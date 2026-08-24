@@ -11,6 +11,7 @@ import type {
 import {
   GeminiChatAdapter,
   createGeminiFunctionCallingMode,
+  createGeminiStructuredOutputConfig,
   createGeminiThinkingConfig,
   createGeminiUserMessage,
   normalizeGeminiResponse,
@@ -132,6 +133,26 @@ describe("Gemini function-calling conformance", () => {
     expect(() =>
       createGeminiThinkingConfig("gemini-2.5-flash", "minimal"),
     ).toThrow("Reasoning mode `minimal` is not supported");
+  });
+
+  it("uses Gemini response schemas for structured output", () => {
+    expect(
+      createGeminiStructuredOutputConfig({
+        name: "memory_decisions",
+        schema: {
+          type: "object",
+          properties: { decisions: { type: "array" } },
+          required: ["decisions"],
+        },
+      }),
+    ).toEqual({
+      responseMimeType: "application/json",
+      responseJsonSchema: {
+        type: "object",
+        properties: { decisions: { type: "array" } },
+        required: ["decisions"],
+      },
+    });
   });
 
   it("uses validated function calling for Gemini 3 models", () => {

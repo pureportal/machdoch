@@ -49,6 +49,18 @@ const parseJsonRecord = (line: string): Record<string, unknown> | undefined => {
   }
 };
 
+const stringifyStructuredOutput = (value: unknown): string | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return undefined;
+  }
+};
+
 const formatDisplayText = (value: string): string =>
   value.endsWith("\n") ? value : `${value}\n\n`;
 
@@ -349,7 +361,9 @@ export class ClaudeCliOutputDecoder
       return;
     }
 
-    const result = getString(event, "result");
+    const result =
+      stringifyStructuredOutput(event.structured_output) ??
+      getString(event, "result");
     if (result) {
       const assistantOutput = this.finalOutput.trim();
       const normalizedResult = result.trim();

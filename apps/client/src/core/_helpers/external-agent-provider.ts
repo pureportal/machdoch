@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { extname, join } from "node:path";
-import { loadWorkspaceEnv } from "../env.js";
+import { loadRuntimeEnvironment } from "../env.js";
 import { materializeCliEnrollment } from "../provider-enrollment/materializer.js";
 import type { MaterializedCliEnrollment } from "../provider-enrollment/types.js";
 import { assertReasoningModeSupportedForProviderModel } from "../reasoning-modes.js";
@@ -60,7 +60,7 @@ import {
 } from "./external-agent-cli-output.js";
 import { recordExternalAgentModelCall } from "../model-usage.js";
 
-interface SpawnedAgentResult {
+export interface SpawnedAgentResult {
   exitCode: number | null;
   signal: NodeJS.Signals | null;
   stdout: string;
@@ -831,7 +831,7 @@ const createActionOutputBatcher = (
   };
 };
 
-const runExternalAgentCommand = async (
+export const runExternalAgentCommand = async (
   executable: string,
   args: string[],
   input: string | undefined,
@@ -1630,7 +1630,7 @@ const executeExternalAgentCliTask = async (
   params: ExternalAgentExecutionParams,
   provider: AgentCliProvider,
 ): Promise<TaskExecutionResult> => {
-  const env = await loadWorkspaceEnv(params.config.workspaceRoot);
+  const env = await loadRuntimeEnvironment();
   const binary = resolveAgentCliProviderBinary(provider, env);
   const providerLabel = getAgentCliProviderLabel(provider);
   const loopState = createExternalAgentLoopState(params.contextSections);

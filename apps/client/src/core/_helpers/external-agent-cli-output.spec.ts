@@ -113,6 +113,26 @@ describe("Claude CLI output decoder", () => {
     });
   });
 
+  it("prefers validated structured output from the terminal result", () => {
+    const decoder = new ClaudeCliOutputDecoder();
+    const update = decoder.push(
+      eventLine({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "The response text is not the structured value.",
+        structured_output: {
+          memories: [{ scope: "workspace", content: "Use pnpm." }],
+        },
+      }),
+    );
+
+    expect(update.resultExitCode).toBe(0);
+    expect(JSON.parse(decoder.getFinalOutput())).toEqual({
+      memories: [{ scope: "workspace", content: "Use pnpm." }],
+    });
+  });
+
   it("streams complete assistant messages but waits for the result event", () => {
     const decoder = new ClaudeCliOutputDecoder();
     const assistant = decoder.push(

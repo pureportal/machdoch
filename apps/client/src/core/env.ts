@@ -57,71 +57,16 @@ import type {
 } from "./runtime-contract.generated.js";
 
 const USER_CONFIG_FILE_NAME = "user-config.json";
-const WORKSPACE_ENV_FILE_NAME = ".env";
 export type UserWebSearchProvider = Exclude<WebSearchProvider, "none">;
 export type UserAgentCliPaths = SharedUserAgentCliPaths;
 const USER_API_PROVIDERS = SCHEMA_USER_API_PROVIDERS;
 const USER_API_PROVIDER_DESCRIPTION = USER_API_PROVIDERS.join(", ");
-const TRUSTED_AGENT_CLI_ENV_KEYS = new Set<string>(
-  Object.values(AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER),
-);
 
 export type UserAgentLimitsSettings = SharedUserAgentLimitsSettings;
 export type UserInternalTaskModelSettings =
   SharedUserInternalTaskModelSettings;
 export type UserReviewModelSettings = SharedUserReviewModelSettings;
 type UserConfigFile = SharedUserConfigFile;
-
-const stripWrappingQuotes = (value: string): string => {
-  const trimmed = value.trim();
-
-  if (trimmed.length >= 2) {
-    const wrappedInSingleQuotes =
-      trimmed.startsWith("'") && trimmed.endsWith("'");
-    const wrappedInDoubleQuotes =
-      trimmed.startsWith('"') && trimmed.endsWith('"');
-
-    if (wrappedInSingleQuotes || wrappedInDoubleQuotes) {
-      return trimmed.slice(1, -1);
-    }
-  }
-
-  return trimmed;
-};
-
-const parseDotEnvFile = async (
-  filePath: string,
-): Promise<Record<string, string>> => {
-  const raw = await readFile(filePath, "utf8");
-  const values: Record<string, string> = {};
-
-  for (const line of raw.split(/\r?\n/u)) {
-    const trimmed = line.trim();
-
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-
-    const separatorIndex = trimmed.indexOf("=");
-
-    if (separatorIndex <= 0) {
-      continue;
-    }
-
-    const key = normalizeOptionalString(trimmed.slice(0, separatorIndex));
-    const value = normalizeOptionalString(
-      stripWrappingQuotes(trimmed.slice(separatorIndex + 1)),
-    );
-
-    if (!key || !value) {
-      continue;
-    }
-
-    values[key] = value;
-  }
-
-  return values;
-};
 
 /**
  * Returns whether a provider id is supported by the user API config file.
@@ -283,12 +228,12 @@ export const loadProcessEnv = (): Record<string, string> => {
 };
 
 /**
- * Loads the effective workspace environment by combining user-scoped provider
- * keys, workspace `.env` values, and current-process overrides.
+ * Loads the effective runtime environment by combining user-scoped provider
+ * settings with current-process overrides.
  */
-export const loadWorkspaceEnv = async (
-  workspaceRoot: string,
-): Promise<Record<string, string>> => {
+export const loadRuntimeEnvironment = async (): Promise<
+  Record<string, string>
+> => {
   const env: Record<string, string> = {};
   const userApiKeys = await loadUserApiKeys();
   const userAgentCliPaths = await loadUserAgentCliPaths();
@@ -322,18 +267,6 @@ export const loadWorkspaceEnv = async (
       key.trim().length > 0
     ) {
       env[WEB_SEARCH_ENV_KEY_BY_PROVIDER[provider]] = key.trim();
-    }
-  }
-
-  const workspaceEnvPath = join(workspaceRoot, WORKSPACE_ENV_FILE_NAME);
-
-  if (existsSync(workspaceEnvPath)) {
-    const workspaceEnv = await parseDotEnvFile(workspaceEnvPath);
-
-    for (const [key, value] of Object.entries(workspaceEnv)) {
-      if (!TRUSTED_AGENT_CLI_ENV_KEYS.has(key)) {
-        env[key] = value;
-      }
     }
   }
 

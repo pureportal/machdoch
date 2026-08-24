@@ -3,6 +3,7 @@ import type { AgentModelStartParams, AgentModelToolSpec } from "../../types.js";
 import {
   LangdockChatCompletionsAdapter,
   createLangdockReasoningConfig,
+  createLangdockStructuredOutputConfig,
   createLangdockToolSelection,
   createLangdockTools,
 } from "./langdock-adapter.js";
@@ -101,6 +102,32 @@ describe("Langdock Chat Completions conformance", () => {
     expect(() => createLangdockReasoningConfig("gpt-5.6-sol", "ultra")).toThrow(
       "Reasoning mode `ultra` is not supported",
     );
+  });
+
+  it("uses strict JSON Schema response formatting", () => {
+    expect(
+      createLangdockStructuredOutputConfig({
+        name: "memory_decisions",
+        schema: {
+          type: "object",
+          properties: { decisions: { type: "array" } },
+          required: ["decisions"],
+        },
+      }),
+    ).toEqual({
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "memory_decisions",
+          schema: {
+            type: "object",
+            properties: { decisions: { type: "array" } },
+            required: ["decisions"],
+          },
+          strict: true,
+        },
+      },
+    });
   });
 
   it("sends start and continuation turns using Chat Completions messages", async () => {

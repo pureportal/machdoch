@@ -34,12 +34,17 @@ import {
 import { normalizeToolResultContent } from "./tool-result-content.js";
 import { resolveProviderPromptCacheDirectives } from "../provider-prompt-cache.js";
 
-export const createAnthropicToolSelection = () => ({
-  tool_choice: {
-    type: "any" as const,
-    disable_parallel_tool_use: true,
-  },
-});
+export const createAnthropicToolSelection = (
+  tools: readonly AgentModelToolSpec[],
+) =>
+  tools.length > 0
+    ? {
+        tool_choice: {
+          type: "any" as const,
+          disable_parallel_tool_use: true,
+        },
+      }
+    : {};
 
 type AnthropicEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -51,16 +56,34 @@ export const createAnthropicOutputConfig = (
   model: string,
   reasoning?: ReasoningMode,
   provider: ConfiguredModelProvider = "anthropic",
-): { output_config?: { effort: AnthropicEffort } } => {
-  if (!reasoning || reasoning === "default") {
+  structuredOutput?: AgentModelStartParams["structuredOutput"],
+): {
+  output_config?: {
+    effort?: AnthropicEffort;
+    format?: { type: "json_schema"; schema: Record<string, unknown> };
+  };
+} => {
+  if ((!reasoning || reasoning === "default") && !structuredOutput) {
     return {};
   }
 
-  assertReasoningModeSupportedForProviderModel(reasoning, provider, model);
+  if (reasoning && reasoning !== "default") {
+    assertReasoningModeSupportedForProviderModel(reasoning, provider, model);
+  }
 
   return {
     output_config: {
-      effort: reasoning as AnthropicEffort,
+      ...(reasoning && reasoning !== "default"
+        ? { effort: reasoning as AnthropicEffort }
+        : {}),
+      ...(structuredOutput
+        ? {
+            format: {
+              type: "json_schema" as const,
+              schema: structuredOutput.schema as Record<string, unknown>,
+            },
+          }
+        : {}),
     },
   };
 };
@@ -195,13 +218,18 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
             params.tools,
           ),
           messages: [...this.messages],
-          tools: createAnthropicTools(params.tools),
+          ...(params.tools.length > 0
+            ? {
+                tools: createAnthropicTools(params.tools),
+                ...createAnthropicToolSelection(params.tools),
+              }
+            : {}),
           ...createAnthropicOutputConfig(
             params.model,
             params.reasoning,
             this.provider,
+            params.structuredOutput,
           ),
-          ...createAnthropicToolSelection(),
         };
 
         if (params.onStreamEvent) {
@@ -270,13 +298,18 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
             this.tools,
           ),
           messages: [...this.messages],
-          tools: createAnthropicTools(this.tools),
+          ...(this.tools.length > 0
+            ? {
+                tools: createAnthropicTools(this.tools),
+                ...createAnthropicToolSelection(this.tools),
+              }
+            : {}),
           ...createAnthropicOutputConfig(
             startParams.model,
             startParams.reasoning,
             this.provider,
+            startParams.structuredOutput,
           ),
-          ...createAnthropicToolSelection(),
         };
 
         if (params.onStreamEvent) {

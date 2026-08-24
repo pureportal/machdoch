@@ -1,10 +1,8 @@
-use std::{collections::HashMap, path::Path};
+use std::collections::HashMap;
 
 use super::{
-    env_commands,
-    env_dotenv::{apply_process_env_overrides, parse_dotenv_file},
-    merge_user_agent_cli_paths_into_env, merge_user_api_keys_into_env,
-    merge_user_web_search_api_keys_into_env,
+    env_commands, env_process::apply_process_env_overrides, merge_user_agent_cli_paths_into_env,
+    merge_user_api_keys_into_env, merge_user_web_search_api_keys_into_env,
 };
 
 pub(crate) fn load_global_env() -> Result<HashMap<String, String>, String> {
@@ -13,25 +11,6 @@ pub(crate) fn load_global_env() -> Result<HashMap<String, String>, String> {
     merge_user_agent_cli_paths_into_env(&mut values)?;
     merge_user_web_search_api_keys_into_env(&mut values)?;
     apply_process_env_overrides(&mut values);
-    Ok(values)
-}
-
-pub(super) fn load_workspace_env(workspace_root: &Path) -> Result<HashMap<String, String>, String> {
-    let env_path = workspace_root.join(".env");
-    let mut values = HashMap::new();
-
-    merge_user_api_keys_into_env(&mut values)?;
-    merge_user_agent_cli_paths_into_env(&mut values)?;
-    merge_user_web_search_api_keys_into_env(&mut values)?;
-
-    if env_path.exists() {
-        for (key, value) in parse_dotenv_file(&env_path)? {
-            values.insert(key, value);
-        }
-    }
-
-    apply_process_env_overrides(&mut values);
-
     Ok(values)
 }
 

@@ -212,7 +212,7 @@ fn parse_langdock_configured_base_url(value: &str) -> Option<(String, Option<Str
 }
 
 fn resolve_langdock_region(env: &HashMap<String, String>) -> String {
-    env.get("LANGDOCK_REGION")
+    env.get("MACHDOCH_LANGDOCK_REGION")
         .map(String::as_str)
         .map(str::trim)
         .map(str::to_ascii_lowercase)
@@ -235,7 +235,7 @@ pub(super) fn resolve_langdock_api_base_url(
     family: LangdockApiFamily,
 ) -> String {
     if let Some(base_url) = env
-        .get("LANGDOCK_BASE_URL")
+        .get("MACHDOCH_LANGDOCK_BASE_URL")
         .map(String::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())

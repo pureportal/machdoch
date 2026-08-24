@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use super::{
-    env::{has_configured_value, load_workspace_env, resolve_agent_cli_binary},
+    env::{has_configured_value, resolve_agent_cli_binary},
+    load_global_env,
     settings::{normalize_user_agent_limits_settings, normalize_user_review_model_settings},
     settings_types::{ContextWindow, ReasoningExecutionMode, UserConfigFile, WorkspaceConfigFile},
     user_config::load_user_config_file,
@@ -309,7 +310,7 @@ pub(super) fn collect_runtime_snapshot(workspace_root: &str) -> Result<RuntimeSn
     let workspace_path = resolve_workspace_root_path(workspace_root)?;
     let resolved_workspace_root = workspace_path.display().to_string();
 
-    let env = load_workspace_env(&workspace_path)?;
+    let env = load_global_env()?;
     let (config, workspace_config_path) = load_workspace_config(&workspace_path)?;
     let (user_config, _) = load_user_config_file()?;
     let provider_availability = get_provider_availability(&env);

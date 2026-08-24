@@ -977,8 +977,8 @@
       "MACHDOCH_CODEX_CLI_PATH",
       "MACHDOCH_CLAUDE_CLI_PATH",
       "MACHDOCH_COPILOT_CLI_PATH",
-      "LANGDOCK_REGION",
-      "LANGDOCK_BASE_URL"
+      "MACHDOCH_LANGDOCK_REGION",
+      "MACHDOCH_LANGDOCK_BASE_URL"
     ],
     "providerEnvKeys": {
       "openai": "OPENAI_API_KEY",

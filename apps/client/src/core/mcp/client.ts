@@ -52,8 +52,11 @@ import { basename, isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { normalizeOptionalString } from "../../helpers/normalize-optional-string.helper.js";
 import { loadRuntimeConfig } from "../config.js";
-import { loadWorkspaceEnv } from "../env.js";
-import { createInternalTaskModelExecution } from "../internal-task-model.js";
+import { loadRuntimeEnvironment } from "../env.js";
+import {
+  executeInternalTaskModelInference,
+  resolveInternalTaskRuntimeConfig,
+} from "../internal-task-model.js";
 import { observeAgentModelCall } from "../model-usage.js";
 import type { AgentModelImageInput } from "../types.js";
 import {
@@ -137,7 +140,7 @@ export interface McpClientManagerOptions {
   createClient?: (context: McpConnectionContext) => Client;
   createTransport?: (context: McpConnectionContext) => Transport;
   samplingHandler?: McpSamplingHandler;
-  loadWorkspaceEnv?: (workspaceRoot: string) => Promise<Record<string, string>>;
+  loadRuntimeEnvironment?: () => Promise<Record<string, string>>;
   now?: () => number;
   setIdleTimer?: (
     handler: () => void,
@@ -405,12 +408,12 @@ export const createProviderSamplingHandler: McpSamplingHandler = async ({
   assertSupportedSamplingRequest(request);
 
   const config = await loadRuntimeConfig(workspaceRoot);
-  const execution = await createInternalTaskModelExecution(config);
+  const internalConfig = resolveInternalTaskRuntimeConfig(config);
 
-  if (!execution) {
+  if (!internalConfig) {
     throw new McpError(
       ErrorCode.InvalidRequest,
-      "MCP sampling is enabled, but no model adapter is available for the configured internal task model.",
+      "MCP sampling is enabled, but no internal task model is configured.",
     );
   }
 
@@ -424,18 +427,16 @@ export const createProviderSamplingHandler: McpSamplingHandler = async ({
   const turn = await observeAgentModelCall(
     {
       stage: "mcp-sampling",
-      provider: execution.config.provider,
-      model: execution.config.model,
+      provider: internalConfig.provider,
+      model: internalConfig.model,
       operation: "createMcpSamplingMessage",
       requestPayload: { systemPrompt, userPrompt, imageInputs, tools: [] },
     },
     async (onRequestAttempt) =>
-      await execution.adapter.startTurn({
-        model: execution.config.model,
+      await executeInternalTaskModelInference(config, {
         systemPrompt,
         userPrompt,
         ...(imageInputs.length > 0 ? { imageInputs } : {}),
-        tools: [],
         ...(signal ? { signal } : {}),
         ...(onRequestAttempt ? { onRequestAttempt } : {}),
       }),
@@ -449,7 +450,7 @@ export const createProviderSamplingHandler: McpSamplingHandler = async ({
       type: "text",
       text,
     },
-    model: execution.config.model,
+    model: internalConfig.model,
     stopReason: normalizeSamplingStopReason(turn.stopReason, truncated),
   };
 };
@@ -1519,9 +1520,9 @@ export class McpClientManager {
   private readonly createClientImpl: (context: McpConnectionContext) => Client;
   private readonly createTransportImpl: (context: McpConnectionContext) => Transport;
   private readonly samplingHandler: McpSamplingHandler;
-  private readonly loadWorkspaceEnvImpl: (
-    workspaceRoot: string,
-  ) => Promise<Record<string, string>>;
+  private readonly loadRuntimeEnvironmentImpl: () => Promise<
+    Record<string, string>
+  >;
   private readonly now: () => number;
   private readonly setIdleTimerImpl: (
     handler: () => void,
@@ -1535,7 +1536,8 @@ export class McpClientManager {
     this.createClientImpl = options.createClient ?? createClient;
     this.createTransportImpl = options.createTransport ?? createTransport;
     this.samplingHandler = options.samplingHandler ?? createProviderSamplingHandler;
-    this.loadWorkspaceEnvImpl = options.loadWorkspaceEnv ?? loadWorkspaceEnv;
+    this.loadRuntimeEnvironmentImpl =
+      options.loadRuntimeEnvironment ?? loadRuntimeEnvironment;
     this.now = options.now ?? Date.now;
     this.setIdleTimerImpl = options.setIdleTimer ?? setTimeout;
     this.clearIdleTimerImpl = options.clearIdleTimer ?? clearTimeout;
@@ -1615,7 +1617,7 @@ export class McpClientManager {
       return current;
     }
 
-    const env = await this.loadWorkspaceEnvImpl(workspaceRoot);
+    const env = await this.loadRuntimeEnvironmentImpl();
     const context: McpConnectionContext = { workspaceRoot, env, server };
     const transport = this.createTransportImpl(context);
     const client = this.createClientImpl(context);
@@ -1780,7 +1782,7 @@ export class McpClientManager {
       throw new Error(`MCP server \`${server.id}\` is not configured for OAuth.`);
     }
 
-    const env = await this.loadWorkspaceEnvImpl(workspaceRoot);
+    const env = await this.loadRuntimeEnvironmentImpl();
     const context: McpConnectionContext = { workspaceRoot, env, server };
     const provider = new ConfiguredMcpOAuthProvider(server.auth, context, server);
     const scope = getOAuthScope(server.auth);
@@ -1827,7 +1829,7 @@ export class McpClientManager {
       throw new Error(`MCP server \`${server.id}\` is not configured for OAuth.`);
     }
 
-    const env = await this.loadWorkspaceEnvImpl(workspaceRoot);
+    const env = await this.loadRuntimeEnvironmentImpl();
     const context: McpConnectionContext = { workspaceRoot, env, server };
     const redirectUrl = server.auth.redirectUrl
       ? resolveTemplateValue(server.auth.redirectUrl, context)
@@ -1888,7 +1890,7 @@ export class McpClientManager {
 
     const parsed = parseOAuthAuthorizationResponse(authorizationResponse);
     const stateVerified = validateOAuthState(server, parsed.state);
-    const env = await this.loadWorkspaceEnvImpl(workspaceRoot);
+    const env = await this.loadRuntimeEnvironmentImpl();
     const context: McpConnectionContext = { workspaceRoot, env, server };
     const provider = new ConfiguredMcpOAuthProvider(server.auth, context, server);
     const scope = getOAuthScope(server.auth);

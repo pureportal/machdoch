@@ -56,7 +56,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("InternalTaskModelSettingsPanel", () => {
-  it("selects models only from configured API providers", async () => {
+  it("selects models from configured API and CLI providers", async () => {
     render(
       createElement(InternalTaskModelSettingsPanel, {
         providerAvailability: [
@@ -75,8 +75,8 @@ describe("InternalTaskModelSettingsPanel", () => {
       within(provider).getByRole("option", { name: "Anthropic" }),
     ).toBeTruthy();
     expect(
-      within(provider).queryByRole("option", { name: "Codex CLI" }),
-    ).toBeNull();
+      within(provider).getByRole("option", { name: "Codex CLI" }),
+    ).toBeTruthy();
 
     fireEvent.change(provider, { target: { value: "anthropic" } });
 

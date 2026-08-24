@@ -1,4 +1,4 @@
-import { loadWorkspaceEnv } from "../env.js";
+import { loadRuntimeEnvironment } from "../env.js";
 import {
   isAgentCliProvider,
   resolveAgentCliProviderBinary,
@@ -206,7 +206,7 @@ export const createInstructionDeliveryPlanForRuntime = async (
     });
   }
 
-  const env = await loadWorkspaceEnv(input.workspaceRoot);
+  const env = await loadRuntimeEnvironment();
   const binary = resolveAgentCliProviderBinary(resolution.providerId, env);
   const probe: ProviderProbeResult =
     binary.available && binary.executable

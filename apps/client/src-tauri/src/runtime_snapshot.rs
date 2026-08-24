@@ -10,8 +10,8 @@ mod collect;
 mod desktop_settings_commands;
 mod env;
 mod env_commands;
-mod env_dotenv;
 mod env_paths;
+mod env_process;
 mod mcp_config;
 mod model_catalog;
 mod settings;
@@ -97,21 +97,6 @@ pub(crate) fn normalize_optional_string(value: Option<&str>) -> Option<String> {
     }
 
     Some(trimmed.to_string())
-}
-
-fn strip_wrapping_quotes(value: &str) -> String {
-    let trimmed = value.trim();
-
-    if trimmed.len() >= 2 {
-        let starts_with_single = trimmed.starts_with('\'') && trimmed.ends_with('\'');
-        let starts_with_double = trimmed.starts_with('"') && trimmed.ends_with('"');
-
-        if starts_with_single || starts_with_double {
-            return trimmed[1..trimmed.len() - 1].to_string();
-        }
-    }
-
-    trimmed.to_string()
 }
 
 fn is_valid_model_provider(value: &str) -> bool {

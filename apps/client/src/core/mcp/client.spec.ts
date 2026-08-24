@@ -235,7 +235,7 @@ describe("McpClientManager lifecycle", () => {
     const manager = new McpClientManager({
       createClient: () => createClient(),
       createTransport: () => transport,
-      loadWorkspaceEnv: async () => ({}),
+      loadRuntimeEnvironment: async () => ({}),
     });
     const server = createServer({ idleShutdownMs: 5 });
 
@@ -267,7 +267,7 @@ describe("McpClientManager lifecycle", () => {
     const manager = new McpClientManager({
       createClient: () => clients.shift() ?? secondClient,
       createTransport: () => transports.shift() ?? secondTransport,
-      loadWorkspaceEnv: async () => ({}),
+      loadRuntimeEnvironment: async () => ({}),
     });
     const server = createServer();
 
@@ -306,7 +306,7 @@ describe("McpClientManager lifecycle", () => {
     const manager = new McpClientManager({
       createClient: () => client,
       createTransport: () => transport,
-      loadWorkspaceEnv: async () => ({}),
+      loadRuntimeEnvironment: async () => ({}),
     });
     const server = createServer();
 
@@ -334,7 +334,7 @@ describe("McpClientManager lifecycle", () => {
     const manager = new McpClientManager({
       createClient: () => client,
       createTransport: () => transport,
-      loadWorkspaceEnv: async () => ({}),
+      loadRuntimeEnvironment: async () => ({}),
     });
     const server = createServer({
       roots: ["${workspaceRoot}", "docs", "https://example.com/mcp-root"],
@@ -391,7 +391,7 @@ describe("McpClientManager lifecycle", () => {
       createClient: () => client,
       createTransport: () => transport,
       samplingHandler,
-      loadWorkspaceEnv: async () => ({}),
+      loadRuntimeEnvironment: async () => ({}),
     });
     const server = createServer({ sampling: "ask-agent" });
     const signal = new AbortController().signal;
@@ -432,7 +432,7 @@ describe("McpClientManager lifecycle", () => {
       createClient: () => client,
       createTransport: () => transport,
       samplingHandler,
-      loadWorkspaceEnv: async () => ({}),
+      loadRuntimeEnvironment: async () => ({}),
     });
     const server = createServer({ sampling: "ask-agent" });
 
@@ -474,7 +474,7 @@ describe("McpClientManager lifecycle", () => {
     } as Partial<Client>);
     const manager = new McpClientManager({
       createClient: () => client,
-      loadWorkspaceEnv: async () => ({
+      loadRuntimeEnvironment: async () => ({
         MCP_ACCESS_TOKEN: "access-token",
         MCP_CLIENT_SECRET: "client-secret",
       }),
@@ -572,7 +572,7 @@ describe("McpClientManager lifecycle", () => {
     const port = await getAvailableLoopbackPort();
     const callbackUrl = `http://127.0.0.1:${port}/oauth/callback`;
     const manager = new McpClientManager({
-      loadWorkspaceEnv: async () => ({}),
+      loadRuntimeEnvironment: async () => ({}),
     });
 
     await writeWorkspaceOAuthMcpConfig(workspaceRoot, callbackUrl);
@@ -631,7 +631,7 @@ describe("McpClientManager lifecycle", () => {
     const port = await getAvailableLoopbackPort();
     const callbackUrl = `http://127.0.0.1:${port}/oauth/callback`;
     const manager = new McpClientManager({
-      loadWorkspaceEnv: async () => ({}),
+      loadRuntimeEnvironment: async () => ({}),
     });
 
     await writeWorkspaceOAuthMcpConfig(workspaceRoot, callbackUrl);
@@ -670,7 +670,7 @@ describe("McpClientManager lifecycle", () => {
     const callbackUrl = `http://127.0.0.1:${port}/oauth/callback`;
     const occupyingServer = createHttpServer();
     const manager = new McpClientManager({
-      loadWorkspaceEnv: async () => ({}),
+      loadRuntimeEnvironment: async () => ({}),
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -759,7 +759,7 @@ describe("McpClientManager lifecycle", () => {
           },
         } as unknown as Partial<Client>),
       createTransport,
-      loadWorkspaceEnv: async () => ({}),
+      loadRuntimeEnvironment: async () => ({}),
     });
 
     await writeWorkspaceMcpConfig(workspaceRoot);
@@ -816,7 +816,7 @@ describe("McpClientManager lifecycle", () => {
           },
         } as unknown as Partial<Client>),
       createTransport,
-      loadWorkspaceEnv: async () => ({}),
+      loadRuntimeEnvironment: async () => ({}),
     });
 
     await writeWorkspaceMcpConfig(workspaceRoot);
@@ -865,7 +865,7 @@ describe("McpClientManager lifecycle", () => {
     const manager = new McpClientManager({
       createClient: () => createClient({ callTool } as Partial<Client>),
       createTransport,
-      loadWorkspaceEnv: async () => ({}),
+      loadRuntimeEnvironment: async () => ({}),
     });
 
     await writeWorkspaceMcpConfig(workspaceRoot);
@@ -921,7 +921,7 @@ describe("McpClientManager lifecycle", () => {
           },
         } as unknown as Partial<Client>),
       createTransport,
-      loadWorkspaceEnv: async () => ({}),
+      loadRuntimeEnvironment: async () => ({}),
     });
 
     await writeWorkspaceMcpConfig(workspaceRoot);
@@ -952,7 +952,7 @@ describe("McpClientManager lifecycle", () => {
           callTool,
         } as Partial<Client>),
       createTransport,
-      loadWorkspaceEnv: async () => ({}),
+      loadRuntimeEnvironment: async () => ({}),
     });
 
     await writeWorkspaceMcpConfig(workspaceRoot);
@@ -1005,7 +1005,7 @@ describe("McpClientManager lifecycle", () => {
           callTool,
         } as Partial<Client>),
       createTransport,
-      loadWorkspaceEnv: async () => ({}),
+      loadRuntimeEnvironment: async () => ({}),
     });
 
     await writeWorkspaceMcpConfig(workspaceRoot);
@@ -1052,7 +1052,7 @@ describe("McpClientManager lifecycle", () => {
           readResource,
         } as Partial<Client>),
       createTransport,
-      loadWorkspaceEnv: async () => ({}),
+      loadRuntimeEnvironment: async () => ({}),
     });
 
     await writeWorkspaceMcpConfig(workspaceRoot, {

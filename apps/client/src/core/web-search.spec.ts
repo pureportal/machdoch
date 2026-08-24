@@ -60,7 +60,7 @@ afterEach(async () => {
 describe("executeWebSearch", () => {
   it("runs Tavily searches with automatic query parameters and explicit response limits", async () => {
     isolateEnvironment();
-    const workspaceRoot = await createWorkspace();
+    await createWorkspace();
     process.env.TAVILY_API_KEY = "tavily-test-key-1234567890";
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
@@ -87,7 +87,6 @@ describe("executeWebSearch", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await executeWebSearch(
-      workspaceRoot,
       "tavily",
       "  Tavily API automatic search parameters  ",
     );
@@ -129,7 +128,7 @@ describe("executeWebSearch", () => {
 
   it("runs Serper searches and normalizes organic result snippets", async () => {
     isolateEnvironment();
-    const workspaceRoot = await createWorkspace();
+    await createWorkspace();
     process.env.SERPER_API_KEY = "serper-test-key-1234567890";
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
@@ -162,7 +161,6 @@ describe("executeWebSearch", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await executeWebSearch(
-      workspaceRoot,
       "serper",
       "  Serper API documentation  ",
       3,
@@ -199,10 +197,10 @@ describe("executeWebSearch", () => {
 
   it("rejects Serper searches when no API key is configured", async () => {
     isolateEnvironment();
-    const workspaceRoot = await createWorkspace();
+    await createWorkspace();
 
-    await expect(
-      executeWebSearch(workspaceRoot, "serper", "current docs"),
-    ).rejects.toThrow("Serper web search is not configured");
+    await expect(executeWebSearch("serper", "current docs")).rejects.toThrow(
+      "Serper web search is not configured",
+    );
   });
 });

@@ -16,7 +16,7 @@ import {
   writeFileAtomically,
   writeJsonAtomically,
 } from "../_helpers/write-file-atomically.helper.js";
-import { getUserConfigPath, loadWorkspaceEnv } from "../env.js";
+import { getUserConfigPath, loadRuntimeEnvironment } from "../env.js";
 import type { AgentCliProvider } from "../runtime-contract.generated.js";
 import {
   PROVIDER_CAPABILITY_REGISTRY,
@@ -635,7 +635,7 @@ const reconcileOnce = async (
     };
   }
 
-  const env = await loadWorkspaceEnv(workspaceRoot);
+  const env = await loadRuntimeEnvironment();
   const statuses: ProviderSyncTargetStatus[] = [];
   const records: ProviderOwnershipRecord[] = [];
   const coverage: EnrollmentCoverageEntry[] = [];
@@ -855,7 +855,7 @@ export const createProviderSyncPlan = async (
 ): Promise<Record<string, unknown>> => {
   const [config, env, status] = await Promise.all([
     loadProviderEnrollmentConfig(),
-    loadWorkspaceEnv(workspaceRoot),
+    loadRuntimeEnvironment(),
     loadProviderSyncStatus(workspaceRoot),
   ]);
   const providers: Record<string, unknown>[] = [];
@@ -936,7 +936,7 @@ export const doctorProviderSync = async (
     readFile(getProviderCoverageLedgerPath(workspaceRoot), "utf8").catch(
       () => "",
     ),
-    loadWorkspaceEnv(workspaceRoot),
+    loadRuntimeEnvironment(),
     inspectCooperativeFileLock(lockTarget),
     loadProviderSyncDaemonDiagnostic(),
   ]);

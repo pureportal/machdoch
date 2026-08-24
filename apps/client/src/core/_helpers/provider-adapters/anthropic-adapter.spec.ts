@@ -34,12 +34,13 @@ const startParams: AgentModelStartParams = {
 
 describe("Anthropic Messages conformance", () => {
   it("requires one tool call per turn", () => {
-    expect(createAnthropicToolSelection()).toEqual({
+    expect(createAnthropicToolSelection([tool])).toEqual({
       tool_choice: {
         type: "any",
         disable_parallel_tool_use: true,
       },
     });
+    expect(createAnthropicToolSelection([])).toEqual({});
   });
 
   it("validates effort for the selected Claude model", () => {
@@ -55,6 +56,77 @@ describe("Anthropic Messages conformance", () => {
     expect(() =>
       createAnthropicOutputConfig("claude-haiku-4-5", "high"),
     ).toThrow("Reasoning mode `high` is not supported");
+  });
+
+  it("combines effort with native structured output", () => {
+    expect(
+      createAnthropicOutputConfig("claude-sonnet-4-6", "high", "anthropic", {
+        name: "memory_decisions",
+        schema: {
+          type: "object",
+          properties: { decisions: { type: "array" } },
+          required: ["decisions"],
+        },
+      }),
+    ).toEqual({
+      output_config: {
+        effort: "high",
+        format: {
+          type: "json_schema",
+          schema: {
+            type: "object",
+            properties: { decisions: { type: "array" } },
+            required: ["decisions"],
+          },
+        },
+      },
+    });
+  });
+
+  it("requests native structured output without forcing tool use", async () => {
+    const calls: unknown[] = [];
+    const client = {
+      messages: {
+        create: async (body: unknown) => {
+          calls.push(body);
+          return {
+            content: [{ type: "text", text: '{"decisions":[]}' }],
+            stop_reason: "end_turn",
+          };
+        },
+      },
+    } as unknown as Anthropic;
+    const adapter = new AnthropicMessagesAdapter(client, []);
+
+    await adapter.startTurn({
+      model: "claude-sonnet-4-6",
+      systemPrompt: "Extract decisions.",
+      userPrompt: "Review this task.",
+      tools: [],
+      structuredOutput: {
+        name: "memory_decisions",
+        schema: {
+          type: "object",
+          properties: { decisions: { type: "array" } },
+          required: ["decisions"],
+        },
+      },
+    });
+
+    expect(calls[0]).toMatchObject({
+      output_config: {
+        format: {
+          type: "json_schema",
+          schema: {
+            type: "object",
+            properties: { decisions: { type: "array" } },
+            required: ["decisions"],
+          },
+        },
+      },
+    });
+    expect(calls[0]).not.toHaveProperty("tools");
+    expect(calls[0]).not.toHaveProperty("tool_choice");
   });
 
   it("reserves enough output capacity for xhigh and max effort", () => {

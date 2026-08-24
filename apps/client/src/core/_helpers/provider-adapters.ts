@@ -1,4 +1,4 @@
-import { hasConfiguredValue, loadWorkspaceEnv } from "../env.js";
+import { hasConfiguredValue, loadRuntimeEnvironment } from "../env.js";
 import type { AgentModelAdapter, AgentModelToolSpec } from "../types.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import { assertContextWindowSupportedForProviderModel } from "../context-windows.js";
@@ -24,7 +24,7 @@ const stripTrailingSlashes = (value: string): string =>
   value.replace(/\/+$/u, "");
 
 const resolveLangdockRegion = (env: Record<string, string>): string => {
-  const region = env.LANGDOCK_REGION?.trim().toLowerCase();
+  const region = env.MACHDOCH_LANGDOCK_REGION?.trim().toLowerCase();
 
   return region && LANGDOCK_SUPPORTED_REGIONS.has(region)
     ? region
@@ -115,7 +115,7 @@ const resolveLangdockSDKBaseURL = (
   protocol: LangdockSDKProtocol,
 ): string => {
   const configuredRegion = resolveLangdockRegion(env);
-  const configuredBaseURL = env.LANGDOCK_BASE_URL;
+  const configuredBaseURL = env.MACHDOCH_LANGDOCK_BASE_URL;
 
   if (configuredBaseURL && hasConfiguredValue(configuredBaseURL)) {
     const normalizedBaseURL = stripKnownLangdockEndpointSuffix(
@@ -199,7 +199,7 @@ export const createProviderAdapter = async (
     config.model,
   );
 
-  const env = await loadWorkspaceEnv(config.workspaceRoot);
+  const env = await loadRuntimeEnvironment();
 
   switch (config.provider) {
     case "openai": {

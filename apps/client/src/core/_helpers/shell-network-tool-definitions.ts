@@ -264,9 +264,10 @@ const runStreamingShellCommand = async (
     timeoutMs: number;
     maxBufferBytes: number;
     signal?: AbortSignal;
-    onOutput?: (
-      output: { stream: "stdout" | "stderr"; chunk: string },
-    ) => void | Promise<void>;
+    onOutput?: (output: {
+      stream: "stdout" | "stderr";
+      chunk: string;
+    }) => void | Promise<void>;
   },
 ): Promise<ShellCommandResult> => {
   if (options.signal?.aborted) {
@@ -634,10 +635,7 @@ export const createShellNetworkToolDefinitions = (
 
         try {
           const cwd = normalizeLocalCommandCwd(context.workspaceRoot);
-          const pid = await startDetachedShellCommand(
-            command,
-            cwd,
-          );
+          const pid = await startDetachedShellCommand(command, cwd);
           const output = [
             `Command: ${command}`,
             `Launch mode: detached`,
@@ -867,7 +865,7 @@ export const createShellNetworkToolDefinitions = (
     backingTool: "network",
     riskLevel: "medium",
     effect: "external-read",
-    execute: async (args, context) => {
+    execute: async (args, _context) => {
       const query = coerceString(args, "query");
       const maxResults = coerceInteger(args, "maxResults");
 
@@ -881,7 +879,6 @@ export const createShellNetworkToolDefinitions = (
 
       try {
         const response = await executeWebSearch(
-          context.workspaceRoot,
           activeProvider,
           query,
           maxResults,

@@ -1,4 +1,4 @@
-import { hasConfiguredValue, loadWorkspaceEnv } from "./env.js";
+import { hasConfiguredValue, loadRuntimeEnvironment } from "./env.js";
 import type {
   RuntimeConfig,
   WebSearchProvider,
@@ -257,12 +257,11 @@ export const getConfiguredWebSearchProvider = (
 };
 
 export const executeWebSearch = async (
-  workspaceRoot: string,
   provider: ActiveWebSearchProvider,
   query: string,
   maxResults?: number,
 ): Promise<WebSearchResponse> => {
-  const env = await loadWorkspaceEnv(workspaceRoot);
+  const env = await loadRuntimeEnvironment();
   const normalizedQuery = query.trim();
   const normalizedMaxResults = clampMaxResults(maxResults);
 
@@ -299,7 +298,9 @@ export const executeWebSearch = async (
       const apiKey = coerceString(env.SERPER_API_KEY);
 
       if (!apiKey || !hasConfiguredValue(apiKey)) {
-        throw new Error("Serper web search is not configured for this runtime.");
+        throw new Error(
+          "Serper web search is not configured for this runtime.",
+        );
       }
 
       return runSerperSearch(apiKey, normalizedQuery, normalizedMaxResults);

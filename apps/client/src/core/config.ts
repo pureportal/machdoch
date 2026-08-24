@@ -19,7 +19,7 @@ import {
   loadUserInternalTaskModelSettings,
   loadUserReviewModelSettings,
   loadUserWebSearchSettings,
-  loadWorkspaceEnv,
+  loadRuntimeEnvironment,
 } from "./env.js";
 import {
   getAgentCliProviders,
@@ -35,7 +35,6 @@ import {
   USER_API_PROVIDERS,
   VALID_MODEL_PROVIDERS,
   VALID_WEB_SEARCH_PROVIDERS,
-  isAgentCliProvider,
   isConfiguredModelProvider,
   isRunMode as isRuntimeSchemaRunMode,
 } from "./runtime-contract.generated.js";
@@ -453,14 +452,12 @@ const resolveInternalTaskModel = (
   const savedProvider = settings.provider;
   const provider =
     savedProvider &&
-    !isAgentCliProvider(savedProvider) &&
     availability.some(
       (entry) => entry.provider === savedProvider && entry.configured,
     )
       ? savedProvider
-      : (availability.find(
-          (entry) => entry.configured && !isAgentCliProvider(entry.provider),
-        )?.provider ?? "unconfigured");
+      : (availability.find((entry) => entry.configured)?.provider ??
+        "unconfigured");
   const savedModel = normalizeOptionalString(settings.model);
 
   return {
@@ -486,7 +483,7 @@ export const loadRuntimeConfig = async (
   overrideContextWindow?: ContextWindow,
   overrideReasoningExecutionMode?: ReasoningExecutionMode,
 ): Promise<RuntimeConfig> => {
-  const env = await loadWorkspaceEnv(workspaceRoot);
+  const env = await loadRuntimeEnvironment();
   const userWebSearchSettings = await loadUserWebSearchSettings();
   const userAgentLimitsSettings = await loadUserAgentLimitsSettings();
   const userReviewModelSettings = await loadUserReviewModelSettings();

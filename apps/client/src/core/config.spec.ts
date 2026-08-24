@@ -108,18 +108,13 @@ describe("loadRuntimeConfig", () => {
     expect(config.compatibility.discoverGithubCustomizations).toBe(false);
   });
 
-  it("loads runtime config from .env and .machdoch/config.json", async () => {
+  it("loads runtime config from process env and .machdoch/config.json", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();
 
     await mkdir(join(workspaceRoot, ".machdoch"), { recursive: true });
-    await writeFile(
-      join(workspaceRoot, ".env"),
-      [
-        "OPENAI_API_KEY=sk-real-openai-key-123456",
-        "MACHDOCH_MODEL=env-model",
-      ].join("\n"),
-    );
+    process.env.OPENAI_API_KEY = "sk-real-openai-key-123456";
+    process.env.MACHDOCH_MODEL = "env-model";
     await writeFile(
       join(workspaceRoot, ".machdoch", "config.json"),
       JSON.stringify(
@@ -375,10 +370,7 @@ describe("loadRuntimeConfig", () => {
         },
       }),
     );
-    await writeFile(
-      join(workspaceRoot, ".env"),
-      "ANTHROPIC_API_KEY=sk-ant-internal-test\n",
-    );
+    process.env.ANTHROPIC_API_KEY = "sk-ant-internal-test";
 
     expect((await loadRuntimeConfig(workspaceRoot)).internalTaskModel).toEqual({
       provider: "anthropic",
@@ -386,7 +378,7 @@ describe("loadRuntimeConfig", () => {
     });
   });
 
-  it("replaces a delegated CLI internal-task selection with an API provider", async () => {
+  it("preserves a configured CLI internal-task selection", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();
 
@@ -400,13 +392,10 @@ describe("loadRuntimeConfig", () => {
         },
       }),
     );
-    await writeFile(
-      join(workspaceRoot, ".env"),
-      "OPENAI_API_KEY=sk-openai-internal-test\n",
-    );
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
 
     expect((await loadRuntimeConfig(workspaceRoot)).internalTaskModel).toEqual({
-      provider: "openai",
+      provider: "codex-cli",
       model: "gpt-5.6-sol",
     });
   });

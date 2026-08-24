@@ -130,6 +130,16 @@ const mapReasoningToGeminiThinkingBudget = (
   }
 };
 
+export const createGeminiStructuredOutputConfig = (
+  structuredOutput: AgentModelStartParams["structuredOutput"],
+) =>
+  structuredOutput
+    ? {
+        responseMimeType: "application/json",
+        responseJsonSchema: structuredOutput.schema,
+      }
+    : {};
+
 export const createGeminiThinkingConfig = (
   model: string,
   reasoning?: ReasoningMode,
@@ -326,6 +336,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
               params.reasoning,
               this.provider,
             ),
+            ...createGeminiStructuredOutputConfig(params.structuredOutput),
             ...(requestSignal ? { abortSignal: requestSignal } : {}),
           },
         };
@@ -383,6 +394,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
               startParams.reasoning,
               this.provider,
             ),
+            ...createGeminiStructuredOutputConfig(startParams.structuredOutput),
             ...(requestSignal ? { abortSignal: requestSignal } : {}),
           },
         };

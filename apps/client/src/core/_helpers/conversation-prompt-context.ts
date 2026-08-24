@@ -10,7 +10,10 @@ import type {
 } from "../types.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type { ConversationMemoryRuntime } from "./agent-tools-shared.js";
-import { createInternalTaskModelExecution } from "../internal-task-model.js";
+import {
+  executeInternalTaskModelInference,
+  resolveInternalTaskRuntimeConfig,
+} from "../internal-task-model.js";
 import { observeAgentModelCall } from "../model-usage.js";
 import {
   compactTraceText,
@@ -349,9 +352,9 @@ const summarizeConversationHistory = async (
   }
 
   try {
-    const execution = await createInternalTaskModelExecution(config);
+    const internalConfig = resolveInternalTaskRuntimeConfig(config);
 
-    if (!execution) {
+    if (!internalConfig) {
       return undefined;
     }
 
@@ -371,17 +374,15 @@ const summarizeConversationHistory = async (
     const turn = await observeAgentModelCall(
       {
         stage: "conversation-summary",
-        provider: execution.config.provider,
-        model: execution.config.model,
+        provider: internalConfig.provider,
+        model: internalConfig.model,
         operation: "summarizeConversationHistory",
         requestPayload: { systemPrompt, userPrompt, tools: [] },
       },
       async (onRequestAttempt) =>
-        await execution.adapter.startTurn({
-          model: execution.config.model,
+        await executeInternalTaskModelInference(config, {
           systemPrompt,
           userPrompt,
-          tools: [],
           ...(signal ? { signal } : {}),
           ...(onRequestAttempt ? { onRequestAttempt } : {}),
         }),
