@@ -376,9 +376,11 @@ Because `.machdoch/config.json` is inside the workspace, a sync tool or source-c
 
 The app automatically archives an inactive open session after 7 days by default and permanently deletes an archived session after another 7 days by default. Change both periods under **Settings > Desktop & startup > Sessions** if that is not the retention policy you want. That section also controls how many recent messages are sent as AI context; older messages can remain visible in history without being included in a new model request.
 
-### Environment settings for advanced use
+### Environment settings for terminal automation
 
-Machdoch can read common provider keys from the current process or a `.env` file in the workspace:
+Settings is the normal source for provider credentials and CLI paths. Machdoch does not read workspace `.env` files. A terminal or CI job can set process environment variables to inject secrets without saving them or to override one invocation.
+
+Provider-owned credential variables keep their standard names:
 
 | Service    | Environment variable |
 | ---------- | -------------------- |
@@ -392,7 +394,7 @@ Machdoch can read common provider keys from the current process or a `.env` file
 | Tavily     | `TAVILY_API_KEY`     |
 | Serper     | `SERPER_API_KEY`     |
 
-A workspace `.env` is a plain-text file. Do not put credentials in a shared folder or commit that file to version control. Use `machdoch config` to see the effective provider, model, mode, offline status, and setting sources when an environment override is confusing.
+Machdoch-owned overrides use the `MACHDOCH_` prefix. They cover mode, model, reasoning, context window, offline execution, agent limits, web-search selection, CLI executable paths, and custom Langdock routing. Examples include `MACHDOCH_MODE`, `MACHDOCH_MODEL`, `MACHDOCH_REASONING`, `MACHDOCH_CODEX_CLI_PATH`, `MACHDOCH_LANGDOCK_REGION`, and `MACHDOCH_LANGDOCK_BASE_URL`. Use `machdoch config` to inspect the effective values and their sources.
 
 The workspace `offline` setting is for model-free inspection and diagnostics, not a local chat model. It disables the live model-driven agent loop. Turn it off to run normal AI tasks.
 
