@@ -119,15 +119,17 @@ const captureCommand = (
 const detectFeatures = (provider: AgentCliProvider, help: string): string[] => {
   const candidates =
     provider === "codex-cli"
-      ? ["--config", "developer_instructions", "mcp_servers"]
+      ? ["--config", "--json", "developer_instructions", "mcp_servers"]
       : provider === "claude-cli"
         ? [
             "--append-system-prompt-file",
             "--effort",
             "--mcp-config",
+            "--output-format",
             "--strict-mcp-config",
             "--bare",
             "--setting-sources",
+            "--verbose",
           ]
         : [
             "--agent",
@@ -178,6 +180,29 @@ export const probeProviderCli = async (
       warnings.push(
         "Provider help probe did not complete successfully on the first attempt and was retried.",
       );
+    }
+
+    if (provider === "codex-cli") {
+      let execHelpResult = captureCommand(executable, ["exec", "--help"]);
+      if (execHelpResult.exitCode !== 0) {
+        execHelpResult = captureCommand(
+          executable,
+          ["exec", "--help"],
+          PROVIDER_PROBE_RETRY_TIMEOUT_MS,
+        );
+        warnings.push(
+          "Codex exec help probe did not complete successfully on the first attempt and was retried.",
+        );
+      }
+      helpResult = {
+        output: `${helpResult.output}\n${execHelpResult.output}`.trim(),
+        exitCode:
+          helpResult.exitCode === null || execHelpResult.exitCode === null
+            ? null
+            : helpResult.exitCode !== 0
+              ? helpResult.exitCode
+              : execHelpResult.exitCode,
+      };
     }
 
     if (helpResult.exitCode === null) {

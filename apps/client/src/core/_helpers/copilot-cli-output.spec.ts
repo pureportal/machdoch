@@ -51,6 +51,7 @@ describe("Copilot CLI output decoder", () => {
         ?.resultExitCode,
     ).toBe(0);
     expect(decoder.getFinalOutput()).toBe("Final answer.");
+    expect(decoder.isModelCallCountReported()).toBe(false);
   });
 
   it("uses the task summary when the latest assistant text starts tools", () => {
