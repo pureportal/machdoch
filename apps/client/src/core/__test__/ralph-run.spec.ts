@@ -811,6 +811,11 @@ describe("runRalphFlow", () => {
     expect(exhausted.status).toBe("crashed");
     expect(exhausted.summary).toBe("Ralph flow reached maxTransitions (2).");
     expect(exhausted.checkpoint).toBeDefined();
+    expect(exhausted.outcome).toMatchObject({
+      status: "budget-exhausted",
+      verified: false,
+      retryable: true,
+    });
     expect(exhausted.blockResults.map((entry) => entry.blockId)).toEqual([
       "start",
       "wait-one",

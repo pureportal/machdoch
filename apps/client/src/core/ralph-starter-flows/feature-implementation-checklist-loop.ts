@@ -1448,10 +1448,10 @@ const fullFeatureImplementationFlow: RalphFlow = {
       to: "outcome-ledger-persisted",
     },
     {
-      id: "report-error-to-ledger-gate",
+      id: "report-error-to-retained-report",
       from: "final-report",
       fromOutput: "ERROR",
-      to: "outcome-ledger-persisted",
+      to: "retained-checklist-report",
     },
     {
       id: "retained-report-success-to-deferral",
@@ -1530,7 +1530,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
 
 export const featureImplementationChecklistLoopStarterFlow = {
   id: "full-feature-implementation",
-  version: 16,
+  version: 17,
   defaultAlias: "feature-implementation-checklist-loop",
   category: "Implementation",
   tags: ["feature", "research", "visual-check"],

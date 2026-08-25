@@ -59,7 +59,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
   description:
     "Bounded autonomous feature cycle that persists a project constitution, scores several product opportunities, implements the best shippable goal, and defers exhausted goals before continuing.",
   settings: {
-    maxTransitions: 500,
+    maxTransitions: 5_000,
     autonomy: {
       recoverFailedEnd: true,
       maxRecoveryAttempts: 3,
@@ -1967,10 +1967,10 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       to: "goals-per-run-counter",
     },
     {
-      id: "report-error-to-counter",
+      id: "report-error-to-retained-report",
       from: "final-report",
       fromOutput: "ERROR",
-      to: "goals-per-run-counter",
+      to: "retained-goal-report",
     },
     {
       id: "retained-report-success-to-deferred",
@@ -1991,10 +1991,10 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       to: "success",
     },
     {
-      id: "stop-report-error-to-end",
+      id: "stop-report-error-to-retained-report",
       from: "stop-goal-report",
       fromOutput: "ERROR",
-      to: "success",
+      to: "retained-goal-report",
     },
     {
       id: "counter-continue-to-detect-next",
@@ -2003,23 +2003,23 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       to: "detect-project-commands",
     },
     {
-      id: "counter-limit-to-success",
+      id: "counter-limit-to-retained-report",
       from: "goals-per-run-counter",
       fromOutput: "LIMIT_REACHED",
-      to: "success",
+      to: "retained-goal-report",
     },
     {
-      id: "counter-error",
+      id: "counter-error-to-retained-report",
       from: "goals-per-run-counter",
       fromOutput: "ERROR",
-      to: "success",
+      to: "retained-goal-report",
     },
   ],
 };
 
 export const autonomousFeatureGenerationLoopStarterFlow = {
   id: "autonomous-feature-generation-loop",
-  version: 16,
+  version: 17,
   defaultAlias: "autonomous-feature-generation-loop",
   category: "Implementation",
   tags: ["autonomous", "feature", "loop"],

@@ -10,9 +10,9 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
   alias: "autonomous-code-improvement-loop",
   name: "Autonomous Code Improvement Loop",
   description:
-    "Bounded autonomous improvement run that selects one evidence-backed work package, implements it with progress-aware termination, verifies and reviews it, and can be scheduled repeatedly without redundant same-run rediscovery.",
+    "Autonomous code-improvement cycle that continues through evidence-backed packages across scopes until none remain.",
   settings: {
-    maxTransitions: 500,
+    maxTransitions: 5_000,
     autonomy: {
       recoverFailedEnd: true,
       maxRecoveryAttempts: 3,
@@ -1219,9 +1219,24 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       },
     },
     {
+      id: "scope-exhausted",
+      title: "Scopes Exhausted?",
+      position: { x: 8600, y: 260 },
+      size: { width: 256, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "CONDITION",
+        condition: {
+          style: "javascript",
+          expression:
+            "(() => { const scanOutput = context.resultsByBlock?.['scan-scopes']?.output; if (!['SUCCESS', 'EMPTY', 'ERROR'].includes(scanOutput)) throw new Error('Code improvement scope scan outcome is missing or invalid.'); if (scanOutput === 'EMPTY') return true; if (scanOutput === 'ERROR') throw new Error('Code improvement scope scan failed.'); const registryOutput = context.resultsByBlock?.['update-scope-registry']?.output; if (!['SUCCESS', 'EMPTY', 'ERROR'].includes(registryOutput)) throw new Error('Code improvement scope registry outcome is missing or invalid.'); if (registryOutput === 'EMPTY') return true; if (registryOutput === 'ERROR') throw new Error('Code improvement scope registry update failed.'); const selectionOutput = context.resultsByBlock?.['select-scope']?.output; if (!['SELECTED', 'EMPTY', 'ERROR'].includes(selectionOutput)) throw new Error('Code improvement scope selection outcome is missing or invalid.'); if (selectionOutput === 'ERROR') throw new Error('Code improvement scope selection failed.'); return selectionOutput === 'EMPTY'; })()",
+        },
+      },
+    },
+    {
       id: "success",
-      title: "Improvement Run Complete",
-      position: { x: 4400, y: 300 },
+      title: "No Actionable Improvements",
+      position: { x: 8940, y: 260 },
       size: { width: 280, height: 114 },
       type: "END",
       status: "success",
@@ -2071,16 +2086,34 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       to: "retained-active-report",
     },
     {
-      id: "report-success-to-end",
+      id: "report-success-to-scope-exhausted",
       from: "final-report",
       fromOutput: "SUCCESS",
+      to: "scope-exhausted",
+    },
+    {
+      id: "report-error-to-retained-report",
+      from: "final-report",
+      fromOutput: "ERROR",
+      to: "retained-active-report",
+    },
+    {
+      id: "scope-exhausted-to-success",
+      from: "scope-exhausted",
+      fromOutput: "MATCH",
       to: "success",
     },
     {
-      id: "report-error-to-end",
-      from: "final-report",
+      id: "scope-exhausted-to-next-scope",
+      from: "scope-exhausted",
+      fromOutput: "NO_MATCH",
+      to: "select-scope",
+    },
+    {
+      id: "scope-exhausted-error-to-retained-report",
+      from: "scope-exhausted",
       fromOutput: "ERROR",
-      to: "success",
+      to: "retained-active-report",
     },
     {
       id: "retained-report-success-to-deferred",
@@ -2099,7 +2132,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
 
 export const autonomousCodeImprovementLoopStarterFlow = {
   id: "autonomous-code-improvement-loop",
-  version: 17,
+  version: 19,
   defaultAlias: "autonomous-code-improvement-loop",
   category: "Code Quality",
   tags: ["autonomous", "improvement", "behavior-change", "validation"],

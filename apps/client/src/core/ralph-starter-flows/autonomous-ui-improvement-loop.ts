@@ -27,7 +27,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
   description:
     "Bounded autonomous UI cycle that scores evidence-backed work packages, applies the design policy, verifies code and visual states, defers exhausted packages, and can be scheduled repeatedly.",
   settings: {
-    maxTransitions: 500,
+    maxTransitions: 5_000,
     autonomy: {
       recoverFailedEnd: true,
       maxRecoveryAttempts: 3,
@@ -1268,7 +1268,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
         condition: {
           style: "javascript",
           expression:
-            "(() => { const scanOutput = context.resultsByBlock?.['scan-ui-scopes']?.output; if (!['SUCCESS', 'EMPTY', 'ERROR'].includes(scanOutput)) throw new Error('UI scope scan outcome is missing or invalid.'); if (scanOutput === 'EMPTY' || scanOutput === 'ERROR') return true; const selectionOutput = context.resultsByBlock?.['select-scope']?.output; if (!['SELECTED', 'EMPTY', 'ERROR'].includes(selectionOutput)) throw new Error('UI scope selection outcome is missing or invalid.'); if (selectionOutput === 'EMPTY') return true; for (const id of ['mark-scope-result', 'defer-scope', 'mark-stop-scope', 'mark-invalid-scope']) { const completed = context.resultsByBlock?.[id]?.data?.cycleCompleted; if (completed !== undefined && typeof completed !== 'boolean') throw new Error('UI scope completion state is invalid.'); if (completed === true) return true; } return false; })()",
+            "(() => { const scanOutput = context.resultsByBlock?.['scan-ui-scopes']?.output; if (!['SUCCESS', 'EMPTY', 'ERROR'].includes(scanOutput)) throw new Error('UI scope scan outcome is missing or invalid.'); if (scanOutput === 'EMPTY') return true; if (scanOutput === 'ERROR') throw new Error('UI scope scan failed.'); const selectionOutput = context.resultsByBlock?.['select-scope']?.output; if (!['SELECTED', 'EMPTY', 'ERROR'].includes(selectionOutput)) throw new Error('UI scope selection outcome is missing or invalid.'); if (selectionOutput === 'EMPTY') return true; if (selectionOutput === 'ERROR') throw new Error('UI scope selection failed.'); for (const id of ['mark-scope-result', 'defer-scope', 'mark-stop-scope', 'mark-invalid-scope']) { const completed = context.resultsByBlock?.[id]?.data?.cycleCompleted; if (completed !== undefined && typeof completed !== 'boolean') throw new Error('UI scope completion state is invalid.'); if (completed === true) return true; } return false; })()",
         },
       },
     },
@@ -2125,10 +2125,10 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       to: "scope-cycle-complete",
     },
     {
-      id: "report-error-to-cycle",
+      id: "report-error-to-retained-report",
       from: "final-report",
       fromOutput: "ERROR",
-      to: "scope-cycle-complete",
+      to: "retained-active-report",
     },
     {
       id: "retained-report-success-to-deferred",
@@ -2165,7 +2165,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
 
 export const autonomousUiImprovementLoopStarterFlow = {
   id: "autonomous-ui-improvement-loop",
-  version: 15,
+  version: 16,
   defaultAlias: "autonomous-ui-improvement-loop",
   category: "Design Quality",
   tags: ["autonomous", "ui", "design", "visual-check"],

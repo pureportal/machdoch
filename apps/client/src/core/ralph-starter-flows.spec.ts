@@ -422,6 +422,68 @@ describe("Ralph starter flows", () => {
     expect(() => applyRalphStarterFlowProtocol(incompleteOutcomes)).toThrow(
       "must assign every terminal outcome exactly once",
     );
+
+    const unsafeLoopLimit = createStarterProtocolFixture();
+    unsafeLoopLimit.flow.blocks.push({
+      id: "loop-limit",
+      type: "UTILITY",
+      title: "Loop limit",
+      utility: { type: "LOOP_COUNTER", maxAttempts: 1 },
+    });
+    unsafeLoopLimit.flow.edges.push({
+      id: "loop-limit-to-done",
+      from: "loop-limit",
+      fromOutput: "LIMIT_REACHED",
+      to: "done",
+    });
+    expect(() => applyRalphStarterFlowProtocol(unsafeLoopLimit)).toThrow(
+      "routes LOOP_COUNTER LIMIT_REACHED",
+    );
+
+    const unsafeLoopCondition = createStarterProtocolFixture();
+    unsafeLoopCondition.flow.blocks.push(
+      {
+        id: "loop-limit",
+        type: "UTILITY",
+        title: "Loop limit",
+        utility: { type: "LOOP_COUNTER", maxAttempts: 1 },
+      },
+      {
+        id: "completion-condition",
+        type: "UTILITY",
+        title: "Completion",
+        utility: {
+          type: "CONDITION",
+          condition: { style: "javascript", expression: "true" },
+        },
+      },
+    );
+    unsafeLoopCondition.flow.edges.push({
+      id: "loop-limit-to-condition",
+      from: "loop-limit",
+      fromOutput: "LIMIT_REACHED",
+      to: "completion-condition",
+    });
+    expect(() => applyRalphStarterFlowProtocol(unsafeLoopCondition)).toThrow(
+      "routes LOOP_COUNTER LIMIT_REACHED",
+    );
+
+    const unsafeReportFailure = createStarterProtocolFixture();
+    unsafeReportFailure.flow.blocks.push({
+      id: "report",
+      type: "UTILITY",
+      title: "Report",
+      utility: { type: "FINAL_REPORT" },
+    });
+    unsafeReportFailure.flow.edges.push({
+      id: "report-error-to-done",
+      from: "report",
+      fromOutput: "ERROR",
+      to: "done",
+    });
+    expect(() => applyRalphStarterFlowProtocol(unsafeReportFailure)).toThrow(
+      "routes FINAL_REPORT ERROR",
+    );
   });
 
   it("persists every autonomous outcome without retiring invalid active state", () => {
@@ -1112,6 +1174,20 @@ describe("Ralph starter flows", () => {
     }
   });
 
+  it("allocates a sustained outer budget to multi-unit starters", () => {
+    for (const starterFlowId of [
+      "autonomous-feature-generation-loop",
+      "autonomous-code-improvement-loop",
+      "autonomous-ui-improvement-loop",
+      "autonomous-refactoring-flow",
+      "security-fix-loop",
+    ]) {
+      expect(
+        getRalphStarterFlow(starterFlowId)?.flow.settings?.maxTransitions,
+      ).toBe(5_000);
+    }
+  });
+
   it("routes autonomous scope cycles only from exact utility protocol state", () => {
     for (const testCase of [
       {
@@ -1125,6 +1201,12 @@ describe("Ralph starter flows", () => {
         scanId: "scan-scopes",
         markerId: "mark-scope-result",
         error: "Security scope",
+      },
+      {
+        flowId: "autonomous-refactoring-flow",
+        scanId: "scan-scopes",
+        markerId: "mark-scope-result",
+        error: "Refactor scope",
       },
     ] as const) {
       const block = getRalphStarterFlow(testCase.flowId)?.flow.blocks.find(
@@ -1162,6 +1244,25 @@ describe("Ralph starter flows", () => {
           },
         ),
       ).toBe(true);
+      expect(() =>
+        evaluateStarterCondition(
+          block,
+          {},
+          {
+            [testCase.scanId]: { output: "ERROR" },
+          },
+        ),
+      ).toThrow(`${testCase.error} scan failed.`);
+      expect(() =>
+        evaluateStarterCondition(
+          block,
+          {},
+          {
+            [testCase.scanId]: { output: "SUCCESS" },
+            "select-scope": { output: "ERROR" },
+          },
+        ),
+      ).toThrow(`${testCase.error} selection failed.`);
       expect(() =>
         evaluateStarterCondition(
           block,
@@ -1400,7 +1501,7 @@ describe("Ralph starter flows", () => {
     });
     expect(flow).toMatchObject({
       name: "Autonomous Feature Generation Loop",
-      settings: { maxTransitions: 500 },
+      settings: { maxTransitions: 5_000 },
     });
     expect(
       flow?.blocks.find((block) => block.id === "find-active-goal"),
@@ -1643,7 +1744,7 @@ describe("Ralph starter flows", () => {
         expect.objectContaining({
           from: "goals-per-run-counter",
           fromOutput: "LIMIT_REACHED",
-          to: "success",
+          to: "retained-goal-report",
         }),
       ]),
     );
@@ -2257,7 +2358,7 @@ describe("Ralph starter flows", () => {
     });
     expect(flow).toMatchObject({
       name: "Autonomous Code Improvement Loop",
-      settings: { maxTransitions: 500 },
+      settings: { maxTransitions: 5_000 },
     });
     expect(chooseImprovement).toMatchObject({
       type: "UTILITY",
@@ -2412,6 +2513,31 @@ describe("Ralph starter flows", () => {
           fromOutput: "CONTINUE",
           to: "validate-improvement",
         }),
+        expect.objectContaining({
+          from: "final-report",
+          fromOutput: "SUCCESS",
+          to: "scope-exhausted",
+        }),
+        expect.objectContaining({
+          from: "final-report",
+          fromOutput: "ERROR",
+          to: "retained-active-report",
+        }),
+        expect.objectContaining({
+          from: "scope-exhausted",
+          fromOutput: "NO_MATCH",
+          to: "select-scope",
+        }),
+        expect.objectContaining({
+          from: "scope-exhausted",
+          fromOutput: "MATCH",
+          to: "success",
+        }),
+        expect.objectContaining({
+          from: "scope-exhausted",
+          fromOutput: "ERROR",
+          to: "retained-active-report",
+        }),
       ]),
     );
     expect(flow?.edges).not.toEqual(
@@ -2433,6 +2559,70 @@ describe("Ralph starter flows", () => {
         prompt: expect.stringContaining("Ignore unrelated workspace changes"),
       },
     });
+  });
+
+  it("continues code improvements until scope selection is exhausted", () => {
+    const flow = getRalphStarterFlow("autonomous-code-improvement-loop")?.flow;
+    const scopeExhausted = flow?.blocks.find(
+      (block): block is RalphUtilityBlock =>
+        block.id === "scope-exhausted" && block.type === "UTILITY",
+    );
+
+    if (!scopeExhausted) {
+      throw new Error("Expected scope exhaustion condition.");
+    }
+
+    const activeScope = {
+      "scan-scopes": { output: "SUCCESS" },
+      "update-scope-registry": { output: "SUCCESS" },
+      "select-scope": { output: "SELECTED" },
+      "mark-scope-result": { data: { cycleCompleted: true } },
+    };
+
+    expect(evaluateStarterCondition(scopeExhausted, {}, activeScope)).toBe(
+      false,
+    );
+    expect(
+      evaluateStarterCondition(
+        scopeExhausted,
+        {},
+        {
+          "scan-scopes": { output: "EMPTY" },
+        },
+      ),
+    ).toBe(true);
+    expect(
+      evaluateStarterCondition(
+        scopeExhausted,
+        {},
+        {
+          "scan-scopes": { output: "SUCCESS" },
+          "update-scope-registry": { output: "EMPTY" },
+        },
+      ),
+    ).toBe(true);
+    expect(
+      evaluateStarterCondition(
+        scopeExhausted,
+        {},
+        {
+          "scan-scopes": { output: "SUCCESS" },
+          "update-scope-registry": { output: "SUCCESS" },
+          "select-scope": { output: "EMPTY" },
+        },
+      ),
+    ).toBe(true);
+    expect(() =>
+      evaluateStarterCondition(
+        scopeExhausted,
+        {},
+        {
+          "scan-scopes": { output: "SUCCESS" },
+          "update-scope-registry": { output: "SUCCESS" },
+          "select-scope": { output: "ERROR" },
+        },
+      ),
+    ).toThrow("Code improvement scope selection failed.");
   });
 
   it("keeps bundled git-diff validators tolerant of shared workspace changes", () => {
@@ -2921,37 +3111,88 @@ describe("Ralph starter flows", () => {
     }
   });
 
-  it("terminates code-quality starters after one selected package per run", () => {
-    for (const starterFlowId of [
-      "autonomous-code-improvement-loop",
-      "autonomous-refactoring-flow",
-    ]) {
-      const flow = getRalphStarterFlow(starterFlowId)!.flow;
+  it("continues code improvements across selected packages", () => {
+    const flow = getRalphStarterFlow("autonomous-code-improvement-loop")!.flow;
 
-      expect(
-        flow.blocks.some((block) => block.id === "scope-cycle-complete"),
-      ).toBe(false);
-      expect(
-        flow.blocks
-          .filter((block) => block.settings?.maxIterations !== undefined)
-          .every((block) => block.type === "PROMPT"),
-      ).toBe(true);
-      expect(flow.edges).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            from: "final-report",
-            fromOutput: "SUCCESS",
-            to: "success",
-          }),
-        ]),
-      );
-      expect(flow.edges.filter((edge) => edge.to === "select-scope")).toEqual([
+    expect(
+      flow.blocks.some((block) => block.id === "scope-cycle-complete"),
+    ).toBe(false);
+    expect(
+      flow.blocks
+        .filter((block) => block.settings?.maxIterations !== undefined)
+        .every((block) => block.type === "PROMPT"),
+    ).toBe(true);
+    expect(flow.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "final-report",
+          fromOutput: "SUCCESS",
+          to: "scope-exhausted",
+        }),
+        expect.objectContaining({
+          from: "scope-exhausted",
+          fromOutput: "NO_MATCH",
+          to: "select-scope",
+        }),
+      ]),
+    );
+    expect(
+      flow.edges.some(
+        (edge) =>
+          edge.from === "final-report" &&
+          edge.fromOutput === "SUCCESS" &&
+          edge.to === "success",
+      ),
+    ).toBe(false);
+  });
+
+  it("continues repository refactoring across selected packages", () => {
+    const flow = getRalphStarterFlow("autonomous-refactoring-flow")!.flow;
+
+    expect(
+      flow.blocks.some((block) => block.id === "scope-cycle-complete"),
+    ).toBe(true);
+    expect(
+      flow.blocks
+        .filter((block) => block.settings?.maxIterations !== undefined)
+        .every((block) => block.type === "PROMPT"),
+    ).toBe(true);
+    expect(flow.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "final-report",
+          fromOutput: "SUCCESS",
+          to: "scope-cycle-complete",
+        }),
+        expect.objectContaining({
+          from: "scope-cycle-complete",
+          fromOutput: "NO_MATCH",
+          to: "select-scope",
+        }),
+        expect.objectContaining({
+          from: "scope-cycle-complete",
+          fromOutput: "MATCH",
+          to: "success",
+        }),
+        expect.objectContaining({
+          from: "final-report",
+          fromOutput: "ERROR",
+          to: "retained-outcome-report",
+        }),
+      ]),
+    );
+    expect(flow.edges.filter((edge) => edge.to === "select-scope")).toEqual(
+      expect.arrayContaining([
         expect.objectContaining({
           from: "update-scope-registry",
           fromOutput: "SUCCESS",
         }),
-      ]);
-    }
+        expect.objectContaining({
+          from: "scope-cycle-complete",
+          fromOutput: "NO_MATCH",
+        }),
+      ]),
+    );
   });
 
   it("uses run-scoped transient artifacts and bounded durable history", () => {

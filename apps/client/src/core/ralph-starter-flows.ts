@@ -573,6 +573,45 @@ const applyTerminalOutcomeProtocol = (
   );
 };
 
+const assertStarterSafetyRoutes = (flow: RalphFlow): void => {
+  const blocksById = new Map(flow.blocks.map((block) => [block.id, block]));
+
+  for (const block of flow.blocks) {
+    if (block.type !== "UTILITY") {
+      continue;
+    }
+
+    const prohibitedOutputs =
+      block.utility.type === "LOOP_COUNTER"
+        ? ["LIMIT_REACHED", "ERROR"]
+        : block.utility.type === "FINAL_REPORT"
+          ? ["ERROR"]
+          : [];
+
+    for (const output of prohibitedOutputs) {
+      for (const edge of flow.edges.filter(
+        (candidate) =>
+          candidate.from === block.id && candidate.fromOutput === output,
+      )) {
+        const target = blocksById.get(edge.to);
+        const reachesSuccessfulTerminal =
+          target?.type === "END" &&
+          (target.outcome === "succeeded" || target.outcome === "no-op");
+        const safetyOutputContinuesThroughCondition =
+          target?.type === "UTILITY" && target.utility.type === "CONDITION";
+        if (
+          reachesSuccessfulTerminal ||
+          safetyOutputContinuesThroughCondition
+        ) {
+          throw new Error(
+            `Starter flow \`${flow.id}\` routes ${block.utility.type} ${output} from \`${block.id}\` toward successful completion.`,
+          );
+        }
+      }
+    }
+  }
+};
+
 export const applyRalphStarterFlowProtocol = (
   starterFlow: RalphStarterFlow,
 ): RalphStarterFlow => {
@@ -628,6 +667,7 @@ export const applyRalphStarterFlowProtocol = (
 
   applyVerificationProtocol(flow, protocol.verification);
   applyTerminalOutcomeProtocol(flow, protocol.terminalOutcomes);
+  assertStarterSafetyRoutes(flow);
   flow.blocks = flow.blocks.map((block) => {
     if (
       block.type === "UTILITY" &&
