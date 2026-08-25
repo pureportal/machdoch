@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
   access,
+  mkdir,
   mkdtemp,
   readFile,
   readdir,
@@ -2227,6 +2228,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).not.toContain("--add-dir");
     expect(call?.args).not.toContain("--deny-tool=write,shell,memory");
     expect(call?.args).toContain("--model=auto");
+    expect(call?.args.some((argument) => argument.startsWith("--effort"))).toBe(
+      false,
+    );
     expect(call?.child.stdinText).not.toContain(
       "You are running as a delegated Copilot CLI agent for Machdoch.",
     );
@@ -2371,6 +2375,111 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
 
     expect(childEnv?.GITHUB_TOKEN).toBeUndefined();
+
+    writeStructuredAnswer(call!, "Copilot delegated answer.");
+    call?.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+  });
+
+  it("keeps central MCP secret variables available to Copilot's projected proxy", async () => {
+    const workspaceRoot = await createWorkspace();
+    const mcpDirectory = join(workspaceRoot, ".machdoch", "mcp");
+    await mkdir(mcpDirectory, { recursive: true });
+    await writeFile(
+      join(mcpDirectory, "mcp.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        servers: [
+          {
+            id: "github-token-server",
+            enabled: true,
+            transport: {
+              type: "stdio",
+              command: "node",
+              env: { TOKEN: "${env:GITHUB_TOKEN}" },
+            },
+          },
+        ],
+      }),
+      "utf8",
+    );
+    process.env.MACHDOCH_COPILOT_CLI_PATH = process.execPath;
+    process.env.GITHUB_TOKEN = "central-mcp-token";
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot, {
+        provider: "copilot-cli",
+        model: "auto",
+      }),
+    );
+
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+    const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
+
+    expect(childEnv?.GITHUB_TOKEN).toBe("central-mcp-token");
+    expect(call?.args).toContain(
+      "--secret-env-vars=COPILOT_GITHUB_TOKEN,GH_TOKEN",
+    );
+    expect(call?.args).not.toContain(
+      "--secret-env-vars=COPILOT_GITHUB_TOKEN,GH_TOKEN,GITHUB_TOKEN",
+    );
+
+    writeStructuredAnswer(call!, "Copilot delegated answer.");
+    call?.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+  });
+
+  it("uses an explicit empty Copilot secret filter when every provider token is required by MCP", async () => {
+    const workspaceRoot = await createWorkspace();
+    const mcpDirectory = join(workspaceRoot, ".machdoch", "mcp");
+    await mkdir(mcpDirectory, { recursive: true });
+    await writeFile(
+      join(mcpDirectory, "mcp.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        servers: [
+          {
+            id: "provider-token-server",
+            enabled: true,
+            transport: {
+              type: "stdio",
+              command: "node",
+              env: {
+                COPILOT_TOKEN: "${env:COPILOT_GITHUB_TOKEN}",
+                GH_TOKEN: "${env:GH_TOKEN}",
+                GITHUB_TOKEN: "${env:GITHUB_TOKEN}",
+              },
+            },
+          },
+        ],
+      }),
+      "utf8",
+    );
+    process.env.MACHDOCH_COPILOT_CLI_PATH = process.execPath;
+    process.env.COPILOT_GITHUB_TOKEN = "central-copilot-token";
+    process.env.GH_TOKEN = "central-gh-token";
+    process.env.GITHUB_TOKEN = "central-github-token";
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot, {
+        provider: "copilot-cli",
+        model: "auto",
+      }),
+    );
+
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+    const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
+
+    expect(childEnv).toMatchObject({
+      COPILOT_GITHUB_TOKEN: "central-copilot-token",
+      GH_TOKEN: "central-gh-token",
+      GITHUB_TOKEN: "central-github-token",
+    });
+    expect(call?.args).toContain("--secret-env-vars=");
 
     writeStructuredAnswer(call!, "Copilot delegated answer.");
     call?.child.emit("close", 0, null);

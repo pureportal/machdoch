@@ -24,6 +24,7 @@ import {
   isProviderSyncAutostartInstalled,
   removeProviderSyncAutostart,
 } from "../../core/provider-enrollment/platform-autostart.js";
+import { resolveMachdochCliLaunch } from "../../core/provider-enrollment/machdoch-cli-launch.js";
 import type { ParsedCliArgs, ProviderSyncCliOptions } from "./cli-args.js";
 import { writeStdoutLine } from "./cli-io.js";
 
@@ -41,25 +42,37 @@ const startDaemon = async (
   await stopProviderSyncDaemon({ onlyIfRuntimeMismatch: true });
   const existing = await getCurrentProviderSyncDaemonPid();
   if (existing) return existing;
-  const script = process.argv[1];
-  if (!script) return undefined;
-  const child = spawn(
-    process.execPath,
-    [
-      ...process.execArgv,
-      script,
-      "provider-sync",
-      "daemon",
-      "--cwd",
-      workspaceRoot,
-    ],
-    {
-      detached: true,
-      stdio: "ignore",
-      windowsHide: true,
-      env: process.env,
-    },
-  );
+  const launch = resolveMachdochCliLaunch();
+  const daemonArgs = [
+    ...launch.args,
+    "provider-sync",
+    "daemon",
+    "--cwd",
+    workspaceRoot,
+  ];
+  const child = spawn(launch.command, daemonArgs, {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+    cwd: launch.cwd,
+    env: { ...process.env, ...launch.environment },
+  });
+  try {
+    await new Promise<void>((resolveSpawn, rejectSpawn) => {
+      child.once("spawn", resolveSpawn);
+      child.once("error", rejectSpawn);
+    });
+  } catch (error) {
+    throw new Error(
+      `Machdoch could not launch the provider-sync daemon with ${launch.command}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+  if (child.pid === undefined) {
+    throw new Error(
+      `Machdoch launched the provider-sync daemon with ${launch.command}, but no process identifier was reported.`,
+    );
+  }
   child.unref();
   return child.pid;
 };
@@ -101,11 +114,11 @@ export const ensureAutomaticProviderSync = async (
     if (autostartInstalled) await removeProviderSyncAutostart();
     return;
   }
-  if (
-    config.persistentSync.daemonAtLogin &&
-    !(await isProviderSyncAutostartInstalled())
-  ) {
+  const autostartInstalled = await isProviderSyncAutostartInstalled();
+  if (config.persistentSync.daemonAtLogin) {
     await installProviderSyncAutostart(workspaceRoot);
+  } else if (autostartInstalled) {
+    await removeProviderSyncAutostart();
   }
   if (config.persistentSync.watch) {
     await stopProviderSyncDaemon({ onlyIfRuntimeMismatch: true });

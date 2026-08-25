@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -17,6 +18,12 @@ const mocks = vi.hoisted(() => ({
   installProviderSyncAutostart: vi.fn(),
   isProviderSyncAutostartInstalled: vi.fn(),
   removeProviderSyncAutostart: vi.fn(),
+  resolveMachdochCliLaunch: vi.fn(),
+  spawn: vi.fn(),
+}));
+
+vi.mock("node:child_process", () => ({
+  spawn: mocks.spawn,
 }));
 
 vi.mock("../../core/provider-enrollment/config.js", () => ({
@@ -48,6 +55,10 @@ vi.mock("../../core/provider-enrollment/platform-autostart.js", () => ({
   removeProviderSyncAutostart: mocks.removeProviderSyncAutostart,
 }));
 
+vi.mock("../../core/provider-enrollment/machdoch-cli-launch.js", () => ({
+  resolveMachdochCliLaunch: mocks.resolveMachdochCliLaunch,
+}));
+
 import {
   ensureAutomaticProviderSync,
   printProviderSyncSummary,
@@ -75,6 +86,18 @@ const createConfig = (watch: boolean) => ({
   },
 });
 
+const createDaemonChild = (event: "spawn" | Error = "spawn") => {
+  const child = Object.assign(new EventEmitter(), {
+    pid: 4322,
+    unref: vi.fn(),
+  });
+  queueMicrotask(() => {
+    if (event === "spawn") child.emit("spawn");
+    else child.emit("error", event);
+  });
+  return child;
+};
+
 describe("automatic provider sync", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -87,6 +110,15 @@ describe("automatic provider sync", () => {
     mocks.uninstallProviderSyncTargets.mockResolvedValue([]);
     mocks.removeProviderSyncAutostart.mockResolvedValue(undefined);
     mocks.stopProviderSyncDaemon.mockResolvedValue(false);
+    mocks.resolveMachdochCliLaunch.mockReturnValue({
+      command: "C:\\Machdoch Runtime\\node.exe",
+      args: ["C:\\Machdoch Runtime\\machdoch-cli.cjs"],
+      cwd: "C:\\Machdoch Runtime",
+      environment: {
+        MACHDOCH_USER_CONFIG_DIR: "C:\\Machdoch Config",
+      },
+    });
+    mocks.spawn.mockImplementation(() => createDaemonChild());
   });
 
   it("does not reconcile or start services while persistent sync is disabled", async () => {
@@ -144,6 +176,69 @@ describe("automatic provider sync", () => {
     expect(mocks.getProviderSyncDaemonPid).not.toHaveBeenCalled();
     expect(mocks.requestProviderSyncRefresh).not.toHaveBeenCalled();
     expect(mocks.reconcileProviderSync).toHaveBeenCalledWith("C:\\workspace");
+  });
+
+  it("refreshes login autostart with the current Machdoch descriptor", async () => {
+    const config = createConfig(false);
+    config.persistentSync.daemonAtLogin = true;
+    mocks.loadProviderEnrollmentConfig.mockResolvedValue(config);
+    mocks.isProviderSyncAutostartInstalled.mockResolvedValue(true);
+
+    await ensureAutomaticProviderSync("C:\\workspace");
+
+    expect(mocks.installProviderSyncAutostart).toHaveBeenCalledWith(
+      "C:\\workspace",
+    );
+    expect(mocks.removeProviderSyncAutostart).not.toHaveBeenCalled();
+  });
+
+  it("removes login autostart when it is no longer configured", async () => {
+    mocks.loadProviderEnrollmentConfig.mockResolvedValue(createConfig(false));
+    mocks.isProviderSyncAutostartInstalled.mockResolvedValue(true);
+
+    await ensureAutomaticProviderSync("C:\\workspace");
+
+    expect(mocks.removeProviderSyncAutostart).toHaveBeenCalledOnce();
+    expect(mocks.installProviderSyncAutostart).not.toHaveBeenCalled();
+  });
+
+  it("launches the watcher through the current Machdoch descriptor", async () => {
+    mocks.loadProviderEnrollmentConfig.mockResolvedValue(createConfig(true));
+
+    await ensureAutomaticProviderSync("C:\\workspace");
+
+    expect(mocks.spawn).toHaveBeenCalledWith(
+      "C:\\Machdoch Runtime\\node.exe",
+      [
+        "C:\\Machdoch Runtime\\machdoch-cli.cjs",
+        "provider-sync",
+        "daemon",
+        "--cwd",
+        "C:\\workspace",
+      ],
+      expect.objectContaining({
+        cwd: "C:\\Machdoch Runtime",
+        detached: true,
+        windowsHide: true,
+        env: expect.objectContaining({
+          MACHDOCH_USER_CONFIG_DIR: "C:\\Machdoch Config",
+        }),
+      }),
+    );
+    expect(mocks.spawn.mock.results[0]?.value.unref).toHaveBeenCalledOnce();
+  });
+
+  it("reports provider-sync launch failures", async () => {
+    mocks.loadProviderEnrollmentConfig.mockResolvedValue(createConfig(true));
+    mocks.spawn.mockImplementation(() =>
+      createDaemonChild(new Error("runtime unavailable")),
+    );
+
+    await expect(
+      ensureAutomaticProviderSync("C:\\workspace"),
+    ).rejects.toThrow(
+      "could not launch the provider-sync daemon with C:\\Machdoch Runtime\\node.exe: runtime unavailable",
+    );
   });
 
   it("enables MCP reconciliation without filename-based instruction cleanup", async () => {

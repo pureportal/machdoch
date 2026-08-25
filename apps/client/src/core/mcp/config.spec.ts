@@ -164,6 +164,70 @@ describe("loadMcpConfig", () => {
     });
   });
 
+  it("preserves detailed direct-tool exposure while applying its enabled default", async () => {
+    const workspaceRoot = await createWorkspace();
+    const configDirectory = join(workspaceRoot, ".machdoch", "mcp");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(
+      join(configDirectory, "mcp.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        defaults: { directTools: false },
+        servers: [
+          {
+            id: "filtered",
+            enabled: true,
+            transport: { type: "stdio", command: "node" },
+            exposure: {
+              directTools: {
+                include: ["read_issue"],
+                exclude: ["delete_issue"],
+                namespacePrefix: "linear",
+              },
+            },
+          },
+          {
+            id: "disabled-filter",
+            enabled: true,
+            transport: { type: "stdio", command: "node" },
+            exposure: { directTools: false },
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const config = await loadMcpConfig(workspaceRoot, {
+      servers: [
+        {
+          id: "filtered",
+          exposure: { directTools: { enabled: true } },
+        },
+        {
+          id: "disabled-filter",
+          exposure: { directTools: { include: ["read_issue"] } },
+        },
+      ],
+    });
+
+    expect(
+      config.servers.find((server) => server.id === "filtered")?.exposure,
+    ).toMatchObject({
+      directTools: {
+        enabled: true,
+        include: ["read_issue"],
+        exclude: ["delete_issue"],
+        namespacePrefix: "linear",
+      },
+    });
+    expect(
+      config.servers.find((server) => server.id === "disabled-filter")
+        ?.exposure,
+    ).toMatchObject({
+      directTools: { enabled: false, include: ["read_issue"] },
+    });
+  });
+
   it("creates editable enabled OAuth servers from hosted presets", () => {
     expect(createMcpConfigFromPreset("linear-remote")).toMatchObject({
       id: "linear",

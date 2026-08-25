@@ -529,6 +529,21 @@ const reconcileProviderScope = async (
     };
   } catch (error) {
     if (ownershipCheckpointCommitted) throw error;
+    if (previousMcp) {
+      try {
+        const removal = await uninstallManagedTarget(previousMcp, {
+          force: true,
+        });
+        if (removal.warning) warnings.push(removal.warning);
+        if (removal.removed) {
+          recordsByPath.delete(getManagedTargetPathIdentity(paths.mcpPath));
+        }
+      } catch (cleanupError) {
+        warnings.push(
+          `Failed to remove the previous generated MCP target after projection failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
+        );
+      }
+    }
     return {
       status: {
         provider,

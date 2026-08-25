@@ -513,4 +513,29 @@ describe("cli args public parser", () => {
       }),
     ).toThrow("--apply is only valid for `machdoch mcp cleanup`.");
   });
+
+  it("parses the internal user-scoped MCP proxy launch without leaking scope to other actions", () => {
+    expect(
+      parseCliArgs(["mcp", "proxy", "linear", "--scope", "user"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toMatchObject({
+      command: "mcp",
+      mcp: {
+        action: "proxy",
+        serverId: "linear",
+        projectionScope: "user",
+      },
+    });
+    expect(() =>
+      parseCliArgs(["mcp", "servers", "--scope", "user"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("--scope is only valid for `machdoch mcp proxy`.");
+    expect(() =>
+      parseCliArgs(["mcp", "proxy", "linear", "--scope", "workspace"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("followed by user");
+  });
 });

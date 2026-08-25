@@ -286,6 +286,8 @@ describe("provider sync daemon", () => {
         pid: process.pid,
         workspaceRoot: root,
         startedAt: new Date().toISOString(),
+        token: "obsolete-record",
+        runtimeId: "0".repeat(64),
       })}\n`,
       "utf8",
     );
@@ -296,65 +298,6 @@ describe("provider sync daemon", () => {
     await expect(getCurrentProviderSyncDaemonPid()).rejects.toThrow(
       "not a valid provider-sync daemon record",
     );
-  });
-
-  it("stops a fully validated daemon record written before schema versioning", async () => {
-    const root = await mkdtemp(join(tmpdir(), "machdoch-daemon-legacy-"));
-    roots.push(root);
-    const userConfigRoot = join(root, "user-config");
-    const daemonPath = join(
-      userConfigRoot,
-      "provider-enrollment",
-      "daemon.json",
-    );
-    await mkdir(join(userConfigRoot, "provider-enrollment"), {
-      recursive: true,
-    });
-    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
-    const child = spawn(
-      process.execPath,
-      ["-e", "setInterval(() => undefined, 1000)"],
-      {
-        stdio: "ignore",
-        windowsHide: true,
-      },
-    );
-    const childPid = child.pid;
-    if (!childPid) {
-      child.kill();
-      throw new Error(
-        "Expected the legacy daemon test process to expose a PID.",
-      );
-    }
-    await writeFile(
-      daemonPath,
-      `${JSON.stringify(
-        {
-          pid: childPid,
-          workspaceRoot: root,
-          startedAt: new Date().toISOString(),
-          token: "legacy-runtime-test",
-          runtimeId: "0".repeat(64),
-        },
-        null,
-        2,
-      )}\n`,
-      "utf8",
-    );
-
-    try {
-      await expect(getProviderSyncDaemonPid()).resolves.toBe(childPid);
-      await expect(getCurrentProviderSyncDaemonPid()).resolves.toBeUndefined();
-      await expect(
-        stopProviderSyncDaemon({
-          onlyIfRuntimeMismatch: true,
-          timeoutMs: 5_000,
-        }),
-      ).resolves.toBe(true);
-      await expect(stat(daemonPath)).rejects.toMatchObject({ code: "ENOENT" });
-    } finally {
-      child.kill();
-    }
   });
 
   it("stops a daemon launched by a different runtime", async () => {

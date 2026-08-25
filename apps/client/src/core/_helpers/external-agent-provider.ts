@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { extname, join } from "node:path";
 import { loadRuntimeEnvironment } from "../env.js";
 import { materializeCliEnrollment } from "../provider-enrollment/materializer.js";
+import { resolveMachdochCliLaunch } from "../provider-enrollment/machdoch-cli-launch.js";
 import type { MaterializedCliEnrollment } from "../provider-enrollment/types.js";
 import { assertReasoningModeSupportedForProviderModel } from "../reasoning-modes.js";
 import type {
@@ -683,6 +684,9 @@ const getProviderSecretEnvKeys = (provider: AgentCliProvider): string[] =>
     .filter((descriptor) => descriptor.sensitivity === "secret")
     .map((descriptor) => descriptor.key);
 
+const normalizeEnvironmentKey = (key: string): string =>
+  process.platform === "win32" ? key.toLocaleUpperCase("en-US") : key;
+
 const createChildEnv = (
   provider: AgentCliProvider,
   enrollmentEnv: NodeJS.ProcessEnv = {},
@@ -1302,6 +1306,7 @@ interface ExternalAgentCommandFactoryParams {
   imageInputs: ModelDrivenExecutionParams["imageInputs"];
   delegationMode: ExternalAgentDelegationMode;
   enrollmentArgs: readonly string[];
+  mcpEnvironmentKeys: readonly string[];
   providerFeatures: readonly string[];
 }
 
@@ -1513,6 +1518,7 @@ const createCopilotCommand = ({
   prompt,
   imageInputs,
   enrollmentArgs,
+  mcpEnvironmentKeys,
   providerFeatures,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
   const contextWindow = config.contextWindow ?? "default";
@@ -1523,7 +1529,12 @@ const createCopilotCommand = ({
   );
   const effort = mapReasoningToCopilotCliEffort(config.model, config.reasoning);
   const maxTurns = getExecutorTurnLimit(config);
-  const secretEnvKeys = getProviderSecretEnvKeys("copilot-cli");
+  const mcpEnvironmentKeySet = new Set(
+    mcpEnvironmentKeys.map(normalizeEnvironmentKey),
+  );
+  const secretEnvKeys = getProviderSecretEnvKeys("copilot-cli").filter(
+    (key) => !mcpEnvironmentKeySet.has(normalizeEnvironmentKey(key)),
+  );
   if (
     !providerFeatures.includes("--stream") ||
     !providerFeatures.includes("--output-format")
@@ -1707,6 +1718,7 @@ const executeExternalAgentCliTask = async (
       resolution,
       deliveryPlan: instructionPlan,
       runtimeSystemInstructions,
+      machdochCliLaunch: resolveMachdochCliLaunch(),
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
@@ -1766,6 +1778,7 @@ const executeExternalAgentCliTask = async (
       imageInputs: params.imageInputs,
       delegationMode,
       enrollmentArgs: enrollment.args,
+      mcpEnvironmentKeys: Object.keys(enrollment.mcpProjection.environment),
       providerFeatures: enrollment.manifest.providerFeatures,
     });
     if (process.platform === "win32") {

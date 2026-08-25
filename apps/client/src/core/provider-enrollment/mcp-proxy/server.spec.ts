@@ -15,7 +15,22 @@ describe("MCP compatibility proxy names", () => {
     );
     expect(first).toBe(second);
     expect(first).toMatch(/^[A-Za-z0-9_-]+$/u);
-    expect(first.length).toBeLessThanOrEqual(64);
+    expect(first.length).toBeLessThanOrEqual(40);
     expect(first).toMatch(/_[a-f0-9]{10}$/u);
+  });
+
+  it("keeps simple per-server names unchanged", () => {
+    expect(createProxyExposedName("linear", "read_issue", false)).toBe(
+      "read_issue",
+    );
+  });
+
+  it("does not collapse distinct names during sanitization or aggregation", () => {
+    expect(createProxyExposedName("linear", "tool/a", false)).not.toBe(
+      createProxyExposedName("linear", "tool a", false),
+    );
+    expect(createProxyExposedName("a", "b__c", true)).not.toBe(
+      createProxyExposedName("a__b", "c", true),
+    );
   });
 });

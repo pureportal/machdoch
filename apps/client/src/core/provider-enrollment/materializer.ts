@@ -35,8 +35,10 @@ import {
   createCliInstructionCapabilityFromProbe,
 } from "./instruction-delivery-preflight.js";
 import { summarizeEnrollmentCoverage } from "./coverage-ledger.js";
+import { renderIsolatedCopilotState } from "./copilot-state.js";
 import { compareCanonicalStrings, sha256 } from "./digests.js";
 import { projectMcpForProvider } from "./mcp-projector.js";
+import type { MachdochCliLaunch } from "./machdoch-cli-launch.js";
 import { quoteTomlKey, renderCodexMcpToml } from "./toml.js";
 import {
   PROVIDER_ENROLLMENT_MANIFEST_SCHEMA_VERSION,
@@ -75,6 +77,7 @@ interface MaterializeCliEnrollmentParams {
   resolution: FrozenInstructionSet;
   deliveryPlan: InstructionDeliveryPlan;
   runtimeSystemInstructions: string;
+  machdochCliLaunch: MachdochCliLaunch;
 }
 
 interface RenderedEnrollmentFiles {
@@ -297,47 +300,16 @@ const copyCopilotAuthentication = async (
       join(copilotHome, "config.json"),
       "Copilot",
       undefined,
-      (content) => {
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(
-            decodeStrictUtf8(content, "Copilot internal state"),
-          );
-        } catch (error) {
-          throw new Error(
-            "Copilot internal state must be a valid JSON object before authentication state can be isolated.",
-            { cause: error },
-          );
-        }
-        if (
-          parsed === null ||
-          typeof parsed !== "object" ||
-          Array.isArray(parsed)
-        ) {
-          throw new Error(
-            "Copilot internal state must be a valid JSON object before authentication state can be isolated.",
-          );
-        }
-
-        const isolated = Object.create(null) as Record<string, unknown>;
-        for (const [key, value] of Object.entries(parsed)) {
-          if (
-            key === "installedPlugins" ||
-            key === "enabledPlugins" ||
-            key === "extraKnownMarketplaces"
-          ) {
-            continue;
-          }
-          isolated[key] = value;
-        }
-        return `${JSON.stringify(isolated, null, 2)}\n`;
-      },
+      (content) =>
+        renderIsolatedCopilotState(
+          decodeStrictUtf8(content, "Copilot internal state"),
+        ),
     );
     void copied;
   } catch (error) {
-    // Invalid or unavailable provider state is never copied into the isolated
-    // run. Environment tokens and OS credential stores remain available.
-    void error;
+    if (!isOptionalProviderStateError(error)) {
+      throw error;
+    }
   }
 };
 
@@ -415,21 +387,36 @@ const readCopilotWorkspaceMcpNames = async (
           { cause: error },
         );
       }
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        throw new Error(
+          `Copilot MCP configuration at ${path} must be a JSON object so provider-native servers can be isolated.`,
+        );
+      }
+      const parsedRecord = parsed as Record<string, unknown>;
+      const rawMcpServers = parsedRecord.mcpServers;
+      if (
+        rawMcpServers !== undefined &&
+        (typeof rawMcpServers !== "object" ||
+          rawMcpServers === null ||
+          Array.isArray(rawMcpServers))
+      ) {
+        throw new Error(
+          `Copilot MCP configuration at ${path} has an invalid mcpServers value; expected a JSON object.`,
+        );
+      }
       const mcpServers =
-        typeof parsed === "object" &&
-        parsed !== null &&
-        !Array.isArray(parsed) &&
-        typeof (parsed as Record<string, unknown>).mcpServers === "object" &&
-        (parsed as Record<string, unknown>).mcpServers !== null &&
-        !Array.isArray((parsed as Record<string, unknown>).mcpServers)
-          ? ((parsed as Record<string, unknown>).mcpServers as Record<
-              string,
-              unknown
-            >)
-          : {};
+        rawMcpServers === undefined
+          ? parsedRecord
+          : (rawMcpServers as Record<string, unknown>);
       for (const name of Object.keys(mcpServers)) {
         if (projectedNames.has(name)) {
-          continue;
+          throw new Error(
+            `Copilot MCP isolation found provider-native server ${JSON.stringify(name)} at ${path}, which conflicts with Machdoch's projected server name. Rename or remove the provider-native entry.`,
+          );
         }
         if (
           name.length === 0 ||
@@ -806,7 +793,9 @@ export const materializeCliEnrollment = async (
   try {
     const [probe, projection] = await Promise.all([
       probeProviderCli(params.provider, params.executable, { force: true }),
-      projectMcpForProvider(params.provider, params.workspaceRoot),
+      projectMcpForProvider(params.provider, params.workspaceRoot, {
+        machdochCliLaunch: params.machdochCliLaunch,
+      }),
     ]);
     const probedCapability = createCliInstructionCapabilityFromProbe(
       params.resolution,
@@ -845,6 +834,10 @@ export const materializeCliEnrollment = async (
       params.workspaceRoot,
       providerFeatures,
     );
+    const enrollmentEnvironment: NodeJS.ProcessEnv = {
+      ...projection.environment,
+      ...rendered.env,
+    };
     const instructionDelivery = createMaterializedInstructionDelivery(
       params,
       rendered.route,
@@ -899,7 +892,7 @@ export const materializeCliEnrollment = async (
         ...(record.digest === undefined ? {} : { digest: record.digest }),
       })),
       arguments: redactArgumentValues(rendered.args),
-      environmentKeys: Object.keys(rendered.env).sort(),
+      environmentKeys: Object.keys(enrollmentEnvironment).sort(),
       coverage,
       coverageSummary,
       warnings: [
@@ -921,15 +914,22 @@ export const materializeCliEnrollment = async (
       instructionRoute: rendered.route,
       mcpProjection: projection,
       args: rendered.args,
-      env: rendered.env,
+      env: enrollmentEnvironment,
       manifest,
       manifestPath,
       dispose: async (): Promise<void> => {
-        await removeSessionRoot(rootPath).catch(() => undefined);
+        await removeSessionRoot(rootPath);
       },
     };
   } catch (error) {
-    await removeSessionRoot(rootPath).catch(() => undefined);
+    try {
+      await removeSessionRoot(rootPath);
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        `CLI enrollment failed and Machdoch could not remove its temporary state at ${rootPath}.`,
+      );
+    }
     throw error;
   }
 };
