@@ -638,6 +638,10 @@ export const parseCliArgs = (
     values?.["never-used-days"],
   );
   const applyMcpCleanup = values?.apply === true;
+  const rawMcpProjectionScope =
+    positionals[0] === "mcp"
+      ? normalizeOptionalString(values?.scope)
+      : undefined;
   const rawRalphScope = normalizeOptionalString(values?.scope);
   const rawInstructionPath = normalizeOptionalString(values?.path);
   const rawInstructionRalphFlow = normalizeOptionalString(
@@ -1250,6 +1254,14 @@ export const parseCliArgs = (
       fail("--apply is only valid for `machdoch mcp cleanup`.");
     }
 
+    if (rawMcpProjectionScope && action !== "proxy") {
+      fail("--scope is only valid for `machdoch mcp proxy`.");
+    }
+
+    if (rawMcpProjectionScope && rawMcpProjectionScope !== "user") {
+      fail("Expected `machdoch mcp proxy --scope` to be followed by user.");
+    }
+
     const unusedDays =
       action === "cleanup"
         ? parseOptionalPositiveInteger(rawMcpUnusedDays, "--unused-days")
@@ -1267,6 +1279,9 @@ export const parseCliArgs = (
       {
         mcp: {
           action,
+          ...(rawMcpProjectionScope === "user"
+            ? { projectionScope: "user" as const }
+            : {}),
           ...(serverId ? { serverId } : {}),
           ...(target ? { target } : {}),
           ...(rawMcpArgumentsJson

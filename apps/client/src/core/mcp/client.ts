@@ -159,7 +159,9 @@ const MCP_CLIENT_INFO = {
   version: "0.1.0",
 };
 
-const SUPPORTED_SAMPLING_IMAGE_MEDIA_TYPES = new Set<AgentModelImageInput["mediaType"]>([
+const SUPPORTED_SAMPLING_IMAGE_MEDIA_TYPES = new Set<
+  AgentModelImageInput["mediaType"]
+>([
   "image/png",
   "image/jpeg",
   "image/webp",
@@ -170,6 +172,25 @@ const SUPPORTED_SAMPLING_IMAGE_MEDIA_TYPES = new Set<AgentModelImageInput["media
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
+const resolveOperationServer = async (
+  workspaceRoot: string,
+  serverId: string,
+  options: McpOperationOptions,
+): Promise<McpEffectiveServerConfig | undefined> => {
+  if (options.effectiveServer) {
+    if (options.effectiveServer.id !== serverId) {
+      throw new Error(
+        `MCP operation expected server \`${serverId}\`, but received resolved configuration for \`${options.effectiveServer.id}\`.`,
+      );
+    }
+    return options.effectiveServer.enabled
+      ? options.effectiveServer
+      : undefined;
+  }
+  const config = await loadMcpConfig(workspaceRoot, options.configOverride);
+  return getEnabledMcpServer(config, serverId);
 };
 
 const stringifyJsonForPrompt = (value: unknown): string => {
@@ -390,7 +411,9 @@ const normalizeSamplingStopReason = (
   return stopReason;
 };
 
-const assertSupportedSamplingRequest = (request: CreateMessageRequest): void => {
+const assertSupportedSamplingRequest = (
+  request: CreateMessageRequest,
+): void => {
   if (request.params.tools && request.params.tools.length > 0) {
     throw new McpError(
       ErrorCode.InvalidRequest,
@@ -480,7 +503,10 @@ class ConfiguredMcpOAuthProvider implements OAuthClientProvider {
 
   constructor(
     private readonly auth: McpOAuthAuthConfig,
-    private readonly context: Pick<McpConnectionContext, "workspaceRoot" | "env">,
+    private readonly context: Pick<
+      McpConnectionContext,
+      "workspaceRoot" | "env"
+    >,
     private readonly server: Pick<
       McpEffectiveServerConfig,
       "id" | "transport" | "title" | "description" | "preset"
@@ -513,7 +539,9 @@ class ConfiguredMcpOAuthProvider implements OAuthClientProvider {
         ? ["authorization_code", "refresh_token"]
         : ["client_credentials"],
       response_types: redirectUrl ? ["code"] : [],
-      token_endpoint_auth_method: hasClientSecret ? "client_secret_basic" : "none",
+      token_endpoint_auth_method: hasClientSecret
+        ? "client_secret_basic"
+        : "none",
       ...(scope ? { scope } : {}),
     };
   }
@@ -552,7 +580,10 @@ class ConfiguredMcpOAuthProvider implements OAuthClientProvider {
   ): Promise<void> {
     this.savedClientInformation = clientInformation;
     await this.persistOAuthState({
-      clientInformation: clientInformation as unknown as Record<string, unknown>,
+      clientInformation: clientInformation as unknown as Record<
+        string,
+        unknown
+      >,
     });
   }
 
@@ -742,7 +773,9 @@ const resolveAuthHeaders = (
   if (auth.type === "bearer") {
     const token =
       auth.token ??
-      (auth.tokenEnv ? resolveEnvironmentValue(auth.tokenEnv, context.env) : undefined);
+      (auth.tokenEnv
+        ? resolveEnvironmentValue(auth.tokenEnv, context.env)
+        : undefined);
 
     return token
       ? {
@@ -755,10 +788,12 @@ const resolveAuthHeaders = (
     return {
       ...(resolveStringRecord(auth.headers, context) ?? {}),
       ...Object.fromEntries(
-        Object.entries(auth.envHeaders ?? {}).flatMap(([headerName, envKey]) => {
-          const value = resolveEnvironmentValue(envKey, context.env);
-          return value ? [[headerName, value] as const] : [];
-        }),
+        Object.entries(auth.envHeaders ?? {}).flatMap(
+          ([headerName, envKey]) => {
+            const value = resolveEnvironmentValue(envKey, context.env);
+            return value ? [[headerName, value] as const] : [];
+          },
+        ),
       ),
     };
   }
@@ -793,7 +828,9 @@ const createStdioEnvironment = (
   context: McpConnectionContext,
 ): Record<string, string> => {
   return {
-    ...(transport.inheritEnvironment ? copyProcessEnv() : getDefaultEnvironment()),
+    ...(transport.inheritEnvironment
+      ? copyProcessEnv()
+      : getDefaultEnvironment()),
     ...(resolveStringRecord(transport.env, context) ?? {}),
   };
 };
@@ -807,7 +844,9 @@ const createTransport = (context: McpConnectionContext): Transport => {
       command: resolveTemplateValue(transport.command, context),
       ...(transport.args
         ? {
-            args: transport.args.map((arg) => resolveTemplateValue(arg, context)),
+            args: transport.args.map((arg) =>
+              resolveTemplateValue(arg, context),
+            ),
           }
         : {}),
       ...(transport.cwd
@@ -841,26 +880,29 @@ const createTransport = (context: McpConnectionContext): Transport => {
   const headers = createHttpHeaders(transport, context);
   const authProvider = createOAuthProvider(context);
 
-  return new SSEClientTransport(new URL(resolveTemplateValue(transport.url, context)), {
-    ...(authProvider ? { authProvider } : {}),
-    ...(Object.keys(headers).length > 0
-      ? {
-          requestInit: {
-            headers,
-          },
-          eventSourceInit: {
-            fetch: (input, init) =>
-              fetch(input, {
-                ...init,
-                headers: {
-                  ...(init?.headers ?? {}),
-                  ...headers,
-                },
-              }),
-          },
-        }
-      : {}),
-  });
+  return new SSEClientTransport(
+    new URL(resolveTemplateValue(transport.url, context)),
+    {
+      ...(authProvider ? { authProvider } : {}),
+      ...(Object.keys(headers).length > 0
+        ? {
+            requestInit: {
+              headers,
+            },
+            eventSourceInit: {
+              fetch: (input, init) =>
+                fetch(input, {
+                  ...init,
+                  headers: {
+                    ...(init?.headers ?? {}),
+                    ...headers,
+                  },
+                }),
+            },
+          }
+        : {}),
+    },
+  );
 };
 
 const getOAuthServerUrl = (context: McpConnectionContext): URL => {
@@ -876,7 +918,9 @@ const getOAuthServerUrl = (context: McpConnectionContext): URL => {
 };
 
 const getOAuthScope = (auth: McpOAuthAuthConfig): string | undefined => {
-  return auth.scopes && auth.scopes.length > 0 ? auth.scopes.join(" ") : undefined;
+  return auth.scopes && auth.scopes.length > 0
+    ? auth.scopes.join(" ")
+    : undefined;
 };
 
 interface ParsedOAuthAuthorizationResponse {
@@ -893,7 +937,9 @@ const parseOAuthAuthorizationResponse = (
     throw new Error("Expected an OAuth authorization code or callback URL.");
   }
 
-  const parseParams = (params: URLSearchParams): ParsedOAuthAuthorizationResponse => {
+  const parseParams = (
+    params: URLSearchParams,
+  ): ParsedOAuthAuthorizationResponse => {
     const error = params.get("error");
 
     if (error) {
@@ -1022,7 +1068,9 @@ const getOAuthAuthorizationUrlState = (
 ): string | undefined => {
   try {
     const parsedUrl = new URL(authorizationUrl);
-    return normalizeOptionalString(parsedUrl.searchParams.get("state") ?? undefined);
+    return normalizeOptionalString(
+      parsedUrl.searchParams.get("state") ?? undefined,
+    );
   } catch {
     return undefined;
   }
@@ -1168,21 +1216,24 @@ const registerClientRequestHandlers = (
   }
 
   if (context.server.sampling !== "disabled") {
-    client.setRequestHandler(CreateMessageRequestSchema, async (request, extra) => {
-      assertSupportedSamplingRequest(request);
+    client.setRequestHandler(
+      CreateMessageRequestSchema,
+      async (request, extra) => {
+        assertSupportedSamplingRequest(request);
 
-      const handlerContext: McpSamplingHandlerContext = {
-        workspaceRoot: context.workspaceRoot,
-        server: context.server,
-        request,
-      };
+        const handlerContext: McpSamplingHandlerContext = {
+          workspaceRoot: context.workspaceRoot,
+          server: context.server,
+          request,
+        };
 
-      if (extra.signal) {
-        handlerContext.signal = extra.signal;
-      }
+        if (extra.signal) {
+          handlerContext.signal = extra.signal;
+        }
 
-      return samplingHandler(handlerContext);
-    });
+        return samplingHandler(handlerContext);
+      },
+    );
   }
 };
 
@@ -1246,7 +1297,9 @@ const createRequestOptions = (
         ? `${progress.progress}${totalSuffix}: ${progress.message}`
         : `${progress.progress}${totalSuffix}`;
 
-      void Promise.resolve(options.onProgress?.(message)).catch(() => undefined);
+      void Promise.resolve(options.onProgress?.(message)).catch(
+        () => undefined,
+      );
     },
   };
 };
@@ -1319,9 +1372,7 @@ const collectTaskToolResult = async (
   return finalResult;
 };
 
-const shouldCacheToolResult = (
-  result: CallToolResult,
-): boolean => {
+const shouldCacheToolResult = (result: CallToolResult): boolean => {
   return result.isError !== true;
 };
 
@@ -1434,7 +1485,9 @@ const listAllPrompts = async (
   return prompts;
 };
 
-const normalizeTool = (tool: ListToolsResult["tools"][number]): McpDiscoveredTool => {
+const normalizeTool = (
+  tool: ListToolsResult["tools"][number],
+): McpDiscoveredTool => {
   return {
     name: tool.name,
     ...(tool.title ? { title: tool.title } : {}),
@@ -1518,7 +1571,9 @@ const normalizePrompt = (
 export class McpClientManager {
   private readonly connections = new Map<string, McpConnection>();
   private readonly createClientImpl: (context: McpConnectionContext) => Client;
-  private readonly createTransportImpl: (context: McpConnectionContext) => Transport;
+  private readonly createTransportImpl: (
+    context: McpConnectionContext,
+  ) => Transport;
   private readonly samplingHandler: McpSamplingHandler;
   private readonly loadRuntimeEnvironmentImpl: () => Promise<
     Record<string, string>
@@ -1535,7 +1590,8 @@ export class McpClientManager {
   constructor(options: McpClientManagerOptions = {}) {
     this.createClientImpl = options.createClient ?? createClient;
     this.createTransportImpl = options.createTransport ?? createTransport;
-    this.samplingHandler = options.samplingHandler ?? createProviderSamplingHandler;
+    this.samplingHandler =
+      options.samplingHandler ?? createProviderSamplingHandler;
     this.loadRuntimeEnvironmentImpl =
       options.loadRuntimeEnvironment ?? loadRuntimeEnvironment;
     this.now = options.now ?? Date.now;
@@ -1669,7 +1725,10 @@ export class McpClientManager {
         }
 
         released = true;
-        connection.activeOperations = Math.max(0, connection.activeOperations - 1);
+        connection.activeOperations = Math.max(
+          0,
+          connection.activeOperations - 1,
+        );
         connection.lastUsedAt = this.now();
         this.scheduleIdleShutdown(connection);
       },
@@ -1721,7 +1780,9 @@ export class McpClientManager {
     return [...this.connections.values()].map((connection) => {
       const closesAt =
         connection.idleShutdownMs > 0 && connection.activeOperations === 0
-          ? new Date(connection.lastUsedAt + connection.idleShutdownMs).toISOString()
+          ? new Date(
+              connection.lastUsedAt + connection.idleShutdownMs,
+            ).toISOString()
           : undefined;
 
       return {
@@ -1745,7 +1806,10 @@ export class McpClientManager {
 
   async closeServer(workspaceRoot: string, serverId: string): Promise<void> {
     const pending = [...this.connections.entries()].filter(([, connection]) => {
-      return connection.server.id === serverId && connection.workspaceRoot === workspaceRoot;
+      return (
+        connection.server.id === serverId &&
+        connection.workspaceRoot === workspaceRoot
+      );
     });
 
     await Promise.all(
@@ -1775,16 +1839,24 @@ export class McpClientManager {
     const server = getEnabledMcpServer(config, serverId);
 
     if (!server) {
-      throw new Error(`MCP server \`${serverId}\` is not configured or not enabled.`);
+      throw new Error(
+        `MCP server \`${serverId}\` is not configured or not enabled.`,
+      );
     }
 
     if (server.auth?.type !== "oauth") {
-      throw new Error(`MCP server \`${server.id}\` is not configured for OAuth.`);
+      throw new Error(
+        `MCP server \`${server.id}\` is not configured for OAuth.`,
+      );
     }
 
     const env = await this.loadRuntimeEnvironmentImpl();
     const context: McpConnectionContext = { workspaceRoot, env, server };
-    const provider = new ConfiguredMcpOAuthProvider(server.auth, context, server);
+    const provider = new ConfiguredMcpOAuthProvider(
+      server.auth,
+      context,
+      server,
+    );
     const scope = getOAuthScope(server.auth);
 
     try {
@@ -1818,15 +1890,22 @@ export class McpClientManager {
       openAuthorizationUrl = openExternalAuthorizationUrl,
       ...operationOptions
     } = options;
-    const config = await loadMcpConfig(workspaceRoot, operationOptions.configOverride);
+    const config = await loadMcpConfig(
+      workspaceRoot,
+      operationOptions.configOverride,
+    );
     const server = getEnabledMcpServer(config, serverId);
 
     if (!server) {
-      throw new Error(`MCP server \`${serverId}\` is not configured or not enabled.`);
+      throw new Error(
+        `MCP server \`${serverId}\` is not configured or not enabled.`,
+      );
     }
 
     if (server.auth?.type !== "oauth") {
-      throw new Error(`MCP server \`${server.id}\` is not configured for OAuth.`);
+      throw new Error(
+        `MCP server \`${server.id}\` is not configured for OAuth.`,
+      );
     }
 
     const env = await this.loadRuntimeEnvironmentImpl();
@@ -1836,7 +1915,11 @@ export class McpClientManager {
       : undefined;
 
     if (!redirectUrl || !isMcpOAuthLoopbackRedirectUrl(redirectUrl)) {
-      const result = await this.beginOAuth(workspaceRoot, serverId, operationOptions);
+      const result = await this.beginOAuth(
+        workspaceRoot,
+        serverId,
+        operationOptions,
+      );
 
       if (result.authorizationUrl) {
         await openAuthorizationUrl(result.authorizationUrl);
@@ -1845,17 +1928,31 @@ export class McpClientManager {
       return result;
     }
 
-    const result = await this.beginOAuth(workspaceRoot, serverId, operationOptions);
+    const result = await this.beginOAuth(
+      workspaceRoot,
+      serverId,
+      operationOptions,
+    );
 
-    if (result.status !== "authorization-required" || !result.authorizationUrl) {
+    if (
+      result.status !== "authorization-required" ||
+      !result.authorizationUrl
+    ) {
       return result;
     }
 
-    const expectedState = getOAuthAuthorizationUrlState(result.authorizationUrl);
-    const callbackServer = await createMcpOAuthLoopbackCallbackServer(redirectUrl, {
-      ...(expectedState ? { expectedState } : {}),
-      ...(callbackTimeoutMs !== undefined ? { timeoutMs: callbackTimeoutMs } : {}),
-    });
+    const expectedState = getOAuthAuthorizationUrlState(
+      result.authorizationUrl,
+    );
+    const callbackServer = await createMcpOAuthLoopbackCallbackServer(
+      redirectUrl,
+      {
+        ...(expectedState ? { expectedState } : {}),
+        ...(callbackTimeoutMs !== undefined
+          ? { timeoutMs: callbackTimeoutMs }
+          : {}),
+      },
+    );
 
     try {
       await openAuthorizationUrl(result.authorizationUrl);
@@ -1881,18 +1978,26 @@ export class McpClientManager {
     const server = getEnabledMcpServer(config, serverId);
 
     if (!server) {
-      throw new Error(`MCP server \`${serverId}\` is not configured or not enabled.`);
+      throw new Error(
+        `MCP server \`${serverId}\` is not configured or not enabled.`,
+      );
     }
 
     if (server.auth?.type !== "oauth") {
-      throw new Error(`MCP server \`${server.id}\` is not configured for OAuth.`);
+      throw new Error(
+        `MCP server \`${server.id}\` is not configured for OAuth.`,
+      );
     }
 
     const parsed = parseOAuthAuthorizationResponse(authorizationResponse);
     const stateVerified = validateOAuthState(server, parsed.state);
     const env = await this.loadRuntimeEnvironmentImpl();
     const context: McpConnectionContext = { workspaceRoot, env, server };
-    const provider = new ConfiguredMcpOAuthProvider(server.auth, context, server);
+    const provider = new ConfiguredMcpOAuthProvider(
+      server.auth,
+      context,
+      server,
+    );
     const scope = getOAuthScope(server.auth);
     const result = await runOAuthFlow(provider, {
       serverUrl: getOAuthServerUrl(context),
@@ -1974,7 +2079,9 @@ export class McpClientManager {
     const server = getEnabledMcpServer(config, serverId);
 
     if (!server) {
-      throw new Error(`MCP server \`${serverId}\` is not configured or not enabled.`);
+      throw new Error(
+        `MCP server \`${serverId}\` is not configured or not enabled.`,
+      );
     }
 
     const previousDiscovery =
@@ -2005,16 +2112,21 @@ export class McpClientManager {
     args: Record<string, unknown>,
     options: McpOperationOptions = {},
   ): Promise<CallToolResult> {
-    const config = await loadMcpConfig(workspaceRoot, options.configOverride);
-    const server = getEnabledMcpServer(config, serverId);
+    const server = await resolveOperationServer(
+      workspaceRoot,
+      serverId,
+      options,
+    );
 
     if (!server) {
-      throw new Error(`MCP server \`${serverId}\` is not configured or not enabled.`);
+      throw new Error(
+        `MCP server \`${serverId}\` is not configured or not enabled.`,
+      );
     }
 
-    const cachedDiscovery = (await loadMcpDiscoveryCache(workspaceRoot)).servers[
-      server.id
-    ];
+    const cachedDiscovery =
+      options.authoritativeDiscovery ??
+      (await loadMcpDiscoveryCache(workspaceRoot)).servers[server.id];
     let discoveredTool = cachedDiscovery?.tools.find(
       (tool) => tool.name === toolName,
     );
@@ -2043,9 +2155,20 @@ export class McpClientManager {
       );
     }
 
-    await recordNativeMcpUsage(workspaceRoot, server, "tool", "invoked", toolName);
+    await recordNativeMcpUsage(
+      workspaceRoot,
+      server,
+      "tool",
+      "invoked",
+      toolName,
+    );
 
-    const cachePolicy = resolveOperationCachePolicy(options, server, "tool", true);
+    const cachePolicy = resolveOperationCachePolicy(
+      options,
+      server,
+      "tool",
+      true,
+    );
     const cacheLookup = mcpRunCacheManager.get<CallToolResult>({
       workspaceRoot,
       serverId: server.id,
@@ -2082,7 +2205,13 @@ export class McpClientManager {
       async () =>
         this.withConnection(workspaceRoot, server, async ({ client }) => {
           if (requiresTaskStream) {
-            return collectTaskToolResult(client, server, toolName, args, options);
+            return collectTaskToolResult(
+              client,
+              server,
+              toolName,
+              args,
+              options,
+            );
           }
 
           const toolResult = await client.callTool(
@@ -2124,18 +2253,29 @@ export class McpClientManager {
     cursor: string | undefined,
     options: McpOperationOptions = {},
   ): Promise<ListTasksResult> {
-    const config = await loadMcpConfig(workspaceRoot, options.configOverride);
-    const server = getEnabledMcpServer(config, serverId);
+    const server = await resolveOperationServer(
+      workspaceRoot,
+      serverId,
+      options,
+    );
 
     if (!server) {
-      throw new Error(`MCP server \`${serverId}\` is not configured or not enabled.`);
+      throw new Error(
+        `MCP server \`${serverId}\` is not configured or not enabled.`,
+      );
     }
 
     if (server.tasks === "disabled") {
       throw new Error(`MCP tasks are disabled for server \`${serverId}\`.`);
     }
 
-    await recordNativeMcpUsage(workspaceRoot, server, "task", "invoked", "list");
+    await recordNativeMcpUsage(
+      workspaceRoot,
+      server,
+      "task",
+      "invoked",
+      "list",
+    );
 
     return runTrackedNativeMcpRemoteOperation(
       workspaceRoot,
@@ -2162,11 +2302,16 @@ export class McpClientManager {
     taskId: string,
     options: McpOperationOptions = {},
   ): Promise<GetTaskResult> {
-    const config = await loadMcpConfig(workspaceRoot, options.configOverride);
-    const server = getEnabledMcpServer(config, serverId);
+    const server = await resolveOperationServer(
+      workspaceRoot,
+      serverId,
+      options,
+    );
 
     if (!server) {
-      throw new Error(`MCP server \`${serverId}\` is not configured or not enabled.`);
+      throw new Error(
+        `MCP server \`${serverId}\` is not configured or not enabled.`,
+      );
     }
 
     if (server.tasks === "disabled") {
@@ -2200,18 +2345,29 @@ export class McpClientManager {
     taskId: string,
     options: McpOperationOptions = {},
   ): Promise<GetTaskPayloadResult> {
-    const config = await loadMcpConfig(workspaceRoot, options.configOverride);
-    const server = getEnabledMcpServer(config, serverId);
+    const server = await resolveOperationServer(
+      workspaceRoot,
+      serverId,
+      options,
+    );
 
     if (!server) {
-      throw new Error(`MCP server \`${serverId}\` is not configured or not enabled.`);
+      throw new Error(
+        `MCP server \`${serverId}\` is not configured or not enabled.`,
+      );
     }
 
     if (server.tasks === "disabled") {
       throw new Error(`MCP tasks are disabled for server \`${serverId}\`.`);
     }
 
-    await recordNativeMcpUsage(workspaceRoot, server, "task", "invoked", "result");
+    await recordNativeMcpUsage(
+      workspaceRoot,
+      server,
+      "task",
+      "invoked",
+      "result",
+    );
 
     return runTrackedNativeMcpRemoteOperation(
       workspaceRoot,
@@ -2239,18 +2395,29 @@ export class McpClientManager {
     taskId: string,
     options: McpOperationOptions = {},
   ): Promise<CancelTaskResult> {
-    const config = await loadMcpConfig(workspaceRoot, options.configOverride);
-    const server = getEnabledMcpServer(config, serverId);
+    const server = await resolveOperationServer(
+      workspaceRoot,
+      serverId,
+      options,
+    );
 
     if (!server) {
-      throw new Error(`MCP server \`${serverId}\` is not configured or not enabled.`);
+      throw new Error(
+        `MCP server \`${serverId}\` is not configured or not enabled.`,
+      );
     }
 
     if (server.tasks === "disabled") {
       throw new Error(`MCP tasks are disabled for server \`${serverId}\`.`);
     }
 
-    await recordNativeMcpUsage(workspaceRoot, server, "task", "invoked", "cancel");
+    await recordNativeMcpUsage(
+      workspaceRoot,
+      server,
+      "task",
+      "invoked",
+      "cancel",
+    );
 
     return runTrackedNativeMcpRemoteOperation(
       workspaceRoot,
@@ -2273,16 +2440,31 @@ export class McpClientManager {
     uri: string,
     options: McpOperationOptions = {},
   ): Promise<ReadResourceResult> {
-    const config = await loadMcpConfig(workspaceRoot, options.configOverride);
-    const server = getEnabledMcpServer(config, serverId);
+    const server = await resolveOperationServer(
+      workspaceRoot,
+      serverId,
+      options,
+    );
 
     if (!server) {
-      throw new Error(`MCP server \`${serverId}\` is not configured or not enabled.`);
+      throw new Error(
+        `MCP server \`${serverId}\` is not configured or not enabled.`,
+      );
     }
 
-    await recordNativeMcpUsage(workspaceRoot, server, "resource", "invoked", uri);
+    await recordNativeMcpUsage(
+      workspaceRoot,
+      server,
+      "resource",
+      "invoked",
+      uri,
+    );
 
-    const cachePolicy = resolveOperationCachePolicy(options, server, "resource");
+    const cachePolicy = resolveOperationCachePolicy(
+      options,
+      server,
+      "resource",
+    );
     const cacheLookup = mcpRunCacheManager.get<ReadResourceResult>({
       workspaceRoot,
       serverId: server.id,
@@ -2340,11 +2522,16 @@ export class McpClientManager {
     args: Record<string, string>,
     options: McpOperationOptions = {},
   ): Promise<GetPromptResult> {
-    const config = await loadMcpConfig(workspaceRoot, options.configOverride);
-    const server = getEnabledMcpServer(config, serverId);
+    const server = await resolveOperationServer(
+      workspaceRoot,
+      serverId,
+      options,
+    );
 
     if (!server) {
-      throw new Error(`MCP server \`${serverId}\` is not configured or not enabled.`);
+      throw new Error(
+        `MCP server \`${serverId}\` is not configured or not enabled.`,
+      );
     }
 
     await recordNativeMcpUsage(

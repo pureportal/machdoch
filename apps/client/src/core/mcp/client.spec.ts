@@ -67,9 +67,7 @@ const createTransport = (): Transport => {
   } as unknown as Transport;
 };
 
-const createClient = (
-  overrides: Partial<Client> = {},
-): Client => {
+const createClient = (overrides: Partial<Client> = {}): Client => {
   return {
     connect: vi.fn(async () => undefined),
     setRequestHandler: vi.fn(),
@@ -271,7 +269,9 @@ describe("McpClientManager lifecycle", () => {
     });
     const server = createServer();
 
-    await expect(manager.discoverServer("C:/workspace", server)).resolves.toMatchObject({
+    await expect(
+      manager.discoverServer("C:/workspace", server),
+    ).resolves.toMatchObject({
       serverId: "test",
       tools: [],
     });
@@ -386,7 +386,9 @@ describe("McpClientManager lifecycle", () => {
       model: "test-model",
       stopReason: "endTurn",
     };
-    const samplingHandler: McpSamplingHandler = vi.fn(async () => samplingResult);
+    const samplingHandler: McpSamplingHandler = vi.fn(
+      async () => samplingResult,
+    );
     const manager = new McpClientManager({
       createClient: () => client,
       createTransport: () => transport,
@@ -405,9 +407,9 @@ describe("McpClientManager lifecycle", () => {
         ) => Promise<CreateMessageResult>)
       | undefined;
 
-    await expect(handler?.(createSamplingRequest(), { signal })).resolves.toEqual(
-      samplingResult,
-    );
+    await expect(
+      handler?.(createSamplingRequest(), { signal }),
+    ).resolves.toEqual(samplingResult);
     expect(samplingHandler).toHaveBeenCalledWith({
       workspaceRoot,
       server,
@@ -501,19 +503,24 @@ describe("McpClientManager lifecycle", () => {
       throw new Error("Expected the MCP transport to be created.");
     }
 
-    const authProvider = (capturedTransport as { _authProvider?: OAuthClientProvider })
-      ._authProvider;
+    const authProvider = (
+      capturedTransport as { _authProvider?: OAuthClientProvider }
+    )._authProvider;
 
     if (!authProvider) {
-      throw new Error("Expected the MCP transport to receive an OAuth provider.");
+      throw new Error(
+        "Expected the MCP transport to receive an OAuth provider.",
+      );
     }
 
-    await expect(Promise.resolve(authProvider.tokens())).resolves.toMatchObject({
-      access_token: "access-token",
-      refresh_token: "refresh-token",
-      token_type: "Bearer",
-      scope: "repo read:user",
-    });
+    await expect(Promise.resolve(authProvider.tokens())).resolves.toMatchObject(
+      {
+        access_token: "access-token",
+        refresh_token: "refresh-token",
+        token_type: "Bearer",
+        scope: "repo read:user",
+      },
+    );
     expect(authProvider.clientInformation()).toMatchObject({
       client_id: "client-id",
       client_secret: "client-secret",
@@ -897,6 +904,63 @@ describe("McpClientManager lifecycle", () => {
     expect(callTool).not.toHaveBeenCalled();
   });
 
+  it("uses a proxy-resolved server snapshot instead of reloading workspace overrides", async () => {
+    const workspaceRoot = await createWorkspace();
+    await writeWorkspaceMcpConfig(workspaceRoot);
+    const callTool = vi.fn(async () => ({
+      content: [{ type: "text", text: "user-scoped result" }],
+    }));
+    const observedCommands: string[] = [];
+    const manager = new McpClientManager({
+      createClient: () => createClient({ callTool } as Partial<Client>),
+      createTransport: (context) => {
+        if (context.server.transport.type === "stdio") {
+          observedCommands.push(context.server.transport.command);
+        }
+        return createTransport();
+      },
+      loadRuntimeEnvironment: async () => ({}),
+    });
+    const effectiveServer = createServer({
+      transport: { type: "stdio", command: "user-scoped-command" },
+      sources: ["user"],
+    });
+
+    await expect(
+      manager.callTool(
+        workspaceRoot,
+        "test",
+        "search",
+        { query: "mcp" },
+        {
+          effectiveServer,
+          authoritativeDiscovery: {
+            serverId: "test",
+            discoveredAt: new Date(0).toISOString(),
+            transportType: "stdio",
+            tools: [
+              {
+                name: "search",
+                inputSchema: {
+                  type: "object",
+                  properties: { query: { type: "string" } },
+                  required: ["query"],
+                },
+              },
+            ],
+            resources: [],
+            resourceTemplates: [],
+            prompts: [],
+          },
+        },
+      ),
+    ).resolves.toMatchObject({
+      content: [{ text: "user-scoped result" }],
+    });
+    expect(observedCommands).toEqual(["user-scoped-command"]);
+    expect(callTool).toHaveBeenCalledTimes(1);
+  });
+
   it("delegates task listing to the SDK task client", async () => {
     const workspaceRoot = await createWorkspace();
     const listTasks = vi.fn(async () => ({
@@ -989,7 +1053,13 @@ describe("McpClientManager lifecycle", () => {
     ).resolves.toMatchObject({
       content: [{ text: "cached result" }],
     });
-    await manager.callTool(workspaceRoot, "test", "search", { q: "mcp" }, options);
+    await manager.callTool(
+      workspaceRoot,
+      "test",
+      "search",
+      { q: "mcp" },
+      options,
+    );
 
     expect(callTool).toHaveBeenCalledTimes(1);
   });

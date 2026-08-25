@@ -14,12 +14,21 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { mcpClientManager } from "../../mcp/client.js";
-import { listEnabledMcpServers, loadMcpConfig } from "../../mcp/config.js";
+import {
+  listEnabledMcpServers,
+  loadMcpConfig,
+  loadUserMcpConfig,
+} from "../../mcp/config.js";
 import type {
   McpEffectiveServerConfig,
+  McpOperationOptions,
   McpServerDiscovery,
 } from "../../mcp/types.js";
 import { sha256 } from "../digests.js";
+import {
+  getMcpToolProjectionPrefix,
+  isMcpToolEnabledForProjection,
+} from "../mcp-tool-exposure.js";
 
 interface ProxyCatalogEntry {
   serverId: string;
@@ -31,34 +40,31 @@ const TOOL_SEPARATOR = "__";
 const RESOURCE_PREFIX = "machdoch-proxy://";
 const MAX_EXPOSED_NAME_LENGTH = 40;
 
-const sanitizeName = (value: string): string => value
-  .trim()
-  .replace(/[^A-Za-z0-9_-]+/gu, "_")
-  .replace(/_+/gu, "_")
-  .replace(/^_+|_+$/gu, "") || "entity";
+const sanitizeName = (value: string): string =>
+  value
+    .trim()
+    .replace(/[^A-Za-z0-9_-]+/gu, "_")
+    .replace(/_+/gu, "_")
+    .replace(/^_+|_+$/gu, "") || "entity";
 
 export const createProxyExposedName = (
   serverId: string,
   name: string,
   aggregate: boolean,
 ): string => {
+  const rawBase = aggregate ? `${serverId}${TOOL_SEPARATOR}${name}` : name;
   const base = aggregate
     ? `${sanitizeName(serverId)}${TOOL_SEPARATOR}${sanitizeName(name)}`
     : sanitizeName(name);
-  if (base.length <= MAX_EXPOSED_NAME_LENGTH) return base;
+  if (
+    !aggregate &&
+    base === rawBase &&
+    base.length <= MAX_EXPOSED_NAME_LENGTH
+  ) {
+    return base;
+  }
   const suffix = sha256(`${serverId}\u0000${name}`).slice(0, 10);
   return `${base.slice(0, MAX_EXPOSED_NAME_LENGTH - suffix.length - 1).replace(/_+$/u, "")}_${suffix}`;
-};
-
-const isToolEnabled = (
-  server: McpEffectiveServerConfig,
-  toolName: string,
-): boolean => {
-  if (server.toolOverrides?.[toolName]?.enabled === false) return false;
-  const directTools = server.exposure?.directTools;
-  if (typeof directTools !== "object" || directTools === null) return true;
-  if (directTools.include && !directTools.include.includes(toolName)) return false;
-  return !directTools.exclude?.includes(toolName);
 };
 
 const getExposedToolName = (
@@ -66,11 +72,7 @@ const getExposedToolName = (
   toolName: string,
   aggregate: boolean,
 ): string => {
-  const directTools = entry.config.exposure?.directTools;
-  const prefix =
-    typeof directTools === "object" && directTools !== null
-      ? directTools.namespacePrefix?.trim()
-      : undefined;
+  const prefix = getMcpToolProjectionPrefix(entry.config);
   return createProxyExposedName(
     entry.serverId,
     prefix ? `${prefix}${TOOL_SEPARATOR}${toolName}` : toolName,
@@ -130,7 +132,9 @@ const parseResourceUri = (
   if (!uri.startsWith(RESOURCE_PREFIX)) {
     throw new Error("Expected a Machdoch aggregate resource URI.");
   }
-  const [encodedServerId, ...encodedUriParts] = uri.slice(RESOURCE_PREFIX.length).split("/");
+  const [encodedServerId, ...encodedUriParts] = uri
+    .slice(RESOURCE_PREFIX.length)
+    .split("/");
   if (!encodedServerId || encodedUriParts.length === 0) {
     throw new Error("Malformed Machdoch aggregate resource URI.");
   }
@@ -143,8 +147,12 @@ const parseResourceUri = (
 const loadCatalog = async (
   workspaceRoot: string,
   serverId?: string,
+  scope?: "user",
 ): Promise<ProxyCatalogEntry[]> => {
-  const config = await loadMcpConfig(workspaceRoot);
+  const config =
+    scope === "user"
+      ? await loadUserMcpConfig()
+      : await loadMcpConfig(workspaceRoot);
   const servers = listEnabledMcpServers(config).filter(
     (server) => !serverId || server.id === serverId,
   );
@@ -164,6 +172,22 @@ const loadCatalog = async (
   );
 };
 
+const createOperationOptions = (
+  entry: ProxyCatalogEntry,
+): McpOperationOptions => ({
+  effectiveServer: entry.config,
+  authoritativeDiscovery: entry.discovery,
+});
+
+const getCatalogEntry = (
+  entries: readonly ProxyCatalogEntry[],
+  serverId: string,
+): ProxyCatalogEntry => {
+  const entry = entries.find((candidate) => candidate.serverId === serverId);
+  if (!entry) throw new Error(`Unknown Machdoch proxy server: ${serverId}.`);
+  return entry;
+};
+
 const registerHandlers = (
   server: Server,
   workspaceRoot: string,
@@ -171,23 +195,39 @@ const registerHandlers = (
 ): void => {
   const aggregate = entries.length > 1;
   const taskTargets = new Map<string, { serverId: string; name: string }>();
+  const taskEntries = entries.filter(
+    (entry) =>
+      entry.config.tasks !== "disabled" &&
+      entry.discovery.capabilities &&
+      "tasks" in entry.discovery.capabilities,
+  );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: entries.flatMap((entry) =>
       entry.discovery.tools
-        .filter((tool) => isToolEnabled(entry.config, tool.name))
+        .filter((tool) =>
+          isMcpToolEnabledForProjection(entry.config, tool.name),
+        )
         .map((tool) => ({
-        name: getExposedToolName(entry, tool.name, aggregate),
-        ...(entry.config.toolOverrides?.[tool.name]?.title || tool.title
-          ? { title: entry.config.toolOverrides?.[tool.name]?.title ?? tool.title }
-          : {}),
-        ...(entry.config.toolOverrides?.[tool.name]?.description || tool.description
-          ? { description: entry.config.toolOverrides?.[tool.name]?.description ?? tool.description }
-          : {}),
-        inputSchema: tool.inputSchema,
-        ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
-        ...(tool.annotations ? { annotations: tool.annotations } : {}),
-      })),
+          name: getExposedToolName(entry, tool.name, aggregate),
+          ...(entry.config.toolOverrides?.[tool.name]?.title || tool.title
+            ? {
+                title:
+                  entry.config.toolOverrides?.[tool.name]?.title ?? tool.title,
+              }
+            : {}),
+          ...(entry.config.toolOverrides?.[tool.name]?.description ||
+          tool.description
+            ? {
+                description:
+                  entry.config.toolOverrides?.[tool.name]?.description ??
+                  tool.description,
+              }
+            : {}),
+          inputSchema: tool.inputSchema,
+          ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
+          ...(tool.annotations ? { annotations: tool.annotations } : {}),
+        })),
     ),
   }));
 
@@ -195,9 +235,12 @@ const registerHandlers = (
     const target = parseNamespacedName(
       request.params.name,
       entries,
-      (entry) => entry.discovery.tools
-        .filter((tool) => isToolEnabled(entry.config, tool.name))
-        .map((tool) => tool.name),
+      (entry) =>
+        entry.discovery.tools
+          .filter((tool) =>
+            isMcpToolEnabledForProjection(entry.config, tool.name),
+          )
+          .map((tool) => tool.name),
       getExposedToolName,
     );
     return await mcpClientManager.callTool(
@@ -205,6 +248,7 @@ const registerHandlers = (
       target.serverId,
       target.name,
       request.params.arguments ?? {},
+      createOperationOptions(getCatalogEntry(entries, target.serverId)),
     );
   });
 
@@ -238,6 +282,7 @@ const registerHandlers = (
       workspaceRoot,
       target.serverId,
       target.uri,
+      createOperationOptions(getCatalogEntry(entries, target.serverId)),
     );
   });
 
@@ -251,35 +296,39 @@ const registerHandlers = (
   }));
 
   server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-    const target = parseNamespacedName(
-      request.params.name,
-      entries,
-      (entry) => entry.discovery.prompts.map((prompt) => prompt.name),
+    const target = parseNamespacedName(request.params.name, entries, (entry) =>
+      entry.discovery.prompts.map((prompt) => prompt.name),
     );
     return await mcpClientManager.getPrompt(
       workspaceRoot,
       target.serverId,
       target.name,
       request.params.arguments ?? {},
+      createOperationOptions(getCatalogEntry(entries, target.serverId)),
     );
   });
 
-  if (entries.some((entry) => entry.discovery.capabilities && "tasks" in entry.discovery.capabilities)) {
+  if (taskEntries.length > 0) {
     server.setRequestHandler(ListTasksRequestSchema, async () => {
       const results = await Promise.all(
-        entries.map(async (entry) => ({
+        taskEntries.map(async (entry) => ({
           serverId: entry.serverId,
           result: await mcpClientManager.listTasks(
             workspaceRoot,
             entry.serverId,
             undefined,
+            createOperationOptions(entry),
           ),
         })),
       );
       return {
         tasks: results.flatMap(({ serverId, result }) =>
           result.tasks.map((task) => {
-            const taskId = createProxyExposedName(serverId, task.taskId, aggregate);
+            const taskId = createProxyExposedName(
+              serverId,
+              task.taskId,
+              aggregate,
+            );
             taskTargets.set(taskId, { serverId, name: task.taskId });
             return { ...task, taskId };
           }),
@@ -288,37 +337,57 @@ const registerHandlers = (
     });
     server.setRequestHandler(GetTaskRequestSchema, async (request) => {
       const target = taskTargets.get(request.params.taskId);
-      if (!target) throw new Error(`Unknown Machdoch proxy task: ${request.params.taskId}.`);
+      if (!target)
+        throw new Error(
+          `Unknown Machdoch proxy task: ${request.params.taskId}.`,
+        );
       const result = await mcpClientManager.getTask(
         workspaceRoot,
         target.serverId,
         target.name,
+        createOperationOptions(getCatalogEntry(taskEntries, target.serverId)),
       );
       return {
         ...result,
-        taskId: createProxyExposedName(target.serverId, result.taskId, aggregate),
+        taskId: createProxyExposedName(
+          target.serverId,
+          result.taskId,
+          aggregate,
+        ),
       };
     });
     server.setRequestHandler(GetTaskPayloadRequestSchema, async (request) => {
       const target = taskTargets.get(request.params.taskId);
-      if (!target) throw new Error(`Unknown Machdoch proxy task: ${request.params.taskId}.`);
+      if (!target)
+        throw new Error(
+          `Unknown Machdoch proxy task: ${request.params.taskId}.`,
+        );
       return await mcpClientManager.getTaskResult(
         workspaceRoot,
         target.serverId,
         target.name,
+        createOperationOptions(getCatalogEntry(taskEntries, target.serverId)),
       );
     });
     server.setRequestHandler(CancelTaskRequestSchema, async (request) => {
       const target = taskTargets.get(request.params.taskId);
-      if (!target) throw new Error(`Unknown Machdoch proxy task: ${request.params.taskId}.`);
+      if (!target)
+        throw new Error(
+          `Unknown Machdoch proxy task: ${request.params.taskId}.`,
+        );
       const result = await mcpClientManager.cancelTask(
         workspaceRoot,
         target.serverId,
         target.name,
+        createOperationOptions(getCatalogEntry(taskEntries, target.serverId)),
       );
       return {
         ...result,
-        taskId: createProxyExposedName(target.serverId, result.taskId, aggregate),
+        taskId: createProxyExposedName(
+          target.serverId,
+          result.taskId,
+          aggregate,
+        ),
       };
     });
   }
@@ -327,8 +396,9 @@ const registerHandlers = (
 export const runMcpStdioProxy = async (
   workspaceRoot: string,
   serverId?: string,
+  scope?: "user",
 ): Promise<void> => {
-  const entries = await loadCatalog(workspaceRoot, serverId);
+  const entries = await loadCatalog(workspaceRoot, serverId, scope);
   const aggregate = entries.length > 1;
   const instructions = entries
     .flatMap((entry) =>
@@ -338,11 +408,16 @@ export const runMcpStdioProxy = async (
     )
     .join("\n\n");
   const supportsTasks = entries.some(
-    (entry) => entry.discovery.capabilities && "tasks" in entry.discovery.capabilities,
+    (entry) =>
+      entry.config.tasks !== "disabled" &&
+      entry.discovery.capabilities &&
+      "tasks" in entry.discovery.capabilities,
   );
   const server = new Server(
     {
-      name: aggregate ? "machdoch-compat" : `machdoch-proxy-${entries[0]?.serverId ?? "mcp"}`,
+      name: aggregate
+        ? "machdoch-compat"
+        : `machdoch-proxy-${entries[0]?.serverId ?? "mcp"}`,
       version: "1.0.0",
     },
     {
@@ -350,9 +425,7 @@ export const runMcpStdioProxy = async (
         tools: {},
         resources: {},
         prompts: {},
-        ...(supportsTasks
-          ? { tasks: { list: {}, cancel: {} } }
-          : {}),
+        ...(supportsTasks ? { tasks: { list: {}, cancel: {} } } : {}),
       },
       ...(instructions ? { instructions } : {}),
     },
@@ -361,12 +434,11 @@ export const runMcpStdioProxy = async (
   const transport = new StdioServerTransport();
 
   const close = (): void => {
-    void Promise.all([
-      server.close(),
-      mcpClientManager.closeAll(),
-    ]).finally(() => {
-      process.exitCode = 0;
-    });
+    void Promise.all([server.close(), mcpClientManager.closeAll()]).finally(
+      () => {
+        process.exitCode = 0;
+      },
+    );
   };
   process.once("SIGINT", close);
   process.once("SIGTERM", close);

@@ -161,7 +161,8 @@ export interface McpConfigFile {
   servers?: McpServerOverride[];
 }
 
-export type McpServerOverride = Partial<McpServerConfig> & Pick<McpServerConfig, "id">;
+export type McpServerOverride = Partial<McpServerConfig> &
+  Pick<McpServerConfig, "id">;
 
 export interface McpConfigOverride {
   defaults?: McpDefaultConfig;
@@ -204,20 +205,19 @@ export interface McpEffectiveDefaults {
   elicitation: McpElicitationMode;
 }
 
-export interface McpEffectiveServerConfig
-  extends Omit<
-    McpServerConfig,
-    | "enabled"
-    | "securityProfile"
-    | "timeoutMs"
-    | "maxTotalTimeoutMs"
-    | "idleShutdownMs"
-    | "maxResponseChars"
-    | "cache"
-    | "roots"
-    | "sampling"
-    | "tasks"
-  > {
+export interface McpEffectiveServerConfig extends Omit<
+  McpServerConfig,
+  | "enabled"
+  | "securityProfile"
+  | "timeoutMs"
+  | "maxTotalTimeoutMs"
+  | "idleShutdownMs"
+  | "maxResponseChars"
+  | "cache"
+  | "roots"
+  | "sampling"
+  | "tasks"
+> {
   enabled: boolean;
   securityProfile: McpSecurityProfile;
   timeoutMs: number;
@@ -362,6 +362,8 @@ export interface McpOperationOptions {
   signal?: AbortSignal;
   onProgress?: (message: string) => void | Promise<void>;
   configOverride?: McpConfigOverride;
+  effectiveServer?: McpEffectiveServerConfig;
+  authoritativeDiscovery?: McpServerDiscovery;
   cache?: McpOperationCacheOptions;
 }
 

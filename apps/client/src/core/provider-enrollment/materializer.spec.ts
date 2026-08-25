@@ -87,15 +87,22 @@ import { inventoryNativeInstructions } from "../instruction-system/native-invent
 
 const roots: string[] = [];
 const runtimeSystemInstructions = "Fixture run-scoped system instructions.";
+const machdochCliLaunch = {
+  command: process.execPath,
+  args: process.argv[1] ? [process.argv[1]] : [],
+  cwd: process.cwd(),
+  environment: {},
+};
 const materializeCliEnrollment = (
   params: Omit<
     Parameters<typeof materializeCliEnrollmentRaw>[0],
-    "runtimeSystemInstructions"
+    "runtimeSystemInstructions" | "machdochCliLaunch"
   >,
 ) =>
   materializeCliEnrollmentRaw({
     ...params,
     runtimeSystemInstructions,
+    machdochCliLaunch,
   });
 
 const createRoot = async (): Promise<string> => {
@@ -256,8 +263,8 @@ describe("CLI provider enrollment materializer", () => {
         );
         expect(enrollment.env.COPILOT_HOME).toContain("copilot-home");
         expect(enrollment.env.COPILOT_CUSTOM_INSTRUCTIONS_DIRS).toBeUndefined();
-        const agentPath = enrollment.manifest.renderedFiles.find((file) =>
-          file.role === "instruction-transport",
+        const agentPath = enrollment.manifest.renderedFiles.find(
+          (file) => file.role === "instruction-transport",
         )!.path;
         expect(await readFile(agentPath, "utf8")).toContain(
           resolution.renderedEnvelope,
@@ -349,8 +356,8 @@ describe("CLI provider enrollment materializer", () => {
       });
 
       const transportText = await readFile(
-        enrollment.manifest.renderedFiles.find((file) =>
-          file.role !== "mcp-configuration",
+        enrollment.manifest.renderedFiles.find(
+          (file) => file.role !== "mcp-configuration",
         )!.path,
         "utf8",
       );
@@ -422,8 +429,8 @@ describe("CLI provider enrollment materializer", () => {
       resolution,
       deliveryPlan: createProbedPlan(resolution),
     });
-    const agentPath = enrollment.manifest.renderedFiles.find((file) =>
-      file.role === "instruction-transport",
+    const agentPath = enrollment.manifest.renderedFiles.find(
+      (file) => file.role === "instruction-transport",
     )!.path;
     const agent = await readFile(agentPath, "utf8");
     const orderedBodies = [
@@ -556,8 +563,8 @@ describe("CLI provider enrollment materializer", () => {
       resolution,
       deliveryPlan: plan,
     });
-    const configPath = enrollment.manifest.renderedFiles.find((file) =>
-      file.role === "instruction-and-mcp-configuration",
+    const configPath = enrollment.manifest.renderedFiles.find(
+      (file) => file.role === "instruction-and-mcp-configuration",
     )!.path;
     const config = await readFile(configPath, "utf8");
     const serializedInstructions = config
@@ -615,8 +622,8 @@ describe("CLI provider enrollment materializer", () => {
         resolution,
         deliveryPlan: createProbedPlan(resolution),
       });
-      const instructionPath = enrollment.manifest.renderedFiles.find((file) =>
-        file.role === "instruction-transport",
+      const instructionPath = enrollment.manifest.renderedFiles.find(
+        (file) => file.role === "instruction-transport",
       )!.path;
       const nativeInstructions = await readFile(instructionPath, "utf8");
 
@@ -681,11 +688,11 @@ describe("CLI provider enrollment materializer", () => {
         deliveryPlan: createProbedPlan(secondResolution),
       }),
     ]);
-    const firstPath = first.manifest.renderedFiles.find((file) =>
-      file.role === "instruction-transport",
+    const firstPath = first.manifest.renderedFiles.find(
+      (file) => file.role === "instruction-transport",
     )!.path;
-    const secondPath = second.manifest.renderedFiles.find((file) =>
-      file.role === "instruction-transport",
+    const secondPath = second.manifest.renderedFiles.find(
+      (file) => file.role === "instruction-transport",
     )!.path;
 
     expect(first.rootPath).not.toBe(second.rootPath);
@@ -821,7 +828,7 @@ describe("CLI provider enrollment materializer", () => {
       ),
       writeFile(
         join(workspaceRoot, ".github", "mcp.json"),
-        '{"mcpServers":{"unmanaged-github":{"command":"github"}}}\n',
+        '{"unmanaged-github":{"command":"github"}}\n',
         "utf8",
       ),
     ]);
@@ -877,7 +884,112 @@ describe("CLI provider enrollment materializer", () => {
     await enrollment.dispose();
   });
 
-  it("starts with clean isolated Copilot state when source state is malformed", async () => {
+  it("rejects malformed provider-native Copilot MCP shape during isolation", async () => {
+    const root = await createRoot();
+    const workspaceRoot = join(root, "workspace");
+    const userConfigRoot = join(root, "user-config");
+    await Promise.all([
+      mkdir(workspaceRoot, { recursive: true }),
+      mkdir(userConfigRoot, { recursive: true }),
+    ]);
+    await Promise.all([
+      writeFile(join(userConfigRoot, "user-config.json"), "{}\n", "utf8"),
+      writeFile(
+        join(workspaceRoot, ".mcp.json"),
+        '{"mcpServers":[]}\n',
+        "utf8",
+      ),
+    ]);
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+    const baseResolution = createInstructionResolutionFixture({
+      providerId: "copilot-cli",
+      surface: "cli",
+    });
+    const resolution = {
+      ...baseResolution,
+      nativeInventory: await inventoryNativeInstructions({
+        workspaceRoot,
+        providerId: "copilot-cli",
+        surface: "cli",
+      }),
+    } as FrozenInstructionSet;
+
+    await expect(
+      materializeCliEnrollment({
+        provider: "copilot-cli",
+        executable: process.execPath,
+        runId: "test-copilot-invalid-mcp-shape",
+        workspaceRoot,
+        resolution,
+        deliveryPlan: createProbedPlan(resolution),
+      }),
+    ).rejects.toThrow("has an invalid mcpServers value");
+  });
+
+  it("passes required central MCP environment only through the provider process", async () => {
+    const root = await createRoot();
+    const workspaceRoot = join(root, "workspace");
+    const userConfigRoot = join(root, "user-config");
+    const mcpConfigRoot = join(workspaceRoot, ".machdoch", "mcp");
+    await Promise.all([
+      mkdir(workspaceRoot, { recursive: true }),
+      mkdir(userConfigRoot, { recursive: true }),
+      mkdir(mcpConfigRoot, { recursive: true }),
+    ]);
+    await Promise.all([
+      writeFile(join(userConfigRoot, "user-config.json"), "{}\n", "utf8"),
+      writeFile(
+        join(mcpConfigRoot, "mcp.json"),
+        JSON.stringify({
+          schemaVersion: 1,
+          servers: [
+            {
+              id: "environment-server",
+              enabled: true,
+              transport: {
+                type: "stdio",
+                command: "node",
+                env: { TOKEN: "${env:MATERIALIZER_MCP_TOKEN}" },
+              },
+            },
+          ],
+        }),
+        "utf8",
+      ),
+    ]);
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+    vi.stubEnv("MATERIALIZER_MCP_TOKEN", "materializer-secret");
+    const resolution = createInstructionResolutionFixture({
+      providerId: "copilot-cli",
+      surface: "cli",
+    });
+
+    const enrollment = await materializeCliEnrollment({
+      provider: "copilot-cli",
+      executable: process.execPath,
+      runId: "test-copilot-mcp-environment",
+      workspaceRoot,
+      resolution,
+      deliveryPlan: createProbedPlan(resolution),
+    });
+
+    expect(enrollment.env.MATERIALIZER_MCP_TOKEN).toBe("materializer-secret");
+    const mcpPathArgument = enrollment.args.find((argument) =>
+      argument.startsWith("--additional-mcp-config=@"),
+    );
+    expect(mcpPathArgument).toBeDefined();
+    const mcpConfig = await readFile(
+      mcpPathArgument!.slice("--additional-mcp-config=@".length),
+      "utf8",
+    );
+    expect(mcpConfig).not.toContain("materializer-secret");
+    expect(enrollment.manifest.environmentKeys).toContain(
+      "MATERIALIZER_MCP_TOKEN",
+    );
+    await enrollment.dispose();
+  });
+
+  it("rejects malformed Copilot state instead of silently discarding it", async () => {
     const root = await createRoot();
     const workspaceRoot = join(root, "workspace");
     const userConfigRoot = join(root, "user-config");
@@ -911,22 +1023,18 @@ describe("CLI provider enrollment materializer", () => {
       }),
     } as FrozenInstructionSet;
 
-    const enrollment = await materializeCliEnrollment({
-      provider: "copilot-cli",
-      executable: process.execPath,
-      runId: "test-copilot-malformed-state",
-      workspaceRoot,
-      resolution,
-      deliveryPlan: createProbedPlan(resolution),
-    });
-
-    expect(
-      enrollment.args.some((argument) => argument.startsWith("--agent=")),
-    ).toBe(true);
     await expect(
-      stat(join(enrollment.env.COPILOT_HOME!, "config.json")),
-    ).rejects.toMatchObject({ code: "ENOENT" });
-    await enrollment.dispose();
+      materializeCliEnrollment({
+        provider: "copilot-cli",
+        executable: process.execPath,
+        runId: "test-copilot-malformed-state",
+        workspaceRoot,
+        resolution,
+        deliveryPlan: createProbedPlan(resolution),
+      }),
+    ).rejects.toThrow(
+      "Copilot internal state must be a valid JSON-with-comments object before authentication state can be isolated.",
+    );
   });
 
   it("does not infer Claude bare-mode conformance from help text alone", async () => {

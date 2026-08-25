@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
-import { watch, type FSWatcher } from "node:fs";
+import { realpathSync, watch, type FSWatcher } from "node:fs";
 import { mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "../_helpers/write-file-atomically.helper.js";
 import { getUserConfigPath } from "../env.js";
 import { loadProviderEnrollmentConfig } from "./config.js";
+import { resolveMachdochCliLaunch } from "./machdoch-cli-launch.js";
 import {
   getProviderEnrollmentStateDirectory,
   getProviderSyncWorkspaceRegistryPath,
@@ -26,16 +27,8 @@ const DAEMON_RECORD_KEYS = new Set([
   "token",
   "runtimeId",
 ]);
-const LEGACY_DAEMON_RECORD_KEYS = new Set([
-  "pid",
-  "workspaceRoot",
-  "startedAt",
-  "token",
-  "runtimeId",
-]);
-
 interface DaemonRecord {
-  schemaVersion: 0 | 1;
+  schemaVersion: 1;
   pid: number;
   workspaceRoot: string;
   startedAt: string;
@@ -93,13 +86,14 @@ const normalizeRuntimePath = (path: string): string => {
 };
 
 export const getProviderSyncDaemonRuntimeId = (): string => {
-  const configuredCli = process.env.MACHDOCH_CLI_PATH?.trim();
-  const cliEntry = configuredCli || process.argv[1]?.trim() || "";
+  const launch = resolveMachdochCliLaunch();
   return createHash("sha256")
     .update(
       JSON.stringify({
-        executable: normalizeRuntimePath(process.execPath),
-        cliEntry: cliEntry ? normalizeRuntimePath(cliEntry) : "",
+        command: normalizeRuntimePath(launch.command),
+        args: launch.args,
+        cwd: normalizeRuntimePath(launch.cwd),
+        environment: launch.environment,
       }),
     )
     .digest("hex");
@@ -127,13 +121,9 @@ const loadDaemonRecord = async (): Promise<DaemonRecord | undefined> => {
     isRecord(parsed) &&
     parsed.schemaVersion === 1 &&
     recordKeys.every((key) => DAEMON_RECORD_KEYS.has(key));
-  const isLegacyRecord =
-    isRecord(parsed) &&
-    !Object.hasOwn(parsed, "schemaVersion") &&
-    recordKeys.every((key) => LEGACY_DAEMON_RECORD_KEYS.has(key));
   if (
     !isRecord(parsed) ||
-    (!isCurrentRecord && !isLegacyRecord) ||
+    !isCurrentRecord ||
     typeof parsed.pid !== "number" ||
     !Number.isInteger(parsed.pid) ||
     parsed.pid <= 0 ||
@@ -148,7 +138,7 @@ const loadDaemonRecord = async (): Promise<DaemonRecord | undefined> => {
     throw invalidDaemonRecordError(path);
   }
   return {
-    schemaVersion: isCurrentRecord ? 1 : 0,
+    schemaVersion: 1,
     pid: parsed.pid,
     workspaceRoot: parsed.workspaceRoot,
     startedAt: parsed.startedAt,
@@ -370,31 +360,43 @@ export const isProviderSyncUserWatchPath = (path: string): boolean => {
   );
 };
 
+const resolveWatcherRoot = (path: string): string => {
+  if (process.platform !== "win32") return path;
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return path;
+  }
+};
+
 const createWorkspaceWatchers = (
   workspaceRoot: string,
   onChange: () => void,
 ): FSWatcher[] => {
+  const watchWorkspaceRoot = resolveWatcherRoot(workspaceRoot);
+  const useSeparateDirectoryWatchers =
+    process.platform === "linux" || process.platform === "win32";
   const roots =
-    process.platform === "linux"
+    useSeparateDirectoryWatchers
       ? [
           ...new Set([
-            workspaceRoot,
-            join(workspaceRoot, ".machdoch"),
-            join(workspaceRoot, ".machdoch", "mcp"),
+            watchWorkspaceRoot,
+            join(watchWorkspaceRoot, ".machdoch"),
+            join(watchWorkspaceRoot, ".machdoch", "mcp"),
           ]),
         ]
-      : [workspaceRoot];
+      : [watchWorkspaceRoot];
 
   const watchers: FSWatcher[] = [];
   for (const root of roots) {
     try {
       const watcher = watch(
         root,
-        { recursive: process.platform !== "linux" },
+        { recursive: !useSeparateDirectoryWatchers },
         (_eventType, filename) => {
           if (!filename) return onChange();
           const changedPath = relative(
-            workspaceRoot,
+            watchWorkspaceRoot,
             join(root, filename.toString()),
           );
           if (isProviderSyncWorkspaceWatchPath(changedPath)) onChange();
@@ -409,8 +411,8 @@ const createWorkspaceWatchers = (
 };
 
 const createSharedWatchers = (onChange: () => void): FSWatcher[] => {
-  const userConfigRoot = dirname(getUserConfigPath());
-  const stateRoot = getProviderEnrollmentStateDirectory();
+  const userConfigRoot = resolveWatcherRoot(dirname(getUserConfigPath()));
+  const stateRoot = resolveWatcherRoot(getProviderEnrollmentStateDirectory());
   const userRoots = [userConfigRoot];
   const watchers: FSWatcher[] = [];
 
@@ -419,7 +421,7 @@ const createSharedWatchers = (onChange: () => void): FSWatcher[] => {
       watchers.push(
         watch(
           root,
-          { recursive: process.platform !== "linux" },
+          { recursive: false },
           (_eventType, filename) => {
             if (!filename) return onChange();
             const changedPath = relative(

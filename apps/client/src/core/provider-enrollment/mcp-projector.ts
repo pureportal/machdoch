@@ -1,4 +1,5 @@
 import type { AgentCliProvider } from "../runtime-contract.generated.js";
+import { loadRuntimeEnvironment } from "../env.js";
 import {
   listEnabledMcpServers,
   loadMcpConfig,
@@ -12,47 +13,71 @@ import type {
 } from "../mcp/types.js";
 import { PROVIDER_CAPABILITY_REGISTRY } from "./capability-registry.js";
 import { digestJson } from "./digests.js";
-import type {
-  McpProjectedServer,
-  McpProjection,
-} from "./types.js";
+import {
+  assertMachdochCliLaunch,
+  resolveMachdochCliLaunch,
+  type MachdochCliLaunch,
+} from "./machdoch-cli-launch.js";
+import { isMcpToolEnabledForProjection } from "./mcp-tool-exposure.js";
+import type { McpProjectedServer, McpProjection } from "./types.js";
 
-interface McpProjectionOptions {
+export interface McpProjectionOptions {
   persistent?: boolean;
   scope?: "user" | "workspace";
-  machdochCommand?: string;
+  machdochCliLaunch?: MachdochCliLaunch;
 }
 
-const getCapabilities = (discovery: McpServerDiscovery | undefined): string[] => {
+const ENVIRONMENT_TEMPLATE_PATTERN = /\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}/gu;
+const HAS_ENVIRONMENT_TEMPLATE_PATTERN = /\$\{env:[A-Za-z_][A-Za-z0-9_]*\}/u;
+
+const getCapabilities = (
+  discovery: McpServerDiscovery | undefined,
+  server: McpEffectiveServerConfig,
+): string[] => {
   const capabilities: string[] = [];
-  if ((discovery?.tools.length ?? 0) > 0) capabilities.push("tools");
-  if ((discovery?.resources.length ?? 0) > 0 || (discovery?.resourceTemplates.length ?? 0) > 0) {
+  if (
+    discovery?.tools.some((tool) =>
+      isMcpToolEnabledForProjection(server, tool.name),
+    )
+  ) {
+    capabilities.push("tools");
+  }
+  if (
+    (discovery?.resources.length ?? 0) > 0 ||
+    (discovery?.resourceTemplates.length ?? 0) > 0
+  ) {
     capabilities.push("resources");
   }
   if ((discovery?.prompts.length ?? 0) > 0) capabilities.push("prompts");
   if (discovery?.instructions) capabilities.push("initialization-instructions");
-  if (discovery?.capabilities && "tasks" in discovery.capabilities) capabilities.push("tasks");
+  if (
+    server.tasks !== "disabled" &&
+    discovery?.capabilities &&
+    "tasks" in discovery.capabilities
+  )
+    capabilities.push("tasks");
   return capabilities.length > 0 ? capabilities : ["unknown-until-connect"];
 };
 
-const hasResolvedSecretMaterial = (server: McpEffectiveServerConfig): boolean => {
-  if (server.auth?.type === "oauth") return true;
-  if (server.auth?.type === "bearer" && server.auth.token) return true;
-  if (
-    server.auth?.type === "headers" &&
-    Object.keys(server.auth.headers ?? {}).length > 0
-  ) {
-    return true;
-  }
-  if (server.transport.type === "stdio" && server.transport.env) {
-    return Object.values(server.transport.env).some(
-      (value) => !/^\$\{env:[A-Za-z_][A-Za-z0-9_]*\}$/u.test(value),
-    );
-  }
-  if (server.transport.type !== "stdio" && server.transport.headers) {
-    return Object.keys(server.transport.headers).length > 0;
-  }
-  return false;
+const hasEnvironmentTemplate = (value: string): boolean => {
+  return HAS_ENVIRONMENT_TEMPLATE_PATTERN.test(value);
+};
+
+const transportHasTemplates = (server: McpEffectiveServerConfig): boolean => {
+  const transport = server.transport;
+  const values =
+    transport.type === "stdio"
+      ? [
+          transport.command,
+          ...(transport.args ?? []),
+          ...(transport.cwd ? [transport.cwd] : []),
+          ...Object.values(transport.env ?? {}),
+        ]
+      : [transport.url, ...Object.values(transport.headers ?? {})];
+  return values.some(
+    (value) =>
+      hasEnvironmentTemplate(value) || value.includes("${workspaceRoot}"),
+  );
 };
 
 const shouldProxyServer = (
@@ -62,28 +87,66 @@ const shouldProxyServer = (
   projectedId: string,
 ): string | undefined => {
   const profile = PROVIDER_CAPABILITY_REGISTRY[provider];
-  if (!(profile.supportedMcpTransports as readonly string[]).includes(server.transport.type)) {
+  if (
+    !(profile.supportedMcpTransports as readonly string[]).includes(
+      server.transport.type,
+    )
+  ) {
     return `${provider} cannot directly represent ${server.transport.type}.`;
   }
-  if (hasResolvedSecretMaterial(server)) {
+  if (server.auth && server.auth.type !== "none") {
     return "Provider enrollment files must not contain resolved secret material.";
+  }
+  if (
+    server.transport.type === "stdio" &&
+    (Object.keys(server.transport.env ?? {}).length > 0 ||
+      server.transport.inheritEnvironment === true ||
+      server.transport.stderr !== undefined)
+  ) {
+    return "Provider-native configuration cannot preserve the MCP server environment and stdio policy.";
+  }
+  if (
+    server.transport.type !== "stdio" &&
+    Object.keys(server.transport.headers ?? {}).length > 0
+  ) {
+    return "Provider enrollment files must not contain resolved HTTP header material.";
+  }
+  if (
+    server.transport.type === "streamable-http" &&
+    (server.transport.sessionId !== undefined ||
+      server.transport.legacySseFallback !== undefined)
+  ) {
+    return "Provider-native configuration cannot preserve the streamable HTTP session policy.";
+  }
+  if (transportHasTemplates(server)) {
+    return "Provider-native configuration cannot resolve Machdoch MCP templates consistently.";
   }
   if (server.sampling !== "disabled") {
     return "Provider-native configuration cannot preserve Machdoch sampling policy.";
   }
-  if (Array.isArray(server.roots)) {
-    return "Provider-native configuration cannot preserve explicit Machdoch roots.";
+  if (server.roots !== "workspace") {
+    return "Provider-native configuration cannot preserve the Machdoch roots policy.";
   }
   const directToolExposure = server.exposure?.directTools;
+  const directToolsEnabled =
+    typeof directToolExposure === "boolean"
+      ? directToolExposure
+      : directToolExposure?.enabled !== false;
+  if (!directToolsEnabled || server.exposure?.mode === "meta-tools") {
+    return "Provider-native configuration cannot preserve disabled direct MCP tool exposure.";
+  }
   if (
-    (typeof directToolExposure === "object" && directToolExposure !== null && (
-      (directToolExposure.include?.length ?? 0) > 0 ||
-      (directToolExposure.exclude?.length ?? 0) > 0 ||
-      Boolean(directToolExposure.namespacePrefix)
-    )) ||
-    server.toolOverrides
+    (typeof directToolExposure === "object" &&
+      directToolExposure !== null &&
+      ((directToolExposure.include?.length ?? 0) > 0 ||
+        (directToolExposure.exclude?.length ?? 0) > 0 ||
+        Boolean(directToolExposure.namespacePrefix))) ||
+    Object.keys(server.toolOverrides ?? {}).length > 0
   ) {
     return "Provider-native configuration cannot preserve Machdoch tool exposure overrides.";
+  }
+  if (server.tasks === "disabled") {
+    return "Provider-native configuration cannot preserve disabled MCP task exposure.";
   }
   if (
     provider === "copilot-cli" &&
@@ -100,101 +163,72 @@ const createProjectedServerId = (
   persistent: boolean,
 ): string => {
   if (!persistent && provider !== "copilot-cli") return serverId;
-  const slug = serverId
-    .toLocaleLowerCase("en-US")
-    .replace(/[^a-z0-9_-]+/gu, "-")
-    .replace(/^-+|-+$/gu, "")
-    .slice(0, 4) || "srv";
+  const slug =
+    serverId
+      .toLocaleLowerCase("en-US")
+      .replace(/[^a-z0-9_-]+/gu, "-")
+      .replace(/^-+|-+$/gu, "")
+      .slice(0, 4) || "srv";
   return `machdoch-${slug}-${digestJson(serverId).slice(0, 8)}`;
 };
 
-const resolveTemplateForProvider = (value: string): string => {
-  return value.replace(
-    /^\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}$/u,
-    "${$1}",
-  );
-};
-
-const mapEnvironment = (
-  values: Record<string, string> | undefined,
-): Record<string, string> | undefined => {
-  if (!values) return undefined;
-  return Object.fromEntries(
-    Object.entries(values).map(([key, value]) => [
-      key,
-      resolveTemplateForProvider(value),
-    ]),
-  );
-};
-
-const getHttpHeaders = (
+const toCodexConfig = (
   server: McpEffectiveServerConfig,
-): Record<string, string> | undefined => {
-  if (server.transport.type === "stdio") return undefined;
-  const headers = { ...(server.transport.headers ?? {}) };
-  const auth = server.auth;
-  if (auth?.type === "bearer") {
-    const token = auth.tokenEnv ? `\${${auth.tokenEnv}}` : auth.token;
-    if (token) headers[auth.headerName ?? "Authorization"] = `Bearer ${token}`;
-  } else if (auth?.type === "headers") {
-    Object.assign(headers, auth.headers ?? {});
-    for (const [header, envKey] of Object.entries(auth.envHeaders ?? {})) {
-      headers[header] = `\${${envKey}}`;
-    }
-  }
-  return Object.keys(headers).length > 0 ? headers : undefined;
-};
-
-const toCodexConfig = (server: McpEffectiveServerConfig): Record<string, unknown> => {
+): Record<string, unknown> => {
   if (server.transport.type === "stdio") {
     return {
       command: server.transport.command,
       ...(server.transport.args ? { args: server.transport.args } : {}),
       ...(server.transport.cwd ? { cwd: server.transport.cwd } : {}),
-      ...(server.transport.env ? { env: mapEnvironment(server.transport.env) } : {}),
+      ...(server.transport.env ? { env: server.transport.env } : {}),
       startup_timeout_sec: Math.ceil(server.timeoutMs / 1_000),
       tool_timeout_sec: Math.ceil(server.maxTotalTimeoutMs / 1_000),
     };
   }
   return {
     url: server.transport.url,
-    ...(getHttpHeaders(server) ? { http_headers: getHttpHeaders(server) } : {}),
+    startup_timeout_sec: Math.ceil(server.timeoutMs / 1_000),
+    tool_timeout_sec: Math.ceil(server.maxTotalTimeoutMs / 1_000),
   };
 };
 
-const toClaudeConfig = (server: McpEffectiveServerConfig): Record<string, unknown> => {
+const toClaudeConfig = (
+  server: McpEffectiveServerConfig,
+): Record<string, unknown> => {
   if (server.transport.type === "stdio") {
     return {
       type: "stdio",
       command: server.transport.command,
       ...(server.transport.args ? { args: server.transport.args } : {}),
       ...(server.transport.cwd ? { cwd: server.transport.cwd } : {}),
-      ...(server.transport.env ? { env: mapEnvironment(server.transport.env) } : {}),
+      ...(server.transport.env ? { env: server.transport.env } : {}),
     };
   }
   return {
     type: server.transport.type === "sse" ? "sse" : "http",
     url: server.transport.url,
-    ...(getHttpHeaders(server) ? { headers: getHttpHeaders(server) } : {}),
   };
 };
 
-const toCopilotConfig = (server: McpEffectiveServerConfig): Record<string, unknown> => {
+const toCopilotConfig = (
+  server: McpEffectiveServerConfig,
+): Record<string, unknown> => {
   if (server.transport.type === "stdio") {
     return {
       type: "local",
       command: server.transport.command,
       ...(server.transport.args ? { args: server.transport.args } : {}),
       ...(server.transport.cwd ? { cwd: server.transport.cwd } : {}),
-      ...(server.transport.env ? { env: mapEnvironment(server.transport.env) } : {}),
+      ...(server.transport.env ? { env: server.transport.env } : {}),
       tools: ["*"],
+      timeout: server.timeoutMs,
     };
   }
   return {
     type: server.transport.type === "sse" ? "sse" : "http",
     url: server.transport.url,
-    ...(getHttpHeaders(server) ? { headers: getHttpHeaders(server) } : {}),
     tools: ["*"],
+    timeout: server.timeoutMs,
   };
 };
 
@@ -214,21 +248,35 @@ const mapNativeServer = (
 
 const createProxyConfig = (
   provider: AgentCliProvider,
-  serverId: string,
+  server: McpEffectiveServerConfig,
   workspaceRoot: string,
-  machdochCommand: string,
+  launch: MachdochCliLaunch,
+  scope: McpProjectionOptions["scope"],
+  environmentKeys: readonly string[],
 ): Record<string, unknown> => {
   const proxyServer: McpEffectiveServerConfig = {
-    id: `machdoch-${serverId}`,
+    id: `machdoch-${server.id}`,
     enabled: true,
     transport: {
       type: "stdio",
-      command: machdochCommand,
-      args: ["mcp", "proxy", serverId, "--cwd", workspaceRoot],
+      command: launch.command,
+      args: [
+        ...launch.args,
+        "mcp",
+        "proxy",
+        server.id,
+        ...(scope === "user"
+          ? ["--scope", "user"]
+          : ["--cwd", workspaceRoot]),
+      ],
+      ...(scope === "user" ? {} : { cwd: launch.cwd }),
+      ...(Object.keys(launch.environment).length > 0
+        ? { env: launch.environment }
+        : {}),
     },
     securityProfile: "weak",
-    timeoutMs: 60_000,
-    maxTotalTimeoutMs: 300_000,
+    timeoutMs: server.timeoutMs,
+    maxTotalTimeoutMs: server.maxTotalTimeoutMs,
     idleShutdownMs: 900_000,
     maxResponseChars: 60_000,
     cache: { enabled: false, ttlMs: 0, forceRefresh: false },
@@ -237,7 +285,151 @@ const createProxyConfig = (
     tasks: "optional",
     sources: ["override"],
   };
-  return mapNativeServer(provider, proxyServer);
+  const providerConfig = mapNativeServer(provider, proxyServer);
+  return {
+    ...providerConfig,
+    ...(provider === "copilot-cli"
+      ? { timeout: server.maxTotalTimeoutMs }
+      : {}),
+    ...(provider === "codex-cli" && environmentKeys.length > 0
+      ? { env_vars: environmentKeys }
+      : {}),
+  };
+};
+
+const collectEnvironmentTemplateKeys = (
+  value: unknown,
+  keys: Set<string>,
+): void => {
+  if (typeof value === "string") {
+    for (const match of value.matchAll(ENVIRONMENT_TEMPLATE_PATTERN)) {
+      const key = match[1];
+      if (key) keys.add(key);
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) collectEnvironmentTemplateKeys(entry, keys);
+    return;
+  }
+  if (typeof value === "object" && value !== null) {
+    for (const entry of Object.values(value)) {
+      collectEnvironmentTemplateKeys(entry, keys);
+    }
+  }
+};
+
+interface ServerEnvironmentReferences {
+  required: Set<string>;
+  optional: Set<string>;
+}
+
+const getServerEnvironmentReferences = (
+  server: McpEffectiveServerConfig,
+): ServerEnvironmentReferences => {
+  const required = new Set<string>();
+  const optional = new Set<string>();
+  collectEnvironmentTemplateKeys(server.transport, required);
+  collectEnvironmentTemplateKeys(server.auth, required);
+  const auth = server.auth;
+  if (auth?.type === "bearer" && !auth.token && auth.tokenEnv) {
+    optional.add(auth.tokenEnv);
+  }
+  if (auth?.type === "headers") {
+    for (const key of Object.values(auth.envHeaders ?? {})) {
+      optional.add(key);
+    }
+  }
+  if (auth?.type === "oauth") {
+    for (const key of [
+      auth.clientSecret ? undefined : auth.clientSecretEnv,
+      auth.accessToken ? undefined : auth.accessTokenEnv,
+      auth.refreshToken ? undefined : auth.refreshTokenEnv,
+    ]) {
+      if (key) optional.add(key);
+    }
+  }
+  for (const key of required) optional.delete(key);
+  return { required, optional };
+};
+
+const getEnvironmentValue = (
+  environment: Record<string, string>,
+  key: string,
+): string | undefined => {
+  const direct = environment[key];
+  if (direct !== undefined || process.platform !== "win32") return direct;
+  const canonicalKey = key.toLocaleUpperCase("en-US");
+  return Object.entries(environment).find(
+    ([candidate]) => candidate.toLocaleUpperCase("en-US") === canonicalKey,
+  )?.[1];
+};
+
+const resolveProjectionEnvironment = async (
+  servers: readonly McpEffectiveServerConfig[],
+): Promise<Record<string, string>> => {
+  const requiredKeys = new Set<string>();
+  const optionalKeys = new Set<string>();
+  let inheritEnvironment = false;
+  for (const server of servers) {
+    const references = getServerEnvironmentReferences(server);
+    for (const key of references.required) requiredKeys.add(key);
+    for (const key of references.optional) optionalKeys.add(key);
+    inheritEnvironment ||=
+      server.transport.type === "stdio" &&
+      server.transport.inheritEnvironment === true;
+  }
+  for (const key of requiredKeys) optionalKeys.delete(key);
+  if (
+    !inheritEnvironment &&
+    requiredKeys.size === 0 &&
+    optionalKeys.size === 0
+  ) {
+    return {};
+  }
+  const runtimeEnvironment = {
+    ...Object.fromEntries(
+      Object.entries(process.env).filter(
+        (entry): entry is [string, string] => entry[1] !== undefined,
+      ),
+    ),
+    ...(await loadRuntimeEnvironment()),
+  };
+  if (inheritEnvironment) return runtimeEnvironment;
+
+  const environment: Record<string, string> = {};
+  for (const key of requiredKeys) {
+    const value = getEnvironmentValue(runtimeEnvironment, key);
+    if (value === undefined || value.trim().length === 0) {
+      throw new Error(
+        `Central MCP configuration requires environment variable ${key}, but it is unavailable for CLI-provider enrollment.`,
+      );
+    }
+    environment[key] = value;
+  }
+  for (const key of optionalKeys) {
+    const value = getEnvironmentValue(runtimeEnvironment, key);
+    if (value !== undefined && value.trim().length > 0) {
+      environment[key] = value;
+    }
+  }
+  return environment;
+};
+
+const getProxyEnvironmentKeys = (
+  server: McpEffectiveServerConfig,
+  environment: Record<string, string>,
+): string[] => {
+  if (
+    server.transport.type === "stdio" &&
+    server.transport.inheritEnvironment === true
+  ) {
+    return Object.keys(environment).sort();
+  }
+  const references = getServerEnvironmentReferences(server);
+  return [...references.required, ...references.optional]
+    .filter((key) => getEnvironmentValue(environment, key) !== undefined)
+    .sort();
 };
 
 const createProviderConfig = (
@@ -261,14 +453,19 @@ export const projectMcpForProvider = async (
     options.scope === "user"
       ? loadUserMcpDiscoveryCacheSync().servers
       : loadMcpDiscoveryCacheSync(workspaceRoot).servers;
-  const enabledServers = listEnabledMcpServers(effectiveConfig).filter((server) => {
-    if (!options.scope) return true;
-    const isWorkspaceServer = server.sources.includes("workspace");
-    return options.scope === "workspace" ? isWorkspaceServer : !isWorkspaceServer;
-  });
+  const enabledServers = listEnabledMcpServers(effectiveConfig).filter(
+    (server) => {
+      if (!options.scope) return true;
+      const isWorkspaceServer = server.sources.includes("workspace");
+      return options.scope === "workspace"
+        ? isWorkspaceServer
+        : !isWorkspaceServer;
+    },
+  );
   const projectedServers: McpProjectedServer[] = [];
   const warnings: string[] = [];
-  const machdochCommand = options.machdochCommand ?? process.env.MACHDOCH_CLI_PATH ?? "machdoch";
+  const environment = await resolveProjectionEnvironment(enabledServers);
+  let machdochCliLaunch: MachdochCliLaunch | undefined;
 
   for (const server of enabledServers) {
     const projectedId = createProjectedServerId(
@@ -282,14 +479,26 @@ export const projectMcpForProvider = async (
       discovery[server.id],
       projectedId,
     );
-    const capabilities = getCapabilities(discovery[server.id]);
+    const capabilities = getCapabilities(discovery[server.id], server);
     const serverDigest = digestJson({
       server,
       discovery: discovery[server.id],
     });
 
     if (proxyReason) {
-      warnings.push(`${server.id}: ${proxyReason} Using the per-server stdio proxy.`);
+      try {
+        machdochCliLaunch ??= options.machdochCliLaunch
+          ? assertMachdochCliLaunch(options.machdochCliLaunch)
+          : resolveMachdochCliLaunch();
+      } catch (error) {
+        throw new Error(
+          `MCP server \`${server.id}\` requires the ${provider} stdio proxy, but Machdoch could not construct a launchable CLI command: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
+        );
+      }
+      warnings.push(
+        `${server.id}: ${proxyReason} Using the per-server stdio proxy.`,
+      );
       projectedServers.push({
         id: projectedId,
         canonicalId: server.id,
@@ -297,9 +506,11 @@ export const projectMcpForProvider = async (
         route: "cli-stdio-proxy",
         providerConfig: createProxyConfig(
           provider,
-          server.id,
+          server,
           workspaceRoot,
-          machdochCommand,
+          machdochCliLaunch,
+          options.scope,
+          getProxyEnvironmentKeys(server, environment),
         ),
         capabilities,
         warnings: [proxyReason],
@@ -334,6 +545,7 @@ export const projectMcpForProvider = async (
     ),
     servers: projectedServers,
     config,
+    environment,
     warnings,
   };
 };

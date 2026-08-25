@@ -208,7 +208,9 @@ const printDiscoveryLines = (
     }
   }
 
-  const printNamed = <T extends { name?: string; uri?: string; uriTemplate?: string }>(
+  const printNamed = <
+    T extends { name?: string; uri?: string; uriTemplate?: string },
+  >(
     label: string,
     values: T[],
     selector: (value: T) => string,
@@ -241,7 +243,10 @@ const printDiscoveryLines = (
   );
 };
 
-const printCacheLines = (config: McpEffectiveConfig, workspaceRoot: string): void => {
+const printCacheLines = (
+  config: McpEffectiveConfig,
+  workspaceRoot: string,
+): void => {
   const cache = loadMcpDiscoveryCacheSync(workspaceRoot);
   const discoveries = Object.values(cache.servers);
 
@@ -260,29 +265,31 @@ const printUnknownResult = (label: string, result: unknown): void => {
   writeStdoutLine(JSON.stringify(result, null, 2));
 };
 
-export const printMcpSummary = async (
-  args: ParsedCliArgs,
-): Promise<void> => {
-  const options: McpCliOptions = args.mcp ?? fail("No MCP action was provided.");
+export const printMcpSummary = async (args: ParsedCliArgs): Promise<void> => {
+  const options: McpCliOptions =
+    args.mcp ?? fail("No MCP action was provided.");
   let proxyOwnsClientLifecycle = false;
 
   try {
     switch (options.action) {
       case "proxy": {
         proxyOwnsClientLifecycle = true;
-        const serverId = options.serverId ??
+        const serverId =
+          options.serverId ??
           fail("Expected a server id after `machdoch mcp proxy`.");
-        const { runMcpStdioProxy } = await import(
-          "../../core/provider-enrollment/mcp-proxy/server.js"
+        const { runMcpStdioProxy } =
+          await import("../../core/provider-enrollment/mcp-proxy/server.js");
+        await runMcpStdioProxy(
+          args.workspaceRoot,
+          serverId,
+          options.projectionScope,
         );
-        await runMcpStdioProxy(args.workspaceRoot, serverId);
         return;
       }
       case "broker": {
         proxyOwnsClientLifecycle = true;
-        const { runMcpStdioProxy } = await import(
-          "../../core/provider-enrollment/mcp-proxy/server.js"
-        );
+        const { runMcpStdioProxy } =
+          await import("../../core/provider-enrollment/mcp-proxy/server.js");
         await runMcpStdioProxy(args.workspaceRoot);
         return;
       }
@@ -328,8 +335,11 @@ export const printMcpSummary = async (
       }
       case "discover":
       case "refresh": {
-        const serverId = options.serverId ??
-          fail(`Expected a server id after \`machdoch mcp ${options.action}\`.`);
+        const serverId =
+          options.serverId ??
+          fail(
+            `Expected a server id after \`machdoch mcp ${options.action}\`.`,
+          );
         const result = await mcpClientManager.discoverServerById(
           args.workspaceRoot,
           serverId,
@@ -350,7 +360,8 @@ export const printMcpSummary = async (
         return;
       }
       case "oauth-authorize": {
-        const serverId = options.serverId ??
+        const serverId =
+          options.serverId ??
           fail("Expected a server id after `machdoch mcp oauth-authorize`.");
         const result = await mcpClientManager.authorizeOAuth(
           args.workspaceRoot,
@@ -376,9 +387,13 @@ export const printMcpSummary = async (
         return;
       }
       case "oauth-start": {
-        const serverId = options.serverId ??
+        const serverId =
+          options.serverId ??
           fail("Expected a server id after `machdoch mcp oauth-start`.");
-        const result = await mcpClientManager.beginOAuth(args.workspaceRoot, serverId);
+        const result = await mcpClientManager.beginOAuth(
+          args.workspaceRoot,
+          serverId,
+        );
 
         if (args.json) {
           printJson({ workspaceRoot: args.workspaceRoot, result });
@@ -395,10 +410,14 @@ export const printMcpSummary = async (
         return;
       }
       case "oauth-finish": {
-        const serverId = options.serverId ??
+        const serverId =
+          options.serverId ??
           fail("Expected a server id after `machdoch mcp oauth-finish`.");
-        const authorizationResponse = options.target ??
-          fail("Expected a callback URL or code after `machdoch mcp oauth-finish <server-id>`.");
+        const authorizationResponse =
+          options.target ??
+          fail(
+            "Expected a callback URL or code after `machdoch mcp oauth-finish <server-id>`.",
+          );
         const result = await mcpClientManager.finishOAuth(
           args.workspaceRoot,
           serverId,
@@ -420,10 +439,14 @@ export const printMcpSummary = async (
         return;
       }
       case "call-tool": {
-        const serverId = options.serverId ??
+        const serverId =
+          options.serverId ??
           fail("Expected a server id after `machdoch mcp call-tool`.");
-        const toolName = options.target ??
-          fail("Expected a tool name after `machdoch mcp call-tool <server-id>`.");
+        const toolName =
+          options.target ??
+          fail(
+            "Expected a tool name after `machdoch mcp call-tool <server-id>`.",
+          );
         const result = await mcpClientManager.callTool(
           args.workspaceRoot,
           serverId,
@@ -440,10 +463,14 @@ export const printMcpSummary = async (
         return;
       }
       case "read-resource": {
-        const serverId = options.serverId ??
+        const serverId =
+          options.serverId ??
           fail("Expected a server id after `machdoch mcp read-resource`.");
-        const uri = options.target ??
-          fail("Expected a URI after `machdoch mcp read-resource <server-id>`.");
+        const uri =
+          options.target ??
+          fail(
+            "Expected a URI after `machdoch mcp read-resource <server-id>`.",
+          );
         const result = await mcpClientManager.readResource(
           args.workspaceRoot,
           serverId,
@@ -459,10 +486,14 @@ export const printMcpSummary = async (
         return;
       }
       case "get-prompt": {
-        const serverId = options.serverId ??
+        const serverId =
+          options.serverId ??
           fail("Expected a server id after `machdoch mcp get-prompt`.");
-        const promptName = options.target ??
-          fail("Expected a prompt name after `machdoch mcp get-prompt <server-id>`.");
+        const promptName =
+          options.target ??
+          fail(
+            "Expected a prompt name after `machdoch mcp get-prompt <server-id>`.",
+          );
         const result = await mcpClientManager.getPrompt(
           args.workspaceRoot,
           serverId,

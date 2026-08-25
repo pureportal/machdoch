@@ -93,6 +93,7 @@ export interface McpProjection {
   catalogDigest: string;
   servers: McpProjectedServer[];
   config: Record<string, unknown>;
+  environment: Record<string, string>;
   warnings: string[];
 }
 

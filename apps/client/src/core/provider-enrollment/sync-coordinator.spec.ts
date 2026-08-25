@@ -477,6 +477,101 @@ describe("provider sync coordinator", () => {
     await expect(stat(projectedPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("removes a stale generated target when a replacement projection fails", async () => {
+    const root = await createRoot();
+    const workspaceRoot = join(root, "workspace");
+    const userConfigRoot = join(root, "user-config");
+    const codexHome = join(root, "codex-home");
+    await Promise.all([
+      mkdir(workspaceRoot, { recursive: true }),
+      mkdir(userConfigRoot, { recursive: true }),
+      mkdir(codexHome, { recursive: true }),
+    ]);
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+    vi.stubEnv("CODEX_HOME", codexHome);
+    vi.stubEnv("MISSING_SYNC_MCP_TOKEN", "");
+    await writeFile(
+      join(userConfigRoot, "user-config.json"),
+      `${JSON.stringify({
+        agentCliPaths: { "codex-cli": process.execPath },
+        providerEnrollment: {
+          schemaVersion: 1,
+          enabled: true,
+          persistentSync: {
+            enabled: true,
+            watch: false,
+            daemonAtLogin: false,
+          },
+          providers: {
+            "codex-cli": { enabled: true },
+            "claude-cli": { enabled: false },
+            "copilot-cli": { enabled: false },
+          },
+        },
+      })}\n`,
+      "utf8",
+    );
+    const mcpPath = join(userConfigRoot, "mcp.json");
+    await writeFile(
+      mcpPath,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        servers: [
+          {
+            id: "user-server",
+            enabled: true,
+            transport: { type: "stdio", command: process.execPath },
+          },
+        ],
+      })}\n`,
+      "utf8",
+    );
+    const projectedPath = join(codexHome, "config.toml");
+
+    await reconcileProviderSync(workspaceRoot);
+    await expect(stat(projectedPath)).resolves.toBeDefined();
+
+    await writeFile(
+      mcpPath,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        servers: [
+          {
+            id: "user-server",
+            enabled: true,
+            transport: {
+              type: "stdio",
+              command: process.execPath,
+              args: ["${env:MISSING_SYNC_MCP_TOKEN}"],
+            },
+          },
+        ],
+      })}\n`,
+      "utf8",
+    );
+
+    const status = await reconcileProviderSync(workspaceRoot);
+
+    expect(status.targets).toContainEqual(
+      expect.objectContaining({
+        provider: "codex-cli",
+        scope: "user",
+        state: "degraded",
+        error: expect.stringContaining("MISSING_SYNC_MCP_TOKEN"),
+      }),
+    );
+    await expect(stat(projectedPath)).rejects.toMatchObject({ code: "ENOENT" });
+    const ownership = JSON.parse(
+      await readFile(getProviderSyncOwnershipPath(), "utf8"),
+    ) as { targets: Array<{ provider: string; scope: string }> };
+    expect(
+      ownership.targets.some(
+        (target) =>
+          target.provider === "codex-cli" && target.scope === "user",
+      ),
+    ).toBe(false);
+  });
+
   it("writes exclusions to Git's actual linked-worktree exclude path", async () => {
     try {
       await execFileAsync("git", ["--version"], { windowsHide: true });

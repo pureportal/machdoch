@@ -108,7 +108,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 };
 
 const isStringArray = (value: unknown): value is string[] => {
-  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+  return (
+    Array.isArray(value) && value.every((entry) => typeof entry === "string")
+  );
 };
 
 const coerceRecordOfStrings = (
@@ -130,7 +132,9 @@ const coerceRecordOfStrings = (
 };
 
 const coerceStringArray = (value: unknown): string[] | undefined => {
-  return isStringArray(value) ? value.filter((entry) => entry.trim().length > 0) : undefined;
+  return isStringArray(value)
+    ? value.filter((entry) => entry.trim().length > 0)
+    : undefined;
 };
 
 const coercePositiveInteger = (
@@ -169,7 +173,9 @@ const isSecurityProfile = (value: unknown): value is McpSecurityProfile => {
 };
 
 const isExposureMode = (value: unknown): value is McpExposureMode => {
-  return value === "meta-tools" || value === "direct-tools" || value === "hybrid";
+  return (
+    value === "meta-tools" || value === "direct-tools" || value === "hybrid"
+  );
 };
 
 const isSamplingMode = (value: unknown): value is McpSamplingMode => {
@@ -188,9 +194,7 @@ const isElicitationMode = (value: unknown): value is McpElicitationMode => {
   return value === "disabled";
 };
 
-const isToolEffect = (
-  value: unknown,
-): value is ToolCallEffect => {
+const isToolEffect = (value: unknown): value is ToolCallEffect => {
   return (
     value === "read" ||
     value === "write" ||
@@ -199,9 +203,7 @@ const isToolEffect = (
   );
 };
 
-const isRiskLevel = (
-  value: unknown,
-): value is ToolRiskLevel => {
+const isRiskLevel = (value: unknown): value is ToolRiskLevel => {
   return value === "low" || value === "medium" || value === "high";
 };
 
@@ -239,7 +241,9 @@ const coerceDirectToolExposure = (
   return exposure;
 };
 
-const coerceExposure = (value: unknown): McpServerExposureConfig | undefined => {
+const coerceExposure = (
+  value: unknown,
+): McpServerExposureConfig | undefined => {
   if (!isRecord(value)) {
     return undefined;
   }
@@ -261,7 +265,9 @@ const coerceAuth = (value: unknown): McpAuthConfig | undefined => {
     return {
       type: "bearer",
       ...(typeof value.token === "string" ? { token: value.token } : {}),
-      ...(typeof value.tokenEnv === "string" ? { tokenEnv: value.tokenEnv } : {}),
+      ...(typeof value.tokenEnv === "string"
+        ? { tokenEnv: value.tokenEnv }
+        : {}),
       ...(typeof value.headerName === "string"
         ? { headerName: value.headerName }
         : {}),
@@ -422,7 +428,9 @@ const coerceHttpTransport = (
   value: Record<string, unknown>,
 ): McpStreamableHttpTransportConfig | undefined => {
   const url =
-    typeof value.url === "string" ? normalizeOptionalString(value.url) : undefined;
+    typeof value.url === "string"
+      ? normalizeOptionalString(value.url)
+      : undefined;
 
   if (!url) {
     return undefined;
@@ -457,7 +465,9 @@ const coerceSseTransport = (
   value: Record<string, unknown>,
 ): McpTransportConfig | undefined => {
   const url =
-    typeof value.url === "string" ? normalizeOptionalString(value.url) : undefined;
+    typeof value.url === "string"
+      ? normalizeOptionalString(value.url)
+      : undefined;
 
   if (!url) {
     return undefined;
@@ -673,10 +683,7 @@ const coerceServerList = (value: unknown): McpServerOverride[] => {
 const parseMcpConfigFile = (raw: string): McpConfigFile => {
   const parsed: unknown = JSON.parse(raw);
 
-  if (
-    !isRecord(parsed) ||
-    parsed.schemaVersion !== MCP_CONFIG_SCHEMA_VERSION
-  ) {
+  if (!isRecord(parsed) || parsed.schemaVersion !== MCP_CONFIG_SCHEMA_VERSION) {
     throw new Error(
       `MCP config schemaVersion must be ${MCP_CONFIG_SCHEMA_VERSION}; recreate the configuration.`,
     );
@@ -698,12 +705,16 @@ const createEmptyMcpConfigFile = (): McpConfigFile => ({
 
 const readConfigFile = async (path: string): Promise<McpConfigFile> => {
   const raw = await readStableMcpConfigurationFile(path);
-  return raw === undefined ? createEmptyMcpConfigFile() : parseMcpConfigFile(raw);
+  return raw === undefined
+    ? createEmptyMcpConfigFile()
+    : parseMcpConfigFile(raw);
 };
 
 const readConfigFileSync = (path: string): McpConfigFile => {
   const raw = readStableMcpConfigurationFileSync(path);
-  return raw === undefined ? createEmptyMcpConfigFile() : parseMcpConfigFile(raw);
+  return raw === undefined
+    ? createEmptyMcpConfigFile()
+    : parseMcpConfigFile(raw);
 };
 
 export const getUserMcpConfigPath = (): string => {
@@ -739,9 +750,13 @@ const mergeDefaults = (
   return {
     ...base,
     ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
-    ...(patch.securityProfile ? { securityProfile: patch.securityProfile } : {}),
+    ...(patch.securityProfile
+      ? { securityProfile: patch.securityProfile }
+      : {}),
     ...(patch.exposure ? { exposure: patch.exposure } : {}),
-    ...(patch.directTools !== undefined ? { directTools: patch.directTools } : {}),
+    ...(patch.directTools !== undefined
+      ? { directTools: patch.directTools }
+      : {}),
     ...(patch.timeoutMs !== undefined ? { timeoutMs: patch.timeoutMs } : {}),
     ...(patch.maxTotalTimeoutMs !== undefined
       ? { maxTotalTimeoutMs: patch.maxTotalTimeoutMs }
@@ -811,6 +826,30 @@ const mergeTransports = (
   return { ...base, ...patch } as McpTransportConfig;
 };
 
+const mergeExposure = (
+  base: McpServerExposureConfig | undefined,
+  patch: McpServerExposureConfig | undefined,
+): McpServerExposureConfig => {
+  const baseDirectTools = base?.directTools;
+  const patchDirectTools = patch?.directTools;
+  const directTools =
+    patchDirectTools === undefined
+      ? baseDirectTools
+      : typeof baseDirectTools === "object" &&
+          typeof patchDirectTools === "object"
+        ? { ...baseDirectTools, ...patchDirectTools }
+        : typeof baseDirectTools === "boolean" &&
+            typeof patchDirectTools === "object" &&
+            patchDirectTools.enabled === undefined
+          ? { ...patchDirectTools, enabled: baseDirectTools }
+        : patchDirectTools;
+  return {
+    ...(base ?? {}),
+    ...(patch ?? {}),
+    ...(directTools === undefined ? {} : { directTools }),
+  };
+};
+
 const mergeServers = (
   base: McpServerConfig,
   patch: McpServerConfig,
@@ -819,9 +858,11 @@ const mergeServers = (
     ...base,
     ...patch,
     transport: mergeTransports(base.transport, patch.transport),
-    ...(base.auth || patch.auth ? { auth: { ...base.auth, ...patch.auth } as McpAuthConfig } : {}),
+    ...(base.auth || patch.auth
+      ? { auth: { ...base.auth, ...patch.auth } as McpAuthConfig }
+      : {}),
     ...(base.exposure || patch.exposure
-      ? { exposure: { ...base.exposure, ...patch.exposure } }
+      ? { exposure: mergeExposure(base.exposure, patch.exposure) }
       : {}),
     ...(base.cache || patch.cache
       ? { cache: mergeCachePolicy(base.cache, patch.cache) }
@@ -851,7 +892,7 @@ const mergeServerPatch = (
       ? { auth: { ...base.auth, ...patch.auth } as McpAuthConfig }
       : {}),
     ...(base.exposure || patch.exposure
-      ? { exposure: { ...base.exposure, ...patch.exposure } }
+      ? { exposure: mergeExposure(base.exposure, patch.exposure) }
       : {}),
     ...(base.cache || patch.cache
       ? { cache: mergeCachePolicy(base.cache, patch.cache) }
@@ -915,18 +956,21 @@ const getExposureMode = (
   return server.exposure?.mode ?? defaults.exposure;
 };
 
-const getDirectToolsEnabled = (
+const getEffectiveDirectToolExposure = (
   server: McpServerConfig,
   defaults: McpEffectiveDefaults,
-): boolean => {
+): boolean | McpDirectToolExposureConfig => {
   const directTools = server.exposure?.directTools;
 
   if (typeof directTools === "boolean") {
     return directTools;
   }
 
-  if (isRecord(directTools) && typeof directTools.enabled === "boolean") {
-    return directTools.enabled;
+  if (directTools) {
+    return {
+      ...directTools,
+      enabled: directTools.enabled ?? defaults.directTools,
+    };
   }
 
   return defaults.directTools;
@@ -938,7 +982,7 @@ const applyServerDefaults = (
   sources: McpConfigSource[],
 ): McpEffectiveServerConfig => {
   const exposureMode = getExposureMode(server, defaults);
-  const directTools = getDirectToolsEnabled(server, defaults);
+  const directTools = getEffectiveDirectToolExposure(server, defaults);
 
   return {
     ...server,
@@ -970,7 +1014,9 @@ const coerceServerOverride = (
   }
 
   const rawId =
-    typeof value.id === "string" ? normalizeOptionalString(value.id) : fallbackId;
+    typeof value.id === "string"
+      ? normalizeOptionalString(value.id)
+      : fallbackId;
   const id = rawId ? normalizeServerId(rawId) : "";
 
   if (!id) {
@@ -981,7 +1027,9 @@ const coerceServerOverride = (
     coerceTransport(value.transport) ??
     coerceTransport({
       ...value,
-      ...(isRecord(value.requestInit) ? { requestInit: value.requestInit } : {}),
+      ...(isRecord(value.requestInit)
+        ? { requestInit: value.requestInit }
+        : {}),
     });
   const exposure = coerceExposure(value.exposure);
   const auth = coerceAuth(value.auth);
@@ -1119,7 +1167,8 @@ const createEffectiveConfig = (
   const userConfigPath = getUserMcpConfigPath();
   const workspaceConfigPath = getWorkspaceMcpConfigPath(workspaceRoot);
   const userDiscoveryCachePath = getUserMcpDiscoveryCachePath();
-  const workspaceDiscoveryCachePath = getWorkspaceMcpDiscoveryCachePath(workspaceRoot);
+  const workspaceDiscoveryCachePath =
+    getWorkspaceMcpDiscoveryCachePath(workspaceRoot);
   const defaults = mergeDefaults(
     mergeDefaults(
       mergeDefaults(DEFAULT_MCP_DEFAULTS, userConfig.defaults),
@@ -1139,7 +1188,11 @@ const createEffectiveConfig = (
   );
   addServerOverrides(servers, userConfig.servers ?? [], "user");
   addServerOverrides(servers, workspaceConfig.servers ?? [], "workspace");
-  addServerOverrides(servers, coerceOverrideServers(overrides?.servers), "override");
+  addServerOverrides(
+    servers,
+    coerceOverrideServers(overrides?.servers),
+    "override",
+  );
 
   return {
     defaults,
@@ -1162,7 +1215,12 @@ export const loadMcpConfig = async (
     readConfigFile(getWorkspaceMcpConfigPath(workspaceRoot)),
   ]);
 
-  return createEffectiveConfig(workspaceRoot, userConfig, workspaceConfig, overrides);
+  return createEffectiveConfig(
+    workspaceRoot,
+    userConfig,
+    workspaceConfig,
+    overrides,
+  );
 };
 
 export const loadUserMcpConfig = async (): Promise<McpEffectiveConfig> => {
@@ -1327,7 +1385,9 @@ const parseDiscoveryCache = (raw: string): McpDiscoveryCacheFile => {
         return [
           [
             serverId,
-            enrichMcpDiscoveryMetadata(discovery as unknown as McpServerDiscovery),
+            enrichMcpDiscoveryMetadata(
+              discovery as unknown as McpServerDiscovery,
+            ),
           ] as const,
         ];
       }),
