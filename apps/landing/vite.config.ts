@@ -6,7 +6,7 @@ const packageDirectory = path.dirname(fileURLToPath(import.meta.url));
 const canonicalUrlToken = "__MACHDOCH_CANONICAL_URL__";
 const siteUrlToken = "__MACHDOCH_SITE_URL__";
 const socialImageUrlToken = "__MACHDOCH_SOCIAL_IMAGE_URL__";
-const repositorySocialImageUrl =
+const developmentSocialImageUrl =
   "https://raw.githubusercontent.com/pureportal/machdoch/main/apps/landing/public/machdoch-app-social.jpg";
 
 function parseLandingUrl(value: string | undefined): URL | undefined {
@@ -15,19 +15,30 @@ function parseLandingUrl(value: string | undefined): URL | undefined {
     return undefined;
   }
 
-  const landingUrl = new URL(trimmedValue);
+  let landingUrl: URL;
+  try {
+    landingUrl = new URL(trimmedValue);
+  } catch {
+    throw new Error("MACHDOCH_LANDING_URL must be a valid absolute HTTPS URL.");
+  }
+
   if (landingUrl.protocol !== "https:") {
     throw new Error("MACHDOCH_LANDING_URL must use HTTPS.");
   }
   if (landingUrl.username || landingUrl.password) {
     throw new Error("MACHDOCH_LANDING_URL must not contain credentials.");
   }
-  if (landingUrl.search || landingUrl.hash) {
+  if (
+    landingUrl.search ||
+    landingUrl.hash ||
+    landingUrl.href.includes("?") ||
+    landingUrl.href.includes("#")
+  ) {
     throw new Error(
       "MACHDOCH_LANDING_URL must not contain a query or fragment.",
     );
   }
-  if (!landingUrl.pathname.endsWith("/")) {
+  if (!trimmedValue.endsWith("/")) {
     throw new Error("MACHDOCH_LANDING_URL must end with a trailing slash.");
   }
 
@@ -38,7 +49,7 @@ function createLandingSeoPlugin(landingUrl: URL | undefined): Plugin {
   const canonicalUrl = landingUrl?.href ?? "./";
   const socialImageUrl = landingUrl
     ? new URL("machdoch-app-social.jpg", landingUrl).href
-    : repositorySocialImageUrl;
+    : developmentSocialImageUrl;
   const sitemapUrl = landingUrl
     ? new URL("sitemap.xml", landingUrl).href
     : undefined;
@@ -109,6 +120,12 @@ export default defineConfig(({ mode }) => {
   const landingUrl = parseLandingUrl(
     process.env.MACHDOCH_LANDING_URL ?? environment.MACHDOCH_LANDING_URL,
   );
+
+  if (mode === "production" && !landingUrl) {
+    throw new Error(
+      "MACHDOCH_LANDING_URL must be set to a valid trailing-slash HTTPS URL for production builds.",
+    );
+  }
 
   return {
     appType: "mpa",
