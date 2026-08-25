@@ -42,6 +42,7 @@ apps/client/src-tauri/target-*/
 
 # Editor / tool local state
 .cache/
+.playwright-mcp/
 .parcel-cache/
 .idea/
 .vs/
