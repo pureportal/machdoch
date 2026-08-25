@@ -10,9 +10,9 @@ const autonomousRefactoringFlow: RalphFlow = {
   alias: "repository-refactor-validation-loop",
   name: "Repository Refactor & Validation Loop",
   description:
-    "Bounded autonomous refactor run that selects one dependency-aware package, implements it with progress-aware termination, validates it, and can be scheduled repeatedly without redundant same-run rediscovery.",
+    "Bounded autonomous refactor cycle that continues across eligible scopes, validates each completed package, and stops only after the current scope cycle is complete.",
   settings: {
-    maxTransitions: 240,
+    maxTransitions: 5_000,
     autonomy: {
       recoverFailedEnd: true,
       maxRecoveryAttempts: 3,
@@ -875,9 +875,24 @@ const autonomousRefactoringFlow: RalphFlow = {
       },
     },
     {
+      id: "scope-cycle-complete",
+      title: "Scope Cycle Complete?",
+      position: { x: 4420, y: 0 },
+      size: { width: 256, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "CONDITION",
+        condition: {
+          style: "javascript",
+          expression:
+            "(() => { const scanOutput = context.resultsByBlock?.['scan-scopes']?.output; if (!['SUCCESS', 'EMPTY', 'ERROR'].includes(scanOutput)) throw new Error('Refactor scope scan outcome is missing or invalid.'); if (scanOutput === 'EMPTY') return true; if (scanOutput === 'ERROR') throw new Error('Refactor scope scan failed.'); const selectionOutput = context.resultsByBlock?.['select-scope']?.output; if (!['SELECTED', 'EMPTY', 'ERROR'].includes(selectionOutput)) throw new Error('Refactor scope selection outcome is missing or invalid.'); if (selectionOutput === 'EMPTY') return true; if (selectionOutput === 'ERROR') throw new Error('Refactor scope selection failed.'); for (const id of ['mark-scope-result', 'defer-scope', 'mark-stop-scope', 'mark-invalid-scope']) { const completed = context.resultsByBlock?.[id]?.data?.cycleCompleted; if (completed !== undefined && typeof completed !== 'boolean') throw new Error('Refactor scope completion state is invalid.'); if (completed === true) return true; } return false; })()",
+        },
+      },
+    },
+    {
       id: "success",
       title: "Refactor Complete",
-      position: { x: 4420, y: 0 },
+      position: { x: 4760, y: 0 },
       size: { width: 256, height: 114 },
       type: "END",
       status: "success",
@@ -1475,16 +1490,16 @@ const autonomousRefactoringFlow: RalphFlow = {
       to: "retained-outcome-report",
     },
     {
-      id: "report-success-to-end",
+      id: "report-success-to-cycle",
       from: "final-report",
       fromOutput: "SUCCESS",
-      to: "success",
+      to: "scope-cycle-complete",
     },
     {
-      id: "report-error-to-end",
+      id: "report-error-to-retained-report",
       from: "final-report",
       fromOutput: "ERROR",
-      to: "success",
+      to: "retained-outcome-report",
     },
     {
       id: "retained-report-success-to-deferred",
@@ -1498,12 +1513,30 @@ const autonomousRefactoringFlow: RalphFlow = {
       fromOutput: "ERROR",
       to: "deferred",
     },
+    {
+      id: "scope-cycle-complete-success",
+      from: "scope-cycle-complete",
+      fromOutput: "MATCH",
+      to: "success",
+    },
+    {
+      id: "scope-cycle-next",
+      from: "scope-cycle-complete",
+      fromOutput: "NO_MATCH",
+      to: "select-scope",
+    },
+    {
+      id: "scope-cycle-error",
+      from: "scope-cycle-complete",
+      fromOutput: "ERROR",
+      to: "retained-outcome-report",
+    },
   ],
 };
 
 export const repositoryRefactorValidationLoopStarterFlow = {
   id: "autonomous-refactoring-flow",
-  version: 16,
+  version: 17,
   defaultAlias: "repository-refactor-validation-loop",
   category: "Code Quality",
   tags: ["refactor", "tests", "validation"],

@@ -12,7 +12,7 @@ const securityFixLoopFlow: RalphFlow = {
   description:
     "Optional bounded autonomous security cycle that reviews risk-first scopes, records a verification baseline, repairs findings, and defers exhausted scopes without human intervention.",
   settings: {
-    maxTransitions: 240,
+    maxTransitions: 5_000,
     autonomy: {
       recoverFailedEnd: true,
       maxRecoveryAttempts: 3,
@@ -644,7 +644,7 @@ const securityFixLoopFlow: RalphFlow = {
         condition: {
           style: "javascript",
           expression:
-            "(() => { const scanOutput = context.resultsByBlock?.['scan-scopes']?.output; if (!['SUCCESS', 'EMPTY', 'ERROR'].includes(scanOutput)) throw new Error('Security scope scan outcome is missing or invalid.'); if (scanOutput === 'EMPTY' || scanOutput === 'ERROR') return true; const selectionOutput = context.resultsByBlock?.['select-scope']?.output; if (!['SELECTED', 'EMPTY', 'ERROR'].includes(selectionOutput)) throw new Error('Security scope selection outcome is missing or invalid.'); if (selectionOutput === 'EMPTY') return true; for (const id of ['mark-scope-result', 'defer-scope', 'mark-invalid-scope']) { const completed = context.resultsByBlock?.[id]?.data?.cycleCompleted; if (completed !== undefined && typeof completed !== 'boolean') throw new Error('Security scope completion state is invalid.'); if (completed === true) return true; } return false; })()",
+            "(() => { const scanOutput = context.resultsByBlock?.['scan-scopes']?.output; if (!['SUCCESS', 'EMPTY', 'ERROR'].includes(scanOutput)) throw new Error('Security scope scan outcome is missing or invalid.'); if (scanOutput === 'EMPTY') return true; if (scanOutput === 'ERROR') throw new Error('Security scope scan failed.'); const selectionOutput = context.resultsByBlock?.['select-scope']?.output; if (!['SELECTED', 'EMPTY', 'ERROR'].includes(selectionOutput)) throw new Error('Security scope selection outcome is missing or invalid.'); if (selectionOutput === 'EMPTY') return true; if (selectionOutput === 'ERROR') throw new Error('Security scope selection failed.'); for (const id of ['mark-scope-result', 'defer-scope', 'mark-invalid-scope']) { const completed = context.resultsByBlock?.[id]?.data?.cycleCompleted; if (completed !== undefined && typeof completed !== 'boolean') throw new Error('Security scope completion state is invalid.'); if (completed === true) return true; } return false; })()",
         },
       },
     },
@@ -1111,10 +1111,10 @@ const securityFixLoopFlow: RalphFlow = {
       to: "scope-cycle-complete",
     },
     {
-      id: "report-error-to-cycle",
+      id: "report-error-to-retained-report",
       from: "final-report",
       fromOutput: "ERROR",
-      to: "scope-cycle-complete",
+      to: "retained-outcome-report",
     },
     {
       id: "retained-report-success-to-deferred",
@@ -1151,7 +1151,7 @@ const securityFixLoopFlow: RalphFlow = {
 
 export const securityReviewFixLoopStarterFlow = {
   id: "security-fix-loop",
-  version: 12,
+  version: 13,
   defaultAlias: "security-review-fix-loop",
   category: "Security",
   tags: ["optional", "review", "fix", "tests"],

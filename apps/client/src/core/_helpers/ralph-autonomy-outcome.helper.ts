@@ -282,6 +282,31 @@ const hasFinalReport = (
   );
 };
 
+const getLatestLoopCounterLimit = (
+  flow: RalphFlow,
+  results: readonly RalphBlockExecutionResult[],
+): { blockId: string; summary: string } | undefined => {
+  const loopCounterBlockIds = new Set(
+    flow.blocks.flatMap((block) =>
+      block.type === "UTILITY" && block.utility.type === "LOOP_COUNTER"
+        ? [block.id]
+        : [],
+    ),
+  );
+
+  for (let index = results.length - 1; index >= 0; index -= 1) {
+    const result = results[index]!;
+    if (!loopCounterBlockIds.has(result.blockId)) {
+      continue;
+    }
+    return result.output === "LIMIT_REACHED"
+      ? { blockId: result.blockId, summary: result.summary }
+      : undefined;
+  }
+
+  return undefined;
+};
+
 const createOutcome = (
   status: RalphRunOutcomeStatus,
   reason: string,
@@ -341,6 +366,7 @@ export const deriveRalphRunOutcome = (input: {
     : graphChanges;
   const scope = getScopeEvidence(flow, blockResults);
   const report = hasFinalReport(flow, blockResults);
+  const loopCounterLimit = getLatestLoopCounterLimit(flow, blockResults);
   const evidence: RalphRunOutcomeEvidence[] = [];
   const limitations: string[] = [];
 
@@ -400,6 +426,13 @@ export const deriveRalphRunOutcome = (input: {
     evidence.push({
       kind: "report",
       summary: "The final report completed.",
+    });
+  }
+  if (loopCounterLimit) {
+    evidence.push({
+      kind: "runtime",
+      blockId: loopCounterLimit.blockId,
+      summary: loopCounterLimit.summary,
     });
   }
 
@@ -540,6 +573,19 @@ export const deriveRalphRunOutcome = (input: {
         evidence,
         retryable: true,
         nextAction: "Resolve the reported blocker, then resume.",
+      },
+    );
+  }
+
+  if (strict && lifecycleStatus === "completed" && loopCounterLimit) {
+    return createOutcome(
+      "budget-exhausted",
+      `${loopCounterLimit.blockId} reached its configured safety limit.`,
+      {
+        evidence,
+        retryable: true,
+        nextAction:
+          "Resume with a new work budget or begin a fresh run for the remaining work.",
       },
     );
   }

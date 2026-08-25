@@ -284,6 +284,58 @@ describe("RALPH evidence-based outcome", () => {
     expect(outcome).toMatchObject({ status: "succeeded", verified: true });
   });
 
+  it("does not report success after a loop safety limit", () => {
+    const outcome = deriveRalphRunOutcome({
+      flow: {
+        ...flow,
+        blocks: [
+          ...flow.blocks,
+          {
+            id: "loop-limit",
+            type: "UTILITY",
+            title: "Loop limit",
+            utility: { type: "LOOP_COUNTER", maxAttempts: 1 },
+          },
+        ],
+      },
+      lifecycleStatus: "completed",
+      terminalBlockId: "done",
+      blockResults: [
+        result("loop-limit", "LIMIT_REACHED"),
+        result("diff", "SUCCESS", {
+          changedFiles: ["src/a.ts"],
+          files: [{ path: "src/a.ts" }],
+        }),
+        result("scope", "IN_SCOPE"),
+        result("verify", "SUCCESS", {
+          verification: {
+            role: "candidate",
+            comparison: {
+              disposition: "PASSED",
+              reason: "passed",
+              candidateFingerprint: "candidate",
+            },
+          },
+        }),
+        result("report", "SUCCESS"),
+      ],
+      autonomy,
+    });
+
+    expect(outcome).toMatchObject({
+      status: "budget-exhausted",
+      verified: false,
+      retryable: true,
+      evidence: expect.arrayContaining([
+        {
+          kind: "runtime",
+          blockId: "loop-limit",
+          summary: "LIMIT_REACHED",
+        },
+      ]),
+    });
+  });
+
   it("keeps explicitly deferred successful END blocks resumable", () => {
     const outcome = deriveRalphRunOutcome({
       flow,
