@@ -341,6 +341,44 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Validate landing URL
+        env:
+          MACHDOCH_LANDING_URL: ${{ vars.MACHDOCH_LANDING_URL }}
+        shell: bash
+        run: |
+          node <<'NODE'
+          const value = process.env.MACHDOCH_LANDING_URL?.trim();
+
+          const fail = (message) => {
+            console.error(`MACHDOCH_LANDING_URL ${message}`);
+            process.exit(1);
+          };
+
+          if (!value) {
+            fail('must be set to a valid trailing-slash HTTPS URL before publishing the landing image.');
+          }
+
+          let landingUrl;
+          try {
+            landingUrl = new URL(value);
+          } catch {
+            fail('must be a valid absolute HTTPS URL.');
+          }
+
+          if (landingUrl.protocol !== 'https:') {
+            fail('must use HTTPS.');
+          }
+          if (landingUrl.username || landingUrl.password) {
+            fail('must not contain credentials.');
+          }
+          if (landingUrl.search || landingUrl.hash || landingUrl.href.includes('?') || landingUrl.href.includes('#')) {
+            fail('must not contain a query or fragment.');
+          }
+          if (!value.endsWith('/')) {
+            fail('must end with a trailing slash.');
+          }
+          NODE
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
