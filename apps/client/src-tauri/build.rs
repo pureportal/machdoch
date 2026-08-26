@@ -1,16 +1,16 @@
 use std::{
     env, fs,
     path::{Path, PathBuf},
+    process::Command,
 };
 
-const EMBEDDED_CLI_FALLBACK: &str =
-    "console.error('machdoch: bundled CLI was not built into this binary.');\nprocess.exit(1);\n";
+mod embedded_runtime_inputs;
+
+use embedded_runtime_inputs::EmbeddedRuntimeInputs;
 
 fn find_node_binary() -> Option<PathBuf> {
     if let Some(path) = env::var_os("MACHDOCH_NODE_BINARY").map(PathBuf::from) {
-        if path.is_file() {
-            return Some(path);
-        }
+        return Some(path);
     }
 
     let binary_name = if cfg!(windows) { "node.exe" } else { "node" };
@@ -36,28 +36,41 @@ fn main() {
     println!("cargo:rerun-if-changed={}", cli_bundle_path.display());
     println!("cargo:rerun-if-env-changed=MACHDOCH_NODE_BINARY");
     println!("cargo:rerun-if-env-changed=PATH");
+    println!("cargo:rustc-check-cfg=cfg(machdoch_embedded_runtime)");
 
-    if cli_bundle_path.is_file() {
-        copy_file_or_panic(&cli_bundle_path, &output_path, "bundled CLI");
-        println!("cargo:rustc-env=MACHDOCH_EMBEDDED_CLI_AVAILABLE=1");
-    } else {
-        write_file_or_panic(
-            &output_path,
-            EMBEDDED_CLI_FALLBACK.as_bytes(),
-            "bundled CLI fallback",
-        );
-        println!("cargo:rustc-env=MACHDOCH_EMBEDDED_CLI_AVAILABLE=0");
+    let runtime_inputs =
+        EmbeddedRuntimeInputs::classify(&cli_bundle_path, find_node_binary().as_deref());
+    for dependency in runtime_inputs.rebuild_dependencies() {
+        println!("cargo:rerun-if-changed={}", dependency.display());
     }
 
-    if let Some(node_binary_path) = find_node_binary() {
-        copy_file_or_panic(&node_binary_path, &node_output_path, "Node runtime");
-        println!("cargo:rustc-env=MACHDOCH_EMBEDDED_NODE_AVAILABLE=1");
-    } else {
-        write_file_or_panic(&node_output_path, b"", "bundled Node fallback");
-        println!("cargo:rustc-env=MACHDOCH_EMBEDDED_NODE_AVAILABLE=0");
+    match runtime_inputs {
+        EmbeddedRuntimeInputs::Complete {
+            cli_bundle,
+            node_binary,
+        } => {
+            if let Err(error) = validate_runtime(&node_binary, &cli_bundle) {
+                if is_distributable_build() {
+                    panic!("{error}");
+                }
+                return tauri_build::build();
+            }
+
+            copy_file_or_panic(&cli_bundle, &output_path, "bundled CLI");
+            copy_file_or_panic(&node_binary, &node_output_path, "Node runtime");
+            println!("cargo:rustc-cfg=machdoch_embedded_runtime");
+        }
+        EmbeddedRuntimeInputs::Incomplete(issue) if is_distributable_build() => {
+            panic!("{}", issue.build_error(&cli_bundle_path));
+        }
+        EmbeddedRuntimeInputs::Incomplete(_) => {}
     }
 
     tauri_build::build()
+}
+
+fn is_distributable_build() -> bool {
+    env::var("PROFILE").is_ok_and(|profile| profile != "debug")
 }
 
 fn configure_windows_common_controls_manifest() {
@@ -88,7 +101,34 @@ fn copy_file_or_panic(source: &Path, destination: &Path, label: &str) {
     });
 }
 
-fn write_file_or_panic(path: &Path, contents: &[u8], label: &str) {
-    fs::write(path, contents)
-        .unwrap_or_else(|error| panic!("failed to write {label} to {}: {error}", path.display()));
+fn validate_runtime(node_binary: &Path, cli_bundle: &Path) -> Result<(), String> {
+    run_node_check(node_binary, "--version", None).map_err(|error| {
+        format!(
+            "The embedded Node runtime is required for this distributable build but the selected executable at {} is invalid: {error}",
+            node_binary.display()
+        )
+    })?;
+    run_node_check(node_binary, "--check", Some(cli_bundle)).map_err(|error| {
+        format!(
+            "The embedded CLI bundle is required for this distributable build but is invalid at {}: {error}",
+            cli_bundle.display()
+        )
+    })
+}
+
+fn run_node_check(node_binary: &Path, argument: &str, input: Option<&Path>) -> Result<(), String> {
+    let mut command = Command::new(node_binary);
+    command.arg(argument);
+    if let Some(input) = input {
+        command.arg(input);
+    }
+
+    let status = command
+        .status()
+        .map_err(|error| format!("could not start it: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("it exited with {status}"))
+    }
 }

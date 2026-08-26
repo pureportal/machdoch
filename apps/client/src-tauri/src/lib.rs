@@ -3,6 +3,9 @@ mod child_process;
 mod cooperative_file_lock;
 mod desktop_shell;
 mod desktop_task;
+#[cfg(test)]
+#[path = "../embedded_runtime_inputs.rs"]
+mod embedded_runtime_inputs;
 mod launcher;
 mod media;
 mod remote_control;

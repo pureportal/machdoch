@@ -1,10 +1,17 @@
 use std::{
-    env, fs,
+    env,
     io::{Read, Write as _},
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::{Command, Stdio},
     thread,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
+};
+
+#[cfg(machdoch_embedded_runtime)]
+use std::{
+    fs,
+    path::Path,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde_json::Value;
@@ -12,12 +19,15 @@ use zeroize::Zeroizing;
 
 use crate::child_process::SupervisedChild;
 
-#[cfg(unix)]
+#[cfg(all(unix, machdoch_embedded_runtime))]
 use std::os::unix::fs::PermissionsExt;
 
+#[cfg(machdoch_embedded_runtime)]
 const EMBEDDED_CLI_BUNDLE: &str = include_str!(concat!(env!("OUT_DIR"), "/machdoch-cli.cjs"));
+#[cfg(machdoch_embedded_runtime)]
 const EMBEDDED_NODE_BINARY: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/machdoch-node.bin"));
 const BUILD_NODE_REQUIREMENT: &str = "Node.js >= 20.10";
+#[cfg(machdoch_embedded_runtime)]
 const RETAINED_PREVIOUS_RUNTIME_FILES_PER_FAMILY: usize = 1;
 const MAX_SIDE_EFFECT_FREE_CLI_OUTPUT_BYTES: u64 = 8 * 1024 * 1024;
 
@@ -26,17 +36,17 @@ pub(crate) struct SharedCliCommand {
 }
 
 pub(crate) fn create_shared_cli_command(args: &[String]) -> Result<SharedCliCommand, String> {
-    if let Ok(command) = create_embedded_cli_command(args) {
-        return Ok(command);
+    #[cfg(machdoch_embedded_runtime)]
+    {
+        create_embedded_cli_command(args)
     }
 
-    // Source execution remains a development fallback for builds that could not
-    // embed the CLI, but normal debug tasks avoid paying the transform cold-start cost.
-    if let Some(command) = create_source_cli_command(args) {
-        return Ok(command);
+    #[cfg(not(machdoch_embedded_runtime))]
+    {
+        create_source_cli_command(args).ok_or_else(|| {
+            "The shared CLI is unavailable because this development build has no embedded runtime and is not running from a source checkout.".to_string()
+        })
     }
-
-    create_embedded_cli_command(args)
 }
 
 fn read_bounded_cli_stream(mut stream: impl Read, stream_name: &str) -> Result<Vec<u8>, String> {
@@ -132,6 +142,7 @@ fn run_side_effect_free_json_command_with_command(
         .map_err(|_| "The shared CLI validator returned invalid JSON.".to_string())
 }
 
+#[cfg(not(machdoch_embedded_runtime))]
 fn create_source_cli_command(args: &[String]) -> Option<SharedCliCommand> {
     let repo_root = resolve_repo_root()?;
     let cli_entry_path = repo_root.join("src").join("cli").join("main.ts");
@@ -152,19 +163,8 @@ fn create_source_cli_command(args: &[String]) -> Option<SharedCliCommand> {
     Some(SharedCliCommand { command })
 }
 
+#[cfg(machdoch_embedded_runtime)]
 fn create_embedded_cli_command(args: &[String]) -> Result<SharedCliCommand, String> {
-    if !embedded_cli_available() {
-        return Err(
-            "The bundled CLI is not available in this build. Run `npm run build:cli-bundle` before building the Tauri release, or run from a source checkout with `npm install`.".to_string(),
-        );
-    }
-
-    if !embedded_node_available() {
-        return Err(format!(
-            "The bundled Node.js runtime is not available in this build. Ensure {BUILD_NODE_REQUIREMENT} is available while building machdoch, or set MACHDOCH_NODE_BINARY to a Node executable to embed."
-        ));
-    }
-
     let node_path = write_embedded_node_runtime()?;
     let entry_path = write_embedded_cli_entry()?;
     let mut command = Command::new(&node_path);
@@ -203,20 +203,14 @@ fn sanitize_node_options(value: &str) -> Option<String> {
     }
 }
 
-fn embedded_cli_available() -> bool {
-    option_env!("MACHDOCH_EMBEDDED_CLI_AVAILABLE") == Some("1")
-}
-
-fn embedded_node_available() -> bool {
-    option_env!("MACHDOCH_EMBEDDED_NODE_AVAILABLE") == Some("1") && !EMBEDDED_NODE_BINARY.is_empty()
-}
-
+#[cfg(not(machdoch_embedded_runtime))]
 fn resolve_repo_root() -> Option<PathBuf> {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .map(Path::to_path_buf)
+        .map(|parent| parent.to_path_buf())
 }
 
+#[cfg(machdoch_embedded_runtime)]
 fn write_embedded_cli_entry() -> Result<PathBuf, String> {
     let file_name = format!(
         "machdoch-cli-{}-{:016x}.cjs",
@@ -227,6 +221,7 @@ fn write_embedded_cli_entry() -> Result<PathBuf, String> {
     materialize_cached_runtime_file(file_name, EMBEDDED_CLI_BUNDLE.as_bytes(), false)
 }
 
+#[cfg(machdoch_embedded_runtime)]
 fn write_embedded_node_runtime() -> Result<PathBuf, String> {
     let suffix = if cfg!(windows) { ".exe" } else { "" };
     let file_name = format!(
@@ -238,6 +233,7 @@ fn write_embedded_node_runtime() -> Result<PathBuf, String> {
     materialize_cached_runtime_file(file_name, EMBEDDED_NODE_BINARY, true)
 }
 
+#[cfg(machdoch_embedded_runtime)]
 fn materialize_cached_runtime_file(
     file_name: String,
     contents: &[u8],
@@ -299,6 +295,7 @@ fn materialize_cached_runtime_file(
     Ok(runtime_path)
 }
 
+#[cfg(machdoch_embedded_runtime)]
 fn cleanup_cached_runtime_files(runtime_directory: &Path, current_file_name: &str) {
     let Some(family_prefix) = cached_runtime_file_family(current_file_name) else {
         return;
@@ -332,6 +329,7 @@ fn cleanup_cached_runtime_files(runtime_directory: &Path, current_file_name: &st
     }
 }
 
+#[cfg(any(machdoch_embedded_runtime, test))]
 fn cached_runtime_file_family(file_name: &str) -> Option<&'static str> {
     if file_name.starts_with("machdoch-node-") {
         return Some("machdoch-node-");
@@ -344,12 +342,14 @@ fn cached_runtime_file_family(file_name: &str) -> Option<&'static str> {
     None
 }
 
+#[cfg(machdoch_embedded_runtime)]
 fn stable_content_hash(contents: &[u8]) -> u64 {
     contents.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
         (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
     })
 }
 
+#[cfg(machdoch_embedded_runtime)]
 fn get_runtime_directory() -> Result<PathBuf, String> {
     let base_directory = resolve_runtime_base_directory();
     let runtime_directory = base_directory.join("machdoch").join("runtime");
@@ -379,6 +379,7 @@ fn get_runtime_directory() -> Result<PathBuf, String> {
     Ok(runtime_directory)
 }
 
+#[cfg(machdoch_embedded_runtime)]
 fn resolve_runtime_base_directory() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
@@ -408,6 +409,7 @@ fn resolve_runtime_base_directory() -> PathBuf {
     env::temp_dir()
 }
 
+#[cfg(machdoch_embedded_runtime)]
 fn make_executable(path: &Path) -> Result<(), String> {
     #[cfg(unix)]
     {
