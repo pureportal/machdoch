@@ -95,7 +95,6 @@ export const RalphFlowEditorToolbar = ({
                 variant="ghost"
                 aria-label="Undo Ralph edit"
                 aria-keyshortcuts={undoShortcut?.ariaKeyShortcuts}
-                title={`Undo Ralph edit${undoShortcut ? ` (${undoShortcut.label})` : ""}`}
                 disabled={!canUndo}
                 onClick={onUndo}
                 className="h-7 w-7 rounded-md p-0 text-xs text-slate-300 hover:bg-slate-800 hover:text-white disabled:text-slate-700"
@@ -114,7 +113,6 @@ export const RalphFlowEditorToolbar = ({
                 variant="ghost"
                 aria-label="Redo Ralph edit"
                 aria-keyshortcuts={redoShortcut?.ariaKeyShortcuts}
-                title={`Redo Ralph edit${redoShortcut ? ` (${redoShortcut.label})` : ""}`}
                 disabled={!canRedo}
                 onClick={onRedo}
                 className="h-7 w-7 rounded-md p-0 text-xs text-slate-300 hover:bg-slate-800 hover:text-white disabled:text-slate-700"
@@ -133,7 +131,6 @@ export const RalphFlowEditorToolbar = ({
                 variant="ghost"
                 aria-label="Clean Ralph layout"
                 aria-keyshortcuts={layoutShortcut?.ariaKeyShortcuts}
-                title={`Clean Ralph layout${layoutShortcut ? ` (${layoutShortcut.label})` : ""}`}
                 disabled={!canCleanLayout}
                 onClick={onCleanLayout}
                 className="h-7 w-7 rounded-md p-0 text-xs text-slate-300 hover:bg-slate-800 hover:text-white disabled:text-slate-700"
@@ -152,7 +149,6 @@ export const RalphFlowEditorToolbar = ({
                   type="button"
                   variant="ghost"
                   aria-label="Show block settings"
-                  title="Show block settings"
                   onClick={onShowInspector}
                   className="h-7 w-7 rounded-md p-0 text-xs text-slate-300 hover:bg-slate-800 hover:text-white"
                 >
@@ -178,7 +174,6 @@ export const RalphFlowEditorToolbar = ({
                     type="button"
                     variant="ghost"
                     aria-label={`Add ${action.label} block`}
-                    title={`Add ${action.label} block`}
                     disabled={action.type === "START" && flowHasStart}
                     onClick={() => onAddBlock(action.type)}
                     className="h-7 w-7 rounded-md p-0 text-slate-300 hover:bg-slate-800 hover:text-white disabled:text-slate-700"
@@ -198,7 +193,6 @@ export const RalphFlowEditorToolbar = ({
                     type="button"
                     variant="ghost"
                     aria-label="Add integration block"
-                    title="Add integration block"
                     className="h-7 w-7 rounded-md p-0 text-slate-300 hover:bg-slate-800 hover:text-white"
                   >
                     <Globe2 className="h-4 w-4 text-violet-300" />

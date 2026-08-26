@@ -117,38 +117,34 @@ const AppRailButton = ({
     activity === "idle" ? label : `${label}, ${getActivityLabel(activity)}`;
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label={ariaLabel}
-          aria-current={active ? "page" : undefined}
-          aria-keyshortcuts={shortcut?.ariaKeyShortcuts}
-          onClick={onClick}
-          className={cn(
-            "app-shell-rail-button relative h-12 w-12 rounded-2xl border border-transparent text-slate-400 hover:bg-slate-900 hover:text-slate-100",
-            active &&
-              "border-sky-500/20 bg-slate-900 text-slate-100 shadow-[0_0_18px_rgba(14,165,233,0.08)]",
-          )}
-        >
-          <Icon
-            className={cn(
-              "h-5 w-5",
-              active ? "text-sky-300" : "text-slate-400",
-            )}
-          />
-          <AppActivityIndicator activity={activity} />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="right">
-        {activity === "idle"
-          ? label
-          : `${label}: ${getActivityLabel(activity)}`}
-        {shortcut ? ` (${shortcut.label})` : null}
-      </TooltipContent>
-    </Tooltip>
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      aria-label={ariaLabel}
+      aria-current={active ? "page" : undefined}
+      aria-keyshortcuts={shortcut?.ariaKeyShortcuts}
+      tooltip={
+        <>
+          {activity === "idle"
+            ? label
+            : `${label}: ${getActivityLabel(activity)}`}
+          {shortcut ? ` (${shortcut.label})` : null}
+        </>
+      }
+      tooltipProps={{ side: "right" }}
+      onClick={onClick}
+      className={cn(
+        "app-shell-rail-button relative h-12 w-12 rounded-2xl border border-transparent text-slate-400 hover:bg-slate-900 hover:text-slate-100",
+        active &&
+          "border-sky-500/20 bg-slate-900 text-slate-100 shadow-[0_0_18px_rgba(14,165,233,0.08)]",
+      )}
+    >
+      <Icon
+        className={cn("h-5 w-5", active ? "text-sky-300" : "text-slate-400")}
+      />
+      <AppActivityIndicator activity={activity} />
+    </Button>
   );
 };
 
@@ -242,10 +238,7 @@ export const AppRail = ({
         />
         <Tooltip>
           <TooltipTrigger asChild>
-            <span
-              className="app-shell-version mt-1 inline-flex h-5 min-w-12 items-center justify-center rounded-full border border-slate-900/80 bg-slate-950/40 px-1.5 text-[9px] font-medium leading-none text-slate-600 transition-colors hover:text-slate-500"
-              title={`machdoch ${appVersion}`}
-            >
+            <span className="app-shell-version mt-1 inline-flex h-5 min-w-12 items-center justify-center rounded-full border border-slate-900/80 bg-slate-950/40 px-1.5 text-[9px] font-medium leading-none text-slate-600 transition-colors hover:text-slate-500">
               v{appVersion}
             </span>
           </TooltipTrigger>

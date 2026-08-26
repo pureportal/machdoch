@@ -13,6 +13,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "../../components/ui/popover";
+import { ControlTooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 import { RUN_MODE_META, RUN_MODE_ORDER } from "../_helpers/session-shell";
 
@@ -88,21 +89,23 @@ export const SessionModePicker = ({
 
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          aria-label={`Execution mode: ${activeRunModeMeta.label}`}
-          className={cn(
-            "app-mode-picker-button h-8 w-8 rounded-full border p-0 text-xs font-medium shadow-none",
-            activeRunModeMeta.triggerClassName,
-          )}
-        >
-          <ActiveRunModeIcon
-            className={cn("h-3.5 w-3.5", activeRunModeMeta.iconClassName)}
-          />
-        </Button>
-      </PopoverTrigger>
+      <ControlTooltip content={`Execution mode: ${activeRunModeMeta.label}`}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            aria-label={`Execution mode: ${activeRunModeMeta.label}`}
+            className={cn(
+              "app-mode-picker-button h-8 w-8 rounded-full border p-0 text-xs font-medium shadow-none",
+              activeRunModeMeta.triggerClassName,
+            )}
+          >
+            <ActiveRunModeIcon
+              className={cn("h-3.5 w-3.5", activeRunModeMeta.iconClassName)}
+            />
+          </Button>
+        </PopoverTrigger>
+      </ControlTooltip>
       <PopoverContent
         align="start"
         className="w-96 rounded-3xl border-slate-800 bg-slate-950/95 p-5 shadow-2xl backdrop-blur-xl"

@@ -1595,7 +1595,7 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
               variant="ghost"
               size="icon"
               aria-label={closeLabel}
-              title={closeLabel}
+              tooltip={closeLabel}
               disabled={closeActionRunning || primaryActionRunning}
               onClick={requestClose}
               className="h-9 w-9 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100"

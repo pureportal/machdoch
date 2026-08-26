@@ -14,6 +14,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "../../components/ui/popover";
+import { ControlTooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 
 interface MediaCategoryPickerProps {
@@ -135,14 +136,16 @@ export const MediaCategoryPicker = ({
               className="inline-flex max-w-full items-center gap-1 rounded-full border border-slate-700 bg-slate-900 px-2 py-1 text-[10px] text-slate-300"
             >
               <span className="truncate">{category.name}</span>
-              <button
-                type="button"
-                aria-label={`Remove ${category.name}`}
-                onClick={() => toggleCategory(category.id)}
-                className="shrink-0 text-slate-500 hover:text-white"
-              >
-                <X className="h-3 w-3" />
-              </button>
+              <ControlTooltip content={`Remove ${category.name}`}>
+                <button
+                  type="button"
+                  aria-label={`Remove ${category.name}`}
+                  onClick={() => toggleCategory(category.id)}
+                  className="shrink-0 text-slate-500 hover:text-white"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </ControlTooltip>
             </span>
           ))}
         </div>

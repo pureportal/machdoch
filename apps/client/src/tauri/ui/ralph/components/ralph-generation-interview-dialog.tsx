@@ -1,9 +1,4 @@
-import {
-  Check,
-  LoaderCircle,
-  MessageSquare,
-  Sparkles,
-} from "lucide-react";
+import { Check, LoaderCircle, MessageSquare, Sparkles } from "lucide-react";
 import type { JSX } from "react";
 
 import type {
@@ -25,11 +20,6 @@ import {
 } from "../../components/ui/dialog";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { Textarea } from "../../components/ui/textarea";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 import type {
   RalphAiGenerationMode,
@@ -182,7 +172,8 @@ export const RalphGenerationInterviewDialog = ({
                 Generation Interview
               </DialogTitle>
               <DialogDescription className="sr-only">
-                Answer generation interview questions before Ralph creates or updates a flow.
+                Answer generation interview questions before Ralph creates or
+                updates a flow.
               </DialogDescription>
             </div>
             {state ? (
@@ -245,7 +236,8 @@ export const RalphGenerationInterviewDialog = ({
                     {state.fields.map((field) => {
                       const error = state.validationErrors[field.id];
                       const skipped = state.skippedFieldIds.includes(field.id);
-                      const answerComment = state.answerComments[field.id] ?? "";
+                      const answerComment =
+                        state.answerComments[field.id] ?? "";
                       const commentOpen =
                         state.expandedCommentFieldIds.includes(field.id);
                       const hasComment = answerComment.trim().length > 0;
@@ -268,28 +260,24 @@ export const RalphGenerationInterviewDialog = ({
                                   Skipped
                                 </span>
                               ) : null}
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => onToggleComment(field.id)}
-                                    aria-label={`${commentOpen ? "Hide" : "Add"} comment for ${field.label}`}
-                                    className={cn(
-                                      "h-7 w-7 rounded-md hover:bg-slate-800 hover:text-slate-100",
-                                      hasComment || commentOpen
-                                        ? "text-cyan-200"
-                                        : "text-slate-500",
-                                    )}
-                                  >
-                                    <MessageSquare className="h-3.5 w-3.5" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  {commentOpen ? "Hide comment" : "Add comment"}
-                                </TooltipContent>
-                              </Tooltip>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => onToggleComment(field.id)}
+                                aria-label={`${commentOpen ? "Hide" : "Add"} comment for ${field.label}`}
+                                tooltip={
+                                  commentOpen ? "Hide comment" : "Add comment"
+                                }
+                                className={cn(
+                                  "h-7 w-7 rounded-md hover:bg-slate-800 hover:text-slate-100",
+                                  hasComment || commentOpen
+                                    ? "text-cyan-200"
+                                    : "text-slate-500",
+                                )}
+                              >
+                                <MessageSquare className="h-3.5 w-3.5" />
+                              </Button>
                             </span>
                           </span>
                           {field.help ? (
@@ -299,7 +287,8 @@ export const RalphGenerationInterviewDialog = ({
                           ) : null}
                           {renderInputControl(
                             field,
-                            state.values[field.id] ?? getDefaultInputValue(field),
+                            state.values[field.id] ??
+                              getDefaultInputValue(field),
                             (value) => onValueChange(field.id, value),
                           )}
                           {commentOpen ? (

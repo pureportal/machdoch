@@ -14,11 +14,6 @@ import {
 } from "../../components/ui/dialog";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { Textarea } from "../../components/ui/textarea";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 import { getDefaultRalphInputValue } from "../../ralph/_helpers/validate-ralph-input-field-values.helper";
 import { RalphInputControl } from "../../ralph/components/ralph-input-controls";
@@ -208,28 +203,24 @@ export const ChatInterviewDialog = ({
                                   Skipped
                                 </span>
                               ) : null}
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => onToggleComment(field.id)}
-                                    aria-label={`${commentOpen ? "Hide" : "Add"} comment for ${field.label}`}
-                                    className={cn(
-                                      "h-7 w-7 rounded-md hover:bg-slate-800 hover:text-slate-100",
-                                      hasComment || commentOpen
-                                        ? "text-cyan-200"
-                                        : "text-slate-500",
-                                    )}
-                                  >
-                                    <MessageSquare className="h-3.5 w-3.5" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  {commentOpen ? "Hide comment" : "Add comment"}
-                                </TooltipContent>
-                              </Tooltip>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => onToggleComment(field.id)}
+                                aria-label={`${commentOpen ? "Hide" : "Add"} comment for ${field.label}`}
+                                tooltip={
+                                  commentOpen ? "Hide comment" : "Add comment"
+                                }
+                                className={cn(
+                                  "h-7 w-7 rounded-md hover:bg-slate-800 hover:text-slate-100",
+                                  hasComment || commentOpen
+                                    ? "text-cyan-200"
+                                    : "text-slate-500",
+                                )}
+                              >
+                                <MessageSquare className="h-3.5 w-3.5" />
+                              </Button>
                             </span>
                           </span>
                           {field.help ? (

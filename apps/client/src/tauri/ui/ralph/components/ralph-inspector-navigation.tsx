@@ -7,11 +7,9 @@ import {
 } from "lucide-react";
 import type { JSX } from "react";
 
-import type {
-  RalphFlowBlock,
-  RalphFlowEdge,
-} from "../../../../core/ralph.js";
+import type { RalphFlowBlock, RalphFlowEdge } from "../../../../core/ralph.js";
 import { cn } from "../../lib/utils";
+import { ControlTooltip } from "../../components/ui/tooltip";
 import type { RalphInspectorSectionId } from "../_helpers/ralph-flow-editor-options.helper";
 
 interface RalphInspectorSection {
@@ -62,28 +60,33 @@ export const RalphInspectorSectionTabs = ({
           const sectionLabel = section.label;
 
           return (
-            <button
+            <ControlTooltip
               key={section.id}
-              type="button"
-              aria-label={section.id === "routes" ? "Route map" : section.label}
-              aria-pressed={isActive}
-              title={section.id === "routes" ? "Route map" : section.label}
-              onClick={() => onSelectSection(section.id)}
-              className={cn(
-                "relative flex h-8 min-w-0 items-center justify-center gap-0.5 rounded-md px-1 text-[0.68rem] font-semibold transition",
-                isActive
-                  ? "bg-cyan-500/15 text-cyan-50 shadow-sm ring-1 ring-cyan-400/30"
-                  : "text-slate-400 hover:bg-slate-800/80 hover:text-slate-100",
-              )}
+              content={section.id === "routes" ? "Route map" : section.label}
             >
-              <Icon className="h-3.5 w-3.5 shrink-0" />
-              <span className="min-w-0 truncate">{sectionLabel}</span>
-              {routeBadge ? (
-                <span className="absolute -right-1 -top-1 min-w-4 rounded-full border border-slate-900 bg-amber-500/25 px-1 text-center text-[0.6rem] leading-4 text-amber-100">
-                  {routeBadge}
-                </span>
-              ) : null}
-            </button>
+              <button
+                type="button"
+                aria-label={
+                  section.id === "routes" ? "Route map" : section.label
+                }
+                aria-pressed={isActive}
+                onClick={() => onSelectSection(section.id)}
+                className={cn(
+                  "relative flex h-8 min-w-0 items-center justify-center gap-0.5 rounded-md px-1 text-[0.68rem] font-semibold transition",
+                  isActive
+                    ? "bg-cyan-500/15 text-cyan-50 shadow-sm ring-1 ring-cyan-400/30"
+                    : "text-slate-400 hover:bg-slate-800/80 hover:text-slate-100",
+                )}
+              >
+                <Icon className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0 truncate">{sectionLabel}</span>
+                {routeBadge ? (
+                  <span className="absolute -right-1 -top-1 min-w-4 rounded-full border border-slate-900 bg-amber-500/25 px-1 text-center text-[0.6rem] leading-4 text-amber-100">
+                    {routeBadge}
+                  </span>
+                ) : null}
+              </button>
+            </ControlTooltip>
           );
         })}
       </div>
@@ -142,7 +145,7 @@ export const RalphSelectedRouteSummary = ({
         {outputs.map((output) => {
           const edge = routesByOutput.get(output);
           const targetBlock = edge
-            ? blocks?.find((block) => block.id === edge.to) ?? null
+            ? (blocks?.find((block) => block.id === edge.to) ?? null)
             : null;
 
           return (
@@ -157,7 +160,11 @@ export const RalphSelectedRouteSummary = ({
             >
               {output}
               {" -> "}
-              {targetBlock ? targetBlock.title : edge ? "missing" : "unconnected"}
+              {targetBlock
+                ? targetBlock.title
+                : edge
+                  ? "missing"
+                  : "unconnected"}
             </span>
           );
         })}

@@ -4,6 +4,7 @@ import { StatusBadge } from "../../../../common/_components/status-badge";
 import type { TaskExecutionResult } from "../../../../core/types.js";
 import { normalizeTaskExecutionFileChanges } from "../../chat-session.model";
 import { Button } from "../../components/ui/button";
+import { ControlTooltip } from "../../components/ui/tooltip";
 import { getRelatedFileButtonLabel } from "../_helpers/execution-message.tsx";
 import { ExecutionFileChanges } from "./execution-file-changes";
 import { InstructionDeliveryInsight } from "./instruction-delivery-insight";
@@ -80,18 +81,19 @@ export const ExecutionInsightRow = ({
       <InstructionDeliveryInsight metadata={execution.metadata} />
 
       {verification.length > 0 ? (
-        <StatusBadge
-          tone="success"
-          variant="ghost"
-          title={verification.join(" \u2022 ")}
-          className={insightMetadataBadgeClassName}
-        >
-          <span
-            aria-hidden="true"
-            className="h-1.5 w-1.5 rounded-full bg-emerald-300/75"
-          />
-          {`${verification.length} check${verification.length === 1 ? "" : "s"}`}
-        </StatusBadge>
+        <ControlTooltip content={verification.join(" \u2022 ")}>
+          <StatusBadge
+            tone="success"
+            variant="ghost"
+            className={insightMetadataBadgeClassName}
+          >
+            <span
+              aria-hidden="true"
+              className="h-1.5 w-1.5 rounded-full bg-emerald-300/75"
+            />
+            {`${verification.length} check${verification.length === 1 ? "" : "s"}`}
+          </StatusBadge>
+        </ControlTooltip>
       ) : null}
 
       {fileChanges ? (
@@ -133,7 +135,7 @@ export const ExecutionInsightRow = ({
           type="button"
           variant="outline"
           size="sm"
-          title={`${fileReference.path} \u2014 ${fileReference.description}`}
+          tooltip={`${fileReference.path} \u2014 ${fileReference.description}`}
           onClick={() => onOpenWorkspaceFile(fileReference.path)}
           className="app-related-file-button h-8 max-w-full rounded-full border-slate-700 bg-slate-950/70 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-60"
         >

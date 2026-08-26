@@ -1823,7 +1823,7 @@ export const SchedulerPanel = ({
                                   ? "Resume scheduled job"
                                   : "Pause scheduled job"
                               }
-                              title={
+                              tooltip={
                                 job.status === "paused"
                                   ? "Resume scheduled job"
                                   : "Pause scheduled job"
@@ -1864,7 +1864,7 @@ export const SchedulerPanel = ({
                               variant="ghost"
                               size="icon-sm"
                               aria-label="Run scheduled job now"
-                              title="Run scheduled job now"
+                              tooltip="Run scheduled job now"
                               disabled={Boolean(busyAction)}
                               onClick={(event) => {
                                 event.stopPropagation();
@@ -1891,7 +1891,7 @@ export const SchedulerPanel = ({
                               variant="ghost"
                               size="icon-sm"
                               aria-label="Delete scheduled job"
-                              title="Delete scheduled job"
+                              tooltip="Delete scheduled job"
                               disabled={Boolean(busyAction)}
                               onClick={(event) => {
                                 event.stopPropagation();
@@ -2003,7 +2003,7 @@ export const SchedulerPanel = ({
                               variant="ghost"
                               size="icon-sm"
                               aria-label="Retry scheduled run"
-                              title="Retry scheduled run"
+                              tooltip="Retry scheduled run"
                               disabled={
                                 Boolean(busyAction) ||
                                 run.status === "succeeded" ||
@@ -2030,7 +2030,7 @@ export const SchedulerPanel = ({
                               variant="ghost"
                               size="icon-sm"
                               aria-label="Cancel scheduled run"
-                              title="Cancel scheduled run"
+                              tooltip="Cancel scheduled run"
                               disabled={
                                 Boolean(busyAction) ||
                                 terminalRunStatuses.has(run.status)

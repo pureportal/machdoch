@@ -26,7 +26,9 @@ const getSpeechToTextProviderLabel = (
 };
 
 const getVoiceAiProviderLabel = (provider: VoiceAiProvider): string => {
-  return provider === "none" ? "System voices only" : getProviderLabel(provider);
+  return provider === "none"
+    ? "System voices only"
+    : getProviderLabel(provider);
 };
 
 export interface VoiceSettingsPanelProps {
@@ -81,21 +83,21 @@ export const VoiceSettingsPanel = ({
           label="Speech input"
           detail={setup.speechToTextAvailabilityDescription}
           value={setup.speechToTextProvider}
-          options={(["none", ...USER_SPEECH_TO_TEXT_PROVIDER_ORDER] as const).map(
-            (provider) => ({
-              value: provider,
-              label: getSpeechToTextProviderLabel(provider),
-              ariaLabel: `Speak to text provider ${getSpeechToTextProviderLabel(provider)}`,
-              disabled:
-                provider !== "none" &&
-                !speechToTextProviderConfigured.get(provider),
-              title:
-                provider !== "none" &&
-                !speechToTextProviderConfigured.get(provider)
-                  ? "Add this provider's API key before selecting it."
-                  : undefined,
-            }),
-          )}
+          options={(
+            ["none", ...USER_SPEECH_TO_TEXT_PROVIDER_ORDER] as const
+          ).map((provider) => ({
+            value: provider,
+            label: getSpeechToTextProviderLabel(provider),
+            ariaLabel: `Speak to text provider ${getSpeechToTextProviderLabel(provider)}`,
+            disabled:
+              provider !== "none" &&
+              !speechToTextProviderConfigured.get(provider),
+            title:
+              provider !== "none" &&
+              !speechToTextProviderConfigured.get(provider)
+                ? "Add this provider's API key before selecting it."
+                : undefined,
+          }))}
           disabled={setup.speechToTextProviderSaving}
           onChange={setup.onSpeechToTextProviderChange}
         />
@@ -142,7 +144,7 @@ export const VoiceSettingsPanel = ({
               variant="outline"
               size="icon"
               aria-label="Refresh microphone devices"
-              title="Refresh microphone devices"
+              tooltip="Refresh microphone devices"
               onClick={() => {
                 void setup.onRefreshSpeechInputDevices();
               }}

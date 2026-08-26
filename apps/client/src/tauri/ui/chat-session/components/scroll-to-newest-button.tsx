@@ -24,7 +24,7 @@ export const ScrollToNewestButton = ({
       variant="outline"
       size="icon"
       aria-label="Scroll to newest message"
-      title="Scroll to newest message"
+      tooltip="Scroll to newest message"
       onClick={onClick}
       className={cn(
         "absolute z-20 h-10 w-10 rounded-full border-sky-400/30 bg-slate-950/90 text-sky-100 shadow-lg shadow-slate-950/35 backdrop-blur-xl hover:bg-slate-900 hover:text-white",

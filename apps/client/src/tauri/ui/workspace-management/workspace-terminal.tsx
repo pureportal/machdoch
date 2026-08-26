@@ -41,6 +41,7 @@ import {
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
 import { EmptyState } from "../components/ui/empty-state";
+import { ControlTooltip } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
 import { openWorkspaceTerminalHost } from "../runtime";
 import {
@@ -69,23 +70,26 @@ const TerminalStatusDot = ({
   terminal,
 }: {
   terminal: WorkspaceTerminalSessionView;
-}): JSX.Element => (
-  <span
-    role="status"
-    aria-label={`${terminal.label}: ${terminalStatusLabel(terminal.status)}`}
-    title={terminalStatusLabel(terminal.status)}
-    className={cn(
-      "size-1.5 shrink-0 rounded-full",
-      terminal.status === "running"
-        ? "bg-emerald-400"
-        : terminal.status === "starting" || terminal.status === "loading"
-          ? "animate-pulse bg-sky-400"
-          : terminal.status === "error"
-            ? "bg-red-400"
-            : "bg-slate-600",
-    )}
-  />
-);
+}): JSX.Element => {
+  const statusLabel = terminalStatusLabel(terminal.status);
+
+  return (
+    <span
+      role="status"
+      aria-label={`${terminal.label}: ${statusLabel}`}
+      className={cn(
+        "size-1.5 shrink-0 rounded-full",
+        terminal.status === "running"
+          ? "bg-emerald-400"
+          : terminal.status === "starting" || terminal.status === "loading"
+            ? "animate-pulse bg-sky-400"
+            : terminal.status === "error"
+              ? "bg-red-400"
+              : "bg-slate-600",
+      )}
+    />
+  );
+};
 
 const WorkspaceTerminalViewport = ({
   store,
@@ -389,29 +393,34 @@ export const WorkspaceTerminal = ({
                     : "border-transparent text-slate-500 hover:bg-slate-900/60 hover:text-slate-300",
                 )}
               >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  title={terminal.title ?? terminal.label}
-                  onClick={() => store.selectTerminal(terminal.id)}
-                  className="flex min-w-0 items-center gap-1.5 py-1 pl-2 text-[11px] outline-none focus-visible:text-sky-300"
+                <ControlTooltip
+                  content={`${terminal.title ?? terminal.label} · ${terminalStatusLabel(terminal.status)}`}
                 >
-                  <TerminalStatusDot terminal={terminal} />
-                  <span className="truncate">{terminal.label}</span>
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Close ${terminal.label}`}
-                  onClick={() => closeTerminal(terminal)}
-                  className={cn(
-                    "mx-1 grid size-4 shrink-0 place-items-center rounded-sm text-slate-600 outline-none hover:bg-slate-800 hover:text-slate-300 focus-visible:ring-1 focus-visible:ring-sky-400",
-                    !active &&
-                      "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
-                  )}
-                >
-                  <X className="size-3" />
-                </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => store.selectTerminal(terminal.id)}
+                    className="flex min-w-0 items-center gap-1.5 py-1 pl-2 text-[11px] outline-none focus-visible:text-sky-300"
+                  >
+                    <TerminalStatusDot terminal={terminal} />
+                    <span className="truncate">{terminal.label}</span>
+                  </button>
+                </ControlTooltip>
+                <ControlTooltip content={`Close ${terminal.label}`}>
+                  <button
+                    type="button"
+                    aria-label={`Close ${terminal.label}`}
+                    onClick={() => closeTerminal(terminal)}
+                    className={cn(
+                      "mx-1 grid size-4 shrink-0 place-items-center rounded-sm text-slate-600 outline-none hover:bg-slate-800 hover:text-slate-300 focus-visible:ring-1 focus-visible:ring-sky-400",
+                      !active &&
+                        "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+                    )}
+                  >
+                    <X className="size-3" />
+                  </button>
+                </ControlTooltip>
               </div>
             );
           })}
@@ -419,17 +428,20 @@ export const WorkspaceTerminal = ({
 
         {snapshot.profiles?.availableShells.length ? (
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className="size-7 shrink-0"
-                aria-label="New terminal"
-              >
-                <Plus className="size-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
+            <ControlTooltip content="New terminal">
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="size-7 shrink-0"
+                  aria-label="New terminal"
+                  tooltip={null}
+                >
+                  <Plus className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+            </ControlTooltip>
             <DropdownMenuContent align="end" className="min-w-44">
               {snapshot.profiles.visibleShells.map((shell) => (
                 <DropdownMenuItem

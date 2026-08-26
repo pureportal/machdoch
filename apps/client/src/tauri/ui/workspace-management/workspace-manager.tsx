@@ -1611,7 +1611,7 @@ export const WorkspaceManager = ({
                       workspaceSetup.loading ||
                       !instructionLibraryAvailable
                     }
-                    title={
+                    tooltip={
                       instructionLibraryAvailable
                         ? undefined
                         : "Instruction library unavailable."
@@ -1629,7 +1629,7 @@ export const WorkspaceManager = ({
                       workspaceSetup.loading ||
                       !instructionLibraryAvailable
                     }
-                    title={
+                    tooltip={
                       instructionLibraryAvailable
                         ? undefined
                         : "Instruction library unavailable."

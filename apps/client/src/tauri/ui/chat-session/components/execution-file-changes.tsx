@@ -17,15 +17,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "../../components/ui/popover";
+import { ControlTooltip } from "../../components/ui/tooltip";
 import {
   normalizeTaskExecutionChangedLineRange,
   normalizeTaskExecutionFileChange,
 } from "../../chat-session.model";
 import { cn } from "../../lib/utils";
-import {
-  getTaskFileChangeFiles,
-  getTaskFileChangeHunks,
-} from "../../runtime";
+import { getTaskFileChangeFiles, getTaskFileChangeHunks } from "../../runtime";
 
 type StoredFileChange = TaskExecutionFileChange & {
   storedId: number;
@@ -86,11 +84,7 @@ const normalizePageCursor = (value: unknown): number | null => {
     return null;
   }
 
-  if (
-    typeof value !== "number" ||
-    !Number.isSafeInteger(value) ||
-    value < 0
-  ) {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
     throw new Error("Stored file-change cursor is invalid.");
   }
 
@@ -236,9 +230,7 @@ const createFileChangeTitle = (
   ].join(" • ");
 };
 
-const getFileOperationClassName = (
-  file: TaskExecutionFileChange,
-): string => {
+const getFileOperationClassName = (file: TaskExecutionFileChange): string => {
   if (file.operation === "added") {
     return "border-emerald-500/25 bg-emerald-500/10 text-emerald-300";
   }
@@ -426,44 +418,45 @@ const FileChangeRow = ({
 
   return (
     <div>
-      <button
-        type="button"
-        aria-label={`${getFileOperationLabel(file)} ${file.path}, ${rangeSummary}`}
-        title={title}
-        disabled={file.operation === "deleted"}
-        onClick={() => onOpenFile(file.path)}
-        className="group flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left outline-none transition-colors hover:bg-slate-900 focus-visible:bg-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500/50 disabled:cursor-default disabled:opacity-75"
-      >
-        <span
-          aria-hidden="true"
-          className={cn(
-            "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border text-[10px] font-bold",
-            getFileOperationClassName(file),
-          )}
+      <ControlTooltip content={title}>
+        <button
+          type="button"
+          aria-label={`${getFileOperationLabel(file)} ${file.path}, ${rangeSummary}`}
+          disabled={file.operation === "deleted"}
+          onClick={() => onOpenFile(file.path)}
+          className="group flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left outline-none transition-colors hover:bg-slate-900 focus-visible:bg-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500/50 disabled:cursor-default disabled:opacity-75"
         >
-          {getFileOperationSymbol(file)}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-xs font-medium text-slate-200 group-hover:text-white">
-            {file.oldPath
-              ? `${file.oldPath} → ${getRepositoryRelativeFilePath(file)}`
-              : getRepositoryRelativeFilePath(file)}
+          <span
+            aria-hidden="true"
+            className={cn(
+              "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border text-[10px] font-bold",
+              getFileOperationClassName(file),
+            )}
+          >
+            {getFileOperationSymbol(file)}
           </span>
-          <span className="mt-0.5 block truncate text-[11px] text-slate-500">
-            {rangeSummary}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-xs font-medium text-slate-200 group-hover:text-white">
+              {file.oldPath
+                ? `${file.oldPath} → ${getRepositoryRelativeFilePath(file)}`
+                : getRepositoryRelativeFilePath(file)}
+            </span>
+            <span className="mt-0.5 block truncate text-[11px] text-slate-500">
+              {rangeSummary}
+            </span>
           </span>
-        </span>
-        {lineDelta ? (
-          <span className="flex shrink-0 items-center gap-1 text-[11px] font-semibold">
-            {lineDelta.additions > 0 ? (
-              <span className="text-emerald-300">{`+${lineDelta.additions}`}</span>
-            ) : null}
-            {lineDelta.deletions > 0 ? (
-              <span className="text-rose-300">{`−${lineDelta.deletions}`}</span>
-            ) : null}
-          </span>
-        ) : null}
-      </button>
+          {lineDelta ? (
+            <span className="flex shrink-0 items-center gap-1 text-[11px] font-semibold">
+              {lineDelta.additions > 0 ? (
+                <span className="text-emerald-300">{`+${lineDelta.additions}`}</span>
+              ) : null}
+              {lineDelta.deletions > 0 ? (
+                <span className="text-rose-300">{`−${lineDelta.deletions}`}</span>
+              ) : null}
+            </span>
+          ) : null}
+        </button>
+      </ControlTooltip>
 
       {canPageHunks ? (
         <button
@@ -478,7 +471,10 @@ const FileChangeRow = ({
 
       {expanded ? (
         <div className="ml-12 mr-2 mt-1 rounded-lg border border-slate-800 bg-slate-900/60 px-2.5 py-2 text-[10px] text-slate-400">
-          <ol className="space-y-1" aria-label={`${file.path} changed line ranges`}>
+          <ol
+            className="space-y-1"
+            aria-label={`${file.path} changed line ranges`}
+          >
             {ranges.map((range, index) => (
               <li key={`${range.oldStart}:${range.newStart}:${index}`}>
                 {getExpandedRangeLabel(range)}
@@ -566,9 +562,7 @@ export const ExecutionFileChanges = ({
     ...(loadError ? [loadError] : []),
   ].join(" ");
   const summaryLabel = `${fileChanges.totalFiles} path change${fileChanges.totalFiles === 1 ? "" : "s"}${
-    hasMultipleRepositories
-      ? ` across ${repositoryCount} repositories`
-      : ""
+    hasMultipleRepositories ? ` across ${repositoryCount} repositories` : ""
   }`;
   const accessibilityLabel = [
     summaryLabel,

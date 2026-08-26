@@ -59,7 +59,6 @@ import {
   takeFileManagerInvocations,
   type FileManagerInvocation,
 } from "./runtime";
-import { TooltipProvider } from "./components/ui/tooltip";
 import { CommandProvider } from "./commands/command-context";
 import { getDefaultCommandShortcut } from "./commands/command-defaults";
 import { useCommandOverlay } from "./commands/use-command-overlay";
@@ -856,289 +855,63 @@ export const ChatSession = (): JSX.Element => {
 
   if (!appShellLoaded || !controller.hasHydrated) {
     return (
-      <TooltipProvider delayDuration={300}>
-        <div className="grid h-screen w-full place-items-center bg-slate-950 px-6 text-slate-100">
-          <div className="grid max-w-md gap-4 text-center">
-            <p className="text-sm text-slate-400">
-              {appShellLoadError ?? "Loading your workspace layout..."}
-            </p>
-            {appShellLoadError ? (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setAppShellLoadAttempt((attempt) => attempt + 1)}
-              >
-                Retry
-              </Button>
-            ) : null}
-          </div>
+      <div className="grid h-screen w-full place-items-center bg-slate-950 px-6 text-slate-100">
+        <div className="grid max-w-md gap-4 text-center">
+          <p className="text-sm text-slate-400">
+            {appShellLoadError ?? "Loading your workspace layout..."}
+          </p>
+          {appShellLoadError ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setAppShellLoadAttempt((attempt) => attempt + 1)}
+            >
+              Retry
+            </Button>
+          ) : null}
         </div>
-      </TooltipProvider>
+      </div>
     );
   }
 
   return (
-    <TooltipProvider delayDuration={300}>
-      <CommandProvider activeView={activeApp} commands={shellCommands}>
-        <Dialog
-          open={controller.catalogOpen}
-          onOpenChange={controller.setCatalogOpen}
-          commandOverlayId="settings-dialog"
-          commandOverlayAllowGlobalCommands={["app.palette.toggle"]}
-        >
-          <div className="app-shell relative flex h-screen w-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-950 font-sans text-slate-100 antialiased">
-            <ShellTitlebar {...controller.titlebar} />
+    <CommandProvider activeView={activeApp} commands={shellCommands}>
+      <Dialog
+        open={controller.catalogOpen}
+        onOpenChange={controller.setCatalogOpen}
+        commandOverlayId="settings-dialog"
+        commandOverlayAllowGlobalCommands={["app.palette.toggle"]}
+      >
+        <div className="app-shell relative flex h-screen w-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-950 font-sans text-slate-100 antialiased">
+          <ShellTitlebar {...controller.titlebar} />
 
-            <FileDropOverlay
-              active={controller.fileDrop.isActive}
-              label="Attach to task"
-            />
+          <FileDropOverlay
+            active={controller.fileDrop.isActive}
+            label="Attach to task"
+          />
 
-            {onboardingOpen && !controller.catalogOpen ? (
-              <Suspense
-                fallback={
-                  <div
-                    role="status"
-                    aria-live="polite"
-                    className="absolute inset-0 z-70 grid place-items-center bg-slate-950/92 text-sm text-slate-400 backdrop-blur-xl"
-                  >
-                    Preparing settings…
-                  </div>
-                }
-              >
-                <OnboardingWizard
-                  activeSession={controller.composer.activeSession}
-                  chooserProviders={controller.composer.chooserProviders}
-                  hasAnyProvider={controller.hasAnyProvider}
-                  isUiControlAvailable={
-                    controller.composer.isUiControlAvailable
-                  }
-                  uiControlDescription={
-                    controller.composer.uiControlDescription
-                  }
-                  settingsSection={controller.settingsDialog.settingsSection}
-                  onSettingsSectionChange={
-                    controller.settingsDialog.onSettingsSectionChange
-                  }
-                  providerSetup={controller.settingsDialog.providerSetup}
-                  workspaceSetup={controller.settingsDialog.workspaceSetup}
-                  webSearchSetup={controller.settingsDialog.webSearchSetup}
-                  mcpSetup={controller.settingsDialog.mcpSetup}
-                  agentLimitsSetup={controller.settingsDialog.agentLimitsSetup}
-                  appearanceSetup={appearance}
-                  memorySetup={controller.settingsDialog.memorySetup}
-                  desktopSetup={controller.settingsDialog.desktopSetup}
-                  voiceSetup={controller.settingsDialog.voiceSetup}
-                  onSelectFolder={controller.composer.onSelectFolder}
-                  onSessionModelSelection={
-                    controller.composer.onSessionModelSelection
-                  }
-                  onSessionModeSelection={
-                    controller.composer.onSessionModeSelection
-                  }
-                  onUiControlEnabledChange={
-                    controller.composer.onUiControlEnabledChange
-                  }
-                  onFinish={() => {
-                    return closeOnboarding(false);
-                  }}
-                  onSkip={() => {
-                    return closeOnboarding(true);
-                  }}
-                />
-              </Suspense>
-            ) : null}
-
-            {controller.voiceInputOverlay.visible ? (
-              <div className="absolute inset-0 z-50 overflow-hidden bg-slate-950/96 backdrop-blur-xl">
-                <VoiceInputOverlay
-                  title="Voice input"
-                  recording={controller.voiceInputOverlay.recording}
-                  transcribing={controller.voiceInputOverlay.transcribing}
-                  level={controller.voiceInputOverlay.level}
-                  statusText={controller.voiceInputOverlay.statusText}
-                  statusTone={controller.voiceInputOverlay.statusTone}
-                  primaryActionDisabled={
-                    controller.voiceInputOverlay.transcribing
-                  }
-                  onPrimaryAction={controller.voiceInputOverlay.onAction}
-                  className="rounded-xl border border-slate-800/70 bg-slate-950/96"
-                  headerClassName="px-8"
-                />
-              </div>
-            ) : null}
-
-            <div className="flex min-h-0 min-w-0 flex-1 w-full overflow-hidden bg-slate-950">
-              <AppRail
-                activeApp={activeApp}
-                chatActivity={chatActivity}
-                ralphActivity={ralphActivity}
-                mediaActivity={mediaActivity}
-                schedulerActivity={schedulerActivity}
-                onSelectApp={selectApp}
-                onOpenScheduler={() => setSchedulerOpen(true)}
-                onOpenMissionControl={() =>
-                  controller.missionControl.setOpen(true)
-                }
-                onOpenSettings={controller.openProviderSettings}
-              />
-
-              {activeApp === "chat" ? (
-                <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                  <SessionsSidebar
-                    {...controller.sidebar}
-                    searchInputRef={sessionSearchInputRef}
-                  />
-
-                  {controller.isDesktop && !controller.hasAnyProvider ? (
-                    <ProviderEmptyState
-                      onOpenSettings={controller.openProviderSettings}
-                    />
-                  ) : (
-                    <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
-                      <SessionHeader {...controller.header} />
-
-                      <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
-                        <ScrollArea className="h-full min-w-0" type="always">
-                          <ConversationFeed
-                            key={controller.composer.activeSession.id}
-                            {...controller.conversation}
-                          />
-                        </ScrollArea>
-                        <ScrollToNewestButton
-                          visible={
-                            controller.conversation.showScrollToNewestButton
-                          }
-                          onClick={controller.conversation.onScrollToNewest}
-                          className="bottom-4 right-4"
-                        />
-                      </div>
-
-                      <footer className="app-session-footer min-w-0 border-t border-slate-900/80 bg-slate-950/40 px-8 pb-5 pt-3 backdrop-blur-xl">
-                        <div className="mx-auto w-full max-w-5xl min-w-0">
-                          <SessionComposer
-                            key={controller.composer.activeSession.id}
-                            {...controller.composer}
-                            onBrowseMediaAssets={() => {
-                              setPendingMediaSection("library");
-                              selectApp("media");
-                            }}
-                            onCreateMediaAsset={(prompt) => {
-                              setPendingMediaDraftPrompt(prompt);
-                              setPendingMediaSection("generate");
-                              selectApp("media");
-                            }}
-                          />
-                        </div>
-                      </footer>
-                    </main>
-                  )}
+          {onboardingOpen && !controller.catalogOpen ? (
+            <Suspense
+              fallback={
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="absolute inset-0 z-70 grid place-items-center bg-slate-950/92 text-sm text-slate-400 backdrop-blur-xl"
+                >
+                  Preparing settings…
                 </div>
-              ) : null}
-
-              {activeApp === "ralph" ? (
-                <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                  <Suspense fallback={appLoadingFallback}>
-                    <RalphApp
-                      isActive
-                      providerStatuses={controller.titlebar.providerStatuses}
-                      onOpenMediaRun={(runId) => {
-                        setPendingMediaRunId(runId);
-                        selectApp("media");
-                      }}
-                    />
-                  </Suspense>
-                </div>
-              ) : null}
-
-              {activeApp === "media" ? (
-                <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                  <Suspense fallback={appLoadingFallback}>
-                    <MediaStudio
-                      providerStatuses={controller.titlebar.providerStatuses}
-                      onOpenProviderSettings={controller.openProviderSettings}
-                      workspaceRoot={
-                        controller.composer.activeSession.workspace
-                      }
-                      openRunId={pendingMediaRunId}
-                      onOpenRunHandled={() => setPendingMediaRunId(null)}
-                      openSection={pendingMediaSection}
-                      onOpenSectionHandled={() => setPendingMediaSection(null)}
-                      openAssetId={pendingMediaAssetId}
-                      onOpenAssetHandled={() => setPendingMediaAssetId(null)}
-                      importPath={pendingMediaImportPath}
-                      onImportPathHandled={() =>
-                        setPendingMediaImportPath(null)
-                      }
-                      draftPrompt={pendingMediaDraftPrompt}
-                      onDraftPromptHandled={() =>
-                        setPendingMediaDraftPrompt(null)
-                      }
-                    />
-                  </Suspense>
-                </div>
-              ) : null}
-
-              <div
-                hidden={activeApp !== "marketplace"}
-                className={cn(
-                  "min-h-0 min-w-0 flex-1 overflow-hidden",
-                  activeApp === "marketplace" ? "flex" : "hidden",
-                )}
-              >
-                {activeApp === "marketplace" ? (
-                  <Suspense fallback={appLoadingFallback}>
-                    <McpMarketplace
-                      workspaceRoot={
-                        controller.composer.activeSession.workspace
-                      }
-                      onOpenSettings={() => {
-                        controller.settingsDialog.onSettingsSectionChange(
-                          "mcp",
-                        );
-                        controller.setCatalogOpen(true);
-                      }}
-                    />
-                  </Suspense>
-                ) : null}
-              </div>
-
-              {activeApp === "instructions" ? (
-                <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                  <Suspense fallback={appLoadingFallback}>
-                    <InstructionManager
-                      setup={controller.instructionManagement}
-                      onDirtyChange={setInstructionDraftDirty}
-                    />
-                  </Suspense>
-                </div>
-              ) : null}
-
-              {activeApp === "workspaces" ? (
-                <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                  <Suspense fallback={appLoadingFallback}>
-                    <WorkspaceManager
-                      setup={controller.instructionManagement}
-                      workspaceSetup={controller.workspaceManagement}
-                      activeWorkspaceRoot={
-                        controller.composer.activeSession.workspace
-                      }
-                      onDirtyChange={setWorkspaceDraftDirty}
-                    />
-                  </Suspense>
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          {controller.catalogOpen ? (
-            <Suspense fallback={null}>
-              <SettingsDialog
+              }
+            >
+              <OnboardingWizard
+                activeSession={controller.composer.activeSession}
+                chooserProviders={controller.composer.chooserProviders}
+                hasAnyProvider={controller.hasAnyProvider}
+                isUiControlAvailable={controller.composer.isUiControlAvailable}
+                uiControlDescription={controller.composer.uiControlDescription}
                 settingsSection={controller.settingsDialog.settingsSection}
                 onSettingsSectionChange={
                   controller.settingsDialog.onSettingsSectionChange
                 }
-                onClose={() => controller.setCatalogOpen(false)}
                 providerSetup={controller.settingsDialog.providerSetup}
                 workspaceSetup={controller.settingsDialog.workspaceSetup}
                 webSearchSetup={controller.settingsDialog.webSearchSetup}
@@ -1148,79 +921,289 @@ export const ChatSession = (): JSX.Element => {
                 memorySetup={controller.settingsDialog.memorySetup}
                 desktopSetup={controller.settingsDialog.desktopSetup}
                 voiceSetup={controller.settingsDialog.voiceSetup}
+                onSelectFolder={controller.composer.onSelectFolder}
+                onSessionModelSelection={
+                  controller.composer.onSessionModelSelection
+                }
+                onSessionModeSelection={
+                  controller.composer.onSessionModeSelection
+                }
+                onUiControlEnabledChange={
+                  controller.composer.onUiControlEnabledChange
+                }
+                onFinish={() => {
+                  return closeOnboarding(false);
+                }}
+                onSkip={() => {
+                  return closeOnboarding(true);
+                }}
               />
             </Suspense>
           ) : null}
-        </Dialog>
 
+          {controller.voiceInputOverlay.visible ? (
+            <div className="absolute inset-0 z-50 overflow-hidden bg-slate-950/96 backdrop-blur-xl">
+              <VoiceInputOverlay
+                title="Voice input"
+                recording={controller.voiceInputOverlay.recording}
+                transcribing={controller.voiceInputOverlay.transcribing}
+                level={controller.voiceInputOverlay.level}
+                statusText={controller.voiceInputOverlay.statusText}
+                statusTone={controller.voiceInputOverlay.statusTone}
+                primaryActionDisabled={
+                  controller.voiceInputOverlay.transcribing
+                }
+                onPrimaryAction={controller.voiceInputOverlay.onAction}
+                className="rounded-xl border border-slate-800/70 bg-slate-950/96"
+                headerClassName="px-8"
+              />
+            </div>
+          ) : null}
+
+          <div className="flex min-h-0 min-w-0 flex-1 w-full overflow-hidden bg-slate-950">
+            <AppRail
+              activeApp={activeApp}
+              chatActivity={chatActivity}
+              ralphActivity={ralphActivity}
+              mediaActivity={mediaActivity}
+              schedulerActivity={schedulerActivity}
+              onSelectApp={selectApp}
+              onOpenScheduler={() => setSchedulerOpen(true)}
+              onOpenMissionControl={() =>
+                controller.missionControl.setOpen(true)
+              }
+              onOpenSettings={controller.openProviderSettings}
+            />
+
+            {activeApp === "chat" ? (
+              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                <SessionsSidebar
+                  {...controller.sidebar}
+                  searchInputRef={sessionSearchInputRef}
+                />
+
+                {controller.isDesktop && !controller.hasAnyProvider ? (
+                  <ProviderEmptyState
+                    onOpenSettings={controller.openProviderSettings}
+                  />
+                ) : (
+                  <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
+                    <SessionHeader {...controller.header} />
+
+                    <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+                      <ScrollArea className="h-full min-w-0" type="always">
+                        <ConversationFeed
+                          key={controller.composer.activeSession.id}
+                          {...controller.conversation}
+                        />
+                      </ScrollArea>
+                      <ScrollToNewestButton
+                        visible={
+                          controller.conversation.showScrollToNewestButton
+                        }
+                        onClick={controller.conversation.onScrollToNewest}
+                        className="bottom-4 right-4"
+                      />
+                    </div>
+
+                    <footer className="app-session-footer min-w-0 border-t border-slate-900/80 bg-slate-950/40 px-8 pb-5 pt-3 backdrop-blur-xl">
+                      <div className="mx-auto w-full max-w-5xl min-w-0">
+                        <SessionComposer
+                          key={controller.composer.activeSession.id}
+                          {...controller.composer}
+                          onBrowseMediaAssets={() => {
+                            setPendingMediaSection("library");
+                            selectApp("media");
+                          }}
+                          onCreateMediaAsset={(prompt) => {
+                            setPendingMediaDraftPrompt(prompt);
+                            setPendingMediaSection("generate");
+                            selectApp("media");
+                          }}
+                        />
+                      </div>
+                    </footer>
+                  </main>
+                )}
+              </div>
+            ) : null}
+
+            {activeApp === "ralph" ? (
+              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                <Suspense fallback={appLoadingFallback}>
+                  <RalphApp
+                    isActive
+                    providerStatuses={controller.titlebar.providerStatuses}
+                    onOpenMediaRun={(runId) => {
+                      setPendingMediaRunId(runId);
+                      selectApp("media");
+                    }}
+                  />
+                </Suspense>
+              </div>
+            ) : null}
+
+            {activeApp === "media" ? (
+              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                <Suspense fallback={appLoadingFallback}>
+                  <MediaStudio
+                    providerStatuses={controller.titlebar.providerStatuses}
+                    onOpenProviderSettings={controller.openProviderSettings}
+                    workspaceRoot={controller.composer.activeSession.workspace}
+                    openRunId={pendingMediaRunId}
+                    onOpenRunHandled={() => setPendingMediaRunId(null)}
+                    openSection={pendingMediaSection}
+                    onOpenSectionHandled={() => setPendingMediaSection(null)}
+                    openAssetId={pendingMediaAssetId}
+                    onOpenAssetHandled={() => setPendingMediaAssetId(null)}
+                    importPath={pendingMediaImportPath}
+                    onImportPathHandled={() => setPendingMediaImportPath(null)}
+                    draftPrompt={pendingMediaDraftPrompt}
+                    onDraftPromptHandled={() =>
+                      setPendingMediaDraftPrompt(null)
+                    }
+                  />
+                </Suspense>
+              </div>
+            ) : null}
+
+            <div
+              hidden={activeApp !== "marketplace"}
+              className={cn(
+                "min-h-0 min-w-0 flex-1 overflow-hidden",
+                activeApp === "marketplace" ? "flex" : "hidden",
+              )}
+            >
+              {activeApp === "marketplace" ? (
+                <Suspense fallback={appLoadingFallback}>
+                  <McpMarketplace
+                    workspaceRoot={controller.composer.activeSession.workspace}
+                    onOpenSettings={() => {
+                      controller.settingsDialog.onSettingsSectionChange("mcp");
+                      controller.setCatalogOpen(true);
+                    }}
+                  />
+                </Suspense>
+              ) : null}
+            </div>
+
+            {activeApp === "instructions" ? (
+              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                <Suspense fallback={appLoadingFallback}>
+                  <InstructionManager
+                    setup={controller.instructionManagement}
+                    onDirtyChange={setInstructionDraftDirty}
+                  />
+                </Suspense>
+              </div>
+            ) : null}
+
+            {activeApp === "workspaces" ? (
+              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                <Suspense fallback={appLoadingFallback}>
+                  <WorkspaceManager
+                    setup={controller.instructionManagement}
+                    workspaceSetup={controller.workspaceManagement}
+                    activeWorkspaceRoot={
+                      controller.composer.activeSession.workspace
+                    }
+                    onDirtyChange={setWorkspaceDraftDirty}
+                  />
+                </Suspense>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {controller.catalogOpen ? (
+          <Suspense fallback={null}>
+            <SettingsDialog
+              settingsSection={controller.settingsDialog.settingsSection}
+              onSettingsSectionChange={
+                controller.settingsDialog.onSettingsSectionChange
+              }
+              onClose={() => controller.setCatalogOpen(false)}
+              providerSetup={controller.settingsDialog.providerSetup}
+              workspaceSetup={controller.settingsDialog.workspaceSetup}
+              webSearchSetup={controller.settingsDialog.webSearchSetup}
+              mcpSetup={controller.settingsDialog.mcpSetup}
+              agentLimitsSetup={controller.settingsDialog.agentLimitsSetup}
+              appearanceSetup={appearance}
+              memorySetup={controller.settingsDialog.memorySetup}
+              desktopSetup={controller.settingsDialog.desktopSetup}
+              voiceSetup={controller.settingsDialog.voiceSetup}
+            />
+          </Suspense>
+        ) : null}
+      </Dialog>
+
+      <Dialog
+        open={controller.missionControl.open}
+        onOpenChange={controller.missionControl.setOpen}
+        commandOverlayId="mission-control"
+        commandOverlayAllowGlobalCommands={["app.palette.toggle"]}
+      >
+        <MissionControlPanel
+          status={controller.missionControl.status}
+          loading={controller.missionControl.loading}
+          message={controller.missionControl.message}
+          onEnable={controller.missionControl.onEnable}
+          onDisable={controller.missionControl.onDisable}
+          onOpenUrl={controller.missionControl.onOpenUrl}
+          onSavePort={controller.missionControl.onSavePort}
+          onForgetPairings={controller.missionControl.onForgetPairings}
+        />
+      </Dialog>
+
+      {schedulerOpen ? (
         <Dialog
-          open={controller.missionControl.open}
-          onOpenChange={controller.missionControl.setOpen}
-          commandOverlayId="mission-control"
+          open
+          onOpenChange={setSchedulerOpen}
+          commandOverlayId="scheduler"
           commandOverlayAllowGlobalCommands={["app.palette.toggle"]}
         >
-          <MissionControlPanel
-            status={controller.missionControl.status}
-            loading={controller.missionControl.loading}
-            message={controller.missionControl.message}
-            onEnable={controller.missionControl.onEnable}
-            onDisable={controller.missionControl.onDisable}
-            onOpenUrl={controller.missionControl.onOpenUrl}
-            onSavePort={controller.missionControl.onSavePort}
-            onForgetPairings={controller.missionControl.onForgetPairings}
+          <SchedulerPanel
+            workspaceRoot={controller.composer.activeSession.workspace}
           />
         </Dialog>
+      ) : null}
 
-        {schedulerOpen ? (
-          <Dialog
-            open
-            onOpenChange={setSchedulerOpen}
-            commandOverlayId="scheduler"
-            commandOverlayAllowGlobalCommands={["app.palette.toggle"]}
-          >
-            <SchedulerPanel
-              workspaceRoot={controller.composer.activeSession.workspace}
-            />
-          </Dialog>
-        ) : null}
+      <AttachmentImagePreviewDialog
+        preview={controller.attachmentImagePreview.preview}
+        onOpenChange={controller.attachmentImagePreview.onOpenChange}
+        onEditMediaAsset={(attachment) => {
+          controller.attachmentImagePreview.onOpenChange(false);
+          setPendingMediaAssetId(attachment.assetId);
+          selectApp("media");
+        }}
+        onSaveToMediaLibrary={(attachment) => {
+          controller.attachmentImagePreview.onOpenChange(false);
+          setPendingMediaImportPath(attachment.path);
+          selectApp("media");
+        }}
+      />
 
-        <AttachmentImagePreviewDialog
-          preview={controller.attachmentImagePreview.preview}
-          onOpenChange={controller.attachmentImagePreview.onOpenChange}
-          onEditMediaAsset={(attachment) => {
-            controller.attachmentImagePreview.onOpenChange(false);
-            setPendingMediaAssetId(attachment.assetId);
-            selectApp("media");
-          }}
-          onSaveToMediaLibrary={(attachment) => {
-            controller.attachmentImagePreview.onOpenChange(false);
-            setPendingMediaImportPath(attachment.path);
-            selectApp("media");
-          }}
-        />
-
-        {controller.filePreview.preview ? (
-          <Suspense
-            fallback={
-              <FilePreviewDialogFallback
-                preview={controller.filePreview.preview}
-                onOpenChange={controller.filePreview.onOpenChange}
-                onOpenExternal={controller.filePreview.onOpenExternal}
-              />
-            }
-          >
-            <FilePreviewDialog
+      {controller.filePreview.preview ? (
+        <Suspense
+          fallback={
+            <FilePreviewDialogFallback
               preview={controller.filePreview.preview}
               onOpenChange={controller.filePreview.onOpenChange}
               onOpenExternal={controller.filePreview.onOpenExternal}
             />
-          </Suspense>
-        ) : null}
+          }
+        >
+          <FilePreviewDialog
+            preview={controller.filePreview.preview}
+            onOpenChange={controller.filePreview.onOpenChange}
+            onOpenExternal={controller.filePreview.onOpenExternal}
+          />
+        </Suspense>
+      ) : null}
 
-        <ChatInputNeededDialog {...controller.inputNeeded} />
+      <ChatInputNeededDialog {...controller.inputNeeded} />
 
-        <ChatInterviewDialog {...controller.chatInterview} />
-      </CommandProvider>
-    </TooltipProvider>
+      <ChatInterviewDialog {...controller.chatInterview} />
+    </CommandProvider>
   );
 };

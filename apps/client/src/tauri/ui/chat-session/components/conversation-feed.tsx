@@ -500,7 +500,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                       ? "Stop reading aloud"
                       : "Read response aloud"
                   }
-                  title={
+                  tooltip={
                     isSpeakingMessage
                       ? "Stop reading aloud"
                       : "Read response aloud"
@@ -541,7 +541,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                   }
                   aria-expanded={isOriginalPromptExpanded}
                   aria-controls={originalPromptPanelId}
-                  title={
+                  tooltip={
                     isOriginalPromptExpanded
                       ? "Hide original prompt"
                       : "View original prompt"
@@ -1669,7 +1669,6 @@ export const ConversationFeed = ({
             variant="ghost"
             size="xs"
             aria-label="Previous message"
-            title="Previous message"
             disabled={!navigationState.previousMessage}
             onClick={() => navigateToMessage(navigationState.previousMessage)}
             className="h-7 rounded-full px-2 text-slate-300 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-35"
@@ -1690,7 +1689,6 @@ export const ConversationFeed = ({
             variant="ghost"
             size="xs"
             aria-label="Next message"
-            title="Next message"
             disabled={!navigationState.nextMessage}
             onClick={() => navigateToMessage(navigationState.nextMessage)}
             className="h-7 rounded-full px-2 text-slate-300 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-35"
@@ -1805,7 +1803,7 @@ export const ConversationFeed = ({
                     }
                     aria-expanded={promptEnhancementPreviewExpanded}
                     aria-controls={promptEnhancementPreviewPanelId}
-                    title={
+                    tooltip={
                       promptEnhancementPreviewExpanded
                         ? "Hide original prompt"
                         : "View original prompt"

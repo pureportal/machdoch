@@ -14,6 +14,7 @@ import type {
   MediaModelDescriptor,
 } from "../../../../core/media/contracts.js";
 import { cn } from "../../lib/utils";
+import { ControlTooltip } from "../../components/ui/tooltip";
 import { MediaLoraStrengthControl } from "./media-lora-strength-control";
 import { MediaResourcePreview } from "./media-visual-preview";
 
@@ -105,14 +106,16 @@ export const MediaAddonBrowser = ({
           {reconciledSelections.length > 0 ? (
             <div className="absolute inset-y-0 right-1.5 flex items-center gap-1.5 text-[10px] text-slate-400">
               <span>{reconciledSelections.length} selected</span>
-              <button
-                type="button"
-                aria-label="Clear selected add-ons"
-                onClick={onClear}
-                className="rounded p-0.5 hover:bg-slate-800 hover:text-slate-100"
-              >
-                <X className="h-3 w-3" />
-              </button>
+              <ControlTooltip content="Clear selected add-ons">
+                <button
+                  type="button"
+                  aria-label="Clear selected add-ons"
+                  onClick={onClear}
+                  className="rounded p-0.5 hover:bg-slate-800 hover:text-slate-100"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </ControlTooltip>
             </div>
           ) : null}
         </div>
@@ -168,6 +171,36 @@ export const MediaAddonBrowser = ({
             reconciledSelections.filter(
               (candidate) => candidate.enabled && candidate.kind === addon.kind,
             ).length >= capability.maxActive;
+          const addonButton = (
+            <button
+              type="button"
+              aria-label={addon.displayName}
+              aria-pressed={selection !== undefined}
+              disabled={atCapacity}
+              onClick={() => onToggle(addon.id)}
+              className="block w-full overflow-hidden rounded-xl text-left"
+            >
+              <div className="aspect-[4/3] bg-slate-900">
+                <MediaResourcePreview
+                  resourceId={addon.id}
+                  metadata={metadata}
+                  assets={assets}
+                  className="h-full w-full"
+                />
+              </div>
+              <div className="flex items-center gap-2 p-2">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-medium text-slate-200">
+                    {addon.displayName}
+                  </span>
+                  <span className="block text-[9px] text-slate-500">
+                    {addonTypeLabel(addon.kind)}
+                  </span>
+                </span>
+                {selection ? <Check className="h-4 w-4 text-sky-300" /> : null}
+              </div>
+            </button>
+          );
           return (
             <article
               key={addon.id}
@@ -181,41 +214,15 @@ export const MediaAddonBrowser = ({
                   : "border-slate-800 bg-slate-900/60",
               )}
             >
-              <button
-                type="button"
-                aria-label={addon.displayName}
-                aria-pressed={selection !== undefined}
-                disabled={atCapacity}
-                title={
-                  atCapacity
-                    ? `${addonTypeLabel(addon.kind)} selection limit reached.`
-                    : undefined
-                }
-                onClick={() => onToggle(addon.id)}
-                className="block w-full overflow-hidden rounded-xl text-left"
-              >
-                <div className="aspect-[4/3] bg-slate-900">
-                  <MediaResourcePreview
-                    resourceId={addon.id}
-                    metadata={metadata}
-                    assets={assets}
-                    className="h-full w-full"
-                  />
-                </div>
-                <div className="flex items-center gap-2 p-2">
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-xs font-medium text-slate-200">
-                      {addon.displayName}
-                    </span>
-                    <span className="block text-[9px] text-slate-500">
-                      {addonTypeLabel(addon.kind)}
-                    </span>
-                  </span>
-                  {selection ? (
-                    <Check className="h-4 w-4 text-sky-300" />
-                  ) : null}
-                </div>
-              </button>
+              {atCapacity ? (
+                <ControlTooltip
+                  content={`${addonTypeLabel(addon.kind)} selection limit reached`}
+                >
+                  <span className="block">{addonButton}</span>
+                </ControlTooltip>
+              ) : (
+                addonButton
+              )}
 
               {selection ? (
                 <div className="absolute inset-x-2 top-2 z-10 max-h-[calc(100%-1rem)] overflow-y-auto rounded-lg border border-sky-300/30 bg-slate-950/90 p-2 shadow-xl backdrop-blur">
@@ -232,19 +239,21 @@ export const MediaAddonBrowser = ({
                             })
                           }
                         />
-                        <button
-                          type="button"
-                          aria-label={`Adjust ${addon.displayName}`}
-                          aria-expanded={openControlsId === addon.id}
-                          onClick={() =>
-                            setOpenControlsId((current) =>
-                              current === addon.id ? null : addon.id,
-                            )
-                          }
-                          className="rounded-md p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100"
-                        >
-                          <SlidersHorizontal className="h-3.5 w-3.5" />
-                        </button>
+                        <ControlTooltip content={`Adjust ${addon.displayName}`}>
+                          <button
+                            type="button"
+                            aria-label={`Adjust ${addon.displayName}`}
+                            aria-expanded={openControlsId === addon.id}
+                            onClick={() =>
+                              setOpenControlsId((current) =>
+                                current === addon.id ? null : addon.id,
+                              )
+                            }
+                            className="rounded-md p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                          >
+                            <SlidersHorizontal className="h-3.5 w-3.5" />
+                          </button>
+                        </ControlTooltip>
                       </>
                     ) : (
                       <select
@@ -264,14 +273,16 @@ export const MediaAddonBrowser = ({
                         <option value="both">Both</option>
                       </select>
                     )}
-                    <button
-                      type="button"
-                      aria-label={`Remove ${addon.displayName}`}
-                      onClick={() => onToggle(addon.id)}
-                      className="rounded-md p-1 text-slate-400 hover:bg-rose-400/10 hover:text-rose-200"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+                    <ControlTooltip content={`Remove ${addon.displayName}`}>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${addon.displayName}`}
+                        onClick={() => onToggle(addon.id)}
+                        className="rounded-md p-1 text-slate-400 hover:bg-rose-400/10 hover:text-rose-200"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </ControlTooltip>
                   </div>
                   {selection.kind === "lora" && openControlsId === addon.id ? (
                     <div className="mt-2 space-y-2 border-t border-slate-800 pt-2 text-[9px] text-slate-300">

@@ -10,6 +10,7 @@ import type {
   MediaGenerationAssetMetadata,
 } from "../../../../core/media/contracts.js";
 import { Button } from "../../components/ui/button";
+import { ControlTooltip } from "../../components/ui/tooltip";
 
 interface MediaCategoryManagerDialogProps {
   categories: readonly MediaAssetCategory[];
@@ -103,14 +104,16 @@ export const MediaCategoryManagerDialog = ({
           >
             Categories
           </h1>
-          <button
-            type="button"
-            aria-label="Close categories"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <ControlTooltip content="Close">
+            <button
+              type="button"
+              aria-label="Close categories"
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </ControlTooltip>
         </header>
         <div className="flex gap-2 border-b border-slate-800 p-4">
           <input
@@ -188,41 +191,47 @@ export const MediaCategoryManagerDialog = ({
                     )}
                     <span className="text-[10px] text-slate-500">{count}</span>
                     {editing ? (
-                      <button
-                        type="button"
-                        aria-label={`Save ${category.name}`}
-                        onClick={saveRename}
-                        className="rounded-md p-1.5 text-emerald-300 hover:bg-slate-800"
-                      >
-                        <Check className="h-3.5 w-3.5" />
-                      </button>
+                      <ControlTooltip content={`Save ${category.name}`}>
+                        <button
+                          type="button"
+                          aria-label={`Save ${category.name}`}
+                          onClick={saveRename}
+                          className="rounded-md p-1.5 text-emerald-300 hover:bg-slate-800"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </button>
+                      </ControlTooltip>
                     ) : (
+                      <ControlTooltip content={`Rename ${category.name}`}>
+                        <button
+                          type="button"
+                          aria-label={`Rename ${category.name}`}
+                          onClick={() => {
+                            setEditingId(category.id);
+                            setEditingName(category.name);
+                            setDeletingId(null);
+                            setError(null);
+                          }}
+                          className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      </ControlTooltip>
+                    )}
+                    <ControlTooltip content={`Remove ${category.name}`}>
                       <button
                         type="button"
-                        aria-label={`Rename ${category.name}`}
+                        aria-label={`Remove ${category.name}`}
                         onClick={() => {
-                          setEditingId(category.id);
-                          setEditingName(category.name);
-                          setDeletingId(null);
+                          setDeletingId(category.id);
+                          setEditingId(null);
                           setError(null);
                         }}
-                        className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-rose-500/10 hover:text-rose-300"
                       >
-                        <Pencil className="h-3.5 w-3.5" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      aria-label={`Remove ${category.name}`}
-                      onClick={() => {
-                        setDeletingId(category.id);
-                        setEditingId(null);
-                        setError(null);
-                      }}
-                      className="rounded-md p-1.5 text-slate-400 hover:bg-rose-500/10 hover:text-rose-300"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    </ControlTooltip>
                   </div>
                 )}
               </div>

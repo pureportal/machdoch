@@ -51,6 +51,7 @@ import { EmptyState } from "../components/ui/empty-state";
 import { Input } from "../components/ui/input";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { SearchField } from "../components/ui/search-field";
+import { ControlTooltip } from "../components/ui/tooltip";
 import {
   createFailedRegistryPage,
   filterMarketplaceResults,
@@ -1528,13 +1529,12 @@ export const McpMarketplace = ({
     }
 
     return (
-      <span
-        title={result.recommendation.reason}
-        className="inline-flex h-6 items-center gap-1 rounded-full border border-amber-400/25 bg-amber-400/10 px-2 text-xs font-semibold text-amber-100"
-      >
-        <Star className="h-3.5 w-3.5 fill-amber-300 text-amber-300" />
-        {result.recommendation.label}
-      </span>
+      <ControlTooltip content={result.recommendation.reason}>
+        <span className="inline-flex h-6 items-center gap-1 rounded-full border border-amber-400/25 bg-amber-400/10 px-2 text-xs font-semibold text-amber-100">
+          <Star className="h-3.5 w-3.5 fill-amber-300 text-amber-300" />
+          {result.recommendation.label}
+        </span>
+      </ControlTooltip>
     );
   };
 

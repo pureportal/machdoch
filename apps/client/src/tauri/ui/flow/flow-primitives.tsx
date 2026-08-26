@@ -2,6 +2,7 @@ import { Handle, type HandleProps } from "@xyflow/react";
 import type { ComponentPropsWithoutRef, JSX, ReactNode } from "react";
 
 import { cn } from "../lib/utils";
+import { ControlTooltip } from "../components/ui/tooltip";
 import {
   FLOW_PORT_PRESENTATIONS,
   FLOW_SELECTED_NODE_CLASS_NAME,
@@ -52,25 +53,38 @@ export const FlowNodeHeader = ({
   </div>
 );
 
-export interface FlowPortProps extends Omit<HandleProps, "className"> {
+export interface FlowPortProps extends Omit<
+  HandleProps,
+  "className" | "title"
+> {
   tone: FlowPortTone;
   className?: string;
+  tooltip?: ReactNode;
 }
 
 export const FlowPort = ({
   className,
   tone,
+  tooltip,
   ...props
-}: FlowPortProps): JSX.Element => (
-  <Handle
-    {...props}
-    className={cn(
-      "!h-3 !w-3 !border-2 !border-slate-950 !shadow-[0_0_0_1px_rgba(226,232,240,0.24),0_0_10px_rgba(2,6,23,0.75)] transition-[box-shadow] hover:!shadow-[0_0_0_2px_rgba(224,242,254,0.72),0_0_14px_rgba(125,211,252,0.65)]",
-      FLOW_PORT_PRESENTATIONS[tone].handleClassName,
-      className,
-    )}
-  />
-);
+}: FlowPortProps): JSX.Element => {
+  const handle = (
+    <Handle
+      {...props}
+      className={cn(
+        "!h-3 !w-3 !border-2 !border-slate-950 !shadow-[0_0_0_1px_rgba(226,232,240,0.24),0_0_10px_rgba(2,6,23,0.75)] transition-[box-shadow] hover:!shadow-[0_0_0_2px_rgba(224,242,254,0.72),0_0_14px_rgba(125,211,252,0.65)]",
+        FLOW_PORT_PRESENTATIONS[tone].handleClassName,
+        className,
+      )}
+    />
+  );
+
+  return tooltip ? (
+    <ControlTooltip content={tooltip}>{handle}</ControlTooltip>
+  ) : (
+    handle
+  );
+};
 
 export interface FlowPortDotProps extends ComponentPropsWithoutRef<"span"> {
   tone: FlowPortTone;

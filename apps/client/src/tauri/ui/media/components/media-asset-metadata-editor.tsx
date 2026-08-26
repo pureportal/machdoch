@@ -9,6 +9,7 @@ import type {
   MediaAssetCategory,
   MediaGenerationAssetMetadata,
 } from "../../../../core/media/contracts.js";
+import { ControlTooltip } from "../../components/ui/tooltip";
 import { MediaCategoryPicker } from "./media-category-picker";
 
 interface MediaAssetMetadataEditorProps {
@@ -164,15 +165,17 @@ export const MediaAssetMetadataEditor = ({
               }}
               className="h-9 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-2 text-slate-100 outline-none focus:border-sky-500"
             />
-            <button
-              type="button"
-              aria-label="Open source URL"
-              disabled={!sourceUrl.trim()}
-              onClick={() => void openSourceUrl()}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-700 text-slate-400 hover:border-slate-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <ExternalLink className="h-4 w-4" />
-            </button>
+            <ControlTooltip content="Open source URL">
+              <button
+                type="button"
+                aria-label="Open source URL"
+                disabled={!sourceUrl.trim()}
+                onClick={() => void openSourceUrl()}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-700 text-slate-400 hover:border-slate-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ExternalLink className="h-4 w-4" />
+              </button>
+            </ControlTooltip>
           </div>
           {sourceUrlError ? (
             <span className="text-rose-300">{sourceUrlError}</span>

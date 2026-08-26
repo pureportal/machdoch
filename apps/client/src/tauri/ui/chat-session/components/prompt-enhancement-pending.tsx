@@ -43,7 +43,7 @@ export const PromptEnhancementPending = ({
           variant="ghost"
           size="icon"
           aria-label="Cancel enhancement"
-          title="Cancel enhancement"
+          tooltip="Cancel enhancement"
           onClick={onCancel}
           className="h-8 w-8 shrink-0 rounded-full text-slate-400 hover:bg-slate-800 hover:text-slate-100"
         >

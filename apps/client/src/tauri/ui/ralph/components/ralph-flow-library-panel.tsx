@@ -15,6 +15,7 @@ import type {
 } from "../../../../core/ralph.js";
 import { Button } from "../../components/ui/button";
 import { ScrollArea } from "../../components/ui/scroll-area";
+import { ControlTooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 import { formatFlowSubtitle } from "../_helpers/format-ralph-flow-labels.helper";
 import {
@@ -55,12 +56,10 @@ interface RalphFlowLibraryPanelProps {
   flowLibraryMode: RalphFlowLibraryMode;
   flowListOpen: boolean;
   flowsLoading: boolean;
-  generationCreatedFlow:
-    | {
-        flowId: string;
-        scope: RalphFlowScope;
-      }
-    | null;
+  generationCreatedFlow: {
+    flowId: string;
+    scope: RalphFlowScope;
+  } | null;
   loading: boolean;
   selectedFlowKey: string | null;
   selectedScope: RalphFlowScope;
@@ -71,10 +70,7 @@ interface RalphFlowLibraryPanelProps {
   ) => RalphStarterFlowUpdate | null;
   onCollapseFlowList: () => void;
   onCreateLocalFlow: (scope?: RalphFlowScope) => void;
-  onFlowContextMenu: (
-    event: ReactMouseEvent,
-    flow: RalphFlowSummary,
-  ) => void;
+  onFlowContextMenu: (event: ReactMouseEvent, flow: RalphFlowSummary) => void;
   onFlowLibraryModeChange?: (mode: RalphFlowLibraryMode) => void;
   onOpenFlowList: () => void;
   onOpenStarterFlowDialog: () => void;
@@ -177,7 +173,7 @@ export const RalphFlowLibraryPanel = ({
           variant="ghost"
           size="icon"
           aria-label="Open Ralph flows"
-          title="Open Ralph flows"
+          tooltip="Open Ralph flows"
           onClick={onOpenFlowList}
           className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100"
         >
@@ -204,7 +200,7 @@ export const RalphFlowLibraryPanel = ({
               size="icon"
               disabled={flowsLoading}
               aria-label="Refresh Ralph flows"
-              title="Refresh Ralph flows"
+              tooltip="Refresh Ralph flows"
               onClick={onRefreshFlows}
               className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100"
             >
@@ -217,7 +213,7 @@ export const RalphFlowLibraryPanel = ({
               variant="ghost"
               size="icon"
               aria-label="Collapse Ralph flows"
-              title="Collapse Ralph flows"
+              tooltip="Collapse Ralph flows"
               onClick={onCollapseFlowList}
               className="h-8 w-8 rounded-lg text-slate-500 hover:bg-slate-900 hover:text-slate-100"
             >
@@ -366,7 +362,8 @@ const RalphFlowLibraryRow = ({
   const flowKey = getFlowSummarySelectionKey(flow);
   const isSelectedFlow = selectedFlowKey === flowKey;
   const canLoadFlow =
-    Boolean(flow.path) || (draftFlow?.id === flow.id && selectedScope === flowScope);
+    Boolean(flow.path) ||
+    (draftFlow?.id === flow.id && selectedScope === flowScope);
   const starterUpdate = getStarterFlowUpdate(flow);
   const statusLabel = getFlowStatusLabel({
     activeFlowRuns: activeRunsByFlowKey.get(flowKey) ?? [],
@@ -399,25 +396,28 @@ const RalphFlowLibraryRow = ({
         type="button"
         disabled={!canLoadFlow}
         onClick={() => onSelectFlow(flow)}
-        title={flow.name}
         className="grid min-w-0 flex-1 gap-1 text-left disabled:cursor-default"
       >
         <span className="flex min-w-0 items-center justify-between gap-2">
           <span className="truncate text-sm font-medium text-slate-100">
             {flow.name}
           </span>
-          <span
-            aria-label={`Flow status: ${statusLabel}`}
-            title={statusLabel}
-            className={cn(
-              "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-slate-800 bg-slate-950",
-              statusPresentation.className,
-            )}
-          >
-            <StatusIcon
-              className={cn("h-3.5 w-3.5", statusPresentation.spin && "animate-spin")}
-            />
-          </span>
+          <ControlTooltip content={statusLabel}>
+            <span
+              aria-label={`Flow status: ${statusLabel}`}
+              className={cn(
+                "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-slate-800 bg-slate-950",
+                statusPresentation.className,
+              )}
+            >
+              <StatusIcon
+                className={cn(
+                  "h-3.5 w-3.5",
+                  statusPresentation.spin && "animate-spin",
+                )}
+              />
+            </span>
+          </ControlTooltip>
         </span>
         <span className="truncate text-[0.7rem] leading-4 text-slate-400">
           {formatFlowSubtitle(flow)}
@@ -438,7 +438,7 @@ const RalphFlowLibraryRow = ({
           size="icon"
           disabled={loading}
           aria-label={`Upgrade ${flow.name} to starter version ${starterUpdate.latestVersion}`}
-          title={`Upgrade to starter v${starterUpdate.latestVersion}`}
+          tooltip={`Upgrade to starter v${starterUpdate.latestVersion}`}
           onClick={() => onUpgradeStarterFlow(flow)}
           className="h-7 w-7 shrink-0 rounded-md text-amber-300 hover:bg-amber-500/10 hover:text-amber-100"
         >

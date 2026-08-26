@@ -60,6 +60,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "../../components/ui/popover";
+import { ControlTooltip } from "../../components/ui/tooltip";
 import { SearchField } from "../../components/ui/search-field";
 import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
@@ -1271,18 +1272,19 @@ const SmartContextPackCard = ({
           <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-100">
             {pack.name}
           </p>
-          <span
-            role="img"
-            aria-label={`${scopeLabel} context pack`}
-            title={`${scopeLabel} context pack`}
-            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-slate-800/80 bg-slate-950/60"
-          >
-            {item.scope === "global" ? (
-              <Globe2 className="h-3 w-3 text-emerald-200" />
-            ) : (
-              <Folder className="h-3 w-3 text-slate-400" />
-            )}
-          </span>
+          <ControlTooltip content={`${scopeLabel} context pack`}>
+            <span
+              role="img"
+              aria-label={`${scopeLabel} context pack`}
+              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-slate-800/80 bg-slate-950/60"
+            >
+              {item.scope === "global" ? (
+                <Globe2 className="h-3 w-3 text-emerald-200" />
+              ) : (
+                <Folder className="h-3 w-3 text-slate-400" />
+              )}
+            </span>
+          </ControlTooltip>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <Button
@@ -1290,7 +1292,7 @@ const SmartContextPackCard = ({
             variant="outline"
             size="icon-sm"
             aria-label={`Edit context pack ${pack.name}`}
-            title={`Edit ${pack.name}`}
+            tooltip={`Edit ${pack.name}`}
             disabled={applyingPackId !== null}
             onClick={() => onEditPack(pack)}
             className="h-7 w-7 rounded-full border-slate-800 bg-transparent text-slate-400 shadow-none hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100 disabled:border-slate-800 disabled:bg-transparent disabled:text-slate-600"
@@ -1302,7 +1304,7 @@ const SmartContextPackCard = ({
             variant="outline"
             size="icon-sm"
             aria-label={`Apply context pack ${pack.name}`}
-            title={`Apply ${pack.name}`}
+            tooltip={`Apply ${pack.name}`}
             disabled={applyingPackId !== null}
             onClick={() => onApplyPack(pack)}
             className="h-7 w-7 rounded-full border-sky-500/20 bg-sky-500/10 text-sky-100 shadow-none hover:bg-sky-500/15 hover:text-white disabled:border-slate-800 disabled:bg-transparent disabled:text-slate-600"
@@ -1314,7 +1316,7 @@ const SmartContextPackCard = ({
             variant="outline"
             size="icon-sm"
             aria-label={`Delete context pack ${pack.name}`}
-            title={`Delete ${pack.name}`}
+            tooltip={`Delete ${pack.name}`}
             disabled={applyingPackId === pack.id}
             onClick={() => void onDeleteContextPack(pack)}
             className="h-7 w-7 rounded-full border-rose-500/20 bg-transparent text-rose-200 shadow-none hover:bg-rose-500/10 hover:text-white disabled:border-slate-800 disabled:bg-transparent disabled:text-slate-600"
@@ -1901,22 +1903,23 @@ export const SmartContextPackPicker = ({
   return (
     <>
       <Popover open={open} onOpenChange={handlePopoverOpenChange}>
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            aria-label="Context packs"
-            title="Context packs"
-            className="app-context-pack-trigger h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs font-medium text-slate-300 shadow-none hover:border-sky-500/30 hover:bg-slate-900 hover:text-slate-100"
-          >
-            <Layers className="h-3.5 w-3.5 text-sky-300" />
-            <span className="hidden sm:inline">
-              {contextPacks.length > 0
-                ? `Packs (${contextPacks.length})`
-                : "Packs"}
-            </span>
-          </Button>
-        </PopoverTrigger>
+        <ControlTooltip content="Context packs">
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              aria-label="Context packs"
+              className="app-context-pack-trigger h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs font-medium text-slate-300 shadow-none hover:border-sky-500/30 hover:bg-slate-900 hover:text-slate-100"
+            >
+              <Layers className="h-3.5 w-3.5 text-sky-300" />
+              <span className="hidden sm:inline">
+                {contextPacks.length > 0
+                  ? `Packs (${contextPacks.length})`
+                  : "Packs"}
+              </span>
+            </Button>
+          </PopoverTrigger>
+        </ControlTooltip>
         <PopoverContent
           align="start"
           sideOffset={8}
@@ -1953,7 +1956,7 @@ export const SmartContextPackPicker = ({
                   variant="outline"
                   size="icon-sm"
                   aria-label="Import context packs"
-                  title={`Import ${formatScopeFilterLabel(
+                  tooltip={`Import ${formatScopeFilterLabel(
                     workspaceRoot && scopeFilter !== "global"
                       ? "workspace"
                       : "global",
@@ -1968,7 +1971,7 @@ export const SmartContextPackPicker = ({
                   variant="outline"
                   size="icon-sm"
                   aria-label="Export context packs"
-                  title={`Export ${formatScopeFilterLabel(
+                  tooltip={`Export ${formatScopeFilterLabel(
                     scopeFilter,
                   ).toLowerCase()} context packs`}
                   disabled={scopedPackItems.length === 0}

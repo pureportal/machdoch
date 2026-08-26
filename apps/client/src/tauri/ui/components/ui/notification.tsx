@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useEffect, type JSX, type ReactNode } from "react";
 import { cn } from "../../lib/utils";
+import { ControlTooltip } from "./tooltip";
 import {
   resolveAppNotificationDismissMs,
   scheduleAppNotificationDismiss,
@@ -119,14 +120,16 @@ export const AppNotification = ({
         <div className="text-xs leading-5 text-current/80">{children}</div>
       </div>
       {onDismiss ? (
-        <button
-          type="button"
-          aria-label={dismissLabel}
-          className="-mr-1 -mt-1 inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-current/60 transition-colors hover:bg-white/10 hover:text-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current/40"
-          onClick={onDismiss}
-        >
-          <X aria-hidden="true" className="h-3.5 w-3.5" />
-        </button>
+        <ControlTooltip content={dismissLabel}>
+          <button
+            type="button"
+            aria-label={dismissLabel}
+            className="-mr-1 -mt-1 inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-current/60 transition-colors hover:bg-white/10 hover:text-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current/40"
+            onClick={onDismiss}
+          >
+            <X aria-hidden="true" className="h-3.5 w-3.5" />
+          </button>
+        </ControlTooltip>
       ) : null}
     </div>
   );

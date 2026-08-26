@@ -48,6 +48,7 @@ import {
   DialogTitle,
 } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
+import { ControlTooltip } from "../../components/ui/tooltip";
 import { useOptionalRegisterCommands } from "../../commands/command-context";
 import { getDefaultCommandShortcut } from "../../commands/command-defaults";
 import {
@@ -927,7 +928,7 @@ export const FilePreviewTextContent = ({
             size="icon-sm"
             aria-label={regexSearchButtonLabel}
             aria-pressed={isRegexSearch}
-            title={regexSearchButtonLabel}
+            tooltip={regexSearchButtonLabel}
             onClick={() => setIsRegexSearch((current) => !current)}
             className={cn(
               "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
@@ -936,17 +937,18 @@ export const FilePreviewTextContent = ({
           >
             <Regex className="h-3.5 w-3.5" />
           </Button>
-          <span
-            id={searchStatusId}
-            aria-live="polite"
-            title={searchResult.error ?? undefined}
-            className={cn(
-              "min-w-16 text-center text-[11px] tabular-nums text-slate-500",
-              searchResult.error && "text-rose-300",
-            )}
-          >
-            {searchStatus}
-          </span>
+          <ControlTooltip content={searchResult.error}>
+            <span
+              id={searchStatusId}
+              aria-live="polite"
+              className={cn(
+                "min-w-16 text-center text-[11px] tabular-nums text-slate-500",
+                searchResult.error && "text-rose-300",
+              )}
+            >
+              {searchStatus}
+            </span>
+          </ControlTooltip>
           <Button
             type="button"
             variant="ghost"
@@ -1028,44 +1030,43 @@ export const FilePreviewTextContent = ({
                 lineIndex >= previewSelection.startLineIndex &&
                 lineIndex <= previewSelection.endLineIndex;
               const isTargetLine = lineIndex === targetLineIndex;
+              const lineTooltip = isTargetLine
+                ? `Opened at line ${lineIndex + 1}; drag to select a range`
+                : `Select line ${lineIndex + 1}; drag to select a range`;
 
               return (
-                <button
-                  key={lineIndex}
-                  ref={isTargetLine ? targetLineRef : undefined}
-                  type="button"
-                  aria-label={`Select line ${lineIndex + 1}${
-                    isTargetLine ? " (opened location)" : ""
-                  }`}
-                  aria-pressed={isSelected}
-                  aria-current={isTargetLine ? "location" : undefined}
-                  title={
-                    isTargetLine
-                      ? `Opened at line ${lineIndex + 1}; hold and drag to select a range`
-                      : `Select line ${lineIndex + 1}; hold and drag to select a range`
-                  }
-                  onPointerDown={(event) => startGutterDrag(lineIndex, event)}
-                  onClick={(event) => {
-                    if (event.detail === 0) {
-                      selectLine(lineIndex, event.shiftKey);
-                    }
-                  }}
-                  className={cn(
-                    "group/line flex h-5 w-10 cursor-ns-resize items-center justify-center outline-none transition-colors focus-visible:bg-sky-400/15",
-                    isTargetLine && "bg-amber-300/15",
-                    isSelected && "bg-sky-400/10",
-                  )}
-                >
-                  <span
-                    aria-hidden="true"
+                <ControlTooltip key={lineIndex} content={lineTooltip}>
+                  <button
+                    ref={isTargetLine ? targetLineRef : undefined}
+                    type="button"
+                    aria-label={`Select line ${lineIndex + 1}${
+                      isTargetLine ? " (opened location)" : ""
+                    }`}
+                    aria-pressed={isSelected}
+                    aria-current={isTargetLine ? "location" : undefined}
+                    onPointerDown={(event) => startGutterDrag(lineIndex, event)}
+                    onClick={(event) => {
+                      if (event.detail === 0) {
+                        selectLine(lineIndex, event.shiftKey);
+                      }
+                    }}
                     className={cn(
-                      "h-1.5 w-1.5 rounded-full bg-slate-700 transition-all group-hover/line:scale-125 group-hover/line:bg-sky-300 group-focus-visible/line:scale-125 group-focus-visible/line:bg-sky-300",
-                      isTargetLine &&
-                        "scale-125 bg-amber-300 ring-2 ring-amber-300/20",
-                      isSelected && "scale-125 bg-sky-300",
+                      "group/line flex h-5 w-10 cursor-ns-resize items-center justify-center outline-none transition-colors focus-visible:bg-sky-400/15",
+                      isTargetLine && "bg-amber-300/15",
+                      isSelected && "bg-sky-400/10",
                     )}
-                  />
-                </button>
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "h-1.5 w-1.5 rounded-full bg-slate-700 transition-all group-hover/line:scale-125 group-hover/line:bg-sky-300 group-focus-visible/line:scale-125 group-focus-visible/line:bg-sky-300",
+                        isTargetLine &&
+                          "scale-125 bg-amber-300 ring-2 ring-amber-300/20",
+                        isSelected && "scale-125 bg-sky-300",
+                      )}
+                    />
+                  </button>
+                </ControlTooltip>
               );
             })}
           </div>
