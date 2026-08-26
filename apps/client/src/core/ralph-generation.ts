@@ -756,6 +756,7 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
     outputs: [
       "READY",
       "COMPLETE",
+      "DEFERRED",
       "BLOCKED",
       "EMPTY",
       "NOT_FOUND",
@@ -765,7 +766,7 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
     generationNotes: [
       "Use before SELECT_JSON_TASK when completion and blocked work need distinct deterministic routes.",
       "EMPTY means the checklist contains no tasks and must not be treated as completion.",
-      "BLOCKED data identifies structural or temporary blockers and the earliest safe retry time when one exists.",
+      "DEFERRED identifies temporary leases or cooldowns and includes the earliest safe retry time; BLOCKED is reserved for structural or otherwise non-selectable work.",
       "The result is a bounded read-only assessment; SELECT_JSON_TASK still owns task claims and lifecycle mutation.",
     ],
   },
@@ -774,7 +775,15 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
     role: "Select and mark the next task batch from a persisted JSON checklist.",
     requiredFields: ["type", "path"],
     optionalFields: ["jsonPath", "strategy", "maxTasks", "schema"],
-    outputs: ["SELECTED", "EMPTY", "NOT_FOUND", "INVALID", "ERROR"],
+    outputs: [
+      "SELECTED",
+      "DEFERRED",
+      "BLOCKED",
+      "EMPTY",
+      "NOT_FOUND",
+      "INVALID",
+      "ERROR",
+    ],
     generationNotes: [
       "Use before implementation prompts so long-running feature loops work on one bounded task batch at a time.",
       "Keep task ids stable and use statuses planned/implementing/verifying/repairing/completed/deferred.",
@@ -838,10 +847,27 @@ const RALPH_GENERATION_UTILITY_CONTRACTS: Record<
     role: "Select the next active scope from a JSON scope registry using a configured strategy.",
     requiredFields: ["type", "flowAlias"],
     optionalFields: ["registryPath", "path", "strategy", "forceNew"],
-    outputs: ["SELECTED", "EMPTY", "ERROR"],
+    outputs: ["SELECTED", "EXHAUSTED", "DEFERRED", "ERROR"],
     generationNotes: [
       "Use instead of asking a PROMPT block to choose from SCOPE=ALL.",
       "SELECTED data includes scope.id, title, paths, globs, tags, risk, and priority.",
+      "EXHAUSTED is evidence that the current cycle has no remaining eligible work; DEFERRED means non-terminal scopes are temporarily unavailable.",
+    ],
+  },
+  BEGIN_SCOPE_CYCLE: {
+    type: "BEGIN_SCOPE_CYCLE",
+    role: "Start a new scope-coverage cycle only after the preceding cycle completed.",
+    requiredFields: ["type", "flowAlias"],
+    optionalFields: [
+      "registryPath",
+      "path",
+      "strategy",
+      "includeMarkdown",
+      "outputPath",
+    ],
+    outputs: ["SUCCESS", "ERROR"],
+    generationNotes: [
+      "Place only on a flow's start path, before scope discovery, so resumptions retain unfinished coverage.",
     ],
   },
   MARK_SCOPE_RESULT: {
@@ -2294,7 +2320,7 @@ const createFlowGenerationTask = (
     "- VALIDATOR.RETRY may omit an edge; Ralph falls back to the validator group start.",
     "- DECISION blocks must define labels used by the runtime's structured route protocol.",
     "- UTILITY blocks usually run deterministic operations without an LLM. PROMPT_JSON is the explicit exception and must be used only when structured AI output is genuinely needed. Available utility.type values come from the utilityTypes contract list.",
-    "- Use utility outputs exactly as produced: WAIT/SET_VARIABLE/NOTIFY use SUCCESS only; HTTP_FETCH uses SUCCESS, HTTP_ERROR, TIMEOUT, ERROR; POLL uses SUCCESS, ERROR, and TIMEOUT when maxAttempts is finite; CONDITION uses MATCH, NO_MATCH, ERROR; RUN_CHECK uses SUCCESS, FAILED, INCONCLUSIVE, ERROR; UI_ANALYZE uses SUCCESS, UNAVAILABLE, ERROR; FILE_EXISTS uses EXISTS, MISSING, ERROR; DELETE_FILE/MOVE_FILE/ARCHIVE_FILE use SUCCESS, NOT_FOUND, ERROR; READ_JSON uses SUCCESS, NOT_FOUND, INVALID, ERROR; READ_JSONL/QUERY_JSONL use SUCCESS, EMPTY, NOT_FOUND, INVALID, ERROR; WRITE_JSON/APPEND_JSONL/PROMPT_JSON/VALIDATE_JSON use SUCCESS, INVALID, ERROR; PATCH_JSON uses SUCCESS, NOT_FOUND, INVALID, ERROR; VALIDATOR_JSON uses DONE, CONTINUE, RETRY, ERROR, INVALID; ASSESS_JSON_TASKS uses READY, COMPLETE, BLOCKED, EMPTY, NOT_FOUND, INVALID, ERROR; SELECT_JSON_TASK uses SELECTED, EMPTY, NOT_FOUND, INVALID, ERROR; MARK_JSON_TASK uses SUCCESS, NOT_FOUND, INVALID, ERROR; CHANGE_SCOPE_GUARD uses IN_SCOPE, OUT_OF_SCOPE, EMPTY, ERROR, but OUT_OF_SCOPE requires enforce=true; LOOP_COUNTER uses CONTINUE, LIMIT_REACHED, ERROR; SCAN_SCOPE_EVIDENCE, UPDATE_SCOPE_REGISTRY, SEARCH_FILES, GIT_DIFF_SUMMARY, and DETECT_PROJECT_COMMANDS use SUCCESS, EMPTY, ERROR; SELECT_SCOPE uses SELECTED, EMPTY, ERROR; MARK_SCOPE_RESULT uses SUCCESS, NOT_FOUND, ERROR.",
+    "- Use utility outputs exactly as produced: WAIT/SET_VARIABLE/NOTIFY use SUCCESS only; HTTP_FETCH uses SUCCESS, HTTP_ERROR, TIMEOUT, ERROR; POLL uses SUCCESS, ERROR, and TIMEOUT when maxAttempts is finite; CONDITION uses MATCH, NO_MATCH, ERROR; RUN_CHECK uses SUCCESS, FAILED, INCONCLUSIVE, ERROR; UI_ANALYZE uses SUCCESS, UNAVAILABLE, ERROR; FILE_EXISTS uses EXISTS, MISSING, ERROR; DELETE_FILE/MOVE_FILE/ARCHIVE_FILE use SUCCESS, NOT_FOUND, ERROR; READ_JSON uses SUCCESS, NOT_FOUND, INVALID, ERROR; READ_JSONL/QUERY_JSONL use SUCCESS, EMPTY, NOT_FOUND, INVALID, ERROR; WRITE_JSON/APPEND_JSONL/PROMPT_JSON/VALIDATE_JSON use SUCCESS, INVALID, ERROR; PATCH_JSON uses SUCCESS, NOT_FOUND, INVALID, ERROR; VALIDATOR_JSON uses DONE, CONTINUE, RETRY, ERROR, INVALID; ASSESS_JSON_TASKS uses READY, COMPLETE, DEFERRED, BLOCKED, EMPTY, NOT_FOUND, INVALID, ERROR; SELECT_JSON_TASK uses SELECTED, DEFERRED, BLOCKED, EMPTY, NOT_FOUND, INVALID, ERROR; MARK_JSON_TASK uses SUCCESS, NOT_FOUND, INVALID, ERROR; CHANGE_SCOPE_GUARD uses IN_SCOPE, OUT_OF_SCOPE, EMPTY, ERROR, but OUT_OF_SCOPE requires enforce=true; LOOP_COUNTER uses CONTINUE, LIMIT_REACHED, ERROR; SCAN_SCOPE_EVIDENCE, UPDATE_SCOPE_REGISTRY, SEARCH_FILES, GIT_DIFF_SUMMARY, and DETECT_PROJECT_COMMANDS use SUCCESS, EMPTY, ERROR; BEGIN_SCOPE_CYCLE uses SUCCESS, ERROR; SELECT_SCOPE uses SELECTED, EXHAUSTED, DEFERRED, ERROR; MARK_SCOPE_RESULT uses SUCCESS, NOT_FOUND, ERROR.",
     "- Add variables directly in prompts using {{name:type=default}}, for example {{scope:path=ALL}}.",
     "- Use block result placeholders such as {{lastResult}}, {{summary:block-id}}, and {{result:block-id}} where useful.",
     "- Use structured utility data placeholders such as {{data:block-id:path.to.value}} where useful.",

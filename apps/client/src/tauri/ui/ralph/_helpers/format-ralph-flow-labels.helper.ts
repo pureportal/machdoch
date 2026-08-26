@@ -41,6 +41,7 @@ export const UTILITY_TYPE_LABELS: Record<RalphUtilityType, string> = {
   CHANGE_SCOPE_GUARD: "Change Scope Guard",
   SCAN_SCOPE_EVIDENCE: "Scan Scope Evidence",
   UPDATE_SCOPE_REGISTRY: "Update Scope Registry",
+  BEGIN_SCOPE_CYCLE: "Begin Scope Cycle",
   SELECT_SCOPE: "Select Scope",
   MARK_SCOPE_RESULT: "Mark Scope Result",
   SEARCH_FILES: "Search Files",

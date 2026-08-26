@@ -40,6 +40,7 @@ describe("coerceRalphUtilityConfig", () => {
         "CHANGE_SCOPE_GUARD",
         "SCAN_SCOPE_EVIDENCE",
         "UPDATE_SCOPE_REGISTRY",
+        "BEGIN_SCOPE_CYCLE",
         "SELECT_SCOPE",
         "MARK_SCOPE_RESULT",
         "SEARCH_FILES",

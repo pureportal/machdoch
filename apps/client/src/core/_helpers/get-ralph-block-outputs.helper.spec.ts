@@ -42,6 +42,7 @@ describe("getRalphUtilityOutputs", () => {
       [
         "READY",
         "COMPLETE",
+        "DEFERRED",
         "BLOCKED",
         "EMPTY",
         "NOT_FOUND",
@@ -51,7 +52,15 @@ describe("getRalphUtilityOutputs", () => {
     ],
     [
       { type: "SELECT_JSON_TASK" },
-      ["SELECTED", "EMPTY", "NOT_FOUND", "INVALID", "ERROR"],
+      [
+        "SELECTED",
+        "DEFERRED",
+        "BLOCKED",
+        "EMPTY",
+        "NOT_FOUND",
+        "INVALID",
+        "ERROR",
+      ],
     ],
     [{ type: "MARK_JSON_TASK" }, ["SUCCESS", "NOT_FOUND", "INVALID", "ERROR"]],
     [
@@ -60,7 +69,8 @@ describe("getRalphUtilityOutputs", () => {
     ],
     [{ type: "SCAN_SCOPE_EVIDENCE" }, ["SUCCESS", "EMPTY", "ERROR"]],
     [{ type: "UPDATE_SCOPE_REGISTRY" }, ["SUCCESS", "EMPTY", "ERROR"]],
-    [{ type: "SELECT_SCOPE" }, ["SELECTED", "EMPTY", "ERROR"]],
+    [{ type: "BEGIN_SCOPE_CYCLE" }, ["SUCCESS", "ERROR"]],
+    [{ type: "SELECT_SCOPE" }, ["SELECTED", "EXHAUSTED", "DEFERRED", "ERROR"]],
     [{ type: "MARK_SCOPE_RESULT" }, ["SUCCESS", "NOT_FOUND", "ERROR"]],
     [{ type: "GIT_STATUS" }, ["SUCCESS", "ERROR"]],
     [{ type: "GIT_SNAPSHOT" }, ["SUCCESS", "ERROR"]],

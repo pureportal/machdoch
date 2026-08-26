@@ -54,6 +54,7 @@ export const getUtilityOutputs = (
       return [
         "READY",
         "COMPLETE",
+        "DEFERRED",
         "BLOCKED",
         "EMPTY",
         "NOT_FOUND",
@@ -61,7 +62,15 @@ export const getUtilityOutputs = (
         "ERROR",
       ];
     case "SELECT_JSON_TASK":
-      return ["SELECTED", "EMPTY", "NOT_FOUND", "INVALID", "ERROR"];
+      return [
+        "SELECTED",
+        "DEFERRED",
+        "BLOCKED",
+        "EMPTY",
+        "NOT_FOUND",
+        "INVALID",
+        "ERROR",
+      ];
     case "MARK_JSON_TASK":
       return ["SUCCESS", "NOT_FOUND", "INVALID", "ERROR"];
     case "CHANGE_SCOPE_GUARD":
@@ -69,8 +78,10 @@ export const getUtilityOutputs = (
     case "SCAN_SCOPE_EVIDENCE":
     case "UPDATE_SCOPE_REGISTRY":
       return ["SUCCESS", "EMPTY", "ERROR"];
+    case "BEGIN_SCOPE_CYCLE":
+      return ["SUCCESS", "ERROR"];
     case "SELECT_SCOPE":
-      return ["SELECTED", "EMPTY", "ERROR"];
+      return ["SELECTED", "EXHAUSTED", "DEFERRED", "ERROR"];
     case "MARK_SCOPE_RESULT":
       return ["SUCCESS", "NOT_FOUND", "ERROR"];
     case "SEARCH_FILES":

@@ -112,6 +112,7 @@ describe("getRalphUtilityOutputs", () => {
       outputs: [
         "READY",
         "COMPLETE",
+        "DEFERRED",
         "BLOCKED",
         "EMPTY",
         "NOT_FOUND",
@@ -122,7 +123,15 @@ describe("getRalphUtilityOutputs", () => {
     {
       name: "SELECT_JSON_TASK",
       utility: { type: "SELECT_JSON_TASK" },
-      outputs: ["SELECTED", "EMPTY", "NOT_FOUND", "INVALID", "ERROR"],
+      outputs: [
+        "SELECTED",
+        "DEFERRED",
+        "BLOCKED",
+        "EMPTY",
+        "NOT_FOUND",
+        "INVALID",
+        "ERROR",
+      ],
     },
     {
       name: "MARK_JSON_TASK",
@@ -145,9 +154,14 @@ describe("getRalphUtilityOutputs", () => {
       outputs: ["SUCCESS", "EMPTY", "ERROR"],
     },
     {
+      name: "BEGIN_SCOPE_CYCLE",
+      utility: { type: "BEGIN_SCOPE_CYCLE" },
+      outputs: ["SUCCESS", "ERROR"],
+    },
+    {
       name: "SELECT_SCOPE",
       utility: { type: "SELECT_SCOPE" },
-      outputs: ["SELECTED", "EMPTY", "ERROR"],
+      outputs: ["SELECTED", "EXHAUSTED", "DEFERRED", "ERROR"],
     },
     {
       name: "MARK_SCOPE_RESULT",

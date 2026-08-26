@@ -408,6 +408,7 @@ export const validateRalphUtilityBlock = (
       break;
     case "SCAN_SCOPE_EVIDENCE":
     case "UPDATE_SCOPE_REGISTRY":
+    case "BEGIN_SCOPE_CYCLE":
     case "SELECT_SCOPE":
       break;
     case "MARK_SCOPE_RESULT":

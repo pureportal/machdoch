@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -298,7 +298,7 @@ describe("RALPH autonomy integration", () => {
           id: "success",
           type: "END",
           title: "Success",
-          outcome: "succeeded",
+          outcome: "deferred",
         },
       ],
       edges: [
@@ -335,7 +335,14 @@ describe("RALPH autonomy integration", () => {
       { ...customizations, workspaceRoot: workspace },
     );
 
-    expect(result.outcome?.status).toBe("verification-inconclusive");
+    expect(result).toMatchObject({
+      status: "blocked",
+      outcome: {
+        status: "deferred",
+        verified: false,
+        retryable: true,
+      },
+    });
     expect(result.progress?.stalledReason).toBeUndefined();
     expect(result.progress?.meaningfulTransitions).toBeGreaterThan(0);
     expect(
@@ -348,7 +355,613 @@ describe("RALPH autonomy integration", () => {
     ).toHaveLength(3);
   }, 60_000);
 
-  it("runs the real security starter to a verified no-op when no scope is eligible", async () => {
+  it("continues a durable task portfolio after one task is deferred", async () => {
+    const workspace = await createWorkspace();
+    const portfolioPath = join(workspace, "portfolio.json");
+    await writeFile(
+      portfolioPath,
+      JSON.stringify({
+        tasks: [
+          {
+            id: "recoverable-first",
+            status: "planned",
+            priority: 100,
+          },
+          {
+            id: "ready-second",
+            status: "planned",
+            priority: 90,
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const flow = createFlow({
+      id: "persistent-task-portfolio",
+      settings: { maxTransitions: 40 },
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "assess",
+          type: "UTILITY",
+          title: "Assess portfolio",
+          utility: {
+            type: "ASSESS_JSON_TASKS",
+            path: "portfolio.json",
+            jsonPath: "tasks",
+            strategy: "priority",
+            maxTasks: 1,
+          },
+        },
+        {
+          id: "select",
+          type: "UTILITY",
+          title: "Select task",
+          utility: {
+            type: "SELECT_JSON_TASK",
+            path: "portfolio.json",
+            jsonPath: "tasks",
+            strategy: "priority",
+            maxTasks: 1,
+          },
+        },
+        {
+          id: "defer-first",
+          type: "UTILITY",
+          title: "Defer first task",
+          utility: {
+            type: "CONDITION",
+            condition: {
+              style: "javascript",
+              expression: 'lastData?.tasks?.[0]?.id === "recoverable-first"',
+            },
+          },
+        },
+        {
+          id: "mark-deferred",
+          type: "UTILITY",
+          title: "Mark task deferred",
+          utility: {
+            type: "MARK_JSON_TASK",
+            path: "portfolio.json",
+            jsonPath: "tasks",
+            input: "{{data:select}}",
+            status: "deferred",
+            delaySeconds: 3_600,
+          },
+        },
+        {
+          id: "mark-verifying",
+          type: "UTILITY",
+          title: "Mark task verifying",
+          utility: {
+            type: "MARK_JSON_TASK",
+            path: "portfolio.json",
+            jsonPath: "tasks",
+            input: "{{data:select}}",
+            status: "verifying",
+          },
+        },
+        {
+          id: "mark-completed",
+          type: "UTILITY",
+          title: "Mark task completed",
+          utility: {
+            type: "MARK_JSON_TASK",
+            path: "portfolio.json",
+            jsonPath: "tasks",
+            input: "{{data:select}}",
+            status: "completed",
+          },
+        },
+        {
+          id: "success",
+          type: "END",
+          title: "Success",
+          status: "success",
+          outcome: "succeeded",
+        },
+        {
+          id: "deferred",
+          type: "END",
+          title: "Deferred",
+          outcome: "deferred",
+        },
+      ],
+      edges: [
+        {
+          id: "start-assess",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "assess",
+        },
+        {
+          id: "assess-ready",
+          from: "assess",
+          fromOutput: "READY",
+          to: "select",
+        },
+        {
+          id: "assess-complete",
+          from: "assess",
+          fromOutput: "COMPLETE",
+          to: "success",
+        },
+        {
+          id: "assess-blocked",
+          from: "assess",
+          fromOutput: "BLOCKED",
+          to: "deferred",
+        },
+        {
+          id: "assess-deferred",
+          from: "assess",
+          fromOutput: "DEFERRED",
+          to: "deferred",
+        },
+        {
+          id: "select-task",
+          from: "select",
+          fromOutput: "SELECTED",
+          to: "defer-first",
+        },
+        {
+          id: "select-empty",
+          from: "select",
+          fromOutput: "EMPTY",
+          to: "deferred",
+        },
+        {
+          id: "defer-first-task",
+          from: "defer-first",
+          fromOutput: "MATCH",
+          to: "mark-deferred",
+        },
+        {
+          id: "complete-next-task",
+          from: "defer-first",
+          fromOutput: "NO_MATCH",
+          to: "mark-verifying",
+        },
+        {
+          id: "deferred-reassess",
+          from: "mark-deferred",
+          fromOutput: "SUCCESS",
+          to: "assess",
+        },
+        {
+          id: "verifying-complete",
+          from: "mark-verifying",
+          fromOutput: "SUCCESS",
+          to: "mark-completed",
+        },
+        {
+          id: "completed-reassess",
+          from: "mark-completed",
+          fromOutput: "SUCCESS",
+          to: "assess",
+        },
+      ],
+    });
+
+    const result = await runRalphFlow(
+      flow,
+      { ...runtimeConfig, workspaceRoot: workspace },
+      { ...customizations, workspaceRoot: workspace },
+      { runId: "persistent-task-portfolio" },
+    );
+    const portfolio = JSON.parse(await readFile(portfolioPath, "utf8")) as {
+      tasks: Array<{ id: string; status: string; nextEligibleAt?: string }>;
+    };
+
+    expect(result).toMatchObject({
+      status: "blocked",
+      outcome: {
+        status: "deferred",
+        verified: false,
+        retryable: true,
+      },
+    });
+    expect(
+      result.blockResults.filter((entry) => entry.blockId === "select"),
+    ).toHaveLength(2);
+    expect(
+      result.blockResults.map((entry) => entry.blockId + ":" + entry.output),
+    ).toEqual(
+      expect.arrayContaining([
+        "mark-deferred:SUCCESS",
+        "mark-completed:SUCCESS",
+        "assess:DEFERRED",
+      ]),
+    );
+    expect(portfolio.tasks).toEqual([
+      expect.objectContaining({
+        id: "recoverable-first",
+        status: "deferred",
+        nextEligibleAt: expect.any(String),
+      }),
+      expect.objectContaining({ id: "ready-second", status: "completed" }),
+    ]);
+  });
+
+  it("completes every eligible task in a durable portfolio before succeeding", async () => {
+    const workspace = await createWorkspace();
+    const portfolioPath = join(workspace, "complete-portfolio.json");
+    await writeFile(
+      portfolioPath,
+      JSON.stringify({
+        tasks: [
+          { id: "first-opportunity", status: "planned", priority: 100 },
+          { id: "second-opportunity", status: "planned", priority: 90 },
+        ],
+      }),
+      "utf8",
+    );
+
+    const flow = createFlow({
+      id: "complete-task-portfolio",
+      settings: { maxTransitions: 40 },
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "assess",
+          type: "UTILITY",
+          title: "Assess portfolio",
+          utility: {
+            type: "ASSESS_JSON_TASKS",
+            path: "complete-portfolio.json",
+            jsonPath: "tasks",
+            strategy: "priority",
+            maxTasks: 1,
+          },
+        },
+        {
+          id: "select",
+          type: "UTILITY",
+          title: "Select task",
+          utility: {
+            type: "SELECT_JSON_TASK",
+            path: "complete-portfolio.json",
+            jsonPath: "tasks",
+            strategy: "priority",
+            maxTasks: 1,
+          },
+        },
+        {
+          id: "mark-verifying",
+          type: "UTILITY",
+          title: "Mark task verifying",
+          utility: {
+            type: "MARK_JSON_TASK",
+            path: "complete-portfolio.json",
+            jsonPath: "tasks",
+            input: "{{data:select}}",
+            status: "verifying",
+          },
+        },
+        {
+          id: "mark-completed",
+          type: "UTILITY",
+          title: "Mark task completed",
+          utility: {
+            type: "MARK_JSON_TASK",
+            path: "complete-portfolio.json",
+            jsonPath: "tasks",
+            input: "{{data:select}}",
+            status: "completed",
+          },
+        },
+        {
+          id: "baseline",
+          type: "UTILITY",
+          title: "Baseline",
+          utility: {
+            type: "RUN_CHECK",
+            command: "node --version",
+            verificationRole: "baseline",
+            verificationPlanId: "complete-task-portfolio",
+          },
+        },
+        {
+          id: "candidate",
+          type: "UTILITY",
+          title: "Candidate",
+          utility: {
+            type: "RUN_CHECK",
+            command: "node --version",
+            verificationRole: "candidate",
+            baselineBlockId: "baseline",
+            verificationPlanId: "complete-task-portfolio",
+          },
+        },
+        {
+          id: "report",
+          type: "UTILITY",
+          title: "Report",
+          utility: {
+            type: "FINAL_REPORT",
+            path: "complete-portfolio-report.json",
+          },
+        },
+        {
+          id: "success",
+          type: "END",
+          title: "Success",
+          status: "success",
+          outcome: "succeeded",
+        },
+      ],
+      edges: [
+        {
+          id: "start-assess",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "assess",
+        },
+        {
+          id: "assess-ready",
+          from: "assess",
+          fromOutput: "READY",
+          to: "select",
+        },
+        {
+          id: "assess-complete",
+          from: "assess",
+          fromOutput: "COMPLETE",
+          to: "baseline",
+        },
+        {
+          id: "select-task",
+          from: "select",
+          fromOutput: "SELECTED",
+          to: "mark-verifying",
+        },
+        {
+          id: "verifying-complete",
+          from: "mark-verifying",
+          fromOutput: "SUCCESS",
+          to: "mark-completed",
+        },
+        {
+          id: "completed-reassess",
+          from: "mark-completed",
+          fromOutput: "SUCCESS",
+          to: "assess",
+        },
+        {
+          id: "baseline-candidate",
+          from: "baseline",
+          fromOutput: "SUCCESS",
+          to: "candidate",
+        },
+        {
+          id: "candidate-report",
+          from: "candidate",
+          fromOutput: "SUCCESS",
+          to: "report",
+        },
+        {
+          id: "report-success",
+          from: "report",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
+      ],
+    });
+
+    const result = await runRalphFlow(
+      flow,
+      { ...runtimeConfig, workspaceRoot: workspace },
+      { ...customizations, workspaceRoot: workspace },
+      { runId: "complete-task-portfolio" },
+    );
+    const portfolio = JSON.parse(await readFile(portfolioPath, "utf8")) as {
+      tasks: Array<{ id: string; status: string }>;
+    };
+
+    expect(result).toMatchObject({
+      status: "completed",
+      outcome: {
+        status: "succeeded",
+        verified: true,
+        retryable: false,
+      },
+    });
+    expect(
+      result.blockResults.filter((entry) => entry.blockId === "select"),
+    ).toHaveLength(2);
+    expect(
+      result.blockResults.map((entry) => entry.blockId + ":" + entry.output),
+    ).toEqual(expect.arrayContaining(["assess:COMPLETE", "success:SUCCESS"]));
+    expect(portfolio.tasks).toEqual([
+      expect.objectContaining({ id: "first-opportunity", status: "completed" }),
+      expect.objectContaining({
+        id: "second-opportunity",
+        status: "completed",
+      }),
+    ]);
+  });
+
+  it("starts a new scope cycle only after prior coverage is terminal", async () => {
+    const workspace = await createWorkspace();
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "src", "index.ts"), "export {};\n", {
+      encoding: "utf8",
+      flag: "w",
+    });
+    const registryPath = join(workspace, "scope-registry.json");
+    const evidence = await discoverRalphScopeEvidence(workspace);
+    const registry = updateRalphScopeRegistryFromEvidence(
+      await readRalphScopeRegistryFile(registryPath, {
+        flowAlias: "cycle-test",
+        strategy: "start-to-end",
+      }),
+      evidence,
+      { flowAlias: "cycle-test", strategy: "start-to-end" },
+    ).registry;
+    const activeScopeIds = registry.scopes
+      .filter((scope) => scope.status === "active")
+      .map((scope) => scope.id);
+
+    await writeRalphScopeRegistryFile(registryPath, {
+      ...registry,
+      selection: {
+        ...registry.selection,
+        completedScopeIds: activeScopeIds,
+      },
+      scopes: registry.scopes.map((scope) =>
+        scope.status === "active"
+          ? {
+              ...scope,
+              lastOutcome: "completed",
+              eligibleAfter: null,
+            }
+          : scope,
+      ),
+    });
+
+    const exhaustedFlow = createFlow({
+      id: "exhausted-scope-cycle",
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "select",
+          type: "UTILITY",
+          title: "Select scope",
+          utility: {
+            type: "SELECT_SCOPE",
+            flowAlias: "cycle-test",
+            registryPath: "scope-registry.json",
+            strategy: "start-to-end",
+          },
+        },
+        {
+          id: "success",
+          type: "END",
+          title: "Success",
+          status: "success",
+          outcome: "succeeded",
+        },
+      ],
+      edges: [
+        {
+          id: "start-select",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "select",
+        },
+        {
+          id: "exhausted-success",
+          from: "select",
+          fromOutput: "EXHAUSTED",
+          to: "success",
+        },
+      ],
+    });
+    const exhausted = await runRalphFlow(
+      exhaustedFlow,
+      { ...runtimeConfig, workspaceRoot: workspace },
+      { ...customizations, workspaceRoot: workspace },
+      { runId: "exhausted-scope-cycle" },
+    );
+    const unchanged = await readRalphScopeRegistryFile(registryPath, {
+      flowAlias: "cycle-test",
+      strategy: "start-to-end",
+    });
+
+    expect(exhausted.status).toBe("completed");
+    expect(
+      exhausted.blockResults.find((entry) => entry.blockId === "select"),
+    ).toMatchObject({
+      output: "EXHAUSTED",
+      data: { availability: { status: "exhausted" } },
+    });
+    expect(unchanged.selection.cycle).toBe(1);
+    expect(unchanged.selection.completedScopeIds).toEqual(activeScopeIds);
+
+    const flow = createFlow({
+      id: "begin-scope-cycle",
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "begin",
+          type: "UTILITY",
+          title: "Begin scope cycle",
+          utility: {
+            type: "BEGIN_SCOPE_CYCLE",
+            flowAlias: "cycle-test",
+            registryPath: "scope-registry.json",
+            strategy: "start-to-end",
+          },
+        },
+        {
+          id: "select",
+          type: "UTILITY",
+          title: "Select scope",
+          utility: {
+            type: "SELECT_SCOPE",
+            flowAlias: "cycle-test",
+            registryPath: "scope-registry.json",
+            strategy: "start-to-end",
+          },
+        },
+        {
+          id: "success",
+          type: "END",
+          title: "Success",
+          status: "success",
+          outcome: "succeeded",
+        },
+      ],
+      edges: [
+        {
+          id: "start-begin",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "begin",
+        },
+        {
+          id: "begin-select",
+          from: "begin",
+          fromOutput: "SUCCESS",
+          to: "select",
+        },
+        {
+          id: "select-success",
+          from: "select",
+          fromOutput: "SELECTED",
+          to: "success",
+        },
+      ],
+    });
+
+    const result = await runRalphFlow(
+      flow,
+      { ...runtimeConfig, workspaceRoot: workspace },
+      { ...customizations, workspaceRoot: workspace },
+      { runId: "begin-scope-cycle" },
+    );
+    const persisted = await readRalphScopeRegistryFile(registryPath, {
+      flowAlias: "cycle-test",
+      strategy: "start-to-end",
+    });
+
+    expect(result.status).toBe("completed");
+    expect(
+      result.blockResults.find((entry) => entry.blockId === "begin"),
+    ).toMatchObject({
+      output: "SUCCESS",
+      data: { cycleStarted: true, cycle: 2 },
+    });
+    expect(
+      result.blockResults.find((entry) => entry.blockId === "select"),
+    ).toMatchObject({ output: "SELECTED" });
+    expect(persisted.selection.cycle).toBe(2);
+    expect(persisted.selection.completedScopeIds).toEqual([]);
+  });
+
+  it("defers the real security starter when every scope is temporarily ineligible", async () => {
     if (spawnSync("git", ["--version"]).status !== 0) {
       return;
     }
@@ -425,27 +1038,29 @@ describe("RALPH autonomy integration", () => {
         2,
       ),
     ).toMatchObject({
-      status: "completed",
+      status: "blocked",
       outcome: {
-        status: "no-op",
-        verified: true,
-        retryable: false,
+        status: "deferred",
+        verified: false,
+        retryable: true,
       },
     });
     expect(result.blockResults.map((entry) => entry.blockId)).toEqual(
       expect.arrayContaining([
         "scan-scopes",
-        "record-stop-outcome",
-        "final-report",
-        "success",
+        "select-scope",
+        "record-coverage-deferred-outcome",
+        "retained-outcome-report",
+        "deferred",
       ]),
     );
     expect(
-      result.blockResults.find((entry) => entry.blockId === "final-report")
-        ?.data,
+      result.blockResults.find(
+        (entry) => entry.blockId === "retained-outcome-report",
+      )?.data,
     ).toMatchObject({
-      outcome: { status: "no-op", verified: true },
-      lifecycle: { status: "completed" },
+      outcome: { status: "deferred", verified: false },
+      lifecycle: { status: "blocked" },
     });
     expect(
       (
@@ -462,6 +1077,6 @@ describe("RALPH autonomy integration", () => {
           "utf8",
         )
       ).trim(),
-    ).toContain('"status": "no-op"');
+    ).toContain('"status": "deferred"');
   }, 60_000);
 });

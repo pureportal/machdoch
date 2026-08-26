@@ -338,6 +338,14 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
         miniMapColor: "#34d399",
         badgeLabel: "SCOPE JSON",
       };
+    case "BEGIN_SCOPE_CYCLE":
+      return {
+        icon: RefreshCw,
+        nodeClassName: "border-cyan-400/60 bg-cyan-950 text-cyan-50",
+        badgeClassName: "text-cyan-200",
+        miniMapColor: "#22d3ee",
+        badgeLabel: "SCOPE CYCLE",
+      };
     case "SELECT_SCOPE":
       return {
         icon: GitBranch,

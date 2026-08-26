@@ -84,6 +84,7 @@ describe("validateRalphUtilityBlock", () => {
       { type: "CHANGE_SCOPE_GUARD" },
       { type: "SCAN_SCOPE_EVIDENCE", rootPath: "." },
       { type: "UPDATE_SCOPE_REGISTRY", flowAlias: "security-review-fix-loop" },
+      { type: "BEGIN_SCOPE_CYCLE", flowAlias: "security-review-fix-loop" },
       { type: "SELECT_SCOPE", strategy: "round-robin" },
       { type: "MARK_SCOPE_RESULT", scopeOutcome: "completed" },
       { type: "SEARCH_FILES", glob: "**/*.ts" },
