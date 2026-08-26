@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { realpathSync, watch, type FSWatcher } from "node:fs";
-import { mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "../_helpers/write-file-atomically.helper.js";
@@ -295,29 +295,18 @@ const acquireDaemon = async (
           `Provider sync daemon is already running with PID ${existing.pid}.`,
         );
       }
-      await rm(path, { force: true });
-      const handle = await open(path, "wx", 0o600);
-      let recorded = false;
-      try {
-        await handle.writeFile(
-          `${JSON.stringify(
-            {
-              schemaVersion: 1,
-              pid: process.pid,
-              workspaceRoot,
-              startedAt: new Date().toISOString(),
-              token,
-              runtimeId: getProviderSyncDaemonRuntimeId(),
-            } satisfies DaemonRecord,
-            null,
-            2,
-          )}\n`,
-        );
-        recorded = true;
-      } finally {
-        await handle.close();
-        if (!recorded) await rm(path, { force: true }).catch(() => undefined);
-      }
+      await writeJsonAtomically(
+        path,
+        {
+          schemaVersion: 1,
+          pid: process.pid,
+          workspaceRoot,
+          startedAt: new Date().toISOString(),
+          token,
+          runtimeId: getProviderSyncDaemonRuntimeId(),
+        } satisfies DaemonRecord,
+        { mode: 0o600 },
+      );
     },
     {
       ownerDescription: "provider-sync daemon single-instance election",
@@ -376,16 +365,15 @@ const createWorkspaceWatchers = (
   const watchWorkspaceRoot = resolveWatcherRoot(workspaceRoot);
   const useSeparateDirectoryWatchers =
     process.platform === "linux" || process.platform === "win32";
-  const roots =
-    useSeparateDirectoryWatchers
-      ? [
-          ...new Set([
-            watchWorkspaceRoot,
-            join(watchWorkspaceRoot, ".machdoch"),
-            join(watchWorkspaceRoot, ".machdoch", "mcp"),
-          ]),
-        ]
-      : [watchWorkspaceRoot];
+  const roots = useSeparateDirectoryWatchers
+    ? [
+        ...new Set([
+          watchWorkspaceRoot,
+          join(watchWorkspaceRoot, ".machdoch"),
+          join(watchWorkspaceRoot, ".machdoch", "mcp"),
+        ]),
+      ]
+    : [watchWorkspaceRoot];
 
   const watchers: FSWatcher[] = [];
   for (const root of roots) {
@@ -419,18 +407,14 @@ const createSharedWatchers = (onChange: () => void): FSWatcher[] => {
   for (const root of userRoots) {
     try {
       watchers.push(
-        watch(
-          root,
-          { recursive: false },
-          (_eventType, filename) => {
-            if (!filename) return onChange();
-            const changedPath = relative(
-              userConfigRoot,
-              join(root, filename.toString()),
-            );
-            if (isProviderSyncUserWatchPath(changedPath)) onChange();
-          },
-        ),
+        watch(root, { recursive: false }, (_eventType, filename) => {
+          if (!filename) return onChange();
+          const changedPath = relative(
+            userConfigRoot,
+            join(root, filename.toString()),
+          );
+          if (isProviderSyncUserWatchPath(changedPath)) onChange();
+        }),
       );
     } catch {
       // Periodic full scans cover missing or unsupported watcher roots.

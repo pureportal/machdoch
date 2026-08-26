@@ -80,6 +80,7 @@ export const writeFileAtomically = async (
      * check without paying the temporary-file write window.
      */
     beforeCommit?: () => void | Promise<void>;
+    mode?: number;
   } = {},
 ): Promise<void> => {
   const directory = dirname(path);
@@ -91,7 +92,7 @@ export const writeFileAtomically = async (
   await mkdir(directory, { recursive: true });
 
   try {
-    const handle = await open(temporaryPath, "wx");
+    const handle = await open(temporaryPath, "wx", options.mode);
     try {
       if (typeof data === "string") {
         await handle.writeFile(data, encoding);
