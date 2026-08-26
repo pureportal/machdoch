@@ -32,6 +32,10 @@ import {
 } from "../../components/ui/dialog";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { SearchField } from "../../components/ui/search-field";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../../components/ui/submit-shortcut";
 import { useOptionalRegisterCommands } from "../../commands/command-context";
 import {
   asPaletteCommands,
@@ -1558,18 +1562,19 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
       }}
       className="app-settings-dialog h-[min(800px,calc(100dvh-24px))] max-h-none w-[min(1240px,calc(100vw-24px))] max-w-none gap-0 overflow-hidden rounded-2xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl sm:max-w-none"
     >
-      <div
-        inert={
-          pendingNavigation || primaryActionRunning || closeActionRunning
-            ? true
-            : undefined
-        }
-        aria-hidden={pendingNavigation ? true : undefined}
-        aria-busy={
-          primaryActionRunning || closeActionRunning ? true : undefined
-        }
-        className="flex min-h-0 flex-1 flex-col overflow-hidden"
-      >
+      <SubmitShortcut asChild>
+        <div
+          inert={
+            pendingNavigation || primaryActionRunning || closeActionRunning
+              ? true
+              : undefined
+          }
+          aria-hidden={pendingNavigation ? true : undefined}
+          aria-busy={
+            primaryActionRunning || closeActionRunning ? true : undefined
+          }
+          className="flex min-h-0 flex-1 flex-col overflow-hidden"
+        >
         <DialogHeader className="min-h-16 flex-row items-center justify-between gap-4 border-b border-slate-800/80 px-5 py-2.5 pr-4 text-left">
           <div className="min-w-0">
             <DialogTitle className="text-lg font-semibold tracking-tight text-white">
@@ -1605,40 +1610,43 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
           </div>
         </DialogHeader>
 
-        <div className="border-b border-slate-800/80 bg-slate-950/80 p-3 md:hidden">
-          <label htmlFor="mobile-settings-section" className="sr-only">
-            Settings section
-          </label>
-          <select
-            ref={mobileSectionRef}
-            id="mobile-settings-section"
-            value={activeSectionId}
-            onChange={(event) =>
-              requestSectionChange(
-                event.target.value as SettingsDialogSectionId,
-              )
-            }
-            className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm font-medium text-slate-100 outline-none focus:border-sky-500/50 focus:ring-2 focus:ring-sky-500/20"
-          >
-            {SETTINGS_SECTION_GROUP_ORDER.map((group) => (
-              <optgroup key={group} label={group}>
-                {dialogSections
-                  .filter((section) => section.group === group)
-                  .map((section) => (
-                    <option key={section.id} value={section.id}>
-                      {section.label}
-                    </option>
-                  ))}
-              </optgroup>
-            ))}
-          </select>
-        </div>
+        <SubmitShortcut asChild>
+          <div className="border-b border-slate-800/80 bg-slate-950/80 p-3 md:hidden">
+            <label htmlFor="mobile-settings-section" className="sr-only">
+              Settings section
+            </label>
+            <select
+              ref={mobileSectionRef}
+              id="mobile-settings-section"
+              value={activeSectionId}
+              onChange={(event) =>
+                requestSectionChange(
+                  event.target.value as SettingsDialogSectionId,
+                )
+              }
+              className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm font-medium text-slate-100 outline-none focus:border-sky-500/50 focus:ring-2 focus:ring-sky-500/20"
+            >
+              {SETTINGS_SECTION_GROUP_ORDER.map((group) => (
+                <optgroup key={group} label={group}>
+                  {dialogSections
+                    .filter((section) => section.group === group)
+                    .map((section) => (
+                      <option key={section.id} value={section.id}>
+                        {section.label}
+                      </option>
+                    ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+        </SubmitShortcut>
 
         <div className="grid min-h-0 flex-1 overflow-hidden md:grid-cols-[13rem_minmax(0,1fr)]">
-          <nav
-            aria-label="Settings sections"
-            className="hidden min-h-0 overflow-y-auto border-r border-slate-800/80 bg-slate-950/70 px-3 py-3 md:block"
-          >
+          <SubmitShortcut asChild>
+            <nav
+              aria-label="Settings sections"
+              className="hidden min-h-0 overflow-y-auto border-r border-slate-800/80 bg-slate-950/70 px-3 py-3 md:block"
+            >
             <SearchField
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
@@ -1720,7 +1728,8 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
                 })}
               </div>
             )}
-          </nav>
+            </nav>
+          </SubmitShortcut>
 
           <ScrollArea
             key={activeSectionId}
@@ -1781,6 +1790,7 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
                 }
                 aria-busy={primaryActionRunning}
                 onClick={requestPrimaryAction}
+                {...SUBMIT_SHORTCUT_ACTION_PROPS}
                 className="h-9 rounded-lg bg-sky-400 px-4 text-slate-950 hover:bg-sky-300"
               >
                 {primaryActionRunning ? (
@@ -1793,7 +1803,8 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
             ) : null}
           </footer>
         ) : null}
-      </div>
+        </div>
+      </SubmitShortcut>
 
       {pendingNavigation && pendingGuard ? (
         <div className="absolute inset-0 z-30 grid place-items-center bg-slate-950/75 p-4 backdrop-blur-sm">

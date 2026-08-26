@@ -157,6 +157,10 @@ import {
 import { Input } from "../components/ui/input";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { SearchField } from "../components/ui/search-field";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../components/ui/submit-shortcut";
 import { Textarea } from "../components/ui/textarea";
 import { cn } from "../lib/utils";
 import {
@@ -12567,143 +12571,149 @@ export const RalphFlowEditor = ({
                 <ScrollArea className="min-h-0" type="always">
                   {editorMode === "generate" ? (
                     <div className="grid min-h-0 gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_20rem]">
-                      <div className="grid min-h-0 content-start gap-2">
-                        <div className="grid grid-cols-3 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1">
-                          {aiTargetOptions.map(
-                            ({ target, label, disabled, title }) => (
-                              <ControlTooltip key={target} content={title}>
-                                <span className="grid">
+                      <SubmitShortcut asChild>
+                        <div className="grid min-h-0 content-start gap-2">
+                          <div className="grid grid-cols-3 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1">
+                            {aiTargetOptions.map(
+                              ({ target, label, disabled, title }) => (
+                                <ControlTooltip key={target} content={title}>
+                                  <span className="grid">
+                                    <button
+                                      type="button"
+                                      disabled={disabled}
+                                      aria-disabled={disabled}
+                                      onClick={() => {
+                                        if (!disabled) {
+                                          setAiTarget(target);
+                                        }
+                                      }}
+                                      className={cn(
+                                        "h-7 rounded-md px-2 text-xs font-semibold",
+                                        disabled
+                                          ? "cursor-not-allowed text-slate-700 opacity-60"
+                                          : aiTarget === target
+                                            ? "bg-emerald-500/20 text-emerald-100"
+                                            : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+                                      )}
+                                    >
+                                      {label}
+                                    </button>
+                                  </span>
+                                </ControlTooltip>
+                              ),
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1">
+                            {[
+                              ["do-it", "No questions"],
+                              ["interview", "Interview"],
+                            ].map(([mode, label]) => (
+                              <button
+                                key={mode}
+                                type="button"
+                                onClick={() =>
+                                  setAiGenerationMode(
+                                    mode as RalphAiGenerationMode,
+                                  )
+                                }
+                                className={cn(
+                                  "flex h-7 min-w-0 items-center justify-center rounded-md px-2 text-xs font-semibold",
+                                  aiGenerationMode === mode
+                                    ? "bg-sky-500/20 text-sky-100"
+                                    : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+                                )}
+                              >
+                                <span className="min-w-0 truncate">
+                                  {label}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                          <div className="grid gap-1.5 rounded-lg border border-slate-800 bg-slate-950/60 p-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                Save to
+                              </span>
+                              <span className="text-[0.68rem] text-slate-500">
+                                {aiTarget === "flow"
+                                  ? creationScopeLabel
+                                  : selectedScopeLabel}
+                              </span>
+                            </div>
+                            {aiTarget === "flow" ? (
+                              <div className="grid grid-cols-2 gap-1 rounded-md bg-slate-900/70 p-1">
+                                {RALPH_FLOW_SCOPES.map((scope) => (
                                   <button
+                                    key={scope}
                                     type="button"
-                                    disabled={disabled}
-                                    aria-disabled={disabled}
-                                    onClick={() => {
-                                      if (!disabled) {
-                                        setAiTarget(target);
-                                      }
-                                    }}
+                                    onClick={() => setCreationScope(scope)}
                                     className={cn(
-                                      "h-7 rounded-md px-2 text-xs font-semibold",
-                                      disabled
-                                        ? "cursor-not-allowed text-slate-700 opacity-60"
-                                        : aiTarget === target
-                                          ? "bg-emerald-500/20 text-emerald-100"
-                                          : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+                                      "h-7 rounded px-2 text-xs font-semibold",
+                                      creationScope === scope
+                                        ? scope === "user"
+                                          ? "bg-sky-500/20 text-sky-100"
+                                          : "bg-emerald-500/20 text-emerald-100"
+                                        : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
                                     )}
                                   >
-                                    {label}
+                                    {RALPH_FLOW_SCOPE_LABELS[scope]}
                                   </button>
-                                </span>
-                              </ControlTooltip>
-                            ),
-                          )}
-                        </div>
-                        <div className="grid grid-cols-2 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1">
-                          {[
-                            ["do-it", "No questions"],
-                            ["interview", "Interview"],
-                          ].map(([mode, label]) => (
-                            <button
-                              key={mode}
-                              type="button"
-                              onClick={() =>
-                                setAiGenerationMode(
-                                  mode as RalphAiGenerationMode,
-                                )
-                              }
-                              className={cn(
-                                "flex h-7 min-w-0 items-center justify-center rounded-md px-2 text-xs font-semibold",
-                                aiGenerationMode === mode
-                                  ? "bg-sky-500/20 text-sky-100"
-                                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
-                              )}
-                            >
-                              <span className="min-w-0 truncate">{label}</span>
-                            </button>
-                          ))}
-                        </div>
-                        <div className="grid gap-1.5 rounded-lg border border-slate-800 bg-slate-950/60 p-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                              Save to
-                            </span>
-                            <span className="text-[0.68rem] text-slate-500">
-                              {aiTarget === "flow"
-                                ? creationScopeLabel
-                                : selectedScopeLabel}
-                            </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-xs leading-4 text-slate-500">
+                                Changes save back to the selected{" "}
+                                {selectedScopeLabel.toLowerCase()} flow.
+                                {aiTarget === "prompt-block" &&
+                                aiPromptBlock ? (
+                                  <span className="mt-1 block truncate text-slate-400">
+                                    Prompt block: {aiPromptBlockLabel}
+                                  </span>
+                                ) : null}
+                              </div>
+                            )}
                           </div>
-                          {aiTarget === "flow" ? (
-                            <div className="grid grid-cols-2 gap-1 rounded-md bg-slate-900/70 p-1">
-                              {RALPH_FLOW_SCOPES.map((scope) => (
-                                <button
-                                  key={scope}
-                                  type="button"
-                                  onClick={() => setCreationScope(scope)}
-                                  className={cn(
-                                    "h-7 rounded px-2 text-xs font-semibold",
-                                    creationScope === scope
-                                      ? scope === "user"
-                                        ? "bg-sky-500/20 text-sky-100"
-                                        : "bg-emerald-500/20 text-emerald-100"
-                                      : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
-                                  )}
-                                >
-                                  {RALPH_FLOW_SCOPE_LABELS[scope]}
-                                </button>
-                              ))}
+                          <Textarea
+                            value={aiPromptDraft}
+                            aria-label="AI flow generation prompt"
+                            placeholder={
+                              aiTarget === "flow"
+                                ? "Describe a complete Ralph flow."
+                                : aiTarget === "prompt-block"
+                                  ? "Describe how to improve the selected prompt block."
+                                  : "Describe the changes to apply to this flow."
+                            }
+                            onChange={(event) =>
+                              handleAiPromptDraftChange(event.target.value)
+                            }
+                            onKeyDown={handleAiPromptHistoryNavigation}
+                            className="min-h-14 border-slate-700 bg-slate-950 text-sm text-slate-100 placeholder:text-slate-600"
+                          />
+                          {aiTarget !== "flow" && !draftFlow ? (
+                            <div className="text-xs text-amber-100">
+                              Select or create a flow first.
                             </div>
-                          ) : (
-                            <div className="text-xs leading-4 text-slate-500">
-                              Changes save back to the selected{" "}
-                              {selectedScopeLabel.toLowerCase()} flow.
-                              {aiTarget === "prompt-block" && aiPromptBlock ? (
-                                <span className="mt-1 block truncate text-slate-400">
-                                  Prompt block: {aiPromptBlockLabel}
-                                </span>
-                              ) : null}
-                            </div>
-                          )}
+                          ) : null}
+                          <Button
+                            type="button"
+                            disabled={!canGenerateWithAgent}
+                            onClick={() => void createFlowWithAgent()}
+                            {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                            className="h-8 justify-self-end rounded-lg bg-emerald-600 px-3 text-xs text-white hover:bg-emerald-500"
+                          >
+                            {generationRunning || generationInterviewRunning ? (
+                              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Sparkles className="h-3.5 w-3.5" />
+                            )}
+                            {generationRunning || generationInterviewRunning
+                              ? "Working"
+                              : aiTarget === "flow"
+                                ? "Generate"
+                                : "Apply"}
+                          </Button>
                         </div>
-                        <Textarea
-                          value={aiPromptDraft}
-                          aria-label="AI flow generation prompt"
-                          placeholder={
-                            aiTarget === "flow"
-                              ? "Describe a complete Ralph flow."
-                              : aiTarget === "prompt-block"
-                                ? "Describe how to improve the selected prompt block."
-                                : "Describe the changes to apply to this flow."
-                          }
-                          onChange={(event) =>
-                            handleAiPromptDraftChange(event.target.value)
-                          }
-                          onKeyDown={handleAiPromptHistoryNavigation}
-                          className="min-h-14 border-slate-700 bg-slate-950 text-sm text-slate-100 placeholder:text-slate-600"
-                        />
-                        {aiTarget !== "flow" && !draftFlow ? (
-                          <div className="text-xs text-amber-100">
-                            Select or create a flow first.
-                          </div>
-                        ) : null}
-                        <Button
-                          type="button"
-                          disabled={!canGenerateWithAgent}
-                          onClick={() => void createFlowWithAgent()}
-                          className="h-8 justify-self-end rounded-lg bg-emerald-600 px-3 text-xs text-white hover:bg-emerald-500"
-                        >
-                          {generationRunning || generationInterviewRunning ? (
-                            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Sparkles className="h-3.5 w-3.5" />
-                          )}
-                          {generationRunning || generationInterviewRunning
-                            ? "Working"
-                            : aiTarget === "flow"
-                              ? "Generate"
-                              : "Apply"}
-                        </Button>
-                      </div>
+                      </SubmitShortcut>
                       <div className="grid min-h-0 content-start gap-2 border-t border-slate-800 pt-3 xl:border-l xl:border-t-0 xl:pl-3 xl:pt-0">
                         <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                           Result
@@ -12967,7 +12977,8 @@ export const RalphFlowEditor = ({
             ) : null}
 
             {editorMode === "run" ? (
-              <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+              <SubmitShortcut asChild>
+                <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
                 <div className="flex min-w-0 items-center justify-between gap-4 border-b border-slate-800 bg-slate-950/95 px-5 py-3">
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-lime-400/20 bg-lime-500/10 text-lime-200">
@@ -12996,11 +13007,11 @@ export const RalphFlowEditor = ({
                       variant="outline"
                       disabled={!canRunAction}
                       aria-label="Run Ralph flow"
-                      aria-keyshortcuts={runShortcut?.ariaKeyShortcuts}
                       onClick={(event) => {
                         event.stopPropagation();
                         void runFlow();
                       }}
+                      {...SUBMIT_SHORTCUT_ACTION_PROPS}
                       className="h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs text-slate-100 hover:bg-slate-800 hover:text-white"
                     >
                       {loading ? (
@@ -13080,103 +13091,108 @@ export const RalphFlowEditor = ({
                     ) : null}
 
                     {visiblePendingInput ? (
-                      <div className="grid gap-3 rounded-lg border border-teal-400/30 bg-teal-950/20 p-3">
-                        <div className="flex min-w-0 items-start justify-between gap-3">
-                          <div className="grid min-w-0 gap-1">
-                            <div className="text-sm font-semibold text-teal-50">
-                              {visiblePendingInput.title}
+                      <SubmitShortcut asChild>
+                        <div className="grid gap-3 rounded-lg border border-teal-400/30 bg-teal-950/20 p-3">
+                          <div className="flex min-w-0 items-start justify-between gap-3">
+                            <div className="grid min-w-0 gap-1">
+                              <div className="text-sm font-semibold text-teal-50">
+                                {visiblePendingInput.title}
+                              </div>
+                              {visiblePendingInput.prompt ? (
+                                <div className="text-xs leading-5 text-teal-100/80">
+                                  {visiblePendingInput.prompt}
+                                </div>
+                              ) : null}
+                              {visiblePendingInput.interview ? (
+                                <div className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-teal-200/75">
+                                  Interview turn{" "}
+                                  {visiblePendingInput.interview.turn} /{" "}
+                                  {visiblePendingInput.interview.maxTurns}
+                                </div>
+                              ) : null}
                             </div>
-                            {visiblePendingInput.prompt ? (
-                              <div className="text-xs leading-5 text-teal-100/80">
-                                {visiblePendingInput.prompt}
-                              </div>
-                            ) : null}
-                            {visiblePendingInput.interview ? (
-                              <div className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-teal-200/75">
-                                Interview turn{" "}
-                                {visiblePendingInput.interview.turn} /{" "}
-                                {visiblePendingInput.interview.maxTurns}
-                              </div>
-                            ) : null}
+                            <span className="shrink-0 rounded-full border border-teal-300/30 bg-teal-400/10 px-2 py-1 text-[0.68rem] font-semibold text-teal-100">
+                              Waiting
+                            </span>
                           </div>
-                          <span className="shrink-0 rounded-full border border-teal-300/30 bg-teal-400/10 px-2 py-1 text-[0.68rem] font-semibold text-teal-100">
-                            Waiting
-                          </span>
-                        </div>
-                        {visiblePendingMediaReview ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onOpenMediaRun?.(visiblePendingMediaReview.runId)
-                            }
-                            disabled={!onOpenMediaRun}
-                            className="flex w-fit items-center gap-2 rounded-lg border border-orange-300/30 bg-orange-400/10 px-3 py-2 text-xs font-semibold text-orange-100 transition hover:border-orange-300/50 hover:bg-orange-400/15 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            <Images className="h-3.5 w-3.5" />
-                            Open run in Media Studio
-                          </button>
-                        ) : null}
-                        <div className="grid gap-3">
-                          {visiblePendingInput.fields.map((field) => (
-                            <label
-                              key={field.id}
-                              className="grid gap-1.5 text-sm text-slate-100"
+                          {visiblePendingMediaReview ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onOpenMediaRun?.(
+                                  visiblePendingMediaReview.runId,
+                                )
+                              }
+                              disabled={!onOpenMediaRun}
+                              className="flex w-fit items-center gap-2 rounded-lg border border-orange-300/30 bg-orange-400/10 px-3 py-2 text-xs font-semibold text-orange-100 transition hover:border-orange-300/50 hover:bg-orange-400/15 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              <span className="flex min-w-0 items-center justify-between gap-3">
-                                <span className="min-w-0 truncate font-medium">
-                                  {field.label}
+                              <Images className="h-3.5 w-3.5" />
+                              Open run in Media Studio
+                            </button>
+                          ) : null}
+                          <div className="grid gap-3">
+                            {visiblePendingInput.fields.map((field) => (
+                              <label
+                                key={field.id}
+                                className="grid gap-1.5 text-sm text-slate-100"
+                              >
+                                <span className="flex min-w-0 items-center justify-between gap-3">
+                                  <span className="min-w-0 truncate font-medium">
+                                    {field.label}
+                                  </span>
+                                  <span className="shrink-0 text-[0.68rem] text-slate-400">
+                                    {field.type}
+                                    {field.required ? " required" : ""}
+                                    {field.skippable ? " skippable" : ""}
+                                  </span>
                                 </span>
-                                <span className="shrink-0 text-[0.68rem] text-slate-400">
-                                  {field.type}
-                                  {field.required ? " required" : ""}
-                                  {field.skippable ? " skippable" : ""}
+                                {renderPendingInputControl(field)}
+                                <span className="flex min-w-0 items-center justify-between gap-3">
+                                  <span className="min-w-0 text-xs text-slate-400">
+                                    {field.help ?? ""}
+                                  </span>
+                                  {field.skippable ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updatePendingInputValue(field.id, null)
+                                      }
+                                      className="shrink-0 text-xs font-medium text-teal-200 hover:text-teal-100"
+                                    >
+                                      Skip
+                                    </button>
+                                  ) : null}
                                 </span>
-                              </span>
-                              {renderPendingInputControl(field)}
-                              <span className="flex min-w-0 items-center justify-between gap-3">
-                                <span className="min-w-0 text-xs text-slate-400">
-                                  {field.help ?? ""}
-                                </span>
-                                {field.skippable ? (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      updatePendingInputValue(field.id, null)
-                                    }
-                                    className="shrink-0 text-xs font-medium text-teal-200 hover:text-teal-100"
-                                  >
-                                    Skip
-                                  </button>
-                                ) : null}
-                              </span>
-                            </label>
-                          ))}
+                              </label>
+                            ))}
+                          </div>
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={inputSubmitting}
+                              onClick={() => void submitPendingInput("cancel")}
+                              className="h-8 rounded-lg border-slate-700 bg-slate-950 px-3 text-xs text-slate-200 hover:bg-slate-900 hover:text-white"
+                            >
+                              {visiblePendingInput.cancelLabel ?? "Cancel"}
+                            </Button>
+                            <Button
+                              type="button"
+                              disabled={inputSubmitting}
+                              onClick={() => void submitPendingInput("submit")}
+                              {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                              className="h-8 rounded-lg bg-teal-600 px-3 text-xs text-white hover:bg-teal-500"
+                            >
+                              {inputSubmitting ? (
+                                <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Check className="h-3.5 w-3.5" />
+                              )}
+                              {visiblePendingInput.submitLabel ?? "Continue"}
+                            </Button>
+                          </div>
                         </div>
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            disabled={inputSubmitting}
-                            onClick={() => void submitPendingInput("cancel")}
-                            className="h-8 rounded-lg border-slate-700 bg-slate-950 px-3 text-xs text-slate-200 hover:bg-slate-900 hover:text-white"
-                          >
-                            {visiblePendingInput.cancelLabel ?? "Cancel"}
-                          </Button>
-                          <Button
-                            type="button"
-                            disabled={inputSubmitting}
-                            onClick={() => void submitPendingInput("submit")}
-                            className="h-8 rounded-lg bg-teal-600 px-3 text-xs text-white hover:bg-teal-500"
-                          >
-                            {inputSubmitting ? (
-                              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Check className="h-3.5 w-3.5" />
-                            )}
-                            {visiblePendingInput.submitLabel ?? "Continue"}
-                          </Button>
-                        </div>
-                      </div>
+                      </SubmitShortcut>
                     ) : null}
 
                     {runPanelTab === "setup" ? (
@@ -14680,7 +14696,8 @@ export const RalphFlowEditor = ({
                     ) : null}
                   </div>
                 </ScrollArea>
-              </div>
+                </div>
+              </SubmitShortcut>
             ) : null}
           </section>
         )}

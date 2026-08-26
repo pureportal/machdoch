@@ -23,6 +23,10 @@ import {
   type WorkspaceRunSnapshot,
 } from "../../../shared/workspace-run.js";
 import { Button } from "../components/ui/button";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../components/ui/submit-shortcut";
 import { cn } from "../lib/utils";
 import {
   listenWorkspaceRunLogs,
@@ -466,12 +470,13 @@ export const WorkspaceRunPanel = ({
           "overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20 shadow-[0_16px_48px_rgba(0,0,0,0.16)]",
       )}
     >
-      <div
-        className={cn(
-          "flex min-w-0 flex-wrap items-center gap-2.5",
-          view === "all" ? "pb-4" : "px-4 py-3.5",
-        )}
-      >
+      <SubmitShortcut asChild>
+        <div
+          className={cn(
+            "flex min-w-0 flex-wrap items-center gap-2.5",
+            view === "all" ? "pb-4" : "px-4 py-3.5",
+          )}
+        >
         <Play aria-hidden="true" className="size-4 shrink-0 text-emerald-300" />
         <div className="min-w-[8rem] flex-1">
           {(snapshot?.configurations.length ?? 0) > 1 && displayedStatus ? (
@@ -550,6 +555,9 @@ export const WorkspaceRunPanel = ({
             variant={directAction === "start" ? "default" : "outline"}
             disabled={busyAction !== null}
             onClick={() => void runAction(directAction)}
+            {...(directAction === "start"
+              ? SUBMIT_SHORTCUT_ACTION_PROPS
+              : {})}
           >
             {busyAction === directAction ? (
               <LoaderCircle
@@ -564,7 +572,8 @@ export const WorkspaceRunPanel = ({
             {directAction === "start" ? "Start" : "Stop"}
           </Button>
         ) : null}
-      </div>
+        </div>
+      </SubmitShortcut>
       {error ? (
         <div
           role="alert"

@@ -42,6 +42,10 @@ import {
 } from "../../chat-session.model";
 import { Avatar } from "../../components/ui/avatar";
 import { Button } from "../../components/ui/button";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../../components/ui/submit-shortcut";
 import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
 import { TaskThinkingPanel } from "../../task-thinking-panel";
@@ -563,59 +567,54 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
               ) : null}
 
               {isEditing ? (
-                <form
-                  className="grid gap-3"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    onEditMessage?.(message);
-                  }}
-                >
-                  <Textarea
-                    autoFocus
-                    aria-label="Edit message"
-                    value={editContent}
-                    onChange={(event) =>
-                      onEditContentChange(event.target.value)
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        onCancelEditing();
-                        return;
-                      }
-
-                      if (
-                        event.key === "Enter" &&
-                        (event.metaKey || event.ctrlKey)
-                      ) {
-                        event.preventDefault();
-                        event.currentTarget.form?.requestSubmit();
-                      }
+                <SubmitShortcut asChild>
+                  <form
+                    className="grid gap-3"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      onEditMessage?.(message);
                     }}
-                    className="max-h-80 min-h-24 resize-none border-slate-600 bg-slate-950/50 text-slate-100 focus-visible:border-sky-400/60 focus-visible:ring-sky-400/20"
-                  />
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={onCancelEditing}
-                      className="h-8 rounded-full px-3 text-xs text-slate-300"
-                    >
-                      <X className="mr-1.5 h-3.5 w-3.5" />
-                      Cancel
-                    </Button>
-                    <Button
-                      type="submit"
-                      size="sm"
-                      disabled={!editContent.trim()}
-                      className="rounded-full bg-sky-600 text-xs text-white hover:bg-sky-500"
-                    >
-                      <Check className="mr-1.5 h-3.5 w-3.5" />
-                      Save and submit
-                    </Button>
-                  </div>
-                </form>
+                  >
+                    <Textarea
+                      autoFocus
+                      aria-label="Edit message"
+                      value={editContent}
+                      onChange={(event) =>
+                        onEditContentChange(event.target.value)
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          onCancelEditing();
+                          return;
+                        }
+                      }}
+                      className="max-h-80 min-h-24 resize-none border-slate-600 bg-slate-950/50 text-slate-100 focus-visible:border-sky-400/60 focus-visible:ring-sky-400/20"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={onCancelEditing}
+                        className="h-8 rounded-full px-3 text-xs text-slate-300"
+                      >
+                        <X className="mr-1.5 h-3.5 w-3.5" />
+                        Cancel
+                      </Button>
+                      <Button
+                        type="submit"
+                        size="sm"
+                        disabled={!editContent.trim()}
+                        {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                        className="rounded-full bg-sky-600 text-xs text-white hover:bg-sky-500"
+                      >
+                        <Check className="mr-1.5 h-3.5 w-3.5" />
+                        Save and submit
+                      </Button>
+                    </div>
+                  </form>
+                </SubmitShortcut>
               ) : (
                 <MarkdownContent
                   content={renderedContent}

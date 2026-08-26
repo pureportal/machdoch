@@ -2,6 +2,7 @@ import { GitBranch, PencilLine, Pin, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type JSX } from "react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { SubmitShortcut } from "../../components/ui/submit-shortcut";
 import type { ChatSessionRecord } from "../../chat-session.model";
 import { cn } from "../../lib/utils";
 import { WorkspaceRunDialogControl } from "./workspace-run-dialog-control";
@@ -89,24 +90,30 @@ export const SessionHeader = ({
     <header className="app-session-header flex h-16 items-center justify-between gap-4 border-b border-slate-900 bg-slate-950/60 px-8 backdrop-blur-md">
       <div className="min-w-0 flex-1">
         {isRenamingSession ? (
-          <Input
-            autoFocus
-            value={renameValue}
-            onChange={(event) => onRenameValueChange(event.target.value)}
-            onBlur={onRenameCommit}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                onRenameCommit();
-              }
+          <SubmitShortcut asChild onSubmitShortcut={onRenameCommit}>
+            <Input
+              autoFocus
+              value={renameValue}
+              onChange={(event) => onRenameValueChange(event.target.value)}
+              onBlur={onRenameCommit}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  !event.ctrlKey &&
+                  !event.metaKey
+                ) {
+                  event.preventDefault();
+                  onRenameCommit();
+                }
 
-              if (event.key === "Escape") {
-                event.preventDefault();
-                onRenameCancel();
-              }
-            }}
-            className="app-session-rename-input h-10 w-full max-w-md rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
-          />
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  onRenameCancel();
+                }
+              }}
+              className="app-session-rename-input h-10 w-full max-w-md rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
+            />
+          </SubmitShortcut>
         ) : (
           <h1 className="app-session-title-heading truncate text-2xl font-semibold tracking-tight text-white">
             {currentSessionTitle}
@@ -120,25 +127,31 @@ export const SessionHeader = ({
           primaryTaskRunning={primaryTaskRunning}
         />
         {canEditSessionMetadata ? (
-          <Input
-            value={tagDraft}
-            aria-label="Session tags"
-            placeholder="Tags"
-            onChange={(event) => setTagDraft(event.target.value)}
-            onBlur={commitTags}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                commitTags();
-              }
+          <SubmitShortcut asChild onSubmitShortcut={commitTags}>
+            <Input
+              value={tagDraft}
+              aria-label="Session tags"
+              placeholder="Tags"
+              onChange={(event) => setTagDraft(event.target.value)}
+              onBlur={commitTags}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  !event.ctrlKey &&
+                  !event.metaKey
+                ) {
+                  event.preventDefault();
+                  commitTags();
+                }
 
-              if (event.key === "Escape") {
-                event.preventDefault();
-                setTagDraft(activeSession.tags.join(", "));
-              }
-            }}
-            className="app-session-tags-input h-9 w-44 rounded-2xl border-slate-800 bg-slate-950 text-xs text-slate-100 placeholder:text-slate-600"
-          />
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setTagDraft(activeSession.tags.join(", "));
+                }
+              }}
+              className="app-session-tags-input h-9 w-44 rounded-2xl border-slate-800 bg-slate-950 text-xs text-slate-100 placeholder:text-slate-600"
+            />
+          </SubmitShortcut>
         ) : null}
         {canPinSession ? (
           <Button

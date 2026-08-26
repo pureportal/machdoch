@@ -19,6 +19,10 @@ import {
   DialogTitle,
 } from "../../components/ui/dialog";
 import { ScrollArea } from "../../components/ui/scroll-area";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../../components/ui/submit-shortcut";
 import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
 import type {
@@ -190,189 +194,196 @@ export const RalphGenerationInterviewDialog = ({
         </DialogHeader>
 
         {state ? (
-          <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] bg-slate-950">
-            <ScrollArea className="min-h-0 bg-slate-950" type="always">
-              <div className="grid gap-4 p-5">
-                {state.status === "loading" ? (
-                  <div className="grid min-h-80 place-items-center">
-                    <div className="grid justify-items-center gap-4">
-                      <LoaderCircle className="h-7 w-7 animate-spin text-cyan-300" />
-                      <div className="text-sm font-semibold text-slate-100">
-                        {getInterviewStatusTitle(state)}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-
-                {state.status === "generating" ? (
-                  <div className="grid min-h-80 place-items-center">
-                    <div className="grid justify-items-center gap-4">
-                      <LoaderCircle className="h-7 w-7 animate-spin text-emerald-300" />
-                      <div className="text-sm font-semibold text-emerald-50">
-                        {getInterviewStatusTitle(state)}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-
-                {state.status === "blocked" ? (
-                  <div className="rounded-md border border-amber-400/25 bg-amber-400/10 p-4">
-                    <div className="mb-1 text-sm font-semibold text-amber-100">
-                      {getInterviewStatusTitle(state)}
-                    </div>
-                    <p className="text-sm leading-6 text-amber-100/80">
-                      {state.error ?? state.summary}
-                    </p>
-                  </div>
-                ) : null}
-
-                {state.status === "ready" ? (
-                  <div className="grid gap-3">
-                    <div className="flex min-w-0 items-center justify-between gap-3">
-                      <h2 className="text-base font-semibold text-white">
-                        {getLatestQuestionScope(state)}
-                      </h2>
-                    </div>
-                    {state.fields.map((field) => {
-                      const error = state.validationErrors[field.id];
-                      const skipped = state.skippedFieldIds.includes(field.id);
-                      const answerComment =
-                        state.answerComments[field.id] ?? "";
-                      const commentOpen =
-                        state.expandedCommentFieldIds.includes(field.id);
-                      const hasComment = answerComment.trim().length > 0;
-
-                      return (
-                        <div
-                          key={field.id}
-                          className={cn(
-                            "grid gap-3 rounded-lg border border-slate-700/70 bg-slate-900/70 p-4 text-sm text-slate-100 shadow-sm shadow-black/15",
-                            skipped && "border-slate-800 bg-slate-900/35",
-                          )}
-                        >
-                          <span className="flex min-w-0 items-start justify-between gap-3">
-                            <span className="min-w-0 font-semibold leading-5 text-slate-50">
-                              {field.label}
-                            </span>
-                            <span className="flex shrink-0 items-center gap-1.5">
-                              {skipped ? (
-                                <span className="text-xs font-medium text-slate-500">
-                                  Skipped
-                                </span>
-                              ) : null}
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => onToggleComment(field.id)}
-                                aria-label={`${commentOpen ? "Hide" : "Add"} comment for ${field.label}`}
-                                tooltip={
-                                  commentOpen ? "Hide comment" : "Add comment"
-                                }
-                                className={cn(
-                                  "h-7 w-7 rounded-md hover:bg-slate-800 hover:text-slate-100",
-                                  hasComment || commentOpen
-                                    ? "text-cyan-200"
-                                    : "text-slate-500",
-                                )}
-                              >
-                                <MessageSquare className="h-3.5 w-3.5" />
-                              </Button>
-                            </span>
-                          </span>
-                          {field.help ? (
-                            <p className="rounded-md border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs font-medium leading-5 text-cyan-50">
-                              {field.help}
-                            </p>
-                          ) : null}
-                          {renderInputControl(
-                            field,
-                            state.values[field.id] ??
-                              getDefaultInputValue(field),
-                            (value) => onValueChange(field.id, value),
-                          )}
-                          {commentOpen ? (
-                            <Textarea
-                              value={answerComment}
-                              aria-label={`Comment for ${field.label}`}
-                              placeholder="Add extra context for this answer"
-                              onChange={(event) =>
-                                onCommentChange(field.id, event.target.value)
-                              }
-                              className="min-h-20 border-slate-700 bg-slate-950 text-sm text-slate-100"
-                            />
-                          ) : null}
-                          <span className="flex min-w-0 items-start justify-between gap-3">
-                            {error ? (
-                              <span className="min-w-0 text-xs leading-5 text-rose-200">
-                                {error}
-                              </span>
-                            ) : (
-                              <span />
-                            )}
-                            {field.skippable ? (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="xs"
-                                onClick={() => onSkipField(field.id)}
-                                className={cn(
-                                  "shrink-0 hover:bg-slate-800 hover:text-slate-100",
-                                  skipped ? "text-slate-200" : "text-slate-400",
-                                )}
-                              >
-                                {skipped ? "Skipped" : "Skip"}
-                              </Button>
-                            ) : null}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-            </ScrollArea>
-
-            <DialogFooter className="justify-end border-t border-slate-800 bg-slate-950 px-5 py-3 sm:flex-row">
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={busy}
-                  onClick={onClose}
-                  className="text-slate-400 hover:bg-slate-900 hover:text-white"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={busy}
-                  onClick={onGenerateNow}
-                  className="border-emerald-400/30 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/15"
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Generate
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={busy || state.status !== "ready"}
-                  onClick={onSubmitAnswers}
-                  className="bg-cyan-600 text-white hover:bg-cyan-500"
-                >
+          <SubmitShortcut asChild>
+            <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] bg-slate-950">
+              <ScrollArea className="min-h-0 bg-slate-950" type="always">
+                <div className="grid gap-4 p-5">
                   {state.status === "loading" ? (
-                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Check className="h-3.5 w-3.5" />
-                  )}
-                  {getPrimaryActionLabel(state)}
-                </Button>
-              </div>
-            </DialogFooter>
-          </div>
+                    <div className="grid min-h-80 place-items-center">
+                      <div className="grid justify-items-center gap-4">
+                        <LoaderCircle className="h-7 w-7 animate-spin text-cyan-300" />
+                        <div className="text-sm font-semibold text-slate-100">
+                          {getInterviewStatusTitle(state)}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {state.status === "generating" ? (
+                    <div className="grid min-h-80 place-items-center">
+                      <div className="grid justify-items-center gap-4">
+                        <LoaderCircle className="h-7 w-7 animate-spin text-emerald-300" />
+                        <div className="text-sm font-semibold text-emerald-50">
+                          {getInterviewStatusTitle(state)}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {state.status === "blocked" ? (
+                    <div className="rounded-md border border-amber-400/25 bg-amber-400/10 p-4">
+                      <div className="mb-1 text-sm font-semibold text-amber-100">
+                        {getInterviewStatusTitle(state)}
+                      </div>
+                      <p className="text-sm leading-6 text-amber-100/80">
+                        {state.error ?? state.summary}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {state.status === "ready" ? (
+                    <div className="grid gap-3">
+                      <div className="flex min-w-0 items-center justify-between gap-3">
+                        <h2 className="text-base font-semibold text-white">
+                          {getLatestQuestionScope(state)}
+                        </h2>
+                      </div>
+                      {state.fields.map((field) => {
+                        const error = state.validationErrors[field.id];
+                        const skipped = state.skippedFieldIds.includes(
+                          field.id,
+                        );
+                        const answerComment =
+                          state.answerComments[field.id] ?? "";
+                        const commentOpen =
+                          state.expandedCommentFieldIds.includes(field.id);
+                        const hasComment = answerComment.trim().length > 0;
+
+                        return (
+                          <div
+                            key={field.id}
+                            className={cn(
+                              "grid gap-3 rounded-lg border border-slate-700/70 bg-slate-900/70 p-4 text-sm text-slate-100 shadow-sm shadow-black/15",
+                              skipped && "border-slate-800 bg-slate-900/35",
+                            )}
+                          >
+                            <span className="flex min-w-0 items-start justify-between gap-3">
+                              <span className="min-w-0 font-semibold leading-5 text-slate-50">
+                                {field.label}
+                              </span>
+                              <span className="flex shrink-0 items-center gap-1.5">
+                                {skipped ? (
+                                  <span className="text-xs font-medium text-slate-500">
+                                    Skipped
+                                  </span>
+                                ) : null}
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => onToggleComment(field.id)}
+                                  aria-label={`${commentOpen ? "Hide" : "Add"} comment for ${field.label}`}
+                                  tooltip={
+                                    commentOpen ? "Hide comment" : "Add comment"
+                                  }
+                                  className={cn(
+                                    "h-7 w-7 rounded-md hover:bg-slate-800 hover:text-slate-100",
+                                    hasComment || commentOpen
+                                      ? "text-cyan-200"
+                                      : "text-slate-500",
+                                  )}
+                                >
+                                  <MessageSquare className="h-3.5 w-3.5" />
+                                </Button>
+                              </span>
+                            </span>
+                            {field.help ? (
+                              <p className="rounded-md border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs font-medium leading-5 text-cyan-50">
+                                {field.help}
+                              </p>
+                            ) : null}
+                            {renderInputControl(
+                              field,
+                              state.values[field.id] ??
+                                getDefaultInputValue(field),
+                              (value) => onValueChange(field.id, value),
+                            )}
+                            {commentOpen ? (
+                              <Textarea
+                                value={answerComment}
+                                aria-label={`Comment for ${field.label}`}
+                                placeholder="Add extra context for this answer"
+                                onChange={(event) =>
+                                  onCommentChange(field.id, event.target.value)
+                                }
+                                className="min-h-20 border-slate-700 bg-slate-950 text-sm text-slate-100"
+                              />
+                            ) : null}
+                            <span className="flex min-w-0 items-start justify-between gap-3">
+                              {error ? (
+                                <span className="min-w-0 text-xs leading-5 text-rose-200">
+                                  {error}
+                                </span>
+                              ) : (
+                                <span />
+                              )}
+                              {field.skippable ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="xs"
+                                  onClick={() => onSkipField(field.id)}
+                                  className={cn(
+                                    "shrink-0 hover:bg-slate-800 hover:text-slate-100",
+                                    skipped
+                                      ? "text-slate-200"
+                                      : "text-slate-400",
+                                  )}
+                                >
+                                  {skipped ? "Skipped" : "Skip"}
+                                </Button>
+                              ) : null}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              </ScrollArea>
+
+              <DialogFooter className="justify-end border-t border-slate-800 bg-slate-950 px-5 py-3 sm:flex-row">
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={onClose}
+                    className="text-slate-400 hover:bg-slate-900 hover:text-white"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    onClick={onGenerateNow}
+                    className="border-emerald-400/30 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/15"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Generate
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={busy || state.status !== "ready"}
+                    onClick={onSubmitAnswers}
+                    {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                    className="bg-cyan-600 text-white hover:bg-cyan-500"
+                  >
+                    {state.status === "loading" ? (
+                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Check className="h-3.5 w-3.5" />
+                    )}
+                    {getPrimaryActionLabel(state)}
+                  </Button>
+                </div>
+              </DialogFooter>
+            </div>
+          </SubmitShortcut>
         ) : null}
       </DialogContent>
     </Dialog>

@@ -10,6 +10,10 @@ import type {
   MediaGenerationAssetMetadata,
 } from "../../../../core/media/contracts.js";
 import { Button } from "../../components/ui/button";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../../components/ui/submit-shortcut";
 import { ControlTooltip } from "../../components/ui/tooltip";
 
 interface MediaCategoryManagerDialogProps {
@@ -115,26 +119,35 @@ export const MediaCategoryManagerDialog = ({
             </button>
           </ControlTooltip>
         </header>
-        <div className="flex gap-2 border-b border-slate-800 p-4">
-          <input
-            value={newName}
-            aria-label="New category"
-            placeholder="New category"
-            maxLength={64}
-            onChange={(event) => setNewName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") addCategory();
-            }}
-            className="h-10 min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus:border-sky-500"
-          />
-          <Button
-            type="button"
-            onClick={addCategory}
-            disabled={!newName.trim()}
-          >
-            <Plus className="h-4 w-4" /> Add
-          </Button>
-        </div>
+        <SubmitShortcut asChild>
+          <div className="flex gap-2 border-b border-slate-800 p-4">
+            <input
+              value={newName}
+              aria-label="New category"
+              placeholder="New category"
+              maxLength={64}
+              onChange={(event) => setNewName(event.target.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  !event.ctrlKey &&
+                  !event.metaKey
+                ) {
+                  addCategory();
+                }
+              }}
+              className="h-10 min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus:border-sky-500"
+            />
+            <Button
+              type="button"
+              onClick={addCategory}
+              disabled={!newName.trim()}
+              {...SUBMIT_SHORTCUT_ACTION_PROPS}
+            >
+              <Plus className="h-4 w-4" /> Add
+            </Button>
+          </div>
+        </SubmitShortcut>
         <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
           {categories.map((category) => {
             const count = assignedCount(category.id);
@@ -170,7 +183,8 @@ export const MediaCategoryManagerDialog = ({
                     </Button>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2">
+                  <SubmitShortcut asChild>
+                    <div className="flex items-center gap-2">
                     {editing ? (
                       <input
                         value={editingName}
@@ -179,7 +193,13 @@ export const MediaCategoryManagerDialog = ({
                         autoFocus
                         onChange={(event) => setEditingName(event.target.value)}
                         onKeyDown={(event) => {
-                          if (event.key === "Enter") saveRename();
+                          if (
+                            event.key === "Enter" &&
+                            !event.ctrlKey &&
+                            !event.metaKey
+                          ) {
+                            saveRename();
+                          }
                           if (event.key === "Escape") setEditingId(null);
                         }}
                         className="h-8 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100 outline-none focus:border-sky-500"
@@ -196,6 +216,7 @@ export const MediaCategoryManagerDialog = ({
                           type="button"
                           aria-label={`Save ${category.name}`}
                           onClick={saveRename}
+                          {...SUBMIT_SHORTCUT_ACTION_PROPS}
                           className="rounded-md p-1.5 text-emerald-300 hover:bg-slate-800"
                         >
                           <Check className="h-3.5 w-3.5" />
@@ -232,7 +253,8 @@ export const MediaCategoryManagerDialog = ({
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </ControlTooltip>
-                  </div>
+                    </div>
+                  </SubmitShortcut>
                 )}
               </div>
             );

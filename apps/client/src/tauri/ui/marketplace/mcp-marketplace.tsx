@@ -51,6 +51,10 @@ import { EmptyState } from "../components/ui/empty-state";
 import { Input } from "../components/ui/input";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { SearchField } from "../components/ui/search-field";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../components/ui/submit-shortcut";
 import { ControlTooltip } from "../components/ui/tooltip";
 import {
   createFailedRegistryPage,
@@ -1691,48 +1695,55 @@ export const McpMarketplace = ({
       <div
         className={cn(PANEL_CLASS, "flex flex-col overflow-hidden lg:min-h-0")}
       >
-        <div className="border-b border-slate-800 p-3">
-          <SearchField
-            value={query}
-            aria-label="Search MCP servers"
-            placeholder="Search MCP servers"
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                searchRegistries(query);
-              }
-            }}
-            endAdornment={
-              searchBusy ? (
-                <RefreshCw
-                  aria-label="Updating search results"
-                  className="size-4 animate-spin text-sky-300"
-                />
-              ) : null
-            }
-            className={INPUT_CLASS}
-          />
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => {
-                searchRegistries(query);
+        <SubmitShortcut asChild>
+          <div className="border-b border-slate-800 p-3">
+            <SearchField
+              value={query}
+              aria-label="Search MCP servers"
+              placeholder="Search MCP servers"
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  !event.ctrlKey &&
+                  !event.metaKey
+                ) {
+                  searchRegistries(query);
+                }
               }}
-              className="h-8 rounded-lg bg-sky-500 px-3 text-slate-950 hover:bg-sky-400"
-            >
-              <Search
-                className={cn("h-4 w-4", searchPending && "animate-pulse")}
-              />
-              {searchPending ? "Searching" : "Search"}
-            </Button>
+              endAdornment={
+                searchBusy ? (
+                  <RefreshCw
+                    aria-label="Updating search results"
+                    className="size-4 animate-spin text-sky-300"
+                  />
+                ) : null
+              }
+              className={INPUT_CLASS}
+            />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  searchRegistries(query);
+                }}
+                {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                className="h-8 rounded-lg bg-sky-500 px-3 text-slate-950 hover:bg-sky-400"
+              >
+                <Search
+                  className={cn("h-4 w-4", searchPending && "animate-pulse")}
+                />
+                {searchPending ? "Searching" : "Search"}
+              </Button>
+            </div>
+            {marketplaceActivityLabel ? (
+              <span className="sr-only" aria-live="polite">
+                {marketplaceActivityLabel}
+              </span>
+            ) : null}
           </div>
-          {marketplaceActivityLabel ? (
-            <span className="sr-only" aria-live="polite">
-              {marketplaceActivityLabel}
-            </span>
-          ) : null}
-        </div>
+        </SubmitShortcut>
 
         <div className="grid gap-2 border-b border-slate-800 px-3 py-2">
           <div className="flex gap-2 overflow-x-auto">
@@ -2407,44 +2418,47 @@ export const McpMarketplace = ({
         </div>
 
         <div className={cn(PANEL_CLASS, "grid gap-3 p-4")}>
-          <div className="grid gap-3 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_auto_auto]">
-            <Input
-              value={registryTitleDraft}
-              placeholder="Registry name"
-              onChange={(event) => setRegistryTitleDraft(event.target.value)}
-              className={INPUT_CLASS}
-            />
-            <Input
-              value={registryUrlDraft}
-              placeholder="https://example.com or https://example.com/v0.1"
-              onChange={(event) => setRegistryUrlDraft(event.target.value)}
-              className={INPUT_CLASS}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              disabled={registryTesting}
-              onClick={() => {
-                void testRegistryDraft();
-              }}
-              className="h-9 rounded-lg border-slate-800 bg-slate-950 px-3 text-slate-200 hover:bg-slate-900"
-            >
-              <RefreshCw
-                className={cn("h-4 w-4", registryTesting && "animate-spin")}
+          <SubmitShortcut asChild>
+            <div className="grid gap-3 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_auto_auto]">
+              <Input
+                value={registryTitleDraft}
+                placeholder="Registry name"
+                onChange={(event) => setRegistryTitleDraft(event.target.value)}
+                className={INPUT_CLASS}
               />
-              Test
-            </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                void addRegistry();
-              }}
-              className="h-9 rounded-lg bg-sky-500 px-3 text-slate-950 hover:bg-sky-400"
-            >
-              <Plus className="h-4 w-4" />
-              Add
-            </Button>
-          </div>
+              <Input
+                value={registryUrlDraft}
+                placeholder="https://example.com or https://example.com/v0.1"
+                onChange={(event) => setRegistryUrlDraft(event.target.value)}
+                className={INPUT_CLASS}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                disabled={registryTesting}
+                onClick={() => {
+                  void testRegistryDraft();
+                }}
+                className="h-9 rounded-lg border-slate-800 bg-slate-950 px-3 text-slate-200 hover:bg-slate-900"
+              >
+                <RefreshCw
+                  className={cn("h-4 w-4", registryTesting && "animate-spin")}
+                />
+                Test
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  void addRegistry();
+                }}
+                {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                className="h-9 rounded-lg bg-sky-500 px-3 text-slate-950 hover:bg-sky-400"
+              >
+                <Plus className="h-4 w-4" />
+                Add
+              </Button>
+            </div>
+          </SubmitShortcut>
         </div>
 
         <div className="grid gap-3">

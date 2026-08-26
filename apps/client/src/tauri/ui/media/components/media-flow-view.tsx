@@ -155,6 +155,7 @@ import { ControlTooltip } from "../../components/ui/tooltip";
 import { EmptyState } from "../../components/ui/empty-state";
 import { Input } from "../../components/ui/input";
 import { SearchField } from "../../components/ui/search-field";
+import { SubmitShortcut } from "../../components/ui/submit-shortcut";
 import { Textarea } from "../../components/ui/textarea";
 import {
   Command,
@@ -2311,21 +2312,32 @@ const VisualGroupEditor = ({
     <article className={cn("rounded-xl border p-3", GROUP_STYLES[group.color])}>
       <div className="flex items-center gap-2">
         <Group className="h-3.5 w-3.5 shrink-0" />
-        <Input
-          value={draftLabel}
-          maxLength={80}
-          aria-label={`Rename ${group.label}`}
-          onChange={(event) => setDraftLabel(event.target.value)}
-          onBlur={commitLabel}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") event.currentTarget.blur();
-            if (event.key === "Escape") {
-              setDraftLabel(group.label);
-              event.currentTarget.blur();
-            }
-          }}
-          className="h-7 min-w-0 border-current/15 bg-slate-950/45 px-2 text-[10px] text-current"
-        />
+        <SubmitShortcut
+          asChild
+          onSubmitShortcut={(event) => event.currentTarget.blur()}
+        >
+          <Input
+            value={draftLabel}
+            maxLength={80}
+            aria-label={`Rename ${group.label}`}
+            onChange={(event) => setDraftLabel(event.target.value)}
+            onBlur={commitLabel}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                !event.ctrlKey &&
+                !event.metaKey
+              ) {
+                event.currentTarget.blur();
+              }
+              if (event.key === "Escape") {
+                setDraftLabel(group.label);
+                event.currentTarget.blur();
+              }
+            }}
+            className="h-7 min-w-0 border-current/15 bg-slate-950/45 px-2 text-[10px] text-current"
+          />
+        </SubmitShortcut>
         <Button
           type="button"
           variant="ghost"
@@ -2417,23 +2429,25 @@ const CanvasCommentEditor = ({
     >
       <div className="flex items-start gap-2">
         <StickyNote className="mt-1 h-3.5 w-3.5 shrink-0" />
-        <Textarea
-          value={draftBody}
-          maxLength={1_000}
-          aria-label={`Edit comment ${comment.id}`}
-          onChange={(event) => setDraftBody(event.target.value)}
-          onBlur={commitBody}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-              event.currentTarget.blur();
-            }
-            if (event.key === "Escape") {
-              setDraftBody(comment.body);
-              event.currentTarget.blur();
-            }
-          }}
-          className="min-h-20 min-w-0 resize-y border-current/15 bg-slate-950/45 px-2 py-1.5 text-[10px] leading-4 text-current"
-        />
+        <SubmitShortcut
+          asChild
+          onSubmitShortcut={(event) => event.currentTarget.blur()}
+        >
+          <Textarea
+            value={draftBody}
+            maxLength={1_000}
+            aria-label={`Edit comment ${comment.id}`}
+            onChange={(event) => setDraftBody(event.target.value)}
+            onBlur={commitBody}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setDraftBody(comment.body);
+                event.currentTarget.blur();
+              }
+            }}
+            className="min-h-20 min-w-0 resize-y border-current/15 bg-slate-950/45 px-2 py-1.5 text-[10px] leading-4 text-current"
+          />
+        </SubmitShortcut>
         <Button
           type="button"
           variant="ghost"
@@ -3301,21 +3315,32 @@ const NodeInspector = ({
       <div className="flex items-start justify-between gap-3">
         <label className="min-w-0 flex-1">
           <span className="text-[10px] font-medium text-slate-300">Name</span>
-          <Input
-            value={nodeLabelDraft}
-            aria-label="Node name"
-            maxLength={256}
-            onChange={(event) => setNodeLabelDraft(event.target.value)}
-            onBlur={commitNodeLabel}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
-              if (event.key === "Escape") {
-                setNodeLabelDraft(node.label);
-                event.currentTarget.blur();
-              }
-            }}
-            className="mt-1 h-8 text-xs font-semibold"
-          />
+          <SubmitShortcut
+            asChild
+            onSubmitShortcut={(event) => event.currentTarget.blur()}
+          >
+            <Input
+              value={nodeLabelDraft}
+              aria-label="Node name"
+              maxLength={256}
+              onChange={(event) => setNodeLabelDraft(event.target.value)}
+              onBlur={commitNodeLabel}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  !event.ctrlKey &&
+                  !event.metaKey
+                ) {
+                  event.currentTarget.blur();
+                }
+                if (event.key === "Escape") {
+                  setNodeLabelDraft(node.label);
+                  event.currentTarget.blur();
+                }
+              }}
+              className="mt-1 h-8 text-xs font-semibold"
+            />
+          </SubmitShortcut>
         </label>
         <div className="mt-5 flex shrink-0 items-center gap-1.5">
           <Button

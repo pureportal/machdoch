@@ -28,6 +28,10 @@ import {
 } from "react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../components/ui/submit-shortcut";
 import { useOptionalRegisterCommands } from "../commands/command-context";
 import {
   asPaletteCommands,
@@ -803,49 +807,52 @@ export const WorkspaceFileTree = ({
       </header>
 
       {formMode ? (
-        <form
-          className="flex shrink-0 items-center gap-1 border-b border-slate-800/80 p-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submitForm();
-          }}
-        >
-          <Input
-            autoFocus
-            value={entryName}
-            aria-label={formMode === "rename" ? "New name" : "Entry name"}
-            placeholder={formMode === "rename" ? "New name" : "Name"}
-            className="h-7 min-w-0 flex-1 border-slate-800 bg-slate-950 px-2 text-xs"
-            onChange={(event) => setEntryName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") setFormMode(null);
+        <SubmitShortcut asChild>
+          <form
+            className="flex shrink-0 items-center gap-1 border-b border-slate-800/80 p-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitForm();
             }}
-          />
-          <Button
-            type="submit"
-            size="icon"
-            variant="ghost"
-            className="size-7"
-            aria-label={formMode === "rename" ? "Rename" : "Create"}
-            disabled={!entryName.trim() || operationPending}
           >
-            {operationPending ? (
-              <LoaderCircle className="size-3.5 animate-spin" />
-            ) : (
-              <Check className="size-3.5" />
-            )}
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="size-7"
-            aria-label="Cancel"
-            onClick={() => setFormMode(null)}
-          >
-            <X className="size-3.5" />
-          </Button>
-        </form>
+            <Input
+              autoFocus
+              value={entryName}
+              aria-label={formMode === "rename" ? "New name" : "Entry name"}
+              placeholder={formMode === "rename" ? "New name" : "Name"}
+              className="h-7 min-w-0 flex-1 border-slate-800 bg-slate-950 px-2 text-xs"
+              onChange={(event) => setEntryName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setFormMode(null);
+              }}
+            />
+            <Button
+              type="submit"
+              size="icon"
+              variant="ghost"
+              className="size-7"
+              aria-label={formMode === "rename" ? "Rename" : "Create"}
+              disabled={!entryName.trim() || operationPending}
+              {...SUBMIT_SHORTCUT_ACTION_PROPS}
+            >
+              {operationPending ? (
+                <LoaderCircle className="size-3.5 animate-spin" />
+              ) : (
+                <Check className="size-3.5" />
+              )}
+            </Button>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-7"
+              aria-label="Cancel"
+              onClick={() => setFormMode(null)}
+            >
+              <X className="size-3.5" />
+            </Button>
+          </form>
+        </SubmitShortcut>
       ) : null}
 
       {operationError ? (

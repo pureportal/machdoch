@@ -22,6 +22,10 @@ import type {
   CommandPageItem,
 } from "../../commands/command-types";
 import { Button } from "../../components/ui/button";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../../components/ui/submit-shortcut";
 import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
 import type { RunningTaskMessageAction } from "../../lib/shell-store";
@@ -420,6 +424,18 @@ export const AgentComposer = ({
   onSend,
   onCancel,
 }: AgentComposerProps): JSX.Element => {
+  const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const handleTextareaRef = useCallback(
+    (node: HTMLTextAreaElement | null): void => {
+      composerTextareaRef.current = node;
+      if (typeof textareaRef === "function") {
+        textareaRef(node);
+      } else if (textareaRef) {
+        textareaRef.current = node;
+      }
+    },
+    [textareaRef],
+  );
   const bufferedDraft = useBufferedDraft(
     draftIdentity,
     draft,
@@ -470,7 +486,12 @@ export const AgentComposer = ({
       return;
     }
 
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !event.ctrlKey &&
+      !event.metaKey
+    ) {
       event.preventDefault();
       submit();
       return;
@@ -526,7 +547,7 @@ export const AgentComposer = ({
   );
   const textarea = (
     <Textarea
-      ref={textareaRef}
+      ref={handleTextareaRef}
       autoFocus={autoFocus}
       aria-label={textareaLabel}
       value={bufferedDraft.value}
@@ -604,6 +625,27 @@ export const AgentComposer = ({
       "command-surface",
     ] as const;
     return [
+      {
+        id: "chat.composer.focus",
+        title: "Focus message input",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("chat.composer.focus"),
+            allowIn: ["document", "text-entry", "interactive-control"],
+          },
+        ],
+        palette: "hidden",
+        availability: () =>
+          inputBlocked ||
+          showCancelAlongsideSend ||
+          !composerTextareaRef.current
+            ? { state: "hidden" }
+            : { state: "enabled" },
+        execute: () =>
+          composerTextareaRef.current?.focus({ preventScroll: true }),
+      },
       {
         id: "chat.composer.send",
         title: sendLabel,
@@ -1111,6 +1153,7 @@ export const AgentComposer = ({
       aria-label={sendLabel}
       tooltip={sendDisabledReason ?? sendLabel}
       disabled={inputBlocked || !canSubmit}
+      {...SUBMIT_SHORTCUT_ACTION_PROPS}
       className={cn(
         styles.sendButton,
         !inputBlocked && canSubmit && styles.sendButtonActive,
@@ -1151,44 +1194,46 @@ export const AgentComposer = ({
 
   if (variant === "quick") {
     return (
-      <form
-        className="grid gap-2.5 [@media(max-height:620px)]:gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          submit();
-        }}
-      >
-        <ContextAttachmentsList
-          attachments={contextAttachments}
-          onOpen={onOpenContextAttachment}
-          onRemove={onRemoveContextAttachment}
-          onClearAll={onClearContextAttachments}
-          compact={styles.attachmentListCompact}
-        />
+      <SubmitShortcut asChild>
+        <form
+          className="grid gap-2.5 [@media(max-height:620px)]:gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+        >
+          <ContextAttachmentsList
+            attachments={contextAttachments}
+            onOpen={onOpenContextAttachment}
+            onRemove={onRemoveContextAttachment}
+            onClearAll={onClearContextAttachments}
+            compact={styles.attachmentListCompact}
+          />
 
-        <div className="overflow-hidden rounded-2xl border border-slate-800/90 bg-slate-900/60 shadow-inner shadow-black/10 focus-within:border-sky-400/40 focus-within:ring-2 focus-within:ring-sky-500/20">
-          {textarea}
+          <div className="overflow-hidden rounded-2xl border border-slate-800/90 bg-slate-900/60 shadow-inner shadow-black/10 focus-within:border-sky-400/40 focus-within:ring-2 focus-within:ring-sky-500/20">
+            {textarea}
 
-          <div className="flex items-center gap-2 border-t border-slate-800/75 px-2.5 py-2">
-            {attachmentMenu}
+            <div className="flex items-center gap-2 border-t border-slate-800/75 px-2.5 py-2">
+              {attachmentMenu}
 
-            <div className="min-w-0 flex-1 [&>button]:h-8 [&>button]:w-full [&>button]:max-w-none [&>button]:justify-start">
-              <SessionModelPicker
-                chooserProviders={chooserProviders}
-                activeProvider={activeProvider}
-                activeModel={activeModel}
-                onSessionModelSelection={onModelSelection}
-              />
-            </div>
+              <div className="min-w-0 flex-1 [&>button]:h-8 [&>button]:w-full [&>button]:max-w-none [&>button]:justify-start">
+                <SessionModelPicker
+                  chooserProviders={chooserProviders}
+                  activeProvider={activeProvider}
+                  activeModel={activeModel}
+                  onSessionModelSelection={onModelSelection}
+                />
+              </div>
 
-            <div className="flex shrink-0 items-center gap-1.5">
-              {toggleButtons}
-              {actionButtons}
-              {sendControl}
+              <div className="flex shrink-0 items-center gap-1.5">
+                {toggleButtons}
+                {actionButtons}
+                {sendControl}
+              </div>
             </div>
           </div>
-        </div>
-      </form>
+        </form>
+      </SubmitShortcut>
     );
   }
 
@@ -1220,20 +1265,22 @@ export const AgentComposer = ({
           onClearAll={onClearContextAttachments}
         />
 
-        <form
-          className={cn(
-            "app-composer-form flex gap-3",
-            showCancelAlongsideSend ? "items-end" : "items-center",
-          )}
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit();
-          }}
-        >
-          {attachmentMenu}
-          {textarea}
-          {sessionActionControls}
-        </form>
+        <SubmitShortcut asChild>
+          <form
+            className={cn(
+              "app-composer-form flex gap-3",
+              showCancelAlongsideSend ? "items-end" : "items-center",
+            )}
+            onSubmit={(event) => {
+              event.preventDefault();
+              submit();
+            }}
+          >
+            {attachmentMenu}
+            {textarea}
+            {sessionActionControls}
+          </form>
+        </SubmitShortcut>
 
         {queuedMessagesPanel}
       </div>

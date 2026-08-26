@@ -14,6 +14,10 @@ import {
 } from "../../../core/instruction-system/tag-rules.js";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../components/ui/submit-shortcut";
 import { ControlTooltip } from "../components/ui/tooltip";
 
 export const TagEditor = ({
@@ -72,7 +76,10 @@ export const TagEditor = ({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
-    if (event.key === "Enter" || event.key === ",") {
+    if (
+      event.key === "," ||
+      (event.key === "Enter" && !event.ctrlKey && !event.metaKey)
+    ) {
       event.preventDefault();
       add();
     }
@@ -80,7 +87,8 @@ export const TagEditor = ({
 
   return (
     <div className="space-y-2">
-      <div className="flex gap-2">
+      <SubmitShortcut asChild>
+        <div className="flex gap-2">
         <Input
           value={draft}
           maxLength={
@@ -110,10 +118,12 @@ export const TagEditor = ({
           }
           aria-label="Add tag"
           onClick={add}
+          {...SUBMIT_SHORTCUT_ACTION_PROPS}
         >
           <Plus className="size-4" />
         </Button>
-      </div>
+        </div>
+      </SubmitShortcut>
       {value.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
           {value.map((tag) => (

@@ -11,6 +11,10 @@ import {
 import { useState, type DragEvent, type JSX } from "react";
 import type { ChatSessionContextAttachment } from "../../chat-session.model";
 import { Button } from "../../components/ui/button";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../../components/ui/submit-shortcut";
 import { Textarea } from "../../components/ui/textarea";
 import { ControlTooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
@@ -153,240 +157,245 @@ export const QueuedMessagesPanel = ({
           const stateLabel = getQueueStateLabel(message.status, index);
 
           return (
-            <li
-              key={message.id}
-              aria-label={`Queued message ${index + 1} of ${messages.length}`}
-              onDragEnter={() => {
-                if (draggingMessageId && draggingMessageId !== message.id) {
-                  setDragOverIndex(index);
-                }
-              }}
-              onDragOver={(event) => {
-                if (!draggingMessageId || draggingMessageId === message.id) {
-                  return;
-                }
-
-                event.preventDefault();
-                event.dataTransfer.dropEffect = "move";
-                setDragOverIndex(index);
-              }}
-              onDrop={(event) => {
-                event.preventDefault();
-                const droppedMessageId = getDragMessageId(
-                  event,
-                  draggingMessageId,
-                );
-                setDragOverIndex(null);
-                setDraggingMessageId(null);
-
-                if (!droppedMessageId || droppedMessageId === message.id) {
-                  return;
-                }
-
-                onMessageReorder?.(droppedMessageId, index);
-              }}
-              className={cn(
-                "grid gap-2.5 rounded-lg border border-slate-800/75 bg-slate-950/45 p-2.5 transition-colors sm:grid-cols-[auto_minmax(0,1fr)_auto]",
-                isDragging && "border-sky-400/40 bg-sky-400/10 opacity-70",
-                isDragTarget && "border-sky-300/60 bg-sky-400/10",
-                message.status === "failed" &&
-                  "border-rose-400/30 bg-rose-400/5",
-                isInProgress && "border-cyan-400/30 bg-cyan-400/5",
-              )}
-            >
-              <div className="flex items-start gap-2 sm:block">
-                <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-md border border-slate-800 bg-slate-950/80 text-xs font-semibold text-slate-300">
-                  {index + 1}
-                </span>
-                <span
-                  className={cn(
-                    "inline-flex h-7 items-center gap-1.5 rounded-full border px-2 text-[11px] font-medium sm:mt-1",
-                    getQueueStateClassName(message.status, index),
-                  )}
-                >
-                  {isInProgress ? (
-                    <LoaderCircle className="h-3 w-3 animate-spin" />
-                  ) : null}
-                  {stateLabel}
-                </span>
-              </div>
-
-              <div className="grid min-w-0 gap-2">
-                <Textarea
-                  aria-label={`Queued message ${index + 1}`}
-                  value={message.content}
-                  disabled={isInProgress}
-                  onChange={(event) =>
-                    onMessageChange?.(message.id, event.target.value)
+            <SubmitShortcut key={message.id} asChild>
+              <li
+                aria-label={`Queued message ${index + 1} of ${messages.length}`}
+                onDragEnter={() => {
+                  if (draggingMessageId && draggingMessageId !== message.id) {
+                    setDragOverIndex(index);
                   }
-                  className="max-h-20 min-h-9 resize-none border-slate-800 bg-slate-950/70 px-3 py-2 text-sm leading-5 text-slate-100 shadow-none placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-sky-500"
-                />
+                }}
+                onDragOver={(event) => {
+                  if (!draggingMessageId || draggingMessageId === message.id) {
+                    return;
+                  }
 
-                {message.promptEnhancementMode ? (
-                  <div className="flex">
-                    <span className="rounded-full border border-violet-400/25 bg-violet-400/10 px-2 py-0.5 text-[11px] font-medium text-violet-100">
-                      {message.promptEnhancementMode === "web-search"
-                        ? "Web enhance"
-                        : "Enhance"}
-                    </span>
-                  </div>
-                ) : null}
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                  setDragOverIndex(index);
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const droppedMessageId = getDragMessageId(
+                    event,
+                    draggingMessageId,
+                  );
+                  setDragOverIndex(null);
+                  setDraggingMessageId(null);
 
-                {message.status === "failed" && message.failureMessage ? (
-                  <p className="text-xs text-rose-200">
-                    {message.failureMessage}
-                  </p>
-                ) : null}
+                  if (!droppedMessageId || droppedMessageId === message.id) {
+                    return;
+                  }
 
-                <div className="flex min-w-0 items-start gap-2 rounded-lg border border-slate-800/60 bg-slate-950/35 p-1.5">
-                  <ContextAttachmentMenuButton
-                    onSelectFiles={() =>
-                      onMessageSelectAttachments?.(message.id, "files") ??
-                      Promise.resolve()
-                    }
-                    onSelectFolders={() =>
-                      onMessageSelectAttachments?.(message.id, "folders") ??
-                      Promise.resolve()
-                    }
-                    onSelectImages={() =>
-                      onMessageSelectAttachments?.(message.id, "images") ??
-                      Promise.resolve()
-                    }
-                    buttonLabel={`Add attachments to queued message ${index + 1}`}
-                    buttonTitle="Add attachments"
-                    disabled={isInProgress}
-                    imageInputDisabled={imageInputDisabled}
-                    imageInputDisabledReason={imageInputDisabledReason}
-                    className="h-7 w-7 rounded-md border-slate-800 bg-slate-950/70 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100"
-                    iconClassName="h-3.5 w-3.5"
-                    menuSide="top"
-                  />
-
-                  {message.attachments.length > 0 ? (
-                    <div className="min-w-0 flex-1">
-                      <ContextAttachmentsList
-                        attachments={message.attachments}
-                        onOpen={onOpenAttachment}
-                        onRemove={(attachmentId) =>
-                          onMessageRemoveAttachment?.(message.id, attachmentId)
-                        }
-                        onClearAll={() =>
-                          onMessageClearAttachments?.(message.id)
-                        }
-                        clearAllLabel={`Remove all attachments from queued message ${
-                          index + 1
-                        }`}
-                        compact
-                        disabled={isInProgress}
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex min-h-7 min-w-0 flex-1 items-center px-1 text-[11px] text-slate-500">
-                      No attachments
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1 sm:flex-col sm:justify-start">
-                {message.canSendNow ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon-xs"
-                    aria-label={`Send queued message ${index + 1} now`}
-                    tooltip="Send now"
-                    disabled={isInProgress || message.status === "failed"}
-                    onClick={() => onMessageSend?.(message.id)}
-                    className="border-sky-400/30 bg-sky-400/10 text-sky-100 hover:bg-sky-400/20 hover:text-white"
-                  >
-                    <SendHorizontal className="h-3 w-3" />
-                  </Button>
-                ) : null}
-                <ControlTooltip content="Drag to reorder">
-                  <button
-                    type="button"
-                    draggable={canReorder && !isInProgress}
-                    aria-label={`Drag queued message ${index + 1} to reorder`}
-                    onDragStart={(event) => {
-                      if (!canReorder || isInProgress) {
-                        event.preventDefault();
-                        return;
-                      }
-
-                      setDraggingMessageId(message.id);
-                      event.dataTransfer.effectAllowed = "move";
-                      event.dataTransfer.setData(
-                        QUEUED_MESSAGE_DRAG_TYPE,
-                        message.id,
-                      );
-                      event.dataTransfer.setData("text/plain", message.id);
-                    }}
-                    onDragEnd={() => {
-                      setDraggingMessageId(null);
-                      setDragOverIndex(null);
-                    }}
+                  onMessageReorder?.(droppedMessageId, index);
+                }}
+                className={cn(
+                  "grid gap-2.5 rounded-lg border border-slate-800/75 bg-slate-950/45 p-2.5 transition-colors sm:grid-cols-[auto_minmax(0,1fr)_auto]",
+                  isDragging && "border-sky-400/40 bg-sky-400/10 opacity-70",
+                  isDragTarget && "border-sky-300/60 bg-sky-400/10",
+                  message.status === "failed" &&
+                    "border-rose-400/30 bg-rose-400/5",
+                  isInProgress && "border-cyan-400/30 bg-cyan-400/5",
+                )}
+              >
+                <div className="flex items-start gap-2 sm:block">
+                  <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-md border border-slate-800 bg-slate-950/80 text-xs font-semibold text-slate-300">
+                    {index + 1}
+                  </span>
+                  <span
                     className={cn(
-                      "inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40",
-                      canReorder && !isInProgress
-                        ? "cursor-grab hover:bg-slate-800 hover:text-slate-100 active:cursor-grabbing"
-                        : "cursor-not-allowed opacity-50",
+                      "inline-flex h-7 items-center gap-1.5 rounded-full border px-2 text-[11px] font-medium sm:mt-1",
+                      getQueueStateClassName(message.status, index),
                     )}
                   >
-                    <GripVertical className="h-3 w-3" />
-                  </button>
-                </ControlTooltip>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon-xs"
-                  aria-label={`Move queued message ${index + 1} up`}
-                  tooltip="Move up"
-                  disabled={!canReorder || index === 0}
-                  onClick={() => onMessageMove?.(message.id, -1)}
-                  className="border-slate-800 bg-slate-950/70 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:bg-slate-950/40 disabled:text-slate-700"
-                >
-                  <ArrowUp className="h-3 w-3" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon-xs"
-                  aria-label={`Move queued message ${index + 1} down`}
-                  tooltip="Move down"
-                  disabled={!canReorder || index === messages.length - 1}
-                  onClick={() => onMessageMove?.(message.id, 1)}
-                  className="border-slate-800 bg-slate-950/70 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:bg-slate-950/40 disabled:text-slate-700"
-                >
-                  <ArrowDown className="h-3 w-3" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon-xs"
-                  aria-label={`Remove queued message ${index + 1}`}
-                  tooltip="Remove"
-                  disabled={isInProgress}
-                  onClick={() => onMessageRemove?.(message.id)}
-                  className="border-rose-500/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/15 hover:text-white"
-                >
-                  <X className="h-3 w-3" />
-                </Button>
-                {message.status === "failed" ? (
+                    {isInProgress ? (
+                      <LoaderCircle className="h-3 w-3 animate-spin" />
+                    ) : null}
+                    {stateLabel}
+                  </span>
+                </div>
+
+                <div className="grid min-w-0 gap-2">
+                  <Textarea
+                    aria-label={`Queued message ${index + 1}`}
+                    value={message.content}
+                    disabled={isInProgress}
+                    onChange={(event) =>
+                      onMessageChange?.(message.id, event.target.value)
+                    }
+                    className="max-h-20 min-h-9 resize-none border-slate-800 bg-slate-950/70 px-3 py-2 text-sm leading-5 text-slate-100 shadow-none placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-sky-500"
+                  />
+
+                  {message.promptEnhancementMode ? (
+                    <div className="flex">
+                      <span className="rounded-full border border-violet-400/25 bg-violet-400/10 px-2 py-0.5 text-[11px] font-medium text-violet-100">
+                        {message.promptEnhancementMode === "web-search"
+                          ? "Web enhance"
+                          : "Enhance"}
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {message.status === "failed" && message.failureMessage ? (
+                    <p className="text-xs text-rose-200">
+                      {message.failureMessage}
+                    </p>
+                  ) : null}
+
+                  <div className="flex min-w-0 items-start gap-2 rounded-lg border border-slate-800/60 bg-slate-950/35 p-1.5">
+                    <ContextAttachmentMenuButton
+                      onSelectFiles={() =>
+                        onMessageSelectAttachments?.(message.id, "files") ??
+                        Promise.resolve()
+                      }
+                      onSelectFolders={() =>
+                        onMessageSelectAttachments?.(message.id, "folders") ??
+                        Promise.resolve()
+                      }
+                      onSelectImages={() =>
+                        onMessageSelectAttachments?.(message.id, "images") ??
+                        Promise.resolve()
+                      }
+                      buttonLabel={`Add attachments to queued message ${index + 1}`}
+                      buttonTitle="Add attachments"
+                      disabled={isInProgress}
+                      imageInputDisabled={imageInputDisabled}
+                      imageInputDisabledReason={imageInputDisabledReason}
+                      className="h-7 w-7 rounded-md border-slate-800 bg-slate-950/70 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100"
+                      iconClassName="h-3.5 w-3.5"
+                      menuSide="top"
+                    />
+
+                    {message.attachments.length > 0 ? (
+                      <div className="min-w-0 flex-1">
+                        <ContextAttachmentsList
+                          attachments={message.attachments}
+                          onOpen={onOpenAttachment}
+                          onRemove={(attachmentId) =>
+                            onMessageRemoveAttachment?.(
+                              message.id,
+                              attachmentId,
+                            )
+                          }
+                          onClearAll={() =>
+                            onMessageClearAttachments?.(message.id)
+                          }
+                          clearAllLabel={`Remove all attachments from queued message ${
+                            index + 1
+                          }`}
+                          compact
+                          disabled={isInProgress}
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex min-h-7 min-w-0 flex-1 items-center px-1 text-[11px] text-slate-500">
+                        No attachments
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1 sm:flex-col sm:justify-start">
+                  {message.canSendNow ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-xs"
+                      aria-label={`Send queued message ${index + 1} now`}
+                      tooltip="Send now"
+                      disabled={isInProgress || message.status === "failed"}
+                      onClick={() => onMessageSend?.(message.id)}
+                      {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                      className="border-sky-400/30 bg-sky-400/10 text-sky-100 hover:bg-sky-400/20 hover:text-white"
+                    >
+                      <SendHorizontal className="h-3 w-3" />
+                    </Button>
+                  ) : null}
+                  <ControlTooltip content="Drag to reorder">
+                    <button
+                      type="button"
+                      draggable={canReorder && !isInProgress}
+                      aria-label={`Drag queued message ${index + 1} to reorder`}
+                      onDragStart={(event) => {
+                        if (!canReorder || isInProgress) {
+                          event.preventDefault();
+                          return;
+                        }
+
+                        setDraggingMessageId(message.id);
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData(
+                          QUEUED_MESSAGE_DRAG_TYPE,
+                          message.id,
+                        );
+                        event.dataTransfer.setData("text/plain", message.id);
+                      }}
+                      onDragEnd={() => {
+                        setDraggingMessageId(null);
+                        setDragOverIndex(null);
+                      }}
+                      className={cn(
+                        "inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40",
+                        canReorder && !isInProgress
+                          ? "cursor-grab hover:bg-slate-800 hover:text-slate-100 active:cursor-grabbing"
+                          : "cursor-not-allowed opacity-50",
+                      )}
+                    >
+                      <GripVertical className="h-3 w-3" />
+                    </button>
+                  </ControlTooltip>
                   <Button
                     type="button"
                     variant="outline"
                     size="icon-xs"
-                    aria-label={`Retry queued message ${index + 1}`}
-                    tooltip="Retry"
-                    onClick={() => onMessageRetry?.(message.id)}
-                    className="border-sky-400/30 bg-sky-400/10 text-sky-100 hover:bg-sky-400/20 hover:text-white"
+                    aria-label={`Move queued message ${index + 1} up`}
+                    tooltip="Move up"
+                    disabled={!canReorder || index === 0}
+                    onClick={() => onMessageMove?.(message.id, -1)}
+                    className="border-slate-800 bg-slate-950/70 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:bg-slate-950/40 disabled:text-slate-700"
                   >
-                    <RotateCcw className="h-3 w-3" />
+                    <ArrowUp className="h-3 w-3" />
                   </Button>
-                ) : null}
-              </div>
-            </li>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-xs"
+                    aria-label={`Move queued message ${index + 1} down`}
+                    tooltip="Move down"
+                    disabled={!canReorder || index === messages.length - 1}
+                    onClick={() => onMessageMove?.(message.id, 1)}
+                    className="border-slate-800 bg-slate-950/70 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:bg-slate-950/40 disabled:text-slate-700"
+                  >
+                    <ArrowDown className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-xs"
+                    aria-label={`Remove queued message ${index + 1}`}
+                    tooltip="Remove"
+                    disabled={isInProgress}
+                    onClick={() => onMessageRemove?.(message.id)}
+                    className="border-rose-500/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/15 hover:text-white"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                  {message.status === "failed" ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-xs"
+                      aria-label={`Retry queued message ${index + 1}`}
+                      tooltip="Retry"
+                      onClick={() => onMessageRetry?.(message.id)}
+                      className="border-sky-400/30 bg-sky-400/10 text-sky-100 hover:bg-sky-400/20 hover:text-white"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                    </Button>
+                  ) : null}
+                </div>
+              </li>
+            </SubmitShortcut>
           );
         })}
       </ol>

@@ -105,7 +105,7 @@ pub(super) fn mission_control_html() -> String {
             </select>
           </div>
           <div class="actions">
-            <button type="submit">Run Prompt</button>
+            <button type="submit" aria-keyshortcuts="Control+Enter Meta+Enter">Run Prompt</button>
             <button class="secondary" id="saveDraft" type="button">Save Draft</button>
             <button class="secondary" data-toggle="session-memory" type="button">Session Memory</button>
             <button class="secondary" data-toggle="global-memory" type="button">Global Memory</button>
