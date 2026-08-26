@@ -63,6 +63,12 @@ struct AuxiliaryCliProgressContext {
     task_id: Option<String>,
 }
 
+#[derive(Clone, Copy)]
+enum AuxiliaryCliProcessMode {
+    Supervised,
+    PreserveDetachedDescendants,
+}
+
 // The persisted library is bounded at 64 MiB. Overview responses add hashes,
 // counts, and JSON formatting, so retain a bounded 2x allowance for the
 // desktop editor while other auxiliary commands keep the 1 MiB default.
@@ -300,11 +306,18 @@ fn run_bounded_auxiliary_cli_command(
     timeout_ms: Option<u64>,
     progress_context: Option<AuxiliaryCliProgressContext>,
     stdout_capture_limit_bytes: usize,
+    process_mode: AuxiliaryCliProcessMode,
 ) -> Result<AuxiliaryCliOutput, String> {
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     hide_child_process_window(command);
 
-    let mut child = SupervisedChild::spawn(command).map_err(|error| match error {
+    let child = match process_mode {
+        AuxiliaryCliProcessMode::Supervised => SupervisedChild::spawn(command),
+        AuxiliaryCliProcessMode::PreserveDetachedDescendants => {
+            SupervisedChild::spawn_preserving_descendants_after_exit(command)
+        }
+    };
+    let mut child = child.map_err(|error| match error {
         SupervisedChildSpawnError::Spawn(error) => format!(
             "Failed to launch the {command_name} CLI. {} {error}",
             crate::shared_cli::cli_runtime_error_hint()
@@ -456,10 +469,11 @@ fn finish_auxiliary_command_response(
     parse_auxiliary_command_response(&stdout_text, spec.parse_name)
 }
 
-fn run_auxiliary_json_command(
+fn run_auxiliary_json_command_with_process_mode(
     workspace_root: &str,
     arguments: impl IntoIterator<Item = String>,
     spec: &AuxiliaryCliSpec,
+    process_mode: AuxiliaryCliProcessMode,
 ) -> Result<Value, String> {
     let cli_args = build_auxiliary_cli_args(workspace_root, spec.subcommand, arguments)?;
     let mut cli_command = crate::shared_cli::create_shared_cli_command(&cli_args)?;
@@ -469,9 +483,23 @@ fn run_auxiliary_json_command(
         Some(AUXILIARY_CLI_COMMAND_TIMEOUT_MS),
         None,
         spec.stdout_capture_limit_bytes,
+        process_mode,
     )?;
 
     finish_auxiliary_command_response(output, spec)
+}
+
+fn run_auxiliary_json_command(
+    workspace_root: &str,
+    arguments: impl IntoIterator<Item = String>,
+    spec: &AuxiliaryCliSpec,
+) -> Result<Value, String> {
+    run_auxiliary_json_command_with_process_mode(
+        workspace_root,
+        arguments,
+        spec,
+        AuxiliaryCliProcessMode::Supervised,
+    )
 }
 
 pub(super) fn execute_scheduler_command(request: SchedulerCommandRequest) -> Result<Value, String> {
@@ -561,10 +589,19 @@ pub(super) fn execute_mcp_command(request: McpCommandRequest) -> Result<Value, S
 pub(super) fn execute_provider_sync_command(
     request: ProviderSyncCommandRequest,
 ) -> Result<Value, String> {
-    run_auxiliary_json_command(
+    let preserve_daemon = request
+        .arguments
+        .first()
+        .is_some_and(|action| action == "enable" || action == "refresh");
+    run_auxiliary_json_command_with_process_mode(
         &request.workspace_root,
         request.arguments,
         &PROVIDER_SYNC_CLI_SPEC,
+        if preserve_daemon {
+            AuxiliaryCliProcessMode::PreserveDetachedDescendants
+        } else {
+            AuxiliaryCliProcessMode::Supervised
+        },
     )
 }
 
@@ -615,6 +652,7 @@ pub(super) fn execute_task_interview_command(
             task_id,
         }),
         TASK_INTERVIEW_CLI_SPEC.stdout_capture_limit_bytes,
+        AuxiliaryCliProcessMode::Supervised,
     ) {
         Ok(output) => output,
         Err(error) => {
@@ -641,7 +679,7 @@ mod tests {
         append_auxiliary_arguments, classify_scheduler_service_owner,
         parse_auxiliary_command_response, recover_scheduler_service_owner,
         run_bounded_auxiliary_cli_command, scheduler_service_start_decision,
-        SchedulerProcessInspector, SchedulerServiceOwnerClassification,
+        AuxiliaryCliProcessMode, SchedulerProcessInspector, SchedulerServiceOwnerClassification,
         SchedulerServiceStartDecision, INSTRUCTION_CLI_SPEC,
     };
     use crate::desktop_task::diagnostics::COMMAND_DIAGNOSTIC_TRUNCATED_MARKER;
@@ -900,6 +938,7 @@ mod tests {
             Some(5_000),
             None,
             SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
+            AuxiliaryCliProcessMode::Supervised,
         )
         .expect("bounded command should finish");
 
@@ -917,6 +956,7 @@ mod tests {
             Some(1_000),
             None,
             SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
+            AuxiliaryCliProcessMode::Supervised,
         )
         .expect_err("hanging command should time out");
 
@@ -933,6 +973,7 @@ mod tests {
             Some(10_000),
             None,
             SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
+            AuxiliaryCliProcessMode::Supervised,
         )
         .expect("large output command should finish");
 
