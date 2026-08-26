@@ -21,6 +21,10 @@ import {
   DialogTitle,
 } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../../components/ui/submit-shortcut";
 import type { RemoteControlStatus } from "../../runtime";
 import { cn } from "../../lib/utils";
 
@@ -428,32 +432,35 @@ export const MissionControlPanel = ({
                   >
                     Port
                   </label>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Input
-                      id="mission-control-port"
-                      type="number"
-                      inputMode="numeric"
-                      min={MIN_REMOTE_CONTROL_PORT}
-                      max={MAX_REMOTE_CONTROL_PORT}
-                      value={portDraft}
-                      onChange={(event) => {
-                        setPortTouched(true);
-                        setPortDraft(event.currentTarget.value);
-                      }}
-                      aria-invalid={!portIsValid}
-                      className="h-9 w-32 border-slate-700 bg-slate-950 text-sm text-slate-100 [appearance:textfield] placeholder:text-slate-600 focus-visible:border-sky-500 focus-visible:ring-sky-500/30 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={loading || !portChanged}
-                      onClick={() => void savePort()}
-                      className="h-9 rounded-lg border-slate-700 bg-slate-950 px-3 text-xs text-slate-200 hover:bg-slate-800 hover:text-white"
-                    >
-                      <Save className="h-3.5 w-3.5" />
-                      Save
-                    </Button>
-                  </div>
+                  <SubmitShortcut asChild>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Input
+                        id="mission-control-port"
+                        type="number"
+                        inputMode="numeric"
+                        min={MIN_REMOTE_CONTROL_PORT}
+                        max={MAX_REMOTE_CONTROL_PORT}
+                        value={portDraft}
+                        onChange={(event) => {
+                          setPortTouched(true);
+                          setPortDraft(event.currentTarget.value);
+                        }}
+                        aria-invalid={!portIsValid}
+                        className="h-9 w-32 border-slate-700 bg-slate-950 text-sm text-slate-100 [appearance:textfield] placeholder:text-slate-600 focus-visible:border-sky-500 focus-visible:ring-sky-500/30 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={loading || !portChanged}
+                        onClick={() => void savePort()}
+                        {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                        className="h-9 rounded-lg border-slate-700 bg-slate-950 px-3 text-xs text-slate-200 hover:bg-slate-800 hover:text-white"
+                      >
+                        <Save className="h-3.5 w-3.5" />
+                        Save
+                      </Button>
+                    </div>
+                  </SubmitShortcut>
                   {!portIsValid ? (
                     <div className="text-xs text-rose-300">
                       Use a port from {MIN_REMOTE_CONTROL_PORT} to{" "}

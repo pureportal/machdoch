@@ -39,6 +39,10 @@ import { Button } from "../components/ui/button";
 import { EmptyState } from "../components/ui/empty-state";
 import { Input } from "../components/ui/input";
 import { SearchField } from "../components/ui/search-field";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../components/ui/submit-shortcut";
 import { getDefaultCommandShortcut } from "../commands/command-defaults";
 import { useOptionalRegisterCommands } from "../commands/command-context";
 import {
@@ -1680,7 +1684,8 @@ export const WorkspaceManager = ({
                 </div>
 
                 {workspaceSection === "settings" ? (
-                  <section className="grid gap-4 rounded-xl border border-slate-800 bg-slate-900/20 p-4 md:grid-cols-[minmax(12rem,0.65fr)_minmax(0,1.35fr)_auto] md:items-end">
+                  <SubmitShortcut asChild>
+                    <section className="grid gap-4 rounded-xl border border-slate-800 bg-slate-900/20 p-4 md:grid-cols-[minmax(12rem,0.65fr)_minmax(0,1.35fr)_auto] md:items-end">
                     <label className="grid gap-1.5 text-xs font-medium text-slate-400">
                       Name
                       <Input
@@ -1722,6 +1727,7 @@ export const WorkspaceManager = ({
                         tagDraftPending ? pendingTagMessageId : undefined
                       }
                       onClick={saveWorkspaceSettings}
+                      {...SUBMIT_SHORTCUT_ACTION_PROPS}
                     >
                       <Save className="size-4" />
                       Save
@@ -1743,7 +1749,8 @@ export const WorkspaceManager = ({
                         Add or clear the pending tag before saving.
                       </p>
                     ) : null}
-                  </section>
+                    </section>
+                  </SubmitShortcut>
                 ) : null}
 
                 {workspaceSection === "git" ? (
@@ -2007,7 +2014,8 @@ export const WorkspaceManager = ({
                           {gitSection === "branches" ? (
                             <div className="grid gap-4 xl:grid-cols-2">
                               <div className="space-y-2">
-                                <div className="flex gap-2">
+                                <SubmitShortcut asChild>
+                                  <div className="flex gap-2">
                                   <Input
                                     value={branchName}
                                     onChange={(event) =>
@@ -2026,11 +2034,13 @@ export const WorkspaceManager = ({
                                         branchName,
                                       })
                                     }
+                                    {...SUBMIT_SHORTCUT_ACTION_PROPS}
                                   >
                                     <Plus className="size-4" />
                                     Create
                                   </Button>
-                                </div>
+                                  </div>
+                                </SubmitShortcut>
                                 {selectedGitOverview.localBranches.map(
                                   (branch) => (
                                     <div
@@ -2110,7 +2120,8 @@ export const WorkspaceManager = ({
                           ) : null}
                           {gitSection === "remotes" ? (
                             <div className="space-y-3">
-                              <div className="grid gap-2 sm:grid-cols-[10rem_minmax(0,1fr)_auto]">
+                              <SubmitShortcut asChild>
+                                <div className="grid gap-2 sm:grid-cols-[10rem_minmax(0,1fr)_auto]">
                                 <Input
                                   value={remoteName}
                                   onChange={(event) =>
@@ -2140,11 +2151,13 @@ export const WorkspaceManager = ({
                                       remoteUrl,
                                     })
                                   }
+                                  {...SUBMIT_SHORTCUT_ACTION_PROPS}
                                 >
                                   <Plus className="size-4" />
                                   Add
                                 </Button>
-                              </div>
+                                </div>
+                              </SubmitShortcut>
                               {selectedGitOverview.remotes.length === 0 ? (
                                 <EmptyState
                                   icon={Network}

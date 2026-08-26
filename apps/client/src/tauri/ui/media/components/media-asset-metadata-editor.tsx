@@ -10,6 +10,7 @@ import type {
   MediaGenerationAssetMetadata,
 } from "../../../../core/media/contracts.js";
 import { ControlTooltip } from "../../components/ui/tooltip";
+import { SubmitShortcut } from "../../components/ui/submit-shortcut";
 import { MediaCategoryPicker } from "./media-category-picker";
 
 interface MediaAssetMetadataEditorProps {
@@ -119,15 +120,26 @@ export const MediaAssetMetadataEditor = ({
       <label className="block space-y-1 text-xs text-slate-400">
         <span>Tags</span>
         <div className="relative">
-          <input
-            value={tags}
-            onChange={(event) => setTags(event.target.value)}
-            onBlur={saveTags}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
-            }}
-            className="h-9 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 pr-8 text-slate-100 outline-none focus:border-sky-500"
-          />
+          <SubmitShortcut
+            asChild
+            onSubmitShortcut={(event) => event.currentTarget.blur()}
+          >
+            <input
+              value={tags}
+              onChange={(event) => setTags(event.target.value)}
+              onBlur={saveTags}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  !event.ctrlKey &&
+                  !event.metaKey
+                ) {
+                  event.currentTarget.blur();
+                }
+              }}
+              className="h-9 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 pr-8 text-slate-100 outline-none focus:border-sky-500"
+            />
+          </SubmitShortcut>
           {tagLoading ? (
             <LoaderCircle className="absolute right-2 top-2.5 h-4 w-4 animate-spin text-slate-400" />
           ) : null}
@@ -136,35 +148,57 @@ export const MediaAssetMetadataEditor = ({
       {showTriggerWords ? (
         <label className="block space-y-1 text-xs text-slate-400">
           <span>Trigger words</span>
-          <input
-            value={triggerWords}
-            onChange={(event) => setTriggerWords(event.target.value)}
-            onBlur={saveTriggerWords}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
-            }}
-            className="h-9 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 text-slate-100 outline-none focus:border-sky-500"
-          />
+          <SubmitShortcut
+            asChild
+            onSubmitShortcut={(event) => event.currentTarget.blur()}
+          >
+            <input
+              value={triggerWords}
+              onChange={(event) => setTriggerWords(event.target.value)}
+              onBlur={saveTriggerWords}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  !event.ctrlKey &&
+                  !event.metaKey
+                ) {
+                  event.currentTarget.blur();
+                }
+              }}
+              className="h-9 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 text-slate-100 outline-none focus:border-sky-500"
+            />
+          </SubmitShortcut>
         </label>
       ) : null}
       {showSourceUrl ? (
         <div className="block space-y-1 text-xs text-slate-400">
           <label htmlFor={sourceInputId}>Source URL</label>
           <div className="flex gap-2">
-            <input
-              id={sourceInputId}
-              type="url"
-              value={sourceUrl}
-              onChange={(event) => {
-                setSourceUrl(event.target.value);
-                setSourceUrlError(null);
-              }}
-              onBlur={saveSourceUrl}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") event.currentTarget.blur();
-              }}
-              className="h-9 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-2 text-slate-100 outline-none focus:border-sky-500"
-            />
+            <SubmitShortcut
+              asChild
+              onSubmitShortcut={(event) => event.currentTarget.blur()}
+            >
+              <input
+                id={sourceInputId}
+                type="url"
+                value={sourceUrl}
+                onChange={(event) => {
+                  setSourceUrl(event.target.value);
+                  setSourceUrlError(null);
+                }}
+                onBlur={saveSourceUrl}
+                onKeyDown={(event) => {
+                  if (
+                    event.key === "Enter" &&
+                    !event.ctrlKey &&
+                    !event.metaKey
+                  ) {
+                    event.currentTarget.blur();
+                  }
+                }}
+                className="h-9 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-2 text-slate-100 outline-none focus:border-sky-500"
+              />
+            </SubmitShortcut>
             <ControlTooltip content="Open source URL">
               <button
                 type="button"

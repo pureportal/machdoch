@@ -1,5 +1,46 @@
 pub(super) fn mission_control_script_events() -> &'static str {
-    r##"    remotePromptForm.addEventListener("submit", (event) => {
+    r##"    const submitShortcutScopeSelector = 'form, [data-submit-shortcut-scope="true"]';
+    const submitShortcutActionSelector = '[data-submit-shortcut-action="true"], button[type="submit"], input[type="submit"], input[type="image"]';
+    const nonEditingInputTypes = new Set(["button", "hidden", "image", "reset", "submit"]);
+
+    document.addEventListener("keydown", (event) => {
+      if (
+        event.defaultPrevented ||
+        (event.key !== "Enter" && event.key !== "Return") ||
+        (!event.ctrlKey && !event.metaKey) ||
+        event.altKey ||
+        event.shiftKey ||
+        event.repeat ||
+        event.isComposing ||
+        event.keyCode === 229 ||
+        event.getModifierState?.("AltGraph")
+      ) return;
+
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const control = target.closest('input, textarea, select');
+      if (
+        control
+          ? control.disabled ||
+            control.readOnly ||
+            (control instanceof HTMLInputElement && nonEditingInputTypes.has(control.type))
+          : !(target instanceof HTMLElement) || !target.isContentEditable
+      ) return;
+
+      const scope = target.closest(submitShortcutScopeSelector);
+      if (!scope) return;
+      const action = Array.from(scope.querySelectorAll(submitShortcutActionSelector))
+        .find((candidate) =>
+          candidate.closest(submitShortcutScopeSelector) === scope && !candidate.disabled
+        );
+      if (!action) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      action.click();
+    });
+
+    remotePromptForm.addEventListener("submit", (event) => {
       event.preventDefault();
       const prompt = remotePrompt.value.trim();
       if (!prompt) return;

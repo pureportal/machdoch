@@ -171,7 +171,7 @@ pub(super) fn mission_control_script_render() -> &'static str {
               </div>
               <form data-followup="${escapeHtml(session.taskId)}">
                 <textarea name="prompt" placeholder="Queue a follow-up prompt"></textarea>
-                <button type="submit">Queue Follow-up</button>
+                <button type="submit" aria-keyshortcuts="Control+Enter Meta+Enter">Queue Follow-up</button>
               </form>
               <div>
                 <h3>Streamed Logs</h3>
@@ -260,9 +260,9 @@ pub(super) fn mission_control_script_render() -> &'static str {
         : `default: ${defaultReasoning}`;
 
       sessionHeader.innerHTML = `
-        <div class="row">
+        <div class="row" data-submit-shortcut-scope="true">
           <input id="sessionTitle" value="${escapeHtml(session.title)}" aria-label="Session title">
-          <button class="secondary" id="saveTitle" type="button">Rename</button>
+          <button class="secondary" id="saveTitle" type="button" data-submit-shortcut-action="true" aria-keyshortcuts="Control+Enter Meta+Enter">Rename</button>
           ${button("pin-session", session.pinnedAt ? "Unpin" : "Pin", `data-session-id="${escapeHtml(session.id)}" ${session.canPin ? "" : "disabled"}`)}
           ${button("branch-session", "Branch", `data-session-id="${escapeHtml(session.id)}" ${session.canBranch ? "" : "disabled"}`)}
           ${button("duplicate-session", "Duplicate", `data-session-id="${escapeHtml(session.id)}" ${session.canDuplicate ? "" : "disabled"}`)}
@@ -277,9 +277,9 @@ pub(super) fn mission_control_script_render() -> &'static str {
           <span>${escapeHtml(session.workspace || "No workspace")}</span>
           ${(session.tags || []).map((tag) => `<span class="pill">${escapeHtml(tag)}</span>`).join("")}
         </div>
-        <div class="row">
+        <div class="row" data-submit-shortcut-scope="true">
           <input id="tagInput" value="${escapeHtml((session.tags || []).join(", "))}" aria-label="Tags" placeholder="tag, tag">
-          <button class="secondary" id="saveTags" type="button">Save Tags</button>
+          <button class="secondary" id="saveTags" type="button" data-submit-shortcut-action="true" aria-keyshortcuts="Control+Enter Meta+Enter">Save Tags</button>
           ${button("clear-session-history", "Clear History", `data-session-id="${escapeHtml(session.id)}"`)}
         </div>
       `;

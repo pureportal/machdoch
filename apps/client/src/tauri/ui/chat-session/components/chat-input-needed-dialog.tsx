@@ -18,6 +18,10 @@ import {
   DialogTitle,
 } from "../../components/ui/dialog";
 import { Textarea } from "../../components/ui/textarea";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../../components/ui/submit-shortcut";
 
 export interface ChatInputNeededDialogRequest {
   placeholder: ChatInputNeededPlaceholder;
@@ -111,86 +115,89 @@ export const ChatInputNeededDialog = ({
         </DialogHeader>
 
         {request ? (
-          <form onSubmit={submitValue} className="grid gap-4 p-5">
-            <div className="grid gap-2">
-              <div className="flex min-w-0 items-center justify-between gap-3">
-                <label
-                  htmlFor={inputId}
-                  className="min-w-0 truncate text-sm font-semibold text-slate-50"
-                >
-                  {request.placeholder.key}
-                </label>
-                {request.placeholder.occurrenceCount > 1 ? (
-                  <span className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-slate-400">
-                    {request.placeholder.occurrenceCount} uses
-                  </span>
-                ) : null}
-                {request.placeholder.optional ? (
-                  <span className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-slate-400">
-                    optional
-                  </span>
-                ) : null}
-              </div>
-              {request.placeholder.options ? (
-                <select
-                  id={inputId}
-                  ref={(node) => {
-                    inputRef.current = node;
-                  }}
-                  aria-label={`Value for ${request.placeholder.key}`}
-                  value={value}
-                  onChange={(event) => setValue(event.target.value)}
-                  className="h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus-visible:border-cyan-500/70 focus-visible:ring-1 focus-visible:ring-cyan-500/40"
-                >
-                  {request.placeholder.optional ? (
-                    <option value="">No value</option>
+          <SubmitShortcut asChild>
+            <form onSubmit={submitValue} className="grid gap-4 p-5">
+              <div className="grid gap-2">
+                <div className="flex min-w-0 items-center justify-between gap-3">
+                  <label
+                    htmlFor={inputId}
+                    className="min-w-0 truncate text-sm font-semibold text-slate-50"
+                  >
+                    {request.placeholder.key}
+                  </label>
+                  {request.placeholder.occurrenceCount > 1 ? (
+                    <span className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-slate-400">
+                      {request.placeholder.occurrenceCount} uses
+                    </span>
                   ) : null}
-                  {request.placeholder.options.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <Textarea
-                  id={inputId}
-                  ref={(node) => {
-                    inputRef.current = node;
-                  }}
-                  aria-label={`Value for ${request.placeholder.key}`}
-                  value={value}
-                  onChange={(event) => setValue(event.target.value)}
-                  placeholder={`Enter ${request.placeholder.key}`}
-                  className="min-h-28 resize-y border-slate-700 bg-slate-900 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:ring-cyan-500/40"
-                />
-              )}
-            </div>
-
-            <DialogFooter className="sm:flex-row">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={onCancel}
-                className="text-slate-400 hover:bg-slate-900 hover:text-white"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={!canSubmit}
-                className="bg-cyan-600 text-white hover:bg-cyan-500 disabled:bg-slate-800 disabled:text-slate-500"
-              >
-                {isLastRequest ? (
-                  <Check className="h-3.5 w-3.5" />
+                  {request.placeholder.optional ? (
+                    <span className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-slate-400">
+                      optional
+                    </span>
+                  ) : null}
+                </div>
+                {request.placeholder.options ? (
+                  <select
+                    id={inputId}
+                    ref={(node) => {
+                      inputRef.current = node;
+                    }}
+                    aria-label={`Value for ${request.placeholder.key}`}
+                    value={value}
+                    onChange={(event) => setValue(event.target.value)}
+                    className="h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus-visible:border-cyan-500/70 focus-visible:ring-1 focus-visible:ring-cyan-500/40"
+                  >
+                    {request.placeholder.optional ? (
+                      <option value="">No value</option>
+                    ) : null}
+                    {request.placeholder.options.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
                 ) : (
-                  <CornerDownRight className="h-3.5 w-3.5" />
+                  <Textarea
+                    id={inputId}
+                    ref={(node) => {
+                      inputRef.current = node;
+                    }}
+                    aria-label={`Value for ${request.placeholder.key}`}
+                    value={value}
+                    onChange={(event) => setValue(event.target.value)}
+                    placeholder={`Enter ${request.placeholder.key}`}
+                    className="min-h-28 resize-y border-slate-700 bg-slate-900 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:ring-cyan-500/40"
+                  />
                 )}
-                {isLastRequest ? "Start" : "Next"}
-              </Button>
-            </DialogFooter>
-          </form>
+              </div>
+
+              <DialogFooter className="sm:flex-row">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={onCancel}
+                  className="text-slate-400 hover:bg-slate-900 hover:text-white"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={!canSubmit}
+                  {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                  className="bg-cyan-600 text-white hover:bg-cyan-500 disabled:bg-slate-800 disabled:text-slate-500"
+                >
+                  {isLastRequest ? (
+                    <Check className="h-3.5 w-3.5" />
+                  ) : (
+                    <CornerDownRight className="h-3.5 w-3.5" />
+                  )}
+                  {isLastRequest ? "Start" : "Next"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </SubmitShortcut>
         ) : null}
       </DialogContent>
     </Dialog>

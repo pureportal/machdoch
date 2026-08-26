@@ -11,6 +11,10 @@ import {
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { AppNotification } from "../../../components/ui/notification";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../../../components/ui/submit-shortcut";
 import { cn } from "../../../lib/utils";
 import {
   doctorProviderSync,
@@ -727,7 +731,8 @@ export const SettingsCredentialForm = ({
   return (
     <>
       <SettingPanel label={keyLabel ?? `${providerLabel} API key`}>
-        <div className="grid gap-2">
+        <SubmitShortcut asChild>
+          <div className="grid gap-2">
           <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
             <Input
               type={keyVisible ? "text" : "password"}
@@ -736,7 +741,11 @@ export const SettingsCredentialForm = ({
                 updateDraftKey(event.target.value);
               }}
               onKeyDown={(event) => {
-                if (event.key === "Enter") {
+                if (
+                  event.key === "Enter" &&
+                  !event.ctrlKey &&
+                  !event.metaKey
+                ) {
                   event.preventDefault();
                   void persistDraftKey();
                 }
@@ -807,13 +816,15 @@ export const SettingsCredentialForm = ({
                 onClick={() => {
                   void persistDraftKey();
                 }}
+                {...SUBMIT_SHORTCUT_ACTION_PROPS}
                 className="bg-sky-500 text-slate-950 hover:bg-sky-400"
               >
                 Save key
               </Button>
             </div>
           ) : null}
-        </div>
+          </div>
+        </SubmitShortcut>
       </SettingPanel>
 
       <SettingsAutoSaveStatus

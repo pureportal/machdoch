@@ -29,6 +29,10 @@ import {
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../../components/ui/submit-shortcut";
 import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
 
@@ -57,20 +61,31 @@ const VariableTextField = ({
     if (draft !== value) onCommit(draft);
   };
   return (
-    <Input
-      aria-label={ariaLabel}
-      value={draft}
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={commit}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") event.currentTarget.blur();
-        if (event.key === "Escape") {
-          setDraft(value);
-          event.currentTarget.blur();
-        }
-      }}
-      className={className}
-    />
+    <SubmitShortcut
+      asChild
+      onSubmitShortcut={(event) => event.currentTarget.blur()}
+    >
+      <Input
+        aria-label={ariaLabel}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (
+            event.key === "Enter" &&
+            !event.ctrlKey &&
+            !event.metaKey
+          ) {
+            event.currentTarget.blur();
+          }
+          if (event.key === "Escape") {
+            setDraft(value);
+            event.currentTarget.blur();
+          }
+        }}
+        className={className}
+      />
+    </SubmitShortcut>
   );
 };
 
@@ -118,7 +133,9 @@ const VariableValueField = ({
         className="h-8 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200 outline-none focus:border-cyan-400/50"
       >
         {variable.constraints.options.map((option) => (
-          <option key={option} value={option}>{option}</option>
+          <option key={option} value={option}>
+            {option}
+          </option>
         ))}
       </select>
     );
@@ -148,10 +165,14 @@ const VariableValueField = ({
 
 const fallbackValue = (variable: MediaFlowVariable): MediaFlowVariableValue => {
   switch (variable.type) {
-    case "text": return "";
-    case "number": return variable.constraints.min;
-    case "boolean": return false;
-    case "choice": return variable.constraints.options[0] ?? "";
+    case "text":
+      return "";
+    case "number":
+      return variable.constraints.min;
+    case "boolean":
+      return false;
+    case "choice":
+      return variable.constraints.options[0] ?? "";
   }
 };
 
@@ -170,12 +191,18 @@ export const MediaFlowVariablesPanel = ({
       onChange(operation());
       setNotice(success ?? null);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "The variable change could not be applied.");
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "The variable change could not be applied.",
+      );
     }
   };
 
   const replaceVariable = (variable: MediaFlowVariable): void => {
-    commit(() => replaceMediaFlowVariable({ flow, variable, updatedAt: now() }));
+    commit(() =>
+      replaceMediaFlowVariable({ flow, variable, updatedAt: now() }),
+    );
   };
 
   const insertToken = (variable: MediaFlowVariable): void => {
@@ -184,15 +211,25 @@ export const MediaFlowVariablesPanel = ({
       setNotice("Add a Creative brief node before inserting a variable token.");
       return;
     }
-    const currentPrompt = typeof prompt.config.prompt === "string" ? prompt.config.prompt.trimEnd() : "";
+    const currentPrompt =
+      typeof prompt.config.prompt === "string"
+        ? prompt.config.prompt.trimEnd()
+        : "";
     const token = `{{${variable.id}}}`;
     onChange({
       ...flow,
       updatedAt: now(),
-      nodes: flow.nodes.map((node) => node.id === prompt.id ? {
-        ...node,
-        config: { ...node.config, prompt: currentPrompt ? `${currentPrompt} ${token}` : token },
-      } : node),
+      nodes: flow.nodes.map((node) =>
+        node.id === prompt.id
+          ? {
+              ...node,
+              config: {
+                ...node.config,
+                prompt: currentPrompt ? `${currentPrompt} ${token}` : token,
+              },
+            }
+          : node,
+      ),
     });
     setNotice(`Inserted ${token} into Creative brief.`);
   };
@@ -212,25 +249,42 @@ export const MediaFlowVariablesPanel = ({
             Reuse one semantic flow with typed, validated run inputs.
           </p>
         </div>
-        <Button type="button" variant="ghost" size="icon-sm" aria-label="Close variables and presets" onClick={onClose}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Close variables and presets"
+          onClick={onClose}
+        >
           <X className="h-4 w-4" />
         </Button>
       </div>
 
       {notice ? (
-        <div className="mt-4 flex gap-2 rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-2 text-[10px] leading-4 text-cyan-100" role="status" aria-live="polite">
-          <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />{notice}
+        <div
+          className="mt-4 flex gap-2 rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-2 text-[10px] leading-4 text-cyan-100"
+          role="status"
+          aria-live="polite"
+        >
+          <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {notice}
         </div>
       ) : null}
 
       <section className="mt-5" aria-labelledby="flow-variables-heading">
         <div className="flex items-center justify-between gap-3">
-          <h2 id="flow-variables-heading" className="text-[10px] font-bold tracking-[0.14em] text-slate-500 uppercase">
+          <h2
+            id="flow-variables-heading"
+            className="text-[10px] font-bold tracking-[0.14em] text-slate-500 uppercase"
+          >
             Run variables · {flow.variables.length}
           </h2>
           <span className="text-[9px] text-slate-600">max 32</span>
         </div>
-        <div className="mt-2 grid grid-cols-4 gap-1" aria-label="Add typed variable">
+        <div
+          className="mt-2 grid grid-cols-4 gap-1"
+          aria-label="Add typed variable"
+        >
           {(["text", "number", "boolean", "choice"] as const).map((type) => (
             <Button
               key={type}
@@ -239,13 +293,17 @@ export const MediaFlowVariablesPanel = ({
               size="sm"
               aria-label={`Add ${type} variable`}
               disabled={flow.variables.length >= 32}
-              onClick={() => commit(
-                () => addMediaFlowVariable({ flow, type, updatedAt: now() }).flow,
-                `Added a ${type} variable.`,
-              )}
+              onClick={() =>
+                commit(
+                  () =>
+                    addMediaFlowVariable({ flow, type, updatedAt: now() }).flow,
+                  `Added a ${type} variable.`,
+                )
+              }
               className="h-7 border-slate-700 bg-slate-900/50 px-1 text-[9px] capitalize text-slate-300 hover:bg-slate-800"
             >
-              <Plus className="h-3 w-3" />{type}
+              <Plus className="h-3 w-3" />
+              {type}
             </Button>
           ))}
         </div>
@@ -253,32 +311,57 @@ export const MediaFlowVariablesPanel = ({
         <div className="mt-3 space-y-3">
           {flow.variables.map((variable) => {
             const resolved = getMediaFlowVariableValue(flow, variable);
-            const usageCount = flow.nodes.filter((node) => JSON.stringify(node.config).includes(`{{${variable.id}}}`)).length;
-            const hasOverride = Object.hasOwn(flow.variableBindings, variable.id);
+            const usageCount = flow.nodes.filter((node) =>
+              JSON.stringify(node.config).includes(`{{${variable.id}}}`),
+            ).length;
+            const hasOverride = Object.hasOwn(
+              flow.variableBindings,
+              variable.id,
+            );
             return (
-              <article key={variable.id} className="rounded-xl border border-slate-800 bg-slate-900/45 p-3">
+              <article
+                key={variable.id}
+                className="rounded-xl border border-slate-800 bg-slate-900/45 p-3"
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <VariableTextField
                       ariaLabel={`Name for ${variable.id}`}
                       value={variable.name}
-                      onCommit={(name) => replaceVariable({ ...variable, name: name.trim() })}
+                      onCommit={(name) =>
+                        replaceVariable({ ...variable, name: name.trim() })
+                      }
                       className="h-7 border-transparent bg-transparent px-1 text-xs font-semibold text-slate-100 hover:border-slate-700 focus:border-cyan-400/40"
                     />
                     <code className="mt-1 block select-all px-1 text-[9px] text-cyan-300">{`{{${variable.id}}}`}</code>
                   </div>
-                  <Badge variant="outline" className="border-slate-700 text-[8px] capitalize text-slate-500">{variable.type}</Badge>
+                  <Badge
+                    variant="outline"
+                    className="border-slate-700 text-[8px] capitalize text-slate-500"
+                  >
+                    {variable.type}
+                  </Badge>
                 </div>
 
                 <div className="mt-3 grid grid-cols-[1fr_auto] items-end gap-2">
                   <label className="text-[9px] text-slate-500">
-                    Current value <span className="text-slate-600">· {resolved.source}</span>
+                    Current value{" "}
+                    <span className="text-slate-600">· {resolved.source}</span>
                     <span className="mt-1 block">
                       <VariableValueField
                         variable={variable}
                         value={resolved.value ?? fallbackValue(variable)}
                         ariaLabel={`Current value for ${variable.name}`}
-                        onCommit={(value) => commit(() => setMediaFlowVariableBinding({ flow, variableId: variable.id, value, updatedAt: now() }))}
+                        onCommit={(value) =>
+                          commit(() =>
+                            setMediaFlowVariableBinding({
+                              flow,
+                              variableId: variable.id,
+                              value,
+                              updatedAt: now(),
+                            }),
+                          )
+                        }
                       />
                     </span>
                   </label>
@@ -287,21 +370,41 @@ export const MediaFlowVariablesPanel = ({
                       type="button"
                       variant="ghost"
                       size="sm"
-                      onClick={() => commit(() => setMediaFlowVariableBinding({ flow, variableId: variable.id, value: null, updatedAt: now() }), "Using the declared default.")}
+                      onClick={() =>
+                        commit(
+                          () =>
+                            setMediaFlowVariableBinding({
+                              flow,
+                              variableId: variable.id,
+                              value: null,
+                              updatedAt: now(),
+                            }),
+                          "Using the declared default.",
+                        )
+                      }
                       className="h-8 px-2 text-[9px] text-slate-500"
-                    >Use default</Button>
+                    >
+                      Use default
+                    </Button>
                   ) : null}
                 </div>
 
                 <details className="mt-3 rounded-lg border border-slate-800/80 bg-slate-950/35 p-2">
-                  <summary className="cursor-pointer text-[9px] font-medium text-slate-400">Definition & constraints</summary>
+                  <summary className="cursor-pointer text-[9px] font-medium text-slate-400">
+                    Definition & constraints
+                  </summary>
                   <div className="mt-3 space-y-3">
                     <label className="block text-[9px] text-slate-500">
                       Description
                       <VariableTextField
                         ariaLabel={`Description for ${variable.name}`}
                         value={variable.description}
-                        onCommit={(description) => replaceVariable({ ...variable, description: description.trim() })}
+                        onCommit={(description) =>
+                          replaceVariable({
+                            ...variable,
+                            description: description.trim(),
+                          })
+                        }
                         className="mt-1 h-8 border-slate-700 bg-slate-950 text-xs text-slate-200"
                       />
                     </label>
@@ -311,7 +414,12 @@ export const MediaFlowVariablesPanel = ({
                         type="checkbox"
                         aria-label={`${variable.name} is required`}
                         checked={variable.required}
-                        onChange={(event) => replaceVariable({ ...variable, required: event.target.checked })}
+                        onChange={(event) =>
+                          replaceVariable({
+                            ...variable,
+                            required: event.target.checked,
+                          })
+                        }
                         className="h-3.5 w-3.5 accent-cyan-400"
                       />
                     </label>
@@ -320,24 +428,38 @@ export const MediaFlowVariablesPanel = ({
                         <span>Declared default</span>
                         <button
                           type="button"
-                          onClick={() => replaceVariable({
-                            ...variable,
-                            defaultValue: variable.defaultValue === null ? fallbackValue(variable) : null,
-                          } as MediaFlowVariable)}
+                          onClick={() =>
+                            replaceVariable({
+                              ...variable,
+                              defaultValue:
+                                variable.defaultValue === null
+                                  ? fallbackValue(variable)
+                                  : null,
+                            } as MediaFlowVariable)
+                          }
                           className="text-[8px] text-cyan-400/70 hover:text-cyan-300"
                         >
-                          {variable.defaultValue === null ? "Set default" : "Unset default"}
+                          {variable.defaultValue === null
+                            ? "Set default"
+                            : "Unset default"}
                         </button>
                       </div>
                       {variable.defaultValue === null ? (
-                        <div className="mt-1 rounded-md border border-dashed border-slate-700 px-2 py-2 text-[9px] text-slate-600">No fallback value</div>
+                        <div className="mt-1 rounded-md border border-dashed border-slate-700 px-2 py-2 text-[9px] text-slate-600">
+                          No fallback value
+                        </div>
                       ) : (
                         <div className="mt-1">
                           <VariableValueField
                             variable={variable}
                             value={variable.defaultValue}
                             ariaLabel={`Default value for ${variable.name}`}
-                            onCommit={(defaultValue) => replaceVariable({ ...variable, defaultValue } as MediaFlowVariable)}
+                            onCommit={(defaultValue) =>
+                              replaceVariable({
+                                ...variable,
+                                defaultValue,
+                              } as MediaFlowVariable)
+                            }
                           />
                         </div>
                       )}
@@ -348,7 +470,12 @@ export const MediaFlowVariablesPanel = ({
                         <VariableTextField
                           ariaLabel={`Maximum characters for ${variable.name}`}
                           value={String(variable.constraints.maxLength)}
-                          onCommit={(draft) => replaceVariable({ ...variable, constraints: { maxLength: Number(draft) } })}
+                          onCommit={(draft) =>
+                            replaceVariable({
+                              ...variable,
+                              constraints: { maxLength: Number(draft) },
+                            })
+                          }
                           className="mt-1 h-8 border-slate-700 bg-slate-950 text-xs text-slate-200"
                         />
                       </label>
@@ -356,12 +483,23 @@ export const MediaFlowVariablesPanel = ({
                     {variable.type === "number" ? (
                       <div className="grid grid-cols-3 gap-2">
                         {(["min", "max", "step"] as const).map((constraint) => (
-                          <label key={constraint} className="text-[9px] capitalize text-slate-500">
+                          <label
+                            key={constraint}
+                            className="text-[9px] capitalize text-slate-500"
+                          >
                             {constraint}
                             <VariableTextField
                               ariaLabel={`${constraint} for ${variable.name}`}
                               value={String(variable.constraints[constraint])}
-                              onCommit={(draft) => replaceVariable({ ...variable, constraints: { ...variable.constraints, [constraint]: Number(draft) } })}
+                              onCommit={(draft) =>
+                                replaceVariable({
+                                  ...variable,
+                                  constraints: {
+                                    ...variable.constraints,
+                                    [constraint]: Number(draft),
+                                  },
+                                })
+                              }
                               className="mt-1 h-8 border-slate-700 bg-slate-950 px-2 text-xs text-slate-200"
                             />
                           </label>
@@ -375,11 +513,21 @@ export const MediaFlowVariablesPanel = ({
                           aria-label={`Options for ${variable.name}`}
                           defaultValue={variable.constraints.options.join("\n")}
                           onBlur={(event) => {
-                            const options = event.target.value.split("\n").map((option) => option.trim()).filter(Boolean);
-                            if (options.join("\n") !== variable.constraints.options.join("\n")) {
+                            const options = event.target.value
+                              .split("\n")
+                              .map((option) => option.trim())
+                              .filter(Boolean);
+                            if (
+                              options.join("\n") !==
+                              variable.constraints.options.join("\n")
+                            ) {
                               replaceVariable({
                                 ...variable,
-                                defaultValue: options.includes(variable.defaultValue ?? "") ? variable.defaultValue : (options[0] ?? ""),
+                                defaultValue: options.includes(
+                                  variable.defaultValue ?? "",
+                                )
+                                  ? variable.defaultValue
+                                  : (options[0] ?? ""),
                                 constraints: { options },
                               });
                             }
@@ -392,20 +540,62 @@ export const MediaFlowVariablesPanel = ({
                 </details>
 
                 <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                  <Button type="button" variant="outline" size="sm" onClick={() => insertToken(variable)} className="h-7 border-cyan-400/20 bg-cyan-400/5 px-2 text-[9px] text-cyan-200">
-                    <Braces className="h-3 w-3" />Insert in brief
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => insertToken(variable)}
+                    className="h-7 border-cyan-400/20 bg-cyan-400/5 px-2 text-[9px] text-cyan-200"
+                  >
+                    <Braces className="h-3 w-3" />
+                    Insert in brief
                   </Button>
-                  <span className="mr-auto text-[9px] text-slate-600">used by {usageCount} node{usageCount === 1 ? "" : "s"}</span>
+                  <span className="mr-auto text-[9px] text-slate-600">
+                    used by {usageCount} node{usageCount === 1 ? "" : "s"}
+                  </span>
                   {pendingDeleteId === variable.id ? (
                     <>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => setPendingDeleteId(null)} className="h-7 px-2 text-[9px] text-slate-500">Cancel</Button>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => {
-                        commit(() => removeMediaFlowVariable({ flow, variableId: variable.id, updatedAt: now() }), `Removed ${variable.name}. Existing tokens now require review.`);
-                        setPendingDeleteId(null);
-                      }} className="h-7 px-2 text-[9px] text-rose-300">Confirm</Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setPendingDeleteId(null)}
+                        className="h-7 px-2 text-[9px] text-slate-500"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          commit(
+                            () =>
+                              removeMediaFlowVariable({
+                                flow,
+                                variableId: variable.id,
+                                updatedAt: now(),
+                              }),
+                            `Removed ${variable.name}. Existing tokens now require review.`,
+                          );
+                          setPendingDeleteId(null);
+                        }}
+                        className="h-7 px-2 text-[9px] text-rose-300"
+                      >
+                        Confirm
+                      </Button>
                     </>
                   ) : (
-                    <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${variable.name}`} onClick={() => setPendingDeleteId(variable.id)} className="text-slate-600 hover:text-rose-300"><Trash2 className="h-3.5 w-3.5" /></Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`Remove ${variable.name}`}
+                      onClick={() => setPendingDeleteId(variable.id)}
+                      className="text-slate-600 hover:text-rose-300"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   )}
                 </div>
               </article>
@@ -413,47 +603,161 @@ export const MediaFlowVariablesPanel = ({
           })}
           {flow.variables.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-800 p-4 text-center text-[10px] leading-4 text-slate-600">
-              Add a typed variable, then insert its token into any text-capable node field.
+              Add a typed variable, then insert its token into any text-capable
+              node field.
             </div>
           ) : null}
         </div>
       </section>
 
-      <section className="mt-6 border-t border-slate-800 pt-5" aria-labelledby="flow-presets-heading">
+      <section
+        className="mt-6 border-t border-slate-800 pt-5"
+        aria-labelledby="flow-presets-heading"
+      >
         <div className="flex items-center justify-between gap-3">
-          <h2 id="flow-presets-heading" className="text-[10px] font-bold tracking-[0.14em] text-slate-500 uppercase">Binding presets · {flow.presets.length}</h2>
+          <h2
+            id="flow-presets-heading"
+            className="text-[10px] font-bold tracking-[0.14em] text-slate-500 uppercase"
+          >
+            Binding presets · {flow.presets.length}
+          </h2>
           <span className="text-[9px] text-slate-600">document-only names</span>
         </div>
-        <form className="mt-2 flex gap-2" onSubmit={(event) => {
-          event.preventDefault();
-          try {
-            const result = createMediaFlowPreset({ flow, name: presetName, updatedAt: now() });
-            onChange(result.flow);
-            setPresetName("");
-            setNotice(`Saved preset ${presetName.trim()}.`);
-          } catch (error) {
-            setNotice(error instanceof Error ? error.message : "The preset could not be saved.");
-          }
-        }}>
-          <Input aria-label="New preset name" value={presetName} onChange={(event) => setPresetName(event.target.value)} placeholder="e.g. Social portrait" className="h-8 border-slate-700 bg-slate-950 text-xs text-slate-200" />
-          <Button type="submit" variant="outline" size="sm" disabled={!presetName.trim() || flow.variables.length === 0 || flow.presets.length >= 32} className="h-8 border-violet-400/20 bg-violet-400/5 px-2 text-[9px] text-violet-200">
-            <BookmarkPlus className="h-3.5 w-3.5" />Save
-          </Button>
-        </form>
+        <SubmitShortcut asChild>
+          <form
+            className="mt-2 flex gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              try {
+                const result = createMediaFlowPreset({
+                  flow,
+                  name: presetName,
+                  updatedAt: now(),
+                });
+                onChange(result.flow);
+                setPresetName("");
+                setNotice(`Saved preset ${presetName.trim()}.`);
+              } catch (error) {
+                setNotice(
+                  error instanceof Error
+                    ? error.message
+                    : "The preset could not be saved.",
+                );
+              }
+            }}
+          >
+            <Input
+              aria-label="New preset name"
+              value={presetName}
+              onChange={(event) => setPresetName(event.target.value)}
+              placeholder="e.g. Social portrait"
+              className="h-8 border-slate-700 bg-slate-950 text-xs text-slate-200"
+            />
+            <Button
+              type="submit"
+              variant="outline"
+              size="sm"
+              disabled={
+                !presetName.trim() ||
+                flow.variables.length === 0 ||
+                flow.presets.length >= 32
+              }
+              {...SUBMIT_SHORTCUT_ACTION_PROPS}
+              className="h-8 border-violet-400/20 bg-violet-400/5 px-2 text-[9px] text-violet-200"
+            >
+              <BookmarkPlus className="h-3.5 w-3.5" />
+              Save
+            </Button>
+          </form>
+        </SubmitShortcut>
         <div className="mt-3 space-y-2">
           {flow.presets.map((preset) => {
             const active = flow.activePresetId === preset.id;
             return (
-              <article key={preset.id} className={cn("rounded-lg border p-3", active ? "border-violet-400/30 bg-violet-400/5" : "border-slate-800 bg-slate-900/35")}>
+              <article
+                key={preset.id}
+                className={cn(
+                  "rounded-lg border p-3",
+                  active
+                    ? "border-violet-400/30 bg-violet-400/5"
+                    : "border-slate-800 bg-slate-900/35",
+                )}
+              >
                 <div className="flex items-center gap-2">
-                  {active ? <BookmarkCheck className="h-3.5 w-3.5 text-violet-300" /> : <Braces className="h-3.5 w-3.5 text-slate-600" />}
-                  <div className="min-w-0 flex-1 break-words text-[11px] leading-4 font-medium text-slate-200">{preset.name}</div>
-                  {active ? <span className="text-[8px] font-semibold tracking-wide text-violet-300 uppercase">active</span> : null}
+                  {active ? (
+                    <BookmarkCheck className="h-3.5 w-3.5 text-violet-300" />
+                  ) : (
+                    <Braces className="h-3.5 w-3.5 text-slate-600" />
+                  )}
+                  <div className="min-w-0 flex-1 break-words text-[11px] leading-4 font-medium text-slate-200">
+                    {preset.name}
+                  </div>
+                  {active ? (
+                    <span className="text-[8px] font-semibold tracking-wide text-violet-300 uppercase">
+                      active
+                    </span>
+                  ) : null}
                 </div>
                 <div className="mt-2 flex items-center gap-1">
-                  <Button type="button" variant="outline" size="sm" onClick={() => commit(() => applyMediaFlowPreset({ flow, presetId: preset.id, updatedAt: now() }), `Applied ${preset.name}.`)} className="h-7 border-slate-700 px-2 text-[9px] text-slate-300"><Check className="h-3 w-3" />Apply</Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => commit(() => updateMediaFlowPreset({ flow, presetId: preset.id, updatedAt: now() }), `Updated ${preset.name} from current values.`)} className="h-7 px-2 text-[9px] text-slate-500">Update values</Button>
-                  <Button type="button" variant="ghost" size="icon-sm" aria-label={`Delete preset ${preset.name}`} onClick={() => commit(() => removeMediaFlowPreset({ flow, presetId: preset.id, updatedAt: now() }), `Deleted ${preset.name}.`)} className="ml-auto text-slate-600 hover:text-rose-300"><Trash2 className="h-3.5 w-3.5" /></Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      commit(
+                        () =>
+                          applyMediaFlowPreset({
+                            flow,
+                            presetId: preset.id,
+                            updatedAt: now(),
+                          }),
+                        `Applied ${preset.name}.`,
+                      )
+                    }
+                    className="h-7 border-slate-700 px-2 text-[9px] text-slate-300"
+                  >
+                    <Check className="h-3 w-3" />
+                    Apply
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      commit(
+                        () =>
+                          updateMediaFlowPreset({
+                            flow,
+                            presetId: preset.id,
+                            updatedAt: now(),
+                          }),
+                        `Updated ${preset.name} from current values.`,
+                      )
+                    }
+                    className="h-7 px-2 text-[9px] text-slate-500"
+                  >
+                    Update values
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Delete preset ${preset.name}`}
+                    onClick={() =>
+                      commit(
+                        () =>
+                          removeMediaFlowPreset({
+                            flow,
+                            presetId: preset.id,
+                            updatedAt: now(),
+                          }),
+                        `Deleted ${preset.name}.`,
+                      )
+                    }
+                    className="ml-auto text-slate-600 hover:text-rose-300"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
               </article>
             );
@@ -462,10 +766,20 @@ export const MediaFlowVariablesPanel = ({
       </section>
 
       {resolution.issues.length > 0 ? (
-        <section className="mt-5 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3" aria-label="Variable validation issues">
-          <div className="text-[10px] font-semibold text-amber-200">{resolution.issues.length} issue{resolution.issues.length === 1 ? "" : "s"} block preflight</div>
+        <section
+          className="mt-5 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3"
+          aria-label="Variable validation issues"
+        >
+          <div className="text-[10px] font-semibold text-amber-200">
+            {resolution.issues.length} issue
+            {resolution.issues.length === 1 ? "" : "s"} block preflight
+          </div>
           <ul className="mt-2 space-y-1 text-[9px] leading-4 text-amber-100/70">
-            {resolution.issues.slice(0, 4).map((issue, index) => <li key={`${issue.code}-${issue.variableId ?? "flow"}-${index}`}>{issue.message}</li>)}
+            {resolution.issues.slice(0, 4).map((issue, index) => (
+              <li key={`${issue.code}-${issue.variableId ?? "flow"}-${index}`}>
+                {issue.message}
+              </li>
+            ))}
           </ul>
         </section>
       ) : null}

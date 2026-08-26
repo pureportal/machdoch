@@ -10,6 +10,7 @@ export const DEFAULT_COMMAND_SHORTCUTS = {
   "app.view.marketplace": "Mod+4",
   "app.view.instructions": "Mod+5",
   "app.view.workspaces": "Mod+6",
+  "chat.composer.focus": "Mod+Shift+M",
   "chat.session.new": "Mod+N",
   "instructions.file.new": "Mod+N",
   "media.activity.recipe.new": "Mod+N",

@@ -5,6 +5,10 @@ import type {
   WorkspaceRunSnapshot,
 } from "../../../shared/workspace-run.js";
 import { Button } from "../components/ui/button";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../components/ui/submit-shortcut";
 import { Textarea } from "../components/ui/textarea";
 import {
   precheckWorkspaceRunConfigurationJson,
@@ -103,72 +107,83 @@ export const WorkspaceRunEditor = ({
   };
 
   return (
-    <div aria-busy={busy !== null} className="grid gap-3">
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={busy !== null}
-          onClick={detect}
-        >
-          {busy === "detect" ? (
-            <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
-          ) : (
-            <Sparkles aria-hidden="true" className="size-4" />
-          )}
-          Detect
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          disabled={busy !== null}
-          onClick={() => void save()}
-        >
-          {busy === "save" ? (
-            <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
-          ) : (
-            <Save aria-hidden="true" className="size-4" />
-          )}
-          Save
-        </Button>
-      </div>
-      {detections.some((detection) => detection.uncertainFields.length > 0) ? (
-        <div className="grid gap-1 text-xs text-amber-200">
-          {detections
-            .filter((detection) => detection.uncertainFields.length > 0)
-            .map((detection) => (
-              <div key={detection.configurationId}>
-                {detection.configurationId}: review{" "}
-                {detection.uncertainFields
-                  .map((field) =>
-                    field === "healthCheck" ? "health check" : field,
-                  )
-                  .join(", ")}
-              </div>
-            ))}
+    <SubmitShortcut asChild>
+      <div aria-busy={busy !== null} className="grid gap-3">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy !== null}
+            onClick={detect}
+          >
+            {busy === "detect" ? (
+              <LoaderCircle
+                aria-hidden="true"
+                className="size-4 animate-spin"
+              />
+            ) : (
+              <Sparkles aria-hidden="true" className="size-4" />
+            )}
+            Detect
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            disabled={busy !== null}
+            onClick={() => void save()}
+            {...SUBMIT_SHORTCUT_ACTION_PROPS}
+          >
+            {busy === "save" ? (
+              <LoaderCircle
+                aria-hidden="true"
+                className="size-4 animate-spin"
+              />
+            ) : (
+              <Save aria-hidden="true" className="size-4" />
+            )}
+            Save
+          </Button>
         </div>
-      ) : null}
-      {error ? (
-        <p id={errorId} role="alert" className="text-xs text-red-300">
-          {error}
-        </p>
-      ) : null}
-      <Textarea
-        aria-label="Run configuration JSON"
-        aria-invalid={error !== null}
-        aria-describedby={error ? errorId : undefined}
-        value={draft}
-        spellCheck={false}
-        onChange={(event) => {
-          const nextDraft = event.currentTarget.value;
-          setDraft(nextDraft);
-          onDirtyChange?.(nextDraft !== serializedDocument);
-          setSaveError(null);
-          clearWorkspaceRunDetection(workspaceRoot);
-        }}
-        className="min-h-72 max-h-[min(32rem,55vh)] resize-y overflow-auto border-slate-800 bg-slate-950 font-mono text-xs leading-5 text-slate-200"
-      />
-    </div>
+        {detections.some(
+          (detection) => detection.uncertainFields.length > 0,
+        ) ? (
+          <div className="grid gap-1 text-xs text-amber-200">
+            {detections
+              .filter((detection) => detection.uncertainFields.length > 0)
+              .map((detection) => (
+                <div key={detection.configurationId}>
+                  {detection.configurationId}: review{" "}
+                  {detection.uncertainFields
+                    .map((field) =>
+                      field === "healthCheck" ? "health check" : field,
+                    )
+                    .join(", ")}
+                </div>
+              ))}
+          </div>
+        ) : null}
+        {error ? (
+          <p id={errorId} role="alert" className="text-xs text-red-300">
+            {error}
+          </p>
+        ) : null}
+        <Textarea
+          aria-label="Run configuration JSON"
+          aria-invalid={error !== null}
+          aria-describedby={error ? errorId : undefined}
+          value={draft}
+          spellCheck={false}
+          onChange={(event) => {
+            const nextDraft = event.currentTarget.value;
+            setDraft(nextDraft);
+            onDirtyChange?.(nextDraft !== serializedDocument);
+            setSaveError(null);
+            clearWorkspaceRunDetection(workspaceRoot);
+          }}
+          className="min-h-72 max-h-[min(32rem,55vh)] resize-y overflow-auto border-slate-800 bg-slate-950 font-mono text-xs leading-5 text-slate-200"
+        />
+      </div>
+    </SubmitShortcut>
   );
 };

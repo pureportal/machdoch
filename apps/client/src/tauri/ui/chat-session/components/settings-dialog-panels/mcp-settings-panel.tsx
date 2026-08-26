@@ -21,6 +21,10 @@ import {
   DialogTrigger,
 } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../../../components/ui/submit-shortcut";
 import { Textarea } from "../../../components/ui/textarea";
 import { cn } from "../../../lib/utils";
 import { MCP_CONFIG_SCOPE_OPTIONS } from "../../../runtime";
@@ -872,10 +876,11 @@ export const McpSettingsPanel = ({
             Add custom
           </Button>
         </DialogTrigger>
-        <DialogContent
-          aria-describedby={undefined}
-          className="w-[min(36rem,calc(100vw-2rem))] max-w-none border-slate-800 bg-slate-950 text-slate-100 sm:max-w-none"
-        >
+        <SubmitShortcut asChild>
+          <DialogContent
+            aria-describedby={undefined}
+            className="w-[min(36rem,calc(100vw-2rem))] max-w-none border-slate-800 bg-slate-950 text-slate-100 sm:max-w-none"
+          >
           <DialogHeader>
             <DialogTitle>Add custom MCP server</DialogTitle>
           </DialogHeader>
@@ -977,13 +982,15 @@ export const McpSettingsPanel = ({
                 type="button"
                 disabled={!customDraftReady}
                 onClick={addCustomServer}
+                {...SUBMIT_SHORTCUT_ACTION_PROPS}
                 className="h-9 rounded-lg bg-sky-500 px-3 text-sm font-medium text-slate-950 hover:bg-sky-400"
               >
                 Add server
               </Button>
             </div>
           </div>
-        </DialogContent>
+          </DialogContent>
+        </SubmitShortcut>
       </Dialog>
     );
   };
@@ -1604,53 +1611,56 @@ export const McpSettingsPanel = ({
                   />
                 </Field>
               </div>
-              <div className="grid gap-2 rounded-lg border border-slate-800 bg-slate-950 p-3">
-                <Field
-                  label="OAuth callback URL or code"
-                  detail="Manual fallback: paste a callback URL or code here only if automatic browser authorization cannot receive the localhost redirect."
-                >
-                  <Input
-                    aria-label="MCP OAuth callback URL or code"
-                    value={oauthCallback}
-                    placeholder="callback URL or code"
-                    disabled={actionDisabled}
-                    onChange={(event) => {
-                      setOauthCallbackDraft(event.target.value);
-                      setup.onOAuthCallbackChange(event.target.value);
-                    }}
-                    className={INPUT_CLASS}
-                  />
-                </Field>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={actionDisabled || !effectiveSelectedServerId}
-                    onClick={() => {
-                      void setup.onStartOAuth(effectiveSelectedServerId);
-                    }}
-                    className="h-9 rounded-lg border-slate-800 bg-slate-950 px-3 text-sm text-slate-200 hover:border-sky-500/30 hover:bg-slate-900"
+              <SubmitShortcut asChild>
+                <div className="grid gap-2 rounded-lg border border-slate-800 bg-slate-950 p-3">
+                  <Field
+                    label="OAuth callback URL or code"
+                    detail="Manual fallback: paste a callback URL or code here only if automatic browser authorization cannot receive the localhost redirect."
                   >
-                    <ExternalLink className="h-4 w-4" />
-                    Start OAuth
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={actionDisabled || !effectiveSelectedServerId}
-                    onClick={() => {
-                      void setup.onFinishOAuth(
-                        effectiveSelectedServerId,
-                        oauthCallback,
-                      );
-                    }}
-                    className="h-9 rounded-lg border-slate-800 bg-slate-950 px-3 text-sm text-slate-200 hover:border-sky-500/30 hover:bg-slate-900"
-                  >
-                    <KeyRound className="h-4 w-4" />
-                    Finish OAuth
-                  </Button>
+                    <Input
+                      aria-label="MCP OAuth callback URL or code"
+                      value={oauthCallback}
+                      placeholder="callback URL or code"
+                      disabled={actionDisabled}
+                      onChange={(event) => {
+                        setOauthCallbackDraft(event.target.value);
+                        setup.onOAuthCallbackChange(event.target.value);
+                      }}
+                      className={INPUT_CLASS}
+                    />
+                  </Field>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={actionDisabled || !effectiveSelectedServerId}
+                      onClick={() => {
+                        void setup.onStartOAuth(effectiveSelectedServerId);
+                      }}
+                      className="h-9 rounded-lg border-slate-800 bg-slate-950 px-3 text-sm text-slate-200 hover:border-sky-500/30 hover:bg-slate-900"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      Start OAuth
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={actionDisabled || !effectiveSelectedServerId}
+                      onClick={() => {
+                        void setup.onFinishOAuth(
+                          effectiveSelectedServerId,
+                          oauthCallback,
+                        );
+                      }}
+                      {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                      className="h-9 rounded-lg border-slate-800 bg-slate-950 px-3 text-sm text-slate-200 hover:border-sky-500/30 hover:bg-slate-900"
+                    >
+                      <KeyRound className="h-4 w-4" />
+                      Finish OAuth
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              </SubmitShortcut>
             </div>
           ) : null}
         </PanelBlock>
@@ -2027,116 +2037,119 @@ export const McpSettingsPanel = ({
       title="MCP servers"
       description="Configure servers, credentials, discovery, and tools."
     >
-      <div className="grid gap-4 py-4">
-        <PanelBlock title="Automatic provider enrollment">
-          <ProviderSyncControl
-            workspaceRoot={setup.workspaceRoot}
-            showDiagnostics
-          />
-        </PanelBlock>
+      <SubmitShortcut asChild>
+        <div className="grid gap-4 py-4">
+          <PanelBlock title="Automatic provider enrollment">
+            <ProviderSyncControl
+              workspaceRoot={setup.workspaceRoot}
+              showDiagnostics
+            />
+          </PanelBlock>
 
-        <div className="sticky top-0 z-10 -mx-2 grid gap-3 border-b border-slate-800 bg-slate-950/95 px-2 py-3 shadow-sm shadow-black/20">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <ChoiceButtons
-                label="MCP configuration scope"
-                value={setup.scope}
-                options={scopeOptions}
-                disabled={setup.loading || setup.saving || dirty}
-                onChange={setup.onScopeChange}
-              />
-              <p className="text-xs text-slate-500">
-                {setup.saving
-                  ? "Saving changes..."
-                  : dirty
-                    ? "Unsaved changes"
-                    : "Saved"}
-                {parsed.servers.length > 0
-                  ? ` · ${parsed.servers.length} server${
-                      parsed.servers.length === 1 ? "" : "s"
-                    }`
-                  : ""}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {renderCustomServerDialog()}
-              {renderPresetDialog()}
-              {dirty ? (
+          <div className="sticky top-0 z-10 -mx-2 grid gap-3 border-b border-slate-800 bg-slate-950/95 px-2 py-3 shadow-sm shadow-black/20">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <ChoiceButtons
+                  label="MCP configuration scope"
+                  value={setup.scope}
+                  options={scopeOptions}
+                  disabled={setup.loading || setup.saving || dirty}
+                  onChange={setup.onScopeChange}
+                />
+                <p className="text-xs text-slate-500">
+                  {setup.saving
+                    ? "Saving changes..."
+                    : dirty
+                      ? "Unsaved changes"
+                      : "Saved"}
+                  {parsed.servers.length > 0
+                    ? ` · ${parsed.servers.length} server${
+                        parsed.servers.length === 1 ? "" : "s"
+                      }`
+                    : ""}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {renderCustomServerDialog()}
+                {renderPresetDialog()}
+                {dirty ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={setup.saving}
+                    onClick={() => setup.onDraftChange(setup.document.raw)}
+                    className="h-9 rounded-lg px-3 text-sm text-slate-300 hover:bg-slate-900 hover:text-slate-100"
+                  >
+                    Discard changes
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
-                  variant="ghost"
-                  disabled={setup.saving}
-                  onClick={() => setup.onDraftChange(setup.document.raw)}
-                  className="h-9 rounded-lg px-3 text-sm text-slate-300 hover:bg-slate-900 hover:text-slate-100"
+                  disabled={saveDisabled}
+                  onClick={() => {
+                    void setup.onSave();
+                  }}
+                  {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                  className="h-9 rounded-lg bg-sky-500 px-3 text-sm font-medium text-slate-950 hover:bg-sky-400"
                 >
-                  Discard changes
+                  <Save className="h-4 w-4" />
+                  {setup.saving ? "Saving" : "Save changes"}
                 </Button>
-              ) : null}
-              <Button
-                type="button"
-                disabled={saveDisabled}
-                onClick={() => {
-                  void setup.onSave();
-                }}
-                className="h-9 rounded-lg bg-sky-500 px-3 text-sm font-medium text-slate-950 hover:bg-sky-400"
-              >
-                <Save className="h-4 w-4" />
-                {setup.saving ? "Saving" : "Save changes"}
-              </Button>
+              </div>
             </div>
+            <p className="min-w-0 break-all font-mono text-xs leading-5 text-slate-500">
+              {setup.document.path}
+            </p>
           </div>
-          <p className="min-w-0 break-all font-mono text-xs leading-5 text-slate-500">
-            {setup.document.path}
-          </p>
+
+          {parsed.error ? (
+            <p className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+              {parsed.error}
+            </p>
+          ) : (
+            <>
+              <div className="grid gap-4">
+                <section className="grid gap-3">
+                  <div className="text-sm font-semibold text-slate-200">
+                    Installed servers
+                  </div>
+                  {renderServerList()}
+                </section>
+
+                {selectedServer ? (
+                  <section className="min-w-0 overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60">
+                    {renderSelectedHeader()}
+                    <div className="grid gap-4 p-4">{renderSelectedTab()}</div>
+                    <div className="flex justify-end border-t border-slate-800 px-4 py-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={disabled}
+                        onClick={removeSelectedServer}
+                        className="h-9 rounded-lg border-rose-500/20 bg-rose-500/10 px-3 text-sm text-rose-200 hover:bg-rose-500/15"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Remove
+                      </Button>
+                    </div>
+                  </section>
+                ) : (
+                  <section className="grid min-h-64 place-items-center rounded-lg border border-dashed border-slate-800 bg-slate-950/50 p-8 text-center">
+                    <div className="grid gap-2">
+                      <Server className="mx-auto h-8 w-8 text-slate-600" />
+                      <p className="text-sm text-slate-500">
+                        Add a preset or custom server to start configuring MCP.
+                      </p>
+                    </div>
+                  </section>
+                )}
+              </div>
+            </>
+          )}
+
+          <SettingsStatus message={setup.message} />
         </div>
-
-        {parsed.error ? (
-          <p className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
-            {parsed.error}
-          </p>
-        ) : (
-          <>
-            <div className="grid gap-4">
-              <section className="grid gap-3">
-                <div className="text-sm font-semibold text-slate-200">
-                  Installed servers
-                </div>
-                {renderServerList()}
-              </section>
-
-              {selectedServer ? (
-                <section className="min-w-0 overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60">
-                  {renderSelectedHeader()}
-                  <div className="grid gap-4 p-4">{renderSelectedTab()}</div>
-                  <div className="flex justify-end border-t border-slate-800 px-4 py-3">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={disabled}
-                      onClick={removeSelectedServer}
-                      className="h-9 rounded-lg border-rose-500/20 bg-rose-500/10 px-3 text-sm text-rose-200 hover:bg-rose-500/15"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Remove
-                    </Button>
-                  </div>
-                </section>
-              ) : (
-                <section className="grid min-h-64 place-items-center rounded-lg border border-dashed border-slate-800 bg-slate-950/50 p-8 text-center">
-                  <div className="grid gap-2">
-                    <Server className="mx-auto h-8 w-8 text-slate-600" />
-                    <p className="text-sm text-slate-500">
-                      Add a preset or custom server to start configuring MCP.
-                    </p>
-                  </div>
-                </section>
-              )}
-            </div>
-          </>
-        )}
-
-        <SettingsStatus message={setup.message} />
-      </div>
+      </SubmitShortcut>
     </SettingsCard>
   );
 };

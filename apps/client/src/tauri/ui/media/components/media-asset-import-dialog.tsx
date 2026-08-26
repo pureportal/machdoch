@@ -28,6 +28,10 @@ import type {
   MediaModelAddonImportInspection,
 } from "../../../../core/media/contracts.js";
 import { Button } from "../../components/ui/button";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../../components/ui/submit-shortcut";
 import { ControlTooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 import { MediaCategoryPicker } from "./media-category-picker";
@@ -397,339 +401,346 @@ export const MediaAssetImportDialog = ({
 
   return (
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="media-import-title"
-        className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl"
-      >
-        <header className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
-          <h1
-            id="media-import-title"
-            className="text-base font-semibold text-slate-100"
-          >
-            Import
-          </h1>
-          <ControlTooltip content="Close">
+      <SubmitShortcut asChild>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="media-import-title"
+          className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl"
+        >
+          <header className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+            <h1
+              id="media-import-title"
+              className="text-base font-semibold text-slate-100"
+            >
+              Import
+            </h1>
+            <ControlTooltip content="Close">
+              <button
+                type="button"
+                aria-label="Close import"
+                onClick={onClose}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </ControlTooltip>
+          </header>
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
             <button
               type="button"
-              aria-label="Close import"
-              onClick={onClose}
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+              disabled={loading}
+              onClick={() => void chooseFile()}
+              className="flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-700 bg-slate-900/35 px-5 text-slate-400 hover:border-sky-500 hover:text-sky-200 disabled:cursor-wait"
             >
-              <X className="h-5 w-5" />
-            </button>
-          </ControlTooltip>
-        </header>
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
-          <button
-            type="button"
-            disabled={loading}
-            onClick={() => void chooseFile()}
-            className="flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-700 bg-slate-900/35 px-5 text-slate-400 hover:border-sky-500 hover:text-sky-200 disabled:cursor-wait"
-          >
-            {loading ? (
-              <LoaderCircle className="h-6 w-6 animate-spin" />
-            ) : path ? (
-              <Check className="h-6 w-6 text-emerald-300" />
-            ) : (
-              <Upload className="h-6 w-6" />
-            )}
-            <span className="max-w-full truncate text-sm">
-              {path ? fileName(path) : "Drop or select a file"}
-            </span>
-            {loading && progress ? (
-              <div className="w-full max-w-sm space-y-1.5 px-4">
-                <div className="flex items-center justify-between text-xs">
-                  <span>{IMPORT_PROGRESS_LABELS[progress.stage]}</span>
-                  <span>{Math.round(progress.progress * 100)}%</span>
+              {loading ? (
+                <LoaderCircle className="h-6 w-6 animate-spin" />
+              ) : path ? (
+                <Check className="h-6 w-6 text-emerald-300" />
+              ) : (
+                <Upload className="h-6 w-6" />
+              )}
+              <span className="max-w-full truncate text-sm">
+                {path ? fileName(path) : "Drop or select a file"}
+              </span>
+              {loading && progress ? (
+                <div className="w-full max-w-sm space-y-1.5 px-4">
+                  <div className="flex items-center justify-between text-xs">
+                    <span>{IMPORT_PROGRESS_LABELS[progress.stage]}</span>
+                    <span>{Math.round(progress.progress * 100)}%</span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
+                    <div
+                      className="h-full rounded-full bg-sky-400 transition-[width]"
+                      style={{
+                        width: `${Math.round(progress.progress * 100)}%`,
+                      }}
+                    />
+                  </div>
                 </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
-                  <div
-                    className="h-full rounded-full bg-sky-400 transition-[width]"
-                    style={{
-                      width: `${Math.round(progress.progress * 100)}%`,
-                    }}
+              ) : null}
+            </button>
+
+            {path ? (
+              <fieldset>
+                <legend className="mb-2 text-sm font-medium text-slate-200">
+                  Type
+                </legend>
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                  {IMPORT_TYPES.filter((item) =>
+                    compatibleImportTypes.includes(item.id),
+                  ).map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      disabled={loading}
+                      aria-pressed={importType === item.id}
+                      onClick={() => chooseType(item.id)}
+                      className={cn(
+                        "rounded-xl border px-2 py-2.5 text-xs font-medium",
+                        importType === item.id
+                          ? "border-sky-400 bg-sky-500/10 text-sky-100"
+                          : "border-slate-800 text-slate-400 hover:border-slate-600",
+                        "disabled:cursor-wait disabled:opacity-60",
+                      )}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+            ) : null}
+
+            {path && importType ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {importIsGenerationAsset ? (
+                  <label className="space-y-1 text-xs text-slate-400">
+                    <span>Name</span>
+                    <input
+                      value={displayName}
+                      onChange={(event) => {
+                        dirtyEnrichmentFields.current.add("displayName");
+                        setDisplayName(event.target.value);
+                      }}
+                      className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
+                    />
+                  </label>
+                ) : null}
+                <div className="space-y-1 text-xs text-slate-400">
+                  <span>Categories</span>
+                  <MediaCategoryPicker
+                    categories={categories}
+                    selectedIds={categoryIds}
+                    onChange={setCategoryIds}
+                    onManage={onManageCategories}
+                    compact
                   />
                 </div>
-              </div>
-            ) : null}
-          </button>
-
-          {path ? (
-            <fieldset>
-              <legend className="mb-2 text-sm font-medium text-slate-200">
-                Type
-              </legend>
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-                {IMPORT_TYPES.filter((item) =>
-                  compatibleImportTypes.includes(item.id),
-                ).map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    disabled={loading}
-                    aria-pressed={importType === item.id}
-                    onClick={() => chooseType(item.id)}
-                    className={cn(
-                      "rounded-xl border px-2 py-2.5 text-xs font-medium",
-                      importType === item.id
-                        ? "border-sky-400 bg-sky-500/10 text-sky-100"
-                        : "border-slate-800 text-slate-400 hover:border-slate-600",
-                      "disabled:cursor-wait disabled:opacity-60",
-                    )}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-          ) : null}
-
-          {path && importType ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              {importIsGenerationAsset ? (
-                <label className="space-y-1 text-xs text-slate-400">
-                  <span>Name</span>
+                <label className="space-y-1 text-xs text-slate-400 sm:col-span-2">
+                  <span>Tags</span>
                   <input
-                    value={displayName}
+                    value={tags}
                     onChange={(event) => {
-                      dirtyEnrichmentFields.current.add("displayName");
-                      setDisplayName(event.target.value);
+                      dirtyEnrichmentFields.current.add("tags");
+                      setTags(event.target.value);
                     }}
                     className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
                   />
                 </label>
-              ) : null}
-              <div className="space-y-1 text-xs text-slate-400">
-                <span>Categories</span>
-                <MediaCategoryPicker
-                  categories={categories}
-                  selectedIds={categoryIds}
-                  onChange={setCategoryIds}
-                  onManage={onManageCategories}
-                  compact
-                />
-              </div>
-              <label className="space-y-1 text-xs text-slate-400 sm:col-span-2">
-                <span>Tags</span>
-                <input
-                  value={tags}
-                  onChange={(event) => {
-                    dirtyEnrichmentFields.current.add("tags");
-                    setTags(event.target.value);
-                  }}
-                  className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
-                />
-              </label>
-              {importIsGenerationAsset ? (
-                <>
-                  <label className="space-y-1 text-xs text-slate-400">
-                    <span>Base model</span>
-                    <select
-                      value={architecture}
-                      onChange={(event) => {
-                        dirtyEnrichmentFields.current.add("architecture");
-                        setArchitecture(
-                          event.target.value as MediaLocalModelArchitecture,
-                        );
-                      }}
-                      className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
-                    >
-                      {ARCHITECTURES.map((item) => (
-                        <option key={item.value} value={item.value}>
-                          {item.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="space-y-1 text-xs text-slate-400">
-                    <span>License</span>
+                {importIsGenerationAsset ? (
+                  <>
+                    <label className="space-y-1 text-xs text-slate-400">
+                      <span>Base model</span>
+                      <select
+                        value={architecture}
+                        onChange={(event) => {
+                          dirtyEnrichmentFields.current.add("architecture");
+                          setArchitecture(
+                            event.target.value as MediaLocalModelArchitecture,
+                          );
+                        }}
+                        className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
+                      >
+                        {ARCHITECTURES.map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-1 text-xs text-slate-400">
+                      <span>License</span>
+                      <input
+                        value={licenseName}
+                        onChange={(event) => setLicenseName(event.target.value)}
+                        className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
+                      />
+                    </label>
+                    <label className="space-y-1 text-xs text-slate-400">
+                      <span>Commercial use</span>
+                      <select
+                        value={commercialUse}
+                        onChange={(event) =>
+                          setCommercialUse(
+                            event.target.value as "allowed" | "review-required",
+                          )
+                        }
+                        className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
+                      >
+                        <option value="review-required">Review required</option>
+                        <option value="allowed">Allowed</option>
+                      </select>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-slate-300 sm:col-span-2">
+                      <input
+                        type="checkbox"
+                        checked={confirmRights}
+                        onChange={(event) =>
+                          setConfirmRights(event.target.checked)
+                        }
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-900"
+                      />
+                      I have the right to use these weights.
+                    </label>
+                  </>
+                ) : null}
+                <label className="space-y-1 text-xs text-slate-400 sm:col-span-2">
+                  <span>Source URL</span>
+                  <div className="flex gap-2">
                     <input
-                      value={licenseName}
-                      onChange={(event) => setLicenseName(event.target.value)}
-                      className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
+                      type="url"
+                      value={sourceUrl}
+                      onChange={(event) => setSourceUrl(event.target.value)}
+                      className="h-10 min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
                     />
-                  </label>
-                  <label className="space-y-1 text-xs text-slate-400">
-                    <span>Commercial use</span>
-                    <select
-                      value={commercialUse}
-                      onChange={(event) =>
-                        setCommercialUse(
-                          event.target.value as "allowed" | "review-required",
+                    {importIsGenerationAsset ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() =>
+                          onInspectCivitai(normalizedSourceUrl ?? "")
+                        }
+                        disabled={
+                          loading ||
+                          !normalizedSourceUrl ||
+                          !isMediaCivitaiSourceUrl(normalizedSourceUrl)
+                        }
+                      >
+                        Enrich
+                      </Button>
+                    ) : null}
+                  </div>
+                  {!sourceUrlValid ? (
+                    <span className="text-rose-300">Enter an HTTPS URL</span>
+                  ) : null}
+                </label>
+                {importIsAddon ? (
+                  <label className="space-y-1 text-xs text-slate-400 sm:col-span-2">
+                    <span>Trigger words</span>
+                    <input
+                      value={triggerWords}
+                      onChange={(event) => {
+                        dirtyEnrichmentFields.current.add("triggerWords");
+                        setTriggerWords(event.target.value);
+                      }}
+                      onBlur={() =>
+                        setTriggerWords(
+                          normalizeMediaTriggerWords(triggerWords),
                         )
                       }
                       className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
-                    >
-                      <option value="review-required">Review required</option>
-                      <option value="allowed">Allowed</option>
-                    </select>
-                  </label>
-                  <label className="flex items-center gap-2 text-xs text-slate-300 sm:col-span-2">
-                    <input
-                      type="checkbox"
-                      checked={confirmRights}
-                      onChange={(event) =>
-                        setConfirmRights(event.target.checked)
-                      }
-                      className="h-4 w-4 rounded border-slate-600 bg-slate-900"
                     />
-                    I have the right to use these weights.
                   </label>
-                </>
-              ) : null}
-              <label className="space-y-1 text-xs text-slate-400 sm:col-span-2">
-                <span>Source URL</span>
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    value={sourceUrl}
-                    onChange={(event) => setSourceUrl(event.target.value)}
-                    className="h-10 min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
-                  />
-                  {importIsGenerationAsset ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() =>
-                        onInspectCivitai(normalizedSourceUrl ?? "")
-                      }
-                      disabled={
-                        loading ||
-                        !normalizedSourceUrl ||
-                        !isMediaCivitaiSourceUrl(normalizedSourceUrl)
-                      }
-                    >
-                      Enrich
-                    </Button>
-                  ) : null}
-                </div>
-                {!sourceUrlValid ? (
-                  <span className="text-rose-300">Enter an HTTPS URL</span>
                 ) : null}
-              </label>
-              {importIsAddon ? (
-                <label className="space-y-1 text-xs text-slate-400 sm:col-span-2">
-                  <span>Trigger words</span>
-                  <input
-                    value={triggerWords}
-                    onChange={(event) => {
-                      dirtyEnrichmentFields.current.add("triggerWords");
-                      setTriggerWords(event.target.value);
-                    }}
-                    onBlur={() =>
-                      setTriggerWords(normalizeMediaTriggerWords(triggerWords))
-                    }
-                    className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
-                  />
-                </label>
-              ) : null}
-              {importIsGenerationAsset ? (
-                <>
-                  <label className="space-y-1 text-xs text-slate-400 sm:col-span-2">
-                    <span>Sample images</span>
-                    <div className="grid max-h-48 grid-cols-6 gap-2 overflow-y-auto rounded-xl border border-slate-800 p-2">
-                      {imageAssets.map((asset) => {
-                        const selected = sampleAssetIds.includes(asset.id);
-                        return (
-                          <button
-                            key={asset.id}
-                            type="button"
-                            aria-pressed={selected}
-                            onClick={() =>
-                              setSampleAssetIds((current) =>
+                {importIsGenerationAsset ? (
+                  <>
+                    <label className="space-y-1 text-xs text-slate-400 sm:col-span-2">
+                      <span>Sample images</span>
+                      <div className="grid max-h-48 grid-cols-6 gap-2 overflow-y-auto rounded-xl border border-slate-800 p-2">
+                        {imageAssets.map((asset) => {
+                          const selected = sampleAssetIds.includes(asset.id);
+                          return (
+                            <button
+                              key={asset.id}
+                              type="button"
+                              aria-pressed={selected}
+                              onClick={() =>
+                                setSampleAssetIds((current) =>
+                                  selected
+                                    ? current.filter((id) => id !== asset.id)
+                                    : [...current, asset.id].slice(0, 12),
+                                )
+                              }
+                              className={cn(
+                                "relative aspect-square overflow-hidden rounded-lg border",
                                 selected
-                                  ? current.filter((id) => id !== asset.id)
-                                  : [...current, asset.id].slice(0, 12),
-                              )
-                            }
-                            className={cn(
-                              "relative aspect-square overflow-hidden rounded-lg border",
-                              selected ? "border-sky-400" : "border-slate-700",
-                            )}
-                          >
-                            <MediaAssetPreview
-                              asset={asset}
-                              className="h-full w-full"
-                            />
-                            {selected ? (
-                              <Check className="absolute right-1 top-1 h-4 w-4 rounded-full bg-sky-500 p-0.5 text-white" />
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </label>
-                </>
-              ) : null}
-            </div>
-          ) : null}
-          {civitaiInspection?.sampleImages.length ? (
-            <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
-              {civitaiInspection.sampleImages.map((sample) => (
-                <img
-                  key={sample.url}
-                  src={sample.url}
-                  alt=""
-                  referrerPolicy="no-referrer"
-                  className="aspect-square w-full rounded-lg object-cover"
-                />
-              ))}
-            </div>
-          ) : null}
-          {civitaiInspection && !civitaiInspection.canEnrich ? (
-            <p className="text-sm text-rose-300">
-              {civitaiInspection.blockingReason}
-            </p>
-          ) : null}
-          {inspection?.duplicate ? (
-            <p className="text-sm text-amber-300">
-              Already imported as {inspection.duplicate.displayName}.
-            </p>
-          ) : null}
-          {importType && !importTypeMatches ? (
-            <p className="text-sm text-rose-300">
-              {detectedAddonKind === "lora"
-                ? "This file is a LoRA."
-                : "This file is an embedding."}
-            </p>
-          ) : null}
-          {fileError ? (
-            <p className="text-sm text-rose-300">{fileError}</p>
-          ) : null}
-          {error ? <p className="text-sm text-rose-300">{error}</p> : null}
+                                  ? "border-sky-400"
+                                  : "border-slate-700",
+                              )}
+                            >
+                              <MediaAssetPreview
+                                asset={asset}
+                                className="h-full w-full"
+                              />
+                              {selected ? (
+                                <Check className="absolute right-1 top-1 h-4 w-4 rounded-full bg-sky-500 p-0.5 text-white" />
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </label>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+            {civitaiInspection?.sampleImages.length ? (
+              <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+                {civitaiInspection.sampleImages.map((sample) => (
+                  <img
+                    key={sample.url}
+                    src={sample.url}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    className="aspect-square w-full rounded-lg object-cover"
+                  />
+                ))}
+              </div>
+            ) : null}
+            {civitaiInspection && !civitaiInspection.canEnrich ? (
+              <p className="text-sm text-rose-300">
+                {civitaiInspection.blockingReason}
+              </p>
+            ) : null}
+            {inspection?.duplicate ? (
+              <p className="text-sm text-amber-300">
+                Already imported as {inspection.duplicate.displayName}.
+              </p>
+            ) : null}
+            {importType && !importTypeMatches ? (
+              <p className="text-sm text-rose-300">
+                {detectedAddonKind === "lora"
+                  ? "This file is a LoRA."
+                  : "This file is an embedding."}
+              </p>
+            ) : null}
+            {fileError ? (
+              <p className="text-sm text-rose-300">{fileError}</p>
+            ) : null}
+            {error ? <p className="text-sm text-rose-300">{error}</p> : null}
+          </div>
+          <footer className="flex justify-end gap-2 border-t border-slate-800 px-5 py-4">
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void submitImport()}
+              disabled={
+                !path ||
+                !importType ||
+                loading ||
+                !sourceUrlValid ||
+                !importTypeMatches ||
+                (importIsGenerationAsset &&
+                  (!inspection ||
+                    !displayName.trim() ||
+                    !licenseName.trim() ||
+                    !confirmRights ||
+                    inspection.duplicate !== null))
+              }
+              {...SUBMIT_SHORTCUT_ACTION_PROPS}
+            >
+              {loading ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <Import className="h-4 w-4" />
+              )}
+              Import
+            </Button>
+          </footer>
         </div>
-        <footer className="flex justify-end gap-2 border-t border-slate-800 px-5 py-4">
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            onClick={() => void submitImport()}
-            disabled={
-              !path ||
-              !importType ||
-              loading ||
-              !sourceUrlValid ||
-              !importTypeMatches ||
-              (importIsGenerationAsset &&
-                (!inspection ||
-                  !displayName.trim() ||
-                  !licenseName.trim() ||
-                  !confirmRights ||
-                  inspection.duplicate !== null))
-            }
-          >
-            {loading ? (
-              <LoaderCircle className="h-4 w-4 animate-spin" />
-            ) : (
-              <Import className="h-4 w-4" />
-            )}
-            Import
-          </Button>
-        </footer>
-      </div>
+      </SubmitShortcut>
     </div>
   );
 };

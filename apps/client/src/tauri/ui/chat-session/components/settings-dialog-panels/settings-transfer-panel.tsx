@@ -24,6 +24,10 @@ import {
 } from "react";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
+import {
+  SUBMIT_SHORTCUT_ACTION_PROPS,
+  SubmitShortcut,
+} from "../../../components/ui/submit-shortcut";
 import { Textarea } from "../../../components/ui/textarea";
 import { useOptionalRegisterCommands } from "../../../commands/command-context";
 import {
@@ -979,133 +983,136 @@ const EncryptedSettingsFilePanel = ({
           : "Choose settings to replace, then select the encrypted file."
       }
     >
-      <div className="grid gap-5 py-5">
-        <CategorySelection
-          categories={catalog.categories}
-          selected={selectedCategories}
-          disabled={busy}
-          onToggle={toggleCategory}
-        />
-        <div className="grid gap-2">
-          <span className="text-sm font-medium text-slate-300">
-            {exporting
-              ? "Encrypted file destination"
-              : "Encrypted settings file"}
-          </span>
-          <div className="flex flex-col gap-2 sm:flex-row">
+      <SubmitShortcut asChild>
+        <div className="grid gap-5 py-5">
+          <CategorySelection
+            categories={catalog.categories}
+            selected={selectedCategories}
+            disabled={busy}
+            onToggle={toggleCategory}
+          />
+          <div className="grid gap-2">
+            <span className="text-sm font-medium text-slate-300">
+              {exporting
+                ? "Encrypted file destination"
+                : "Encrypted settings file"}
+            </span>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input
+                readOnly
+                value={filePath}
+                aria-label={
+                  exporting
+                    ? "Encrypted file destination"
+                    : "Encrypted settings file"
+                }
+                placeholder={
+                  exporting
+                    ? "Choose where to save the file"
+                    : "Choose a .machdoch-settings file"
+                }
+                className="min-w-0 flex-1 border-slate-800 bg-slate-950 text-slate-300"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => void chooseFile()}
+                className="border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+              >
+                {exporting ? "Choose destination" : "Choose file"}
+              </Button>
+            </div>
+          </div>
+          <div className="grid gap-2">
+            <label
+              htmlFor="encrypted-settings-passphrase"
+              className="text-sm font-medium text-slate-300"
+            >
+              File passphrase
+            </label>
             <Input
-              readOnly
-              value={filePath}
-              aria-label={
-                exporting
-                  ? "Encrypted file destination"
-                  : "Encrypted settings file"
-              }
-              placeholder={
-                exporting
-                  ? "Choose where to save the file"
-                  : "Choose a .machdoch-settings file"
-              }
-              className="min-w-0 flex-1 border-slate-800 bg-slate-950 text-slate-300"
+              id="encrypted-settings-passphrase"
+              type="password"
+              value={passphrase}
+              maxLength={1024}
+              disabled={busy}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => setPassphrase(event.target.value)}
+              className="border-slate-800 bg-slate-950 text-slate-100"
             />
+            {exporting ? (
+              <>
+                <label
+                  htmlFor="encrypted-settings-passphrase-confirmation"
+                  className="text-sm font-medium text-slate-300"
+                >
+                  Confirm passphrase
+                </label>
+                <Input
+                  id="encrypted-settings-passphrase-confirmation"
+                  type="password"
+                  value={passphraseConfirmation}
+                  maxLength={1024}
+                  disabled={busy}
+                  autoComplete="off"
+                  spellCheck={false}
+                  onChange={(event) =>
+                    setPassphraseConfirmation(event.target.value)
+                  }
+                  className="border-slate-800 bg-slate-950 text-slate-100"
+                />
+                <p className="text-xs leading-5 text-slate-500">
+                  Use at least 12 characters and at most 1,024 UTF-8 bytes. A
+                  lost passphrase cannot be recovered.
+                </p>
+              </>
+            ) : null}
+          </div>
+          {localError ? (
+            <p role="alert" className="text-sm text-rose-300">
+              {localError}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap justify-between gap-3 border-t border-slate-800 pt-4">
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               disabled={busy}
-              onClick={() => void chooseFile()}
-              className="border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+              onClick={() => void back()}
+              className="text-slate-400 hover:bg-slate-900 hover:text-slate-100"
             >
-              {exporting ? "Choose destination" : "Choose file"}
+              Back
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                busy ||
+                selectedCategories.size === 0 ||
+                filePath.length === 0 ||
+                passphrase.length === 0 ||
+                !passphraseFits ||
+                (exporting &&
+                  (!passphraseIsLongEnough ||
+                    passphrase !== passphraseConfirmation))
+              }
+              onClick={() => void (exporting ? exportFile() : inspectFile())}
+              {...SUBMIT_SHORTCUT_ACTION_PROPS}
+              className="bg-sky-500 text-slate-950 hover:bg-sky-400"
+            >
+              {busy ? <LoaderCircle className="size-4 animate-spin" /> : null}
+              {busy
+                ? exporting
+                  ? "Encrypting and writing…"
+                  : "Authenticating and validating…"
+                : exporting
+                  ? "Export encrypted file"
+                  : "Review encrypted file"}
             </Button>
           </div>
         </div>
-        <div className="grid gap-2">
-          <label
-            htmlFor="encrypted-settings-passphrase"
-            className="text-sm font-medium text-slate-300"
-          >
-            File passphrase
-          </label>
-          <Input
-            id="encrypted-settings-passphrase"
-            type="password"
-            value={passphrase}
-            maxLength={1024}
-            disabled={busy}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => setPassphrase(event.target.value)}
-            className="border-slate-800 bg-slate-950 text-slate-100"
-          />
-          {exporting ? (
-            <>
-              <label
-                htmlFor="encrypted-settings-passphrase-confirmation"
-                className="text-sm font-medium text-slate-300"
-              >
-                Confirm passphrase
-              </label>
-              <Input
-                id="encrypted-settings-passphrase-confirmation"
-                type="password"
-                value={passphraseConfirmation}
-                maxLength={1024}
-                disabled={busy}
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(event) =>
-                  setPassphraseConfirmation(event.target.value)
-                }
-                className="border-slate-800 bg-slate-950 text-slate-100"
-              />
-              <p className="text-xs leading-5 text-slate-500">
-                Use at least 12 characters and at most 1,024 UTF-8 bytes. A lost
-                passphrase cannot be recovered.
-              </p>
-            </>
-          ) : null}
-        </div>
-        {localError ? (
-          <p role="alert" className="text-sm text-rose-300">
-            {localError}
-          </p>
-        ) : null}
-        <div className="flex flex-wrap justify-between gap-3 border-t border-slate-800 pt-4">
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={busy}
-            onClick={() => void back()}
-            className="text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-          >
-            Back
-          </Button>
-          <Button
-            type="button"
-            disabled={
-              busy ||
-              selectedCategories.size === 0 ||
-              filePath.length === 0 ||
-              passphrase.length === 0 ||
-              !passphraseFits ||
-              (exporting &&
-                (!passphraseIsLongEnough ||
-                  passphrase !== passphraseConfirmation))
-            }
-            onClick={() => void (exporting ? exportFile() : inspectFile())}
-            className="bg-sky-500 text-slate-950 hover:bg-sky-400"
-          >
-            {busy ? <LoaderCircle className="size-4 animate-spin" /> : null}
-            {busy
-              ? exporting
-                ? "Encrypting and writing…"
-                : "Authenticating and validating…"
-              : exporting
-                ? "Export encrypted file"
-                : "Review encrypted file"}
-          </Button>
-        </div>
-      </div>
+      </SubmitShortcut>
     </SettingsCard>
   );
 };
@@ -1845,65 +1852,70 @@ export const SettingsTransferPanel = (): JSX.Element => {
             : "Choose the settings this PC can receive. You’ll review changes before anything is replaced."
         }
       >
-        <div className="grid gap-5 py-5">
-          <div className="grid gap-2">
-            <label
-              htmlFor="settings-transfer-device-name"
-              className="text-sm font-medium text-slate-300"
-            >
-              Device name
-            </label>
-            <Input
-              id="settings-transfer-device-name"
-              value={displayName}
-              maxLength={64}
-              onChange={(event) => setDisplayName(event.target.value)}
-              className="border-slate-800 bg-slate-950 text-slate-100"
-            />
-          </div>
-          <CategorySelection
-            categories={status.categories}
-            selected={selectedCategories}
-            disabled={busy}
-            onToggle={toggleCategory}
-          />
-          <InterfaceSelection
-            status={status}
-            selected={selectedInterfaces}
-            disabled={busy}
-            onToggle={toggleInterface}
-          />
-          {localError ? (
-            <p role="alert" className="text-sm text-rose-300">
-              {localError}
-            </p>
-          ) : null}
-          <div className="flex flex-wrap justify-between gap-3 border-t border-slate-800 pt-4">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setConfigurationMode("landing")}
+        <SubmitShortcut asChild>
+          <div className="grid gap-5 py-5">
+            <div className="grid gap-2">
+              <label
+                htmlFor="settings-transfer-device-name"
+                className="text-sm font-medium text-slate-300"
+              >
+                Device name
+              </label>
+              <Input
+                id="settings-transfer-device-name"
+                value={displayName}
+                maxLength={64}
+                onChange={(event) => setDisplayName(event.target.value)}
+                className="border-slate-800 bg-slate-950 text-slate-100"
+              />
+            </div>
+            <CategorySelection
+              categories={status.categories}
+              selected={selectedCategories}
               disabled={busy}
-              className="text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-            >
-              Back
-            </Button>
-            <Button
-              type="button"
-              onClick={() => start(configurationMode)}
-              disabled={
-                busy ||
-                selectedCategories.size === 0 ||
-                selectedInterfaces.size === 0 ||
-                displayName.trim().length === 0
-              }
-              className="bg-sky-500 text-slate-950 hover:bg-sky-400"
-            >
-              {busy ? <LoaderCircle className="size-4 animate-spin" /> : null}
-              {configurationMode === "send" ? "Make available" : "Find senders"}
-            </Button>
+              onToggle={toggleCategory}
+            />
+            <InterfaceSelection
+              status={status}
+              selected={selectedInterfaces}
+              disabled={busy}
+              onToggle={toggleInterface}
+            />
+            {localError ? (
+              <p role="alert" className="text-sm text-rose-300">
+                {localError}
+              </p>
+            ) : null}
+            <div className="flex flex-wrap justify-between gap-3 border-t border-slate-800 pt-4">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setConfigurationMode("landing")}
+                disabled={busy}
+                className="text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+              >
+                Back
+              </Button>
+              <Button
+                type="button"
+                onClick={() => start(configurationMode)}
+                disabled={
+                  busy ||
+                  selectedCategories.size === 0 ||
+                  selectedInterfaces.size === 0 ||
+                  displayName.trim().length === 0
+                }
+                {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                className="bg-sky-500 text-slate-950 hover:bg-sky-400"
+              >
+                {busy ? <LoaderCircle className="size-4 animate-spin" /> : null}
+                {configurationMode === "send"
+                  ? "Make available"
+                  : "Find senders"}
+              </Button>
+            </div>
           </div>
-        </div>
+        </SubmitShortcut>
       </SettingsCard>
     );
   }
@@ -2058,33 +2070,36 @@ export const SettingsTransferPanel = (): JSX.Element => {
                 <span>Can’t find the other PC?</span>
                 <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
               </summary>
-              <div className="grid gap-3 border-t border-slate-800 p-4">
-                <p className="text-xs leading-5 text-slate-400">
-                  Make sure both PCs are awake on the same network and Machdoch
-                  is allowed through the firewall.
-                </p>
-                <Textarea
-                  value={manualCode}
-                  onChange={(event) => setManualCode(event.target.value)}
-                  maxLength={MAX_MANUAL_CODE_LENGTH}
-                  placeholder="Paste machdoch-xfer:v1:…"
-                  aria-label="Paste manual connection code"
-                  className="min-h-24 border-slate-800 bg-slate-950 font-mono text-xs text-slate-300"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={busy || manualCode.trim().length === 0}
-                  onClick={() =>
-                    void run(() =>
-                      connectManualSettingsTransfer(manualCode.trim()),
-                    )
-                  }
-                  className="w-fit border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
-                >
-                  Connect with manual code
-                </Button>
-              </div>
+              <SubmitShortcut asChild>
+                <div className="grid gap-3 border-t border-slate-800 p-4">
+                  <p className="text-xs leading-5 text-slate-400">
+                    Make sure both PCs are awake on the same network and
+                    Machdoch is allowed through the firewall.
+                  </p>
+                  <Textarea
+                    value={manualCode}
+                    onChange={(event) => setManualCode(event.target.value)}
+                    maxLength={MAX_MANUAL_CODE_LENGTH}
+                    placeholder="Paste machdoch-xfer:v1:…"
+                    aria-label="Paste manual connection code"
+                    className="min-h-24 border-slate-800 bg-slate-950 font-mono text-xs text-slate-300"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busy || manualCode.trim().length === 0}
+                    onClick={() =>
+                      void run(() =>
+                        connectManualSettingsTransfer(manualCode.trim()),
+                      )
+                    }
+                    {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                    className="w-fit border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+                  >
+                    Connect with manual code
+                  </Button>
+                </div>
+              </SubmitShortcut>
             </details>
           </div>
         ) : null}
