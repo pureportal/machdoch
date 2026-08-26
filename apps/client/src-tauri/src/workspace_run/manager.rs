@@ -2772,13 +2772,19 @@ mod tests {
             .start(workspace.to_string_lossy().as_ref(), None)
             .expect("task should start");
         let marker_deadline = Instant::now() + Duration::from_secs(10);
-        while !marker.exists() && Instant::now() < marker_deadline {
+        let descendant_id = loop {
+            if let Some(process_id) = fs::read_to_string(&marker)
+                .ok()
+                .and_then(|value| value.trim().parse::<u32>().ok())
+            {
+                break process_id;
+            }
+            assert!(
+                Instant::now() < marker_deadline,
+                "descendant pid should be written before the deadline"
+            );
             thread::sleep(Duration::from_millis(50));
-        }
-        let descendant_id = fs::read_to_string(&marker)
-            .expect("descendant pid should be readable")
-            .parse::<u32>()
-            .expect("descendant pid should be numeric");
+        };
         assert!(process_is_running(descendant_id));
 
         manager
