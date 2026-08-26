@@ -106,6 +106,8 @@ import {
   readRalphUtilityValuePath,
 } from "./_helpers/evaluate-ralph-utility-condition.helper.js";
 import {
+  assessRalphScopeRegistryAvailability,
+  beginRalphScopeRegistryCycle,
   createDefaultRalphScopeRegistryPath,
   createRalphScopeRegistryMarkdownPath,
   discoverRalphScopeEvidence,
@@ -7114,6 +7116,85 @@ const createJsonTaskSelectionBlockers = (
   return { blockers, dependencyCycles };
 };
 
+type JsonTaskSelectionStatus = "ready" | "complete" | "deferred" | "blocked";
+
+interface JsonTaskSelectionAssessment {
+  status: JsonTaskSelectionStatus;
+  candidates: JsonTaskCandidate[];
+  blockerState: ReturnType<typeof createJsonTaskSelectionBlockers>;
+  blockers: Array<Record<string, unknown>>;
+  structurallyBlocked: boolean;
+  nextRetryTimestamp?: number;
+}
+
+const assessJsonTaskSelection = (
+  tasks: Record<string, unknown>[],
+  strategy: string | undefined,
+  maxTasks: number,
+  runId: string,
+  now = Date.now(),
+): JsonTaskSelectionAssessment => {
+  const candidates = getJsonTaskCandidatesForRun(
+    tasks,
+    strategy,
+    maxTasks,
+    runId,
+    now,
+  );
+  const blockerState = createJsonTaskSelectionBlockers(tasks, runId, now);
+  const blockers = blockerState.blockers.filter(
+    (entry) => Array.isArray(entry.reasons) && entry.reasons.length > 0,
+  );
+  const retryTimes = tasks.flatMap((task) => {
+    if (!isSelectableJsonTask(task)) {
+      return [];
+    }
+
+    const retryAt: number[] = [];
+    if (typeof task.nextEligibleAt === "string") {
+      const parsed = Date.parse(task.nextEligibleAt);
+      if (Number.isFinite(parsed) && parsed > now) {
+        retryAt.push(parsed);
+      }
+    }
+
+    const lease = readJsonTaskLease(task);
+    if (lease && lease.ownerId !== runId && isJsonTaskLeaseActive(lease, now)) {
+      retryAt.push(Date.parse(lease.expiresAt));
+    }
+    return retryAt;
+  });
+  const structurallyBlocked = blockers.some((entry) => {
+    const reasons = Array.isArray(entry.reasons) ? entry.reasons : [];
+    return (
+      reasons.includes("missing-dependency") ||
+      reasons.includes("dependency-cycle") ||
+      reasons.includes("invalid-next-eligible-at") ||
+      (reasons.includes("deferred") && typeof entry.nextEligibleAt !== "string")
+    );
+  });
+  const nextRetryTimestamp =
+    retryTimes.length > 0 ? Math.min(...retryTimes) : undefined;
+  const unfinishedCount = tasks.filter(isSelectableJsonTask).length;
+  const status: JsonTaskSelectionStatus =
+    candidates.length > 0
+      ? "ready"
+      : unfinishedCount === 0
+        ? "complete"
+        : !structurallyBlocked && nextRetryTimestamp !== undefined
+          ? "deferred"
+          : "blocked";
+
+  return {
+    status,
+    candidates,
+    blockerState,
+    blockers,
+    structurallyBlocked,
+    ...(nextRetryTimestamp !== undefined ? { nextRetryTimestamp } : {}),
+  };
+};
+
 const createJsonTaskAssessmentItem = (
   task: Record<string, unknown>,
 ): Record<string, unknown> => {
@@ -7231,62 +7312,21 @@ const executeAssessJsonTasksUtilityBlock = async (
     const assessmentStrategy =
       utility.strategy === "random" ? "random-seeded" : utility.strategy;
     const now = Date.now();
-    const candidates = getJsonTaskCandidatesForRun(
+    const selection = assessJsonTaskSelection(
       taskArray.tasks,
       assessmentStrategy,
       maxTasks,
       context.runId,
       now,
     );
-    const blockerState = createJsonTaskSelectionBlockers(
-      taskArray.tasks,
-      context.runId,
-      now,
-    );
-    const blockers = blockerState.blockers.filter(
-      (entry) => Array.isArray(entry.reasons) && entry.reasons.length > 0,
-    );
-    const retryTimes = taskArray.tasks.flatMap((task) => {
-      if (!isSelectableJsonTask(task)) {
-        return [];
-      }
-      const retryAt: number[] = [];
-      if (typeof task.nextEligibleAt === "string") {
-        const parsed = Date.parse(task.nextEligibleAt);
-        if (Number.isFinite(parsed) && parsed > now) {
-          retryAt.push(parsed);
-        }
-      }
-      const lease = readJsonTaskLease(task);
-      if (
-        lease &&
-        lease.ownerId !== context.runId &&
-        isJsonTaskLeaseActive(lease, now)
-      ) {
-        retryAt.push(Date.parse(lease.expiresAt));
-      }
-      return retryAt;
-    });
-    const structurallyBlocked = blockers.some((entry) => {
-      const reasons = Array.isArray(entry.reasons) ? entry.reasons : [];
-      return (
-        reasons.includes("missing-dependency") ||
-        reasons.includes("dependency-cycle") ||
-        reasons.includes("invalid-next-eligible-at") ||
-        (reasons.includes("deferred") &&
-          typeof entry.nextEligibleAt !== "string")
-      );
-    });
-    const nextRetryTimestamp =
-      retryTimes.length > 0 ? Math.min(...retryTimes) : undefined;
     const tasks = taskArray.tasks
       .slice(0, MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS)
       .map(createJsonTaskAssessmentItem);
-    const boundedCandidates = candidates.slice(
+    const boundedCandidates = selection.candidates.slice(
       0,
       MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
     );
-    const boundedBlockers = blockers
+    const boundedBlockers = selection.blockers
       .slice(0, MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS)
       .map((entry) => {
         const boundedEntry: Record<string, unknown> = {};
@@ -7307,7 +7347,7 @@ const executeAssessJsonTasksUtilityBlock = async (
         }
         return boundedEntry;
       });
-    const boundedDependencyCycles = blockerState.dependencyCycles
+    const boundedDependencyCycles = selection.blockerState.dependencyCycles
       .slice(0, MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS)
       .map((cycle) => cycle.slice(0, MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS));
     const data = {
@@ -7333,34 +7373,38 @@ const executeAssessJsonTasksUtilityBlock = async (
       ),
       nextTaskIndexes: boundedCandidates.map((candidate) => candidate.index),
       nextTasksTruncated:
-        candidates.length > MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
+        selection.candidates.length > MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
       omittedNextTaskCount: Math.max(
         0,
-        candidates.length - MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
+        selection.candidates.length - MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
       ),
       maxTasks,
       blockers: boundedBlockers,
-      blockersTruncated: blockers.length > MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
+      blockersTruncated:
+        selection.blockers.length > MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
       omittedBlockerCount: Math.max(
         0,
-        blockers.length - MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
+        selection.blockers.length - MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
       ),
       dependencyCycles: boundedDependencyCycles,
       dependencyCyclesTruncated:
-        blockerState.dependencyCycles.length >
+        selection.blockerState.dependencyCycles.length >
           MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS ||
-        blockerState.dependencyCycles.some(
+        selection.blockerState.dependencyCycles.some(
           (cycle) => cycle.length > MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
         ),
       omittedDependencyCycleCount: Math.max(
         0,
-        blockerState.dependencyCycles.length -
+        selection.blockerState.dependencyCycles.length -
           MAX_RALPH_JSON_TASK_ASSESSMENT_ITEMS,
       ),
-      structurallyBlocked,
-      retryable: !structurallyBlocked && nextRetryTimestamp !== undefined,
-      ...(nextRetryTimestamp !== undefined
-        ? { nextRetryAt: new Date(nextRetryTimestamp).toISOString() }
+      availability: selection.status,
+      structurallyBlocked: selection.structurallyBlocked,
+      retryable: selection.status === "deferred",
+      ...(selection.nextRetryTimestamp !== undefined
+        ? {
+            nextRetryAt: new Date(selection.nextRetryTimestamp).toISOString(),
+          }
         : {}),
     };
 
@@ -7382,11 +7426,21 @@ const executeAssessJsonTasksUtilityBlock = async (
         "completed",
       );
     }
-    if (candidates.length > 0) {
+    if (selection.status === "ready") {
       return createUtilityResult(
         block,
         "READY",
-        `${block.title} found ${candidates.length} task(s) ready for the next bounded claim.`,
+        `${block.title} found ${selection.candidates.length} task(s) ready for the next bounded claim.`,
+        data,
+        "completed",
+      );
+    }
+
+    if (selection.status === "deferred") {
+      return createUtilityResult(
+        block,
+        "DEFERRED",
+        `${block.title} found ${unfinishedCount} temporarily unavailable task(s); retry after ${new Date(selection.nextRetryTimestamp!).toISOString()}.`,
         data,
         "completed",
       );
@@ -7395,11 +7449,9 @@ const executeAssessJsonTasksUtilityBlock = async (
     return createUtilityResult(
       block,
       "BLOCKED",
-      structurallyBlocked
+      selection.structurallyBlocked
         ? `${block.title} found ${unfinishedCount} unfinished task(s) with structural blockers.`
-        : nextRetryTimestamp !== undefined
-          ? `${block.title} found ${unfinishedCount} temporarily blocked task(s); retry after ${new Date(nextRetryTimestamp).toISOString()}.`
-          : `${block.title} found ${unfinishedCount} unfinished task(s), but none can be selected.`,
+        : `${block.title} found ${unfinishedCount} unfinished task(s), but none can be selected.`,
       data,
       "completed",
     );
@@ -7489,29 +7541,39 @@ const executeSelectJsonTaskUtilityBlock = async (
     }
 
     const maxTasks = getJsonTaskMaxTasks(utility);
-    const selectedTasks = getJsonTaskCandidatesForRun(
+    const selection = assessJsonTaskSelection(
       taskArray.tasks,
       utility.strategy,
       maxTasks,
       context.runId,
     );
+    const selectedTasks = selection.candidates;
 
     if (selectedTasks.length === 0) {
       const unfinishedTasks = taskArray.tasks.filter(isSelectableJsonTask);
       if (unfinishedTasks.length > 0) {
-        const blockers = createJsonTaskSelectionBlockers(
-          taskArray.tasks,
-          context.runId,
-        );
         return createUtilityResult(
           block,
-          "INVALID",
-          `${block.title} found unfinished tasks, but all are blocked.`,
+          selection.status === "deferred" ? "DEFERRED" : "BLOCKED",
+          selection.status === "deferred"
+            ? `${block.title} found only temporarily unavailable tasks.`
+            : `${block.title} found unfinished tasks with structural blockers.`,
           {
             path,
             jsonPath: taskArray.normalizedPath,
-            ...blockers,
+            blockers: selection.blockers,
+            dependencyCycles: selection.blockerState.dependencyCycles,
+            structurallyBlocked: selection.structurallyBlocked,
+            retryable: selection.status === "deferred",
+            ...(selection.nextRetryTimestamp !== undefined
+              ? {
+                  nextRetryAt: new Date(
+                    selection.nextRetryTimestamp,
+                  ).toISOString(),
+                }
+              : {}),
           },
+          "completed",
         );
       }
       return createUtilityResult(
@@ -8610,6 +8672,60 @@ const executeUpdateScopeRegistryUtilityBlock = async (
   }
 };
 
+const executeBeginScopeCycleUtilityBlock = async (
+  block: RalphUtilityBlock,
+  utility: RalphUtilityConfig,
+  config: RuntimeConfig,
+  context: RalphResultContext,
+): Promise<RalphBlockExecutionResult> => {
+  let mutationLock: RalphFileMutationLock | undefined;
+  try {
+    const flowAlias = getScopeRegistryFlowAlias(utility);
+    const strategy = getScopeRegistryStrategy(utility);
+    const registryPath = await resolveScopeRegistryUtilityPath(
+      utility,
+      config.workspaceRoot,
+    );
+    mutationLock = await acquireRalphFileMutationLock(
+      registryPath,
+      context.runId,
+    );
+    const registry = await readRalphScopeRegistryFile(registryPath, {
+      flowAlias,
+      strategy,
+    });
+    const cycle = beginRalphScopeRegistryCycle(registry);
+
+    await writeRalphScopeRegistryFile(registryPath, cycle.registry);
+    const markdownPath = await maybeWriteScopeRegistryMarkdown(
+      utility,
+      registryPath,
+      cycle.registry,
+      config.workspaceRoot,
+    );
+
+    return createUtilityResult(
+      block,
+      "SUCCESS",
+      cycle.cycleStarted
+        ? `${block.title} started scope cycle ${cycle.registry.selection.cycle}.`
+        : `${block.title} retained the current scope cycle.`,
+      {
+        registryPath,
+        ...(markdownPath ? { markdownPath } : {}),
+        cycleStarted: cycle.cycleStarted,
+        cycle: cycle.registry.selection.cycle,
+        registry: cycle.registry,
+      },
+      "completed",
+    );
+  } catch (error) {
+    return createRalphBlockExecutionErrorResult(block, error);
+  } finally {
+    await mutationLock?.release();
+  }
+};
+
 const executeSelectScopeUtilityBlock = async (
   block: RalphUtilityBlock,
   utility: RalphUtilityConfig,
@@ -8640,17 +8756,27 @@ const executeSelectScopeUtilityBlock = async (
     if (utility.forceNew !== undefined) {
       selectionOptions.forceNew = utility.forceNew;
     }
-
     const selection = selectRalphScopeFromRegistry(registry, selectionOptions);
+    const availability = assessRalphScopeRegistryAvailability(
+      selection.registry,
+    );
 
     await writeRalphScopeRegistryFile(registryPath, selection.registry);
 
     if (!selection.scope) {
+      if (availability.status === "ready") {
+        throw new Error(
+          `${block.title} reported ready scope availability without selecting a scope.`,
+        );
+      }
+
       return createUtilityResult(
         block,
-        "EMPTY",
-        `${block.title} did not find an active scope.`,
-        { registryPath, registry: selection.registry },
+        availability.status === "exhausted" ? "EXHAUSTED" : "DEFERRED",
+        availability.status === "exhausted"
+          ? `${block.title} confirmed the current scope cycle is exhausted.`
+          : `${block.title} found only temporarily unavailable scopes.`,
+        { registryPath, registry: selection.registry, availability },
         "completed",
       );
     }
@@ -8667,8 +8793,8 @@ const executeSelectScopeUtilityBlock = async (
           : {}),
         strategy,
         reusedCurrentScope: selection.reusedCurrentScope,
-        cycleStarted: selection.cycleStarted,
         cycle: selection.registry.selection.cycle,
+        availability,
       },
       "completed",
     );
@@ -12861,6 +12987,13 @@ const executeUtilityBlock = async (
       return executeScanScopeEvidenceUtilityBlock(block, utility, blockConfig);
     case "UPDATE_SCOPE_REGISTRY":
       return executeUpdateScopeRegistryUtilityBlock(
+        block,
+        utility,
+        blockConfig,
+        context,
+      );
+    case "BEGIN_SCOPE_CYCLE":
+      return executeBeginScopeCycleUtilityBlock(
         block,
         utility,
         blockConfig,

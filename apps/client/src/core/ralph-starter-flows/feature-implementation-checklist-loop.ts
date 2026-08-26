@@ -1010,6 +1010,12 @@ const fullFeatureImplementationFlow: RalphFlow = {
       to: "record-blocked-outcome",
     },
     {
+      id: "assessed-checklist-deferred-to-ledger",
+      from: "assess-checklist-tasks",
+      fromOutput: "DEFERRED",
+      to: "record-deferred-outcome",
+    },
+    {
       id: "assessed-checklist-empty-to-invalid",
       from: "assess-checklist-tasks",
       fromOutput: "EMPTY",
@@ -1044,6 +1050,18 @@ const fullFeatureImplementationFlow: RalphFlow = {
       from: "select-next-task",
       fromOutput: "EMPTY",
       to: "assess-checklist-tasks",
+    },
+    {
+      id: "select-task-deferred",
+      from: "select-next-task",
+      fromOutput: "DEFERRED",
+      to: "record-deferred-outcome",
+    },
+    {
+      id: "select-task-blocked",
+      from: "select-next-task",
+      fromOutput: "BLOCKED",
+      to: "record-blocked-outcome",
     },
     {
       id: "select-task-not-found",
@@ -1346,10 +1364,10 @@ const fullFeatureImplementationFlow: RalphFlow = {
       to: "record-invalid-outcome",
     },
     {
-      id: "mark-deferred-to-record",
+      id: "mark-deferred-to-reassessment",
       from: "mark-tasks-deferred",
       fromOutput: "SUCCESS",
-      to: "record-deferred-outcome",
+      to: "assess-checklist-tasks",
     },
     {
       id: "mark-deferred-missing-to-record",
@@ -1530,7 +1548,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
 
 export const featureImplementationChecklistLoopStarterFlow = {
   id: "full-feature-implementation",
-  version: 17,
+  version: 18,
   defaultAlias: "feature-implementation-checklist-loop",
   category: "Implementation",
   tags: ["feature", "research", "visual-check"],

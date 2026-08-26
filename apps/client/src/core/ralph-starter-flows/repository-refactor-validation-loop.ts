@@ -188,6 +188,23 @@ const autonomousRefactoringFlow: RalphFlow = {
       type: "START",
     },
     {
+      id: "begin-scope-cycle",
+      title: "Begin Scope Cycle",
+      position: { x: 360, y: -120 },
+      size: { width: 280, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "BEGIN_SCOPE_CYCLE",
+        flowAlias: "repository-refactor-validation-loop",
+        registryPath:
+          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.json}}",
+        outputPath:
+          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.md}}",
+        strategy: "{{scopeSelectionStrategy:text=priority}}",
+        includeMarkdown: true,
+      },
+    },
+    {
       id: "scan-scopes",
       title: "Scan Scope Evidence",
       position: { x: 700, y: -120 },
@@ -244,6 +261,19 @@ const autonomousRefactoringFlow: RalphFlow = {
         rootPath: "{{data:select-scope:scope.paths.0}}",
         outputPath:
           "{{projectCommandsFile:path=.machdoch/ralph/refactor/project-commands.json}}",
+      },
+    },
+    {
+      id: "read-refactor-outcomes",
+      title: "Read Refactor Outcomes",
+      position: { x: 1720, y: -40 },
+      size: { width: 280, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "QUERY_JSONL",
+        path: "{{refactorOutcomesFile:path=.machdoch/ralph/refactor/outcomes.jsonl}}",
+        maxResults: 50,
+        order: "newest",
       },
     },
     {
@@ -330,7 +360,7 @@ const autonomousRefactoringFlow: RalphFlow = {
           },
         },
         prompt:
-          "Inspect selected dependency-aware scope {{result:select-scope}} and detected commands {{result:detect-project-commands}} without editing files. Infer a concise project constitution, then generate 3-5 materially different cohesive refactor packages. Score each from 0-100 for maintainability leverage, evidence confidence, effort, and risk. Prioritize coupling, dependency topology, change frequency, duplicated behavior, test ownership, complexity, runtime errors, coverage gaps, and TODO/failure evidence; file length is only a supporting signal. Identify focused research needed to discriminate among leading candidates. Make bounded reversible architectural assumptions autonomously and return only schema-valid JSON.",
+          "Inspect selected dependency-aware scope {{result:select-scope}}, detected commands {{result:detect-project-commands}}, and bounded durable outcomes {{result:read-refactor-outcomes}} without editing files. Infer a concise project constitution, then generate 3-5 materially different cohesive refactor packages. Resume an unfinished selected or deferred package when its blocker is gone, but do not repeat completed or still-blocked work. Score each from 0-100 for maintainability leverage, evidence confidence, effort, and risk. Prioritize coupling, dependency topology, change frequency, duplicated behavior, test ownership, complexity, runtime errors, coverage gaps, and TODO/failure evidence; file length is only a supporting signal. Identify focused research needed to discriminate among leading candidates. Make bounded reversible architectural assumptions autonomously and return only schema-valid JSON.",
       },
     },
     {
@@ -697,20 +727,16 @@ const autonomousRefactoringFlow: RalphFlow = {
       },
     },
     {
-      id: "mark-scope-result",
-      title: "Mark Scope Result",
-      position: { x: 3740, y: 0 },
+      id: "completion-report",
+      title: "Refactor Coverage Report",
+      position: { x: 4420, y: -220 },
       size: { width: 280, height: 170 },
       type: "UTILITY",
       utility: {
-        type: "MARK_SCOPE_RESULT",
-        flowAlias: "repository-refactor-validation-loop",
-        registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.json}}",
+        type: "FINAL_REPORT",
+        path: "{{refactorReportFile:path=.machdoch/ralph/refactor/final-report.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.md}}",
-        scopeOutcome: "completed",
-        includeMarkdown: true,
+          "{{refactorReportMarkdown:path=.machdoch/ralph/refactor/final-report.md}}",
       },
     },
     {
@@ -819,6 +845,20 @@ const autonomousRefactoringFlow: RalphFlow = {
       },
     },
     {
+      id: "record-selected-refactor",
+      title: "Retain Selected Refactor",
+      position: { x: 3400, y: 0 },
+      size: { width: 280, height: 170 },
+      settings: { retry: { mode: "finite", maxRetries: 3, delaySeconds: 1 } },
+      type: "UTILITY",
+      utility: {
+        type: "APPEND_JSONL",
+        path: "{{refactorOutcomesFile:path=.machdoch/ralph/refactor/outcomes.jsonl}}",
+        input:
+          '{"state":"selected","scopeId":"{{data:select-scope:scope.id}}","plan":{{data:audit-against-policy:output}}}',
+      },
+    },
+    {
       id: "record-done-outcome",
       title: "Record Completed Refactor Outcome",
       position: { x: 4080, y: -260 },
@@ -829,7 +869,8 @@ const autonomousRefactoringFlow: RalphFlow = {
         type: "APPEND_JSONL",
         workOutcome: "DONE",
         path: "{{refactorOutcomesFile:path=.machdoch/ralph/refactor/outcomes.jsonl}}",
-        input: '{"outcome":"DONE","scopeRoot":"{{scopeRoot:path=.}}"}',
+        input:
+          '{"state":"completed","scopeId":"{{data:select-scope:scope.id}}","plan":{{data:audit-against-policy:output}},"validation":{{data:final-refactor-scan:output}}}',
       },
     },
     {
@@ -843,7 +884,8 @@ const autonomousRefactoringFlow: RalphFlow = {
         type: "APPEND_JSONL",
         workOutcome: "DEFER",
         path: "{{refactorOutcomesFile:path=.machdoch/ralph/refactor/outcomes.jsonl}}",
-        input: '{"outcome":"DEFER","scopeRoot":"{{scopeRoot:path=.}}"}',
+        input:
+          '{"state":"deferred","scopeId":"{{data:select-scope:scope.id}}","plan":{{data:audit-against-policy:output}}}',
       },
     },
     {
@@ -857,7 +899,8 @@ const autonomousRefactoringFlow: RalphFlow = {
         type: "APPEND_JSONL",
         workOutcome: "STOP",
         path: "{{refactorOutcomesFile:path=.machdoch/ralph/refactor/outcomes.jsonl}}",
-        input: '{"outcome":"STOP","scopeRoot":"{{scopeRoot:path=.}}"}',
+        input:
+          '{"state":"exhausted","scopeId":"{{data:select-scope:scope.id}}","plan":{{data:audit-against-policy:output}}}',
       },
     },
     {
@@ -875,18 +918,33 @@ const autonomousRefactoringFlow: RalphFlow = {
       },
     },
     {
-      id: "scope-cycle-complete",
-      title: "Scope Cycle Complete?",
-      position: { x: 4420, y: 0 },
-      size: { width: 256, height: 170 },
+      id: "record-coverage-deferred-outcome",
+      title: "Record Deferred Refactor Coverage",
+      position: { x: 4420, y: 180 },
+      size: { width: 280, height: 170 },
+      settings: { retry: { mode: "finite", maxRetries: 3, delaySeconds: 1 } },
       type: "UTILITY",
       utility: {
-        type: "CONDITION",
-        condition: {
-          style: "javascript",
-          expression:
-            "(() => { const scanOutput = context.resultsByBlock?.['scan-scopes']?.output; if (!['SUCCESS', 'EMPTY', 'ERROR'].includes(scanOutput)) throw new Error('Refactor scope scan outcome is missing or invalid.'); if (scanOutput === 'EMPTY') return true; if (scanOutput === 'ERROR') throw new Error('Refactor scope scan failed.'); const selectionOutput = context.resultsByBlock?.['select-scope']?.output; if (!['SELECTED', 'EMPTY', 'ERROR'].includes(selectionOutput)) throw new Error('Refactor scope selection outcome is missing or invalid.'); if (selectionOutput === 'EMPTY') return true; if (selectionOutput === 'ERROR') throw new Error('Refactor scope selection failed.'); for (const id of ['mark-scope-result', 'defer-scope', 'mark-stop-scope', 'mark-invalid-scope']) { const completed = context.resultsByBlock?.[id]?.data?.cycleCompleted; if (completed !== undefined && typeof completed !== 'boolean') throw new Error('Refactor scope completion state is invalid.'); if (completed === true) return true; } return false; })()",
-        },
+        type: "APPEND_JSONL",
+        workOutcome: "DEFER",
+        path: "{{refactorOutcomesFile:path=.machdoch/ralph/refactor/outcomes.jsonl}}",
+        input:
+          '{"state":"coverage-deferred","scopeRoot":"{{scopeRoot:path=.}}","reason":"The coverage cycle is waiting on deferred scopes."}',
+      },
+    },
+    {
+      id: "record-exhausted-outcome",
+      title: "Record Exhausted Refactor Coverage",
+      position: { x: 4420, y: 380 },
+      size: { width: 280, height: 170 },
+      settings: { retry: { mode: "finite", maxRetries: 3, delaySeconds: 1 } },
+      type: "UTILITY",
+      utility: {
+        type: "APPEND_JSONL",
+        workOutcome: "STOP",
+        path: "{{refactorOutcomesFile:path=.machdoch/ralph/refactor/outcomes.jsonl}}",
+        input:
+          '{"state":"coverage-exhausted","scopeRoot":"{{scopeRoot:path=.}}","reason":"The current refactor coverage cycle has no remaining eligible scope."}',
       },
     },
     {
@@ -908,10 +966,22 @@ const autonomousRefactoringFlow: RalphFlow = {
   ],
   edges: [
     {
-      id: "start-to-scan-scopes",
+      id: "start-to-begin-scope-cycle",
       from: "start",
       fromOutput: "SUCCESS",
+      to: "begin-scope-cycle",
+    },
+    {
+      id: "begin-scope-cycle-to-scan-scopes",
+      from: "begin-scope-cycle",
+      fromOutput: "SUCCESS",
       to: "scan-scopes",
+    },
+    {
+      id: "begin-scope-cycle-error",
+      from: "begin-scope-cycle",
+      fromOutput: "ERROR",
+      to: "retained-outcome-report",
     },
     {
       id: "scan-scopes-to-update",
@@ -923,7 +993,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       id: "scan-scopes-empty",
       from: "scan-scopes",
       fromOutput: "EMPTY",
-      to: "record-stop-outcome",
+      to: "record-exhausted-outcome",
     },
     {
       id: "scan-scopes-error",
@@ -941,7 +1011,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       id: "update-registry-empty",
       from: "update-scope-registry",
       fromOutput: "EMPTY",
-      to: "record-stop-outcome",
+      to: "record-exhausted-outcome",
     },
     {
       id: "update-registry-error",
@@ -956,10 +1026,16 @@ const autonomousRefactoringFlow: RalphFlow = {
       to: "detect-project-commands",
     },
     {
-      id: "select-scope-empty",
+      id: "select-scope-exhausted",
       from: "select-scope",
-      fromOutput: "EMPTY",
-      to: "record-stop-outcome",
+      fromOutput: "EXHAUSTED",
+      to: "record-exhausted-outcome",
+    },
+    {
+      id: "select-scope-deferred",
+      from: "select-scope",
+      fromOutput: "DEFERRED",
+      to: "record-coverage-deferred-outcome",
     },
     {
       id: "select-scope-error",
@@ -971,17 +1047,47 @@ const autonomousRefactoringFlow: RalphFlow = {
       id: "detect-commands-to-propose",
       from: "detect-project-commands",
       fromOutput: "SUCCESS",
-      to: "propose-refactor-packages",
+      to: "read-refactor-outcomes",
     },
     {
       id: "detect-commands-empty-to-propose",
       from: "detect-project-commands",
       fromOutput: "EMPTY",
-      to: "propose-refactor-packages",
+      to: "read-refactor-outcomes",
     },
     {
       id: "detect-commands-error-to-propose",
       from: "detect-project-commands",
+      fromOutput: "ERROR",
+      to: "read-refactor-outcomes",
+    },
+    {
+      id: "outcomes-success-to-propose",
+      from: "read-refactor-outcomes",
+      fromOutput: "SUCCESS",
+      to: "propose-refactor-packages",
+    },
+    {
+      id: "outcomes-empty-to-propose",
+      from: "read-refactor-outcomes",
+      fromOutput: "EMPTY",
+      to: "propose-refactor-packages",
+    },
+    {
+      id: "outcomes-not-found-to-propose",
+      from: "read-refactor-outcomes",
+      fromOutput: "NOT_FOUND",
+      to: "propose-refactor-packages",
+    },
+    {
+      id: "outcomes-invalid-to-propose",
+      from: "read-refactor-outcomes",
+      fromOutput: "INVALID",
+      to: "propose-refactor-packages",
+    },
+    {
+      id: "outcomes-error-to-propose",
+      from: "read-refactor-outcomes",
       fromOutput: "ERROR",
       to: "propose-refactor-packages",
     },
@@ -1055,7 +1161,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       id: "actionable-refactor-to-snapshot",
       from: "has-actionable-refactor",
       fromOutput: "MATCH",
-      to: "git-snapshot-before",
+      to: "record-selected-refactor",
     },
     {
       id: "no-actionable-refactor-to-classify",
@@ -1086,6 +1192,24 @@ const autonomousRefactoringFlow: RalphFlow = {
       from: "selection-is-deferred",
       fromOutput: "ERROR",
       to: "mark-invalid-scope",
+    },
+    {
+      id: "selected-refactor-retained",
+      from: "record-selected-refactor",
+      fromOutput: "SUCCESS",
+      to: "git-snapshot-before",
+    },
+    {
+      id: "selected-refactor-invalid",
+      from: "record-selected-refactor",
+      fromOutput: "INVALID",
+      to: "mark-invalid-scope",
+    },
+    {
+      id: "selected-refactor-error",
+      from: "record-selected-refactor",
+      fromOutput: "ERROR",
+      to: "retained-outcome-report",
     },
     {
       id: "snapshot-to-baseline",
@@ -1319,7 +1443,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       id: "scan-done",
       from: "final-refactor-scan",
       fromOutput: "DONE",
-      to: "mark-scope-result",
+      to: "record-done-outcome",
     },
     {
       id: "scan-continue",
@@ -1344,24 +1468,6 @@ const autonomousRefactoringFlow: RalphFlow = {
       from: "final-refactor-scan",
       fromOutput: "INVALID",
       to: "mark-invalid-scope",
-    },
-    {
-      id: "mark-done-to-ledger",
-      from: "mark-scope-result",
-      fromOutput: "SUCCESS",
-      to: "record-done-outcome",
-    },
-    {
-      id: "mark-done-missing-to-ledger",
-      from: "mark-scope-result",
-      fromOutput: "NOT_FOUND",
-      to: "record-done-outcome",
-    },
-    {
-      id: "mark-done-error-to-ledger",
-      from: "mark-scope-result",
-      fromOutput: "ERROR",
-      to: "record-done-outcome",
     },
     {
       id: "mark-defer-to-ledger",
@@ -1436,10 +1542,10 @@ const autonomousRefactoringFlow: RalphFlow = {
       to: "retained-outcome-report",
     },
     {
-      id: "defer-ledger-to-retained-report",
+      id: "defer-ledger-to-report",
       from: "record-deferred-outcome",
       fromOutput: "SUCCESS",
-      to: "retained-outcome-report",
+      to: "final-report",
     },
     {
       id: "defer-ledger-invalid-to-retained-report",
@@ -1493,7 +1599,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       id: "report-success-to-cycle",
       from: "final-report",
       fromOutput: "SUCCESS",
-      to: "scope-cycle-complete",
+      to: "scan-scopes",
     },
     {
       id: "report-error-to-retained-report",
@@ -1514,20 +1620,50 @@ const autonomousRefactoringFlow: RalphFlow = {
       to: "deferred",
     },
     {
-      id: "scope-cycle-complete-success",
-      from: "scope-cycle-complete",
-      fromOutput: "MATCH",
+      id: "coverage-deferred-recorded",
+      from: "record-coverage-deferred-outcome",
+      fromOutput: "SUCCESS",
+      to: "retained-outcome-report",
+    },
+    {
+      id: "coverage-deferred-record-invalid",
+      from: "record-coverage-deferred-outcome",
+      fromOutput: "INVALID",
+      to: "retained-outcome-report",
+    },
+    {
+      id: "coverage-deferred-record-error",
+      from: "record-coverage-deferred-outcome",
+      fromOutput: "ERROR",
+      to: "retained-outcome-report",
+    },
+    {
+      id: "coverage-exhausted-recorded",
+      from: "record-exhausted-outcome",
+      fromOutput: "SUCCESS",
+      to: "completion-report",
+    },
+    {
+      id: "coverage-exhausted-record-invalid",
+      from: "record-exhausted-outcome",
+      fromOutput: "INVALID",
+      to: "retained-outcome-report",
+    },
+    {
+      id: "coverage-exhausted-record-error",
+      from: "record-exhausted-outcome",
+      fromOutput: "ERROR",
+      to: "retained-outcome-report",
+    },
+    {
+      id: "completion-report-success",
+      from: "completion-report",
+      fromOutput: "SUCCESS",
       to: "success",
     },
     {
-      id: "scope-cycle-next",
-      from: "scope-cycle-complete",
-      fromOutput: "NO_MATCH",
-      to: "select-scope",
-    },
-    {
-      id: "scope-cycle-error",
-      from: "scope-cycle-complete",
+      id: "completion-report-error",
+      from: "completion-report",
       fromOutput: "ERROR",
       to: "retained-outcome-report",
     },
@@ -1536,7 +1672,7 @@ const autonomousRefactoringFlow: RalphFlow = {
 
 export const repositoryRefactorValidationLoopStarterFlow = {
   id: "autonomous-refactoring-flow",
-  version: 17,
+  version: 20,
   defaultAlias: "repository-refactor-validation-loop",
   category: "Code Quality",
   tags: ["refactor", "tests", "validation"],

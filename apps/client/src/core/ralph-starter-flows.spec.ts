@@ -25,6 +25,7 @@ const evaluateStarterTransform = (
   block: RalphUtilityBlock,
   sourceBlockId: string,
   sourceOutput: Record<string, unknown>,
+  sourceData?: Record<string, unknown>,
 ): Record<string, unknown> => {
   if (block.utility.type !== "TRANSFORM_JSON" || !block.utility.expression) {
     throw new Error(`Expected ${block.id} to contain a transform expression.`);
@@ -44,7 +45,7 @@ const evaluateStarterTransform = (
   ) => unknown;
   const output = evaluator({}, {}, undefined, {
     resultsByBlock: new Map<string, unknown>([
-      [sourceBlockId, { data: { output: sourceOutput } }],
+      [sourceBlockId, { data: sourceData ?? { output: sourceOutput } }],
       [
         "detect-project-commands",
         {
@@ -486,12 +487,17 @@ describe("Ralph starter flows", () => {
     );
   });
 
-  it("persists every autonomous outcome without retiring invalid active state", () => {
+  it("persists every autonomous outcome before retiring active state", () => {
     const archivePolicies = [
       {
         flowId: "autonomous-feature-generation-loop",
         archiveId: "archive-goal",
-        sources: ["record-done-goal-outcome"],
+        sources: [
+          "record-blocked-goal-outcome",
+          "record-deferred-goal-outcome",
+          "record-done-goal-outcome",
+          "record-resumed-goal-deferred-outcome",
+        ],
         output: "SUCCESS",
       },
       {
@@ -503,13 +509,22 @@ describe("Ralph starter flows", () => {
       {
         flowId: "autonomous-code-improvement-loop",
         archiveId: "archive-active-improvement",
-        sources: ["record-done-outcome", "record-stop-outcome"],
+        sources: [
+          "record-done-outcome",
+          "record-scope-deferred-outcome",
+          "record-scope-invalid-outcome",
+        ],
         output: "SUCCESS",
       },
       {
         flowId: "autonomous-ui-improvement-loop",
         archiveId: "archive-active-ui-improvement",
-        sources: ["record-done-outcome", "record-stop-outcome"],
+        sources: [
+          "record-deferred-outcome",
+          "record-done-outcome",
+          "record-invalid-outcome",
+          "record-stop-outcome",
+        ],
         output: "SUCCESS",
       },
     ] as const;
@@ -587,102 +602,90 @@ describe("Ralph starter flows", () => {
       );
     }
 
-    for (const flowId of [
+    const codeFlow = getRalphStarterFlow(
       "autonomous-code-improvement-loop",
-      "autonomous-ui-improvement-loop",
-    ]) {
-      const flow = getRalphStarterFlow(flowId)!.flow;
+    )!.flow;
+    expect(codeFlow.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "record-invalid-outcome",
+          fromOutput: "SUCCESS",
+          to: "retained-active-report",
+        }),
+        expect.objectContaining({
+          from: "record-deferred-outcome",
+          fromOutput: "SUCCESS",
+          to: "retained-active-report",
+        }),
+      ]),
+    );
+
+    for (const testCase of [
+      {
+        flowId: "autonomous-feature-generation-loop",
+        localLedger: "record-deferred-goal-outcome",
+        localTarget: "archive-goal",
+        globalLedger: "record-goal-portfolio-deferred-outcome",
+        retainedReport: "retained-goal-report",
+      },
+      {
+        flowId: "autonomous-code-improvement-loop",
+        localLedger: "record-scope-deferred-outcome",
+        localTarget: "archive-active-improvement",
+        globalLedger: "record-deferred-outcome",
+        retainedReport: "retained-active-report",
+      },
+      {
+        flowId: "autonomous-ui-improvement-loop",
+        localLedger: "record-deferred-outcome",
+        localTarget: "archive-active-ui-improvement",
+        globalLedger: "record-coverage-deferred-outcome",
+        retainedReport: "retained-active-report",
+      },
+      {
+        flowId: "autonomous-refactoring-flow",
+        localLedger: "record-deferred-outcome",
+        localTarget: "final-report",
+        globalLedger: "record-coverage-deferred-outcome",
+        retainedReport: "retained-outcome-report",
+      },
+      {
+        flowId: "security-fix-loop",
+        localLedger: "record-deferred-outcome",
+        localTarget: "final-report",
+        globalLedger: "record-coverage-deferred-outcome",
+        retainedReport: "retained-outcome-report",
+      },
+    ] as const) {
+      const flow = getRalphStarterFlow(testCase.flowId)!.flow;
       expect(flow.edges).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            from: "record-invalid-outcome",
+            from: testCase.localLedger,
             fromOutput: "SUCCESS",
-            to: "retained-active-report",
+            to: testCase.localTarget,
           }),
           expect.objectContaining({
-            from: "retained-active-report",
+            from: testCase.globalLedger,
             fromOutput: "SUCCESS",
-            to: "deferred",
+            to: testCase.retainedReport,
           }),
         ]),
       );
-      expect(
-        flow.edges.some(
-          (edge) =>
-            edge.from === "record-invalid-outcome" &&
-            flow.blocks.some(
-              (block) =>
-                block.id === edge.to &&
-                block.type === "UTILITY" &&
-                block.utility.type === "ARCHIVE_FILE",
-            ),
-        ),
-      ).toBe(false);
     }
 
-    const deferredLedgers = [
-      {
-        flowId: "autonomous-feature-generation-loop",
-        ledgerId: "record-deferred-goal-outcome",
-      },
-      ...STARTER_RALPH_FLOWS.filter(
-        (starter) => starter.id !== "autonomous-feature-generation-loop",
-      ).map((starter) => ({
-        flowId: starter.id,
-        ledgerId: "record-deferred-outcome",
-      })),
-    ];
-    for (const { flowId, ledgerId } of deferredLedgers) {
-      const flow = getRalphStarterFlow(flowId)!.flow;
-      const successEdge = flow.edges.find(
-        (edge) => edge.from === ledgerId && edge.fromOutput === "SUCCESS",
-      );
-      expect(successEdge).toBeTruthy();
-      const successTarget = flow.blocks.find(
-        (block) => block.id === successEdge?.to,
-      );
-      expect(successTarget).toMatchObject({
-        type: "UTILITY",
-        utility: { type: "FINAL_REPORT" },
-      });
-
-      const visited = new Set<string>();
-      const pending = successEdge ? [successEdge.to] : [];
-      let reachesDeferred = false;
-      let reachesArchive = false;
-      while (pending.length > 0) {
-        const current = pending.pop();
-        if (!current || visited.has(current)) {
-          continue;
-        }
-        visited.add(current);
-        if (current === "deferred") {
-          reachesDeferred = true;
-        }
-        const currentBlock = flow.blocks.find((block) => block.id === current);
-        if (
-          currentBlock?.type === "UTILITY" &&
-          currentBlock.utility.type === "ARCHIVE_FILE"
-        ) {
-          reachesArchive = true;
-        }
-        pending.push(
-          ...flow.edges
-            .filter((edge) => edge.from === current)
-            .map((edge) => edge.to),
-        );
-      }
-      expect(reachesDeferred, `${flowId} DEFER must end deferred`).toBe(true);
-      expect(reachesArchive, `${flowId} DEFER must retain active state`).toBe(
-        false,
-      );
-      const deferredEnd = flow.blocks.find((block) => block.id === "deferred");
-      expect(deferredEnd).toMatchObject({
-        type: "END",
-        outcome: "deferred",
-      });
-      expect(deferredEnd?.title).not.toMatch(/retained/iu);
-    }
+    const oneShotFlow = getRalphStarterFlow(
+      "full-feature-implementation",
+    )!.flow;
+    expect(oneShotFlow.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "record-deferred-outcome",
+          fromOutput: "SUCCESS",
+          to: "retained-checklist-report",
+        }),
+      ]),
+    );
 
     const featureFlow = getRalphStarterFlow(
       "full-feature-implementation",
@@ -815,8 +818,9 @@ describe("Ralph starter flows", () => {
         assessmentId: "assess-goal-tasks",
         completedOutcomeId: "read-completed-goal",
         blockedOutcomeId: "record-blocked-goal-outcome",
+        deferredOutcomeId: "record-deferred-goal-outcome",
         invalidOutcomeId: "record-invalid-goal-outcome",
-        retainedReportId: "retained-goal-report",
+        blockedSuccessTarget: "archive-goal",
       },
       {
         flowId: "full-feature-implementation",
@@ -824,8 +828,9 @@ describe("Ralph starter flows", () => {
         assessmentId: "assess-checklist-tasks",
         completedOutcomeId: "record-done-outcome",
         blockedOutcomeId: "record-blocked-outcome",
+        deferredOutcomeId: "record-deferred-outcome",
         invalidOutcomeId: "record-invalid-outcome",
-        retainedReportId: "retained-checklist-report",
+        blockedSuccessTarget: "retained-checklist-report",
       },
     ] as const;
 
@@ -894,13 +899,33 @@ describe("Ralph starter flows", () => {
           }),
           expect.objectContaining({
             from: taskFlow.assessmentId,
+            fromOutput: "DEFERRED",
+            to: taskFlow.deferredOutcomeId,
+          }),
+          expect.objectContaining({
+            from: taskFlow.assessmentId,
             fromOutput: "EMPTY",
             to: taskFlow.invalidOutcomeId,
           }),
           expect.objectContaining({
             from: taskFlow.blockedOutcomeId,
             fromOutput: "SUCCESS",
-            to: taskFlow.retainedReportId,
+            to: taskFlow.blockedSuccessTarget,
+          }),
+          expect.objectContaining({
+            from: "select-next-task",
+            fromOutput: "DEFERRED",
+            to: taskFlow.deferredOutcomeId,
+          }),
+          expect.objectContaining({
+            from: "select-next-task",
+            fromOutput: "BLOCKED",
+            to: taskFlow.blockedOutcomeId,
+          }),
+          expect.objectContaining({
+            from: "mark-tasks-deferred",
+            fromOutput: "SUCCESS",
+            to: taskFlow.assessmentId,
           }),
         ]),
       );
@@ -1049,7 +1074,10 @@ describe("Ralph starter flows", () => {
         type: "UTILITY",
         utility: {
           type: "DETECT_PROJECT_COMMANDS",
-          rootPath: "{{data:select-scope:scope.paths.0}}",
+          rootPath:
+            starterFlowId === "autonomous-code-improvement-loop"
+              ? "{{data:read-active-improvement:json.scope.paths.0}}"
+              : "{{data:select-scope:scope.paths.0}}",
         },
       });
       expect(runCheck).toMatchObject({
@@ -1110,13 +1138,6 @@ describe("Ralph starter flows", () => {
 
   it("keeps generated template note and history files under the machdoch workspace directory", () => {
     const expectedMachdochFiles = [
-      {
-        starterFlowId: "autonomous-code-improvement-loop",
-        variableName: "notesFile",
-        expectedPath:
-          ".machdoch/ralph/code-improvements/RALPH_CODE_IMPROVEMENT_NOTES.md",
-        rootFallback: "path=RALPH_CODE_IMPROVEMENT_NOTES.md",
-      },
       {
         starterFlowId: "autonomous-ui-improvement-loop",
         variableName: "notesFile",
@@ -1188,100 +1209,77 @@ describe("Ralph starter flows", () => {
     }
   });
 
-  it("routes autonomous scope cycles only from exact utility protocol state", () => {
+  it("routes scoped coverage from authoritative utility outcomes", () => {
     for (const testCase of [
+      {
+        flowId: "autonomous-code-improvement-loop",
+        scanId: "scan-scopes",
+        retainedReportId: "retained-active-report",
+      },
       {
         flowId: "autonomous-ui-improvement-loop",
         scanId: "scan-ui-scopes",
-        markerId: "mark-scope-result",
-        error: "UI scope",
+        retainedReportId: "retained-active-report",
       },
       {
         flowId: "security-fix-loop",
         scanId: "scan-scopes",
-        markerId: "mark-scope-result",
-        error: "Security scope",
+        retainedReportId: "retained-outcome-report",
       },
       {
         flowId: "autonomous-refactoring-flow",
         scanId: "scan-scopes",
-        markerId: "mark-scope-result",
-        error: "Refactor scope",
+        retainedReportId: "retained-outcome-report",
       },
     ] as const) {
-      const block = getRalphStarterFlow(testCase.flowId)?.flow.blocks.find(
-        (candidate) => candidate.id === "scope-cycle-complete",
+      const flow = getRalphStarterFlow(testCase.flowId)!.flow;
+
+      expect(
+        flow.blocks.some((block) =>
+          ["scope-selection-exhausted", "scope-cycle-complete"].includes(
+            block.id,
+          ),
+        ),
+      ).toBe(false);
+      expect(flow.edges).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            from: "select-scope",
+            fromOutput: "EXHAUSTED",
+            to: "record-exhausted-outcome",
+          }),
+          expect.objectContaining({
+            from: "select-scope",
+            fromOutput: "DEFERRED",
+            to: expect.stringContaining("deferred-outcome"),
+          }),
+          expect.objectContaining({
+            from: "record-exhausted-outcome",
+            fromOutput: "SUCCESS",
+            to: "completion-report",
+          }),
+          expect.objectContaining({
+            from: "completion-report",
+            fromOutput: "SUCCESS",
+            to: "success",
+          }),
+          expect.objectContaining({
+            from: "final-report",
+            fromOutput: "SUCCESS",
+            to: testCase.scanId,
+          }),
+          expect.objectContaining({
+            from: "final-report",
+            fromOutput: "ERROR",
+            to: testCase.retainedReportId,
+          }),
+        ]),
       );
-      if (block?.type !== "UTILITY" || block.utility.type !== "CONDITION") {
-        throw new Error(`Expected ${testCase.flowId} scope-cycle condition.`);
-      }
-
-      const activeCycle = {
-        [testCase.scanId]: { output: "SUCCESS" },
-        "select-scope": {
-          output: "SELECTED",
-          data: { note: 'Quoted incidental prose: "EMPTY ERROR".' },
-        },
-      };
-
-      expect(evaluateStarterCondition(block, {}, activeCycle)).toBe(false);
       expect(
-        evaluateStarterCondition(
-          block,
-          {},
-          {
-            ...activeCycle,
-            [testCase.markerId]: { data: { cycleCompleted: true } },
-          },
+        flow.edges.some(
+          (edge) => edge.from === "final-report" && edge.to === "success",
         ),
-      ).toBe(true);
-      expect(
-        evaluateStarterCondition(
-          block,
-          {},
-          {
-            [testCase.scanId]: { output: "EMPTY" },
-          },
-        ),
-      ).toBe(true);
-      expect(() =>
-        evaluateStarterCondition(
-          block,
-          {},
-          {
-            [testCase.scanId]: { output: "ERROR" },
-          },
-        ),
-      ).toThrow(`${testCase.error} scan failed.`);
-      expect(() =>
-        evaluateStarterCondition(
-          block,
-          {},
-          {
-            [testCase.scanId]: { output: "SUCCESS" },
-            "select-scope": { output: "ERROR" },
-          },
-        ),
-      ).toThrow(`${testCase.error} selection failed.`);
-      expect(() =>
-        evaluateStarterCondition(
-          block,
-          {},
-          {
-            [testCase.scanId]: { output: 'Quoted outcome: "EMPTY".' },
-          },
-        ),
-      ).toThrow(`${testCase.error} scan outcome is missing or invalid.`);
-      expect(() =>
-        evaluateStarterCondition(
-          block,
-          {},
-          {
-            ...activeCycle,
-            [testCase.markerId]: { data: { cycleCompleted: "true" } },
-          },
-        ),
-      ).toThrow(`${testCase.error} completion state is invalid.`);
+      ).toBe(false);
     }
   });
 
@@ -1314,16 +1312,26 @@ describe("Ralph starter flows", () => {
       const deferred = findCondition("selection-is-deferred");
       const reviewDeferred = findCondition("review-is-deferred");
       const reviewFix = findCondition("review-needs-fix");
+      const usesPersistentPlan =
+        testCase.flowId === "autonomous-code-improvement-loop";
+      const decisionBlockId = usesPersistentPlan
+        ? "build-improvement-plan"
+        : testCase.choiceId;
       const implementResult = {
-        [testCase.choiceId]: {
+        [decisionBlockId]: {
           data: {
-            output: {
-              decision: "IMPLEMENT",
-              selectedCandidate: {
-                id: "candidate",
-                evidence: ['Quoted prose: "STOP DEFER".'],
-              },
-            },
+            output: usesPersistentPlan
+              ? {
+                  decision: "IMPLEMENT",
+                  tasks: [{ id: "candidate", status: "planned" }],
+                }
+              : {
+                  decision: "IMPLEMENT",
+                  selectedCandidate: {
+                    id: "candidate",
+                    evidence: ['Quoted prose: "STOP DEFER".'],
+                  },
+                },
           },
         },
       };
@@ -1336,7 +1344,7 @@ describe("Ralph starter flows", () => {
           deferred,
           {},
           {
-            [testCase.choiceId]: { data: { output: { decision: "DEFER" } } },
+            [decisionBlockId]: { data: { output: { decision: "DEFER" } } },
           },
         ),
       ).toBe(true);
@@ -1345,29 +1353,37 @@ describe("Ralph starter flows", () => {
           actionable,
           {},
           {
-            [testCase.choiceId]: {
+            [decisionBlockId]: {
               data: {
-                output: { decision: "implement", selectedCandidate: {} },
+                output: usesPersistentPlan
+                  ? { decision: "implement", tasks: [] }
+                  : { decision: "implement", selectedCandidate: {} },
               },
             },
           },
         ),
       ).toThrow(
-        `${testCase.errorPrefix} selection decision is missing or invalid.`,
+        `${testCase.errorPrefix} ${usesPersistentPlan ? "plan" : "selection"} decision is missing or invalid.`,
       );
       expect(() =>
         evaluateStarterCondition(
           actionable,
           {},
           {
-            [testCase.choiceId]: {
+            [decisionBlockId]: {
               data: {
-                output: { decision: "IMPLEMENT", selectedCandidate: {} },
+                output: usesPersistentPlan
+                  ? { decision: "IMPLEMENT", tasks: [] }
+                  : { decision: "IMPLEMENT", selectedCandidate: {} },
               },
             },
           },
         ),
-      ).toThrow(/IMPLEMENT requires a structured selected/u);
+      ).toThrow(
+        usesPersistentPlan
+          ? "IMPLEMENT requires persisted tasks."
+          : /IMPLEMENT requires a structured selected/u,
+      );
       expect(
         evaluateStarterCondition(
           reviewDeferred,
@@ -1466,6 +1482,9 @@ describe("Ralph starter flows", () => {
     const readCompletedGoals = flow?.blocks.find(
       (block) => block.id === "read-completed-goals",
     );
+    const readGoalOutcomes = flow?.blocks.find(
+      (block) => block.id === "read-goal-outcomes",
+    );
     const hasActionableGoal = flow?.blocks.find(
       (block) => block.id === "has-actionable-goal",
     );
@@ -1516,6 +1535,10 @@ describe("Ralph starter flows", () => {
       utility: { type: "ARCHIVE_FILE" },
     });
     expect(readCompletedGoals).toMatchObject({
+      type: "UTILITY",
+      utility: { type: "QUERY_JSONL", maxResults: 50, order: "newest" },
+    });
+    expect(readGoalOutcomes).toMatchObject({
       type: "UTILITY",
       utility: { type: "QUERY_JSONL", maxResults: 50, order: "newest" },
     });
@@ -1677,6 +1700,10 @@ describe("Ralph starter flows", () => {
         }),
         expect.objectContaining({
           from: "read-completed-goals",
+          to: "read-goal-outcomes",
+        }),
+        expect.objectContaining({
+          from: "read-goal-outcomes",
           to: "understand-project",
         }),
         expect.objectContaining({
@@ -1989,6 +2016,9 @@ describe("Ralph starter flows", () => {
     const progressAnalysis = flow?.blocks.find(
       (block) => block.id === "refactor-progress-analysis",
     );
+    const readRefactorOutcomes = flow?.blocks.find(
+      (block) => block.id === "read-refactor-outcomes",
+    );
     expect(starterFlow?.version).toBeGreaterThanOrEqual(8);
     expect(scopeSelectionStrategy).toMatchObject({
       type: "text",
@@ -2088,6 +2118,10 @@ describe("Ralph starter flows", () => {
         expression: expect.stringContaining("previous.diffSignature"),
       },
     });
+    expect(readRefactorOutcomes).toMatchObject({
+      type: "UTILITY",
+      utility: { type: "QUERY_JSONL", maxResults: 50, order: "newest" },
+    });
     expect(
       flow?.blocks.some((block) => block.id === "change-scope-guard"),
     ).toBe(false);
@@ -2119,6 +2153,11 @@ describe("Ralph starter flows", () => {
         expect.objectContaining({
           from: "has-actionable-refactor",
           fromOutput: "MATCH",
+          to: "record-selected-refactor",
+        }),
+        expect.objectContaining({
+          from: "record-selected-refactor",
+          fromOutput: "SUCCESS",
           to: "git-snapshot-before",
         }),
         expect.objectContaining({
@@ -2206,6 +2245,9 @@ describe("Ralph starter flows", () => {
     const selectScope = flow?.blocks.find(
       (block) => block.id === "select-scope",
     );
+    const beginScopeCycle = flow?.blocks.find(
+      (block) => block.id === "begin-scope-cycle",
+    );
     const securityResearch = flow?.blocks.find(
       (block) => block.id === "security-research",
     );
@@ -2235,6 +2277,13 @@ describe("Ralph starter flows", () => {
         strategy: "{{scopeSelectionStrategy:text=risk-first}}",
       },
     });
+    expect(beginScopeCycle).toMatchObject({
+      type: "UTILITY",
+      utility: {
+        type: "BEGIN_SCOPE_CYCLE",
+        strategy: "{{scopeSelectionStrategy:text=risk-first}}",
+      },
+    });
     expect(securityResearch).toMatchObject({
       type: "PROMPT",
       prompt: expect.stringContaining("selected JSON scope"),
@@ -2258,10 +2307,18 @@ describe("Ralph starter flows", () => {
       expect.arrayContaining([
         expect.objectContaining({
           from: "start",
+          to: "begin-scope-cycle",
+        }),
+        expect.objectContaining({
+          from: "begin-scope-cycle",
           to: "scan-scopes",
         }),
         expect.objectContaining({
           from: "detect-project-commands",
+          to: "read-security-outcomes",
+        }),
+        expect.objectContaining({
+          from: "read-security-outcomes",
           to: "research-decision",
         }),
         expect.objectContaining({
@@ -2275,6 +2332,11 @@ describe("Ralph starter flows", () => {
         expect.objectContaining({
           from: "findings-present",
           fromOutput: "MATCH",
+          to: "record-security-findings",
+        }),
+        expect.objectContaining({
+          from: "record-security-findings",
+          fromOutput: "SUCCESS",
           to: "count-fix-loop",
         }),
         expect.objectContaining({
@@ -2346,12 +2408,21 @@ describe("Ralph starter flows", () => {
     const finalScanCounter = flow?.blocks.find(
       (block) => block.id === "count-final-validation-scan",
     );
+    const taskAssessment = flow?.blocks.find(
+      (block) => block.id === "assess-improvement-tasks",
+    );
+    const activePlanFile = flow?.variables?.find(
+      (variable) => variable.name === "activeImprovementPlanFile",
+    );
+    const scopeScanDepth = flow?.variables?.find(
+      (variable) => variable.name === "scopeScanMaxDepth",
+    );
 
     expect(starterFlow).toMatchObject({
       defaultAlias: "autonomous-code-improvement-loop",
       category: "Code Quality",
     });
-    expect(starterFlow?.version).toBeGreaterThanOrEqual(8);
+    expect(starterFlow?.version).toBeGreaterThanOrEqual(20);
     expect(scopeSelectionStrategy).toMatchObject({
       type: "text",
       default: "priority",
@@ -2359,6 +2430,15 @@ describe("Ralph starter flows", () => {
     expect(flow).toMatchObject({
       name: "Autonomous Code Improvement Loop",
       settings: { maxTransitions: 5_000 },
+    });
+    expect(activePlanFile).toMatchObject({
+      type: "path",
+      default: ".machdoch/ralph/code-improvements/active-improvement-plan.json",
+    });
+    expect(scopeScanDepth).toMatchObject({ type: "number", default: "6" });
+    expect(taskAssessment).toMatchObject({
+      type: "UTILITY",
+      utility: { type: "ASSESS_JSON_TASKS", jsonPath: "tasks", maxTasks: 1 },
     });
     expect(chooseImprovement).toMatchObject({
       type: "UTILITY",
@@ -2369,12 +2449,14 @@ describe("Ralph starter flows", () => {
     });
     expect(chooseImprovement).toMatchObject({
       utility: {
-        prompt: expect.stringContaining("provisional portfolio"),
+        prompt: expect.stringContaining(
+          "retain every currently eligible meaningful package",
+        ),
       },
     });
     expect(chooseImprovement).toMatchObject({
       utility: {
-        prompt: expect.stringContaining("Return DEFER only"),
+        prompt: expect.stringContaining("DEFER only"),
       },
     });
     expect(actionableDecision).toMatchObject({
@@ -2382,7 +2464,7 @@ describe("Ralph starter flows", () => {
       utility: {
         type: "CONDITION",
         condition: {
-          expression: expect.stringContaining("choose-improvement"),
+          expression: expect.stringContaining("build-improvement-plan"),
         },
       },
     });
@@ -2391,7 +2473,7 @@ describe("Ralph starter flows", () => {
       utility: {
         type: "LOOP_COUNTER",
         counterName: expect.stringContaining(
-          "{{data:choose-improvement:output.selectedCandidate.id}}",
+          "{{data:select-improvement-task:tasks.0.id}}",
         ),
         maxAttempts: "{{maxImprovementPasses:number=3}}",
       },
@@ -2399,31 +2481,31 @@ describe("Ralph starter flows", () => {
     expect(implementImprovement).toMatchObject({
       type: "PROMPT",
       settings: { maxIterations: 1 },
-      prompt: expect.stringContaining("authoritative handoff"),
+      prompt: expect.stringContaining("Implement only selected task"),
     });
     expect(implementImprovement).toMatchObject({
       type: "PROMPT",
-      prompt: expect.stringContaining("work-yield evidence"),
+      prompt: expect.stringContaining("Do not repeat discovery"),
     });
     expect(independentReview).toMatchObject({
       type: "UTILITY",
       utility: {
         type: "PROMPT_JSON",
-        prompt: expect.stringContaining("Baseline verification"),
+        prompt: expect.stringContaining("verification baseline"),
       },
     });
     expect(validateImprovement).toMatchObject({
       type: "UTILITY",
       utility: {
         type: "VALIDATOR_JSON",
-        prompt: expect.stringContaining("no new/worsened failure"),
+        prompt: expect.stringContaining("no new or worsened failure"),
       },
     });
     expect(workYieldAnalysis).toMatchObject({
       type: "UTILITY",
       utility: {
         type: "TRANSFORM_JSON",
-        expression: expect.stringContaining("previous.diffSignature"),
+        expression: expect.stringContaining("prior.signature"),
       },
     });
     expect(usefulWorkProduced).toMatchObject({
@@ -2466,7 +2548,7 @@ describe("Ralph starter flows", () => {
         expect.objectContaining({
           from: "implement-improvement",
           fromOutput: "SUCCESS",
-          to: "verification-decision",
+          to: "mark-improvement-task-verifying",
         }),
         expect.objectContaining({
           from: "baseline-verification",
@@ -2481,32 +2563,32 @@ describe("Ralph starter flows", () => {
         expect.objectContaining({
           from: "count-improvement-pass",
           fromOutput: "LIMIT_REACHED",
-          to: "defer-scope",
+          to: "mark-improvement-task-deferred",
         }),
         expect.objectContaining({
           from: "count-verification-repair",
           fromOutput: "LIMIT_REACHED",
-          to: "defer-scope",
+          to: "mark-improvement-task-deferred",
         }),
         expect.objectContaining({
           from: "validate-improvement",
           fromOutput: "CONTINUE",
-          to: "count-improvement-pass",
+          to: "mark-improvement-task-repairing",
         }),
         expect.objectContaining({
           from: "validate-improvement",
           fromOutput: "RETRY",
-          to: "count-verification-repair",
+          to: "mark-improvement-task-repairing",
         }),
         expect.objectContaining({
           from: "useful-work-produced",
           fromOutput: "NO_MATCH",
-          to: "defer-scope",
+          to: "mark-improvement-task-deferred",
         }),
         expect.objectContaining({
           from: "review-needs-fix",
           fromOutput: "MATCH",
-          to: "count-verification-repair",
+          to: "mark-improvement-task-repairing",
         }),
         expect.objectContaining({
           from: "count-final-validation-scan",
@@ -2514,9 +2596,34 @@ describe("Ralph starter flows", () => {
           to: "validate-improvement",
         }),
         expect.objectContaining({
+          from: "mark-improvement-task-completed",
+          fromOutput: "SUCCESS",
+          to: "assess-improvement-tasks",
+        }),
+        expect.objectContaining({
+          from: "mark-improvement-task-deferred",
+          fromOutput: "SUCCESS",
+          to: "assess-improvement-tasks",
+        }),
+        expect.objectContaining({
+          from: "assess-improvement-tasks",
+          fromOutput: "COMPLETE",
+          to: "read-completed-improvement-plan",
+        }),
+        expect.objectContaining({
+          from: "assess-improvement-tasks",
+          fromOutput: "BLOCKED",
+          to: "mark-invalid-active-scope",
+        }),
+        expect.objectContaining({
+          from: "assess-improvement-tasks",
+          fromOutput: "DEFERRED",
+          to: "defer-active-plan-scope",
+        }),
+        expect.objectContaining({
           from: "final-report",
           fromOutput: "SUCCESS",
-          to: "scope-exhausted",
+          to: "scan-scopes",
         }),
         expect.objectContaining({
           from: "final-report",
@@ -2524,19 +2631,24 @@ describe("Ralph starter flows", () => {
           to: "retained-active-report",
         }),
         expect.objectContaining({
-          from: "scope-exhausted",
-          fromOutput: "NO_MATCH",
-          to: "select-scope",
+          from: "select-scope",
+          fromOutput: "EXHAUSTED",
+          to: "record-exhausted-outcome",
         }),
         expect.objectContaining({
-          from: "scope-exhausted",
-          fromOutput: "MATCH",
-          to: "success",
+          from: "record-exhausted-outcome",
+          fromOutput: "SUCCESS",
+          to: "completion-report",
         }),
         expect.objectContaining({
-          from: "scope-exhausted",
-          fromOutput: "ERROR",
-          to: "retained-active-report",
+          from: "select-scope",
+          fromOutput: "DEFERRED",
+          to: "record-deferred-outcome",
+        }),
+        expect.objectContaining({
+          from: "append-deferred-improvement-plan",
+          fromOutput: "SUCCESS",
+          to: "record-scope-deferred-outcome",
         }),
       ]),
     );
@@ -2549,9 +2661,13 @@ describe("Ralph starter flows", () => {
       ]),
     );
     expect(JSON.stringify(flow)).toContain("CHANGE_SCOPE_GUARD");
+    expect(JSON.stringify(flow)).not.toContain(
+      "archive-superseded-improvement",
+    );
+    expect(JSON.stringify(flow)).not.toContain("selectedCandidate");
     expect(independentReview).toMatchObject({
       utility: {
-        prompt: expect.stringContaining("Ignore unrelated workspace changes"),
+        prompt: expect.stringContaining("Review selected task"),
       },
     });
     expect(validateImprovement).toMatchObject({
@@ -2562,67 +2678,35 @@ describe("Ralph starter flows", () => {
   });
 
   it("continues code improvements until scope selection is exhausted", () => {
-    const flow = getRalphStarterFlow("autonomous-code-improvement-loop")?.flow;
-    const scopeExhausted = flow?.blocks.find(
-      (block): block is RalphUtilityBlock =>
-        block.id === "scope-exhausted" && block.type === "UTILITY",
-    );
+    const flow = getRalphStarterFlow("autonomous-code-improvement-loop")!.flow;
 
-    if (!scopeExhausted) {
-      throw new Error("Expected scope exhaustion condition.");
-    }
-
-    const activeScope = {
-      "scan-scopes": { output: "SUCCESS" },
-      "update-scope-registry": { output: "SUCCESS" },
-      "select-scope": { output: "SELECTED" },
-      "mark-scope-result": { data: { cycleCompleted: true } },
-    };
-
-    expect(evaluateStarterCondition(scopeExhausted, {}, activeScope)).toBe(
+    expect(flow.blocks.some((block) => block.id === "scope-exhausted")).toBe(
       false,
     );
-    expect(
-      evaluateStarterCondition(
-        scopeExhausted,
-        {},
-        {
-          "scan-scopes": { output: "EMPTY" },
-        },
-      ),
-    ).toBe(true);
-    expect(
-      evaluateStarterCondition(
-        scopeExhausted,
-        {},
-        {
-          "scan-scopes": { output: "SUCCESS" },
-          "update-scope-registry": { output: "EMPTY" },
-        },
-      ),
-    ).toBe(true);
-    expect(
-      evaluateStarterCondition(
-        scopeExhausted,
-        {},
-        {
-          "scan-scopes": { output: "SUCCESS" },
-          "update-scope-registry": { output: "SUCCESS" },
-          "select-scope": { output: "EMPTY" },
-        },
-      ),
-    ).toBe(true);
-    expect(() =>
-      evaluateStarterCondition(
-        scopeExhausted,
-        {},
-        {
-          "scan-scopes": { output: "SUCCESS" },
-          "update-scope-registry": { output: "SUCCESS" },
-          "select-scope": { output: "ERROR" },
-        },
-      ),
-    ).toThrow("Code improvement scope selection failed.");
+    expect(flow.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "final-report",
+          fromOutput: "SUCCESS",
+          to: "scan-scopes",
+        }),
+        expect.objectContaining({
+          from: "select-scope",
+          fromOutput: "EXHAUSTED",
+          to: "record-exhausted-outcome",
+        }),
+        expect.objectContaining({
+          from: "select-scope",
+          fromOutput: "DEFERRED",
+          to: "record-deferred-outcome",
+        }),
+        expect.objectContaining({
+          from: "completion-report",
+          fromOutput: "SUCCESS",
+          to: "success",
+        }),
+      ]),
+    );
   });
 
   it("keeps bundled git-diff validators tolerant of shared workspace changes", () => {
@@ -2729,11 +2813,11 @@ describe("Ralph starter flows", () => {
   it("starts bundled templates autonomously without ask-user gates", () => {
     const expectedStartTargets: Record<string, string> = {
       "autonomous-feature-generation-loop": "detect-project-commands",
-      "autonomous-code-improvement-loop": "scan-scopes",
-      "autonomous-ui-improvement-loop": "scan-ui-scopes",
+      "autonomous-code-improvement-loop": "find-active-improvement",
+      "autonomous-ui-improvement-loop": "begin-scope-cycle",
       "full-feature-implementation": "detect-project-commands",
-      "autonomous-refactoring-flow": "scan-scopes",
-      "security-fix-loop": "scan-scopes",
+      "autonomous-refactoring-flow": "begin-scope-cycle",
+      "security-fix-loop": "begin-scope-cycle",
     };
 
     for (const starterFlow of STARTER_RALPH_FLOWS) {
@@ -2951,7 +3035,22 @@ describe("Ralph starter flows", () => {
         const errorEdge = flow.edges.find(
           (edge) => edge.from === block.id && edge.fromOutput === "ERROR",
         );
-        expect(errorEdge?.to).toBe(retainedReport?.id);
+        expect(errorEdge?.to).toBe(
+          starterFlowId === "autonomous-code-improvement-loop"
+            ? "record-invalid-outcome"
+            : retainedReport?.id,
+        );
+      }
+      if (starterFlowId === "autonomous-code-improvement-loop") {
+        expect(flow.edges).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              from: "record-invalid-outcome",
+              fromOutput: "SUCCESS",
+              to: retainedReport?.id,
+            }),
+          ]),
+        );
       }
     }
   });
@@ -3003,10 +3102,6 @@ describe("Ralph starter flows", () => {
 
     for (const { starterId, chooserId } of [
       {
-        starterId: "autonomous-code-improvement-loop",
-        chooserId: "choose-improvement",
-      },
-      {
         starterId: "autonomous-ui-improvement-loop",
         chooserId: "choose-ui-improvement",
       },
@@ -3047,6 +3142,33 @@ describe("Ralph starter flows", () => {
         additionalProperties: false,
       });
     }
+
+    const codeChooser = getRalphStarterFlow(
+      "autonomous-code-improvement-loop",
+    )?.flow.blocks.find((block) => block.id === "choose-improvement");
+    if (
+      codeChooser?.type !== "UTILITY" ||
+      codeChooser.utility.type !== "PROMPT_JSON"
+    ) {
+      throw new Error("Expected persistent code improvement planner.");
+    }
+    const codeSchema = codeChooser.utility.schema as {
+      properties?: {
+        tasks?: {
+          items?: {
+            properties?: Record<string, unknown>;
+            required?: string[];
+            additionalProperties?: boolean;
+          };
+        };
+      };
+    };
+    const taskSchema = codeSchema.properties?.tasks?.items;
+
+    expect(taskSchema?.additionalProperties).toBe(false);
+    expect([...(taskSchema?.required ?? [])].sort()).toEqual(
+      Object.keys(taskSchema?.properties ?? {}).sort(),
+    );
   });
 
   it("configures unattended recovery, graceful deferral, and bounded repair", () => {
@@ -3094,9 +3216,11 @@ describe("Ralph starter flows", () => {
         utility: {
           type: "LOOP_COUNTER",
           maxAttempts:
-            starterFlowId === "autonomous-ui-improvement-loop"
-              ? "{{maxVerificationRepairPasses:number=3}}"
-              : "{{maxVerificationRepairPasses:number=2}}",
+            starterFlowId === "autonomous-code-improvement-loop"
+              ? "{{maxVerificationRepairPasses:number=4}}"
+              : starterFlowId === "autonomous-ui-improvement-loop"
+                ? "{{maxVerificationRepairPasses:number=3}}"
+                : "{{maxVerificationRepairPasses:number=2}}",
         },
       });
       expect(flow?.edges).toEqual(
@@ -3104,7 +3228,10 @@ describe("Ralph starter flows", () => {
           expect.objectContaining({
             from: "count-verification-repair",
             fromOutput: "LIMIT_REACHED",
-            to: "defer-scope",
+            to:
+              starterFlowId === "autonomous-code-improvement-loop"
+                ? "mark-improvement-task-deferred"
+                : "defer-scope",
           }),
         ]),
       );
@@ -3127,12 +3254,17 @@ describe("Ralph starter flows", () => {
         expect.objectContaining({
           from: "final-report",
           fromOutput: "SUCCESS",
-          to: "scope-exhausted",
+          to: "scan-scopes",
         }),
         expect.objectContaining({
-          from: "scope-exhausted",
-          fromOutput: "NO_MATCH",
-          to: "select-scope",
+          from: "mark-improvement-task-deferred",
+          fromOutput: "SUCCESS",
+          to: "assess-improvement-tasks",
+        }),
+        expect.objectContaining({
+          from: "mark-improvement-task-completed",
+          fromOutput: "SUCCESS",
+          to: "assess-improvement-tasks",
         }),
       ]),
     );
@@ -3151,7 +3283,7 @@ describe("Ralph starter flows", () => {
 
     expect(
       flow.blocks.some((block) => block.id === "scope-cycle-complete"),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       flow.blocks
         .filter((block) => block.settings?.maxIterations !== undefined)
@@ -3162,16 +3294,21 @@ describe("Ralph starter flows", () => {
         expect.objectContaining({
           from: "final-report",
           fromOutput: "SUCCESS",
-          to: "scope-cycle-complete",
+          to: "scan-scopes",
         }),
         expect.objectContaining({
-          from: "scope-cycle-complete",
-          fromOutput: "NO_MATCH",
-          to: "select-scope",
+          from: "record-done-outcome",
+          fromOutput: "SUCCESS",
+          to: "final-report",
         }),
         expect.objectContaining({
-          from: "scope-cycle-complete",
-          fromOutput: "MATCH",
+          from: "select-scope",
+          fromOutput: "EXHAUSTED",
+          to: "record-exhausted-outcome",
+        }),
+        expect.objectContaining({
+          from: "completion-report",
+          fromOutput: "SUCCESS",
           to: "success",
         }),
         expect.objectContaining({
@@ -3181,15 +3318,153 @@ describe("Ralph starter flows", () => {
         }),
       ]),
     );
-    expect(flow.edges.filter((edge) => edge.to === "select-scope")).toEqual(
+    expect(flow.edges.filter((edge) => edge.to === "select-scope")).toEqual([
+      expect.objectContaining({
+        from: "update-scope-registry",
+        fromOutput: "SUCCESS",
+      }),
+    ]);
+  });
+
+  it("re-audits work-bearing scopes before declaring coverage complete", () => {
+    const uiFlow = getRalphStarterFlow("autonomous-ui-improvement-loop")!.flow;
+    expect(
+      uiFlow.blocks.some((block) => block.id === "mark-scope-result"),
+    ).toBe(false);
+    expect(uiFlow.edges).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          from: "update-scope-registry",
+          from: "append-completed-ui-improvement",
           fromOutput: "SUCCESS",
+          to: "record-done-outcome",
         }),
         expect.objectContaining({
-          from: "scope-cycle-complete",
+          from: "record-done-outcome",
+          fromOutput: "SUCCESS",
+          to: "archive-active-ui-improvement",
+        }),
+        expect.objectContaining({
+          from: "final-report",
+          fromOutput: "SUCCESS",
+          to: "scan-ui-scopes",
+        }),
+      ]),
+    );
+
+    const refactorFlow = getRalphStarterFlow(
+      "autonomous-refactoring-flow",
+    )!.flow;
+    expect(
+      refactorFlow.blocks.some((block) => block.id === "mark-scope-result"),
+    ).toBe(false);
+    expect(refactorFlow.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "record-selected-refactor",
+          fromOutput: "SUCCESS",
+          to: "git-snapshot-before",
+        }),
+        expect.objectContaining({
+          from: "final-refactor-scan",
+          fromOutput: "DONE",
+          to: "record-done-outcome",
+        }),
+        expect.objectContaining({
+          from: "final-report",
+          fromOutput: "SUCCESS",
+          to: "scan-scopes",
+        }),
+      ]),
+    );
+
+    const securityFlow = getRalphStarterFlow("security-fix-loop")!.flow;
+    expect(securityFlow.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "findings-present",
+          fromOutput: "MATCH",
+          to: "record-security-findings",
+        }),
+        expect.objectContaining({
+          from: "verify-stop-condition",
+          fromOutput: "DONE",
+          to: "record-done-outcome",
+        }),
+        expect.objectContaining({
+          from: "findings-present",
           fromOutput: "NO_MATCH",
+          to: "mark-scope-result",
+        }),
+        expect.objectContaining({
+          from: "mark-scope-result",
+          fromOutput: "SUCCESS",
+          to: "record-stop-outcome",
+        }),
+        expect.objectContaining({
+          from: "final-report",
+          fromOutput: "SUCCESS",
+          to: "scan-scopes",
+        }),
+      ]),
+    );
+  });
+
+  it("keeps the checklist one-shot while iterative starters advance", () => {
+    const checklistFlow = getRalphStarterFlow(
+      "full-feature-implementation",
+    )!.flow;
+    expect(
+      checklistFlow.blocks.some(
+        (block) =>
+          block.type === "UTILITY" &&
+          ["BEGIN_SCOPE_CYCLE", "SELECT_SCOPE"].includes(block.utility.type),
+      ),
+    ).toBe(false);
+    expect(checklistFlow.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "mark-tasks-deferred",
+          fromOutput: "SUCCESS",
+          to: "assess-checklist-tasks",
+        }),
+        expect.objectContaining({
+          from: "record-deferred-outcome",
+          fromOutput: "SUCCESS",
+          to: "retained-checklist-report",
+        }),
+      ]),
+    );
+    expect(
+      checklistFlow.edges.some(
+        (edge) =>
+          edge.from === "final-report" && edge.to === "prepare-feature-brief",
+      ),
+    ).toBe(false);
+
+    const generationFlow = getRalphStarterFlow(
+      "autonomous-feature-generation-loop",
+    )!.flow;
+    expect(generationFlow.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "record-deferred-goal-outcome",
+          fromOutput: "SUCCESS",
+          to: "archive-goal",
+        }),
+        expect.objectContaining({
+          from: "record-blocked-goal-outcome",
+          fromOutput: "SUCCESS",
+          to: "archive-goal",
+        }),
+        expect.objectContaining({
+          from: "final-report",
+          fromOutput: "SUCCESS",
+          to: "goals-per-run-counter",
+        }),
+        expect.objectContaining({
+          from: "record-goal-portfolio-deferred-outcome",
+          fromOutput: "SUCCESS",
+          to: "retained-goal-report",
         }),
       ]),
     );
@@ -3273,23 +3548,27 @@ describe("Ralph starter flows", () => {
       {
         flowId: "autonomous-code-improvement-loop",
         transformBlockId: "select-verification-command",
-        sourceBlockId: "choose-improvement",
+        sourceBlockId: "select-improvement-task",
+        sourceIsData: true,
         createOutput: (
           verificationTier: string,
           reviewTier: string,
         ): Record<string, unknown> => ({
-          selectedCandidate: {
-            verificationTier,
-            reviewTier,
-            riskAssessment:
-              'Quoted incidental prose: "database migration secret API".',
-          },
+          tasks: [
+            {
+              verificationTier,
+              reviewTier,
+              riskAssessment:
+                'Quoted incidental prose: "database migration secret API".',
+            },
+          ],
         }),
       },
       {
         flowId: "autonomous-ui-improvement-loop",
         transformBlockId: "select-verification-command",
         sourceBlockId: "choose-ui-improvement",
+        sourceIsData: false,
         createOutput: (
           verificationTier: string,
           reviewTier: string,
@@ -3307,6 +3586,7 @@ describe("Ralph starter flows", () => {
         flowId: "autonomous-refactoring-flow",
         transformBlockId: "select-validation-command",
         sourceBlockId: "audit-against-policy",
+        sourceIsData: false,
         createOutput: (
           verificationTier: string,
           reviewTier: string,
@@ -3334,6 +3614,9 @@ describe("Ralph starter flows", () => {
           block,
           testCase.sourceBlockId,
           testCase.createOutput("focused", "validator-only"),
+          testCase.sourceIsData
+            ? testCase.createOutput("focused", "validator-only")
+            : undefined,
         ),
       ).toMatchObject({
         tier: "focused",
@@ -3346,6 +3629,9 @@ describe("Ralph starter flows", () => {
           block,
           testCase.sourceBlockId,
           testCase.createOutput("FOCUSED", "trusted"),
+          testCase.sourceIsData
+            ? testCase.createOutput("FOCUSED", "trusted")
+            : undefined,
         ),
       ).toMatchObject({
         tier: "broad",
@@ -3360,7 +3646,7 @@ describe("Ralph starter flows", () => {
     }
   });
 
-  it("keeps strict candidate schemas aligned with the planning prompts", () => {
+  it("keeps strict portfolio task schemas aligned with the planning prompts", () => {
     const expectations = [
       {
         flowId: "autonomous-code-improvement-loop",
@@ -3368,20 +3654,20 @@ describe("Ralph starter flows", () => {
         fields: [
           "id",
           "title",
+          "status",
+          "batchKey",
+          "dependencies",
+          "likelyFiles",
+          "priority",
           "evidence",
           "value",
           "currentBehavior",
           "proposedBehavior",
-          "relatedChanges",
-          "affectedFiles",
           "acceptanceCriteria",
-          "expectedOutcome",
-          "riskAssessment",
           "verificationPlan",
           "verificationTier",
           "reviewTier",
           "rollbackNotes",
-          "remainingRelatedWork",
         ],
       },
     ] as const;
@@ -3404,24 +3690,24 @@ describe("Ralph starter flows", () => {
 
       const schema = block.utility.schema as
         | {
-            properties?: Record<
-              string,
-              {
-                anyOf?: Array<{
+            properties?: {
+              tasks?: {
+                items?: {
                   properties?: Record<string, unknown>;
                   required?: string[];
-                }>;
-              }
-            >;
+                  additionalProperties?: boolean;
+                };
+              };
+            };
           }
         | undefined;
-      const fullCandidateBranch =
-        schema?.properties?.selectedCandidate?.anyOf?.[0];
-      const properties = fullCandidateBranch?.properties;
+      const task = schema?.properties?.tasks?.items;
+      const properties = task?.properties;
       expect(Object.keys(properties ?? {})).toEqual(
         expect.arrayContaining([...expectation.fields]),
       );
-      expect(fullCandidateBranch?.required).toEqual(
+      expect(task?.additionalProperties).toBe(false);
+      expect(task?.required).toEqual(
         expect.arrayContaining([...expectation.fields]),
       );
     }

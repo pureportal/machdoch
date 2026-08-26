@@ -321,6 +321,19 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       },
     },
     {
+      id: "read-goal-outcomes",
+      title: "Read Goal Outcomes",
+      position: { x: 1180, y: 360 },
+      size: { width: 280, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "QUERY_JSONL",
+        path: "{{goalOutcomesFile:path=.machdoch/autonomous-features/outcomes.jsonl}}",
+        maxResults: 50,
+        order: "newest",
+      },
+    },
+    {
       id: "understand-project",
       title: "Understand Project",
       position: { x: 1060, y: 140 },
@@ -382,7 +395,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
           },
         },
         prompt:
-          "No active autonomous feature goal was found. Inspect the repository to infer and persist a project constitution: product purpose, users, desired outcomes, product principles, technical direction, measurable priorities, architecture, current features, extension points, tests, scripts, constraints, and recently changed areas. Compare bounded completed goal history {{result:read-completed-goals}} and detected commands {{result:detect-project-commands}}. Apply projectVision={{projectVision:text=}}, implementationScope={{implementationScope:text=auto-detect}}, excludedAreas={{excludedAreas:text=}}, and riskTolerance={{riskTolerance:text=ambitious}}. Make bounded evidence-backed assumptions autonomously. Do not change files. Return only schema-valid JSON.",
+          "No active autonomous feature goal was found. Inspect the repository to infer and persist a project constitution: product purpose, users, desired outcomes, product principles, technical direction, measurable priorities, architecture, current features, extension points, tests, scripts, constraints, and recently changed areas. Compare bounded completed goal history {{result:read-completed-goals}}, bounded blocked/deferred/invalid outcomes {{result:read-goal-outcomes}}, and detected commands {{result:detect-project-commands}}. Resume deferred work only when its blocker is gone, avoid completed or still-blocked goals, and preserve unresolved deferral as DEFER rather than reporting STOP. Apply projectVision={{projectVision:text=}}, implementationScope={{implementationScope:text=auto-detect}}, excludedAreas={{excludedAreas:text=}}, and riskTolerance={{riskTolerance:text=ambitious}}. Make bounded evidence-backed assumptions autonomously. Do not change files. Return only schema-valid JSON.",
       },
     },
     {
@@ -1071,7 +1084,37 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
         workOutcome: "DEFER",
         path: "{{goalOutcomesFile:path=.machdoch/autonomous-features/outcomes.jsonl}}",
         input:
-          '{"outcome":"DEFER","goalPath":"{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}","reason":"Bounded repair exhausted or external state unavailable."}',
+          '{"outcome":"DEFER","goal":{{data:read-canonical-active-goal:json}},"reason":"Bounded repair exhausted or external state unavailable."}',
+      },
+    },
+    {
+      id: "record-resumed-goal-deferred-outcome",
+      title: "Record Resumed Goal Deferral",
+      position: { x: 5320, y: 320 },
+      size: { width: 280, height: 160 },
+      settings: { retry: { mode: "finite", maxRetries: 3, delaySeconds: 1 } },
+      type: "UTILITY",
+      utility: {
+        type: "APPEND_JSONL",
+        workOutcome: "DEFER",
+        path: "{{goalOutcomesFile:path=.machdoch/autonomous-features/outcomes.jsonl}}",
+        input:
+          '{"outcome":"DEFER","goal":{{data:read-active-goal:json}},"reason":"The resumed goal could not be prepared safely."}',
+      },
+    },
+    {
+      id: "record-goal-portfolio-deferred-outcome",
+      title: "Record Goal Portfolio Deferral",
+      position: { x: 5320, y: 500 },
+      size: { width: 280, height: 160 },
+      settings: { retry: { mode: "finite", maxRetries: 3, delaySeconds: 1 } },
+      type: "UTILITY",
+      utility: {
+        type: "APPEND_JSONL",
+        workOutcome: "DEFER",
+        path: "{{goalOutcomesFile:path=.machdoch/autonomous-features/outcomes.jsonl}}",
+        input:
+          '{"outcome":"DEFER","reason":"Eligible feature work exists but is temporarily unavailable."}',
       },
     },
     {
@@ -1086,7 +1129,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
         workOutcome: "BLOCKED",
         path: "{{goalOutcomesFile:path=.machdoch/autonomous-features/outcomes.jsonl}}",
         input:
-          '{"outcome":"BLOCKED","goalPath":"{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}","reason":"Persisted goal tasks have no currently selectable work.","assessment":{{data:assess-goal-tasks}}}',
+          '{"outcome":"BLOCKED","goal":{{data:read-canonical-active-goal:json}},"reason":"Persisted goal tasks have no currently selectable work.","assessment":{{data:assess-goal-tasks}}}',
       },
     },
     {
@@ -1226,35 +1269,65 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       id: "prepare-active-goal-error",
       from: "prepare-active-goal",
       fromOutput: "ERROR",
-      to: "record-deferred-goal-outcome",
+      to: "record-resumed-goal-deferred-outcome",
     },
     {
       id: "completed-goals-to-understand",
       from: "read-completed-goals",
       fromOutput: "SUCCESS",
-      to: "understand-project",
+      to: "read-goal-outcomes",
     },
     {
       id: "completed-goals-empty-to-understand",
       from: "read-completed-goals",
       fromOutput: "EMPTY",
-      to: "understand-project",
+      to: "read-goal-outcomes",
     },
     {
       id: "completed-goals-missing-to-understand",
       from: "read-completed-goals",
       fromOutput: "NOT_FOUND",
-      to: "understand-project",
+      to: "read-goal-outcomes",
     },
     {
       id: "completed-goals-invalid-to-understand",
       from: "read-completed-goals",
       fromOutput: "INVALID",
-      to: "understand-project",
+      to: "read-goal-outcomes",
     },
     {
       id: "completed-goals-error-to-understand",
       from: "read-completed-goals",
+      fromOutput: "ERROR",
+      to: "read-goal-outcomes",
+    },
+    {
+      id: "goal-outcomes-to-understand",
+      from: "read-goal-outcomes",
+      fromOutput: "SUCCESS",
+      to: "understand-project",
+    },
+    {
+      id: "goal-outcomes-empty-to-understand",
+      from: "read-goal-outcomes",
+      fromOutput: "EMPTY",
+      to: "understand-project",
+    },
+    {
+      id: "goal-outcomes-missing-to-understand",
+      from: "read-goal-outcomes",
+      fromOutput: "NOT_FOUND",
+      to: "understand-project",
+    },
+    {
+      id: "goal-outcomes-invalid-to-understand",
+      from: "read-goal-outcomes",
+      fromOutput: "INVALID",
+      to: "understand-project",
+    },
+    {
+      id: "goal-outcomes-error-to-understand",
+      from: "read-goal-outcomes",
       fromOutput: "ERROR",
       to: "understand-project",
     },
@@ -1364,7 +1437,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       id: "selection-deferred-to-ledger",
       from: "selection-is-deferred",
       fromOutput: "MATCH",
-      to: "record-deferred-goal-outcome",
+      to: "record-goal-portfolio-deferred-outcome",
     },
     {
       id: "selection-stop-to-ledger",
@@ -1406,7 +1479,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       id: "plan-error",
       from: "create-implementation-plan",
       fromOutput: "ERROR",
-      to: "record-deferred-goal-outcome",
+      to: "read-canonical-active-goal",
     },
     {
       id: "canonical-goal-to-assessment",
@@ -1451,6 +1524,12 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       to: "record-blocked-goal-outcome",
     },
     {
+      id: "assessed-goal-deferred-to-ledger",
+      from: "assess-goal-tasks",
+      fromOutput: "DEFERRED",
+      to: "record-deferred-goal-outcome",
+    },
+    {
       id: "assessed-goal-empty-to-invalid",
       from: "assess-goal-tasks",
       fromOutput: "EMPTY",
@@ -1485,6 +1564,18 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       from: "select-next-task",
       fromOutput: "EMPTY",
       to: "assess-goal-tasks",
+    },
+    {
+      id: "select-task-deferred",
+      from: "select-next-task",
+      fromOutput: "DEFERRED",
+      to: "record-deferred-goal-outcome",
+    },
+    {
+      id: "select-task-blocked",
+      from: "select-next-task",
+      fromOutput: "BLOCKED",
+      to: "record-blocked-goal-outcome",
     },
     {
       id: "select-task-not-found",
@@ -1787,10 +1878,10 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       to: "record-invalid-goal-outcome",
     },
     {
-      id: "mark-deferred-to-ledger",
+      id: "mark-deferred-to-reassessment",
       from: "mark-tasks-deferred",
       fromOutput: "SUCCESS",
-      to: "record-deferred-goal-outcome",
+      to: "assess-goal-tasks",
     },
     {
       id: "mark-deferred-missing-to-ledger",
@@ -1871,10 +1962,10 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       to: "retained-goal-report",
     },
     {
-      id: "deferred-outcome-to-retained-report",
+      id: "deferred-outcome-to-archive",
       from: "record-deferred-goal-outcome",
       fromOutput: "SUCCESS",
-      to: "retained-goal-report",
+      to: "archive-goal",
     },
     {
       id: "deferred-outcome-invalid-to-retained-report",
@@ -1889,10 +1980,10 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       to: "retained-goal-report",
     },
     {
-      id: "blocked-outcome-to-retained-report",
+      id: "blocked-outcome-to-archive",
       from: "record-blocked-goal-outcome",
       fromOutput: "SUCCESS",
-      to: "retained-goal-report",
+      to: "archive-goal",
     },
     {
       id: "blocked-outcome-invalid-to-retained-report",
@@ -1903,6 +1994,42 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
     {
       id: "blocked-outcome-error-to-retained-report",
       from: "record-blocked-goal-outcome",
+      fromOutput: "ERROR",
+      to: "retained-goal-report",
+    },
+    {
+      id: "resumed-deferred-outcome-to-archive",
+      from: "record-resumed-goal-deferred-outcome",
+      fromOutput: "SUCCESS",
+      to: "archive-goal",
+    },
+    {
+      id: "resumed-deferred-outcome-invalid",
+      from: "record-resumed-goal-deferred-outcome",
+      fromOutput: "INVALID",
+      to: "retained-goal-report",
+    },
+    {
+      id: "resumed-deferred-outcome-error",
+      from: "record-resumed-goal-deferred-outcome",
+      fromOutput: "ERROR",
+      to: "retained-goal-report",
+    },
+    {
+      id: "portfolio-deferred-outcome-recorded",
+      from: "record-goal-portfolio-deferred-outcome",
+      fromOutput: "SUCCESS",
+      to: "retained-goal-report",
+    },
+    {
+      id: "portfolio-deferred-outcome-invalid",
+      from: "record-goal-portfolio-deferred-outcome",
+      fromOutput: "INVALID",
+      to: "retained-goal-report",
+    },
+    {
+      id: "portfolio-deferred-outcome-error",
+      from: "record-goal-portfolio-deferred-outcome",
       fromOutput: "ERROR",
       to: "retained-goal-report",
     },
@@ -2019,7 +2146,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
 
 export const autonomousFeatureGenerationLoopStarterFlow = {
   id: "autonomous-feature-generation-loop",
-  version: 17,
+  version: 18,
   defaultAlias: "autonomous-feature-generation-loop",
   category: "Implementation",
   tags: ["autonomous", "feature", "loop"],

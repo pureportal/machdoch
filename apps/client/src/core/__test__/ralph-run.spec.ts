@@ -2472,6 +2472,7 @@ describe("runRalphFlow", () => {
         ...[
           "READY",
           "COMPLETE",
+          "DEFERRED",
           "BLOCKED",
           "EMPTY",
           "NOT_FOUND",
@@ -2576,9 +2577,10 @@ describe("runRalphFlow", () => {
           },
         ]),
       ).resolves.toMatchObject({
-        output: "BLOCKED",
+        output: "DEFERRED",
         status: "completed",
         data: expect.objectContaining({
+          availability: "deferred",
           structurallyBlocked: false,
           retryable: true,
           nextRetryAt: "2099-01-01T00:00:00.000Z",
@@ -2725,14 +2727,20 @@ describe("runRalphFlow", () => {
           fromOutput: "BLOCKED",
           to: "record-blocked",
         },
-        ...["READY", "COMPLETE", "EMPTY", "NOT_FOUND", "INVALID", "ERROR"].map(
-          (fromOutput) => ({
-            id: `assess-${fromOutput.toLowerCase().replaceAll("_", "-")}`,
-            from: "assess",
-            fromOutput,
-            to: "deferred",
-          }),
-        ),
+        ...[
+          "READY",
+          "COMPLETE",
+          "DEFERRED",
+          "EMPTY",
+          "NOT_FOUND",
+          "INVALID",
+          "ERROR",
+        ].map((fromOutput) => ({
+          id: `assess-${fromOutput.toLowerCase().replaceAll("_", "-")}`,
+          from: "assess",
+          fromOutput,
+          to: "deferred",
+        })),
         ...["SUCCESS", "INVALID", "ERROR"].map((fromOutput) => ({
           id: `record-${fromOutput.toLowerCase()}`,
           from: "record-blocked",
@@ -9566,9 +9574,9 @@ describe("runRalphFlow", () => {
           to: "success",
         },
         {
-          id: "invalid-blocked",
+          id: "deferred-blocked",
           from: "select",
-          fromOutput: "INVALID",
+          fromOutput: "DEFERRED",
           to: "blocked",
         },
       ],
@@ -9641,7 +9649,13 @@ describe("runRalphFlow", () => {
       );
       expect(
         before.blockResults.find((entry) => entry.blockId === "select"),
-      ).toMatchObject({ output: "INVALID" });
+      ).toMatchObject({
+        output: "DEFERRED",
+        data: expect.objectContaining({
+          retryable: true,
+          nextRetryAt: expect.any(String),
+        }),
+      });
 
       const eligibleJson = JSON.parse(await readFile(path, "utf8")) as {
         tasks: Array<Record<string, unknown>>;
@@ -9693,7 +9707,7 @@ describe("runRalphFlow", () => {
         {
           id: "select-blocked",
           from: "select",
-          fromOutput: "INVALID",
+          fromOutput: "BLOCKED",
           to: "blocked",
         },
       ],
@@ -9729,8 +9743,10 @@ describe("runRalphFlow", () => {
       );
 
       expect(selection).toMatchObject({
-        output: "INVALID",
+        output: "BLOCKED",
         data: expect.objectContaining({
+          structurallyBlocked: true,
+          retryable: false,
           blockers: expect.arrayContaining([
             expect.objectContaining({
               taskId: "missing",
@@ -9871,7 +9887,7 @@ describe("runRalphFlow", () => {
         {
           id: "select-blocked",
           from: "select",
-          fromOutput: "INVALID",
+          fromOutput: "DEFERRED",
           to: "blocked",
         },
       ],
@@ -9950,7 +9966,7 @@ describe("runRalphFlow", () => {
       expect(
         rivalResult?.blockResults.find((entry) => entry.blockId === "select")
           ?.output,
-      ).not.toBe("SELECTED");
+      ).toBe("DEFERRED");
       expect(stored.tasks[0]?.lease.ownerId).toBe("owner-run");
       expect(Date.parse(stored.tasks[0]!.lease.expiresAt)).toBeGreaterThan(
         Date.now(),

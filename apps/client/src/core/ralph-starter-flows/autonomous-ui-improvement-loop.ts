@@ -241,6 +241,23 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       type: "START",
     },
     {
+      id: "begin-scope-cycle",
+      title: "Begin Scope Cycle",
+      position: { x: 360, y: 0 },
+      size: { width: 280, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "BEGIN_SCOPE_CYCLE",
+        flowAlias: "autonomous-ui-improvement-loop",
+        registryPath:
+          "{{scopeRegistryFile:path=.machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.json}}",
+        outputPath:
+          "{{scopeRegistryMarkdown:path=.machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.md}}",
+        strategy: "{{scopeSelectionStrategy:text=ui-first}}",
+        includeMarkdown: true,
+      },
+    },
+    {
       id: "scan-ui-scopes",
       title: "Scan UI Scope Evidence",
       position: { x: 700, y: 0 },
@@ -308,6 +325,19 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "QUERY_JSONL",
         path: "{{completedUiImprovementsFile:path=.machdoch/ralph/ui-improvements/completed-ui-improvements.jsonl}}",
+        maxResults: 50,
+        order: "newest",
+      },
+    },
+    {
+      id: "read-ui-outcomes",
+      title: "Read UI Outcomes",
+      position: { x: 1900, y: 40 },
+      size: { width: 280, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "QUERY_JSONL",
+        path: "{{uiImprovementOutcomesFile:path=.machdoch/ralph/ui-improvements/outcomes.jsonl}}",
         maxResults: 50,
         order: "newest",
       },
@@ -396,7 +426,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
           },
         },
         prompt:
-          "First inspect selected UI scope {{result:select-scope}}, detected commands {{result:detect-project-commands}}, bounded relevant history {{result:read-completed-ui-improvements}}, repository package/config metadata, the target view, and representative sibling views without editing files. Infer a concise product/UI constitution, record comparative gaps in information architecture, density, primitives, states, accessibility, and responsive behavior, then generate 3-5 materially different cohesive UI packages. Include a view-level refactor candidate when the target is structurally inconsistent with stronger sibling surfaces and local polish would leave the root problem intact. Score each from 0-100 for user value, evidence confidence, effort, and risk. Base them on concrete responsive, accessibility, hierarchy, design-system, copy, visual-state, hydration, runtime, or package-capability evidence. Identify only focused current research needed to discriminate among leading candidates. Make bounded reversible design assumptions autonomously and return only schema-valid JSON.",
+          "First inspect selected UI scope {{result:select-scope}}, detected commands {{result:detect-project-commands}}, bounded completed history {{result:read-completed-ui-improvements}}, bounded prior outcomes including deferred or invalid packages {{result:read-ui-outcomes}}, repository package/config metadata, the target view, and representative sibling views without editing files. Infer a concise product/UI constitution, record comparative gaps in information architecture, density, primitives, states, accessibility, and responsive behavior, then generate 3-5 materially different cohesive UI packages. Reconsider a deferred package when its blocker is gone, but do not repeat completed or still-blocked work. Include a view-level refactor candidate when the target is structurally inconsistent with stronger sibling surfaces and local polish would leave the root problem intact. Score each from 0-100 for user value, evidence confidence, effort, and risk. Base them on concrete responsive, accessibility, hierarchy, design-system, copy, visual-state, hydration, runtime, or package-capability evidence. Identify only focused current research needed to discriminate among leading candidates. Make bounded reversible design assumptions autonomously and return only schema-valid JSON.",
       },
     },
     {
@@ -1081,6 +1111,19 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       },
     },
     {
+      id: "completion-report",
+      title: "UI Coverage Report",
+      position: { x: 7420, y: 340 },
+      size: { width: 280, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "FINAL_REPORT",
+        path: "{{uiReportFile:path=.machdoch/ralph/ui-improvements/final-report.json}}",
+        outputPath:
+          "{{uiReportMarkdown:path=.machdoch/ralph/ui-improvements/final-report.md}}",
+      },
+    },
+    {
       id: "retained-active-report",
       title: "Retained Active UI Report",
       position: { x: 7080, y: 120 },
@@ -1128,23 +1171,6 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
         path: "{{activeUiImprovementFile:path=.machdoch/ralph/ui-improvements/active-ui-improvement.json}}",
         rootPath:
           "{{archivedUiImprovementsDirectory:path=.machdoch/ralph/ui-improvements/archive}}",
-      },
-    },
-    {
-      id: "mark-scope-result",
-      title: "Mark Scope Result",
-      position: { x: 3720, y: 300 },
-      size: { width: 280, height: 170 },
-      type: "UTILITY",
-      utility: {
-        type: "MARK_SCOPE_RESULT",
-        flowAlias: "autonomous-ui-improvement-loop",
-        registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.json}}",
-        outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.md}}",
-        scopeOutcome: "completed",
-        includeMarkdown: true,
       },
     },
     {
@@ -1224,7 +1250,22 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
         type: "APPEND_JSONL",
         workOutcome: "DEFER",
         path: "{{uiImprovementOutcomesFile:path=.machdoch/ralph/ui-improvements/outcomes.jsonl}}",
-        input: '{"outcome":"DEFER","scopeRoot":"{{scopeRoot:path=.}}"}',
+        input: "{{data:choose-ui-improvement:output}}",
+      },
+    },
+    {
+      id: "record-coverage-deferred-outcome",
+      title: "Record Deferred UI Coverage",
+      position: { x: 8260, y: 180 },
+      size: { width: 280, height: 170 },
+      settings: { retry: { mode: "finite", maxRetries: 3, delaySeconds: 1 } },
+      type: "UTILITY",
+      utility: {
+        type: "APPEND_JSONL",
+        workOutcome: "DEFER",
+        path: "{{uiImprovementOutcomesFile:path=.machdoch/ralph/ui-improvements/outcomes.jsonl}}",
+        input:
+          '{"outcome":"DEFER","scopeRoot":"{{scopeRoot:path=.}}","reason":"The coverage cycle is waiting on deferred scopes."}',
       },
     },
     {
@@ -1258,18 +1299,18 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       },
     },
     {
-      id: "scope-cycle-complete",
-      title: "Scope Cycle Complete?",
-      position: { x: 4060, y: 300 },
-      size: { width: 256, height: 170 },
+      id: "record-exhausted-outcome",
+      title: "Record Exhausted UI Coverage",
+      position: { x: 8260, y: 620 },
+      size: { width: 280, height: 170 },
+      settings: { retry: { mode: "finite", maxRetries: 3, delaySeconds: 1 } },
       type: "UTILITY",
       utility: {
-        type: "CONDITION",
-        condition: {
-          style: "javascript",
-          expression:
-            "(() => { const scanOutput = context.resultsByBlock?.['scan-ui-scopes']?.output; if (!['SUCCESS', 'EMPTY', 'ERROR'].includes(scanOutput)) throw new Error('UI scope scan outcome is missing or invalid.'); if (scanOutput === 'EMPTY') return true; if (scanOutput === 'ERROR') throw new Error('UI scope scan failed.'); const selectionOutput = context.resultsByBlock?.['select-scope']?.output; if (!['SELECTED', 'EMPTY', 'ERROR'].includes(selectionOutput)) throw new Error('UI scope selection outcome is missing or invalid.'); if (selectionOutput === 'EMPTY') return true; if (selectionOutput === 'ERROR') throw new Error('UI scope selection failed.'); for (const id of ['mark-scope-result', 'defer-scope', 'mark-stop-scope', 'mark-invalid-scope']) { const completed = context.resultsByBlock?.[id]?.data?.cycleCompleted; if (completed !== undefined && typeof completed !== 'boolean') throw new Error('UI scope completion state is invalid.'); if (completed === true) return true; } return false; })()",
-        },
+        type: "APPEND_JSONL",
+        workOutcome: "STOP",
+        path: "{{uiImprovementOutcomesFile:path=.machdoch/ralph/ui-improvements/outcomes.jsonl}}",
+        input:
+          '{"outcome":"STOP","scopeRoot":"{{scopeRoot:path=.}}","reason":"The current UI coverage cycle has no remaining eligible scope."}',
       },
     },
     {
@@ -1291,10 +1332,22 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
   ],
   edges: [
     {
-      id: "start-to-scan-ui-scopes",
+      id: "start-to-begin-scope-cycle",
       from: "start",
       fromOutput: "SUCCESS",
+      to: "begin-scope-cycle",
+    },
+    {
+      id: "begin-scope-cycle-to-scan-ui-scopes",
+      from: "begin-scope-cycle",
+      fromOutput: "SUCCESS",
       to: "scan-ui-scopes",
+    },
+    {
+      id: "begin-scope-cycle-error",
+      from: "begin-scope-cycle",
+      fromOutput: "ERROR",
+      to: "retained-active-report",
     },
     {
       id: "scan-ui-scopes-to-update",
@@ -1306,7 +1359,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       id: "scan-ui-scopes-empty",
       from: "scan-ui-scopes",
       fromOutput: "EMPTY",
-      to: "record-stop-outcome",
+      to: "record-exhausted-outcome",
     },
     {
       id: "scan-ui-scopes-error",
@@ -1324,7 +1377,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       id: "update-registry-empty",
       from: "update-scope-registry",
       fromOutput: "EMPTY",
-      to: "record-stop-outcome",
+      to: "record-exhausted-outcome",
     },
     {
       id: "update-registry-error",
@@ -1339,10 +1392,16 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       to: "detect-project-commands",
     },
     {
-      id: "select-scope-empty",
+      id: "select-scope-exhausted",
       from: "select-scope",
-      fromOutput: "EMPTY",
-      to: "record-stop-outcome",
+      fromOutput: "EXHAUSTED",
+      to: "record-exhausted-outcome",
+    },
+    {
+      id: "select-scope-deferred",
+      from: "select-scope",
+      fromOutput: "DEFERRED",
+      to: "record-coverage-deferred-outcome",
     },
     {
       id: "select-scope-error",
@@ -1372,29 +1431,59 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       id: "history-success-to-propose",
       from: "read-completed-ui-improvements",
       fromOutput: "SUCCESS",
-      to: "propose-ui-improvements",
+      to: "read-ui-outcomes",
     },
     {
       id: "history-empty-to-propose",
       from: "read-completed-ui-improvements",
       fromOutput: "EMPTY",
-      to: "propose-ui-improvements",
+      to: "read-ui-outcomes",
     },
     {
       id: "history-not-found-to-propose",
       from: "read-completed-ui-improvements",
       fromOutput: "NOT_FOUND",
-      to: "propose-ui-improvements",
+      to: "read-ui-outcomes",
     },
     {
       id: "history-invalid-to-propose",
       from: "read-completed-ui-improvements",
       fromOutput: "INVALID",
-      to: "propose-ui-improvements",
+      to: "read-ui-outcomes",
     },
     {
       id: "history-error-to-propose",
       from: "read-completed-ui-improvements",
+      fromOutput: "ERROR",
+      to: "read-ui-outcomes",
+    },
+    {
+      id: "outcomes-success-to-propose",
+      from: "read-ui-outcomes",
+      fromOutput: "SUCCESS",
+      to: "propose-ui-improvements",
+    },
+    {
+      id: "outcomes-empty-to-propose",
+      from: "read-ui-outcomes",
+      fromOutput: "EMPTY",
+      to: "propose-ui-improvements",
+    },
+    {
+      id: "outcomes-not-found-to-propose",
+      from: "read-ui-outcomes",
+      fromOutput: "NOT_FOUND",
+      to: "propose-ui-improvements",
+    },
+    {
+      id: "outcomes-invalid-to-propose",
+      from: "read-ui-outcomes",
+      fromOutput: "INVALID",
+      to: "propose-ui-improvements",
+    },
+    {
+      id: "outcomes-error-to-propose",
+      from: "read-ui-outcomes",
       fromOutput: "ERROR",
       to: "propose-ui-improvements",
     },
@@ -1939,10 +2028,10 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       to: "mark-invalid-scope",
     },
     {
-      id: "append-completed-to-mark",
+      id: "append-completed-to-ledger",
       from: "append-completed-ui-improvement",
       fromOutput: "SUCCESS",
-      to: "mark-scope-result",
+      to: "record-done-outcome",
     },
     {
       id: "append-completed-invalid",
@@ -1955,24 +2044,6 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       from: "append-completed-ui-improvement",
       fromOutput: "ERROR",
       to: "mark-invalid-scope",
-    },
-    {
-      id: "mark-done-to-ledger",
-      from: "mark-scope-result",
-      fromOutput: "SUCCESS",
-      to: "record-done-outcome",
-    },
-    {
-      id: "mark-done-missing-to-ledger",
-      from: "mark-scope-result",
-      fromOutput: "NOT_FOUND",
-      to: "record-done-outcome",
-    },
-    {
-      id: "mark-done-error-to-ledger",
-      from: "mark-scope-result",
-      fromOutput: "ERROR",
-      to: "record-done-outcome",
     },
     {
       id: "mark-defer-to-ledger",
@@ -2047,10 +2118,10 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       to: "retained-active-report",
     },
     {
-      id: "defer-ledger-to-retained-report",
+      id: "defer-ledger-to-archive",
       from: "record-deferred-outcome",
       fromOutput: "SUCCESS",
-      to: "retained-active-report",
+      to: "archive-active-ui-improvement",
     },
     {
       id: "defer-ledger-invalid-to-retained-report",
@@ -2083,10 +2154,10 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       to: "retained-active-report",
     },
     {
-      id: "invalid-ledger-to-retained-report",
+      id: "invalid-ledger-to-archive",
       from: "record-invalid-outcome",
       fromOutput: "SUCCESS",
-      to: "retained-active-report",
+      to: "archive-active-ui-improvement",
     },
     {
       id: "invalid-ledger-invalid-to-retained-report",
@@ -2122,7 +2193,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       id: "report-success-to-cycle",
       from: "final-report",
       fromOutput: "SUCCESS",
-      to: "scope-cycle-complete",
+      to: "scan-ui-scopes",
     },
     {
       id: "report-error-to-retained-report",
@@ -2143,20 +2214,50 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       to: "deferred",
     },
     {
-      id: "scope-cycle-complete-success",
-      from: "scope-cycle-complete",
-      fromOutput: "MATCH",
+      id: "coverage-deferred-recorded",
+      from: "record-coverage-deferred-outcome",
+      fromOutput: "SUCCESS",
+      to: "retained-active-report",
+    },
+    {
+      id: "coverage-deferred-record-invalid",
+      from: "record-coverage-deferred-outcome",
+      fromOutput: "INVALID",
+      to: "retained-active-report",
+    },
+    {
+      id: "coverage-deferred-record-error",
+      from: "record-coverage-deferred-outcome",
+      fromOutput: "ERROR",
+      to: "retained-active-report",
+    },
+    {
+      id: "coverage-exhausted-recorded",
+      from: "record-exhausted-outcome",
+      fromOutput: "SUCCESS",
+      to: "completion-report",
+    },
+    {
+      id: "coverage-exhausted-record-invalid",
+      from: "record-exhausted-outcome",
+      fromOutput: "INVALID",
+      to: "retained-active-report",
+    },
+    {
+      id: "coverage-exhausted-record-error",
+      from: "record-exhausted-outcome",
+      fromOutput: "ERROR",
+      to: "retained-active-report",
+    },
+    {
+      id: "completion-report-success",
+      from: "completion-report",
+      fromOutput: "SUCCESS",
       to: "success",
     },
     {
-      id: "scope-cycle-next",
-      from: "scope-cycle-complete",
-      fromOutput: "NO_MATCH",
-      to: "select-scope",
-    },
-    {
-      id: "scope-cycle-error",
-      from: "scope-cycle-complete",
+      id: "completion-report-error",
+      from: "completion-report",
       fromOutput: "ERROR",
       to: "retained-active-report",
     },
@@ -2165,7 +2266,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
 
 export const autonomousUiImprovementLoopStarterFlow = {
   id: "autonomous-ui-improvement-loop",
-  version: 16,
+  version: 19,
   defaultAlias: "autonomous-ui-improvement-loop",
   category: "Design Quality",
   tags: ["autonomous", "ui", "design", "visual-check"],

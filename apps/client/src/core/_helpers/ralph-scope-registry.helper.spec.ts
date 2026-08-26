@@ -2,8 +2,11 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  assessRalphScopeRegistryAvailability,
+  beginRalphScopeRegistryCycle,
   discoverRalphScopeEvidence,
   isCompletedRalphScopeOutcome,
+  isRalphScopeCoverageTerminalOutcome,
   markRalphScopeRegistryResult,
   parseRalphScopeRegistry,
   selectRalphScopeFromRegistry,
@@ -69,6 +72,10 @@ describe("Ralph scope registry helpers", () => {
         join(workspace, "packages", "api", "node_modules", "ignored"),
         { recursive: true },
       );
+      await mkdir(join(workspace, "target-debug1", "generated"), {
+        recursive: true,
+      });
+      await mkdir(join(workspace, "targeting"), { recursive: true });
       await writeFile(join(workspace, "package.json"), "{}", "utf8");
       await writeFile(join(workspace, "src", "index.ts"), "", "utf8");
       await writeFile(join(workspace, "src-tauri", "Cargo.toml"), "", "utf8");
@@ -116,6 +123,12 @@ describe("Ralph scope registry helpers", () => {
         "utf8",
       );
       await writeFile(
+        join(workspace, "target-debug1", "generated", "lib.rs"),
+        "",
+        "utf8",
+      );
+      await writeFile(join(workspace, "targeting", "index.ts"), "", "utf8");
+      await writeFile(
         join(
           workspace,
           "packages",
@@ -145,6 +158,8 @@ describe("Ralph scope registry helpers", () => {
       );
       expect(scopeIds.join("\n")).not.toContain("node-modules");
       expect(scopeIds.join("\n")).not.toContain("coverage");
+      expect(scopeIds.join("\n")).not.toContain("target-debug1");
+      expect(scopeIds).toContain("targeting");
       expect(
         evidence.scopes.find((scope) => scope.id === "src-tauri")?.risk,
       ).toBe("high");
@@ -193,6 +208,9 @@ describe("Ralph scope registry helpers", () => {
 
     expect(isCompletedRalphScopeOutcome("completed")).toBe(true);
     expect(isCompletedRalphScopeOutcome("deferred")).toBe(false);
+    expect(isRalphScopeCoverageTerminalOutcome("no-meaningful-work")).toBe(
+      true,
+    );
     expect(
       isCompletedRalphScopeOutcome(
         'completed because the model said "DONE"' as never,
@@ -377,8 +395,40 @@ describe("Ralph scope registry helpers", () => {
     });
 
     expect(secondMark.cycleCompleted).toBe(true);
-    expect(secondMark.registry.selection.cycle).toBe(2);
-    expect(secondMark.registry.selection.completedScopeIds).toEqual([]);
+    expect(secondMark.registry.selection.cycle).toBe(1);
+    expect(secondMark.registry.selection.completedScopeIds).toEqual([
+      "alpha",
+      "beta",
+    ]);
+
+    const exhaustedSelection = selectRalphScopeFromRegistry(
+      secondMark.registry,
+      {
+        strategy: "start-to-end",
+        now: "2026-06-25T10:06:00.000Z",
+      },
+    );
+    expect(exhaustedSelection.scope).toBeUndefined();
+
+    const nextCycle = beginRalphScopeRegistryCycle(secondMark.registry, {
+      now: "2026-06-25T10:07:00.000Z",
+    });
+    expect(nextCycle.cycleStarted).toBe(true);
+    expect(nextCycle.registry.selection.cycle).toBe(2);
+    expect(nextCycle.registry.selection.completedScopeIds).toEqual([]);
+    expect(nextCycle.registry.history.at(-1)).toMatchObject({
+      type: "scope-cycle-started",
+      cycle: 2,
+    });
+
+    const restartedSelection = selectRalphScopeFromRegistry(
+      nextCycle.registry,
+      {
+        strategy: "start-to-end",
+        now: "2026-06-25T10:08:00.000Z",
+      },
+    );
+    expect(restartedSelection.scope?.id).toBe("alpha");
   });
 
   it("cools down deferred scopes without counting them as validated or completed", () => {
@@ -470,7 +520,68 @@ describe("Ralph scope registry helpers", () => {
 
     expect(stopped.scope?.eligibleAfter).toBe("2026-06-26T10:03:00.000Z");
     expect(stopped.scope?.validatedCount).toBe(0);
-    expect(stopped.registry.selection.completedScopeIds).toEqual([]);
+    expect(stopped.registry.selection.completedScopeIds).toEqual(["alpha"]);
+  });
+
+  it("distinguishes pending scope cooldowns from evidence-backed exhaustion", () => {
+    const registry = updateRalphScopeRegistryFromEvidence(
+      parseRalphScopeRegistry(undefined, {
+        flowAlias: "test-flow",
+        strategy: "start-to-end",
+        now: "2026-06-25T10:00:00.000Z",
+      }),
+      createEvidence(),
+      {
+        flowAlias: "test-flow",
+        strategy: "start-to-end",
+        now: "2026-06-25T10:01:00.000Z",
+      },
+    ).registry;
+    const coolingDown = {
+      ...registry,
+      selection: {
+        ...registry.selection,
+        currentScopeId: null,
+        completedScopeIds: ["beta"],
+      },
+      scopes: registry.scopes.map((scope) =>
+        scope.id === "alpha"
+          ? {
+              ...scope,
+              lastOutcome: "deferred" as const,
+              eligibleAfter: "2026-06-25T10:31:00.000Z",
+            }
+          : { ...scope, lastOutcome: "completed" as const },
+      ),
+    };
+
+    expect(
+      assessRalphScopeRegistryAvailability(coolingDown, {
+        now: "2026-06-25T10:02:00.000Z",
+      }),
+    ).toMatchObject({
+      status: "deferred",
+      activeScopeCount: 2,
+      eligibleScopeCount: 1,
+      selectableScopeCount: 0,
+      nonTerminalScopeIds: ["alpha"],
+      nextEligibleAt: "2026-06-25T10:31:00.000Z",
+    });
+
+    const exhausted = {
+      ...coolingDown,
+      scopes: coolingDown.scopes.map((scope) => ({
+        ...scope,
+        lastOutcome: "no-meaningful-work" as const,
+        eligibleAfter: "2026-06-26T10:00:00.000Z",
+      })),
+    };
+
+    expect(
+      assessRalphScopeRegistryAvailability(exhausted, {
+        now: "2026-06-25T10:02:00.000Z",
+      }).status,
+    ).toBe("exhausted");
   });
 
   it("advances a lifie-style completed UI scope only after it is marked", () => {

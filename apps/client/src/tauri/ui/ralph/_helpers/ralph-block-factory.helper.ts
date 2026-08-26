@@ -286,6 +286,13 @@ export const createDefaultUtilityConfig = (
         strategy: "round-robin",
         includeMarkdown: true,
       };
+    case "BEGIN_SCOPE_CYCLE":
+      return {
+        type,
+        flowAlias: "{{flowAlias:string=scope-registry}}",
+        strategy: "round-robin",
+        includeMarkdown: true,
+      };
     case "SELECT_SCOPE":
       return {
         type,

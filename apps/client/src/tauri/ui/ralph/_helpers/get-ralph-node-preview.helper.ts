@@ -291,6 +291,12 @@ export const getUtilityNodePreview = (
         secondary: `Flow: ${compactPreviewText(utility.flowAlias, "ralph-flow")}`,
         chips: [utility.strategy ?? "round-robin", "JSON"],
       };
+    case "BEGIN_SCOPE_CYCLE":
+      return {
+        primary: `Begin cycle for ${compactPreviewText(utility.registryPath ?? utility.path, "default registry")}`,
+        secondary: `Flow: ${compactPreviewText(utility.flowAlias, "ralph-flow")}`,
+        chips: ["SUCCESS", "ERROR"],
+      };
     case "SELECT_SCOPE":
       return {
         primary: `Select scope from ${compactPreviewText(utility.registryPath ?? utility.path, "default registry")}`,

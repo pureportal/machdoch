@@ -99,7 +99,11 @@ export interface RalphScopeRegistrySelection {
 
 export interface RalphScopeRegistryHistoryEntry {
   at: string;
-  type: "registry-updated" | "scope-selected" | "scope-marked";
+  type:
+    | "registry-updated"
+    | "scope-selected"
+    | "scope-marked"
+    | "scope-cycle-started";
   scopeId?: string;
   cycle?: number;
   outcome?: RalphScopeOutcome;
@@ -132,7 +136,20 @@ export interface RalphScopeRegistrySelectionResult {
   scope?: RalphScopeRegistryScope;
   scopeCluster?: RalphScopeRegistryScopeCluster;
   reusedCurrentScope: boolean;
-  cycleStarted: boolean;
+}
+
+export type RalphScopeRegistryAvailabilityStatus =
+  | "ready"
+  | "exhausted"
+  | "deferred";
+
+export interface RalphScopeRegistryAvailability {
+  status: RalphScopeRegistryAvailabilityStatus;
+  activeScopeCount: number;
+  eligibleScopeCount: number;
+  selectableScopeCount: number;
+  nonTerminalScopeIds: string[];
+  nextEligibleAt?: string;
 }
 
 export interface RalphScopeRegistryScopeCluster {
@@ -149,6 +166,11 @@ export interface RalphScopeRegistryMarkResult {
   registry: RalphScopeRegistry;
   scope?: RalphScopeRegistryScope;
   cycleCompleted: boolean;
+}
+
+export interface RalphScopeRegistryCycleResult {
+  registry: RalphScopeRegistry;
+  cycleStarted: boolean;
 }
 
 const DEFAULT_SCOPE_SCAN_EXCLUDE_PATHS = [
@@ -625,6 +647,18 @@ const isExcludedScopePath = (
 ): boolean => {
   const normalizedPath = normalizeRegistryPath(relPath);
 
+  const excludesBuildTargets = excludePaths.some(
+    (excludePath) => normalizeRegistryPath(excludePath) === "target",
+  );
+  if (
+    excludesBuildTargets &&
+    getPathSegments(normalizedPath).some(
+      (segment) => segment === "target" || /^target[-_]/u.test(segment),
+    )
+  ) {
+    return true;
+  }
+
   return excludePaths.some((excludePath) => {
     const normalizedExclude = normalizeRegistryPath(excludePath);
     const nestedExclude = `/${normalizedExclude}/`;
@@ -1074,7 +1108,8 @@ export const parseRalphScopeRegistry = (
             if (
               entry.type !== "registry-updated" &&
               entry.type !== "scope-selected" &&
-              entry.type !== "scope-marked"
+              entry.type !== "scope-marked" &&
+              entry.type !== "scope-cycle-started"
             ) {
               throw new Error("Expected a valid Ralph scope history type.");
             }
@@ -1336,6 +1371,10 @@ export const isCompletedRalphScopeOutcome = (
   outcome: RalphScopeOutcome,
 ): boolean => outcome === "completed";
 
+export const isRalphScopeCoverageTerminalOutcome = (
+  outcome: RalphScopeOutcome | null | undefined,
+): boolean => outcome === "completed" || outcome === "no-meaningful-work";
+
 const getScopeOutcomeCooldownMs = (outcome: RalphScopeOutcome): number => {
   switch (outcome) {
     case "no-meaningful-work":
@@ -1369,6 +1408,59 @@ const isScopeEligibleAt = (
     !Number.isFinite(currentTime) ||
     eligibleAt <= currentTime
   );
+};
+
+export const assessRalphScopeRegistryAvailability = (
+  registry: RalphScopeRegistry,
+  options: { now?: string } = {},
+): RalphScopeRegistryAvailability => {
+  const now = options.now ?? new Date().toISOString();
+  const activeScopes = getActiveScopes(registry);
+  const eligibleScopes = activeScopes.filter((scope) =>
+    isScopeEligibleAt(scope, now),
+  );
+  const completedScopeIds = new Set(registry.selection.completedScopeIds);
+  const selectableScopes = eligibleScopes.filter(
+    (scope) => !completedScopeIds.has(scope.id),
+  );
+  const nonTerminalScopes = activeScopes.filter(
+    (scope) => !isRalphScopeCoverageTerminalOutcome(scope.lastOutcome),
+  );
+  const nextEligibleAt = activeScopes
+    .map((scope) => scope.eligibleAfter)
+    .filter(
+      (eligibleAfter): eligibleAfter is string =>
+        typeof eligibleAfter === "string" &&
+        Number.isFinite(Date.parse(eligibleAfter)) &&
+        Date.parse(eligibleAfter) > Date.parse(now),
+    )
+    .sort((left, right) => left.localeCompare(right))[0];
+
+  if (selectableScopes.length > 0) {
+    return {
+      status: "ready",
+      activeScopeCount: activeScopes.length,
+      eligibleScopeCount: eligibleScopes.length,
+      selectableScopeCount: selectableScopes.length,
+      nonTerminalScopeIds: nonTerminalScopes.map((scope) => scope.id),
+      ...(nextEligibleAt ? { nextEligibleAt } : {}),
+    };
+  }
+
+  const exhausted =
+    activeScopes.length === 0 ||
+    activeScopes.every((scope) =>
+      isRalphScopeCoverageTerminalOutcome(scope.lastOutcome),
+    );
+
+  return {
+    status: exhausted ? "exhausted" : "deferred",
+    activeScopeCount: activeScopes.length,
+    eligibleScopeCount: eligibleScopes.length,
+    selectableScopeCount: selectableScopes.length,
+    nonTerminalScopeIds: nonTerminalScopes.map((scope) => scope.id),
+    ...(nextEligibleAt ? { nextEligibleAt } : {}),
+  };
 };
 
 const riskRank: Record<RalphScopeRegistryRisk, number> = {
@@ -1705,7 +1797,6 @@ export const selectRalphScopeFromRegistry = (
       scope: currentScope,
       scopeCluster: createScopeCluster(registry, currentScope),
       reusedCurrentScope: true,
-      cycleStarted: false,
     };
   }
 
@@ -1716,7 +1807,6 @@ export const selectRalphScopeFromRegistry = (
         selection: { ...registry.selection, strategy, currentScopeId: null },
       },
       reusedCurrentScope: false,
-      cycleStarted: false,
     };
   }
 
@@ -1730,35 +1820,22 @@ export const selectRalphScopeFromRegistry = (
         selection: { ...registry.selection, strategy, currentScopeId: null },
       },
       reusedCurrentScope: false,
-      cycleStarted: false,
     };
   }
 
   const completedIds = new Set(registry.selection.completedScopeIds);
-  let candidateScopes = eligibleScopes.filter(
+  const candidateScopes = eligibleScopes.filter(
     (scope) => !completedIds.has(scope.id),
   );
-  let cycle = registry.selection.cycle;
-  let cycleStarted = false;
 
   if (candidateScopes.length === 0) {
-    const allActiveScopesCompleted = activeScopes.every((scope) =>
-      completedIds.has(scope.id),
-    );
-    if (!allActiveScopesCompleted) {
-      return {
-        registry: {
-          ...registry,
-          selection: { ...registry.selection, strategy, currentScopeId: null },
-        },
-        reusedCurrentScope: false,
-        cycleStarted: false,
-      };
-    }
-
-    candidateScopes = eligibleScopes;
-    cycle += 1;
-    cycleStarted = true;
+    return {
+      registry: {
+        ...registry,
+        selection: { ...registry.selection, strategy, currentScopeId: null },
+      },
+      reusedCurrentScope: false,
+    };
   }
 
   const picked = pickScope(candidateScopes, registry, strategy);
@@ -1782,18 +1859,14 @@ export const selectRalphScopeFromRegistry = (
         ...registry.selection,
         strategy,
         cursor: picked.cursor,
-        cycle,
         currentScopeId: picked.scope.id,
-        completedScopeIds: cycleStarted
-          ? []
-          : registry.selection.completedScopeIds,
       },
     },
     {
       at: now,
       type: "scope-selected",
       scopeId: picked.scope.id,
-      cycle,
+      cycle: registry.selection.cycle,
       summary: `${picked.scope.title} selected with ${strategy}.`,
     },
   );
@@ -1804,12 +1877,10 @@ export const selectRalphScopeFromRegistry = (
         scope: selectedScope,
         scopeCluster: createScopeCluster(nextRegistry, selectedScope),
         reusedCurrentScope: false,
-        cycleStarted,
       }
     : {
         registry: nextRegistry,
         reusedCurrentScope: false,
-        cycleStarted,
       };
 };
 
@@ -1838,16 +1909,16 @@ export const markRalphScopeRegistryResult = (
   }
 
   const completed = isCompletedRalphScopeOutcome(outcome);
-  const completedScopeIds = completed
+  const coverageTerminal = isRalphScopeCoverageTerminalOutcome(outcome);
+  const completedScopeIds = coverageTerminal
     ? [...new Set([...registry.selection.completedScopeIds, scopeId])]
     : registry.selection.completedScopeIds;
   const activeScopeIds = activeScopes.map((candidate) => candidate.id);
   const cycleCompleted =
-    completed &&
+    coverageTerminal &&
     activeScopeIds.every((activeScopeId) =>
       completedScopeIds.includes(activeScopeId),
     );
-  const nextCompletedScopeIds = cycleCompleted ? [] : completedScopeIds;
   const parsedNow = Date.parse(now);
   const eligibleAfter = completed
     ? null
@@ -1878,10 +1949,7 @@ export const markRalphScopeRegistryResult = (
       selection: {
         ...registry.selection,
         currentScopeId: null,
-        completedScopeIds: nextCompletedScopeIds,
-        cycle: cycleCompleted
-          ? registry.selection.cycle + 1
-          : registry.selection.cycle,
+        completedScopeIds,
       },
     },
     {
@@ -1898,6 +1966,46 @@ export const markRalphScopeRegistryResult = (
   return markedScope
     ? { registry: nextRegistry, scope: markedScope, cycleCompleted }
     : { registry: nextRegistry, cycleCompleted };
+};
+
+export const beginRalphScopeRegistryCycle = (
+  registry: RalphScopeRegistry,
+  options: { now?: string } = {},
+): RalphScopeRegistryCycleResult => {
+  const activeScopeIds = getActiveScopes(registry).map((scope) => scope.id);
+  const completedScopeIds = new Set(registry.selection.completedScopeIds);
+  const cycleCompleted =
+    activeScopeIds.length > 0 &&
+    activeScopeIds.every((scopeId) => completedScopeIds.has(scopeId));
+
+  if (!cycleCompleted) {
+    return { registry, cycleStarted: false };
+  }
+
+  const now = options.now ?? new Date().toISOString();
+  const cycle = registry.selection.cycle + 1;
+
+  return {
+    registry: appendHistory(
+      {
+        ...registry,
+        updatedAt: now,
+        selection: {
+          ...registry.selection,
+          currentScopeId: null,
+          completedScopeIds: [],
+          cycle,
+        },
+      },
+      {
+        at: now,
+        type: "scope-cycle-started",
+        cycle,
+        summary: "Started a new scope coverage cycle.",
+      },
+    ),
+    cycleStarted: true,
+  };
 };
 
 export const readRalphScopeRegistryFile = async (

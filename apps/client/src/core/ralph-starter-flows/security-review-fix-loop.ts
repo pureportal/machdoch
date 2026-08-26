@@ -184,6 +184,23 @@ const securityFixLoopFlow: RalphFlow = {
       type: "START",
     },
     {
+      id: "begin-scope-cycle",
+      title: "Begin Scope Cycle",
+      position: { x: 700, y: 120 },
+      size: { width: 280, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "BEGIN_SCOPE_CYCLE",
+        flowAlias: "security-review-fix-loop",
+        registryPath:
+          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/security-review-fix-loop.scope-registry.json}}",
+        outputPath:
+          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/security-review-fix-loop.scope-registry.md}}",
+        strategy: "{{scopeSelectionStrategy:text=risk-first}}",
+        includeMarkdown: true,
+      },
+    },
+    {
       id: "research-decision",
       title: "Use Online Research?",
       position: { x: 700, y: 0 },
@@ -212,7 +229,7 @@ const securityFixLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Use content enrichment before the security review for selected JSON scope {{result:select-scope}}. If search_web is available, run focused searches for current primary-source security guidance, standards, advisories, framework hardening docs, and relevant changelogs for project stack {{projectStack:text=auto-detect}}, detected commands {{result:detect-project-commands}}, and these standards: {{securityStandards:text=OWASP Top 10, OWASP ASVS}}. Use fetch_url on official standards, vendor, maintainer, or advisory pages before relying on them. Keep the research concise and focus on the selected paths/globs, configured scope root {{scopeRoot:path=.}}, and fix threshold {{severityThreshold:text=high}}. Include source links, standard versions/requirement ids when available, relevant checks, exploitability notes, and assumptions. If web search is unavailable, say so and use local package/config evidence plus any provided URLs.",
+        "Use content enrichment before the security review for selected JSON scope {{result:select-scope}} and bounded durable outcomes {{result:read-security-outcomes}}. If search_web is available, run focused searches for current primary-source security guidance, standards, advisories, framework hardening docs, and relevant changelogs for project stack {{projectStack:text=auto-detect}}, detected commands {{result:detect-project-commands}}, and these standards: {{securityStandards:text=OWASP Top 10, OWASP ASVS}}. Use fetch_url on official standards, vendor, maintainer, or advisory pages before relying on them. Keep the research concise and focus on the selected paths/globs, configured scope root {{scopeRoot:path=.}}, and fix threshold {{severityThreshold:text=high}}. Include source links, standard versions/requirement ids when available, relevant checks, exploitability notes, and assumptions. If web search is unavailable, say so and use local package/config evidence plus any provided URLs.",
     },
     {
       id: "scan-scopes",
@@ -271,6 +288,19 @@ const securityFixLoopFlow: RalphFlow = {
         rootPath: "{{data:select-scope:scope.paths.0}}",
         outputPath:
           "{{projectCommandsFile:path=.machdoch/ralph/security/project-commands.json}}",
+      },
+    },
+    {
+      id: "read-security-outcomes",
+      title: "Read Security Outcomes",
+      position: { x: 2040, y: -20 },
+      size: { width: 280, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "QUERY_JSONL",
+        path: "{{securityOutcomesFile:path=.machdoch/ralph/security/outcomes.jsonl}}",
+        maxResults: 50,
+        order: "newest",
       },
     },
     {
@@ -369,7 +399,7 @@ const securityFixLoopFlow: RalphFlow = {
           },
         },
         prompt:
-          "Run a focused security review for selected JSON scope {{result:select-scope}}. Use project stack {{projectStack:text=auto-detect}}, detected commands {{result:detect-project-commands}}, standards {{securityStandards:text=OWASP Top 10, OWASP ASVS}}, fix threshold {{severityThreshold:text=high}}, auth test instructions {{authTestInstructions:text=}}, git baseline {{result:git-snapshot-before}}, pre-change verification baseline {{result:baseline-verification}}, and research {{summary:security-research}} when present. Inspect selected paths explicitly. Return JSON with coveredPaths, concise threatModel, and findings at or above threshold. Findings must include severity, evidence, exploitability, file references, and fixPlan. If none qualify, return findings: []. Schema, dependency, and public API changes are allowed when needed and verified.",
+          "Run a focused security review for selected JSON scope {{result:select-scope}}. Use project stack {{projectStack:text=auto-detect}}, detected commands {{result:detect-project-commands}}, bounded durable outcomes {{result:read-security-outcomes}}, standards {{securityStandards:text=OWASP Top 10, OWASP ASVS}}, fix threshold {{severityThreshold:text=high}}, auth test instructions {{authTestInstructions:text=}}, git baseline {{result:git-snapshot-before}}, pre-change verification baseline {{result:baseline-verification}}, and research {{summary:security-research}} when present. Inspect selected paths explicitly. Reassess previously repaired findings and resume deferred findings whose blockers are gone without repeating completed work. Return JSON with coveredPaths, concise threatModel, and findings at or above threshold. Findings must include severity, evidence, exploitability, file references, and fixPlan. If none qualify, return findings: []. Schema, dependency, and public API changes are allowed when needed and verified.",
       },
     },
     {
@@ -501,6 +531,19 @@ const securityFixLoopFlow: RalphFlow = {
       },
     },
     {
+      id: "completion-report",
+      title: "Security Coverage Report",
+      position: { x: 5100, y: -240 },
+      size: { width: 280, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "FINAL_REPORT",
+        path: "{{securityReportFile:path=.machdoch/ralph/security/final-report.json}}",
+        outputPath:
+          "{{securityReportMarkdown:path=.machdoch/ralph/security/final-report.md}}",
+      },
+    },
+    {
       id: "mark-scope-result",
       title: "Mark Scope Result",
       position: { x: 5100, y: 0 },
@@ -578,6 +621,20 @@ const securityFixLoopFlow: RalphFlow = {
       },
     },
     {
+      id: "record-security-findings",
+      title: "Retain Security Findings",
+      position: { x: 2890, y: -120 },
+      size: { width: 280, height: 170 },
+      settings: { retry: { mode: "finite", maxRetries: 3, delaySeconds: 1 } },
+      type: "UTILITY",
+      utility: {
+        type: "APPEND_JSONL",
+        path: "{{securityOutcomesFile:path=.machdoch/ralph/security/outcomes.jsonl}}",
+        input:
+          '{"state":"selected","scopeId":"{{data:select-scope:scope.id}}","review":{{data:security-check:output}}}',
+      },
+    },
+    {
       id: "record-done-outcome",
       title: "Record Completed Security Outcome",
       position: { x: 5440, y: -240 },
@@ -588,7 +645,8 @@ const securityFixLoopFlow: RalphFlow = {
         type: "APPEND_JSONL",
         workOutcome: "DONE",
         path: "{{securityOutcomesFile:path=.machdoch/ralph/security/outcomes.jsonl}}",
-        input: '{"outcome":"DONE","scopeRoot":"{{scopeRoot:path=.}}"}',
+        input:
+          '{"state":"repaired","scopeId":"{{data:select-scope:scope.id}}","review":{{data:security-check:output}},"validation":{{data:verify-stop-condition:output}}}',
       },
     },
     {
@@ -602,7 +660,8 @@ const securityFixLoopFlow: RalphFlow = {
         type: "APPEND_JSONL",
         workOutcome: "DEFER",
         path: "{{securityOutcomesFile:path=.machdoch/ralph/security/outcomes.jsonl}}",
-        input: '{"outcome":"DEFER","scopeRoot":"{{scopeRoot:path=.}}"}',
+        input:
+          '{"state":"deferred","scopeId":"{{data:select-scope:scope.id}}","review":{{data:security-check:output}}}',
       },
     },
     {
@@ -616,7 +675,8 @@ const securityFixLoopFlow: RalphFlow = {
         type: "APPEND_JSONL",
         workOutcome: "STOP",
         path: "{{securityOutcomesFile:path=.machdoch/ralph/security/outcomes.jsonl}}",
-        input: '{"outcome":"STOP","scopeRoot":"{{scopeRoot:path=.}}"}',
+        input:
+          '{"state":"clear","scopeId":"{{data:select-scope:scope.id}}","review":{{data:security-check:output}}}',
       },
     },
     {
@@ -634,18 +694,33 @@ const securityFixLoopFlow: RalphFlow = {
       },
     },
     {
-      id: "scope-cycle-complete",
-      title: "Scope Cycle Complete?",
-      position: { x: 5440, y: 0 },
-      size: { width: 256, height: 170 },
+      id: "record-coverage-deferred-outcome",
+      title: "Record Deferred Security Coverage",
+      position: { x: 5780, y: 180 },
+      size: { width: 280, height: 170 },
+      settings: { retry: { mode: "finite", maxRetries: 3, delaySeconds: 1 } },
       type: "UTILITY",
       utility: {
-        type: "CONDITION",
-        condition: {
-          style: "javascript",
-          expression:
-            "(() => { const scanOutput = context.resultsByBlock?.['scan-scopes']?.output; if (!['SUCCESS', 'EMPTY', 'ERROR'].includes(scanOutput)) throw new Error('Security scope scan outcome is missing or invalid.'); if (scanOutput === 'EMPTY') return true; if (scanOutput === 'ERROR') throw new Error('Security scope scan failed.'); const selectionOutput = context.resultsByBlock?.['select-scope']?.output; if (!['SELECTED', 'EMPTY', 'ERROR'].includes(selectionOutput)) throw new Error('Security scope selection outcome is missing or invalid.'); if (selectionOutput === 'EMPTY') return true; if (selectionOutput === 'ERROR') throw new Error('Security scope selection failed.'); for (const id of ['mark-scope-result', 'defer-scope', 'mark-invalid-scope']) { const completed = context.resultsByBlock?.[id]?.data?.cycleCompleted; if (completed !== undefined && typeof completed !== 'boolean') throw new Error('Security scope completion state is invalid.'); if (completed === true) return true; } return false; })()",
-        },
+        type: "APPEND_JSONL",
+        workOutcome: "DEFER",
+        path: "{{securityOutcomesFile:path=.machdoch/ralph/security/outcomes.jsonl}}",
+        input:
+          '{"state":"coverage-deferred","scopeRoot":"{{scopeRoot:path=.}}","reason":"The coverage cycle is waiting on deferred scopes."}',
+      },
+    },
+    {
+      id: "record-exhausted-outcome",
+      title: "Record Exhausted Security Coverage",
+      position: { x: 5780, y: 380 },
+      size: { width: 280, height: 170 },
+      settings: { retry: { mode: "finite", maxRetries: 3, delaySeconds: 1 } },
+      type: "UTILITY",
+      utility: {
+        type: "APPEND_JSONL",
+        workOutcome: "STOP",
+        path: "{{securityOutcomesFile:path=.machdoch/ralph/security/outcomes.jsonl}}",
+        input:
+          '{"state":"coverage-exhausted","scopeRoot":"{{scopeRoot:path=.}}","reason":"The current security coverage cycle has no remaining eligible scope."}',
       },
     },
     {
@@ -667,10 +742,22 @@ const securityFixLoopFlow: RalphFlow = {
   ],
   edges: [
     {
-      id: "start-to-scan-scopes",
+      id: "start-to-begin-scope-cycle",
       from: "start",
       fromOutput: "SUCCESS",
+      to: "begin-scope-cycle",
+    },
+    {
+      id: "begin-scope-cycle-to-scan-scopes",
+      from: "begin-scope-cycle",
+      fromOutput: "SUCCESS",
       to: "scan-scopes",
+    },
+    {
+      id: "begin-scope-cycle-error",
+      from: "begin-scope-cycle",
+      fromOutput: "ERROR",
+      to: "retained-outcome-report",
     },
     {
       id: "scan-scopes-to-update",
@@ -682,7 +769,7 @@ const securityFixLoopFlow: RalphFlow = {
       id: "scan-scopes-empty",
       from: "scan-scopes",
       fromOutput: "EMPTY",
-      to: "record-stop-outcome",
+      to: "record-exhausted-outcome",
     },
     {
       id: "scan-scopes-error",
@@ -700,7 +787,7 @@ const securityFixLoopFlow: RalphFlow = {
       id: "update-registry-empty",
       from: "update-scope-registry",
       fromOutput: "EMPTY",
-      to: "record-stop-outcome",
+      to: "record-exhausted-outcome",
     },
     {
       id: "update-registry-error",
@@ -715,10 +802,16 @@ const securityFixLoopFlow: RalphFlow = {
       to: "detect-project-commands",
     },
     {
-      id: "select-scope-empty",
+      id: "select-scope-exhausted",
       from: "select-scope",
-      fromOutput: "EMPTY",
-      to: "record-stop-outcome",
+      fromOutput: "EXHAUSTED",
+      to: "record-exhausted-outcome",
+    },
+    {
+      id: "select-scope-deferred",
+      from: "select-scope",
+      fromOutput: "DEFERRED",
+      to: "record-coverage-deferred-outcome",
     },
     {
       id: "select-scope-error",
@@ -730,17 +823,47 @@ const securityFixLoopFlow: RalphFlow = {
       id: "detect-commands-to-research-decision",
       from: "detect-project-commands",
       fromOutput: "SUCCESS",
-      to: "research-decision",
+      to: "read-security-outcomes",
     },
     {
       id: "detect-commands-empty-to-research-decision",
       from: "detect-project-commands",
       fromOutput: "EMPTY",
-      to: "research-decision",
+      to: "read-security-outcomes",
     },
     {
       id: "detect-commands-error-to-research-decision",
       from: "detect-project-commands",
+      fromOutput: "ERROR",
+      to: "read-security-outcomes",
+    },
+    {
+      id: "outcomes-success-to-research-decision",
+      from: "read-security-outcomes",
+      fromOutput: "SUCCESS",
+      to: "research-decision",
+    },
+    {
+      id: "outcomes-empty-to-research-decision",
+      from: "read-security-outcomes",
+      fromOutput: "EMPTY",
+      to: "research-decision",
+    },
+    {
+      id: "outcomes-not-found-to-research-decision",
+      from: "read-security-outcomes",
+      fromOutput: "NOT_FOUND",
+      to: "research-decision",
+    },
+    {
+      id: "outcomes-invalid-to-research-decision",
+      from: "read-security-outcomes",
+      fromOutput: "INVALID",
+      to: "research-decision",
+    },
+    {
+      id: "outcomes-error-to-research-decision",
+      from: "read-security-outcomes",
       fromOutput: "ERROR",
       to: "research-decision",
     },
@@ -826,7 +949,7 @@ const securityFixLoopFlow: RalphFlow = {
       id: "findings-present-fix",
       from: "findings-present",
       fromOutput: "MATCH",
-      to: "count-fix-loop",
+      to: "record-security-findings",
     },
     {
       id: "findings-present-none",
@@ -839,6 +962,24 @@ const securityFixLoopFlow: RalphFlow = {
       from: "findings-present",
       fromOutput: "ERROR",
       to: "mark-invalid-scope",
+    },
+    {
+      id: "security-findings-retained",
+      from: "record-security-findings",
+      fromOutput: "SUCCESS",
+      to: "count-fix-loop",
+    },
+    {
+      id: "security-findings-invalid",
+      from: "record-security-findings",
+      fromOutput: "INVALID",
+      to: "mark-invalid-scope",
+    },
+    {
+      id: "security-findings-error",
+      from: "record-security-findings",
+      fromOutput: "ERROR",
+      to: "retained-outcome-report",
     },
     {
       id: "count-fix-loop-continue",
@@ -952,7 +1093,7 @@ const securityFixLoopFlow: RalphFlow = {
       id: "verify-done",
       from: "verify-stop-condition",
       fromOutput: "DONE",
-      to: "mark-scope-result",
+      to: "record-done-outcome",
     },
     {
       id: "verify-continue",
@@ -982,19 +1123,19 @@ const securityFixLoopFlow: RalphFlow = {
       id: "mark-done-to-ledger",
       from: "mark-scope-result",
       fromOutput: "SUCCESS",
-      to: "record-done-outcome",
+      to: "record-stop-outcome",
     },
     {
       id: "mark-done-missing-to-ledger",
       from: "mark-scope-result",
       fromOutput: "NOT_FOUND",
-      to: "record-done-outcome",
+      to: "record-stop-outcome",
     },
     {
       id: "mark-done-error-to-ledger",
       from: "mark-scope-result",
       fromOutput: "ERROR",
-      to: "record-done-outcome",
+      to: "record-stop-outcome",
     },
     {
       id: "mark-defer-to-ledger",
@@ -1051,10 +1192,10 @@ const securityFixLoopFlow: RalphFlow = {
       to: "retained-outcome-report",
     },
     {
-      id: "defer-ledger-to-retained-report",
+      id: "defer-ledger-to-report",
       from: "record-deferred-outcome",
       fromOutput: "SUCCESS",
-      to: "retained-outcome-report",
+      to: "final-report",
     },
     {
       id: "defer-ledger-invalid-to-retained-report",
@@ -1108,7 +1249,7 @@ const securityFixLoopFlow: RalphFlow = {
       id: "report-success-to-cycle",
       from: "final-report",
       fromOutput: "SUCCESS",
-      to: "scope-cycle-complete",
+      to: "scan-scopes",
     },
     {
       id: "report-error-to-retained-report",
@@ -1129,20 +1270,50 @@ const securityFixLoopFlow: RalphFlow = {
       to: "deferred",
     },
     {
-      id: "scope-cycle-complete-success",
-      from: "scope-cycle-complete",
-      fromOutput: "MATCH",
+      id: "coverage-deferred-recorded",
+      from: "record-coverage-deferred-outcome",
+      fromOutput: "SUCCESS",
+      to: "retained-outcome-report",
+    },
+    {
+      id: "coverage-deferred-record-invalid",
+      from: "record-coverage-deferred-outcome",
+      fromOutput: "INVALID",
+      to: "retained-outcome-report",
+    },
+    {
+      id: "coverage-deferred-record-error",
+      from: "record-coverage-deferred-outcome",
+      fromOutput: "ERROR",
+      to: "retained-outcome-report",
+    },
+    {
+      id: "coverage-exhausted-recorded",
+      from: "record-exhausted-outcome",
+      fromOutput: "SUCCESS",
+      to: "completion-report",
+    },
+    {
+      id: "coverage-exhausted-record-invalid",
+      from: "record-exhausted-outcome",
+      fromOutput: "INVALID",
+      to: "retained-outcome-report",
+    },
+    {
+      id: "coverage-exhausted-record-error",
+      from: "record-exhausted-outcome",
+      fromOutput: "ERROR",
+      to: "retained-outcome-report",
+    },
+    {
+      id: "completion-report-success",
+      from: "completion-report",
+      fromOutput: "SUCCESS",
       to: "success",
     },
     {
-      id: "scope-cycle-next",
-      from: "scope-cycle-complete",
-      fromOutput: "NO_MATCH",
-      to: "select-scope",
-    },
-    {
-      id: "scope-cycle-error",
-      from: "scope-cycle-complete",
+      id: "completion-report-error",
+      from: "completion-report",
       fromOutput: "ERROR",
       to: "retained-outcome-report",
     },
@@ -1151,7 +1322,7 @@ const securityFixLoopFlow: RalphFlow = {
 
 export const securityReviewFixLoopStarterFlow = {
   id: "security-fix-loop",
-  version: 13,
+  version: 16,
   defaultAlias: "security-review-fix-loop",
   category: "Security",
   tags: ["optional", "review", "fix", "tests"],
