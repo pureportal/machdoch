@@ -1,10 +1,8 @@
 import {
   Archive,
-  ChevronDown,
   Copy,
   Download,
   Ellipsis,
-  Folder,
   Pin,
   Plus,
   Search,
@@ -76,6 +74,10 @@ import {
   type SessionStatusFilter,
   type SessionStatusFilterSelection,
 } from "../_helpers/session-shell.ts";
+import {
+  WorkspaceSelect,
+  type WorkspaceSelectOption,
+} from "./workspace-select";
 
 const SESSION_CONTEXT_MENU_WIDTH = 192;
 const SESSION_CONTEXT_MENU_HEIGHT = 144;
@@ -397,6 +399,25 @@ export const SessionsSidebar = ({
   const sessionProjectCount = sessionProjectFacets.filter(
     (project) => project.path !== null,
   ).length;
+  const workspaceFilterOptions = useMemo<WorkspaceSelectOption[]>(
+    () => [
+      {
+        id: ALL_SESSION_PROJECTS_FILTER,
+        label: `All workspaces (${sessionProjectCount})`,
+        path: null,
+      },
+      ...sessionProjectFacets.map((project) => ({
+        id: project.id,
+        label: createSessionProjectOptionLabel(project),
+        path: project.path,
+        icon: project.path === null ? ("not-set" as const) : undefined,
+      })),
+    ],
+    [sessionProjectCount, sessionProjectFacets],
+  );
+  const selectedWorkspaceFilterLabel =
+    workspaceFilterOptions.find((option) => option.id === sessionProjectFilter)
+      ?.label ?? `All workspaces (${sessionProjectCount})`;
   const selectedStatusFilters = useMemo(
     () => normalizeSessionStatusFilterSelection(sessionStatusFilters),
     [sessionStatusFilters],
@@ -798,38 +819,28 @@ export const SessionsSidebar = ({
               event.currentTarget.value = "";
             }}
           />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                aria-label="Import sessions"
-                onClick={() => importInputRef.current?.click()}
-                className="app-sessions-toolbar-button h-8 w-8 rounded-xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-              >
-                <Upload className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Import sessions</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                aria-label="Export visible sessions"
-                onClick={onExportSessions}
-                className="app-sessions-toolbar-button h-8 w-8 rounded-xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-              >
-                <Download className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              Export visible sessions
-            </TooltipContent>
-          </Tooltip>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            aria-label="Import sessions"
+            tooltipProps={{ side: "bottom" }}
+            onClick={() => importInputRef.current?.click()}
+            className="app-sessions-toolbar-button h-8 w-8 rounded-xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+          >
+            <Upload className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            aria-label="Export visible sessions"
+            tooltipProps={{ side: "bottom" }}
+            onClick={onExportSessions}
+            className="app-sessions-toolbar-button h-8 w-8 rounded-xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+          >
+            <Download className="h-4 w-4" />
+          </Button>
           <Button
             type="button"
             size="sm"
@@ -860,27 +871,18 @@ export const SessionsSidebar = ({
             />
 
             {showSessionProjectFilter ? (
-              <div className="relative">
-                <Folder className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-500" />
-                <select
-                  aria-label="Workspace filter"
-                  value={sessionProjectFilter}
-                  onChange={(event) =>
-                    onSessionProjectFilterChange(event.target.value)
-                  }
-                  className="app-sessions-workspace-filter h-9 w-full appearance-none truncate rounded-xl border border-slate-800 bg-slate-950/80 py-1 pr-8 pl-9 text-sm font-medium text-slate-200 outline-none transition-[border-color,box-shadow] hover:border-slate-700 focus-visible:border-slate-600 focus-visible:ring-1 focus-visible:ring-slate-600/35"
-                >
-                  <option value={ALL_SESSION_PROJECTS_FILTER}>
-                    {`All workspaces (${sessionProjectCount})`}
-                  </option>
-                  {sessionProjectFacets.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {createSessionProjectOptionLabel(project)}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-slate-500" />
-              </div>
+              <WorkspaceSelect
+                selectedOptionId={sessionProjectFilter}
+                options={workspaceFilterOptions}
+                buttonLabel={selectedWorkspaceFilterLabel}
+                active={sessionProjectFilter !== ALL_SESSION_PROJECTS_FILTER}
+                buttonAriaLabel="Workspace filter"
+                buttonClassName="app-sessions-workspace-filter h-9 w-full min-w-0 justify-start rounded-xl border-slate-800 bg-slate-950/80 px-3 text-sm font-medium text-slate-200 shadow-none hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100"
+                contentClassName="w-[var(--radix-popover-trigger-width)]"
+                onSelectOption={(option) =>
+                  onSessionProjectFilterChange(option.id)
+                }
+              />
             ) : null}
 
             {sessionTagFacets.length > 0 ? (
@@ -921,28 +923,22 @@ export const SessionsSidebar = ({
                 const isSelected = sessionScopeFilter === filter.id;
 
                 return (
-                  <Tooltip key={filter.id}>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        aria-label={`Scope: ${filter.label}`}
-                        aria-pressed={isSelected}
-                        onClick={() => onSessionScopeFilterChange(filter.id)}
-                        className={cn(
-                          "app-session-filter-button h-7 w-6 rounded-lg border border-transparent text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100",
-                          isSelected &&
-                            "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
-                        )}
-                      >
-                        <FilterIcon className="h-3.5 w-3.5" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">
-                      {`Scope: ${filter.label}`}
-                    </TooltipContent>
-                  </Tooltip>
+                  <Button
+                    key={filter.id}
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    aria-label={`Scope: ${filter.label}`}
+                    aria-pressed={isSelected}
+                    onClick={() => onSessionScopeFilterChange(filter.id)}
+                    className={cn(
+                      "app-session-filter-button h-7 w-6 rounded-lg border border-transparent text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100",
+                      isSelected &&
+                        "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
+                    )}
+                  >
+                    <FilterIcon className="h-3.5 w-3.5" />
+                  </Button>
                 );
               })}
             </div>
@@ -955,28 +951,22 @@ export const SessionsSidebar = ({
                 const isSelected = selectedStatusFilters.includes(filter.id);
 
                 return (
-                  <Tooltip key={filter.id}>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        aria-label={`Status: ${filter.label}`}
-                        aria-pressed={isSelected}
-                        onClick={() => toggleSessionStatusFilter(filter.id)}
-                        className={cn(
-                          "app-session-filter-button h-7 w-6 rounded-lg border border-transparent text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100",
-                          isSelected &&
-                            "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
-                        )}
-                      >
-                        <FilterIcon className="h-3.5 w-3.5" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">
-                      {`Status: ${filter.label}`}
-                    </TooltipContent>
-                  </Tooltip>
+                  <Button
+                    key={filter.id}
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    aria-label={`Status: ${filter.label}`}
+                    aria-pressed={isSelected}
+                    onClick={() => toggleSessionStatusFilter(filter.id)}
+                    className={cn(
+                      "app-session-filter-button h-7 w-6 rounded-lg border border-transparent text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100",
+                      isSelected &&
+                        "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
+                    )}
+                  >
+                    <FilterIcon className="h-3.5 w-3.5" />
+                  </Button>
                 );
               })}
             </div>
@@ -1159,7 +1149,7 @@ export const SessionsSidebar = ({
                           size="icon"
                           variant="ghost"
                           aria-label={`Session actions for ${sessionTitle}`}
-                          title="Session actions"
+                          tooltip="Session actions"
                           aria-haspopup="menu"
                           aria-expanded={
                             sessionContextMenu?.sessionId === session.id
