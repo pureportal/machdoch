@@ -1,10 +1,13 @@
 use std::{
     fs::{self, OpenOptions},
     io,
+    path::Path,
     process::{Command, ExitStatus, Stdio},
     thread,
     time::{Duration, Instant},
 };
+
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -64,6 +67,8 @@ struct AuxiliaryCliProgressContext {
 // counts, and JSON formatting, so retain a bounded 2x allowance for the
 // desktop editor while other auxiliary commands keep the 1 MiB default.
 const INSTRUCTION_CLI_OUTPUT_CAPTURE_LIMIT_BYTES: usize = 128 * 1024 * 1024;
+const SCHEDULER_SERVICE_OWNER_FRESHNESS: Duration = Duration::from_secs(120);
+const SCHEDULER_SERVICE_MODE: &str = "service-all";
 
 const SCHEDULER_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
     subcommand: "scheduler",
@@ -104,6 +109,156 @@ const TASK_INTERVIEW_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
     failure_name: "task interview",
     stdout_capture_limit_bytes: SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
 };
+
+#[derive(Debug, PartialEq, Eq)]
+enum SchedulerServiceOwnerClassification {
+    Missing,
+    Malformed,
+    Stale,
+    Dead,
+    NonScheduler,
+    Reusable(u32),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum SchedulerServiceStartDecision {
+    LaunchReplacement,
+    Reuse(u32),
+}
+
+trait SchedulerProcessInspector {
+    fn command_line(&self, pid: u32) -> Option<Vec<String>>;
+}
+
+struct SystemSchedulerProcessInspector;
+
+impl SchedulerProcessInspector for SystemSchedulerProcessInspector {
+    fn command_line(&self, pid: u32) -> Option<Vec<String>> {
+        if pid == 0 {
+            return None;
+        }
+
+        let pid = Pid::from_u32(pid);
+        let mut system = System::new();
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::Some(&[pid]),
+            true,
+            ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
+        );
+
+        system.process(pid).map(|process| {
+            process
+                .cmd()
+                .iter()
+                .map(|argument| argument.to_string_lossy().into_owned())
+                .collect()
+        })
+    }
+}
+
+fn scheduler_owner_pid(owner: &str) -> Option<u32> {
+    let (pid, issued_at) = owner.trim().split_once(':')?;
+    let pid = pid.parse::<u32>().ok()?;
+
+    (pid > 0 && issued_at.parse::<u64>().is_ok()).then_some(pid)
+}
+
+fn is_scheduler_service_command(command_line: &[String]) -> bool {
+    command_line.windows(5).any(|arguments| {
+        arguments[0] == "--json"
+            && arguments[1] == "--cwd"
+            && !arguments[2].is_empty()
+            && arguments[3] == SCHEDULER_CLI_SPEC.subcommand
+            && arguments[4] == SCHEDULER_SERVICE_MODE
+    })
+}
+
+fn classify_scheduler_service_owner(
+    owner: Option<&str>,
+    age: Option<Duration>,
+    process_inspector: &impl SchedulerProcessInspector,
+) -> SchedulerServiceOwnerClassification {
+    let Some(pid) = owner.and_then(scheduler_owner_pid) else {
+        return if owner.is_some() {
+            SchedulerServiceOwnerClassification::Malformed
+        } else {
+            SchedulerServiceOwnerClassification::Missing
+        };
+    };
+
+    if age.is_none_or(|age| age > SCHEDULER_SERVICE_OWNER_FRESHNESS) {
+        return SchedulerServiceOwnerClassification::Stale;
+    }
+
+    let Some(command_line) = process_inspector.command_line(pid) else {
+        return SchedulerServiceOwnerClassification::Dead;
+    };
+
+    if is_scheduler_service_command(&command_line) {
+        SchedulerServiceOwnerClassification::Reusable(pid)
+    } else {
+        SchedulerServiceOwnerClassification::NonScheduler
+    }
+}
+
+fn scheduler_service_start_decision(
+    owner: Option<&str>,
+    age: Option<Duration>,
+    process_inspector: &impl SchedulerProcessInspector,
+) -> SchedulerServiceStartDecision {
+    match classify_scheduler_service_owner(owner, age, process_inspector) {
+        SchedulerServiceOwnerClassification::Reusable(pid) => {
+            SchedulerServiceStartDecision::Reuse(pid)
+        }
+        SchedulerServiceOwnerClassification::Missing
+        | SchedulerServiceOwnerClassification::Malformed
+        | SchedulerServiceOwnerClassification::Stale
+        | SchedulerServiceOwnerClassification::Dead
+        | SchedulerServiceOwnerClassification::NonScheduler => {
+            SchedulerServiceStartDecision::LaunchReplacement
+        }
+    }
+}
+
+fn scheduler_service_owner_age(owner_path: &Path) -> Option<Duration> {
+    fs::metadata(owner_path)
+        .ok()
+        .and_then(|metadata| metadata.modified().ok())
+        .and_then(|modified| modified.elapsed().ok())
+}
+
+fn clear_scheduler_service_owner(owner_path: &Path) -> Result<(), String> {
+    let Some(lock_path) = owner_path.parent() else {
+        return Ok(());
+    };
+
+    match fs::remove_dir_all(lock_path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!(
+            "Failed to clear unusable scheduler service ownership: {error}"
+        )),
+    }
+}
+
+fn recover_scheduler_service_owner(
+    owner_path: &Path,
+    process_inspector: &impl SchedulerProcessInspector,
+) -> Result<SchedulerServiceStartDecision, String> {
+    let owner = fs::read_to_string(owner_path).ok();
+    let owner_exists = owner_path.exists();
+    let decision = scheduler_service_start_decision(
+        owner.as_deref(),
+        scheduler_service_owner_age(owner_path),
+        process_inspector,
+    );
+
+    if owner_exists && decision == SchedulerServiceStartDecision::LaunchReplacement {
+        clear_scheduler_service_owner(owner_path)?;
+    }
+
+    Ok(decision)
+}
 
 fn join_auxiliary_cli_output(
     stdout_worker: thread::JoinHandle<Result<String, String>>,
@@ -334,24 +489,9 @@ pub(super) fn start_scheduler_service(request: SchedulerCommandRequest) -> Resul
     let service_owner_path = user_config_directory
         .join("scheduler-workspaces.json.service-lock")
         .join("owner");
-    if let Ok(metadata) = fs::metadata(&service_owner_path) {
-        if metadata
-            .modified()
-            .ok()
-            .and_then(|modified| modified.elapsed().ok())
-            .map(|age| age <= Duration::from_secs(120))
-            .unwrap_or(false)
-        {
-            if let Ok(owner) = fs::read_to_string(&service_owner_path) {
-                if let Some(pid) = owner
-                    .split(':')
-                    .next()
-                    .and_then(|value| value.parse::<u32>().ok())
-                {
-                    return Ok(pid);
-                }
-            }
-        }
+    match recover_scheduler_service_owner(&service_owner_path, &SystemSchedulerProcessInspector)? {
+        SchedulerServiceStartDecision::Reuse(pid) => return Ok(pid),
+        SchedulerServiceStartDecision::LaunchReplacement => {}
     }
     let workspace_path = if request.workspace_root.trim().is_empty() {
         user_config_directory.clone()
@@ -489,11 +629,20 @@ pub(super) fn execute_task_interview_command(
 
 #[cfg(test)]
 mod tests {
-    use std::{env, process::Command, thread, time::Duration};
+    use std::{
+        collections::HashMap,
+        env, fs,
+        process::Command,
+        thread,
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    };
 
     use super::{
-        append_auxiliary_arguments, parse_auxiliary_command_response,
-        run_bounded_auxiliary_cli_command, INSTRUCTION_CLI_SPEC,
+        append_auxiliary_arguments, classify_scheduler_service_owner,
+        parse_auxiliary_command_response, recover_scheduler_service_owner,
+        run_bounded_auxiliary_cli_command, scheduler_service_start_decision,
+        SchedulerProcessInspector, SchedulerServiceOwnerClassification,
+        SchedulerServiceStartDecision, INSTRUCTION_CLI_SPEC,
     };
     use crate::desktop_task::diagnostics::COMMAND_DIAGNOSTIC_TRUNCATED_MARKER;
     use crate::desktop_task::process::{
@@ -501,6 +650,182 @@ mod tests {
     };
 
     const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_AUXILIARY_CLI_TEST_CHILD_MODE";
+
+    #[derive(Default)]
+    struct TestSchedulerProcessInspector {
+        command_lines: HashMap<u32, Vec<String>>,
+    }
+
+    impl TestSchedulerProcessInspector {
+        fn with_process(pid: u32, command_line: &[&str]) -> Self {
+            Self {
+                command_lines: HashMap::from([(
+                    pid,
+                    command_line
+                        .iter()
+                        .map(|argument| (*argument).to_string())
+                        .collect(),
+                )]),
+            }
+        }
+    }
+
+    impl SchedulerProcessInspector for TestSchedulerProcessInspector {
+        fn command_line(&self, pid: u32) -> Option<Vec<String>> {
+            self.command_lines.get(&pid).cloned()
+        }
+    }
+
+    fn fresh_scheduler_service_command() -> [&'static str; 6] {
+        [
+            "cli-entry.js",
+            "--json",
+            "--cwd",
+            "C:\\workspace",
+            "scheduler",
+            "service-all",
+        ]
+    }
+
+    #[test]
+    fn scheduler_owner_classification_rejects_malformed_records() {
+        let classification = classify_scheduler_service_owner(
+            Some("not-a-pid"),
+            Some(Duration::ZERO),
+            &TestSchedulerProcessInspector::default(),
+        );
+
+        assert_eq!(
+            classification,
+            SchedulerServiceOwnerClassification::Malformed
+        );
+    }
+
+    #[test]
+    fn scheduler_owner_classification_rejects_stale_records() {
+        let classification = classify_scheduler_service_owner(
+            Some("17:123"),
+            Some(Duration::from_secs(121)),
+            &TestSchedulerProcessInspector::with_process(17, &fresh_scheduler_service_command()),
+        );
+
+        assert_eq!(classification, SchedulerServiceOwnerClassification::Stale);
+    }
+
+    #[test]
+    fn scheduler_owner_classification_rejects_fresh_dead_processes() {
+        let classification = classify_scheduler_service_owner(
+            Some("17:123"),
+            Some(Duration::ZERO),
+            &TestSchedulerProcessInspector::default(),
+        );
+
+        assert_eq!(classification, SchedulerServiceOwnerClassification::Dead);
+    }
+
+    #[test]
+    fn scheduler_owner_classification_reuses_a_live_scheduler_process() {
+        let classification = classify_scheduler_service_owner(
+            Some("17:123"),
+            Some(Duration::ZERO),
+            &TestSchedulerProcessInspector::with_process(17, &fresh_scheduler_service_command()),
+        );
+
+        assert_eq!(
+            classification,
+            SchedulerServiceOwnerClassification::Reusable(17)
+        );
+    }
+
+    #[test]
+    fn scheduler_owner_classification_rejects_live_non_scheduler_processes() {
+        let classification = classify_scheduler_service_owner(
+            Some("17:123"),
+            Some(Duration::ZERO),
+            &TestSchedulerProcessInspector::with_process(17, &["node", "server.js"]),
+        );
+
+        assert_eq!(
+            classification,
+            SchedulerServiceOwnerClassification::NonScheduler
+        );
+    }
+
+    #[test]
+    fn scheduler_owner_classification_rejects_live_non_service_scheduler_processes() {
+        let process_inspector = TestSchedulerProcessInspector::with_process(
+            17,
+            &[
+                "cli-entry.js",
+                "--json",
+                "--cwd",
+                "C:\\workspace",
+                "scheduler",
+                "run-due",
+            ],
+        );
+        let classification = classify_scheduler_service_owner(
+            Some("17:123"),
+            Some(Duration::ZERO),
+            &process_inspector,
+        );
+        let decision = scheduler_service_start_decision(
+            Some("17:123"),
+            Some(Duration::ZERO),
+            &process_inspector,
+        );
+
+        assert_eq!(
+            classification,
+            SchedulerServiceOwnerClassification::NonScheduler
+        );
+        assert_eq!(decision, SchedulerServiceStartDecision::LaunchReplacement);
+    }
+
+    #[test]
+    fn scheduler_service_start_decision_replaces_dead_owners_and_reuses_live_owners() {
+        let replacement = scheduler_service_start_decision(
+            Some("17:123"),
+            Some(Duration::ZERO),
+            &TestSchedulerProcessInspector::default(),
+        );
+        let reuse = scheduler_service_start_decision(
+            Some("17:123"),
+            Some(Duration::ZERO),
+            &TestSchedulerProcessInspector::with_process(17, &fresh_scheduler_service_command()),
+        );
+
+        assert_eq!(
+            replacement,
+            SchedulerServiceStartDecision::LaunchReplacement
+        );
+        assert_eq!(reuse, SchedulerServiceStartDecision::Reuse(17));
+    }
+
+    #[test]
+    fn scheduler_owner_recovery_clears_a_fresh_dead_owner_before_replacement() {
+        let test_directory = env::temp_dir().join(format!(
+            "machdoch-scheduler-owner-recovery-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be after the Unix epoch")
+                .as_nanos(),
+        ));
+        let lock_path = test_directory.join("scheduler-workspaces.json.service-lock");
+        let owner_path = lock_path.join("owner");
+        fs::create_dir_all(&lock_path).expect("scheduler lock directory should be created");
+        fs::write(&owner_path, "17:123").expect("dead scheduler owner should be recorded");
+
+        let decision =
+            recover_scheduler_service_owner(&owner_path, &TestSchedulerProcessInspector::default())
+                .expect("dead scheduler owner should be recovered");
+
+        assert_eq!(decision, SchedulerServiceStartDecision::LaunchReplacement);
+        assert!(!lock_path.exists());
+
+        fs::remove_dir_all(test_directory).expect("test directory should be removed");
+    }
 
     #[test]
     fn auxiliary_arguments_preserve_empty_and_whitespace_values() {
