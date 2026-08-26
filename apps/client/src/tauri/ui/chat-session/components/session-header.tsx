@@ -147,7 +147,7 @@ export const SessionHeader = ({
             size="icon"
             aria-label={isPinned ? "Unpin session" : "Pin session"}
             aria-pressed={isPinned}
-            title={isPinned ? "Unpin session" : "Pin session"}
+            tooltip={isPinned ? "Unpin session" : "Pin session"}
             onClick={onTogglePinnedSession}
             className={cn(
               "h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100",
@@ -163,7 +163,7 @@ export const SessionHeader = ({
             variant="ghost"
             size="icon"
             aria-label="Branch session"
-            title="Branch session"
+            tooltip="Branch session"
             onClick={onBranchSession}
             className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
           >

@@ -1195,7 +1195,7 @@ export const InstructionManager = ({
                       variant="outline"
                       disabled={formDisabled || dirty}
                       aria-label="Duplicate instruction file"
-                      title={
+                      tooltip={
                         dirty ? "Save or discard changes first." : undefined
                       }
                       onClick={() => void duplicateFile()}
@@ -1210,7 +1210,7 @@ export const InstructionManager = ({
                       variant="ghost"
                       disabled={formDisabled || dirty || hasManualAssignments}
                       aria-label="Delete instruction file"
-                      title={
+                      tooltip={
                         dirty
                           ? "Save or discard changes first."
                           : selectedFile.manualAssignmentCount
@@ -1429,7 +1429,7 @@ export const InstructionManager = ({
                             !name.trim() ||
                             !setup.workspaceRoot))
                       }
-                      title={
+                      tooltip={
                         !setup.workspaceRoot && !aiBusy
                           ? "Select a workspace to use AI editing."
                           : undefined

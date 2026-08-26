@@ -33,11 +33,6 @@ import {
   asPaletteCommands,
   type CommandDefinition,
 } from "../commands/command-types";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
 import {
   createWorkspaceEntry,
@@ -94,22 +89,17 @@ const TreeAction = ({
   disabled?: boolean;
   onClick: () => void;
 }): JSX.Element => (
-  <Tooltip>
-    <TooltipTrigger asChild>
-      <Button
-        type="button"
-        size="icon"
-        variant="ghost"
-        className="size-7 text-slate-500 hover:text-slate-200"
-        aria-label={label}
-        disabled={disabled}
-        onClick={onClick}
-      >
-        <Icon className="size-3.5" />
-      </Button>
-    </TooltipTrigger>
-    <TooltipContent>{label}</TooltipContent>
-  </Tooltip>
+  <Button
+    type="button"
+    size="icon"
+    variant="ghost"
+    className="size-7 text-slate-500 hover:text-slate-200"
+    aria-label={label}
+    disabled={disabled}
+    onClick={onClick}
+  >
+    <Icon className="size-3.5" />
+  </Button>
 );
 
 const entryIcon = (

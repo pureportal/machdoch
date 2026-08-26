@@ -1,15 +1,17 @@
-import * as React from "react"
-import { cva, type VariantProps } from "class-variance-authority"
-import { Slot } from "radix-ui"
+import * as React from "react";
+import { cva, type VariantProps } from "class-variance-authority";
+import { Slot } from "radix-ui";
 
-import { cn } from "../../lib/utils"
+import { cn } from "../../lib/utils";
+import { ControlTooltip, TooltipContent } from "./tooltip";
 
 const buttonVariants = cva(
   "inline-flex cursor-pointer shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-oklch(0.705 0.015 286.067) focus-visible:ring-[3px] focus-visible:ring-oklch(0.705 0.015 286.067)/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-oklch(0.577 0.245 27.325) aria-invalid:ring-oklch(0.577 0.245 27.325)/20 dark:aria-invalid:ring-oklch(0.577 0.245 27.325)/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 dark:focus-visible:border-oklch(0.552 0.016 285.938) dark:focus-visible:ring-oklch(0.552 0.016 285.938)/50 dark:aria-invalid:border-oklch(0.704 0.191 22.216) dark:aria-invalid:ring-oklch(0.704 0.191 22.216)/20 dark:dark:aria-invalid:ring-oklch(0.704 0.191 22.216)/40",
   {
     variants: {
       variant: {
-        default: "bg-oklch(0.21 0.006 285.885) text-oklch(0.985 0 0) hover:bg-oklch(0.21 0.006 285.885)/90 dark:bg-oklch(0.92 0.004 286.32) dark:text-oklch(0.21 0.006 285.885) dark:hover:bg-oklch(0.92 0.004 286.32)/90",
+        default:
+          "bg-oklch(0.21 0.006 285.885) text-oklch(0.985 0 0) hover:bg-oklch(0.21 0.006 285.885)/90 dark:bg-oklch(0.92 0.004 286.32) dark:text-oklch(0.21 0.006 285.885) dark:hover:bg-oklch(0.92 0.004 286.32)/90",
         destructive:
           "bg-oklch(0.577 0.245 27.325) text-white hover:bg-oklch(0.577 0.245 27.325)/90 focus-visible:ring-oklch(0.577 0.245 27.325)/20 dark:bg-oklch(0.577 0.245 27.325)/60 dark:focus-visible:ring-oklch(0.577 0.245 27.325)/40 dark:bg-oklch(0.704 0.191 22.216) dark:hover:bg-oklch(0.704 0.191 22.216)/90 dark:focus-visible:ring-oklch(0.704 0.191 22.216)/20 dark:dark:bg-oklch(0.704 0.191 22.216)/60 dark:dark:focus-visible:ring-oklch(0.704 0.191 22.216)/40",
         outline:
@@ -35,22 +37,32 @@ const buttonVariants = cva(
       variant: "default",
       size: "default",
     },
-  }
-)
+  },
+);
+
+type ButtonProps = Omit<React.ComponentProps<"button">, "title"> &
+  VariantProps<typeof buttonVariants> & {
+    asChild?: boolean;
+    tooltip?: React.ReactNode;
+    tooltipProps?: Omit<
+      React.ComponentProps<typeof TooltipContent>,
+      "children" | "content"
+    >;
+  };
+
+const iconButtonSizes = new Set(["icon", "icon-xs", "icon-sm", "icon-lg"]);
 
 function Button({
   className,
   variant = "default",
   size = "default",
   asChild = false,
+  tooltip,
+  tooltipProps,
   ...props
-}: React.ComponentProps<"button"> &
-  VariantProps<typeof buttonVariants> & {
-    asChild?: boolean
-  }) {
-  const Comp = asChild ? Slot.Root : "button"
-
-  return (
+}: ButtonProps) {
+  const Comp = asChild ? Slot.Root : "button";
+  const button = (
     <Comp
       data-slot="button"
       data-variant={variant}
@@ -58,7 +70,25 @@ function Button({
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />
-  )
+  );
+  const resolvedTooltip =
+    tooltip === undefined && size && iconButtonSizes.has(size)
+      ? props["aria-label"]
+      : tooltip;
+  const tooltipTrigger =
+    props.disabled && size && iconButtonSizes.has(size) ? (
+      <span className="inline-flex">{button}</span>
+    ) : (
+      button
+    );
+
+  return resolvedTooltip ? (
+    <ControlTooltip content={resolvedTooltip} {...tooltipProps}>
+      {tooltipTrigger}
+    </ControlTooltip>
+  ) : (
+    button
+  );
 }
 
-export { Button, buttonVariants }
+export { Button, buttonVariants };

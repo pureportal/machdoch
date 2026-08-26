@@ -22,6 +22,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu";
+import { ControlTooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 
 const getAttachmentIcon = (
@@ -105,13 +106,6 @@ const getAttachmentActionTitle = (
   }
 };
 
-const getAttachmentReferenceTitle = (
-  attachment: ChatSessionContextAttachment,
-): string =>
-  isMediaAssetContextAttachment(attachment)
-    ? `Media Studio asset ${attachment.assetId}`
-    : attachment.path;
-
 export interface ContextAttachmentMenuButtonProps {
   onSelectFiles: () => Promise<void>;
   onSelectFolders: () => Promise<void>;
@@ -149,49 +143,57 @@ export const ContextAttachmentMenuButton = ({
 }: ContextAttachmentMenuButtonProps): JSX.Element => {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          aria-label={buttonLabel}
-          title={buttonTitle}
-          disabled={disabled}
-          className={className}
-        >
-          <Plus className={iconClassName} />
-        </Button>
-      </DropdownMenuTrigger>
+      <ControlTooltip content={buttonTitle}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-label={buttonLabel}
+            tooltip={null}
+            disabled={disabled}
+            className={className}
+          >
+            <Plus className={iconClassName} />
+          </Button>
+        </DropdownMenuTrigger>
+      </ControlTooltip>
       <DropdownMenuContent
         align="start"
         side={menuSide}
         className="min-w-36 rounded-xl border-slate-800 bg-slate-950 p-1 text-slate-200 shadow-xl shadow-black/30"
       >
-        <DropdownMenuItem
-          disabled={imageInputDisabled}
-          title={imageInputDisabledReason ?? "Attach images"}
-          onSelect={() => {
-            if (!imageInputDisabled) {
-              void onSelectImages();
-            }
-          }}
-          className="rounded-lg text-xs text-sky-100 focus:bg-sky-500/10 focus:text-sky-50 disabled:text-slate-600"
+        <ControlTooltip
+          content={imageInputDisabled ? imageInputDisabledReason : null}
         >
-          <Image className="h-3.5 w-3.5 text-sky-300" />
-          Images
-        </DropdownMenuItem>
-        {onBrowseMediaAssets ? (
           <DropdownMenuItem
-            disabled={mediaLibraryDisabled}
-            title={mediaLibraryDisabledReason ?? "Choose from Media Studio"}
+            disabled={imageInputDisabled}
             onSelect={() => {
-              if (!mediaLibraryDisabled) onBrowseMediaAssets();
+              if (!imageInputDisabled) {
+                void onSelectImages();
+              }
             }}
-            className="rounded-lg text-xs text-orange-100 focus:bg-orange-500/10 focus:text-orange-50 disabled:text-slate-600"
+            className="rounded-lg text-xs text-sky-100 focus:bg-sky-500/10 focus:text-sky-50 disabled:text-slate-600 data-disabled:cursor-not-allowed data-disabled:pointer-events-auto"
           >
-            <Images className="h-3.5 w-3.5 text-orange-300" />
-            Media Library
+            <Image className="h-3.5 w-3.5 text-sky-300" />
+            Images
           </DropdownMenuItem>
+        </ControlTooltip>
+        {onBrowseMediaAssets ? (
+          <ControlTooltip
+            content={mediaLibraryDisabled ? mediaLibraryDisabledReason : null}
+          >
+            <DropdownMenuItem
+              disabled={mediaLibraryDisabled}
+              onSelect={() => {
+                if (!mediaLibraryDisabled) onBrowseMediaAssets();
+              }}
+              className="rounded-lg text-xs text-orange-100 focus:bg-orange-500/10 focus:text-orange-50 disabled:text-slate-600 data-disabled:cursor-not-allowed data-disabled:pointer-events-auto"
+            >
+              <Images className="h-3.5 w-3.5 text-orange-300" />
+              Media Library
+            </DropdownMenuItem>
+          </ControlTooltip>
         ) : null}
         {onCreateMediaAsset ? (
           <DropdownMenuItem
@@ -290,35 +292,37 @@ export const ContextAttachmentsList = ({
                   "border-sky-400/30 bg-sky-400/10 text-sky-50",
                 compact ? "h-7 px-2 text-[11px]" : "h-8 px-2.5 text-xs",
               )}
-              title={getAttachmentReferenceTitle(attachment)}
             >
               {onOpen ? (
-                <button
-                  type="button"
-                  aria-label={getAttachmentActionLabel(attachment)}
-                  title={getAttachmentActionTitle(attachment)}
-                  onClick={() => onOpen(attachment)}
-                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full text-left hover:text-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40"
-                >
-                  {attachmentContent}
-                </button>
+                <ControlTooltip content={getAttachmentActionTitle(attachment)}>
+                  <button
+                    type="button"
+                    aria-label={getAttachmentActionLabel(attachment)}
+                    onClick={() => onOpen(attachment)}
+                    className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full text-left hover:text-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40"
+                  >
+                    {attachmentContent}
+                  </button>
+                </ControlTooltip>
               ) : (
                 <div className="flex min-w-0 flex-1 items-center gap-1.5">
                   {attachmentContent}
                 </div>
               )}
-              <button
-                type="button"
-                aria-label={`Remove ${attachment.name}`}
-                disabled={disabled}
-                onClick={() => onRemove(attachment.id)}
-                className={cn(
-                  "ml-0.5 flex shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-500",
-                  "h-6 w-6",
-                )}
-              >
-                <X className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
-              </button>
+              <ControlTooltip content={`Remove ${attachment.name}`}>
+                <button
+                  type="button"
+                  aria-label={`Remove ${attachment.name}`}
+                  disabled={disabled}
+                  onClick={() => onRemove(attachment.id)}
+                  className={cn(
+                    "ml-0.5 flex shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-500",
+                    "h-6 w-6",
+                  )}
+                >
+                  <X className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
+                </button>
+              </ControlTooltip>
             </li>
           );
         })}
@@ -327,7 +331,6 @@ export const ContextAttachmentsList = ({
       <button
         type="button"
         aria-label={clearAllLabel}
-        title={clearAllLabel}
         disabled={disabled}
         onClick={onClearAll}
         className={cn(
@@ -379,31 +382,32 @@ export const MessageAttachmentsList = ({
 
           return (
             <li key={attachment.id} className="max-w-full">
-              <button
-                type="button"
-                aria-label={actionLabel}
-                title={actionTitle}
-                disabled={!onOpen}
-                onClick={() => onOpen?.(attachment)}
-                className={cn(
-                  "app-message-attachment-button inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-slate-800 bg-slate-950/70 px-3 text-xs text-slate-300 shadow-sm shadow-slate-950/20 transition-colors hover:bg-slate-900 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/35 disabled:cursor-default disabled:opacity-70",
-                  attachment.kind === "image" &&
-                    "border-sky-400/30 bg-sky-400/10 text-sky-50 hover:bg-sky-400/15",
-                )}
-              >
-                <Icon
+              <ControlTooltip content={actionTitle}>
+                <button
+                  type="button"
+                  aria-label={actionLabel}
+                  disabled={!onOpen}
+                  onClick={() => onOpen?.(attachment)}
                   className={cn(
-                    "h-3.5 w-3.5 shrink-0 text-sky-300",
-                    attachment.kind === "image" && "text-sky-200",
+                    "app-message-attachment-button inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-slate-800 bg-slate-950/70 px-3 text-xs text-slate-300 shadow-sm shadow-slate-950/20 transition-colors hover:bg-slate-900 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/35 disabled:cursor-default disabled:opacity-70",
+                    attachment.kind === "image" &&
+                      "border-sky-400/30 bg-sky-400/10 text-sky-50 hover:bg-sky-400/15",
                   )}
-                />
-                <span className="min-w-0 max-w-48 truncate">
-                  {attachment.name}
-                </span>
-                {shouldShowAttachmentKindLabel(attachment) ? (
-                  <span className="shrink-0 text-slate-500">{kindLabel}</span>
-                ) : null}
-              </button>
+                >
+                  <Icon
+                    className={cn(
+                      "h-3.5 w-3.5 shrink-0 text-sky-300",
+                      attachment.kind === "image" && "text-sky-200",
+                    )}
+                  />
+                  <span className="min-w-0 max-w-48 truncate">
+                    {attachment.name}
+                  </span>
+                  {shouldShowAttachmentKindLabel(attachment) ? (
+                    <span className="shrink-0 text-slate-500">{kindLabel}</span>
+                  ) : null}
+                </button>
+              </ControlTooltip>
             </li>
           );
         })}

@@ -366,7 +366,7 @@ export const MissionControlPanel = ({
                         variant="ghost"
                         size="icon"
                         aria-label="Copy Mission Control link"
-                        title="Copy Mission Control link"
+                        tooltip="Copy Mission Control link"
                         onClick={() => void copyLink()}
                         className="h-8 w-8 rounded-md text-slate-400 hover:bg-slate-800 hover:text-slate-100"
                       >
@@ -377,7 +377,7 @@ export const MissionControlPanel = ({
                         variant="ghost"
                         size="icon"
                         aria-label="Open Mission Control"
-                        title="Open Mission Control"
+                        tooltip="Open Mission Control"
                         onClick={() => void onOpenUrl()}
                         className="h-8 w-8 rounded-md text-slate-400 hover:bg-slate-800 hover:text-slate-100"
                       >
@@ -397,7 +397,7 @@ export const MissionControlPanel = ({
                           variant="ghost"
                           size="icon"
                           aria-label="Copy Mission Control token"
-                          title="Copy Mission Control token"
+                          tooltip="Copy Mission Control token"
                           onClick={() => void copyToken()}
                           className="h-8 w-8 rounded-md text-slate-400 hover:bg-slate-800 hover:text-slate-100"
                         >

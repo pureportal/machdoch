@@ -508,7 +508,7 @@ export const AssistantPopupShell = (): JSX.Element => {
                 quickChatPinned ? "Unpin Quick Chat" : "Pin Quick Chat"
               }
               aria-pressed={quickChatPinned}
-              title={quickChatPinned ? "Unpin Quick Chat" : "Pin Quick Chat"}
+              tooltip={quickChatPinned ? "Unpin Quick Chat" : "Pin Quick Chat"}
               onClick={() => {
                 setQuickChatPinned((currentValue) => !currentValue);
               }}

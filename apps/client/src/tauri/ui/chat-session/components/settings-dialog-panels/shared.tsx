@@ -1,9 +1,4 @@
-import {
-  ArrowUpRight,
-  Eye,
-  EyeOff,
-  RefreshCw,
-} from "lucide-react";
+import { ArrowUpRight, Eye, EyeOff, RefreshCw } from "lucide-react";
 import {
   useEffect,
   useId,
@@ -258,7 +253,7 @@ export function ChoiceButtons<TValue extends string>({
             type="button"
             variant="outline"
             aria-label={option.ariaLabel}
-            title={option.title}
+            tooltip={option.title}
             aria-pressed={selected}
             disabled={disabled || option.disabled}
             onClick={() => onChange(option.value)}
@@ -527,7 +522,6 @@ export const ProviderSyncControl = ({
         </div>
       ) : null}
       <SettingsStatus message={message} />
-
     </div>
   );
 };
@@ -760,7 +754,7 @@ export const SettingsCredentialForm = ({
                 variant="outline"
                 size="icon"
                 aria-label={`${keyVisible ? "Hide" : "Show"} ${providerLabel} API key`}
-                title={`${keyVisible ? "Hide" : "Show"} ${providerLabel} API key`}
+                tooltip={`${keyVisible ? "Hide" : "Show"} ${providerLabel} API key`}
                 onClick={() => setKeyVisible((visible) => !visible)}
                 disabled={draftKey.trim().length === 0}
                 className="h-10 w-10 rounded-lg border-slate-800 bg-slate-950 text-slate-300 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-40"
@@ -777,7 +771,7 @@ export const SettingsCredentialForm = ({
                   variant="ghost"
                   size="icon"
                   aria-label={portalAction.label}
-                  title={portalAction.title ?? portalAction.label}
+                  tooltip={portalAction.title ?? portalAction.label}
                   onClick={() => {
                     void portalAction.onClick();
                   }}

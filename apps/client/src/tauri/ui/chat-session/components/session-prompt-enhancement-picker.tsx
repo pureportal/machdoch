@@ -12,6 +12,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "../../components/ui/popover";
+import { ControlTooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 import {
   PROMPT_ENHANCEMENT_LABELS,
@@ -104,20 +105,22 @@ export const SessionPromptEnhancementPicker = ({
 
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          aria-label={`Prompt enhancement: ${activeLabel}`}
-          className={cn(
-            "h-8 w-8 rounded-full border border-slate-800 bg-slate-950/70 p-0 text-slate-300 shadow-none hover:border-fuchsia-500/30 hover:bg-slate-900 hover:text-fuchsia-100",
-            active &&
-              "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-100",
-          )}
-        >
-          <Sparkles className="h-3.5 w-3.5" />
-        </Button>
-      </PopoverTrigger>
+      <ControlTooltip content={`Prompt enhancement: ${activeLabel}`}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            aria-label={`Prompt enhancement: ${activeLabel}`}
+            className={cn(
+              "h-8 w-8 rounded-full border border-slate-800 bg-slate-950/70 p-0 text-slate-300 shadow-none hover:border-fuchsia-500/30 hover:bg-slate-900 hover:text-fuchsia-100",
+              active &&
+                "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-100",
+            )}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+          </Button>
+        </PopoverTrigger>
+      </ControlTooltip>
       <PopoverContent
         align="start"
         className="w-96 rounded-3xl border-slate-800 bg-slate-950/95 p-5 shadow-2xl backdrop-blur-xl"

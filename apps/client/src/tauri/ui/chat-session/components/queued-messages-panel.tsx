@@ -12,6 +12,7 @@ import { useState, type DragEvent, type JSX } from "react";
 import type { ChatSessionContextAttachment } from "../../chat-session.model";
 import { Button } from "../../components/ui/button";
 import { Textarea } from "../../components/ui/textarea";
+import { ControlTooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 import type { AttachmentSelectionKind } from "../_helpers/session-context-attachments";
 import {
@@ -294,7 +295,7 @@ export const QueuedMessagesPanel = ({
                     variant="outline"
                     size="icon-xs"
                     aria-label={`Send queued message ${index + 1} now`}
-                    title="Send now"
+                    tooltip="Send now"
                     disabled={isInProgress || message.status === "failed"}
                     onClick={() => onMessageSend?.(message.id)}
                     className="border-sky-400/30 bg-sky-400/10 text-sky-100 hover:bg-sky-400/20 hover:text-white"
@@ -302,44 +303,45 @@ export const QueuedMessagesPanel = ({
                     <SendHorizontal className="h-3 w-3" />
                   </Button>
                 ) : null}
-                <button
-                  type="button"
-                  draggable={canReorder && !isInProgress}
-                  aria-label={`Drag queued message ${index + 1} to reorder`}
-                  title="Drag to reorder"
-                  onDragStart={(event) => {
-                    if (!canReorder || isInProgress) {
-                      event.preventDefault();
-                      return;
-                    }
+                <ControlTooltip content="Drag to reorder">
+                  <button
+                    type="button"
+                    draggable={canReorder && !isInProgress}
+                    aria-label={`Drag queued message ${index + 1} to reorder`}
+                    onDragStart={(event) => {
+                      if (!canReorder || isInProgress) {
+                        event.preventDefault();
+                        return;
+                      }
 
-                    setDraggingMessageId(message.id);
-                    event.dataTransfer.effectAllowed = "move";
-                    event.dataTransfer.setData(
-                      QUEUED_MESSAGE_DRAG_TYPE,
-                      message.id,
-                    );
-                    event.dataTransfer.setData("text/plain", message.id);
-                  }}
-                  onDragEnd={() => {
-                    setDraggingMessageId(null);
-                    setDragOverIndex(null);
-                  }}
-                  className={cn(
-                    "inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40",
-                    canReorder && !isInProgress
-                      ? "cursor-grab hover:bg-slate-800 hover:text-slate-100 active:cursor-grabbing"
-                      : "cursor-not-allowed opacity-50",
-                  )}
-                >
-                  <GripVertical className="h-3 w-3" />
-                </button>
+                      setDraggingMessageId(message.id);
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData(
+                        QUEUED_MESSAGE_DRAG_TYPE,
+                        message.id,
+                      );
+                      event.dataTransfer.setData("text/plain", message.id);
+                    }}
+                    onDragEnd={() => {
+                      setDraggingMessageId(null);
+                      setDragOverIndex(null);
+                    }}
+                    className={cn(
+                      "inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40",
+                      canReorder && !isInProgress
+                        ? "cursor-grab hover:bg-slate-800 hover:text-slate-100 active:cursor-grabbing"
+                        : "cursor-not-allowed opacity-50",
+                    )}
+                  >
+                    <GripVertical className="h-3 w-3" />
+                  </button>
+                </ControlTooltip>
                 <Button
                   type="button"
                   variant="outline"
                   size="icon-xs"
                   aria-label={`Move queued message ${index + 1} up`}
-                  title="Move up"
+                  tooltip="Move up"
                   disabled={!canReorder || index === 0}
                   onClick={() => onMessageMove?.(message.id, -1)}
                   className="border-slate-800 bg-slate-950/70 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:bg-slate-950/40 disabled:text-slate-700"
@@ -351,7 +353,7 @@ export const QueuedMessagesPanel = ({
                   variant="outline"
                   size="icon-xs"
                   aria-label={`Move queued message ${index + 1} down`}
-                  title="Move down"
+                  tooltip="Move down"
                   disabled={!canReorder || index === messages.length - 1}
                   onClick={() => onMessageMove?.(message.id, 1)}
                   className="border-slate-800 bg-slate-950/70 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:bg-slate-950/40 disabled:text-slate-700"
@@ -363,7 +365,7 @@ export const QueuedMessagesPanel = ({
                   variant="outline"
                   size="icon-xs"
                   aria-label={`Remove queued message ${index + 1}`}
-                  title="Remove"
+                  tooltip="Remove"
                   disabled={isInProgress}
                   onClick={() => onMessageRemove?.(message.id)}
                   className="border-rose-500/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/15 hover:text-white"
@@ -376,7 +378,7 @@ export const QueuedMessagesPanel = ({
                     variant="outline"
                     size="icon-xs"
                     aria-label={`Retry queued message ${index + 1}`}
-                    title="Retry"
+                    tooltip="Retry"
                     onClick={() => onMessageRetry?.(message.id)}
                     className="border-sky-400/30 bg-sky-400/10 text-sky-100 hover:bg-sky-400/20 hover:text-white"
                   >

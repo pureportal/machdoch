@@ -75,7 +75,7 @@ export const MediaErrorNotice = ({
             type="button"
             size="sm"
             variant="outline"
-            title={action.description}
+            tooltip={action.description}
             onClick={() => onAction(action.id)}
             className="h-7 border-rose-300/20 bg-slate-950/25 px-2.5 text-[9px] text-rose-100 hover:bg-rose-300/10"
           >

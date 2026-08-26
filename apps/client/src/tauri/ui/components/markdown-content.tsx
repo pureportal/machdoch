@@ -27,12 +27,7 @@ import {
 import { cn } from "../lib/utils";
 import { MermaidDiagram } from "./mermaid-diagram";
 import { Button } from "./ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "./ui/tooltip";
+import { ControlTooltip } from "./ui/tooltip";
 
 export interface MarkdownContentProps {
   content: string;
@@ -148,32 +143,24 @@ const CopyableCodeBlock = ({
       <pre className="m-0 max-w-full overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 pr-12 text-xs leading-6 text-slate-200">
         {children}
       </pre>
-      <TooltipProvider delayDuration={200}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              aria-label={
-                hasCopied ? "Copied code block" : "Copy code block to clipboard"
-              }
-              title={hasCopied ? "Copied" : "Copy to Clipboard"}
-              onClick={handleCopy}
-              className="absolute right-2 top-2 size-7 border border-slate-700/70 bg-slate-900/90 p-0 text-slate-300 shadow-sm opacity-90 hover:bg-slate-800 hover:text-sky-100 focus-visible:ring-sky-400/40"
-            >
-              {hasCopied ? (
-                <Check className="size-3.5" aria-hidden="true" />
-              ) : (
-                <Clipboard className="size-3.5" aria-hidden="true" />
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="left">
-            {hasCopied ? "Copied" : "Copy to Clipboard"}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        aria-label={
+          hasCopied ? "Copied code block" : "Copy code block to clipboard"
+        }
+        tooltip={hasCopied ? "Copied" : "Copy to clipboard"}
+        tooltipProps={{ side: "left" }}
+        onClick={handleCopy}
+        className="absolute right-2 top-2 size-7 border border-slate-700/70 bg-slate-900/90 p-0 text-slate-300 shadow-sm opacity-90 hover:bg-slate-800 hover:text-sky-100 focus-visible:ring-sky-400/40"
+      >
+        {hasCopied ? (
+          <Check className="size-3.5" aria-hidden="true" />
+        ) : (
+          <Clipboard className="size-3.5" aria-hidden="true" />
+        )}
+      </Button>
     </div>
   );
 };
@@ -292,35 +279,41 @@ const createMarkdownComponents = (
         : workspaceTarget.relativePath;
 
       return (
-        <button
-          type="button"
-          title={targetTitle}
-          data-workspace-path={workspaceTarget.relativePath}
-          data-workspace-line={workspaceTarget.line}
-          onClick={() =>
-            openWorkspaceMarkdownLinkTarget(
-              workspaceTarget,
-              onOpenWorkspaceFile,
-            )
-          }
-          className={cn(
-            "app-markdown-link app-markdown-workspace-link",
-            className,
-          )}
-        >
-          {children}
-        </button>
+        <ControlTooltip content={targetTitle}>
+          <button
+            type="button"
+            data-workspace-path={workspaceTarget.relativePath}
+            data-workspace-line={workspaceTarget.line}
+            onClick={() =>
+              openWorkspaceMarkdownLinkTarget(
+                workspaceTarget,
+                onOpenWorkspaceFile,
+              )
+            }
+            className={cn(
+              "app-markdown-link app-markdown-workspace-link",
+              className,
+            )}
+          >
+            {children}
+          </button>
+        </ControlTooltip>
       );
     }
 
     if (!href?.trim() || isLocalMarkdownLinkHref(href)) {
-      return (
+      const inertLink = (
         <span
-          title={href || undefined}
           className={cn("app-markdown-link app-markdown-inert-link", className)}
         >
           {children}
         </span>
+      );
+
+      return href ? (
+        <ControlTooltip content={href}>{inertLink}</ControlTooltip>
+      ) : (
+        inertLink
       );
     }
 

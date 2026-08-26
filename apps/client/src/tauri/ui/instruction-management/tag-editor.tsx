@@ -14,6 +14,7 @@ import {
 } from "../../../core/instruction-system/tag-rules.js";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { ControlTooltip } from "../components/ui/tooltip";
 
 export const TagEditor = ({
   value,
@@ -121,17 +122,19 @@ export const TagEditor = ({
               className="inline-flex items-center gap-1 rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-xs text-slate-300"
             >
               {tag}
-              <button
-                type="button"
-                disabled={disabled}
-                aria-label={`Remove ${tag}`}
-                onClick={() =>
-                  onChange(value.filter((candidate) => candidate !== tag))
-                }
-                className="rounded-sm text-slate-500 outline-none hover:text-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500/60 disabled:opacity-50"
-              >
-                <X className="size-3" />
-              </button>
+              <ControlTooltip content={`Remove ${tag}`}>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  aria-label={`Remove ${tag}`}
+                  onClick={() =>
+                    onChange(value.filter((candidate) => candidate !== tag))
+                  }
+                  className="rounded-sm text-slate-500 outline-none hover:text-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500/60 disabled:opacity-50"
+                >
+                  <X className="size-3" />
+                </button>
+              </ControlTooltip>
             </span>
           ))}
         </div>

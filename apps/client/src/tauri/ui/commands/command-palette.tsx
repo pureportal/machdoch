@@ -15,6 +15,7 @@ import {
   PopoverAnchor,
   PopoverContent,
 } from "../components/ui/popover";
+import { ControlTooltip } from "../components/ui/tooltip";
 import type { CommandRegistry } from "./command-registry";
 import { rankCommandItems } from "./command-search";
 import {
@@ -323,14 +324,16 @@ const PaletteBody = ({
     >
       {page ? (
         <div className="flex h-10 items-center border-b border-slate-200 px-2 dark:border-slate-800">
-          <button
-            type="button"
-            className="grid size-8 place-items-center rounded text-slate-500 hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:hover:bg-slate-800 dark:hover:text-white"
-            onClick={onPopPage}
-            aria-label="Back to commands"
-          >
-            <ChevronLeftIcon className="size-4" />
-          </button>
+          <ControlTooltip content="Back">
+            <button
+              type="button"
+              className="grid size-8 place-items-center rounded text-slate-500 hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:hover:bg-slate-800 dark:hover:text-white"
+              onClick={onPopPage}
+              aria-label="Back to commands"
+            >
+              <ChevronLeftIcon className="size-4" />
+            </button>
+          </ControlTooltip>
           <span className="truncate text-sm font-medium">{title}</span>
         </div>
       ) : null}
@@ -361,11 +364,6 @@ const PaletteBody = ({
                 disabled={item.availability.state !== "enabled"}
                 aria-keyshortcuts={item.ariaShortcut}
                 onSelect={() => void item.execute()}
-                title={
-                  item.availability.state === "disabled"
-                    ? item.availability.reason
-                    : undefined
-                }
               >
                 {item.busy ? (
                   <LoaderCircleIcon

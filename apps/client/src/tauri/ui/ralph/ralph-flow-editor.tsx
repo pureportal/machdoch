@@ -143,6 +143,7 @@ import {
 import { subscribeToSettingsImport } from "../settings-transfer";
 import { Button } from "../components/ui/button";
 import { EmptyState } from "../components/ui/empty-state";
+import { ControlTooltip } from "../components/ui/tooltip";
 import {
   ContextAttachmentMenuButton,
   ContextAttachmentsList,
@@ -9435,7 +9436,7 @@ export const RalphFlowEditor = ({
               size="icon"
               aria-label="Ralph keyboard shortcuts"
               aria-expanded={shortcutHelpOpen}
-              title="Keyboard shortcuts"
+              tooltip="Keyboard shortcuts"
               onClick={() => setShortcutHelpOpen((current) => !current)}
               className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-white"
             >
@@ -9483,7 +9484,7 @@ export const RalphFlowEditor = ({
               disabled={!canRunAction}
               aria-label="Run Ralph flow"
               aria-keyshortcuts={runShortcut?.ariaKeyShortcuts}
-              title={`${runActionMessage}${runShortcut ? ` (${runShortcut.label})` : ""}`}
+              tooltip={`${runActionMessage}${runShortcut ? ` (${runShortcut.label})` : ""}`}
               onClick={() => void runFlow()}
               className="h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs text-slate-100 hover:bg-slate-800 hover:text-white"
             >
@@ -9656,20 +9657,21 @@ export const RalphFlowEditor = ({
 
         {showInspectorPanel ? (
           <aside className="relative col-start-3 row-start-1 grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)_auto] border-l border-slate-800 bg-slate-950/90 shadow-[-18px_0_36px_rgba(2,6,23,0.18)]">
-            <button
-              type="button"
-              aria-label="Resize block settings"
-              title="Drag to resize, double-click to reset"
-              onPointerDown={handleInspectorResizePointerDown}
-              onDoubleClick={resetInspectorWidth}
-              className="group absolute inset-y-0 left-0 z-50 flex w-6 -translate-x-3 cursor-col-resize touch-none select-none items-center justify-center text-slate-500 hover:text-cyan-200 active:text-cyan-100"
-              style={{ cursor: "col-resize" }}
-            >
-              <span className="absolute inset-y-3 left-1/2 w-px -translate-x-1/2 rounded-full bg-slate-700/70 transition group-hover:bg-cyan-400/70" />
-              <span className="relative flex h-9 w-4 items-center justify-center rounded-full border border-slate-700/80 bg-slate-950/95 shadow-lg shadow-slate-950/40 transition group-hover:border-cyan-400/50 group-hover:bg-slate-900">
-                <GripVertical className="h-5 w-5" />
-              </span>
-            </button>
+            <ControlTooltip content="Drag to resize · Double-click to reset">
+              <button
+                type="button"
+                aria-label="Resize block settings"
+                onPointerDown={handleInspectorResizePointerDown}
+                onDoubleClick={resetInspectorWidth}
+                className="group absolute inset-y-0 left-0 z-50 flex w-6 -translate-x-3 cursor-col-resize touch-none select-none items-center justify-center text-slate-500 hover:text-cyan-200 active:text-cyan-100"
+                style={{ cursor: "col-resize" }}
+              >
+                <span className="absolute inset-y-3 left-1/2 w-px -translate-x-1/2 rounded-full bg-slate-700/70 transition group-hover:bg-cyan-400/70" />
+                <span className="relative flex h-9 w-4 items-center justify-center rounded-full border border-slate-700/80 bg-slate-950/95 shadow-lg shadow-slate-950/40 transition group-hover:border-cyan-400/50 group-hover:bg-slate-900">
+                  <GripVertical className="h-5 w-5" />
+                </span>
+              </button>
+            </ControlTooltip>
             <div className="border-b border-slate-800 bg-slate-950/95 px-3 py-2.5">
               <div className="flex min-w-0 items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2">
@@ -9704,7 +9706,7 @@ export const RalphFlowEditor = ({
                       type="button"
                       variant="ghost"
                       aria-label="Show flow settings"
-                      title="Show flow settings"
+                      tooltip="Show flow settings"
                       onClick={() => {
                         setSelectedBlockId(null);
                         setSelectedEdgeId(null);
@@ -9720,7 +9722,7 @@ export const RalphFlowEditor = ({
                     variant="ghost"
                     size="icon"
                     aria-label={selectedEdge ? "Remove route" : "Remove block"}
-                    title={selectedEdge ? "Remove route" : "Remove block"}
+                    tooltip={selectedEdge ? "Remove route" : "Remove block"}
                     disabled={
                       selectedEdge
                         ? false
@@ -9742,7 +9744,7 @@ export const RalphFlowEditor = ({
                     variant="ghost"
                     size="icon"
                     aria-label="Hide block settings"
-                    title="Hide block settings"
+                    tooltip="Hide block settings"
                     onClick={() => setInspectorOpen(false)}
                     className="h-8 w-8 rounded-lg text-slate-500 hover:bg-slate-900 hover:text-slate-100"
                   >
@@ -10591,7 +10593,7 @@ export const RalphFlowEditor = ({
                               variant="ghost"
                               size="icon"
                               aria-label="Refresh Media Studio flows"
-                              title="Refresh saved Media Studio flows"
+                              tooltip="Refresh saved Media Studio flows"
                               disabled={mediaFlowCatalogLoading}
                               onClick={() =>
                                 setMediaFlowCatalogRefresh((value) => value + 1)
@@ -10814,7 +10816,6 @@ export const RalphFlowEditor = ({
                                     <Input
                                       defaultValue={inputId}
                                       aria-label={`Media input id ${inputId}`}
-                                      title="Media Studio variable id"
                                       onBlur={(event) =>
                                         renameSelectedMediaBinding(
                                           "input",
@@ -11037,7 +11038,6 @@ export const RalphFlowEditor = ({
                                     <Input
                                       defaultValue={outputId}
                                       aria-label={`Media output id ${outputId}`}
-                                      title="Binding id"
                                       onBlur={(event) =>
                                         renameSelectedMediaBinding(
                                           "output",
@@ -11738,6 +11738,7 @@ export const RalphFlowEditor = ({
                                         type="button"
                                         variant="ghost"
                                         aria-label={`Remove variable attachment ${index + 1}`}
+                                        tooltip={`Remove attachment ${index + 1}`}
                                         onClick={() =>
                                           removeSelectedBlockVariableAttachment(
                                             key,
@@ -11998,7 +11999,7 @@ export const RalphFlowEditor = ({
                                     variant="ghost"
                                     size="icon"
                                     aria-label={`Remove ${output} route`}
-                                    title={`Remove ${output} route`}
+                                    tooltip={`Remove ${output} route`}
                                     onClick={() => removeEdge(edge.id)}
                                     className="h-6 w-6 rounded text-slate-500 hover:bg-red-500/10 hover:text-red-200"
                                   >
@@ -12325,7 +12326,7 @@ export const RalphFlowEditor = ({
                                 selectedFlowUnsaved
                               }
                               aria-label="Refresh Ralph revisions"
-                              title="Refresh Ralph revisions"
+                              tooltip="Refresh Ralph revisions"
                               onClick={() =>
                                 void refreshRevisions(selectedId, selectedScope)
                               }
@@ -12374,7 +12375,7 @@ export const RalphFlowEditor = ({
                                     size="icon"
                                     disabled={loading || dirty}
                                     aria-label={`Restore revision ${revision.id}`}
-                                    title={
+                                    tooltip={
                                       dirty
                                         ? "Save or discard changes first"
                                         : `Restore ${revision.id}`
@@ -12570,28 +12571,30 @@ export const RalphFlowEditor = ({
                         <div className="grid grid-cols-3 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1">
                           {aiTargetOptions.map(
                             ({ target, label, disabled, title }) => (
-                              <button
-                                key={target}
-                                type="button"
-                                disabled={disabled}
-                                aria-disabled={disabled}
-                                title={title}
-                                onClick={() => {
-                                  if (!disabled) {
-                                    setAiTarget(target);
-                                  }
-                                }}
-                                className={cn(
-                                  "h-7 rounded-md px-2 text-xs font-semibold",
-                                  disabled
-                                    ? "cursor-not-allowed text-slate-700 opacity-60"
-                                    : aiTarget === target
-                                      ? "bg-emerald-500/20 text-emerald-100"
-                                      : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
-                                )}
-                              >
-                                {label}
-                              </button>
+                              <ControlTooltip key={target} content={title}>
+                                <span className="grid">
+                                  <button
+                                    type="button"
+                                    disabled={disabled}
+                                    aria-disabled={disabled}
+                                    onClick={() => {
+                                      if (!disabled) {
+                                        setAiTarget(target);
+                                      }
+                                    }}
+                                    className={cn(
+                                      "h-7 rounded-md px-2 text-xs font-semibold",
+                                      disabled
+                                        ? "cursor-not-allowed text-slate-700 opacity-60"
+                                        : aiTarget === target
+                                          ? "bg-emerald-500/20 text-emerald-100"
+                                          : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+                                    )}
+                                  >
+                                    {label}
+                                  </button>
+                                </span>
+                              </ControlTooltip>
                             ),
                           )}
                         </div>
@@ -12736,7 +12739,7 @@ export const RalphFlowEditor = ({
                                     type="button"
                                     variant="outline"
                                     aria-label="Copy Ralph generation error"
-                                    title="Copy Ralph generation error"
+                                    tooltip="Copy Ralph generation error"
                                     onClick={() => void copyGenerationError()}
                                     className="h-7 rounded-lg border-amber-400/30 bg-amber-500/10 px-2 text-xs text-amber-100 hover:bg-amber-500/15 hover:text-white"
                                   >
@@ -12812,20 +12815,22 @@ export const RalphFlowEditor = ({
                                 </div>
                               ) : null}
                               {generationJob.tempFlowPath ? (
-                                <div
-                                  className="min-w-0 truncate sm:col-span-2"
-                                  title={generationJob.tempFlowPath}
+                                <ControlTooltip
+                                  content={generationJob.tempFlowPath}
                                 >
-                                  Temp: {generationJob.tempFlowPath}
-                                </div>
+                                  <div className="min-w-0 truncate sm:col-span-2">
+                                    Temp: {generationJob.tempFlowPath}
+                                  </div>
+                                </ControlTooltip>
                               ) : null}
                               {generationJob.generationLogPath ? (
-                                <div
-                                  className="min-w-0 truncate sm:col-span-2"
-                                  title={generationJob.generationLogPath}
+                                <ControlTooltip
+                                  content={generationJob.generationLogPath}
                                 >
-                                  Log: {generationJob.generationLogPath}
-                                </div>
+                                  <div className="min-w-0 truncate sm:col-span-2">
+                                    Log: {generationJob.generationLogPath}
+                                  </div>
+                                </ControlTooltip>
                               ) : null}
                             </div>
                             {generationJob.activity.length > 0 ? (
@@ -13306,12 +13311,11 @@ export const RalphFlowEditor = ({
                                           </span>
                                         ) : null}
                                       </span>
-                                      <span
-                                        title="Variable type is defined by the flow."
-                                        className="h-7 shrink-0 rounded border border-slate-800 bg-slate-950 px-2 py-1 text-[0.7rem] text-slate-400"
-                                      >
-                                        {variable.type}
-                                      </span>
+                                      <ControlTooltip content="Defined by the flow">
+                                        <span className="h-7 shrink-0 rounded border border-slate-800 bg-slate-950 px-2 py-1 text-[0.7rem] text-slate-400">
+                                          {variable.type}
+                                        </span>
+                                      </ControlTooltip>
                                     </span>
                                     <RalphSetupVariableControl
                                       variable={variable}
@@ -13582,12 +13586,11 @@ export const RalphFlowEditor = ({
                                             <span className="truncate font-medium text-slate-300">
                                               {name}
                                             </span>
-                                            <span
-                                              className="truncate text-slate-500"
-                                              title={value}
-                                            >
-                                              {value || "(empty)"}
-                                            </span>
+                                            <ControlTooltip content={value}>
+                                              <span className="truncate text-slate-500">
+                                                {value || "(empty)"}
+                                              </span>
+                                            </ControlTooltip>
                                             <RalphCopyButton
                                               value={value}
                                               label={`${name} variable`}
@@ -13815,7 +13818,7 @@ export const RalphFlowEditor = ({
                             size="icon"
                             disabled={runHistoryLoading || !selectedId}
                             aria-label="Refresh Ralph run history"
-                            title="Refresh Ralph run history"
+                            tooltip="Refresh Ralph run history"
                             onClick={() =>
                               void refreshRunHistory(selectedId, selectedScope)
                             }
@@ -14008,7 +14011,7 @@ export const RalphFlowEditor = ({
                                   ? "Back to live runs"
                                   : "Back to run history"
                               }
-                              title={
+                              tooltip={
                                 selectedActiveRun
                                   ? "Back to live runs"
                                   : "Back to run history"
@@ -14058,12 +14061,11 @@ export const RalphFlowEditor = ({
                                     ? "Detailed trace"
                                     : "Readable log"}
                                 </div>
-                                <div
-                                  className="mt-1 truncate text-[0.68rem] text-slate-600"
-                                  title={selectedRunLog.path}
-                                >
-                                  {selectedRunLog.path}
-                                </div>
+                                <ControlTooltip content={selectedRunLog.path}>
+                                  <div className="mt-1 truncate text-[0.68rem] text-slate-600">
+                                    {selectedRunLog.path}
+                                  </div>
+                                </ControlTooltip>
                               </div>
                               <div className="flex shrink-0 items-center gap-1">
                                 <Button
@@ -14119,7 +14121,7 @@ export const RalphFlowEditor = ({
                                   variant="ghost"
                                   size="icon"
                                   aria-label="Close Ralph run log"
-                                  title="Close Ralph run log"
+                                  tooltip="Close Ralph run log"
                                   onClick={() => setSelectedRunLog(null)}
                                   className="h-7 w-7 rounded-lg text-slate-500 hover:bg-slate-900 hover:text-slate-100"
                                 >
@@ -14251,12 +14253,11 @@ export const RalphFlowEditor = ({
                                         <span className="truncate text-xs font-medium text-slate-300">
                                           {name}
                                         </span>
-                                        <span
-                                          className="truncate text-xs text-slate-500"
-                                          title={value}
-                                        >
-                                          {value || "(empty)"}
-                                        </span>
+                                        <ControlTooltip content={value}>
+                                          <span className="truncate text-xs text-slate-500">
+                                            {value || "(empty)"}
+                                          </span>
+                                        </ControlTooltip>
                                       </span>
                                       <RalphCopyButton
                                         value={value}
@@ -14529,12 +14530,11 @@ export const RalphFlowEditor = ({
                                             <span className="truncate font-medium text-slate-300">
                                               {name}
                                             </span>
-                                            <span
-                                              className="truncate text-slate-500"
-                                              title={value}
-                                            >
-                                              {value || "(empty)"}
-                                            </span>
+                                            <ControlTooltip content={value}>
+                                              <span className="truncate text-slate-500">
+                                                {value || "(empty)"}
+                                              </span>
+                                            </ControlTooltip>
                                             <RalphCopyButton
                                               value={value}
                                               label={`${name} variable`}

@@ -27,6 +27,7 @@ import { MarkdownContent } from "../components/markdown-content";
 import { getWorkspaceMarkdownLinkTarget } from "../components/workspace-markdown-links";
 import { Button } from "../components/ui/button";
 import { EmptyState } from "../components/ui/empty-state";
+import { ControlTooltip } from "../components/ui/tooltip";
 import { useOptionalRegisterCommands } from "../commands/command-context";
 import {
   asPaletteCommands,
@@ -115,17 +116,22 @@ const WorkspaceMarkdownImage = ({
     );
   }
   if (!resolvedSource) return null;
-  return (
+  const image = (
     <img
       src={resolvedSource}
       alt={alt ?? ""}
-      title={title}
       loading="lazy"
       decoding="async"
       referrerPolicy="no-referrer"
       className="my-4 max-h-[32rem] max-w-full rounded-md object-contain"
       onError={() => setFailed(true)}
     />
+  );
+
+  return title ? (
+    <ControlTooltip content={title}>{image}</ControlTooltip>
+  ) : (
+    image
   );
 };
 
@@ -827,54 +833,63 @@ export const WorkspaceFileViewer = ({
               workspaceRoot={workspaceRoot}
               className="text-sm text-slate-300"
               components={{
-                a: ({ href, children, title }) => (
-                  <a
-                    href={href}
-                    title={title}
-                    className="app-markdown-link"
-                    onClick={(event) => {
-                      if (!href || href.startsWith("#")) return;
-                      event.preventDefault();
-                      const workspaceTarget = getWorkspaceMarkdownLinkTarget(
-                        href,
-                        workspaceRoot,
-                      );
-                      const external =
-                        href.startsWith("//") ||
-                        /^[a-z][a-z\d+.-]*:/iu.test(href);
-                      if (external && !workspaceTarget) {
-                        const target = href.startsWith("//")
-                          ? `https:${href}`
-                          : href;
-                        void openExternalUrl(target).catch(
+                a: ({ href, children, title }) => {
+                  const link = (
+                    <a
+                      href={href}
+                      className="app-markdown-link"
+                      onClick={(event) => {
+                        if (!href || href.startsWith("#")) return;
+                        event.preventDefault();
+                        const workspaceTarget = getWorkspaceMarkdownLinkTarget(
+                          href,
+                          workspaceRoot,
+                        );
+                        const external =
+                          href.startsWith("//") ||
+                          /^[a-z][a-z\d+.-]*:/iu.test(href);
+                        if (external && !workspaceTarget) {
+                          const target = href.startsWith("//")
+                            ? `https:${href}`
+                            : href;
+                          void openExternalUrl(target).catch(
+                            (openError: unknown) =>
+                              setSaveError(errorMessage(openError)),
+                          );
+                          return;
+                        }
+                        const absoluteWorkspaceTarget =
+                          workspaceTarget &&
+                          (/^(?:file:|[a-z]:[\\/]|[\\/])/iu.test(href) ||
+                            href.startsWith("//"));
+                        const path = absoluteWorkspaceTarget
+                          ? workspaceTarget.relativePath
+                          : resolveWorkspaceMarkdownPath(
+                              document.path,
+                              workspaceTarget?.relativePath ?? href,
+                            );
+                        if (!path) {
+                          setSaveError(
+                            "This link points outside the workspace.",
+                          );
+                          return;
+                        }
+                        void openWorkspacePath(workspaceRoot, path).catch(
                           (openError: unknown) =>
                             setSaveError(errorMessage(openError)),
                         );
-                        return;
-                      }
-                      const absoluteWorkspaceTarget =
-                        workspaceTarget &&
-                        (/^(?:file:|[a-z]:[\\/]|[\\/])/iu.test(href) ||
-                          href.startsWith("//"));
-                      const path = absoluteWorkspaceTarget
-                        ? workspaceTarget.relativePath
-                        : resolveWorkspaceMarkdownPath(
-                            document.path,
-                            workspaceTarget?.relativePath ?? href,
-                          );
-                      if (!path) {
-                        setSaveError("This link points outside the workspace.");
-                        return;
-                      }
-                      void openWorkspacePath(workspaceRoot, path).catch(
-                        (openError: unknown) =>
-                          setSaveError(errorMessage(openError)),
-                      );
-                    }}
-                  >
-                    {children}
-                  </a>
-                ),
+                      }}
+                    >
+                      {children}
+                    </a>
+                  );
+
+                  return title ? (
+                    <ControlTooltip content={title}>{link}</ControlTooltip>
+                  ) : (
+                    link
+                  );
+                },
                 img: ({ src, alt, title }) => (
                   <WorkspaceMarkdownImage
                     workspaceRoot={workspaceRoot}

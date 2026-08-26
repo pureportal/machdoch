@@ -55,7 +55,7 @@ export const RalphCopyButton = ({
       variant="ghost"
       size="icon"
       aria-label={accessibleLabel}
-      title={accessibleLabel}
+      tooltip={accessibleLabel}
       onClick={() => void copyValue()}
       className={cn(
         "h-7 w-7 rounded-md text-slate-500 hover:bg-slate-800 hover:text-white",

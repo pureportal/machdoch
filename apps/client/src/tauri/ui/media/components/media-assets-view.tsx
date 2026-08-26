@@ -41,6 +41,7 @@ import type {
   MediaModelDescriptor,
 } from "../../../../core/media/contracts.js";
 import { Button } from "../../components/ui/button";
+import { ControlTooltip } from "../../components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -471,12 +472,11 @@ export const MediaAssetsView = ({
                         Use model
                       </Button>
                     ) : readiness ? (
-                      <p
-                        title={readiness.message}
-                        className="line-clamp-2 min-h-8 text-[10px] leading-4 text-amber-300"
-                      >
-                        {readiness.action}
-                      </p>
+                      <ControlTooltip content={readiness.message}>
+                        <p className="line-clamp-2 min-h-8 text-[10px] leading-4 text-amber-300">
+                          {readiness.action}
+                        </p>
+                      </ControlTooltip>
                     ) : null}
                   </div>
                 </article>
@@ -553,15 +553,17 @@ export const MediaAssetsView = ({
                     setContextAssetId(open ? asset.id : null)
                   }
                 >
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      aria-label="Asset actions"
-                      className="absolute right-2 top-2 z-10 rounded-lg bg-slate-950/85 p-1.5 text-slate-200 hover:bg-slate-900"
-                    >
-                      <MoreVertical className="h-4 w-4" />
-                    </button>
-                  </DropdownMenuTrigger>
+                  <ControlTooltip content="Asset actions">
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="Asset actions"
+                        className="absolute right-2 top-2 z-10 rounded-lg bg-slate-950/85 p-1.5 text-slate-200 hover:bg-slate-900"
+                      >
+                        <MoreVertical className="h-4 w-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                  </ControlTooltip>
                   <DropdownMenuContent align="end">
                     {asset.kind === "image" ? (
                       <DropdownMenuItem
@@ -670,14 +672,16 @@ export const MediaAssetsView = ({
               {selectedResourceModel?.displayName ??
                 selectedResourceAddon?.displayName}
             </span>
-            <button
-              type="button"
-              aria-label="Close asset details"
-              onClick={() => setSelectedResourceId(null)}
-              className="rounded-md p-1 text-slate-400 hover:text-white"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <ControlTooltip content="Close">
+              <button
+                type="button"
+                aria-label="Close asset details"
+                onClick={() => setSelectedResourceId(null)}
+                className="rounded-md p-1 text-slate-400 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </ControlTooltip>
           </div>
           <MediaResourcePreview
             resourceId={selectedResourceId ?? ""}
@@ -770,14 +774,16 @@ export const MediaAssetsView = ({
                 : selectedAsset.kind[0]?.toUpperCase() +
                   selectedAsset.kind.slice(1)}
             </span>
-            <button
-              type="button"
-              aria-label="Close asset details"
-              onClick={() => setSelectedAssetId(null)}
-              className="rounded-md p-1 text-slate-400 hover:text-white"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <ControlTooltip content="Close">
+              <button
+                type="button"
+                aria-label="Close asset details"
+                onClick={() => setSelectedAssetId(null)}
+                className="rounded-md p-1 text-slate-400 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </ControlTooltip>
           </div>
           <MediaAssetPreview
             asset={selectedAsset}

@@ -27,6 +27,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "../../components/ui/popover";
+import { ControlTooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 import type { RuntimeProvider } from "../../model-catalog";
 import {
@@ -239,26 +240,29 @@ export const SessionReasoningPicker = ({
 
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          aria-label={`Reasoning mode: ${activeMeta.label}`}
-          title={`Reasoning mode: ${activeMeta.label}${
-            isUsingWorkspaceDefaultReasoning ? " (workspace default)" : ""
-          }`}
-          data-reasoning-mode={displayActiveReasoning}
-          data-reasoning-source={
-            isUsingWorkspaceDefaultReasoning ? "workspace" : "session"
-          }
-          className={cn(
-            "app-reasoning-picker-button h-8 w-8 rounded-full border p-0 shadow-none",
-            activeMeta.triggerClassName,
-          )}
-        >
-          <ActiveReasoningIcon className="h-3.5 w-3.5" />
-        </Button>
-      </PopoverTrigger>
+      <ControlTooltip
+        content={`Reasoning mode: ${activeMeta.label}${
+          isUsingWorkspaceDefaultReasoning ? " (workspace default)" : ""
+        }`}
+      >
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            aria-label={`Reasoning mode: ${activeMeta.label}`}
+            data-reasoning-mode={displayActiveReasoning}
+            data-reasoning-source={
+              isUsingWorkspaceDefaultReasoning ? "workspace" : "session"
+            }
+            className={cn(
+              "app-reasoning-picker-button h-8 w-8 rounded-full border p-0 shadow-none",
+              activeMeta.triggerClassName,
+            )}
+          >
+            <ActiveReasoningIcon className="h-3.5 w-3.5" />
+          </Button>
+        </PopoverTrigger>
+      </ControlTooltip>
       <PopoverContent
         align="start"
         className="w-96 rounded-3xl border-slate-800 bg-slate-950/95 p-5 shadow-2xl backdrop-blur-xl"

@@ -28,6 +28,7 @@ import type {
   MediaModelAddonImportInspection,
 } from "../../../../core/media/contracts.js";
 import { Button } from "../../components/ui/button";
+import { ControlTooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 import { MediaCategoryPicker } from "./media-category-picker";
 import { MediaAssetPreview } from "./media-visual-preview";
@@ -409,14 +410,16 @@ export const MediaAssetImportDialog = ({
           >
             Import
           </h1>
-          <button
-            type="button"
-            aria-label="Close import"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <ControlTooltip content="Close">
+            <button
+              type="button"
+              aria-label="Close import"
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </ControlTooltip>
         </header>
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
           <button

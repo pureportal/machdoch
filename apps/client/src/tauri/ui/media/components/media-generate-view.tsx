@@ -47,6 +47,7 @@ import type {
   MediaVideoRecipeSettings,
 } from "../../../../core/media/contracts.js";
 import { Button } from "../../components/ui/button";
+import { ControlTooltip } from "../../components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -718,20 +719,22 @@ export const MediaGenerateView = ({
                         asset={asset}
                         className="h-full w-full"
                       />
-                      <button
-                        type="button"
-                        aria-label={`Remove reference ${index + 1}`}
-                        onClick={() =>
-                          changeReferences(
-                            settings.referenceImages.filter(
-                              (candidate) => candidate.assetId !== asset.id,
-                            ),
-                          )
-                        }
-                        className="absolute top-1 right-1 rounded-md bg-slate-950/85 p-1 text-slate-200 opacity-80 transition-opacity hover:opacity-100"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
+                      <ControlTooltip content={`Remove reference ${index + 1}`}>
+                        <button
+                          type="button"
+                          aria-label={`Remove reference ${index + 1}`}
+                          onClick={() =>
+                            changeReferences(
+                              settings.referenceImages.filter(
+                                (candidate) => candidate.assetId !== asset.id,
+                              ),
+                            )
+                          }
+                          className="absolute top-1 right-1 rounded-md bg-slate-950/85 p-1 text-slate-200 opacity-80 transition-opacity hover:opacity-100"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </ControlTooltip>
                     </div>
                     {target === "image" ? (
                       <select
@@ -790,29 +793,34 @@ export const MediaGenerateView = ({
                   </div>
                 ))}
                 {settings.referenceImages.length < referenceLimit ? (
-                  <button
-                    type="button"
-                    aria-label={`Add ${referenceHeading.toLocaleLowerCase()}`}
-                    title={
+                  <ControlTooltip
+                    content={
                       referenceImportSupported
-                        ? undefined
+                        ? `Add ${referenceHeading.toLocaleLowerCase()}`
                         : "Add images in the desktop app"
                     }
-                    onClick={onAddReferenceImages}
-                    disabled={
-                      !referenceImportSupported || referenceImportPending
-                    }
-                    className="flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-slate-700 text-slate-400 transition-colors hover:border-sky-500 hover:text-sky-300 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    {referenceImportPending ? (
-                      <LoaderCircle className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <ImagePlus className="h-5 w-5" />
-                    )}
-                    <span className="text-[10px]">
-                      {referenceImportPending ? "Adding" : "Add image"}
+                    <span className="inline-flex">
+                      <button
+                        type="button"
+                        aria-label={`Add ${referenceHeading.toLocaleLowerCase()}`}
+                        onClick={onAddReferenceImages}
+                        disabled={
+                          !referenceImportSupported || referenceImportPending
+                        }
+                        className="flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-slate-700 text-slate-400 transition-colors hover:border-sky-500 hover:text-sky-300 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {referenceImportPending ? (
+                          <LoaderCircle className="h-5 w-5 animate-spin" />
+                        ) : (
+                          <ImagePlus className="h-5 w-5" />
+                        )}
+                        <span className="text-[10px]">
+                          {referenceImportPending ? "Adding" : "Add image"}
+                        </span>
+                      </button>
                     </span>
-                  </button>
+                  </ControlTooltip>
                 ) : null}
               </div>
               {assetPicker === "reference" ? (
@@ -885,20 +893,22 @@ export const MediaGenerateView = ({
                         asset={baseImageAsset}
                         className="h-full w-full"
                       />
-                      <button
-                        type="button"
-                        aria-label="Remove base image"
-                        onClick={() =>
-                          onChange({
-                            ...settings,
-                            baseImageAssetId: null,
-                            editMask: null,
-                          })
-                        }
-                        className="absolute top-1 right-1 rounded-md bg-slate-950/85 p-1 text-slate-200"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
+                      <ControlTooltip content="Remove base image">
+                        <button
+                          type="button"
+                          aria-label="Remove base image"
+                          onClick={() =>
+                            onChange({
+                              ...settings,
+                              baseImageAssetId: null,
+                              editMask: null,
+                            })
+                          }
+                          className="absolute top-1 right-1 rounded-md bg-slate-950/85 p-1 text-slate-200"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </ControlTooltip>
                     </div>
                   ) : (
                     <button
@@ -1049,16 +1059,18 @@ export const MediaGenerateView = ({
                         asset={poseImageAsset}
                         className="h-full w-full"
                       />
-                      <button
-                        type="button"
-                        aria-label="Remove pose map"
-                        onClick={() =>
-                          onChange({ ...settings, poseImageAssetId: null })
-                        }
-                        className="absolute top-1 right-1 rounded-md bg-slate-950/85 p-1 text-slate-200"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
+                      <ControlTooltip content="Remove pose map">
+                        <button
+                          type="button"
+                          aria-label="Remove pose map"
+                          onClick={() =>
+                            onChange({ ...settings, poseImageAssetId: null })
+                          }
+                          className="absolute top-1 right-1 rounded-md bg-slate-950/85 p-1 text-slate-200"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </ControlTooltip>
                     </div>
                   ) : (
                     <button

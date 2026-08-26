@@ -93,7 +93,6 @@ const RalphNodeLockBadge = ({
     <div
       role="img"
       aria-label={label}
-      title={label}
       className={cn(
         "pointer-events-none absolute top-2 right-2 z-10 flex h-6 w-6 items-center justify-center rounded-md border shadow-lg shadow-black/35",
         isDirectlyLocked
@@ -301,6 +300,7 @@ const RalphBlockNode = ({
         type="target"
         position={Position.Left}
         tone="slate"
+        tooltip="Input"
         style={{ left: 0, transform: "translateY(-50%)" }}
       />
       <FlowNodeHeader
@@ -354,6 +354,7 @@ const RalphBlockNode = ({
               type="source"
               position={Position.Right}
               tone={getRalphOutputTone(output)}
+              tooltip={`Output: ${output}`}
               style={{ right: -6 }}
             />
           </div>

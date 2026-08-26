@@ -289,7 +289,7 @@ const getVariantStyles = (variant: AgentComposerVariant) => {
       "app-composer-attachment-button h-11 w-11 shrink-0 rounded-[1.15rem] border-slate-800 bg-slate-900 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100",
     attachmentIcon: "h-4 w-4",
     textarea:
-      "app-composer-textarea max-h-[30vh] min-h-14 resize-none overflow-y-auto rounded-[1.4rem] border-slate-800 bg-slate-900/70 px-5 py-4 text-base text-slate-100 shadow-inner shadow-black/20 placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-sky-500 disabled:cursor-not-allowed disabled:bg-slate-900/50 disabled:text-slate-500 disabled:opacity-100",
+      "app-composer-textarea max-h-[30vh] min-h-14 min-w-0 flex-1 resize-none overflow-y-auto rounded-[1.4rem] border-slate-800 bg-slate-900/70 px-5 py-4 text-base text-slate-100 shadow-inner shadow-black/20 placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-sky-500 disabled:cursor-not-allowed disabled:bg-slate-900/50 disabled:text-slate-500 disabled:opacity-100",
     iconButton:
       "app-composer-icon-button h-11 w-11 shrink-0 rounded-[1.15rem] border-slate-800 bg-slate-900 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:border-slate-800 disabled:bg-slate-900 disabled:text-slate-600 disabled:opacity-100",
     sendButton:
@@ -312,11 +312,6 @@ const renderToggle = (
       key={toggle.id}
       label={toggle.label}
       title={toggle.title}
-      description={
-        variant === "session"
-          ? (toggle.description ?? toggle.title ?? toggle.label)
-          : undefined
-      }
       icon={toggle.icon}
       pressed={toggle.pressed}
       disabled={toggle.disabled}
@@ -341,8 +336,9 @@ const renderAction = (
       key={action.id}
       type="button"
       variant="outline"
+      size="icon"
       aria-label={action.label}
-      title={action.title ?? action.label}
+      tooltip={action.title ?? action.label}
       disabled={action.disabled}
       onClick={action.onClick}
       className={cn(iconButtonClassName, action.className)}
@@ -1101,7 +1097,7 @@ export const AgentComposer = ({
       variant="outline"
       size={variant === "session" ? "icon" : undefined}
       aria-label={variant === "quick" ? "Cancel Quick Chat" : "Cancel task"}
-      title="Cancel"
+      tooltip="Cancel"
       onClick={onCancel}
       className={styles.cancelButton}
     >
@@ -1113,7 +1109,7 @@ export const AgentComposer = ({
       variant="outline"
       size={variant === "session" ? "icon" : undefined}
       aria-label={sendLabel}
-      title={sendDisabledReason ?? sendLabel}
+      tooltip={sendDisabledReason ?? sendLabel}
       disabled={inputBlocked || !canSubmit}
       className={cn(
         styles.sendButton,
@@ -1129,13 +1125,29 @@ export const AgentComposer = ({
       variant="outline"
       size="icon"
       aria-label="Cancel edit"
-      title="Cancel edit"
+      tooltip="Cancel edit"
       onClick={onCancel}
       className={styles.cancelButton}
     >
       <X className={styles.iconClassName} />
     </Button>
   ) : null;
+  const sessionActionControls = showCancelAlongsideSend ? (
+    <div
+      role="group"
+      aria-label="Edit message actions"
+      className="app-composer-edit-actions flex shrink-0 items-center gap-2"
+    >
+      {actionButtons}
+      {editCancelControl}
+      {sendControl}
+    </div>
+  ) : (
+    <>
+      {actionButtons}
+      {sendControl}
+    </>
+  );
 
   if (variant === "quick") {
     return (
@@ -1209,7 +1221,10 @@ export const AgentComposer = ({
         />
 
         <form
-          className="app-composer-form flex items-center gap-3"
+          className={cn(
+            "app-composer-form flex gap-3",
+            showCancelAlongsideSend ? "items-end" : "items-center",
+          )}
           onSubmit={(event) => {
             event.preventDefault();
             submit();
@@ -1217,9 +1232,7 @@ export const AgentComposer = ({
         >
           {attachmentMenu}
           {textarea}
-          {actionButtons}
-          {editCancelControl}
-          {sendControl}
+          {sessionActionControls}
         </form>
 
         {queuedMessagesPanel}

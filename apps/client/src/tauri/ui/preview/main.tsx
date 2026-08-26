@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "../styles.css";
+import { TooltipProvider } from "../components/ui/tooltip";
 import { App } from "./app";
 
 declare const __MACHDOCH_DEVELOPMENT__: boolean;
@@ -8,16 +9,11 @@ declare const __MACHDOCH_DEVELOPMENT__: boolean;
 if (__MACHDOCH_DEVELOPMENT__) {
   void import("./media-quality-driver").then((driver) => {
     Object.assign(window, {
-      startWitchFramePackQualityRun:
-        driver.startWitchFramePackQualityRun,
-      startWitchHunyuanQualityRun:
-        driver.startWitchHunyuanQualityRun,
-      startGeneralHunyuanQualityRun:
-        driver.startGeneralHunyuanQualityRun,
-      startAnimationIterationRun:
-        driver.startAnimationIterationRun,
-      startDogLoraImageQualityRun:
-        driver.startDogLoraImageQualityRun,
+      startWitchFramePackQualityRun: driver.startWitchFramePackQualityRun,
+      startWitchHunyuanQualityRun: driver.startWitchHunyuanQualityRun,
+      startGeneralHunyuanQualityRun: driver.startGeneralHunyuanQualityRun,
+      startAnimationIterationRun: driver.startAnimationIterationRun,
+      startDogLoraImageQualityRun: driver.startDogLoraImageQualityRun,
     });
   });
 }
@@ -45,6 +41,8 @@ document.addEventListener(
 
 createRoot(rootElement).render(
   <StrictMode>
-    <App />
+    <TooltipProvider delayDuration={300}>
+      <App />
+    </TooltipProvider>
   </StrictMode>,
 );

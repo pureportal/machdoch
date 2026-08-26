@@ -33,6 +33,7 @@ import {
   useSessionFileDrops,
   type SessionDropPayload,
 } from "./chat-session/_helpers/use-session-file-drops";
+import { ControlTooltip } from "./components/ui/tooltip";
 
 const BUBBLE_SYNC_INTERVAL_MS = 30_000;
 const ACTIVE_TASK_RECONCILIATION_INTERVAL_MS = 30_000;
@@ -62,18 +63,19 @@ export const AssistantBubbleShell = () => {
   const popupMutationQueueRef = useRef<Promise<void>>(Promise.resolve());
   const windowSyncQueueRef = useRef<Promise<void>>(Promise.resolve());
 
-  const enqueuePopupMutation = useCallback(<T,>(
-    mutation: () => Promise<T>,
-  ): Promise<T> => {
-    const operation = popupMutationQueueRef.current
-      .catch(() => undefined)
-      .then(mutation);
-    popupMutationQueueRef.current = operation.then(
-      () => undefined,
-      () => undefined,
-    );
-    return operation;
-  }, []);
+  const enqueuePopupMutation = useCallback(
+    <T,>(mutation: () => Promise<T>): Promise<T> => {
+      const operation = popupMutationQueueRef.current
+        .catch(() => undefined)
+        .then(mutation);
+      popupMutationQueueRef.current = operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      return operation;
+    },
+    [],
+  );
 
   const emitQuickChatDrop = useCallback(
     async (payload: SessionDropPayload): Promise<void> => {
@@ -272,7 +274,8 @@ export const AssistantBubbleShell = () => {
           return;
         }
         const topologyChanged =
-          topologyKey !== null && topologyKey !== lastMonitorTopologyKeyRef.current;
+          topologyKey !== null &&
+          topologyKey !== lastMonitorTopologyKeyRef.current;
 
         if (topologyKey !== null) {
           lastMonitorTopologyKeyRef.current = topologyKey;
@@ -305,7 +308,10 @@ export const AssistantBubbleShell = () => {
           nextSizeKey !== lastBubbleSizeRef.current ||
           !sizeIsCurrent;
 
-        if (shouldSyncSize && (await setWindowSize(currentWindow, layout.bubbleSize))) {
+        if (
+          shouldSyncSize &&
+          (await setWindowSize(currentWindow, layout.bubbleSize))
+        ) {
           lastBubbleSizeRef.current = nextSizeKey;
         }
 
@@ -377,7 +383,10 @@ export const AssistantBubbleShell = () => {
         try {
           unlisten = await createUnlistener();
         } catch (error) {
-          console.error("Failed to subscribe to assistant bubble window events", error);
+          console.error(
+            "Failed to subscribe to assistant bubble window events",
+            error,
+          );
           continue;
         }
 
@@ -412,14 +421,15 @@ export const AssistantBubbleShell = () => {
     desktopSettings.assistantBubbleHideWhenFullscreen,
   ]);
 
-  const handleTemporarilyHide = (event: MouseEvent<HTMLButtonElement>): void => {
+  const handleTemporarilyHide = (
+    event: MouseEvent<HTMLButtonElement>,
+  ): void => {
     event.preventDefault();
     event.stopPropagation();
     suppressPrimaryActionUntilRef.current = Date.now() + 800;
     lastVisibilityRef.current = false;
     temporarilyHiddenUntilRef.current =
-      Date.now() +
-      desktopSettings.assistantBubbleTemporarilyHideSeconds * 1000;
+      Date.now() + desktopSettings.assistantBubbleTemporarilyHideSeconds * 1000;
     popupStateRequestRef.current += 1;
     setPopupOpen(false);
     void enqueuePopupMutation(hideAssistantPopup).catch((error) => {
@@ -427,11 +437,15 @@ export const AssistantBubbleShell = () => {
     });
 
     if (isTauri()) {
-      void getCurrentWindow().hide().catch(() => undefined);
+      void getCurrentWindow()
+        .hide()
+        .catch(() => undefined);
     }
   };
 
-  const handleBubbleMouseDown = (event: MouseEvent<HTMLButtonElement>): void => {
+  const handleBubbleMouseDown = (
+    event: MouseEvent<HTMLButtonElement>,
+  ): void => {
     if (event.button !== 2) {
       return;
     }
@@ -479,67 +493,70 @@ export const AssistantBubbleShell = () => {
   return (
     <div className="quick-chat-bubble-shell fixed inset-0 flex items-center justify-center overflow-visible bg-transparent select-none">
       <div className="quick-chat-bubble-wrap relative">
-        <button
-          type="button"
-          aria-label="Open Quick Chat"
-          aria-expanded={popupOpen}
-          aria-haspopup="dialog"
-          title="Open Quick Chat"
-          data-style={appearance.settings.quickChatBubbleStyle}
-          data-state={bubbleVisualState}
-          data-running={runningTaskCount > 0 ? "true" : "false"}
-          data-has-notification={
-            runningTaskCount > 0 ? "true" : "false"
-          }
-          data-voice-enabled={
-            desktopSettings.quickVoiceEnabled ? "true" : "false"
-          }
-          data-drop-active={bubbleFileDrop.isActive ? "true" : "false"}
-          onClick={handleBubbleClick}
-          onFocus={() => {
-            const requestId = popupStateRequestRef.current + 1;
-            popupStateRequestRef.current = requestId;
-            void isAssistantPopupVisible()
-              .then((visible) => {
-                if (popupStateRequestRef.current === requestId) {
-                  setPopupOpen(visible);
-                }
-              })
-              .catch((error) => {
-                console.error("Failed to inspect assistant popup visibility", error);
-              });
-          }}
-          onMouseDown={handleBubbleMouseDown}
-          onContextMenu={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          className="quick-chat-bubble group relative flex h-17 w-17 items-center justify-center rounded-[1.35rem] border border-sky-400/25 bg-slate-950/95 text-slate-100 shadow-none transition-colors duration-150 hover:border-sky-300/45 hover:bg-slate-900/95"
-        >
-          <span aria-hidden="true" className="quick-chat-bubble-aura" />
-          <span aria-hidden="true" className="quick-chat-bubble-surface" />
-          <MessageSquareMore className="quick-chat-bubble-icon relative z-10 h-6 w-6 text-sky-100 transition-colors group-hover:text-white" />
-          <Zap className="quick-chat-bubble-zap absolute right-3 top-3 z-10 h-3 w-3 text-sky-300" />
-        </button>
+        <ControlTooltip content="Quick Chat">
+          <button
+            type="button"
+            aria-label="Open Quick Chat"
+            aria-expanded={popupOpen}
+            aria-haspopup="dialog"
+            data-style={appearance.settings.quickChatBubbleStyle}
+            data-state={bubbleVisualState}
+            data-running={runningTaskCount > 0 ? "true" : "false"}
+            data-has-notification={runningTaskCount > 0 ? "true" : "false"}
+            data-voice-enabled={
+              desktopSettings.quickVoiceEnabled ? "true" : "false"
+            }
+            data-drop-active={bubbleFileDrop.isActive ? "true" : "false"}
+            onClick={handleBubbleClick}
+            onFocus={() => {
+              const requestId = popupStateRequestRef.current + 1;
+              popupStateRequestRef.current = requestId;
+              void isAssistantPopupVisible()
+                .then((visible) => {
+                  if (popupStateRequestRef.current === requestId) {
+                    setPopupOpen(visible);
+                  }
+                })
+                .catch((error) => {
+                  console.error(
+                    "Failed to inspect assistant popup visibility",
+                    error,
+                  );
+                });
+            }}
+            onMouseDown={handleBubbleMouseDown}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            className="quick-chat-bubble group relative flex h-17 w-17 items-center justify-center rounded-[1.35rem] border border-sky-400/25 bg-slate-950/95 text-slate-100 shadow-none transition-colors duration-150 hover:border-sky-300/45 hover:bg-slate-900/95"
+          >
+            <span aria-hidden="true" className="quick-chat-bubble-aura" />
+            <span aria-hidden="true" className="quick-chat-bubble-surface" />
+            <MessageSquareMore className="quick-chat-bubble-icon relative z-10 h-6 w-6 text-sky-100 transition-colors group-hover:text-white" />
+            <Zap className="quick-chat-bubble-zap absolute right-3 top-3 z-10 h-3 w-3 text-sky-300" />
+          </button>
+        </ControlTooltip>
 
-        <button
-          type="button"
-          aria-label="Start quick voice command"
-          title="Start quick voice command"
-          disabled={!desktopSettings.quickVoiceEnabled}
-          onClick={() => {
-            void showQuickVoiceWindow().catch((error) => {
-              console.error("Failed to show Quick Voice window", error);
-            });
-          }}
-          onContextMenu={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          className="quick-chat-voice-button absolute bottom-4 left-8 z-20 flex h-8 w-8 items-center justify-center rounded-full border border-violet-300/45 bg-violet-500 text-white shadow-none transition-colors duration-150 hover:bg-violet-400 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500 disabled:hover:bg-slate-800"
-        >
-          <Mic className="h-3.5 w-3.5" />
-        </button>
+        <ControlTooltip content="Quick Voice">
+          <button
+            type="button"
+            aria-label="Start quick voice command"
+            disabled={!desktopSettings.quickVoiceEnabled}
+            onClick={() => {
+              void showQuickVoiceWindow().catch((error) => {
+                console.error("Failed to show Quick Voice window", error);
+              });
+            }}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            className="quick-chat-voice-button absolute bottom-4 left-8 z-20 flex h-8 w-8 items-center justify-center rounded-full border border-violet-300/45 bg-violet-500 text-white shadow-none transition-colors duration-150 hover:bg-violet-400 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500 disabled:hover:bg-slate-800"
+          >
+            <Mic className="h-3.5 w-3.5" />
+          </button>
+        </ControlTooltip>
       </div>
     </div>
   );

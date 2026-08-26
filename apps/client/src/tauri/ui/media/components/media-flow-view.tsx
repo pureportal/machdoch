@@ -151,6 +151,7 @@ import {
 import { readMediaAssetPreview } from "../media-runtime";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { ControlTooltip } from "../../components/ui/tooltip";
 import { EmptyState } from "../../components/ui/empty-state";
 import { Input } from "../../components/ui/input";
 import { SearchField } from "../../components/ui/search-field";
@@ -633,7 +634,7 @@ const MediaFlowNodeCard = ({
           type="target"
           position={Position.Left}
           tone={PORT_TONES[port.dataType]}
-          title={`${port.label}: ${port.dataType}`}
+          tooltip={`${port.label}: ${PORT_LABELS[port.dataType]} input`}
           aria-label={`${port.label} ${port.dataType} input`}
           style={{ top: `${((index + 1) / (data.inputs.length + 1)) * 100}%` }}
         />
@@ -666,62 +667,65 @@ const MediaFlowNodeCard = ({
         <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/10 pt-2 text-[9px]">
           <div className="min-w-0 space-y-1">
             {data.inputs.map((port) => (
-              <div
+              <ControlTooltip
                 key={`input-${port.id}`}
-                className="flex min-w-0 items-center gap-1.5"
-                title={`${port.label}: ${PORT_LABELS[port.dataType]} input`}
+                content={`${port.label}: ${PORT_LABELS[port.dataType]} input`}
               >
-                <FlowPortDot
-                  aria-hidden="true"
-                  tone={PORT_TONES[port.dataType]}
-                />
-                <span className="truncate opacity-70">
-                  {port.label}
-                  {port.required ? " *" : ""}
-                </span>
-              </div>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <FlowPortDot
+                    aria-hidden="true"
+                    tone={PORT_TONES[port.dataType]}
+                  />
+                  <span className="truncate opacity-70">
+                    {port.label}
+                    {port.required ? " *" : ""}
+                  </span>
+                </div>
+              </ControlTooltip>
             ))}
           </div>
           <div className="min-w-0 space-y-1 text-right">
             {data.outputs.map((port) => (
-              <div
+              <ControlTooltip
                 key={`output-${port.id}`}
-                className="flex min-w-0 items-center justify-end gap-1.5"
-                title={`${port.label}: ${PORT_LABELS[port.dataType]} output`}
+                content={`${port.label}: ${PORT_LABELS[port.dataType]} output`}
               >
-                <span className="truncate opacity-70">{port.label}</span>
-                <FlowPortDot
-                  aria-hidden="true"
-                  tone={PORT_TONES[port.dataType]}
-                />
-              </div>
+                <div className="flex min-w-0 items-center justify-end gap-1.5">
+                  <span className="truncate opacity-70">{port.label}</span>
+                  <FlowPortDot
+                    aria-hidden="true"
+                    tone={PORT_TONES[port.dataType]}
+                  />
+                </div>
+              </ControlTooltip>
             ))}
           </div>
         </div>
       ) : null}
       {data.runOverlay ? (
-        <div
-          title={data.runOverlay.detail}
-          className={cn(
-            "mt-2 flex items-center justify-between gap-2 rounded-md border px-2 py-1 text-[9px]",
-            RUN_OVERLAY_BADGE_STYLES[data.runOverlay.state],
-          )}
-        >
-          <span className="flex min-w-0 items-center gap-1.5 font-medium">
-            <span
-              aria-hidden="true"
-              className={cn(
-                "h-1.5 w-1.5 shrink-0 rounded-full bg-current",
-                data.runOverlay.state === "running" && "animate-pulse",
-              )}
-            />
-            <span className="truncate">{data.runOverlay.label}</span>
-          </span>
-          <span className="shrink-0 font-mono opacity-60">
-            {data.runOverlay.stepCount} step
-            {data.runOverlay.stepCount === 1 ? "" : "s"}
-          </span>
-        </div>
+        <ControlTooltip content={data.runOverlay.detail}>
+          <div
+            className={cn(
+              "mt-2 flex items-center justify-between gap-2 rounded-md border px-2 py-1 text-[9px]",
+              RUN_OVERLAY_BADGE_STYLES[data.runOverlay.state],
+            )}
+          >
+            <span className="flex min-w-0 items-center gap-1.5 font-medium">
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "h-1.5 w-1.5 shrink-0 rounded-full bg-current",
+                  data.runOverlay.state === "running" && "animate-pulse",
+                )}
+              />
+              <span className="truncate">{data.runOverlay.label}</span>
+            </span>
+            <span className="shrink-0 font-mono opacity-60">
+              {data.runOverlay.stepCount} step
+              {data.runOverlay.stepCount === 1 ? "" : "s"}
+            </span>
+          </div>
+        </ControlTooltip>
       ) : null}
       {data.outputs.map((port, index) => (
         <FlowPort
@@ -730,7 +734,7 @@ const MediaFlowNodeCard = ({
           type="source"
           position={Position.Right}
           tone={PORT_TONES[port.dataType]}
-          title={`${port.label}: ${port.dataType}`}
+          tooltip={`${port.label}: ${PORT_LABELS[port.dataType]} output`}
           aria-label={`${port.label} ${port.dataType} output`}
           style={{ top: `${((index + 1) / (data.outputs.length + 1)) * 100}%` }}
         />
@@ -1346,42 +1350,50 @@ const ModelAddonPicker = ({
                           {selection.kind === "lora" &&
                           (capability?.supportsSeparateComponentStrengths ||
                             capability?.supportsDenoisingSchedules) ? (
+                            <ControlTooltip
+                              content={`Adjust ${addon.displayName}`}
+                            >
+                              <button
+                                type="button"
+                                aria-label={`Adjust ${addon.displayName}`}
+                                aria-expanded={openControlsId === addon.id}
+                                disabled={disabled}
+                                onClick={() =>
+                                  setOpenControlsId((current) =>
+                                    current === addon.id ? null : addon.id,
+                                  )
+                                }
+                                className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50"
+                              >
+                                <ChevronDown
+                                  className={cn(
+                                    "h-3.5 w-3.5 transition-transform",
+                                    openControlsId === addon.id && "rotate-180",
+                                  )}
+                                />
+                              </button>
+                            </ControlTooltip>
+                          ) : null}
+                          <ControlTooltip
+                            content={`Remove ${addon.displayName}`}
+                          >
                             <button
                               type="button"
-                              aria-label={`Adjust ${addon.displayName}`}
-                              aria-expanded={openControlsId === addon.id}
+                              aria-label={`Remove ${addon.displayName}`}
                               disabled={disabled}
                               onClick={() =>
-                                setOpenControlsId((current) =>
-                                  current === addon.id ? null : addon.id,
+                                onChange(
+                                  selections.filter(
+                                    (candidate) =>
+                                      candidate.addonId !== selection.addonId,
+                                  ),
                                 )
                               }
-                              className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50"
+                              className="rounded p-1 text-slate-400 hover:bg-rose-400/10 hover:text-rose-200 disabled:opacity-50"
                             >
-                              <ChevronDown
-                                className={cn(
-                                  "h-3.5 w-3.5 transition-transform",
-                                  openControlsId === addon.id && "rotate-180",
-                                )}
-                              />
+                              <Trash2 className="h-3.5 w-3.5" />
                             </button>
-                          ) : null}
-                          <button
-                            type="button"
-                            aria-label={`Remove ${addon.displayName}`}
-                            disabled={disabled}
-                            onClick={() =>
-                              onChange(
-                                selections.filter(
-                                  (candidate) =>
-                                    candidate.addonId !== selection.addonId,
-                                ),
-                              )
-                            }
-                            className="rounded p-1 text-slate-400 hover:bg-rose-400/10 hover:text-rose-200 disabled:opacity-50"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          </ControlTooltip>
                         </div>
                         {selection.kind === "textual-inversion" ? (
                           <Input
@@ -1867,56 +1879,68 @@ const NodeFieldEditor = ({
                     className="min-w-0 flex-1 rounded-md bg-slate-950 text-[10px]"
                   />
                   <div className="flex shrink-0 gap-1">
-                    <button
-                      type="button"
-                      disabled={field.readOnly || index === 0}
-                      aria-label={`Move ${subjectCutoutModelLabel(modelId)} up`}
-                      onClick={() => {
-                        const nextPriority = [...modelPriority];
-                        [nextPriority[index - 1], nextPriority[index]] = [
-                          nextPriority[index]!,
-                          nextPriority[index - 1]!,
-                        ];
-                        onChange(field.id, nextPriority);
-                      }}
-                      className="h-7 w-7 rounded border border-slate-700 text-[11px] text-slate-400 hover:bg-slate-800 disabled:opacity-30"
+                    <ControlTooltip
+                      content={`Move ${subjectCutoutModelLabel(modelId)} up`}
                     >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      disabled={
-                        field.readOnly || index === modelPriority.length - 1
-                      }
-                      aria-label={`Move ${subjectCutoutModelLabel(modelId)} down`}
-                      onClick={() => {
-                        const nextPriority = [...modelPriority];
-                        [nextPriority[index], nextPriority[index + 1]] = [
-                          nextPriority[index + 1]!,
-                          nextPriority[index]!,
-                        ];
-                        onChange(field.id, nextPriority);
-                      }}
-                      className="h-7 w-7 rounded border border-slate-700 text-[11px] text-slate-400 hover:bg-slate-800 disabled:opacity-30"
+                      <button
+                        type="button"
+                        disabled={field.readOnly || index === 0}
+                        aria-label={`Move ${subjectCutoutModelLabel(modelId)} up`}
+                        onClick={() => {
+                          const nextPriority = [...modelPriority];
+                          [nextPriority[index - 1], nextPriority[index]] = [
+                            nextPriority[index]!,
+                            nextPriority[index - 1]!,
+                          ];
+                          onChange(field.id, nextPriority);
+                        }}
+                        className="h-7 w-7 rounded border border-slate-700 text-[11px] text-slate-400 hover:bg-slate-800 disabled:opacity-30"
+                      >
+                        ↑
+                      </button>
+                    </ControlTooltip>
+                    <ControlTooltip
+                      content={`Move ${subjectCutoutModelLabel(modelId)} down`}
                     >
-                      ↓
-                    </button>
-                    <button
-                      type="button"
-                      disabled={field.readOnly || modelPriority.length === 1}
-                      aria-label={`Remove ${subjectCutoutModelLabel(modelId)} fallback policy entry`}
-                      onClick={() =>
-                        onChange(
-                          field.id,
-                          modelPriority.filter(
-                            (_, candidateIndex) => candidateIndex !== index,
-                          ),
-                        )
-                      }
-                      className="h-7 w-7 rounded border border-slate-700 text-[11px] text-slate-400 hover:border-rose-400/30 hover:bg-rose-400/10 hover:text-rose-200 disabled:opacity-30"
+                      <button
+                        type="button"
+                        disabled={
+                          field.readOnly || index === modelPriority.length - 1
+                        }
+                        aria-label={`Move ${subjectCutoutModelLabel(modelId)} down`}
+                        onClick={() => {
+                          const nextPriority = [...modelPriority];
+                          [nextPriority[index], nextPriority[index + 1]] = [
+                            nextPriority[index + 1]!,
+                            nextPriority[index]!,
+                          ];
+                          onChange(field.id, nextPriority);
+                        }}
+                        className="h-7 w-7 rounded border border-slate-700 text-[11px] text-slate-400 hover:bg-slate-800 disabled:opacity-30"
+                      >
+                        ↓
+                      </button>
+                    </ControlTooltip>
+                    <ControlTooltip
+                      content={`Remove ${subjectCutoutModelLabel(modelId)}`}
                     >
-                      ×
-                    </button>
+                      <button
+                        type="button"
+                        disabled={field.readOnly || modelPriority.length === 1}
+                        aria-label={`Remove ${subjectCutoutModelLabel(modelId)} fallback policy entry`}
+                        onClick={() =>
+                          onChange(
+                            field.id,
+                            modelPriority.filter(
+                              (_, candidateIndex) => candidateIndex !== index,
+                            ),
+                          )
+                        }
+                        className="h-7 w-7 rounded border border-slate-700 text-[11px] text-slate-400 hover:border-rose-400/30 hover:bg-rose-400/10 hover:text-rose-200 disabled:opacity-30"
+                      >
+                        ×
+                      </button>
+                    </ControlTooltip>
                   </div>
                 </div>
                 <div className="mt-1.5 flex items-center justify-between gap-2 pl-7 text-[9px]">
@@ -2307,7 +2331,7 @@ const VisualGroupEditor = ({
           variant="ghost"
           size="icon-sm"
           aria-label={`Remove ${group.label} group`}
-          title="Remove visual group; nodes remain unchanged"
+          tooltip="Remove visual group; nodes remain unchanged"
           onClick={() => onRemove(group.id)}
           className="shrink-0 text-current opacity-60 hover:bg-slate-950/40 hover:opacity-100"
         >
@@ -2785,25 +2809,25 @@ const VideoQualityPresetPanel = ({
       </div>
       <div className="mt-2 grid grid-cols-3 gap-1">
         {MEDIA_VIDEO_QUALITY_PRESETS.map((preset) => (
-          <button
-            key={preset.id}
-            type="button"
-            aria-pressed={activePreset === preset.id}
-            title={preset.description}
-            onClick={() =>
-              onApply(
-                resolveMediaVideoQualityPresetSettings(preset, architecture),
-              )
-            }
-            className={cn(
-              "rounded-lg border px-2 py-1.5 text-[9px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-violet-300/40",
-              activePreset === preset.id
-                ? "border-violet-300/40 bg-violet-300/15 text-violet-100"
-                : "border-slate-800 bg-slate-950/55 text-slate-500 hover:border-violet-300/25 hover:text-slate-300",
-            )}
-          >
-            {preset.label}
-          </button>
+          <ControlTooltip key={preset.id} content={preset.description}>
+            <button
+              type="button"
+              aria-pressed={activePreset === preset.id}
+              onClick={() =>
+                onApply(
+                  resolveMediaVideoQualityPresetSettings(preset, architecture),
+                )
+              }
+              className={cn(
+                "rounded-lg border px-2 py-1.5 text-[9px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-violet-300/40",
+                activePreset === preset.id
+                  ? "border-violet-300/40 bg-violet-300/15 text-violet-100"
+                  : "border-slate-800 bg-slate-950/55 text-slate-500 hover:border-violet-300/25 hover:text-slate-300",
+              )}
+            >
+              {preset.label}
+            </button>
+          </ControlTooltip>
         ))}
       </div>
       <p className="mt-2 text-[9px] leading-4 text-slate-500">
@@ -2832,58 +2856,67 @@ const VideoQualityPresetPanel = ({
         <span className="mr-0.5 text-[9px] font-medium text-slate-500">
           Fit playback:
         </span>
-        {durationFits.map(({ targetSeconds, fit }) => (
-          <button
-            key={targetSeconds}
-            type="button"
-            disabled={fit === null}
-            aria-pressed={
-              fit !== null && config.numFrames === fit.sourceFrameCount
-            }
-            title={
-              fit
-                ? `${fit.sourceFrameCount} native source frames deliver ${fit.outputFrameCount} frames (${fit.durationSeconds.toFixed(2)} seconds)${fit.exact ? "" : ", the closest supported duration"}`
-                : (unsupportedLoopReason ??
-                  "Choose a valid frame rate and loop mode first")
-            }
-            onClick={() => {
-              if (fit) onApply({ numFrames: fit.sourceFrameCount });
-            }}
-            className={cn(
-              "rounded-md border px-2 py-1 text-[9px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-violet-300/40 disabled:cursor-not-allowed disabled:opacity-40",
-              fit !== null && config.numFrames === fit.sourceFrameCount
-                ? "border-emerald-400/35 bg-emerald-400/10 text-emerald-200"
-                : "border-slate-800 bg-slate-950/55 text-slate-500 hover:border-violet-300/25 hover:text-slate-300",
-            )}
-          >
-            {targetSeconds}s
-            {fit && !fit.exact ? ` ≈ ${fit.durationSeconds.toFixed(2)}s` : ""}
-          </button>
-        ))}
+        {durationFits.map(({ targetSeconds, fit }) => {
+          const durationTooltip = fit
+            ? `${fit.sourceFrameCount} source frames produce ${fit.outputFrameCount} frames (${fit.durationSeconds.toFixed(2)} seconds)${fit.exact ? "" : ", closest supported duration"}`
+            : (unsupportedLoopReason ??
+              "Choose a valid frame rate and loop mode first");
+
+          return (
+            <ControlTooltip key={targetSeconds} content={durationTooltip}>
+              <span className="inline-flex">
+                <button
+                  type="button"
+                  disabled={fit === null}
+                  aria-pressed={
+                    fit !== null && config.numFrames === fit.sourceFrameCount
+                  }
+                  onClick={() => {
+                    if (fit) onApply({ numFrames: fit.sourceFrameCount });
+                  }}
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-[9px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-violet-300/40 disabled:cursor-not-allowed disabled:opacity-40",
+                    fit !== null && config.numFrames === fit.sourceFrameCount
+                      ? "border-emerald-400/35 bg-emerald-400/10 text-emerald-200"
+                      : "border-slate-800 bg-slate-950/55 text-slate-500 hover:border-violet-300/25 hover:text-slate-300",
+                  )}
+                >
+                  {targetSeconds}s
+                  {fit && !fit.exact
+                    ? ` ≈ ${fit.durationSeconds.toFixed(2)}s`
+                    : ""}
+                </button>
+              </span>
+            </ControlTooltip>
+          );
+        })}
         {smoothDurationFit?.exact ? (
-          <button
-            type="button"
-            aria-pressed={
-              config.fps === 24 &&
-              config.numFrames === smoothDurationFit.sourceFrameCount
-            }
-            title={`${smoothDurationFit.sourceFrameCount} native source frames deliver ${smoothDurationFit.outputFrameCount} frames in 3 seconds at 24 fps`}
-            onClick={() =>
-              onApply({
-                fps: 24,
-                numFrames: smoothDurationFit.sourceFrameCount,
-              })
-            }
-            className={cn(
-              "rounded-md border px-2 py-1 text-[9px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-violet-300/40",
-              config.fps === 24 &&
-                config.numFrames === smoothDurationFit.sourceFrameCount
-                ? "border-sky-400/35 bg-sky-400/10 text-sky-200"
-                : "border-slate-800 bg-slate-950/55 text-slate-500 hover:border-sky-300/25 hover:text-slate-300",
-            )}
+          <ControlTooltip
+            content={`${smoothDurationFit.sourceFrameCount} source frames produce ${smoothDurationFit.outputFrameCount} frames in 3 seconds at 24 fps`}
           >
-            3s smooth · 24 fps
-          </button>
+            <button
+              type="button"
+              aria-pressed={
+                config.fps === 24 &&
+                config.numFrames === smoothDurationFit.sourceFrameCount
+              }
+              onClick={() =>
+                onApply({
+                  fps: 24,
+                  numFrames: smoothDurationFit.sourceFrameCount,
+                })
+              }
+              className={cn(
+                "rounded-md border px-2 py-1 text-[9px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-violet-300/40",
+                config.fps === 24 &&
+                  config.numFrames === smoothDurationFit.sourceFrameCount
+                  ? "border-sky-400/35 bg-sky-400/10 text-sky-200"
+                  : "border-slate-800 bg-slate-950/55 text-slate-500 hover:border-sky-300/25 hover:text-slate-300",
+              )}
+            >
+              3s smooth · 24 fps
+            </button>
+          </ControlTooltip>
         ) : null}
       </div>
       {model ? (
@@ -3291,7 +3324,7 @@ const NodeInspector = ({
             size="icon-sm"
             aria-label={`Copy ${node.label}`}
             aria-keyshortcuts={copyShortcut?.ariaKeyShortcuts}
-            title={`Copy node${copyShortcut ? ` (${copyShortcut.label})` : ""}`}
+            tooltip={`Copy node${copyShortcut ? ` (${copyShortcut.label})` : ""}`}
             onClick={() => onNodeCopy(node.id)}
             className="text-slate-500 hover:bg-cyan-400/10 hover:text-cyan-300"
           >
@@ -4498,16 +4531,10 @@ export const MediaFlowView = ({
           ),
         });
       }),
-    [
-      collapsedNodeIds,
-      flow.edges,
-      flowNodesById,
-      visualRunOverlayProjection,
-    ],
+    [collapsedNodeIds, flow.edges, flowNodesById, visualRunOverlayProjection],
   );
-  const [canvasEdges, setCanvasEdges] = useState<MediaCanvasEdge[]>(
-    projectedCanvasEdges,
-  );
+  const [canvasEdges, setCanvasEdges] =
+    useState<MediaCanvasEdge[]>(projectedCanvasEdges);
   const activeNodeSignature = useMemo(
     () =>
       [...(visualRunOverlayProjection?.activeNodeIds ?? [])]
@@ -5236,12 +5263,7 @@ export const MediaFlowView = ({
       });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [
-    activeNodeSignature,
-    canvasNodes,
-    followRun,
-    visualRunOverlayProjection,
-  ]);
+  }, [activeNodeSignature, canvasNodes, followRun, visualRunOverlayProjection]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -5744,7 +5766,7 @@ export const MediaFlowView = ({
               size="icon-sm"
               aria-label="Undo semantic change"
               aria-keyshortcuts={undoShortcut?.ariaKeyShortcuts}
-              title={`Undo semantic change${undoShortcut ? ` (${undoShortcut.label})` : ""}`}
+              tooltip={`Undo semantic change${undoShortcut ? ` (${undoShortcut.label})` : ""}`}
               disabled={!canUndoSemantic}
               onClick={onUndoSemantic}
               className="text-cyan-300/70 hover:bg-cyan-400/10 hover:text-cyan-200"
@@ -5757,7 +5779,7 @@ export const MediaFlowView = ({
               size="icon-sm"
               aria-label="Redo semantic change"
               aria-keyshortcuts={redoShortcut?.ariaKeyShortcuts}
-              title={`Redo semantic change${redoShortcut ? ` (${redoShortcut.label})` : ""}`}
+              tooltip={`Redo semantic change${redoShortcut ? ` (${redoShortcut.label})` : ""}`}
               disabled={!canRedoSemantic}
               onClick={onRedoSemantic}
               className="text-cyan-300/70 hover:bg-cyan-400/10 hover:text-cyan-200"
@@ -5772,7 +5794,7 @@ export const MediaFlowView = ({
                 clipboardLabel ? `Paste ${clipboardLabel}` : "Paste copied node"
               }
               aria-keyshortcuts={pasteShortcut?.ariaKeyShortcuts}
-              title={
+              tooltip={
                 canPasteNode
                   ? `Paste ${clipboardLabel ?? "copied node"}${pasteShortcut ? ` (${pasteShortcut.label})` : ""}`
                   : (pasteBlockedReason ?? "Copy a node before pasting")
@@ -5795,32 +5817,35 @@ export const MediaFlowView = ({
             className="flex items-center"
             aria-label="Canvas selection controls"
           >
-            <button
-              type="button"
-              aria-label={`Manage node selection · ${selectedNodeIds.length}`}
-              aria-expanded={selectionPanelOpen}
-              title="Choose an exact set of semantic nodes"
-              onClick={() => {
-                setSelectedNodeId(null);
-                setPlanPanelOpen(false);
-                setHistoryPanelOpen(false);
-                setPortabilityPanelOpen(false);
-                setPalettePanelOpen(false);
-                setGroupsPanelOpen(false);
-                setVariablesPanelOpen(false);
-                setSelectionPanelOpen((open) => !open);
-              }}
-              className="rounded-md px-2 py-1 text-[9px] tabular-nums text-violet-300/70 transition-colors hover:bg-violet-400/10 hover:text-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/30"
-            >
-              Select
-              {selectedNodeIds.length > 0 ? ` · ${selectedNodeIds.length}` : ""}
-            </button>
+            <ControlTooltip content="Manage node selection">
+              <button
+                type="button"
+                aria-label={`Manage node selection · ${selectedNodeIds.length}`}
+                aria-expanded={selectionPanelOpen}
+                onClick={() => {
+                  setSelectedNodeId(null);
+                  setPlanPanelOpen(false);
+                  setHistoryPanelOpen(false);
+                  setPortabilityPanelOpen(false);
+                  setPalettePanelOpen(false);
+                  setGroupsPanelOpen(false);
+                  setVariablesPanelOpen(false);
+                  setSelectionPanelOpen((open) => !open);
+                }}
+                className="rounded-md px-2 py-1 text-[9px] tabular-nums text-violet-300/70 transition-colors hover:bg-violet-400/10 hover:text-violet-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/30"
+              >
+                Select
+                {selectedNodeIds.length > 0
+                  ? ` · ${selectedNodeIds.length}`
+                  : ""}
+              </button>
+            </ControlTooltip>
             <Button
               type="button"
               variant="ghost"
               size="icon-sm"
               aria-label="Select all visible flow nodes"
-              title="Select all visible semantic nodes"
+              tooltip="Select all visible semantic nodes"
               onClick={selectAllFlowNodes}
               className="text-violet-300/70 hover:bg-violet-400/10 hover:text-violet-200"
             >
@@ -5833,7 +5858,7 @@ export const MediaFlowView = ({
                 size="icon-sm"
                 aria-label={`Copy ${selectedNodeIds.length} selected nodes`}
                 aria-keyshortcuts={copyShortcut?.ariaKeyShortcuts}
-                title={`Copy selected semantic nodes and their internal connections${copyShortcut ? ` (${copyShortcut.label})` : ""}`}
+                tooltip={`Copy selected semantic nodes and their internal connections${copyShortcut ? ` (${copyShortcut.label})` : ""}`}
                 disabled={selectedNodeIds.length === 0}
                 onClick={() => onNodesCopy(selectedNodeIds)}
                 className="text-violet-300/70 hover:bg-violet-400/10 hover:text-violet-200"
@@ -5847,7 +5872,7 @@ export const MediaFlowView = ({
                 variant="ghost"
                 size="icon-sm"
                 aria-label={`Group ${selectedNodeIds.length} selected nodes`}
-                title={
+                tooltip={
                   selectedGroupConflict
                     ? "A selected node already belongs to a visual group"
                     : selectedNodeIds.length < 2
@@ -5867,7 +5892,7 @@ export const MediaFlowView = ({
               size="icon-sm"
               aria-label={`Manage canvas organization · ${layout.groups.length} groups · ${layout.comments.length} comments`}
               aria-expanded={groupsPanelOpen}
-              title="Manage visual groups and canvas comments"
+              tooltip="Manage visual groups and canvas comments"
               onClick={() => {
                 setSelectedNodeId(null);
                 setPlanPanelOpen(false);
@@ -5997,7 +6022,6 @@ export const MediaFlowView = ({
             variant="outline"
             size="sm"
             aria-expanded={openCommandPage ? undefined : palettePanelOpen}
-            title="Add node"
             onClick={(event) => {
               if (openCommandPage) {
                 openCommandPage(nodeCommandPage, {
@@ -6042,7 +6066,7 @@ export const MediaFlowView = ({
               variant="ghost"
               size="sm"
               disabled={portabilityLoading}
-              title="Export the current immutable head revision"
+              tooltip="Export the current immutable head revision"
               onClick={onExportRevision}
               className="h-8 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100"
             >
@@ -6080,7 +6104,7 @@ export const MediaFlowView = ({
             size="sm"
             aria-describedby="media-run-description"
             disabled={runPending || revisionLoading || !runSupported}
-            title={runDescription}
+            tooltip={runDescription}
             onClick={() => {
               if (localRunSupported) onRunLocalFlow();
               else if (remoteRunSupported) setRemoteConfirmationOpen(true);
