@@ -110,6 +110,7 @@ impl fmt::Display for ChildCleanupError {
 pub(crate) struct SupervisedChild {
     child: Child,
     job: Option<ChildProcessJob>,
+    preserve_descendants_after_exit: bool,
     tree_termination_attempted: bool,
     #[cfg(test)]
     tree_termination_attempts: usize,
@@ -124,6 +125,21 @@ impl SupervisedChild {
         command: &mut Command,
     ) -> Result<Self, SupervisedChildSpawnError> {
         Self::spawn_with_job_requirement(command, true)
+    }
+
+    pub(crate) fn spawn_preserving_descendants_after_exit(
+        command: &mut Command,
+    ) -> Result<Self, SupervisedChildSpawnError> {
+        configure_child_process_group(command);
+        let child = command.spawn().map_err(SupervisedChildSpawnError::Spawn)?;
+        Ok(Self {
+            child,
+            job: None,
+            preserve_descendants_after_exit: true,
+            tree_termination_attempted: false,
+            #[cfg(test)]
+            tree_termination_attempts: 0,
+        })
     }
 
     fn spawn_with_job_requirement(
@@ -158,6 +174,7 @@ impl SupervisedChild {
         Ok(Self {
             child,
             job,
+            preserve_descendants_after_exit: false,
             tree_termination_attempted: false,
             #[cfg(test)]
             tree_termination_attempts: 0,
@@ -166,7 +183,7 @@ impl SupervisedChild {
 
     pub(crate) fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
         let status = self.child.try_wait()?;
-        if status.is_some() {
+        if status.is_some() && !self.preserve_descendants_after_exit {
             self.terminate_tree_once();
         }
         Ok(status)
@@ -175,7 +192,9 @@ impl SupervisedChild {
     pub(crate) fn terminate_and_reap(&mut self) -> Result<ChildCleanupOutcome, ChildCleanupError> {
         match self.child.try_wait() {
             Ok(Some(status)) => {
-                self.terminate_tree_once();
+                if !self.preserve_descendants_after_exit {
+                    self.terminate_tree_once();
+                }
                 return Ok(ChildCleanupOutcome {
                     kind: ChildCleanupKind::AlreadyExited,
                     status,
@@ -637,6 +656,36 @@ mod tests {
         assert!(!process_is_alive(pid), "descendant process {pid} survived");
     }
 
+    fn stop_test_process(pid: u32) {
+        #[cfg(target_os = "windows")]
+        {
+            super::terminate_child_process_tree_by_id(pid);
+        }
+
+        #[cfg(unix)]
+        unsafe {
+            libc::kill(pid as i32, libc::SIGKILL);
+        }
+    }
+
+    struct TestProcessGuard(Option<u32>);
+
+    impl TestProcessGuard {
+        fn stop(mut self) {
+            let pid = self.0.take().expect("test process should be available");
+            stop_test_process(pid);
+            assert_process_stops(pid);
+        }
+    }
+
+    impl Drop for TestProcessGuard {
+        fn drop(&mut self) {
+            if let Some(pid) = self.0.take() {
+                stop_test_process(pid);
+            }
+        }
+    }
+
     #[test]
     fn supervised_child_preserves_natural_exit_status() {
         let mut child = SupervisedChild::spawn(&mut test_child_command("exit"))
@@ -713,6 +762,27 @@ mod tests {
 
         assert!(status.success());
         assert_process_stops(descendant_pid);
+    }
+
+    #[test]
+    fn persistent_descendant_mode_preserves_descendants_after_parent_exit() {
+        let pid_path = TestPath::new();
+        let mut command = test_child_command("spawn-descendant-and-exit");
+        command.env(TEST_DESCENDANT_PID_PATH_ENV, &pid_path.0);
+        let mut child = SupervisedChild::spawn_preserving_descendants_after_exit(&mut command)
+            .expect("persistent-descendant parent should start");
+        let descendant_pid = wait_for_descendant_pid(&pid_path.0);
+        let guard = TestProcessGuard(Some(descendant_pid));
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("parent should remain observable") {
+                break status;
+            }
+            thread::sleep(Duration::from_millis(10));
+        };
+
+        assert!(status.success());
+        assert!(process_is_alive(descendant_pid));
+        guard.stop();
     }
 
     #[test]
