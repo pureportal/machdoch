@@ -3,7 +3,10 @@ import { extname, join } from "node:path";
 import { loadRuntimeEnvironment } from "../env.js";
 import { materializeCliEnrollment } from "../provider-enrollment/materializer.js";
 import { resolveMachdochCliLaunch } from "../provider-enrollment/machdoch-cli-launch.js";
-import type { MaterializedCliEnrollment } from "../provider-enrollment/types.js";
+import type {
+  EnrollmentDisposalResult,
+  MaterializedCliEnrollment,
+} from "../provider-enrollment/types.js";
 import { assertReasoningModeSupportedForProviderModel } from "../reasoning-modes.js";
 import type {
   AgentCliProvider,
@@ -1889,6 +1892,7 @@ const executeExternalAgentCliTask = async (
     },
   ];
   let result: SpawnedAgentResult;
+  let enrollmentDisposal: EnrollmentDisposalResult;
   let copilotTelemetry:
     | Awaited<ReturnType<typeof readCopilotCliTelemetry>>
     | undefined;
@@ -1954,7 +1958,7 @@ const executeExternalAgentCliTask = async (
     assertInstructionDeliveryReceiptCertain(failureReceipt, error);
     throw error;
   } finally {
-    await enrollment.dispose();
+    enrollmentDisposal = await enrollment.dispose();
   }
   const deliveryReceipt = createInstructionDeliveryReceipt({
     plan: instructionPlan,
@@ -2098,6 +2102,12 @@ const executeExternalAgentCliTask = async (
       evidence: receipt.evidence.map((entry) => ({ ...entry })),
       bodyStored: false,
     })),
+    instructionEnrollmentCleanupStatus: enrollmentDisposal.status,
+    ...(enrollmentDisposal.errorCode === undefined
+      ? {}
+      : {
+          instructionEnrollmentCleanupErrorCode: enrollmentDisposal.errorCode,
+        }),
     ...providerShutdownMetadata,
   };
   const stdout = cleanCliText(result.stdout);

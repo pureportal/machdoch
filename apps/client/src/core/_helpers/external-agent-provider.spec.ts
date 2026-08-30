@@ -510,6 +510,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(result?.status).toBe("executed");
     expect(result?.executedTools).toEqual(["shell"]);
     expect(result?.response?.markdown).toBe("Codex delegated answer.");
+    expect(result?.metadata).toMatchObject({
+      instructionEnrollmentCleanupStatus: "removed",
+    });
     expect(spawnCalls).toHaveLength(1);
     expect(call?.child.stdout.destroyed).toBe(true);
     expect(call?.child.stderr.destroyed).toBe(true);

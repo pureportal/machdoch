@@ -8,6 +8,7 @@ import {
   utimes,
   writeFile,
 } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -154,6 +155,110 @@ const createProbedPlan = (
     capability: createCliInstructionCapabilityFromProbe(resolution, probe),
   });
 
+interface ExclusiveFileLock {
+  release(): Promise<void>;
+}
+
+const openExclusiveWindowsFileLock = async (
+  path: string,
+): Promise<ExclusiveFileLock> => {
+  const encodedPath = Buffer.from(path, "utf16le").toString("base64");
+  const script = [
+    `$path = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encodedPath}'))`,
+    "$stream = [IO.File]::Open($path, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)",
+    "[Console]::Out.WriteLine('locked')",
+    "[Console]::Out.Flush()",
+    "[Console]::In.ReadLine() | Out-Null",
+    "$stream.Dispose()",
+  ].join("; ");
+  const encodedScript = Buffer.from(script, "utf16le").toString("base64");
+  const child = spawn(
+    "powershell.exe",
+    ["-NoProfile", "-NonInteractive", "-EncodedCommand", encodedScript],
+    { stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
+  );
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk: string) => {
+    stderr += chunk;
+  });
+  await new Promise<void>((resolve, reject) => {
+    let stdout = "";
+    const timeout = setTimeout(
+      () => reject(new Error("Timed out waiting for the Windows file lock.")),
+      5_000,
+    );
+    const settle = (operation: () => void): void => {
+      clearTimeout(timeout);
+      operation();
+    };
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+      if (stdout.includes("locked")) settle(resolve);
+    });
+    child.once("error", (error) => settle(() => reject(error)));
+    child.once("exit", (code) => {
+      if (!stdout.includes("locked")) {
+        settle(() =>
+          reject(
+            new Error(
+              `Windows file-lock helper exited with code ${code ?? "unknown"}: ${stderr}`,
+            ),
+          ),
+        );
+      }
+    });
+  });
+  let released = false;
+  const closed = new Promise<void>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code === 0) resolve();
+      else {
+        reject(
+          new Error(
+            `Windows file-lock helper closed with code ${code ?? "unknown"}: ${stderr}`,
+          ),
+        );
+      }
+    });
+  });
+  return {
+    release: async (): Promise<void> => {
+      if (!released) {
+        released = true;
+        child.stdin.end("\n");
+      }
+      await closed;
+    },
+  };
+};
+
+const createCodexEnrollment = async (runId: string) => {
+  const root = await createRoot();
+  const workspaceRoot = join(root, "workspace");
+  const userConfigRoot = join(root, "user-config");
+  await Promise.all([
+    mkdir(workspaceRoot, { recursive: true }),
+    mkdir(userConfigRoot, { recursive: true }),
+  ]);
+  await writeFile(join(userConfigRoot, "user-config.json"), "{}\n", "utf8");
+  vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+  const resolution = createInstructionResolutionFixture({
+    providerId: "codex-cli",
+    surface: "cli",
+  });
+  return materializeCliEnrollment({
+    provider: "codex-cli",
+    executable: process.execPath,
+    runId,
+    workspaceRoot,
+    resolution,
+    deliveryPlan: createProbedPlan(resolution),
+  });
+};
+
 afterEach(async () => {
   vi.unstubAllEnvs();
   await Promise.all(
@@ -277,6 +382,80 @@ describe("CLI provider enrollment materializer", () => {
         code: "ENOENT",
       });
     },
+  );
+
+  it.runIf(process.platform === "win32")(
+    "retries a transient Windows lock while removing Codex SQLite state",
+    async () => {
+      const enrollment = await createCodexEnrollment(
+        "test-transient-codex-sqlite-lock",
+      );
+      const databasePath = join(enrollment.env.CODEX_HOME!, "goals_1.sqlite");
+      await writeFile(databasePath, "fixture", "utf8");
+      const lock = await openExclusiveWindowsFileLock(databasePath);
+      const releaseLock = new Promise<void>((resolve, reject) => {
+        setTimeout(() => void lock.release().then(resolve, reject), 250);
+      });
+
+      try {
+        await expect(enrollment.dispose()).resolves.toEqual({
+          status: "removed",
+        });
+        await releaseLock;
+        await expect(stat(enrollment.rootPath)).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+      } finally {
+        await lock.release().catch(() => undefined);
+        await rm(enrollment.rootPath, {
+          recursive: true,
+          force: true,
+          maxRetries: 10,
+          retryDelay: 20,
+        });
+      }
+    },
+  );
+
+  it.runIf(process.platform === "win32")(
+    "defers a persistent Codex SQLite lock and reaps it after release",
+    async () => {
+      const enrollment = await createCodexEnrollment(
+        "test-persistent-codex-sqlite-lock",
+      );
+      const databasePath = join(enrollment.env.CODEX_HOME!, "goals_1.sqlite");
+      await writeFile(databasePath, "fixture", "utf8");
+      const lock = await openExclusiveWindowsFileLock(databasePath);
+
+      try {
+        await expect(enrollment.dispose()).resolves.toMatchObject({
+          status: "deferred",
+          errorCode: expect.stringMatching(/^(?:EACCES|EBUSY|EPERM)$/u),
+        });
+        const marker = JSON.parse(
+          await readFile(
+            join(enrollment.rootPath, ".machdoch-instruction-session.json"),
+            "utf8",
+          ),
+        ) as Record<string, unknown>;
+        expect(marker.state).toBe("cleanup-pending");
+
+        await lock.release();
+        await cleanupStaleEnrollmentArtifacts();
+        await expect(stat(enrollment.rootPath)).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+      } finally {
+        await lock.release().catch(() => undefined);
+        await rm(enrollment.rootPath, {
+          recursive: true,
+          force: true,
+          maxRetries: 10,
+          retryDelay: 20,
+        });
+      }
+    },
+    10_000,
   );
 
   it.each([
