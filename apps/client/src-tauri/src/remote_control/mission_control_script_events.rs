@@ -48,9 +48,11 @@ pub(super) fn mission_control_script_events() -> &'static str {
       const session = selectedSession();
       const submittedSessionId = session?.id;
       void sendCommand({
-        kind: "follow-up",
+        kind: "submit-message",
         sessionId: submittedSessionId,
-        prompt
+        prompt,
+        promptEnhancementMode: "off",
+        enabled: false
       }).catch((error) => {
         if (remotePrompt.value === "" && selectedSession()?.id === submittedSessionId) {
           remotePrompt.value = prompt;
@@ -76,11 +78,15 @@ pub(super) fn mission_control_script_events() -> &'static str {
       const prompt = textarea.value.trim();
       if (!prompt) return;
       const submittedTaskId = form.dataset.followup;
+      const submittedSessionId = selectedSession()?.id;
       textarea.value = "";
       void sendCommand({
-        kind: "follow-up",
+        kind: "submit-message",
+        sessionId: submittedSessionId,
         taskId: submittedTaskId,
-        prompt
+        prompt,
+        promptEnhancementMode: "off",
+        enabled: false
       }).catch((error) => {
         if (textarea.value === "" && form.dataset.followup === submittedTaskId) {
           textarea.value = prompt;

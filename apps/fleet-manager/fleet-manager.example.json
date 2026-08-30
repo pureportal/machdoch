@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "externalBaseUrl": "https://fleet.example.internal",
+  "listen": {
+    "address": "127.0.0.1",
+    "port": 43188
+  },
+  "database": {
+    "path": "./data/fleet-manager.sqlite"
+  },
+  "sessionPolicy": {
+    "idleSeconds": 1800,
+    "absoluteSeconds": 43200,
+    "maximumConcurrentSessions": 8
+  },
+  "enrollmentPolicy": {
+    "keyLifetimeSeconds": 900,
+    "maximumOutstandingKeys": 8
+  },
+  "connectionPolicy": {
+    "requestTimeoutSeconds": 30,
+    "heartbeatTimeoutSeconds": 45
+  },
+  "settingsManager": {
+    "enabled": false,
+    "encryptionKeyEnvironmentVariable": "MACHDOCH_SETTINGS_KEY",
+    "limits": {
+      "maximumProfiles": 64,
+      "maximumInstructionsPerProfile": 128,
+      "maximumPacksPerProfile": 128,
+      "maximumRevisionsPerProfile": 100,
+      "maximumDocumentBytes": 1048576,
+      "maximumSecretBytes": 8192
+    }
+  }
+}

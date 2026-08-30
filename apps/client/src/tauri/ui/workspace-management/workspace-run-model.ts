@@ -72,9 +72,8 @@ export const workspaceRunPrimaryStatus = (
 ): WorkspaceRunConfigurationStatus | null => {
   if (!snapshot) return null;
   return (
-    snapshot.configurations.find(
-      (status) => status.configuration.id === snapshot.primaryConfigurationId,
-    ) ?? null
+    snapshot.configurations.find((status) => status.configuration.primary) ??
+    null
   );
 };
 

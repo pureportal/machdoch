@@ -49,6 +49,29 @@ pub(super) fn create_bridge_progress(
     })
 }
 
+pub(super) fn create_bridge_warning_progress(
+    task: &str,
+    mode: Option<&str>,
+    message: &str,
+) -> Value {
+    json!({
+        "task": task,
+        "mode": mode.unwrap_or("machdoch"),
+        "state": "resolving-context",
+        "message": message,
+        "executedTools": [],
+        "outputSections": [],
+        "cancellable": true,
+        "timelineEvent": {
+            "kind": "state",
+            "phase": "skipped",
+            "label": "Run configuration",
+            "detail": message,
+            "tone": "warning",
+        },
+    })
+}
+
 pub(super) fn emit_progress_event(
     app_handle: &tauri::AppHandle,
     window_label: &str,
@@ -91,7 +114,9 @@ pub(super) fn emit_progress_from_stderr_line(
 mod tests {
     use serde_json::json;
 
-    use super::{create_bridge_progress, parse_structured_progress_line};
+    use super::{
+        create_bridge_progress, create_bridge_warning_progress, parse_structured_progress_line,
+    };
 
     #[test]
     fn structured_progress_lines_parse_only_object_payloads() {
@@ -112,5 +137,19 @@ mod tests {
 
         assert_eq!(progress["mode"], "machdoch");
         assert_eq!(progress["cancellable"], false);
+    }
+
+    #[test]
+    fn bridge_warning_progress_is_non_terminal_and_visible() {
+        let progress = create_bridge_warning_progress(
+            "task",
+            Some("ask"),
+            "Run configuration was not included.",
+        );
+
+        assert_eq!(progress["state"], "resolving-context");
+        assert_eq!(progress["cancellable"], true);
+        assert_eq!(progress["timelineEvent"]["tone"], "warning");
+        assert_eq!(progress["timelineEvent"]["label"], "Run configuration");
     }
 }

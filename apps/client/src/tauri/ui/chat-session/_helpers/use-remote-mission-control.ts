@@ -1,12 +1,15 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MutableRefObject,
 } from "react";
+import { productSnapshotVersion } from "@machdoch/fleet-protocol";
 import {
   isMediaAssetContextAttachment,
+  isTransientChatOperationMessage,
   type ChatSessionMessage,
   type ChatSessionContextAttachment,
   type ChatSessionRecord,
@@ -34,7 +37,9 @@ import {
   disableRemoteControlServer,
   enableRemoteControlServer,
   forgetRemoteControlPairings,
+  getFleetConnectionStatus,
   getRemoteControlStatus,
+  loadProviderModelCatalog,
   listSchedulerJobs,
   listSchedulerRuns,
   openRemoteControlUrl,
@@ -52,6 +57,7 @@ import {
   type RemoteShellContextPackSnapshot,
   type RemoteShellMessageSnapshot,
   type RemoteShellMessageSourceSnapshot,
+  type RemoteShellMediaSnapshot,
   type RemoteShellProviderStatusSnapshot,
   type RemoteShellRuntimeCapabilitySnapshot,
   type RemoteShellSchedulerJobSnapshot,
@@ -61,15 +67,27 @@ import {
   type RemoteControlStatus,
   type SchedulerJobSummary,
   type SchedulerRunSummary,
+  type InstructionRegistryResult,
 } from "../../runtime";
-import type { RuntimeProvider } from "../../model-catalog";
+import {
+  executeRemoteMediaCommand,
+  loadRemoteMediaSnapshot,
+  unavailableRemoteMediaSnapshot,
+} from "../../media/remote-media";
+import {
+  getCatalogModelsForProvider,
+  getModelLabelForProvider,
+  getProviderLabel,
+  type ProviderModelCatalogSnapshot,
+  type RuntimeProvider,
+} from "../../model-catalog";
+import { getReasoningModesForProvider } from "../../reasoning-options";
 import {
   beginCrossWindowOperation,
   completeCrossWindowOperation,
   releaseCrossWindowOperation,
 } from "../../lib/cross-window-operation";
 import { getRenderedMessageContent } from "./execution-message";
-import type { SubmitTaskToSessionOptions } from "./use-session-task-submission";
 import {
   canUseTauriStore,
   getCurrentShellWindowLabel,
@@ -96,6 +114,7 @@ export interface RemoteMissionControlController {
 
 const STATUS_REFRESH_MS = 15_000;
 const SCHEDULER_REFRESH_MS = 60_000;
+const MEDIA_REFRESH_MS = 3_000;
 const SNAPSHOT_PUBLISH_DELAY_MS = 250;
 const PENDING_COMMAND_POLL_MS = 15_000;
 
@@ -109,6 +128,8 @@ const IDEMPOTENT_REMOTE_COMMAND_KINDS = new Set<
   "scheduler-delete",
   "scheduler-retry-run",
   "scheduler-cancel-run",
+  "generate-media",
+  "cancel-media-run",
 ]);
 const MAX_IDEMPOTENT_REMOTE_COMMAND_ATTEMPTS = 3;
 const MAIN_WINDOW_LABEL = "main";
@@ -263,6 +284,9 @@ const createMessageSnapshot = (
   voiceSupported: boolean,
 ): RemoteShellMessageSnapshot => {
   const source = createMessageSourceSnapshot(message);
+  const promptEnhancement =
+    isTransientChatOperationMessage(message) &&
+    message.lifecycle?.owner === "prompt-enhancement";
 
   return {
     id: message.id,
@@ -273,6 +297,7 @@ const createMessageSnapshot = (
       : {}),
     ...(message.taskId ? { taskId: message.taskId } : {}),
     ...(message.taskAction ? { taskAction: { ...message.taskAction } } : {}),
+    presentation: promptEnhancement ? "prompt-enhancement" : "message",
     attachments: (message.contextAttachments ?? []).map(
       createAttachmentSnapshot,
     ),
@@ -486,6 +511,11 @@ const createProviderStatusSnapshots = (
   }));
 };
 
+const getWorkspaceLabel = (workspace: string): string => {
+  const segments = workspace.split(/[\\/]+/u).filter(Boolean);
+  return segments.at(-1) ?? workspace;
+};
+
 const findSessionByTaskId = (
   sessions: ChatSessionRecord[],
   taskId: string | undefined,
@@ -536,6 +566,14 @@ export const useRemoteMissionControl = (options: {
   activeRunMode: RuntimeSnapshot["mode"];
   activeReasoning: RuntimeSnapshot["reasoning"];
   composerWorkspaceLabel: string;
+  recentWorkspaces: string[];
+  promptEnhancementMode: "off" | "simple" | "web-search";
+  interviewEnabled: boolean;
+  interviewAvailable: boolean;
+  instructionRegistry: InstructionRegistryResult | null;
+  instructionRegistryLoading: boolean;
+  instructionRegistryError: string | null;
+  onRefreshInstructions: () => Promise<void>;
   isGlobalMemoryAvailable: boolean;
   isGlobalMemoryActive: boolean;
   isUiControlAvailable: boolean;
@@ -562,8 +600,6 @@ export const useRemoteMissionControl = (options: {
   activeDesktopTasksRef: MutableRefObject<Map<string, string>>;
   flushPersistence: () => Promise<void>;
   onMarkRemoteCommandHandled: (commandId: string) => void;
-  submitTaskToSession: (options: SubmitTaskToSessionOptions) => boolean;
-  onQueueSessionFollowUp: (sessionId: string, prompt: string) => boolean;
   onRetryTask: (message: ChatSessionMessage) => void;
   onContinueTask: (message: ChatSessionMessage) => void;
   onCreateSession: (workspace?: string) => void;
@@ -590,6 +626,16 @@ export const useRemoteMissionControl = (options: {
     sessionId: string,
     reasoning: RuntimeSnapshot["reasoning"] | null,
   ) => void;
+  onSetSessionWorkspace: (sessionId: string, workspace: string | null) => void;
+  onSetPromptEnhancementMode: (mode: "off" | "simple" | "web-search") => void;
+  onSetInterview: (enabled: boolean) => void;
+  onCancelPromptEnhancement: (taskId: string) => void;
+  onSubmitSessionMessage: (input: {
+    sessionId: string;
+    prompt: string;
+    promptEnhancementMode: "off" | "simple" | "web-search";
+    interviewEnabled: boolean;
+  }) => boolean;
   onSetSessionMemory: (sessionId: string, enabled: boolean) => void;
   onSetGlobalMemory: (sessionId: string, enabled: boolean) => void;
   onSetUiControl: (sessionId: string, enabled: boolean) => void;
@@ -606,6 +652,7 @@ export const useRemoteMissionControl = (options: {
     ? currentWindowLabel === MAIN_WINDOW_LABEL
     : true;
   const [status, setStatus] = useState<RemoteControlStatus | null>(null);
+  const [fleetEnabled, setFleetEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -616,11 +663,17 @@ export const useRemoteMissionControl = (options: {
     loading: false,
     error: null,
   });
+  const [mediaSnapshot, setMediaSnapshot] =
+    useState<RemoteShellMediaSnapshot | null>(null);
+  const [providerModelCatalog, setProviderModelCatalog] =
+    useState<ProviderModelCatalogSnapshot | null>(null);
+  const [modelCatalogLoading, setModelCatalogLoading] = useState(false);
   const handleCommandRef = useRef<
     (command: RemoteControlCommandEvent) => Promise<void>
   >(async () => undefined);
   const lastPublishedSnapshotRef = useRef<string>("");
   const schedulerRefreshSequenceRef = useRef(0);
+  const mediaRefreshSequenceRef = useRef(0);
   const schedulerWorkspaceRef = useRef(options.activeSession.workspace);
   const lastSnapshotCapturedAtRef = useRef(0);
   const snapshotPublishRetryAttemptRef = useRef(0);
@@ -631,6 +684,47 @@ export const useRemoteMissionControl = (options: {
   const statusMutationSequenceRef = useRef(0);
   const statusMutationInFlightRef = useRef(false);
   schedulerWorkspaceRef.current = options.activeSession.workspace;
+  const remotePublishingEnabled = status?.enabled === true || fleetEnabled;
+  const configuredMediaProviderKey = (
+    options.runtimeSnapshot?.providerAvailability ?? []
+  )
+    .filter((entry) => entry.configured)
+    .map((entry) => entry.provider)
+    .join(",");
+  const configuredMediaProviderIds = useMemo(
+    () =>
+      configuredMediaProviderKey ? configuredMediaProviderKey.split(",") : [],
+    [configuredMediaProviderKey],
+  );
+
+  useEffect(() => {
+    if (!options.hasHydrated || !remotePublishingEnabled) {
+      return;
+    }
+    void options.onRefreshInstructions();
+  }, [
+    options.activeSession.workspace,
+    options.hasHydrated,
+    options.onRefreshInstructions,
+    remotePublishingEnabled,
+  ]);
+
+  useEffect(() => {
+    if (!options.hasHydrated || !remotePublishingEnabled) return;
+
+    let cancelled = false;
+    setModelCatalogLoading(true);
+    void loadProviderModelCatalog()
+      .then((catalog) => {
+        if (!cancelled) setProviderModelCatalog(catalog);
+      })
+      .finally(() => {
+        if (!cancelled) setModelCatalogLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [options.hasHydrated, remotePublishingEnabled]);
 
   const getSessionForCommand = useCallback(
     (
@@ -694,6 +788,15 @@ export const useRemoteMissionControl = (options: {
         return;
       }
       setMessage(error instanceof Error ? error.message : String(error));
+    }
+  }, []);
+
+  const refreshFleetStatus = useCallback(async (): Promise<void> => {
+    try {
+      const nextStatus = await getFleetConnectionStatus();
+      setFleetEnabled(nextStatus.enabled);
+    } catch {
+      setFleetEnabled(false);
     }
   }, []);
 
@@ -778,6 +881,31 @@ export const useRemoteMissionControl = (options: {
     }
   }, [options.activeSession.workspace]);
 
+  const refreshMedia = useCallback(async (): Promise<void> => {
+    const refreshSequence = mediaRefreshSequenceRef.current + 1;
+    mediaRefreshSequenceRef.current = refreshSequence;
+    try {
+      const nextSnapshot = await loadRemoteMediaSnapshot(
+        configuredMediaProviderIds,
+      );
+      if (
+        refreshSequence === mediaRefreshSequenceRef.current &&
+        remoteHookMountedRef.current
+      ) {
+        setMediaSnapshot(nextSnapshot);
+      }
+    } catch (error) {
+      if (
+        refreshSequence === mediaRefreshSequenceRef.current &&
+        remoteHookMountedRef.current
+      ) {
+        setMediaSnapshot((current) =>
+          unavailableRemoteMediaSnapshot(error, current),
+        );
+      }
+    }
+  }, [configuredMediaProviderIds]);
+
   const createShellSnapshot = useCallback((): RemoteControlShellSnapshot => {
     const schedulerSnapshot = schedulerState.snapshot
       ? {
@@ -792,9 +920,23 @@ export const useRemoteMissionControl = (options: {
     const webSearchConfigured = webSearchAvailability.some(
       (entry) => entry.configured,
     );
+    const modelCatalog = options.chooserProviders.map((provider) => {
+      const runtimeProvider = providerModelCatalog?.providers.find(
+        (entry) => entry.provider === provider,
+      );
+      return {
+        provider,
+        label: getProviderLabel(provider),
+        available: runtimeProvider?.available === true,
+        ...(runtimeProvider?.error ? { error: runtimeProvider.error } : {}),
+        models: getCatalogModelsForProvider(provider, providerModelCatalog).map(
+          (model) => ({ id: model.id, label: model.label }),
+        ),
+      };
+    });
 
     return {
-      version: 1,
+      version: productSnapshotVersion,
       capturedAt: Date.now(),
       activeSessionId: options.activeSession.id,
       sessions: options.shellState.sessions
@@ -807,6 +949,13 @@ export const useRemoteMissionControl = (options: {
             options.defaultReasoning,
           ),
         ),
+      workspaces: options.recentWorkspaces.slice(0, 40).map((root) => ({
+        root,
+        label: getWorkspaceLabel(root),
+        sessionCount: options.shellState.sessions.filter(
+          (session) => session.workspace === root,
+        ).length,
+      })),
       visibleMessages: options.visibleMessages
         .slice(-REMOTE_MESSAGE_LIMIT)
         .map((entry) =>
@@ -820,11 +969,28 @@ export const useRemoteMissionControl = (options: {
         sessionId: options.activeSession.id,
         draft: options.activeSession.draft,
         provider: options.activeSession.provider,
+        providerLabel: getProviderLabel(options.activeSession.provider),
         model: options.activeSession.model,
+        modelLabel: getModelLabelForProvider(
+          options.activeSession.provider,
+          options.activeSession.model,
+          providerModelCatalog,
+        ),
+        modelCatalogLoading,
+        modelCatalog,
         mode: options.activeRunMode,
         defaultMode: options.defaultMode,
         reasoning: options.activeReasoning,
         defaultReasoning: options.defaultReasoning,
+        reasoningOptions: [
+          ...getReasoningModesForProvider(
+            options.activeSession.provider,
+            options.activeSession.model,
+          ),
+        ],
+        promptEnhancementMode: options.promptEnhancementMode,
+        interviewEnabled: options.interviewEnabled,
+        interviewAvailable: options.interviewAvailable,
         ...(options.activeSession.workspace
           ? { workspace: options.activeSession.workspace }
           : {}),
@@ -876,9 +1042,32 @@ export const useRemoteMissionControl = (options: {
         ),
       },
       ...(schedulerSnapshot ? { scheduler: schedulerSnapshot } : {}),
+      ...(mediaSnapshot ? { media: mediaSnapshot } : {}),
       contextPacks: options.workspaceContextPacks.map((pack) =>
         createContextPackSnapshot(pack, options.matchedContextPackIds),
       ),
+      instructions: {
+        loading: options.instructionRegistryLoading,
+        ...(options.instructionRegistry
+          ? { revision: options.instructionRegistry.revision }
+          : {}),
+        ...(options.instructionRegistryError
+          ? { error: options.instructionRegistryError }
+          : {}),
+        profiles: (options.instructionRegistry?.profiles ?? []).map(
+          (profile) => ({
+            id: profile.id,
+            name: profile.name,
+            ...(profile.description
+              ? { description: profile.description }
+              : {}),
+            ...(profile.body ? { body: profile.body } : {}),
+            enabled: profile.enabled,
+            global: profile.global,
+            tags: profile.tags,
+          }),
+        ),
+      },
       promptHistory: options.activeSession.promptHistory.slice(
         -REMOTE_PROMPT_HISTORY_LIMIT,
       ),
@@ -917,10 +1106,16 @@ export const useRemoteMissionControl = (options: {
     options.defaultMode,
     options.defaultReasoning,
     options.hasAnyProvider,
+    options.instructionRegistry,
+    options.instructionRegistryError,
+    options.instructionRegistryLoading,
+    options.interviewAvailable,
+    options.interviewEnabled,
     options.isGlobalMemoryActive,
     options.isGlobalMemoryAvailable,
     options.isUiControlAvailable,
     options.matchedContextPackIds,
+    options.promptEnhancementMode,
     options.quickTaskAttachmentCount,
     options.quickTaskAutopilotEnabled,
     options.quickTaskDraft,
@@ -933,6 +1128,7 @@ export const useRemoteMissionControl = (options: {
     options.runtimeError,
     options.runtimeLoading,
     options.runtimeSnapshot,
+    options.recentWorkspaces,
     options.sendDisabledReason,
     options.shellState.sessions,
     options.shellState.voice.autoSpeakResponses,
@@ -944,6 +1140,9 @@ export const useRemoteMissionControl = (options: {
     options.visibleMessages,
     options.voiceSupported,
     options.workspaceContextPacks,
+    modelCatalogLoading,
+    providerModelCatalog,
+    mediaSnapshot,
     schedulerState,
   ]);
 
@@ -1048,34 +1247,37 @@ export const useRemoteMissionControl = (options: {
           break;
         }
 
-        case "follow-up": {
+        case "submit-message": {
           const prompt = command.prompt?.trim();
-
-          if (!prompt) {
-            break;
-          }
-
+          const promptEnhancementMode = command.promptEnhancementMode;
           if (
-            command.taskId &&
-            options.activeDesktopTasksRef.current.has(command.taskId)
+            !prompt ||
+            !promptEnhancementMode ||
+            !["off", "simple", "web-search"].includes(promptEnhancementMode)
           ) {
-            if (!options.onQueueSessionFollowUp(sourceSession.id, prompt)) {
-              throw new Error("The remote follow-up could not be queued.");
-            }
-            break;
+            throw new NonRetryableRemoteCommandError(
+              "The remote message options are invalid.",
+            );
           }
+          if (
+            !options.onSubmitSessionMessage({
+              sessionId: sourceSession.id,
+              prompt,
+              promptEnhancementMode: promptEnhancementMode as
+                | "off"
+                | "simple"
+                | "web-search",
+              interviewEnabled: command.enabled === true,
+            })
+          ) {
+            throw new Error("The remote message could not be submitted.");
+          }
+          break;
+        }
 
-          const accepted = options.submitTaskToSession({
-            sessionSnapshot: sourceSession,
-            task: prompt,
-            contextAttachments: [],
-            clearDraft: false,
-            activateSession: true,
-            visibleMessageContent: prompt,
-            promptHistoryContent: prompt,
-          });
-          if (accepted === false) {
-            throw new Error("The remote follow-up could not be submitted.");
+        case "cancel-prompt-enhancement": {
+          if (command.taskId) {
+            options.onCancelPromptEnhancement(command.taskId);
           }
           break;
         }
@@ -1160,17 +1362,36 @@ export const useRemoteMissionControl = (options: {
 
         case "set-session-model": {
           const provider = command.provider;
+          const runtimeProvider =
+            provider &&
+            options.chooserProviders.includes(provider as RuntimeProvider)
+              ? (provider as RuntimeProvider)
+              : null;
+          const providerCatalog = providerModelCatalog?.providers.find(
+            (entry) => entry.provider === runtimeProvider,
+          );
+          const modelAvailable = runtimeProvider
+            ? getCatalogModelsForProvider(
+                runtimeProvider,
+                providerModelCatalog,
+              ).some((model) => model.id === command.model)
+            : false;
 
           if (
             command.sessionId &&
-            provider &&
+            runtimeProvider &&
             command.model &&
-            options.chooserProviders.includes(provider as RuntimeProvider)
+            providerCatalog?.available &&
+            modelAvailable
           ) {
             options.onSetSessionModel(
               command.sessionId,
-              provider as RuntimeProvider,
+              runtimeProvider,
               command.model,
+            );
+          } else {
+            throw new NonRetryableRemoteCommandError(
+              "The selected provider or model is unavailable.",
             );
           }
           break;
@@ -1179,6 +1400,13 @@ export const useRemoteMissionControl = (options: {
         case "set-session-mode": {
           if (command.sessionId && isRuntimeMode(command.mode)) {
             options.onSetSessionMode(command.sessionId, command.mode);
+          }
+          break;
+        }
+
+        case "clear-session-mode": {
+          if (command.sessionId) {
+            options.onSetSessionMode(command.sessionId, null);
           }
           break;
         }
@@ -1192,6 +1420,46 @@ export const useRemoteMissionControl = (options: {
                 : null,
             );
           }
+          break;
+        }
+
+        case "clear-session-reasoning": {
+          if (command.sessionId) {
+            options.onSetSessionReasoning(command.sessionId, null);
+          }
+          break;
+        }
+
+        case "set-session-workspace": {
+          if (command.sessionId && command.workspace) {
+            options.onSetSessionWorkspace(command.sessionId, command.workspace);
+          }
+          break;
+        }
+
+        case "clear-session-workspace": {
+          if (command.sessionId) {
+            options.onSetSessionWorkspace(command.sessionId, null);
+          }
+          break;
+        }
+
+        case "set-prompt-enhancement-mode": {
+          if (
+            command.promptEnhancementMode &&
+            ["off", "simple", "web-search"].includes(
+              command.promptEnhancementMode,
+            )
+          ) {
+            options.onSetPromptEnhancementMode(
+              command.promptEnhancementMode as "off" | "simple" | "web-search",
+            );
+          }
+          break;
+        }
+
+        case "set-interview": {
+          options.onSetInterview(command.enabled === true);
           break;
         }
 
@@ -1287,6 +1555,13 @@ export const useRemoteMissionControl = (options: {
           break;
         }
 
+        case "generate-media":
+        case "cancel-media-run": {
+          await executeRemoteMediaCommand(command, configuredMediaProviderIds);
+          await refreshMedia();
+          break;
+        }
+
         case "scheduler-trigger": {
           if (command.jobId) {
             await runRemoteSchedulerAction(() =>
@@ -1368,7 +1643,14 @@ export const useRemoteMissionControl = (options: {
 
       options.onMarkRemoteCommandHandled(command.commandId);
     },
-    [getSessionForCommand, options, runRemoteSchedulerAction],
+    [
+      getSessionForCommand,
+      configuredMediaProviderIds,
+      options,
+      providerModelCatalog,
+      refreshMedia,
+      runRemoteSchedulerAction,
+    ],
   );
   handleCommandRef.current = handleCommand;
 
@@ -1495,7 +1777,24 @@ export const useRemoteMissionControl = (options: {
   }, [isPrimaryController, refreshStatus]);
 
   useEffect(() => {
-    if (!isPrimaryController || !status?.enabled) {
+    if (!isPrimaryController) {
+      return;
+    }
+
+    void refreshFleetStatus();
+    const refreshInterval = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void refreshFleetStatus();
+      }
+    }, STATUS_REFRESH_MS);
+
+    return () => {
+      window.clearInterval(refreshInterval);
+    };
+  }, [isPrimaryController, refreshFleetStatus]);
+
+  useEffect(() => {
+    if (!isPrimaryController || !remotePublishingEnabled) {
       return;
     }
 
@@ -1508,10 +1807,10 @@ export const useRemoteMissionControl = (options: {
     return () => {
       window.clearInterval(refreshInterval);
     };
-  }, [isPrimaryController, refreshStatus, status?.enabled]);
+  }, [isPrimaryController, refreshStatus, remotePublishingEnabled]);
 
   useEffect(() => {
-    if (!isPrimaryController || !status?.enabled) {
+    if (!isPrimaryController || !remotePublishingEnabled) {
       return;
     }
 
@@ -1525,10 +1824,32 @@ export const useRemoteMissionControl = (options: {
     return () => {
       window.clearInterval(refreshInterval);
     };
-  }, [isPrimaryController, refreshScheduler, status?.enabled]);
+  }, [isPrimaryController, refreshScheduler, remotePublishingEnabled]);
 
   useEffect(() => {
-    if (!isPrimaryController || !options.hasHydrated || !status?.enabled) {
+    if (!isPrimaryController || !remotePublishingEnabled) {
+      return;
+    }
+
+    void refreshMedia();
+    const refreshInterval = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void refreshMedia();
+      }
+    }, MEDIA_REFRESH_MS);
+
+    return () => {
+      window.clearInterval(refreshInterval);
+      mediaRefreshSequenceRef.current += 1;
+    };
+  }, [isPrimaryController, refreshMedia, remotePublishingEnabled]);
+
+  useEffect(() => {
+    if (
+      !isPrimaryController ||
+      !options.hasHydrated ||
+      !remotePublishingEnabled
+    ) {
       return;
     }
 
@@ -1596,7 +1917,7 @@ export const useRemoteMissionControl = (options: {
     isPrimaryController,
     options.hasHydrated,
     snapshotPublishRetrySequence,
-    status?.enabled,
+    remotePublishingEnabled,
   ]);
 
   useEffect(() => {
@@ -1605,6 +1926,7 @@ export const useRemoteMissionControl = (options: {
     return () => {
       remoteHookMountedRef.current = false;
       schedulerRefreshSequenceRef.current += 1;
+      mediaRefreshSequenceRef.current += 1;
       statusPollSequenceRef.current += 1;
       statusMutationSequenceRef.current += 1;
       statusMutationInFlightRef.current = false;

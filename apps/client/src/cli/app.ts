@@ -123,6 +123,12 @@ export const runCli = async (argv: string[]): Promise<void> => {
       await printProviderSyncSummary(args);
       return;
     }
+    case "fleet": {
+      const { printFleetSummary } =
+        await import("./_helpers/cli-fleet-commands.js");
+      await printFleetSummary(args);
+      return;
+    }
     case "run": {
       const { printTaskPreview } = await import("./_helpers/cli-task-run.js");
       await printTaskPreview(args);

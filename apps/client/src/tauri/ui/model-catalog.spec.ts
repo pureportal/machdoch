@@ -23,9 +23,9 @@ describe("provider model catalog", () => {
       ],
     } satisfies ProviderModelCatalogSnapshot;
 
-    expect(
-      getCatalogModelsForProvider("openai", unavailableSnapshot),
-    ).toEqual([]);
+    expect(getCatalogModelsForProvider("openai", unavailableSnapshot)).toEqual(
+      [],
+    );
   });
 
   it("treats the live Copilot catalog as authoritative", () => {
@@ -53,12 +53,7 @@ describe("provider model catalog", () => {
         ),
       ),
     ).toEqual(
-      new Set([
-        "auto",
-        "gpt-5.5",
-        "mai-code-1-flash",
-        "kimi-k2.7-code",
-      ]),
+      new Set(["auto", "gpt-5.5", "mai-code-1-flash", "kimi-k2.7-code"]),
     );
   });
 
@@ -78,15 +73,11 @@ describe("provider model catalog", () => {
             { id: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
             { id: "gpt-5.6-luna", label: "GPT-5.6 Luna" },
             { id: "gpt-5.3-codex-spark", label: "GPT-5.3 Codex Spark" },
-            { id: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
-            { id: "gpt-5.2", label: "GPT-5.2" },
             {
               id: "gpt-5.1",
               label: "GPT-5.1",
               stage: "provider-deprecated",
             },
-            { id: "claude-opus-4-8", label: "Claude Opus 4.8" },
-            { id: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
           ],
         },
       ],
@@ -107,7 +98,7 @@ describe("provider model catalog", () => {
     ]);
   });
 
-  it("treats live provider catalogs as authoritative and filters OpenAI special-purpose models", () => {
+  it("treats the normalized live OpenAI catalog as authoritative", () => {
     const snapshot = {
       generatedAt: 1,
       providers: [
@@ -117,14 +108,10 @@ describe("provider model catalog", () => {
           available: true,
           models: [
             { id: "gpt-5.4-mini" },
-            { id: "gpt-4o-realtime-preview" },
-            { id: "gpt-5.5-audio-preview" },
-            { id: "computer-use-preview" },
-            { id: "gpt-4.1" },
             { id: "gpt-5.6-sol", releaseDate: "2026-06-26" },
             { id: "gpt-5.6-terra", releaseDate: "2026-06-26" },
             { id: "gpt-5.6-luna", releaseDate: "2026-06-26" },
-            { id: "o4-mini" },
+            { id: "gpt-4.1", stage: "provider-deprecated" },
           ],
         },
       ],
@@ -132,12 +119,7 @@ describe("provider model catalog", () => {
 
     expect(
       getCatalogModelsForProvider("openai", snapshot).map((model) => model.id),
-    ).toEqual([
-      "gpt-5.6-sol",
-      "gpt-5.6-terra",
-      "gpt-5.6-luna",
-      "gpt-5.4-mini",
-    ]);
+    ).toEqual(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.4-mini"]);
   });
 
   it("keeps current Anthropic runtime models including Claude 5 families", () => {
@@ -149,7 +131,6 @@ describe("provider model catalog", () => {
           source: "provider-api",
           available: true,
           models: [
-            { id: "claude-3-7-sonnet-20250219" },
             { id: "claude-sonnet-5" },
             { id: "claude-fable-5" },
             { id: "claude-opus-4-8" },
@@ -182,7 +163,6 @@ describe("provider model catalog", () => {
           source: "provider-api",
           available: true,
           models: [
-            { id: "gemini-embedding-001" },
             { id: "gemini-2.5-pro" },
             { id: "gemini-2.5-flash" },
             { id: "gemini-2.5-flash-lite" },
@@ -193,8 +173,6 @@ describe("provider model catalog", () => {
             { id: "gemini-3.1-flash-lite" },
             { id: "gemini-3.5-flash" },
             { id: "gemini-flash-latest" },
-            { id: "gemini-3.5-flash-tts-preview" },
-            { id: "gemini-live-2.5-flash-preview" },
           ],
         },
       ],
@@ -225,23 +203,21 @@ describe("provider model catalog", () => {
           source: "provider-api",
           available: true,
           models: [
-            { id: "text-embedding-3-large" },
             { id: "gpt-5.5" },
             { id: "gpt-5.4" },
             { id: "gpt-5.4-mini" },
             { id: "gpt-5.2-pro" },
-            { id: "gpt-4.1" },
             { id: "o4-mini" },
             { id: "langdock-llama-3.3-70b-2" },
-            { id: "claude-3-7-sonnet-20250219" },
-            { id: "langdock-image-generator" },
           ],
         },
       ],
     } satisfies ProviderModelCatalogSnapshot;
 
     expect(
-      getCatalogModelsForProvider("langdock", snapshot).map((model) => model.id),
+      getCatalogModelsForProvider("langdock", snapshot).map(
+        (model) => model.id,
+      ),
     ).toEqual([
       "gpt-5.5",
       "gpt-5.4",

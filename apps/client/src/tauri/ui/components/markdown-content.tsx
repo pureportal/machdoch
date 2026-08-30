@@ -1,5 +1,12 @@
 import { Check, Clipboard } from "lucide-react";
 import {
+  defaultMarkdownUrlTransform,
+  MarkdownRenderer,
+  type MarkdownComponents as Components,
+  type MarkdownOptions as ReactMarkdownOptions,
+  type MarkdownUrlTransform as UrlTransform,
+} from "@machdoch/product-ui";
+import {
   isValidElement,
   memo,
   useEffect,
@@ -10,12 +17,6 @@ import {
   type JSX,
   type ReactNode,
 } from "react";
-import ReactMarkdown, {
-  defaultUrlTransform,
-  type Components,
-  type Options as ReactMarkdownOptions,
-  type UrlTransform,
-} from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   createWorkspacePathLinkRemarkPlugin,
@@ -198,7 +199,7 @@ const createMarkdownUrlTransform =
       return url;
     }
 
-    return defaultUrlTransform(url);
+    return defaultMarkdownUrlTransform(url);
   };
 
 const createMarkdownComponents = (
@@ -376,14 +377,13 @@ export const MarkdownContent = memo(function MarkdownContent({
         className,
       )}
     >
-      <ReactMarkdown
+      <MarkdownRenderer
+        content={content}
         remarkPlugins={remarkPlugins}
         remarkRehypeOptions={remarkRehypeOptions}
         urlTransform={urlTransform}
         components={components}
-      >
-        {content}
-      </ReactMarkdown>
+      />
     </div>
   );
 });

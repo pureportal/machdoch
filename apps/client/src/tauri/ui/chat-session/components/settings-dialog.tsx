@@ -10,6 +10,7 @@ import {
   Network,
   Palette,
   Search as SearchIcon,
+  Timer,
   Volume2,
   X,
   type LucideIcon,
@@ -84,11 +85,13 @@ import type {
   ProviderSetupControls,
   VoiceSettingsControls,
   WebSearchSetupControls,
+  WorkspaceRunSettingsControls,
   WorkspaceSettingsControls,
 } from "./settings-dialog-panels/types";
 import { VoiceSettingsPanel } from "./settings-dialog-panels/voice-settings-panel";
 import { WebSearchSettingsPanel } from "./settings-dialog-panels/web-search-settings-panel";
 import { WorkspaceSettingsPanel } from "./settings-dialog-panels/workspace-settings-panel";
+import { WorkspaceRunSettingsPanel } from "./settings-dialog-panels/workspace-run-settings-panel";
 
 const SETTINGS_SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
   providers: KeyRound,
@@ -100,6 +103,7 @@ const SETTINGS_SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
   voice: Volume2,
   memory: Brain,
   desktop: Monitor,
+  "workspace-run": Timer,
   transfer: ArrowLeftRight,
 };
 
@@ -141,6 +145,7 @@ export interface SettingsControlsProps {
   appearanceSetup: AppearanceSettingsControls;
   memorySetup: MemorySettingsControls;
   desktopSetup: DesktopSettingsControls;
+  workspaceRunSetup: WorkspaceRunSettingsControls;
   voiceSetup: VoiceSettingsControls;
 }
 
@@ -183,6 +188,7 @@ const renderSettingsPanel = ({
   appearanceSetup,
   memorySetup,
   desktopSetup,
+  workspaceRunSetup,
   voiceSetup,
 }: SettingsDialogProps): JSX.Element => {
   switch (settingsSection) {
@@ -209,6 +215,9 @@ const renderSettingsPanel = ({
 
     case "desktop":
       return <DesktopSettingsPanel setup={desktopSetup} />;
+
+    case "workspace-run":
+      return <WorkspaceRunSettingsPanel setup={workspaceRunSetup} />;
 
     case "voice":
       return <VoiceSettingsPanel setup={voiceSetup} />;
@@ -1575,234 +1584,238 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
           }
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
-        <DialogHeader className="min-h-16 flex-row items-center justify-between gap-4 border-b border-slate-800/80 px-5 py-2.5 pr-4 text-left">
-          <div className="min-w-0">
-            <DialogTitle className="text-lg font-semibold tracking-tight text-white">
-              {title}
-            </DialogTitle>
-            <DialogDescription className="mt-0.5 truncate text-xs text-slate-400">
-              {description}
-            </DialogDescription>
-            {actionError ? (
-              <p role="alert" className="mt-1 text-xs text-rose-300">
-                {actionError}
-              </p>
-            ) : null}
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {navigationGuard ? (
-              <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-200">
-                Changes pending
-              </span>
-            ) : null}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label={closeLabel}
-              tooltip={closeLabel}
-              disabled={closeActionRunning || primaryActionRunning}
-              onClick={requestClose}
-              className="h-9 w-9 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-            >
-              <X className="size-4" />
-            </Button>
-          </div>
-        </DialogHeader>
-
-        <SubmitShortcut asChild>
-          <div className="border-b border-slate-800/80 bg-slate-950/80 p-3 md:hidden">
-            <label htmlFor="mobile-settings-section" className="sr-only">
-              Settings section
-            </label>
-            <select
-              ref={mobileSectionRef}
-              id="mobile-settings-section"
-              value={activeSectionId}
-              onChange={(event) =>
-                requestSectionChange(
-                  event.target.value as SettingsDialogSectionId,
-                )
-              }
-              className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm font-medium text-slate-100 outline-none focus:border-sky-500/50 focus:ring-2 focus:ring-sky-500/20"
-            >
-              {SETTINGS_SECTION_GROUP_ORDER.map((group) => (
-                <optgroup key={group} label={group}>
-                  {dialogSections
-                    .filter((section) => section.group === group)
-                    .map((section) => (
-                      <option key={section.id} value={section.id}>
-                        {section.label}
-                      </option>
-                    ))}
-                </optgroup>
-              ))}
-            </select>
-          </div>
-        </SubmitShortcut>
-
-        <div className="grid min-h-0 flex-1 overflow-hidden md:grid-cols-[13rem_minmax(0,1fr)]">
-          <SubmitShortcut asChild>
-            <nav
-              aria-label="Settings sections"
-              className="hidden min-h-0 overflow-y-auto border-r border-slate-800/80 bg-slate-950/70 px-3 py-3 md:block"
-            >
-            <SearchField
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              aria-label="Find settings"
-              placeholder="Find settings"
-              containerClassName="mb-3"
-              className="h-9 rounded-lg border-slate-800 bg-slate-950 text-sm text-slate-100"
-            />
-
-            {visibleSections.length === 0 ? (
-              <div className="grid justify-items-start gap-2 px-2 py-3">
-                <p className="text-sm text-slate-400">No settings found.</p>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSearchQuery("")}
-                  className="-ml-2 text-sky-300 hover:bg-slate-900 hover:text-sky-200"
-                >
-                  Clear search
-                </Button>
-              </div>
-            ) : (
-              <div className="grid gap-3">
-                {SETTINGS_SECTION_GROUP_ORDER.map((group) => {
-                  const groupSections = visibleSections.filter(
-                    (section) => section.group === group,
-                  );
-
-                  if (groupSections.length === 0) {
-                    return null;
-                  }
-
-                  return (
-                    <div key={group} className="grid gap-1">
-                      <p className="px-3 pb-1 text-[0.6875rem] font-semibold tracking-[0.12em] text-slate-500 uppercase">
-                        {group}
-                      </p>
-                      {groupSections.map((section) => {
-                        const SectionIcon =
-                          section.id === INTRO_SECTION_ID
-                            ? (introSection?.icon ?? KeyRound)
-                            : SETTINGS_SECTION_ICONS[section.id];
-                        const selected = activeSectionId === section.id;
-
-                        return (
-                          <Button
-                            key={section.id}
-                            ref={(node) => {
-                              if (node) {
-                                navigationButtonRefs.current.set(
-                                  section.id,
-                                  node,
-                                );
-                              } else {
-                                navigationButtonRefs.current.delete(section.id);
-                              }
-                            }}
-                            type="button"
-                            variant="ghost"
-                            aria-current={selected ? "page" : undefined}
-                            onKeyDown={(event) =>
-                              handleNavigationKeyDown(event, section.id)
-                            }
-                            onClick={() => requestSectionChange(section.id)}
-                            className={cn(
-                              "h-8.5 w-full justify-start rounded-lg border border-transparent bg-transparent px-3 text-sm text-slate-400 hover:border-slate-800 hover:bg-slate-900/70 hover:text-slate-100",
-                              selected &&
-                                "border-sky-500/25 bg-sky-500/10 font-semibold text-sky-100",
-                            )}
-                          >
-                            <SectionIcon className="size-4" />
-                            <span className="truncate">{section.label}</span>
-                          </Button>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            </nav>
-          </SubmitShortcut>
-
-          <ScrollArea
-            key={activeSectionId}
-            type="always"
-            role="region"
-            aria-labelledby="active-settings-section-title"
-            className="min-h-0 bg-slate-950/40 [&_[data-slot=scroll-area-scrollbar]]:w-3 [&_[data-slot=scroll-area-scrollbar]]:border-l [&_[data-slot=scroll-area-scrollbar]]:border-l-slate-800 [&_[data-slot=scroll-area-scrollbar]]:bg-slate-950/80 [&_[data-slot=scroll-area-thumb]]:bg-slate-600/80 [&_[data-slot=scroll-area-thumb]]:hover:bg-slate-500"
-          >
-            <div className="mx-auto grid w-full max-w-5xl content-start gap-4 px-4 py-4 pr-7 sm:px-6 sm:py-5 sm:pr-9">
-              <header className="flex items-start gap-3 border-b border-slate-800/70 pb-4">
-                <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border border-sky-500/20 bg-sky-500/10 text-sky-300">
-                  <ActiveSectionIcon className="size-4.5" />
-                </span>
-                <div className="min-w-0">
-                  <h2
-                    id="active-settings-section-title"
-                    className="text-lg font-semibold tracking-tight text-slate-100"
-                  >
-                    {activeSection.label}
-                  </h2>
-                  <p className="mt-1 text-sm leading-5 text-slate-400">
-                    {activeSection.description}
-                  </p>
-                </div>
-              </header>
-
-              <SettingsNavigationGuardProvider
-                onGuardChange={setNavigationGuard}
-              >
-                {activeSectionId === INTRO_SECTION_ID && introSection
-                  ? introSection.content
-                  : renderSettingsPanel({
-                      ...props,
-                      settingsSection: activeSectionId as SettingsSection,
-                    })}
-              </SettingsNavigationGuardProvider>
+          <DialogHeader className="min-h-16 flex-row items-center justify-between gap-4 border-b border-slate-800/80 px-5 py-2.5 pr-4 text-left">
+            <div className="min-w-0">
+              <DialogTitle className="text-lg font-semibold tracking-tight text-white">
+                {title}
+              </DialogTitle>
+              <DialogDescription className="mt-0.5 truncate text-xs text-slate-400">
+                {description}
+              </DialogDescription>
+              {actionError ? (
+                <p role="alert" className="mt-1 text-xs text-rose-300">
+                  {actionError}
+                </p>
+              ) : null}
             </div>
-          </ScrollArea>
-        </div>
-        {primaryAction || closeText ? (
-          <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-800/80 bg-slate-950/95 px-4 py-3 sm:px-5">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={closeActionRunning || primaryActionRunning}
-              onClick={requestClose}
-              className="h-9 rounded-lg border-slate-700 bg-slate-900 px-4 text-slate-200 hover:bg-slate-800"
-            >
-              {closeActionRunning ? "Closing…" : (closeText ?? "Cancel")}
-            </Button>
-            {primaryAction ? (
+            <div className="flex shrink-0 items-center gap-2">
+              {navigationGuard ? (
+                <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-200">
+                  Changes pending
+                </span>
+              ) : null}
               <Button
                 type="button"
-                disabled={
-                  primaryAction.disabled ||
-                  primaryActionRunning ||
-                  closeActionRunning
-                }
-                aria-busy={primaryActionRunning}
-                onClick={requestPrimaryAction}
-                {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                className="h-9 rounded-lg bg-sky-400 px-4 text-slate-950 hover:bg-sky-300"
+                variant="ghost"
+                size="icon"
+                aria-label={closeLabel}
+                tooltip={closeLabel}
+                disabled={closeActionRunning || primaryActionRunning}
+                onClick={requestClose}
+                className="h-9 w-9 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100"
               >
-                {primaryActionRunning ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : null}
-                {primaryActionRunning
-                  ? (primaryAction.pendingLabel ?? `${primaryAction.label}…`)
-                  : primaryAction.label}
+                <X className="size-4" />
               </Button>
-            ) : null}
-          </footer>
-        ) : null}
+            </div>
+          </DialogHeader>
+
+          <SubmitShortcut asChild>
+            <div className="border-b border-slate-800/80 bg-slate-950/80 p-3 md:hidden">
+              <label htmlFor="mobile-settings-section" className="sr-only">
+                Settings section
+              </label>
+              <select
+                ref={mobileSectionRef}
+                id="mobile-settings-section"
+                value={activeSectionId}
+                onChange={(event) =>
+                  requestSectionChange(
+                    event.target.value as SettingsDialogSectionId,
+                  )
+                }
+                className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm font-medium text-slate-100 outline-none focus:border-sky-500/50 focus:ring-2 focus:ring-sky-500/20"
+              >
+                {SETTINGS_SECTION_GROUP_ORDER.map((group) => (
+                  <optgroup key={group} label={group}>
+                    {dialogSections
+                      .filter((section) => section.group === group)
+                      .map((section) => (
+                        <option key={section.id} value={section.id}>
+                          {section.label}
+                        </option>
+                      ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+          </SubmitShortcut>
+
+          <div className="grid min-h-0 flex-1 overflow-hidden md:grid-cols-[13rem_minmax(0,1fr)]">
+            <SubmitShortcut asChild>
+              <nav
+                aria-label="Settings sections"
+                className="hidden min-h-0 overflow-y-auto border-r border-slate-800/80 bg-slate-950/70 px-3 py-3 md:block"
+              >
+                <SearchField
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  aria-label="Find settings"
+                  placeholder="Find settings"
+                  containerClassName="mb-3"
+                  className="h-9 rounded-lg border-slate-800 bg-slate-950 text-sm text-slate-100"
+                />
+
+                {visibleSections.length === 0 ? (
+                  <div className="grid justify-items-start gap-2 px-2 py-3">
+                    <p className="text-sm text-slate-400">No settings found.</p>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSearchQuery("")}
+                      className="-ml-2 text-sky-300 hover:bg-slate-900 hover:text-sky-200"
+                    >
+                      Clear search
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid gap-3">
+                    {SETTINGS_SECTION_GROUP_ORDER.map((group) => {
+                      const groupSections = visibleSections.filter(
+                        (section) => section.group === group,
+                      );
+
+                      if (groupSections.length === 0) {
+                        return null;
+                      }
+
+                      return (
+                        <div key={group} className="grid gap-1">
+                          <p className="px-3 pb-1 text-[0.6875rem] font-semibold tracking-[0.12em] text-slate-500 uppercase">
+                            {group}
+                          </p>
+                          {groupSections.map((section) => {
+                            const SectionIcon =
+                              section.id === INTRO_SECTION_ID
+                                ? (introSection?.icon ?? KeyRound)
+                                : SETTINGS_SECTION_ICONS[section.id];
+                            const selected = activeSectionId === section.id;
+
+                            return (
+                              <Button
+                                key={section.id}
+                                ref={(node) => {
+                                  if (node) {
+                                    navigationButtonRefs.current.set(
+                                      section.id,
+                                      node,
+                                    );
+                                  } else {
+                                    navigationButtonRefs.current.delete(
+                                      section.id,
+                                    );
+                                  }
+                                }}
+                                type="button"
+                                variant="ghost"
+                                aria-current={selected ? "page" : undefined}
+                                onKeyDown={(event) =>
+                                  handleNavigationKeyDown(event, section.id)
+                                }
+                                onClick={() => requestSectionChange(section.id)}
+                                className={cn(
+                                  "h-8.5 w-full justify-start rounded-lg border border-transparent bg-transparent px-3 text-sm text-slate-400 hover:border-slate-800 hover:bg-slate-900/70 hover:text-slate-100",
+                                  selected &&
+                                    "border-sky-500/25 bg-sky-500/10 font-semibold text-sky-100",
+                                )}
+                              >
+                                <SectionIcon className="size-4" />
+                                <span className="truncate">
+                                  {section.label}
+                                </span>
+                              </Button>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </nav>
+            </SubmitShortcut>
+
+            <ScrollArea
+              key={activeSectionId}
+              type="always"
+              role="region"
+              aria-labelledby="active-settings-section-title"
+              className="min-h-0 bg-slate-950/40 [&_[data-slot=scroll-area-scrollbar]]:w-3 [&_[data-slot=scroll-area-scrollbar]]:border-l [&_[data-slot=scroll-area-scrollbar]]:border-l-slate-800 [&_[data-slot=scroll-area-scrollbar]]:bg-slate-950/80 [&_[data-slot=scroll-area-thumb]]:bg-slate-600/80 [&_[data-slot=scroll-area-thumb]]:hover:bg-slate-500"
+            >
+              <div className="mx-auto grid w-full max-w-5xl content-start gap-4 px-4 py-4 pr-7 sm:px-6 sm:py-5 sm:pr-9">
+                <header className="flex items-start gap-3 border-b border-slate-800/70 pb-4">
+                  <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border border-sky-500/20 bg-sky-500/10 text-sky-300">
+                    <ActiveSectionIcon className="size-4.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <h2
+                      id="active-settings-section-title"
+                      className="text-lg font-semibold tracking-tight text-slate-100"
+                    >
+                      {activeSection.label}
+                    </h2>
+                    <p className="mt-1 text-sm leading-5 text-slate-400">
+                      {activeSection.description}
+                    </p>
+                  </div>
+                </header>
+
+                <SettingsNavigationGuardProvider
+                  onGuardChange={setNavigationGuard}
+                >
+                  {activeSectionId === INTRO_SECTION_ID && introSection
+                    ? introSection.content
+                    : renderSettingsPanel({
+                        ...props,
+                        settingsSection: activeSectionId as SettingsSection,
+                      })}
+                </SettingsNavigationGuardProvider>
+              </div>
+            </ScrollArea>
+          </div>
+          {primaryAction || closeText ? (
+            <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-800/80 bg-slate-950/95 px-4 py-3 sm:px-5">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={closeActionRunning || primaryActionRunning}
+                onClick={requestClose}
+                className="h-9 rounded-lg border-slate-700 bg-slate-900 px-4 text-slate-200 hover:bg-slate-800"
+              >
+                {closeActionRunning ? "Closing…" : (closeText ?? "Cancel")}
+              </Button>
+              {primaryAction ? (
+                <Button
+                  type="button"
+                  disabled={
+                    primaryAction.disabled ||
+                    primaryActionRunning ||
+                    closeActionRunning
+                  }
+                  aria-busy={primaryActionRunning}
+                  onClick={requestPrimaryAction}
+                  {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                  className="h-9 rounded-lg bg-sky-400 px-4 text-slate-950 hover:bg-sky-300"
+                >
+                  {primaryActionRunning ? (
+                    <LoaderCircle className="size-4 animate-spin" />
+                  ) : null}
+                  {primaryActionRunning
+                    ? (primaryAction.pendingLabel ?? `${primaryAction.label}…`)
+                    : primaryAction.label}
+                </Button>
+              ) : null}
+            </footer>
+          ) : null}
         </div>
       </SubmitShortcut>
 

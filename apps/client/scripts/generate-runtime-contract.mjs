@@ -126,6 +126,10 @@ const agentCliProviderEnvKeys = metadata.agentCliProviderEnvKeys;
 const webSearchEnvKeys = metadata.webSearchEnvKeys;
 const defaultAgentLimits = getDefaultObject("UserAgentLimitsSettings");
 const agentLimitBounds = getBoundsObject("UserAgentLimitsSettings");
+const defaultWorkspaceRunSettings = getDefaultObject(
+  "UserWorkspaceRunSettings",
+);
+const workspaceRunSettingBounds = getBoundsObject("UserWorkspaceRunSettings");
 const defaultReviewModelSettings = getDefaultObject("UserReviewModelSettings");
 const defaultInternalTaskModelSettings = getDefaultObject(
   "UserInternalTaskModelSettings",
@@ -227,6 +231,8 @@ export const WEB_SEARCH_ENV_KEY_BY_PROVIDER = ${json(webSearchEnvKeys)} as const
 
 export const DEFAULT_USER_AGENT_LIMITS_SETTINGS = ${json(defaultAgentLimits)} as const satisfies UserAgentLimitsSettings;
 export const AGENT_LIMIT_BOUNDS = ${json(agentLimitBounds)} as const;
+export const DEFAULT_USER_WORKSPACE_RUN_SETTINGS = ${json(defaultWorkspaceRunSettings)} as const satisfies UserWorkspaceRunSettings;
+export const WORKSPACE_RUN_SETTING_BOUNDS = ${json(workspaceRunSettingBounds)} as const;
 export const DEFAULT_USER_REVIEW_MODEL_SETTINGS = ${json(defaultReviewModelSettings)} as const satisfies UserReviewModelSettings;
 export const DEFAULT_USER_INTERNAL_TASK_MODEL_SETTINGS = ${json(defaultInternalTaskModelSettings)} as const satisfies UserInternalTaskModelSettings;
 export const DEFAULT_USER_DESKTOP_SETTINGS = ${json(defaultDesktopSettings)} as const satisfies UserDesktopSettings;
@@ -476,6 +482,7 @@ export interface UserConfigFile {
   speechToText?: UserSpeechToTextConfigFile;
   desktop?: Partial<UserDesktopSettings>;
   agentLimits?: RuntimeAgentLimitOverrides;
+  workspaceRun?: Partial<UserWorkspaceRunSettings>;
   memory?: UserMemoryConfigFile;
   reviewModel?: UserReviewModelConfigFile;
   internalTaskModel?: UserInternalTaskModelConfigFile;
@@ -486,6 +493,14 @@ export interface UserAgentLimitsSettings {
   infinite: boolean;
   executorTurns: number;
   autopilotExecutorIterations: number;
+}
+
+export interface UserWorkspaceRunSettings {
+  startupDelayMs: number;
+  healthCheckIntervalMs: number;
+  healthCheckTimeoutMs: number;
+  healthCheckFailureThreshold: number;
+  sequentialReadinessTimeoutMs: number;
 }
 
 export interface UserReviewModelSettings {
@@ -610,6 +625,22 @@ pub const DEFAULT_MAX_EXECUTOR_TURNS: u32 = ${defaultAgentLimits.executorTurns};
 pub const DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS: u32 = ${defaultAgentLimits.autopilotExecutorIterations};
 pub const MAX_CONFIGURED_EXECUTOR_TURNS: u32 = ${agentLimitBounds.executorTurns.max};
 pub const MAX_CONFIGURED_AUTOPILOT_ITERATIONS: u32 = ${agentLimitBounds.autopilotExecutorIterations.max};
+
+pub const DEFAULT_WORKSPACE_RUN_STARTUP_DELAY_MS: u64 = ${defaultWorkspaceRunSettings.startupDelayMs};
+pub const MIN_WORKSPACE_RUN_STARTUP_DELAY_MS: u64 = ${workspaceRunSettingBounds.startupDelayMs.min};
+pub const MAX_WORKSPACE_RUN_STARTUP_DELAY_MS: u64 = ${workspaceRunSettingBounds.startupDelayMs.max};
+pub const DEFAULT_WORKSPACE_RUN_HEALTH_CHECK_INTERVAL_MS: u64 = ${defaultWorkspaceRunSettings.healthCheckIntervalMs};
+pub const MIN_WORKSPACE_RUN_HEALTH_CHECK_INTERVAL_MS: u64 = ${workspaceRunSettingBounds.healthCheckIntervalMs.min};
+pub const MAX_WORKSPACE_RUN_HEALTH_CHECK_INTERVAL_MS: u64 = ${workspaceRunSettingBounds.healthCheckIntervalMs.max};
+pub const DEFAULT_WORKSPACE_RUN_HEALTH_CHECK_TIMEOUT_MS: u64 = ${defaultWorkspaceRunSettings.healthCheckTimeoutMs};
+pub const MIN_WORKSPACE_RUN_HEALTH_CHECK_TIMEOUT_MS: u64 = ${workspaceRunSettingBounds.healthCheckTimeoutMs.min};
+pub const MAX_WORKSPACE_RUN_HEALTH_CHECK_TIMEOUT_MS: u64 = ${workspaceRunSettingBounds.healthCheckTimeoutMs.max};
+pub const DEFAULT_WORKSPACE_RUN_HEALTH_CHECK_FAILURE_THRESHOLD: u32 = ${defaultWorkspaceRunSettings.healthCheckFailureThreshold};
+pub const MIN_WORKSPACE_RUN_HEALTH_CHECK_FAILURE_THRESHOLD: u32 = ${workspaceRunSettingBounds.healthCheckFailureThreshold.min};
+pub const MAX_WORKSPACE_RUN_HEALTH_CHECK_FAILURE_THRESHOLD: u32 = ${workspaceRunSettingBounds.healthCheckFailureThreshold.max};
+pub const DEFAULT_WORKSPACE_RUN_SEQUENTIAL_READINESS_TIMEOUT_MS: u64 = ${defaultWorkspaceRunSettings.sequentialReadinessTimeoutMs};
+pub const MIN_WORKSPACE_RUN_SEQUENTIAL_READINESS_TIMEOUT_MS: u64 = ${workspaceRunSettingBounds.sequentialReadinessTimeoutMs.min};
+pub const MAX_WORKSPACE_RUN_SEQUENTIAL_READINESS_TIMEOUT_MS: u64 = ${workspaceRunSettingBounds.sequentialReadinessTimeoutMs.max};
 
 ${rustDefaultDesktopConstants}
 ${rustDesktopBoundsConstants}

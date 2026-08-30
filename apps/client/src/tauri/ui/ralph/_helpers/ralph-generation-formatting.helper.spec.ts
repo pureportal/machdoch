@@ -38,7 +38,7 @@ describe("ralph-generation-formatting helper", () => {
         {
           provider: "openai",
           available: true,
-          models: [{ id: "unsupported-openai-model" }],
+          models: [{ id: "gpt-5.6-terra" }],
         },
       ],
     };
@@ -46,7 +46,9 @@ describe("ralph-generation-formatting helper", () => {
     expect(getProviderOption("openai")).toBe("openai");
     expect(getProviderOption("not-a-provider" as never)).toBe("default");
     expect(getEffectiveProvider("default", "openai")).toBe("openai");
-    expect(getPreferredModelForProvider("openai", snapshot)).toBe("gpt-5.5");
+    expect(getPreferredModelForProvider("openai", snapshot)).toBe(
+      "gpt-5.6-terra",
+    );
   });
 
   it("detects prompt blocks and creates prompt block generation prompts", () => {
@@ -65,9 +67,9 @@ describe("ralph-generation-formatting helper", () => {
     };
 
     expect(isRalphPromptBlock(flow.blocks[0])).toBe(true);
-    expect(createPromptBlockGenerationPrompt("Make it shorter.", block)).toContain(
-      '"prompt": "Write the response."',
-    );
+    expect(
+      createPromptBlockGenerationPrompt("Make it shorter.", block),
+    ).toContain('"prompt": "Write the response."');
   });
 
   it("formats interview context with trimmed answer comments", () => {
@@ -122,5 +124,4 @@ describe("ralph-generation-formatting helper", () => {
       ),
     ).toContain("Comment: keep tests focused");
   });
-
 });

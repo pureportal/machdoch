@@ -69,6 +69,7 @@ describe("ralph-block-factory helper", () => {
     expect(getUtilityOutputs(utility)).toEqual([
       "READY",
       "COMPLETE",
+      "DEFERRED",
       "BLOCKED",
       "EMPTY",
       "NOT_FOUND",

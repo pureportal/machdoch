@@ -42,17 +42,22 @@ vi.mock("../../workspace-management/workspace-run-ai", () => ai);
 const taskStatus = (
   state: WorkspaceRunConfigurationStatus["state"],
   {
+    id = "server",
     name = "Server",
+    primary = true,
     health = null,
   }: {
+    id?: string;
     name?: string;
+    primary?: boolean;
     health?: WorkspaceRunHealthStatus | null;
   } = {},
 ): WorkspaceRunConfigurationStatus => ({
   configuration: {
-    id: "server",
+    id,
     name,
     kind: "task",
+    primary,
     command: "pnpm run dev",
     workingDirectory: ".",
     environment: {},
@@ -84,7 +89,7 @@ const createSnapshot = (
   options?: Parameters<typeof taskStatus>[1],
 ): WorkspaceRunSnapshot => ({
   workspaceRoot: "C:/workspace",
-  primaryConfigurationId: "server",
+  primaryConfigurationId: options?.id ?? "server",
   configurations: [taskStatus(state, options)],
 });
 
@@ -100,8 +105,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   const stopped = createSnapshot("stopped");
   const document: WorkspaceRunConfigurationDocument = {
-    schemaVersion: 1,
-    primaryConfigurationId: "server",
+    schemaVersion: 2,
     configurations: stopped.configurations.map(
       (status) => status.configuration,
     ),
@@ -123,7 +127,6 @@ describe("WorkspaceRunDialogControl", () => {
       snapshot: createSnapshot("stopped"),
       accessibleName: "Run workspace",
       running: false,
-      mainFullstack: false,
       unhealthy: false,
       accentClass: null,
     },
@@ -132,42 +135,16 @@ describe("WorkspaceRunDialogControl", () => {
       snapshot: createSnapshot("running"),
       accessibleName: "Run workspace, process running",
       running: true,
-      mainFullstack: false,
       unhealthy: false,
       accentClass: "bg-emerald-500/10",
-    },
-    {
-      state: "Main Fullstack Script running",
-      snapshot: createSnapshot("running", {
-        name: "Main Fullstack Script",
-      }),
-      accessibleName: "Run workspace, Main Fullstack Script running",
-      running: true,
-      mainFullstack: true,
-      unhealthy: false,
-      accentClass: "bg-fuchsia-500/10",
     },
     {
       state: "unhealthy",
       snapshot: createSnapshot("unhealthy", { health: failedHealth }),
       accessibleName: "Run workspace, process running, health check failed",
       running: true,
-      mainFullstack: false,
       unhealthy: true,
       accentClass: "bg-emerald-500/10",
-    },
-    {
-      state: "Main Fullstack Script running and unhealthy",
-      snapshot: createSnapshot("unhealthy", {
-        name: "Main Fullstack Script",
-        health: failedHealth,
-      }),
-      accessibleName:
-        "Run workspace, Main Fullstack Script running, health check failed",
-      running: true,
-      mainFullstack: true,
-      unhealthy: true,
-      accentClass: "bg-fuchsia-500/10",
     },
   ])("presents the $state state", async (scenario) => {
     runtime.loadWorkspaceRunSnapshot.mockResolvedValue(scenario.snapshot);
@@ -185,9 +162,6 @@ describe("WorkspaceRunDialogControl", () => {
     expect(run.getAttribute("data-script-running")).toBe(
       String(scenario.running),
     );
-    expect(run.getAttribute("data-main-fullstack-script-running")).toBe(
-      String(scenario.mainFullstack),
-    );
     expect(run.getAttribute("data-health-check-failed")).toBe(
       String(scenario.unhealthy),
     );
@@ -204,7 +178,6 @@ describe("WorkspaceRunDialogControl", () => {
       expect(run.classList.contains(scenario.accentClass)).toBe(true);
     } else {
       expect(run.classList.contains("bg-emerald-500/10")).toBe(false);
-      expect(run.classList.contains("bg-fuchsia-500/10")).toBe(false);
     }
   });
 
@@ -227,16 +200,21 @@ describe("WorkspaceRunDialogControl", () => {
     expect(run.textContent).toContain("Run");
     expect(run.textContent).not.toContain("Play");
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Start" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Run Server/u })).toBeNull();
 
     fireEvent.click(run);
 
     expect(await screen.findByRole("dialog")).toBeTruthy();
-    expect(await screen.findByRole("button", { name: "Start" })).toBeTruthy();
+    expect(
+      await screen.findByRole("button", { name: "Run Server" }),
+    ).toBeTruthy();
     const panel = screen.getByRole("region", { name: "Workspace run" });
-    expect(panel.classList.contains("border")).toBe(false);
-    expect(panel.classList.contains("rounded-xl")).toBe(false);
-    expect(panel.classList.contains("bg-slate-900/30")).toBe(false);
+    expect(panel.classList.contains("border")).toBe(true);
+    expect(panel.classList.contains("rounded-xl")).toBe(true);
+    expect(panel.querySelectorAll(".lucide-play")).toHaveLength(1);
+    expect(panel.querySelector(".lucide-play")?.closest("button")).toBe(
+      screen.getByRole("button", { name: "Run Server" }),
+    );
     fireEvent.click(screen.getByText("Configuration"));
     expect(await screen.findByRole("button", { name: "Detect" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
@@ -280,6 +258,72 @@ describe("WorkspaceRunDialogControl", () => {
     expect(run.getAttribute("data-primary-task-running")).toBe("true");
   });
 
+  it("selects the flagged primary configuration whenever the dialog opens", async () => {
+    const server = taskStatus("stopped", {
+      id: "server",
+      name: "Server",
+      primary: false,
+    });
+    const completeStack = taskStatus("stopped", {
+      id: "complete-stack",
+      name: "Complete Stack",
+      primary: true,
+    });
+    const snapshot: WorkspaceRunSnapshot = {
+      workspaceRoot: "C:/workspace",
+      primaryConfigurationId: "server",
+      configurations: [server, completeStack],
+    };
+    runtime.loadWorkspaceRunSnapshot.mockResolvedValue(snapshot);
+    runtime.loadWorkspaceRunConfigurationDocument.mockResolvedValue({
+      schemaVersion: 2,
+      configurations: snapshot.configurations.map(
+        (status) => status.configuration,
+      ),
+    });
+    runtime.startWorkspaceRunConfiguration.mockResolvedValue(snapshot);
+
+    render(
+      createElement(WorkspaceRunDialogControl, {
+        workspaceRoot: "C:/workspace",
+        primaryTaskRunning: false,
+      }),
+    );
+    const trigger = await screen.findByRole("button", {
+      name: "Run workspace",
+    });
+
+    fireEvent.click(trigger);
+    const selector = (await screen.findByLabelText(
+      "Run configuration",
+    )) as HTMLSelectElement;
+    await waitFor(() => expect(selector.value).toBe("complete-stack"));
+    expect(
+      screen.getByRole("option", { name: "Complete Stack (Default)" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Run Complete Stack" }),
+    ).toBeTruthy();
+
+    fireEvent.change(selector, { target: { value: "server" } });
+    expect(selector.value).toBe("server");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(trigger);
+    const reopenedSelector = (await screen.findByLabelText(
+      "Run configuration",
+    )) as HTMLSelectElement;
+    await waitFor(() => expect(reopenedSelector.value).toBe("complete-stack"));
+    fireEvent.click(screen.getByRole("button", { name: "Run Complete Stack" }));
+    await waitFor(() =>
+      expect(runtime.startWorkspaceRunConfiguration).toHaveBeenCalledWith(
+        "C:/workspace",
+        "complete-stack",
+      ),
+    );
+  });
+
   it("keeps detection running and retains its result across control mounts", async () => {
     let finishDetection:
       | ((result: { documentJson: string; detections: [] }) => void)
@@ -291,13 +335,13 @@ describe("WorkspaceRunDialogControl", () => {
         }),
     );
     const detectedDocument: WorkspaceRunConfigurationDocument = {
-      schemaVersion: 1,
-      primaryConfigurationId: "detected",
+      schemaVersion: 2,
       configurations: [
         {
           id: "detected",
           name: "Detected",
           kind: "task",
+          primary: true,
           command: "pnpm dev",
           workingDirectory: ".",
           environment: {},

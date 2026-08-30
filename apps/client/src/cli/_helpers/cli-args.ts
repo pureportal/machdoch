@@ -13,6 +13,7 @@ import type {
 } from "../../core/runtime-contract.generated.js";
 import {
   INSTRUCTION_ACTIONS,
+  FLEET_ACTIONS,
   MCP_ACTIONS,
   MCP_ACTIONS_REQUIRING_SERVER,
   MCP_ACTIONS_REQUIRING_TARGET,
@@ -56,6 +57,8 @@ export type {
   ConfigCliOptions,
   CommandName,
   InstructionCliAction,
+  FleetCliAction,
+  FleetCliOptions,
   InstructionCliGroup,
   InstructionCliOptions,
   McpCliAction,
@@ -74,6 +77,8 @@ export type {
   TaskInterviewCliOptions,
 } from "./cli-args-types.js";
 import type {
+  FleetCliAction,
+  FleetCliOptions,
   InstructionCliAction,
   InstructionCliGroup,
   McpCliAction,
@@ -240,6 +245,9 @@ export const parseCliArgs = (
         "decisions-file"?: string;
         "confirm-assignment-removal"?: boolean;
         "metadata-json"?: string;
+        "manager-url"?: string;
+        "enrollment-key"?: string;
+        "display-name"?: string;
       }
     | undefined;
   let positionals: string[] = [];
@@ -375,6 +383,9 @@ export const parseCliArgs = (
         "decisions-file": { type: "string" },
         "confirm-assignment-removal": { type: "boolean" },
         "metadata-json": { type: "string" },
+        "manager-url": { type: "string" },
+        "enrollment-key": { type: "string" },
+        "display-name": { type: "string" },
       },
       allowPositionals: true,
       strict: true,
@@ -397,9 +408,23 @@ export const parseCliArgs = (
   const rawMode = normalizeOptionalString(values?.mode);
   const rawProvider = normalizeOptionalString(values?.provider);
   const isProviderSyncCommand = positionals[0] === "provider-sync";
+  const isFleetCommand = positionals[0] === "fleet";
   const rawRuntimeProvider = normalizeOptionalString(
     values?.["runtime-provider"],
   );
+  const rawFleetManagerUrl = normalizeOptionalString(values?.["manager-url"]);
+  const rawFleetEnrollmentKey = normalizeOptionalString(
+    values?.["enrollment-key"],
+  );
+  const rawFleetDisplayName = normalizeOptionalString(values?.["display-name"]);
+  if (
+    !isFleetCommand &&
+    (values?.["manager-url"] !== undefined ||
+      values?.["enrollment-key"] !== undefined ||
+      values?.["display-name"] !== undefined)
+  ) {
+    fail("Fleet enrollment options require `machdoch fleet enroll`.");
+  }
   const rawKey = normalizeOptionalString(values?.key);
   const rawTask = normalizeOptionalString(values?.task);
   const rawModel = normalizeOptionalString(values?.model);
@@ -1169,6 +1194,81 @@ export const parseCliArgs = (
           ...(rawProvider ? { provider: rawProvider as AgentCliProvider } : {}),
         },
       },
+    );
+  }
+
+  if (first === "fleet") {
+    if (quickRunRequested || rawTask) {
+      fail("`machdoch fleet` cannot be combined with --quick or --task.");
+    }
+    const [rawAction, ...extraPositionals] = rest;
+    const actionText = normalizeOptionalString(rawAction) ?? "status";
+    if (!FLEET_ACTIONS.has(actionText as FleetCliAction)) {
+      fail(
+        `Expected \`machdoch fleet\` action to be one of ${Array.from(
+          FLEET_ACTIONS,
+        ).join(", ")}.`,
+      );
+    }
+    if (extraPositionals.length > 0) {
+      fail(
+        `Command \`fleet ${actionText}\` does not accept positional arguments: ${extraPositionals.join(" ")}`,
+      );
+    }
+    if (
+      rawModel ||
+      rawDefaultModel ||
+      rawReasoning ||
+      rawRuntimeProvider ||
+      rawProvider ||
+      rawKey ||
+      rawMode ||
+      sessionMemoryEnabled !== undefined ||
+      globalMemoryEnabled !== undefined ||
+      agentLimits ||
+      rawConversationContextFile ||
+      deterministicAction ||
+      skipFileChangeDetection ||
+      rawContextPaths ||
+      rawImagePaths
+    ) {
+      fail(
+        "`machdoch fleet` cannot be combined with runtime override options.",
+      );
+    }
+
+    const action = actionText as FleetCliAction;
+    if (action === "enroll") {
+      if (!rawFleetManagerUrl) {
+        fail("Expected --manager-url for `machdoch fleet enroll`.");
+      }
+      if (!rawFleetEnrollmentKey) {
+        fail("Expected --enrollment-key for `machdoch fleet enroll`.");
+      }
+      if (!rawFleetDisplayName) {
+        fail("Expected --display-name for `machdoch fleet enroll`.");
+      }
+    } else if (
+      values?.["manager-url"] !== undefined ||
+      values?.["enrollment-key"] !== undefined ||
+      values?.["display-name"] !== undefined
+    ) {
+      fail(
+        `Fleet enrollment options are only valid for \`machdoch fleet enroll\`.`,
+      );
+    }
+
+    const fleet: FleetCliOptions = {
+      action,
+      ...(rawFleetManagerUrl ? { managerUrl: rawFleetManagerUrl } : {}),
+      ...(rawFleetEnrollmentKey
+        ? { enrollmentKey: rawFleetEnrollmentKey }
+        : {}),
+      ...(rawFleetDisplayName ? { displayName: rawFleetDisplayName } : {}),
+    };
+    return createParsedArgs(
+      { json, verbose, workspaceRoot, command: "fleet" },
+      { fleet },
     );
   }
 

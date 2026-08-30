@@ -3,13 +3,11 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { useEffect } from "react";
 import type { MediaRuntimeRunRecord } from "../../../core/media/contracts.js";
-
-const ACTIVE_MEDIA_STATUSES = new Set(["queued", "running", "canceling"]);
+import { isMediaRunActive } from "./media-run-activity";
 
 export const getActiveMediaShutdownRuns = (
   runs: readonly MediaRuntimeRunRecord[],
-): MediaRuntimeRunRecord[] =>
-  runs.filter((run) => ACTIVE_MEDIA_STATUSES.has(run.status));
+): MediaRuntimeRunRecord[] => runs.filter(isMediaRunActive);
 
 export const useMediaShutdownGuard = (): void => {
   useEffect(() => {
@@ -26,9 +24,12 @@ export const useMediaShutdownGuard = (): void => {
     void getCurrentWindow()
       .onCloseRequested(async (event) => {
         try {
-          const runs = await invoke<MediaRuntimeRunRecord[]>("media_list_runs", {
-            limit: 100,
-          });
+          const runs = await invoke<MediaRuntimeRunRecord[]>(
+            "media_list_runs",
+            {
+              limit: 100,
+            },
+          );
           const activeRuns = getActiveMediaShutdownRuns(runs);
           if (activeRuns.length === 0) return;
           const close = await confirm(
@@ -37,7 +38,10 @@ export const useMediaShutdownGuard = (): void => {
           );
           if (!close) event.preventDefault();
         } catch (error) {
-          console.error("Failed to inspect Media Studio jobs before closing", error);
+          console.error(
+            "Failed to inspect Media Studio jobs before closing",
+            error,
+          );
         }
       })
       .then((dispose) => {
@@ -45,7 +49,10 @@ export const useMediaShutdownGuard = (): void => {
         else unlisten = dispose;
       })
       .catch((error: unknown) => {
-        console.error("Failed to register the Media Studio shutdown guard", error);
+        console.error(
+          "Failed to register the Media Studio shutdown guard",
+          error,
+        );
       });
 
     return () => {

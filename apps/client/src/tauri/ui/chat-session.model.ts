@@ -334,7 +334,18 @@ export interface ShellPersistedState {
   lastSelectedSessionMemoryEnabled: boolean;
   lastSelectedUseGlobalMemory: boolean;
   lastSelectedUiControlEnabled: boolean;
+  fleetManagedSettings?: FleetManagedSettingsState;
   lastRecoveredLaunchId?: string;
+}
+
+export interface FleetManagedSettingsState {
+  managerId: string;
+  profileId: string;
+  revision: number;
+  instructionProfileIds: Record<string, string>;
+  contextPackIds: string[];
+  secretIds: string[];
+  appliedAt: number;
 }
 
 const DEFAULT_PROVIDER: RuntimeProvider = "openai";
@@ -485,6 +496,55 @@ const normalizeOptionalPromptEnhancementMode = (
 
 const normalizeOptionalBoolean = (value: unknown): boolean | undefined => {
   return typeof value === "boolean" ? value : undefined;
+};
+
+const normalizeFleetManagedSettingsState = (
+  value: unknown,
+): FleetManagedSettingsState | undefined => {
+  if (!isRecord(value)) return undefined;
+  const managerId = normalizeString(value.managerId).trim();
+  const profileId = normalizeString(value.profileId).trim();
+  const revision = normalizeOptionalFiniteNumber(value.revision);
+  const appliedAt = normalizeOptionalFiniteNumber(value.appliedAt);
+  if (
+    !managerId ||
+    !profileId ||
+    revision === undefined ||
+    appliedAt === undefined
+  ) {
+    return undefined;
+  }
+  const instructionProfileIds = isRecord(value.instructionProfileIds)
+    ? Object.fromEntries(
+        Object.entries(value.instructionProfileIds).flatMap(
+          ([managedId, localId]) =>
+            managedId.trim() && typeof localId === "string" && localId.trim()
+              ? [[managedId.trim(), localId.trim()] as const]
+              : [],
+        ),
+      )
+    : {};
+  const normalizeIds = (candidate: unknown): string[] =>
+    Array.isArray(candidate)
+      ? [
+          ...new Set(
+            candidate
+              .filter((entry): entry is string => typeof entry === "string")
+              .map((entry) => entry.trim())
+              .filter(Boolean),
+          ),
+        ]
+      : [];
+
+  return {
+    managerId,
+    profileId,
+    revision: Math.max(0, Math.round(revision)),
+    instructionProfileIds,
+    contextPackIds: normalizeIds(value.contextPackIds),
+    secretIds: normalizeIds(value.secretIds),
+    appliedAt: Math.max(0, appliedAt),
+  };
 };
 
 const isRuntimeProvider = (value: unknown): value is RuntimeProvider => {
@@ -2871,6 +2931,9 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
     candidate.lastRecoveredLaunchId.trim().length > 0
       ? candidate.lastRecoveredLaunchId
       : undefined;
+  const fleetManagedSettings = normalizeFleetManagedSettingsState(
+    candidate.fleetManagedSettings,
+  );
   const voiceCandidate =
     candidate.voice && typeof candidate.voice === "object"
       ? (candidate.voice as Partial<ShellVoiceSettings>)
@@ -2955,6 +3018,7 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
     lastSelectedSessionMemoryEnabled,
     lastSelectedUseGlobalMemory,
     lastSelectedUiControlEnabled,
+    ...(fleetManagedSettings ? { fleetManagedSettings } : {}),
     ...(lastRecoveredLaunchId ? { lastRecoveredLaunchId } : {}),
   };
 };

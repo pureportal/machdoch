@@ -72,6 +72,67 @@ describe("cli args public parser", () => {
     ).toMatchObject({ command: "config", config: { action: "edit" } });
   });
 
+  it("parses Fleet enrollment, status, configuration, and service actions", () => {
+    expect(
+      parseCliArgs(
+        [
+          "fleet",
+          "enroll",
+          "--manager-url",
+          "https://fleet.example.test",
+          "--enrollment-key",
+          "mch_enroll_key",
+          "--display-name",
+          "Build host",
+          "--json",
+        ],
+        { currentWorkingDirectory: "C:/workspace" },
+      ),
+    ).toMatchObject({
+      command: "fleet",
+      fleet: {
+        action: "enroll",
+        managerUrl: "https://fleet.example.test",
+        enrollmentKey: "mch_enroll_key",
+        displayName: "Build host",
+      },
+      json: true,
+      workspaceRoot: "C:/workspace",
+    });
+    expect(
+      parseCliArgs(["fleet"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toMatchObject({ command: "fleet", fleet: { action: "status" } });
+    expect(
+      parseCliArgs(["fleet", "service", "--cwd", "C:/service-workspace"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toMatchObject({
+      command: "fleet",
+      fleet: { action: "service" },
+      workspaceRoot: "C:/service-workspace",
+    });
+    expect(() =>
+      parseCliArgs(
+        ["fleet", "enroll", "--manager-url", "https://fleet.example.test"],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
+    ).toThrow("Expected --enrollment-key");
+    expect(() =>
+      parseCliArgs(["fleet", "status", "--display-name", "unused"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("only valid for `machdoch fleet enroll`");
+    expect(() =>
+      parseCliArgs(["run", "--manager-url", "https://fleet.example.test"], {
+        currentWorkingDirectory: "C:/workspace",
+      }),
+    ).toThrow("require `machdoch fleet enroll`");
+  });
+
   it("parses default chat, explicit run, and repeated context options", () => {
     expect(
       parseCliArgs([], { currentWorkingDirectory: "C:/workspace" }),

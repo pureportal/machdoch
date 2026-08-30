@@ -1,4 +1,4 @@
-export const WORKSPACE_RUN_SCHEMA_VERSION = 1 as const;
+export const WORKSPACE_RUN_SCHEMA_VERSION = 2 as const;
 export const WORKSPACE_RUN_MAX_LOG_ENTRIES = 400 as const;
 
 export type WorkspaceRunLifecycleState =
@@ -17,10 +17,6 @@ export interface WorkspaceRunHealthCheck {
   host?: string | null;
   port?: number | null;
   url?: string | null;
-  startupDelayMs: number;
-  intervalMs: number;
-  timeoutMs: number;
-  failureThreshold: number;
   restartOnFailure: boolean;
 }
 
@@ -36,6 +32,7 @@ export interface WorkspaceRunTaskConfiguration {
   id: string;
   name: string;
   kind: "task";
+  primary: boolean;
   command: string;
   workingDirectory: string;
   environment: Record<string, string>;
@@ -50,6 +47,7 @@ export interface WorkspaceRunCompositeConfiguration {
   id: string;
   name: string;
   kind: "composite";
+  primary: boolean;
   children: string[];
   startOrder: "parallel" | "sequence";
 }
@@ -60,7 +58,6 @@ export type WorkspaceRunConfiguration =
 
 export interface WorkspaceRunConfigurationDocument {
   schemaVersion: typeof WORKSPACE_RUN_SCHEMA_VERSION;
-  primaryConfigurationId: string | null;
   configurations: WorkspaceRunConfiguration[];
 }
 
@@ -125,6 +122,10 @@ export interface WorkspaceRunDetection {
 export const createEmptyWorkspaceRunDocument =
   (): WorkspaceRunConfigurationDocument => ({
     schemaVersion: WORKSPACE_RUN_SCHEMA_VERSION,
-    primaryConfigurationId: null,
     configurations: [],
   });
+
+export const workspaceRunPrimaryConfigurationId = (
+  configurations: readonly WorkspaceRunConfiguration[],
+): string | null =>
+  configurations.find((configuration) => configuration.primary)?.id ?? null;

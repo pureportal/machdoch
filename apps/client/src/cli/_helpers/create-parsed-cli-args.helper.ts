@@ -8,6 +8,7 @@ import type {
 import type { TaskDeterministicAction } from "../../core/types.js";
 import type {
   ConfigCliOptions,
+  FleetCliOptions,
   InstructionCliOptions,
   McpCliOptions,
   ParsedCliArgs,
@@ -29,6 +30,7 @@ export const createParsedArgs = (
     | "scheduler"
     | "mcp"
     | "providerSync"
+    | "fleet"
     | "instructions"
     | "provider"
     | "runtimeProvider"
@@ -69,6 +71,7 @@ export const createParsedArgs = (
     scheduler?: SchedulerCliOptions;
     mcp?: McpCliOptions;
     providerSync?: ProviderSyncCliOptions;
+    fleet?: FleetCliOptions;
     instructions?: InstructionCliOptions;
     config?: ConfigCliOptions;
     task?: string;
@@ -117,6 +120,7 @@ export const createParsedArgs = (
     ...(options?.scheduler ? { scheduler: options.scheduler } : {}),
     ...(options?.mcp ? { mcp: options.mcp } : {}),
     ...(options?.providerSync ? { providerSync: options.providerSync } : {}),
+    ...(options?.fleet ? { fleet: options.fleet } : {}),
     ...(options?.instructions ? { instructions: options.instructions } : {}),
     ...(options?.config ? { config: options.config } : {}),
   };

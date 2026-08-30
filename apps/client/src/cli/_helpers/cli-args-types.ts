@@ -14,6 +14,7 @@ export type CommandName =
   | "interview"
   | "ralph"
   | "scheduler"
+  | "fleet"
   | "mcp"
   | "provider-sync"
   | "set-api"
@@ -107,6 +108,21 @@ export type ProviderSyncCliAction =
   | "refresh"
   | "doctor"
   | "daemon";
+
+export type FleetCliAction =
+  | "status"
+  | "enroll"
+  | "enable"
+  | "disable"
+  | "reset"
+  | "service";
+
+export interface FleetCliOptions {
+  action: FleetCliAction;
+  managerUrl?: string;
+  enrollmentKey?: string;
+  displayName?: string;
+}
 
 export type InstructionCliGroup =
   | "profiles"
@@ -297,6 +313,7 @@ export interface ParsedCliArgs {
   scheduler?: SchedulerCliOptions;
   mcp?: McpCliOptions;
   providerSync?: ProviderSyncCliOptions;
+  fleet?: FleetCliOptions;
   instructions?: InstructionCliOptions;
   mode?: RunMode;
   provider?: UserApiProvider;

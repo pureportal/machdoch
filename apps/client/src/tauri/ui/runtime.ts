@@ -1,4 +1,12 @@
 import * as tauriCore from "@tauri-apps/api/core";
+import type {
+  FleetManagedSettingsDelivery,
+  ProductAttachment,
+  ProductCommandKind,
+  ProductMessage,
+  ProductSession,
+  ProductShell,
+} from "@machdoch/fleet-protocol";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -55,6 +63,7 @@ import {
   DEFAULT_USER_INTERNAL_TASK_MODEL_SETTINGS,
   DEFAULT_USER_REVIEW_MODEL_SETTINGS,
   DEFAULT_USER_DESKTOP_SETTINGS,
+  DEFAULT_USER_WORKSPACE_RUN_SETTINGS,
   DESKTOP_SETTING_BOUNDS,
   MODEL_PROVIDERS,
   REASONING_MODES,
@@ -63,12 +72,14 @@ import {
   USER_AUDIO_AI_PROVIDERS,
   USER_WEB_SEARCH_PROVIDERS,
   VALID_MODEL_PROVIDERS,
+  WORKSPACE_RUN_SETTING_BOUNDS,
   isContextWindow,
   isReasoningExecutionMode,
 } from "../../core/runtime-contract.generated.js";
 import { MAX_TASK_INPUT_BYTES } from "../../shared/task-input-limits.js";
 import {
   createEmptyWorkspaceRunDocument,
+  workspaceRunPrimaryConfigurationId,
   type WorkspaceRunConfigurationDocument,
   type WorkspaceRunLogBatch,
   type WorkspaceRunSnapshot,
@@ -102,6 +113,7 @@ import type {
   UserWebSearchProvider,
   UserWebSearchSettings as SharedUserWebSearchSettings,
   UserVoiceSettings as SharedUserVoiceSettings,
+  UserWorkspaceRunSettings as SharedUserWorkspaceRunSettings,
   VoiceAiProvider as SharedVoiceAiProvider,
   WebSearchProvider as SharedWebSearchProvider,
   WebSearchProviderAvailability as SharedWebSearchProviderAvailability,
@@ -256,6 +268,8 @@ export type UserReviewModelSettings = SharedUserReviewModelSettings;
 export type UserInternalTaskModelSettings = SharedUserInternalTaskModelSettings;
 
 export type UserDesktopSettings = SharedUserDesktopSettings;
+
+export type UserWorkspaceRunSettings = SharedUserWorkspaceRunSettings;
 
 export type McpConfigScope = "user" | "workspace";
 
@@ -720,41 +734,17 @@ export interface RemoteControlStatus {
   sessions: RemoteControlTaskSession[];
 }
 
-export type RemoteControlCommandKind =
-  | "cancel"
-  | "retry"
-  | "continue"
-  | "follow-up"
-  | "create-session"
-  | "activate-session"
-  | "archive-session"
-  | "pin-session"
-  | "duplicate-session"
-  | "branch-session"
-  | "delete-session"
-  | "rename-session"
-  | "tag-session"
-  | "clear-session-history"
-  | "update-draft"
-  | "set-session-model"
-  | "set-session-mode"
-  | "set-session-reasoning"
-  | "set-session-memory"
-  | "set-global-memory"
-  | "set-ui-control"
-  | "remove-attachment"
-  | "clear-attachments"
-  | "apply-context-pack"
-  | "delete-context-pack"
-  | "save-message-context-pack"
-  | "speak-message"
-  | "stop-speaking"
-  | "scheduler-trigger"
-  | "scheduler-pause"
-  | "scheduler-resume"
-  | "scheduler-delete"
-  | "scheduler-retry-run"
-  | "scheduler-cancel-run";
+export interface FleetConnectionStatus {
+  enabled: boolean;
+  phase: "disabled" | "connecting" | "connected" | "error";
+  managerUrl?: string;
+  managerId?: string;
+  instanceId?: string;
+  displayName?: string;
+  lastError?: string;
+}
+
+export type RemoteControlCommandKind = ProductCommandKind;
 
 export interface RemoteControlCommandEvent {
   commandId: string;
@@ -766,8 +756,10 @@ export interface RemoteControlCommandEvent {
   tags?: string[];
   provider?: string;
   model?: string;
+  modelId?: string;
   mode?: string;
   reasoning?: string;
+  promptEnhancementMode?: string;
   workspace?: string;
   enabled?: boolean;
   attachmentId?: string;
@@ -775,229 +767,66 @@ export interface RemoteControlCommandEvent {
   messageId?: string;
   jobId?: string;
   runId?: string;
+  target?: "image" | "svg";
+  aspectRatio?: "1:1" | "4:5" | "16:9" | "9:16";
+  outputCount?: number;
+  outputFormat?: "png" | "jpeg" | "webp" | "svg";
+  transparentBackground?: boolean;
   createdAt: number;
 }
 
-export interface RemoteShellAttachmentSnapshot {
-  id: string;
-  kind: string;
-  name: string;
-  source: "path" | "media-asset";
-  path?: string;
-  parent?: string;
-  workspaceRoot?: string;
-  assetId?: string;
-}
+export type RemoteShellAttachmentSnapshot = ProductAttachment;
 
-export interface RemoteShellSessionSnapshot {
-  id: string;
-  title: string;
-  status: string;
-  workspace?: string;
-  provider: string;
-  model: string;
-  mode?: string;
-  effectiveMode: string;
-  reasoning?: string;
-  effectiveReasoning?: string;
-  createdAt: number;
-  updatedAt: number;
-  archivedAt?: number;
-  pinnedAt?: number;
-  tags: string[];
-  messageCount: number;
-  promptHistoryCount: number;
-  attachmentCount: number;
-  runningTaskId?: string;
-  canRename: boolean;
-  canDelete: boolean;
-  canArchive: boolean;
-  canPin: boolean;
-  canDuplicate: boolean;
-  canBranch: boolean;
-  specialKind?: string;
-}
+export type RemoteShellSessionSnapshot = ProductSession;
 
-export interface RemoteShellTraceEntrySnapshot {
-  label: string;
-  detail: string;
-  tone?: string;
-  timestamp?: number;
-}
+export type RemoteShellTraceEntrySnapshot = NonNullable<
+  ProductMessage["source"]
+>["entries"][number];
 
-export interface RemoteShellMessageSourceSnapshot {
-  kind: string;
-  status?: string;
-  title?: string;
-  summary?: string;
-  mode?: string;
-  entries: RemoteShellTraceEntrySnapshot[];
-  timeline: RemoteShellTraceEntrySnapshot[];
-}
+export type RemoteShellMessageSourceSnapshot = NonNullable<
+  ProductMessage["source"]
+>;
 
-export interface RemoteShellMessageActionsSnapshot {
-  canRetry: boolean;
-  canContinue: boolean;
-  canSaveAsContextPack: boolean;
-  canSpeak: boolean;
-  isSpeaking: boolean;
-}
+export type RemoteShellMessageActionsSnapshot = ProductMessage["actions"];
 
-export interface RemoteShellMessageSnapshot {
-  id: string;
-  role: string;
-  content: string;
-  createdAt?: number;
-  taskId?: string;
-  taskAction?: {
-    kind: "retry-task" | "continue-task";
-    objective: string;
-  };
-  attachments: RemoteShellAttachmentSnapshot[];
-  source?: RemoteShellMessageSourceSnapshot;
-  actions: RemoteShellMessageActionsSnapshot;
-}
+export type RemoteShellMessageSnapshot = ProductMessage;
 
-export interface RemoteShellComposerSnapshot {
-  sessionId: string;
-  draft: string;
-  provider: string;
-  model: string;
-  mode: string;
-  defaultMode: string;
-  reasoning: string;
-  defaultReasoning: string;
-  workspace?: string;
-  workspaceLabel: string;
-  canSend: boolean;
-  sendDisabledReason?: string;
-  isExecuting: boolean;
-  sessionMemoryEnabled: boolean;
-  globalMemoryAvailable: boolean;
-  globalMemoryEnabled: boolean;
-  uiControlAvailable: boolean;
-  uiControlEnabled: boolean;
-  uiControlDescription: string;
-  attachments: RemoteShellAttachmentSnapshot[];
-  chooserProviders: string[];
-  matchedContextPackIds: string[];
-}
+export type RemoteShellComposerSnapshot = NonNullable<ProductShell["composer"]>;
 
-export interface RemoteShellProviderStatusSnapshot {
-  provider: string;
-  available: boolean;
-  reason?: string;
-}
+export type RemoteShellProviderStatusSnapshot = NonNullable<
+  ProductShell["runtime"]
+>["providerStatuses"][number];
 
-export interface RemoteShellRuntimeCapabilitySnapshot {
-  available: boolean;
-  reason?: string;
-}
+export type RemoteShellRuntimeCapabilitySnapshot = NonNullable<
+  NonNullable<ProductShell["runtime"]>["uiControl"]
+>;
 
-export interface RemoteShellRuntimeSnapshot {
-  loading: boolean;
-  error?: string;
-  hasAnyProvider: boolean;
-  providerStatuses: RemoteShellProviderStatusSnapshot[];
-  mode?: string;
-  reasoning?: string;
-  uiControl?: RemoteShellRuntimeCapabilitySnapshot;
-  webSearch?: RemoteShellRuntimeCapabilitySnapshot;
-}
+export type RemoteShellRuntimeSnapshot = NonNullable<ProductShell["runtime"]>;
 
-export interface RemoteShellSchedulerJobSnapshot {
-  id: string;
-  name: string;
-  status: string;
-  schedule: string;
-  promptPreview: string;
-  nextRunAt?: number;
-  lastStartedAt?: number;
-  lastFinishedAt?: number;
-}
+export type RemoteShellSchedulerJobSnapshot = NonNullable<
+  ProductShell["scheduler"]
+>["jobs"][number];
 
-export interface RemoteShellSchedulerRunSnapshot {
-  id: string;
-  jobId: string;
-  source: string;
-  status: string;
-  scheduledFor: number;
-  updatedAt: number;
-  attempt: number;
-  maxAttempts: number;
-  startedAt?: number;
-  finishedAt?: number;
-  nextAttemptAt?: number;
-  error?: string;
-  summary?: string;
-}
+export type RemoteShellSchedulerRunSnapshot = NonNullable<
+  ProductShell["scheduler"]
+>["runs"][number];
 
-export interface RemoteShellSchedulerSnapshot {
-  workspaceRoot?: string;
-  loading: boolean;
-  error?: string;
-  jobs: RemoteShellSchedulerJobSnapshot[];
-  runs: RemoteShellSchedulerRunSnapshot[];
-  updatedAt: number;
-}
+export type RemoteShellSchedulerSnapshot = NonNullable<
+  ProductShell["scheduler"]
+>;
 
-export interface RemoteShellContextPackSnapshot {
-  id: string;
-  name: string;
-  scope?: "workspace" | "global";
-  scopeLabel?: string;
-  workspace?: string;
-  instructionsPreview: string;
-  promptPreview: string;
-  attachmentCount: number;
-  variables: string[];
-  matched: boolean;
-  provider?: string;
-  model?: string;
-  mode?: string;
-  reasoning?: string;
-  promptEnhancementMode?: string;
-  interviewEnabled?: boolean;
-  sessionMemoryEnabled?: boolean;
-  useGlobalMemory?: boolean;
-  uiControlEnabled?: boolean;
-}
+export type RemoteShellContextPackSnapshot =
+  ProductShell["contextPacks"][number];
 
-export interface RemoteShellVoiceSnapshot {
-  supported: boolean;
-  autoSpeakResponses: boolean;
-  speakingMessageId?: string;
-  speechInputSupported: boolean;
-  speechInputEnabled: boolean;
-  speechInputStatus?: string;
-}
+export type RemoteShellVoiceSnapshot = NonNullable<ProductShell["voice"]>;
 
-export interface RemoteShellQuickTaskSnapshot {
-  status: string;
-  draft: string;
-  isExecuting: boolean;
-  provider: string;
-  model: string;
-  autopilotEnabled: boolean;
-  globalMemoryEnabled: boolean;
-  uiControlEnabled: boolean;
-  attachmentCount: number;
-}
+export type RemoteShellQuickTaskSnapshot = NonNullable<
+  ProductShell["quickTask"]
+>;
 
-export interface RemoteControlShellSnapshot {
-  version: 1;
-  capturedAt: number;
-  activeSessionId?: string;
-  sessions: RemoteShellSessionSnapshot[];
-  visibleMessages: RemoteShellMessageSnapshot[];
-  composer?: RemoteShellComposerSnapshot;
-  runtime?: RemoteShellRuntimeSnapshot;
-  scheduler?: RemoteShellSchedulerSnapshot;
-  contextPacks: RemoteShellContextPackSnapshot[];
-  promptHistory: string[];
-  voice?: RemoteShellVoiceSnapshot;
-  quickTask?: RemoteShellQuickTaskSnapshot;
-}
+export type RemoteShellMediaSnapshot = NonNullable<ProductShell["media"]>;
+
+export type RemoteControlShellSnapshot = ProductShell;
 
 export type SchedulerJobStatus = "active" | "paused" | "completed" | "deleted";
 
@@ -1592,7 +1421,7 @@ const REMOTE_CONTROL_COMMAND_KINDS = [
   "cancel",
   "retry",
   "continue",
-  "follow-up",
+  "submit-message",
   "create-session",
   "activate-session",
   "archive-session",
@@ -1603,10 +1432,17 @@ const REMOTE_CONTROL_COMMAND_KINDS = [
   "rename-session",
   "tag-session",
   "clear-session-history",
+  "clear-session-mode",
+  "clear-session-reasoning",
   "update-draft",
   "set-session-model",
   "set-session-mode",
   "set-session-reasoning",
+  "set-session-workspace",
+  "clear-session-workspace",
+  "set-prompt-enhancement-mode",
+  "set-interview",
+  "cancel-prompt-enhancement",
   "set-session-memory",
   "set-global-memory",
   "set-ui-control",
@@ -1623,6 +1459,8 @@ const REMOTE_CONTROL_COMMAND_KINDS = [
   "scheduler-delete",
   "scheduler-retry-run",
   "scheduler-cancel-run",
+  "generate-media",
+  "cancel-media-run",
 ] as const satisfies ReadonlyArray<RemoteControlCommandKind>;
 const REMOTE_CONTROL_RUN_MODES = ["ask", "machdoch"] as const;
 const SCHEDULER_JOB_STATUSES = [
@@ -2026,12 +1864,15 @@ const isRemoteControlCommandEvent = (
         value.tags.every((tag) => typeof tag === "string"))) &&
     (value.provider === undefined || typeof value.provider === "string") &&
     (value.model === undefined || typeof value.model === "string") &&
+    (value.modelId === undefined || typeof value.modelId === "string") &&
     (value.mode === undefined || typeof value.mode === "string") &&
     (value.kind !== "set-session-mode" ||
       REMOTE_CONTROL_RUN_MODES.includes(
         value.mode as (typeof REMOTE_CONTROL_RUN_MODES)[number],
       )) &&
     (value.reasoning === undefined || typeof value.reasoning === "string") &&
+    (value.promptEnhancementMode === undefined ||
+      typeof value.promptEnhancementMode === "string") &&
     (value.kind !== "set-session-reasoning" ||
       value.reasoning === undefined ||
       isRuntimeReasoningMode(value.reasoning)) &&
@@ -2044,6 +1885,22 @@ const isRemoteControlCommandEvent = (
     (value.messageId === undefined || typeof value.messageId === "string") &&
     (value.jobId === undefined || typeof value.jobId === "string") &&
     (value.runId === undefined || typeof value.runId === "string") &&
+    (value.target === undefined ||
+      value.target === "image" ||
+      value.target === "svg") &&
+    (value.aspectRatio === undefined ||
+      (typeof value.aspectRatio === "string" &&
+        ["1:1", "4:5", "16:9", "9:16"].includes(value.aspectRatio))) &&
+    (value.outputCount === undefined ||
+      (typeof value.outputCount === "number" &&
+        Number.isInteger(value.outputCount) &&
+        value.outputCount >= 1 &&
+        value.outputCount <= 8)) &&
+    (value.outputFormat === undefined ||
+      (typeof value.outputFormat === "string" &&
+        ["png", "jpeg", "webp", "svg"].includes(value.outputFormat))) &&
+    (value.transparentBackground === undefined ||
+      typeof value.transparentBackground === "boolean") &&
     typeof value.createdAt === "number" &&
     Number.isFinite(value.createdAt)
   );
@@ -3034,6 +2891,52 @@ const createDefaultUserAgentLimitsSettings = (): UserAgentLimitsSettings => {
   return { ...DEFAULT_USER_AGENT_LIMITS_SETTINGS };
 };
 
+const createDefaultUserWorkspaceRunSettings = (): UserWorkspaceRunSettings => {
+  return { ...DEFAULT_USER_WORKSPACE_RUN_SETTINGS };
+};
+
+const normalizeUserWorkspaceRunSettings = (
+  settings: UserWorkspaceRunSettings,
+): UserWorkspaceRunSettings => {
+  const healthCheckIntervalMs = clampIntegerSetting(
+    settings.healthCheckIntervalMs,
+    WORKSPACE_RUN_SETTING_BOUNDS.healthCheckIntervalMs.min,
+    WORKSPACE_RUN_SETTING_BOUNDS.healthCheckIntervalMs.max,
+    DEFAULT_USER_WORKSPACE_RUN_SETTINGS.healthCheckIntervalMs,
+  );
+
+  return {
+    startupDelayMs: clampIntegerSetting(
+      settings.startupDelayMs,
+      WORKSPACE_RUN_SETTING_BOUNDS.startupDelayMs.min,
+      WORKSPACE_RUN_SETTING_BOUNDS.startupDelayMs.max,
+      DEFAULT_USER_WORKSPACE_RUN_SETTINGS.startupDelayMs,
+    ),
+    healthCheckIntervalMs,
+    healthCheckTimeoutMs: Math.min(
+      healthCheckIntervalMs,
+      clampIntegerSetting(
+        settings.healthCheckTimeoutMs,
+        WORKSPACE_RUN_SETTING_BOUNDS.healthCheckTimeoutMs.min,
+        WORKSPACE_RUN_SETTING_BOUNDS.healthCheckTimeoutMs.max,
+        DEFAULT_USER_WORKSPACE_RUN_SETTINGS.healthCheckTimeoutMs,
+      ),
+    ),
+    healthCheckFailureThreshold: clampIntegerSetting(
+      settings.healthCheckFailureThreshold,
+      WORKSPACE_RUN_SETTING_BOUNDS.healthCheckFailureThreshold.min,
+      WORKSPACE_RUN_SETTING_BOUNDS.healthCheckFailureThreshold.max,
+      DEFAULT_USER_WORKSPACE_RUN_SETTINGS.healthCheckFailureThreshold,
+    ),
+    sequentialReadinessTimeoutMs: clampIntegerSetting(
+      settings.sequentialReadinessTimeoutMs,
+      WORKSPACE_RUN_SETTING_BOUNDS.sequentialReadinessTimeoutMs.min,
+      WORKSPACE_RUN_SETTING_BOUNDS.sequentialReadinessTimeoutMs.max,
+      DEFAULT_USER_WORKSPACE_RUN_SETTINGS.sequentialReadinessTimeoutMs,
+    ),
+  };
+};
+
 const createDefaultUserReviewModelSettings = (): UserReviewModelSettings => {
   return { ...DEFAULT_USER_REVIEW_MODEL_SETTINGS };
 };
@@ -3357,6 +3260,20 @@ export const saveUserProviderApiKey = async (
   }
 };
 
+export const deleteUserProviderApiKey = async (
+  provider: UserApiKeyProvider,
+): Promise<RuntimeProviderAvailability[]> => {
+  if (!canInvokeTauriCommands()) {
+    return createProviderAvailabilitySnapshot([]);
+  }
+  const result = await tauriCore.invoke<RuntimeProviderAvailability[]>(
+    "delete_user_provider_api_key",
+    { provider },
+  );
+  await emitUserSettingsChanged("provider-keys");
+  return result;
+};
+
 export const openUserProviderApiKeyPortal = async (
   provider: UserApiKeyProvider,
 ): Promise<void> => {
@@ -3501,6 +3418,17 @@ export const loadUserAgentLimitsSettings =
       createDefaultUserAgentLimitsSettings,
       "Failed to load user agent limit settings",
       createDefaultUserAgentLimitsSettings,
+      true,
+    );
+  };
+
+export const loadUserWorkspaceRunSettings =
+  async (): Promise<UserWorkspaceRunSettings> => {
+    return loadTauriValueOrFallback(
+      "get_user_workspace_run_settings",
+      createDefaultUserWorkspaceRunSettings,
+      "Failed to load Workspace Run settings",
+      createDefaultUserWorkspaceRunSettings,
       true,
     );
   };
@@ -3791,6 +3719,27 @@ export const saveUserAgentLimitsSettings = async (
   }
 };
 
+export const saveUserWorkspaceRunSettings = async (
+  settings: UserWorkspaceRunSettings,
+): Promise<UserWorkspaceRunSettings> => {
+  const normalizedSettings = normalizeUserWorkspaceRunSettings(settings);
+
+  if (!canInvokeTauriCommands()) {
+    return normalizedSettings;
+  }
+
+  try {
+    const result = await tauriCore.invoke<UserWorkspaceRunSettings>(
+      "save_user_workspace_run_settings",
+      { settings: normalizedSettings },
+    );
+    await emitUserSettingsChanged("workspace-run");
+    return result;
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
 export const saveUserReviewModelSettings = async (
   settings: UserReviewModelSettings,
 ): Promise<UserReviewModelSettings> => {
@@ -4039,6 +3988,20 @@ export const saveUserWebSearchApiKey = async (
   }
 };
 
+export const deleteUserWebSearchApiKey = async (
+  provider: UserWebSearchApiKeyProvider,
+): Promise<UserWebSearchSettings> => {
+  if (!canInvokeTauriCommands()) {
+    return createDefaultUserWebSearchSettings();
+  }
+  const result = await tauriCore.invoke<UserWebSearchSettings>(
+    "delete_user_web_search_api_key",
+    { provider },
+  );
+  await emitUserSettingsChanged("web-search");
+  return result;
+};
+
 export const saveUserWebSearchActiveProvider = async (
   provider: WebSearchProvider,
 ): Promise<UserWebSearchSettings> => {
@@ -4251,6 +4214,94 @@ export const getRemoteControlStatus =
       throw new Error("The Mission Control status payload was invalid.");
     }
 
+    return status;
+  };
+
+const normalizeFleetConnectionStatus = (
+  value: unknown,
+): FleetConnectionStatus | null => {
+  if (!isRecord(value) || typeof value.enabled !== "boolean") {
+    return null;
+  }
+  const phases = new Set(["disabled", "connecting", "connected", "error"]);
+  if (typeof value.phase !== "string" || !phases.has(value.phase)) {
+    return null;
+  }
+  const optionalFields = [
+    "managerUrl",
+    "managerId",
+    "instanceId",
+    "displayName",
+    "lastError",
+  ] as const;
+  if (
+    optionalFields.some(
+      (field) => value[field] !== undefined && typeof value[field] !== "string",
+    )
+  ) {
+    return null;
+  }
+  return value as unknown as FleetConnectionStatus;
+};
+
+export const getFleetConnectionStatus =
+  async (): Promise<FleetConnectionStatus> => {
+    if (!canInvokeTauriCommands()) {
+      return { enabled: false, phase: "disabled" };
+    }
+    const status = normalizeFleetConnectionStatus(
+      await tauriCore.invoke<unknown>("get_fleet_connection_status"),
+    );
+    if (!status) {
+      throw new Error("The Fleet Manager connection payload was invalid.");
+    }
+    return status;
+  };
+
+export const getFleetManagedSettings =
+  async (): Promise<FleetManagedSettingsDelivery> => {
+    if (!canInvokeTauriCommands()) {
+      return { schemaVersion: 1, assigned: false };
+    }
+    return tauriCore.invoke<FleetManagedSettingsDelivery>(
+      "get_fleet_managed_settings",
+    );
+  };
+
+export const enrollFleetManager = async (
+  managerUrl: string,
+  enrollmentKey: string,
+  displayName: string,
+): Promise<FleetConnectionStatus> => {
+  if (!canInvokeTauriCommands()) {
+    throw new Error(
+      "Fleet Manager enrollment is only available in the desktop app.",
+    );
+  }
+  const status = normalizeFleetConnectionStatus(
+    await tauriCore.invoke<unknown>("enroll_fleet_manager", {
+      managerUrl,
+      enrollmentKey,
+      displayName,
+    }),
+  );
+  if (!status) {
+    throw new Error("The Fleet Manager enrollment payload was invalid.");
+  }
+  return status;
+};
+
+export const resetFleetManagerConnection =
+  async (): Promise<FleetConnectionStatus> => {
+    if (!canInvokeTauriCommands()) {
+      return { enabled: false, phase: "disabled" };
+    }
+    const status = normalizeFleetConnectionStatus(
+      await tauriCore.invoke<unknown>("reset_fleet_manager_connection"),
+    );
+    if (!status) {
+      throw new Error("The Fleet Manager reset payload was invalid.");
+    }
     return status;
   };
 
@@ -4886,7 +4937,9 @@ export const saveWorkspaceRunConfigurationDocument = async (
   if (!canInvokeTauriCommands()) {
     return {
       ...createEmptyWorkspaceRunSnapshot(root),
-      primaryConfigurationId: document.primaryConfigurationId,
+      primaryConfigurationId: workspaceRunPrimaryConfigurationId(
+        document.configurations,
+      ),
       configurations: [],
     };
   }
@@ -6596,6 +6649,7 @@ export type UserSettingsChangeKind =
   | "speech-to-text"
   | "memory"
   | "agent-limits"
+  | "workspace-run"
   | "review-model"
   | "internal-task-model"
   | "provider-enrollment"

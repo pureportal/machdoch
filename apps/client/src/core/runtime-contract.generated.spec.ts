@@ -7,6 +7,7 @@ import {
   DEFAULT_USER_DESKTOP_SETTINGS,
   DEFAULT_USER_INTERNAL_TASK_MODEL_SETTINGS,
   DEFAULT_USER_REVIEW_MODEL_SETTINGS,
+  DEFAULT_USER_WORKSPACE_RUN_SETTINGS,
   RUN_MODES,
   RUNTIME_ENV_KEYS,
   USER_REVIEW_MODEL_MODES,
@@ -79,6 +80,9 @@ describe("generated runtime contract", () => {
     );
     expect(DEFAULT_USER_INTERNAL_TASK_MODEL_SETTINGS).toEqual(
       readDefaults(contract.$defs.UserInternalTaskModelSettings?.properties),
+    );
+    expect(DEFAULT_USER_WORKSPACE_RUN_SETTINGS).toEqual(
+      readDefaults(contract.$defs.UserWorkspaceRunSettings?.properties),
     );
     expect(DEFAULT_USER_DESKTOP_SETTINGS).toEqual(
       readDefaults(contract.$defs.UserDesktopSettings?.properties),

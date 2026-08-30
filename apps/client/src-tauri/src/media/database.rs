@@ -169,11 +169,22 @@ fn recover_interrupted_runs(connection: &mut Connection) -> MediaResult<Recovery
         .map_err(|error| format!("failed to start Media Studio recovery: {error}"))?;
     let interrupted_runs = {
         let mut statement = transaction
-            .prepare("SELECT id, executor FROM runs WHERE status IN ('running', 'canceling') AND executor != 'mock-remote-provider'")
+            .prepare(
+                "SELECT id, status, executor FROM runs
+                 WHERE executor != 'mock-remote-provider'
+                   AND (
+                     status IN ('running', 'canceling')
+                     OR (status = 'queued' AND executor != 'deterministic-fixture')
+                   )",
+            )
             .map_err(|error| format!("failed to inspect interrupted media runs: {error}"))?;
         let interrupted_runs = statement
             .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
             })
             .map_err(|error| format!("failed to read interrupted media runs: {error}"))?
             .collect::<Result<Vec<_>, _>>()
@@ -181,7 +192,7 @@ fn recover_interrupted_runs(connection: &mut Connection) -> MediaResult<Recovery
         interrupted_runs
     };
 
-    for (run_id, executor) in &interrupted_runs {
+    for (run_id, previous_status, executor) in &interrupted_runs {
         let cancel_requested = transaction
             .query_row(
                 "SELECT cancel_requested FROM runs WHERE id = ?1",
@@ -196,6 +207,14 @@ fn recover_interrupted_runs(connection: &mut Connection) -> MediaResult<Recovery
                 "run_canceled",
                 "Cancellation was completed during startup recovery.",
                 None,
+            )
+        } else if previous_status == "queued" {
+            (
+                "failed",
+                "Interrupted; run again",
+                "run_interrupted",
+                "Generation was interrupted before it started. Run it again.",
+                Some("Generation was interrupted before it started."),
             )
         } else if executor == "openai-image-api" {
             (
@@ -253,7 +272,7 @@ fn recover_interrupted_runs(connection: &mut Connection) -> MediaResult<Recovery
                 params![run_id, status, message, now()],
             )
             .map_err(|error| format!("failed to recover media node executions: {error}"))?;
-        if executor == "openai-image-api" && !cancel_requested {
+        if executor == "openai-image-api" && previous_status != "queued" && !cancel_requested {
             transaction
                 .execute(
                     "UPDATE provider_jobs SET status = 'acceptance-unknown', raw_state = 'desktop-interrupted',
@@ -7725,6 +7744,42 @@ mod tests {
         assert_eq!(
             detail.run.error.as_deref(),
             Some("Local generation was interrupted before its outputs were published.")
+        );
+        assert!(detail
+            .events
+            .iter()
+            .any(|event| event.kind == "run_interrupted"));
+        cleanup(&paths);
+    }
+
+    #[test]
+    fn startup_fails_orphaned_queued_local_generation() {
+        let paths = test_paths("queued-local-recovery");
+        prepare_wan_publication(&paths, "run:orphaned-local-video", None);
+        let connection = open(&paths).unwrap();
+        connection
+            .execute(
+                "UPDATE runs SET status = 'queued', current_step = 'Recovered after interruption'
+                 WHERE id = 'run:orphaned-local-video'",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "UPDATE jobs SET status = 'queued' WHERE run_id = 'run:orphaned-local-video'",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+
+        let recovery = initialize(&paths).unwrap();
+        let detail = get_run_detail(&paths, "run:orphaned-local-video").unwrap();
+        assert_eq!(recovery.recovered_runs, 1);
+        assert_eq!(detail.run.status, "failed");
+        assert_eq!(detail.run.current_step, "Interrupted; run again");
+        assert_eq!(
+            detail.run.error.as_deref(),
+            Some("Generation was interrupted before it started.")
         );
         assert!(detail
             .events

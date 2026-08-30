@@ -53,6 +53,21 @@ const targetFiles = [
     },
   },
   {
+    path: "apps/fleet-manager/package.json",
+    update: (content, currentVersion, nextVersion) => {
+      const packageJson = JSON.parse(content);
+
+      assertVersion(
+        packageJson.version,
+        currentVersion,
+        "apps/fleet-manager/package.json",
+      );
+      packageJson.version = nextVersion;
+
+      return `${JSON.stringify(packageJson, null, 2)}\n`;
+    },
+  },
+  {
     path: "apps/client/src-tauri/Cargo.toml",
     update: (content, currentVersion, nextVersion) =>
       replaceSingleVersion(

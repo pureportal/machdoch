@@ -6,6 +6,7 @@ mod desktop_task;
 #[cfg(test)]
 #[path = "../embedded_runtime_inputs.rs"]
 mod embedded_runtime_inputs;
+mod fleet;
 mod launcher;
 mod media;
 mod remote_control;
@@ -153,6 +154,7 @@ pub fn run() {
             desktop_shell::create_desktop_launch_id(),
         ))
         .manage(desktop_shell::QuickVoiceShortcutState::default())
+        .manage(fleet::FleetConnectionState::default())
         .manage(media::MediaRuntimeState::default())
         .manage(remote_control::RemoteControlState::default())
         .manage(shell_state::ShellStateStoreLock::default())
@@ -180,6 +182,10 @@ pub fn run() {
 
             if let Err(error) = remote_control::sync_remote_control_startup(app.handle()) {
                 eprintln!("Failed to initialize Mission Control: {error}");
+            }
+
+            if let Err(error) = fleet::initialize(app.handle()) {
+                eprintln!("Failed to initialize Fleet Manager connection: {error}");
             }
 
             if let Err(error) = media::initialize_runtime(app.handle()) {
@@ -326,6 +332,10 @@ pub fn run() {
             media::media_resolve_provider_review,
             media::media_wake_provider_reconciliation,
             media::media_transform_image,
+            fleet::enroll_fleet_manager,
+            fleet::get_fleet_connection_status,
+            fleet::get_fleet_managed_settings,
+            fleet::reset_fleet_manager_connection,
             remote_control::disable_remote_control_server,
             remote_control::enable_remote_control_server,
             remote_control::forget_remote_control_pairings,
@@ -356,12 +366,14 @@ pub fn run() {
             ui_operation::release_cross_window_operation,
             runtime_snapshot::get_user_desktop_settings,
             runtime_snapshot::get_user_agent_limits_settings,
+            runtime_snapshot::get_user_workspace_run_settings,
             runtime_snapshot::get_global_provider_availability,
             runtime_snapshot::get_provider_model_catalog,
             runtime_snapshot::get_user_memory_settings,
             runtime_snapshot::get_workspace_memory_entries,
             runtime_snapshot::get_user_mcp_config_document,
             runtime_snapshot::get_user_provider_api_keys,
+            runtime_snapshot::delete_user_provider_api_key,
             runtime_snapshot::get_user_internal_task_model_settings,
             runtime_snapshot::get_user_review_model_settings,
             runtime_snapshot::get_user_speech_to_text_settings,
@@ -371,6 +383,7 @@ pub fn run() {
             runtime_snapshot::get_runtime_snapshot,
             runtime_snapshot::save_user_desktop_settings,
             runtime_snapshot::save_user_agent_limits_settings,
+            runtime_snapshot::save_user_workspace_run_settings,
             runtime_snapshot::save_user_global_memory_enabled,
             runtime_snapshot::forget_user_global_memory_entry,
             runtime_snapshot::forget_workspace_memory,
@@ -383,6 +396,7 @@ pub fn run() {
             runtime_snapshot::save_user_voice_active_provider,
             runtime_snapshot::save_user_web_search_active_provider,
             runtime_snapshot::save_user_web_search_api_key,
+            runtime_snapshot::delete_user_web_search_api_key,
             runtime_snapshot::save_workspace_default_mode,
             runtime_snapshot::save_workspace_reasoning_mode,
             runtime_snapshot::save_workspace_context_window,

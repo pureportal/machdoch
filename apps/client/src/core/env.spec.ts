@@ -13,6 +13,7 @@ import {
   loadUserInternalTaskModelSettings,
   loadUserMemorySettings,
   loadUserReviewModelSettings,
+  loadUserWorkspaceRunSettings,
   loadUserWebSearchApiKeys,
   loadUserWebSearchSettings,
   loadRuntimeEnvironment,
@@ -23,6 +24,7 @@ import {
   saveUserGlobalMemoryEnabled,
   saveUserInternalTaskModelSettings,
   saveUserReviewModelSettings,
+  saveUserWorkspaceRunSettings,
   saveUserSpeechToTextActiveProvider,
   saveUserSpeechToTextInputDevice,
   saveUserVoiceActiveProvider,
@@ -317,6 +319,39 @@ describe("user config API key helpers", () => {
 
     const updatedConfig = JSON.parse(await readFile(savedConfigPath, "utf8"));
     expect(updatedConfig.speechToText).not.toHaveProperty("inputDeviceId");
+  });
+
+  it("persists global Workspace Run timing settings", async () => {
+    isolateEnvironment();
+    const configDirectory = await createWorkspace();
+    process.env.MACHDOCH_USER_CONFIG_DIR = configDirectory;
+
+    await saveUserWorkspaceRunSettings({
+      startupDelayMs: 5_000,
+      healthCheckIntervalMs: 8_000,
+      healthCheckTimeoutMs: 3_000,
+      healthCheckFailureThreshold: 4,
+      sequentialReadinessTimeoutMs: 180_000,
+    });
+
+    expect(await loadUserWorkspaceRunSettings()).toEqual({
+      startupDelayMs: 5_000,
+      healthCheckIntervalMs: 8_000,
+      healthCheckTimeoutMs: 3_000,
+      healthCheckFailureThreshold: 4,
+      sequentialReadinessTimeoutMs: 180_000,
+    });
+    expect(
+      JSON.parse(await readFile(getUserConfigPath(), "utf8")),
+    ).toMatchObject({
+      workspaceRun: {
+        startupDelayMs: 5_000,
+        healthCheckIntervalMs: 8_000,
+        healthCheckTimeoutMs: 3_000,
+        healthCheckFailureThreshold: 4,
+        sequentialReadinessTimeoutMs: 180_000,
+      },
+    });
   });
 
   it("persists cross-session global memory settings and deduplicates entries", async () => {

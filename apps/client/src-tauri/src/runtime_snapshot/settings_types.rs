@@ -69,6 +69,16 @@ pub struct UserAgentLimitsSettings {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct UserWorkspaceRunSettings {
+    pub(crate) startup_delay_ms: u64,
+    pub(crate) health_check_interval_ms: u64,
+    pub(crate) health_check_timeout_ms: u64,
+    pub(crate) health_check_failure_threshold: u32,
+    pub(crate) sequential_readiness_timeout_ms: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserDesktopSettings {
     pub(crate) autostart_enabled: bool,
     pub(crate) autostart_minimized: bool,
@@ -143,6 +153,8 @@ pub(super) struct UserConfigFile {
     pub(super) desktop: UserDesktopConfigFile,
     #[serde(default)]
     pub(super) agent_limits: UserAgentLimitsConfigFile,
+    #[serde(default)]
+    pub(super) workspace_run: UserWorkspaceRunConfigFile,
     #[serde(default)]
     pub(super) memory: UserMemoryConfigFile,
     #[serde(default)]
@@ -220,6 +232,21 @@ pub(super) struct UserInternalTaskModelConfigFile {
     pub(super) provider: Option<String>,
     pub(super) model: Option<String>,
     pub(super) reasoning: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct UserWorkspaceRunConfigFile {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) startup_delay_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) health_check_interval_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) health_check_timeout_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) health_check_failure_threshold: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) sequential_readiness_timeout_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

@@ -23,7 +23,6 @@ import { workspaceRunIsActive } from "../../workspace-management/workspace-run-m
 import { createWorkspaceRootKey } from "../../workspace-management/workspace-management-model";
 
 const RUN_RECONCILIATION_INTERVAL_MS = 5_000;
-const MAIN_FULLSTACK_SCRIPT_NAME = "Main Fullstack Script";
 
 const collectWorkspaceRunStatuses = (
   statuses: readonly WorkspaceRunConfigurationStatus[],
@@ -105,19 +104,12 @@ export const WorkspaceRunDialogControl = ({
       )
     : [];
   const scriptRunning = activeRunStatuses.length > 0;
-  const mainFullstackScriptRunning = activeRunStatuses.some(
-    (status) => status.configuration.name === MAIN_FULLSTACK_SCRIPT_NAME,
-  );
   const healthCheckFailed = activeRunStatuses.some(
     (status) => status.health?.state === "failed",
   );
   const runAriaLabel = [
     "Run workspace",
-    mainFullstackScriptRunning
-      ? `${MAIN_FULLSTACK_SCRIPT_NAME} running`
-      : scriptRunning
-        ? "process running"
-        : null,
+    scriptRunning ? "process running" : null,
     healthCheckFailed ? "health check failed" : null,
   ]
     .filter(Boolean)
@@ -145,18 +137,12 @@ export const WorkspaceRunDialogControl = ({
           aria-label={runAriaLabel}
           data-detecting={detecting ? "true" : "false"}
           data-script-running={scriptRunning ? "true" : "false"}
-          data-main-fullstack-script-running={
-            mainFullstackScriptRunning ? "true" : "false"
-          }
           data-health-check-failed={healthCheckFailed ? "true" : "false"}
           data-primary-task-running={primaryTaskRunning ? "true" : "false"}
           className={cn(
             "relative isolate h-9 overflow-hidden rounded-2xl border border-transparent px-3 text-slate-300 hover:bg-slate-900 hover:text-white",
             scriptRunning &&
-              !mainFullstackScriptRunning &&
               "border-emerald-400/25 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/15 hover:text-emerald-50",
-            mainFullstackScriptRunning &&
-              "border-fuchsia-400/30 bg-fuchsia-500/10 text-fuchsia-100 hover:bg-fuchsia-500/15 hover:text-fuchsia-50",
             !scriptRunning &&
               primaryTaskRunning &&
               "border-sky-400/25 bg-sky-500/10 text-sky-100",
@@ -180,9 +166,7 @@ export const WorkspaceRunDialogControl = ({
                 data-run-activity="script"
                 className={cn(
                   "absolute inset-0 animate-ping rounded-full motion-reduce:animate-none",
-                  mainFullstackScriptRunning
-                    ? "bg-fuchsia-400/30"
-                    : "bg-emerald-400/30",
+                  "bg-emerald-400/30",
                 )}
               />
             ) : null}
@@ -197,11 +181,7 @@ export const WorkspaceRunDialogControl = ({
               aria-hidden="true"
               className={cn(
                 "relative size-4",
-                scriptRunning &&
-                  !mainFullstackScriptRunning &&
-                  "fill-emerald-300 text-emerald-300",
-                mainFullstackScriptRunning &&
-                  "fill-fuchsia-300 text-fuchsia-300",
+                scriptRunning && "fill-emerald-300 text-emerald-300",
                 !scriptRunning && primaryTaskRunning && "text-sky-300",
                 !scriptRunning &&
                   !primaryTaskRunning &&
@@ -228,11 +208,13 @@ export const WorkspaceRunDialogControl = ({
           <DialogTitle>Run</DialogTitle>
         </DialogHeader>
         <div className="min-h-0 overflow-y-auto p-5">
-          <WorkspaceRunPanel
-            workspaceRoot={normalizedRoot}
-            view="all"
-            onDocumentDirtyChange={setDocumentDirty}
-          />
+          {open ? (
+            <WorkspaceRunPanel
+              workspaceRoot={normalizedRoot}
+              view="all"
+              onDocumentDirtyChange={setDocumentDirty}
+            />
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>

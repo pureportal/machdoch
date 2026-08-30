@@ -48,6 +48,7 @@ export type SettingsSection =
   | "voice"
   | "memory"
   | "desktop"
+  | "workspace-run"
   | "transfer";
 export type SettingsSectionGroup =
   | "Setup"
@@ -162,6 +163,13 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
       "archive",
       "quick chat",
     ],
+  },
+  {
+    id: "workspace-run",
+    label: "Run timeouts",
+    group: "App",
+    description: "Workspace process timing.",
+    keywords: ["health", "startup", "readiness", "interval", "timeout"],
   },
   {
     id: "transfer",

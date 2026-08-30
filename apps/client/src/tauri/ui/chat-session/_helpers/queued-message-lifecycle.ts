@@ -1,11 +1,16 @@
-import type {
-  ChatSessionContextAttachment,
-  ChatSessionQueuedMessage,
+import {
+  getActiveChatOperationIds,
+  getSessionOverviewStatus,
+  getSessionTaskOutcome,
+  type ChatSessionContextAttachment,
+  type ChatSessionQueuedMessage,
+  type ChatSessionRecord,
 } from "../../chat-session.model";
 import {
   createQueuedMessageDispatchPrompt,
   type QueuedMessageDispatchPrompt,
 } from "./prompt-enhancement";
+import { shouldDispatchQueuedFollowUp } from "./queued-follow-up-policy";
 import { areContextAttachmentRecordsEqual } from "./session-context-attachments";
 
 const areQueuedMessageAttachmentsEqual = (
@@ -21,6 +26,39 @@ const areQueuedMessageAttachmentsEqual = (
         areContextAttachmentRecordsEqual(attachment, candidate)
       );
     })
+  );
+};
+
+export const canDispatchQueuedMessage = (
+  message: ChatSessionQueuedMessage,
+  session: ChatSessionRecord,
+  unsettledDesktopTaskId: string | null,
+): boolean => {
+  if (unsettledDesktopTaskId) {
+    return false;
+  }
+
+  if (!message.blockedByTaskId) {
+    return true;
+  }
+
+  return shouldDispatchQueuedFollowUp(
+    message.dispatchPolicy,
+    getSessionTaskOutcome(session, message.blockedByTaskId),
+    getActiveChatOperationIds(session).includes(message.blockedByTaskId),
+  );
+};
+
+export const canStartQueuedMessageDispatch = (
+  message: ChatSessionQueuedMessage,
+  queuedHeadId: string | undefined,
+  session: ChatSessionRecord,
+  unsettledDesktopTaskId: string | null,
+): boolean => {
+  return (
+    queuedHeadId === message.id &&
+    canDispatchQueuedMessage(message, session, unsettledDesktopTaskId) &&
+    getSessionOverviewStatus(session) !== "running"
   );
 };
 

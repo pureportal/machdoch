@@ -25,7 +25,7 @@ use super::{
         create_desktop_task_activity, desktop_task_activity_elapsed, join_cli_output_and_cleanup,
         read_stderr, read_stdout,
     },
-    progress::{create_bridge_progress, emit_progress_event},
+    progress::{create_bridge_progress, create_bridge_warning_progress, emit_progress_event},
     DesktopMediaAssetReference, DesktopTaskRunRequest, DesktopTaskRunResponse,
     DESKTOP_TASK_IDLE_TIMEOUT_MS, DESKTOP_TASK_TERMINATION_CANCELLED,
     DESKTOP_TASK_TERMINATION_IDLE_TIMEOUT, DESKTOP_TASK_WAIT_POLL_MS,
@@ -224,11 +224,20 @@ pub(super) fn execute_desktop_task(
     let normalized_model = normalize_optional_string(model.as_deref());
     let normalized_reasoning = normalize_optional_string(reasoning.as_deref());
     let conversation_context = enrich_ui_control_conversation_context(conversation_context)?;
-    let conversation_context = crate::workspace_run::enrich_conversation_context(
+    let conversation_context_handoff = crate::workspace_run::enrich_conversation_context(
         &app_handle,
         &normalized_workspace_root,
         conversation_context,
     )?;
+    if let Some(warning) = conversation_context_handoff.warning.as_deref() {
+        emit_progress_event(
+            &app_handle,
+            &window_label,
+            task_id.as_deref(),
+            create_bridge_warning_progress(normalized_task, normalized_mode.as_deref(), warning),
+        );
+    }
+    let conversation_context = conversation_context_handoff.context;
     let conversation_context_path = conversation_context
         .as_ref()
         .map(write_conversation_context_file)

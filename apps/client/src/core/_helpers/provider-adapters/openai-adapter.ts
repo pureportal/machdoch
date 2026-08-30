@@ -50,10 +50,18 @@ export const createOpenAITools = (tools: AgentModelToolSpec[]) => {
   }));
 };
 
-export const createOpenAIResponseToolSelection = () => ({
-  parallel_tool_calls: false,
-  tool_choice: "required" as const,
-});
+export const createOpenAIResponseToolSelection = (
+  tools: AgentModelToolSpec[],
+) => {
+  if (tools.length === 0) {
+    return {};
+  }
+
+  return {
+    parallel_tool_calls: false,
+    tool_choice: "required" as const,
+  };
+};
 
 type OpenAIReasoningEffort =
   | "none"
@@ -333,7 +341,7 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
           ),
           ...createOpenAIMultiAgentConfig(params.model, params.reasoning),
           ...createOpenAIStructuredOutputTextConfig(params.structuredOutput),
-          ...createOpenAIResponseToolSelection(),
+          ...createOpenAIResponseToolSelection(params.tools),
         };
 
         if (params.onStreamEvent) {
@@ -415,7 +423,7 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
           ...createOpenAIStructuredOutputTextConfig(
             startParams.structuredOutput,
           ),
-          ...createOpenAIResponseToolSelection(),
+          ...createOpenAIResponseToolSelection(this.tools),
         };
 
         if (params.onStreamEvent) {

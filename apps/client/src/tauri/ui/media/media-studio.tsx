@@ -1,4 +1,4 @@
-import { Boxes, FileClock, FolderGit2, ImagePlus } from "lucide-react";
+import { MediaStudioNavigation } from "@machdoch/product-ui";
 import {
   open as openDialog,
   save as saveDialog,
@@ -105,11 +105,6 @@ import type {
   MediaVideoRecipeSettings,
   MediaWorkspaceModelDiscovery,
 } from "../../../core/media/contracts.js";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "../components/ui/tooltip";
 import { getDefaultCommandShortcut } from "../commands/command-defaults";
 import { useOptionalRegisterCommands } from "../commands/command-context";
 import type { CommandDefinition } from "../commands/command-types";
@@ -117,7 +112,6 @@ import {
   subscribeToUserSettingsChanged,
   type RuntimeProviderAvailability,
 } from "../runtime";
-import { cn } from "../lib/utils";
 import { MediaFlowView } from "./components/media-flow-view";
 import { MediaErrorNotice } from "./components/media-error-notice";
 import { MediaGenerateView } from "./components/media-generate-view";
@@ -235,18 +229,14 @@ interface MediaStudioProps {
   onDraftPromptHandled?: () => void;
 }
 
-interface NavigationItem {
+const NAVIGATION_ITEMS: readonly {
   id: MediaStudioSection;
   label: string;
-  icon: typeof ImagePlus;
-  separated?: boolean;
-}
-
-const NAVIGATION_ITEMS: readonly NavigationItem[] = [
-  { id: "generate", label: "Basic", icon: ImagePlus },
-  { id: "flow", label: "Advanced", icon: FolderGit2 },
-  { id: "library", label: "Assets", icon: Boxes, separated: true },
-  { id: "runs", label: "Activity", icon: FileClock },
+}[] = [
+  { id: "generate", label: "Basic" },
+  { id: "flow", label: "Advanced" },
+  { id: "library", label: "Assets" },
+  { id: "runs", label: "Activity" },
 ] as const;
 
 const readImportError = (error: unknown, fallback: string): string => {
@@ -4454,55 +4444,11 @@ export const MediaStudio = ({
   const persistenceError = saveError ?? loadError;
 
   return (
-    <main className="flex h-full min-h-0 min-w-0 flex-1 bg-slate-950 text-slate-100">
-      <aside className="flex w-20 shrink-0 flex-col border-r border-slate-800/80 bg-slate-950 sm:w-24 lg:w-28">
-        <nav
-          aria-label="Media Studio"
-          className="flex flex-col items-stretch gap-1.5 p-2.5"
-        >
-          {NAVIGATION_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const active = state.activeSection === item.id;
-            return (
-              <div
-                key={item.id}
-                className={
-                  item.separated
-                    ? "mt-2 border-t border-slate-800 pt-3"
-                    : undefined
-                }
-              >
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      aria-label={item.label}
-                      aria-current={active ? "page" : undefined}
-                      onClick={() => selectSection(item.id)}
-                      className={cn(
-                        "flex h-14 w-full flex-col items-center justify-center gap-1 rounded-xl border border-transparent px-1 text-slate-400 outline-none transition-colors hover:bg-slate-900 hover:text-slate-100 focus-visible:ring-2 focus-visible:ring-sky-400/60",
-                        active &&
-                          "border-sky-500/20 bg-slate-900 text-slate-100 shadow-[0_0_18px_rgba(14,165,233,0.08)]",
-                      )}
-                    >
-                      <Icon
-                        className={cn(
-                          "h-5 w-5",
-                          active ? "text-sky-300" : "text-slate-400",
-                        )}
-                      />
-                      <span className="max-w-full truncate text-[9px] font-medium">
-                        {item.label}
-                      </span>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">{item.label}</TooltipContent>
-                </Tooltip>
-              </div>
-            );
-          })}
-        </nav>
-      </aside>
+    <main className="m-media-studio-layout">
+      <MediaStudioNavigation
+        activeSection={state.activeSection}
+        onSelect={selectSection}
+      />
 
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
         {runtimeError ? (

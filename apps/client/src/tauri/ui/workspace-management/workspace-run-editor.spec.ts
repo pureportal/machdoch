@@ -29,8 +29,7 @@ vi.mock("../runtime", () => runtime);
 vi.mock("./workspace-run-ai", () => ai);
 
 const document: WorkspaceRunConfigurationDocument = {
-  schemaVersion: 1,
-  primaryConfigurationId: null,
+  schemaVersion: 2,
   configurations: [],
 };
 const snapshot: WorkspaceRunSnapshot = {
@@ -132,5 +131,78 @@ describe("WorkspaceRunEditor", () => {
       "C:/workspace",
       document,
     );
+  });
+
+  it("presents detected configurations and identifies the default", async () => {
+    const detectedDocument: WorkspaceRunConfigurationDocument = {
+      schemaVersion: 2,
+      configurations: [
+        {
+          id: "web",
+          name: "Web",
+          kind: "task",
+          primary: false,
+          command: "pnpm dev:web",
+          workingDirectory: ".",
+          environment: {},
+          hotReload: true,
+          ports: [],
+          urls: [],
+          restartPolicy: {
+            onCrash: false,
+            maxRestarts: 5,
+            windowMs: 60_000,
+            backoffMs: 1_000,
+            maxBackoffMs: 30_000,
+          },
+        },
+        {
+          id: "complete-stack",
+          name: "Complete Stack",
+          kind: "composite",
+          primary: true,
+          children: ["web"],
+          startOrder: "parallel",
+        },
+      ],
+    };
+    ai.generateWorkspaceRunDetection.mockResolvedValue({
+      documentJson: JSON.stringify(detectedDocument),
+      detections: [
+        {
+          configurationId: "web",
+          confidence: "medium",
+          evidence: ["package.json defines dev:web"],
+          uncertainFields: ["ports"],
+        },
+        {
+          configurationId: "complete-stack",
+          confidence: "high",
+          evidence: ["The workspace starts its services together."],
+          uncertainFields: [],
+        },
+      ],
+    });
+    runtime.precheckWorkspaceRunConfigurationJson.mockResolvedValue(
+      detectedDocument,
+    );
+
+    render(
+      createElement(WorkspaceRunEditor, {
+        workspaceRoot: "C:/workspace",
+        document,
+        onSaved: vi.fn(),
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Detect" }));
+
+    const detected = await screen.findByRole("region", {
+      name: "Detected run configurations",
+    });
+    expect(detected.textContent).toContain("Web");
+    expect(detected.textContent).toContain("Complete Stack");
+    expect(detected.textContent).toContain("Default");
+    expect(detected.textContent).toContain("Review Ports");
+    expect(detected.textContent).toContain("pnpm dev:web");
   });
 });

@@ -7,6 +7,7 @@ import {
   loadCliConfigEntries,
   saveConfigSetting,
 } from "./cli-config-commands.ts";
+import { writeFleetConnectionConfig } from "../../core/fleet-connection.ts";
 
 const rootsToClean: string[] = [];
 const originalEnvironment = new Map<string, string | undefined>();
@@ -73,7 +74,129 @@ describe("CLI configuration catalog", () => {
     expect(names).toContain("workspace.reasoning-mode");
     expect(names).toContain("workspace.github-customizations");
     expect(names).toContain("desktop.quick-voice-shortcut");
+    expect(names).toContain("fleet.enabled");
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "workspace-run.startup-delay-ms",
+        "workspace-run.health-check-interval-ms",
+        "workspace-run.health-check-timeout-ms",
+        "workspace-run.health-check-failure-threshold",
+        "workspace-run.sequential-readiness-timeout-ms",
+      ]),
+    );
     expect(names).not.toContain("desktop.autostart-enabled");
+  });
+
+  it("uses the canonical Fleet connection document for fleet.enabled", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    await expect(
+      saveConfigSetting(workspaceRoot, "fleet.enabled", "off"),
+    ).resolves.toMatchObject({ value: false });
+    await expect(
+      saveConfigSetting(workspaceRoot, "fleet.enabled", "on"),
+    ).rejects.toThrow("Enroll this CLI");
+
+    await writeFleetConnectionConfig({
+      schemaVersion: 1,
+      enabled: true,
+      managerUrl: "https://fleet.example.test",
+      managerId: `manager_${Buffer.alloc(18, 1).toString("base64url")}`,
+      instanceId: `instance_${Buffer.alloc(18, 2).toString("base64url")}`,
+      displayName: "Build host",
+      instanceSecret: `mch_instance_${Buffer.alloc(32, 3).toString("base64url")}`,
+    });
+
+    await saveConfigSetting(workspaceRoot, "fleet.enabled", "off");
+    expect(
+      (await loadCliConfigEntries(workspaceRoot)).find(
+        (entry) => entry.setting === "fleet.enabled",
+      ),
+    ).toMatchObject({ value: false, source: "saved" });
+    await saveConfigSetting(workspaceRoot, "fleet.enabled", "on");
+    await clearConfigSetting(workspaceRoot, "fleet.enabled");
+
+    const stored = JSON.parse(
+      await readFile(
+        join(workspaceRoot, ".user-config", "fleet-connection.json"),
+        "utf8",
+      ),
+    ) as { enabled?: boolean };
+    expect(stored.enabled).toBe(false);
+  });
+
+  it("persists, reports, validates, and resets Workspace Run timeouts", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    await saveConfigSetting(
+      workspaceRoot,
+      "workspace-run.startup-delay-ms",
+      "5000",
+    );
+    await saveConfigSetting(
+      workspaceRoot,
+      "workspace-run.health-check-interval-ms",
+      "7000",
+    );
+    await saveConfigSetting(
+      workspaceRoot,
+      "workspace-run.health-check-timeout-ms",
+      "6500",
+    );
+    await saveConfigSetting(
+      workspaceRoot,
+      "workspace-run.health-check-failure-threshold",
+      "4",
+    );
+    await saveConfigSetting(
+      workspaceRoot,
+      "workspace-run.sequential-readiness-timeout-ms",
+      "160000",
+    );
+
+    await expect(
+      saveConfigSetting(
+        workspaceRoot,
+        "workspace-run.health-check-timeout-ms",
+        "7001",
+      ),
+    ).rejects.toThrow("at most 7000");
+
+    const entries = await loadCliConfigEntries(workspaceRoot);
+    expect(
+      entries.find(
+        (entry) => entry.setting === "workspace-run.health-check-timeout-ms",
+      ),
+    ).toMatchObject({ value: 6500, source: "saved" });
+    expect(
+      entries.find(
+        (entry) =>
+          entry.setting === "workspace-run.sequential-readiness-timeout-ms",
+      ),
+    ).toMatchObject({ value: 160_000, source: "saved" });
+
+    const configPath = join(workspaceRoot, ".user-config", "user-config.json");
+    const stored = JSON.parse(await readFile(configPath, "utf8")) as {
+      workspaceRun?: Record<string, unknown>;
+    };
+    expect(stored.workspaceRun).toMatchObject({
+      startupDelayMs: 5000,
+      healthCheckIntervalMs: 7000,
+      healthCheckTimeoutMs: 6500,
+      healthCheckFailureThreshold: 4,
+      sequentialReadinessTimeoutMs: 160_000,
+    });
+
+    await clearConfigSetting(
+      workspaceRoot,
+      "workspace-run.health-check-timeout-ms",
+    );
+    const reset = JSON.parse(await readFile(configPath, "utf8")) as {
+      workspaceRun?: Record<string, unknown>;
+    };
+    expect(reset.workspaceRun).not.toHaveProperty("healthCheckTimeoutMs");
   });
 
   it("persists review-model and workspace compatibility settings and redacts keys", async () => {

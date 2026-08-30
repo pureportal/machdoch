@@ -1,0 +1,47 @@
+{
+  "name": "@machdoch/fleet-manager",
+  "version": "6.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "next build",
+    "check": "pnpm run lint && pnpm run typecheck && pnpm run test",
+    "dev": "node --watch-path=src/server.ts --watch-path=src/server --watch-path=next.config.ts --enable-source-maps --import @oxc-node/core/register src/server.ts dev",
+    "format": "oxfmt src next.config.ts postcss.config.mjs package.json tsconfig.json components.json",
+    "lint": "oxlint src next.config.ts",
+    "lint:fix": "oxlint --fix src next.config.ts",
+    "password": "oxnode src/server.ts password",
+    "seed": "oxnode src/server.ts seed",
+    "settings-key": "oxnode src/server.ts settings-key",
+    "start": "oxnode src/server.ts serve",
+    "test": "vitest run",
+    "typecheck": "next typegen && tsc --noEmit --pretty false"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "@machdoch/fleet-protocol": "workspace:*",
+    "@machdoch/product-ui": "workspace:*",
+    "@oxc-node/cli": "^0.1.0",
+    "@oxc-node/core": "^0.1.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.18.0",
+    "next": "^16.3.3",
+    "radix-ui": "^1.6.7",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwind-merge": "^3.6.0",
+    "ws": "^8.21.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@types/ws": "^8.18.1",
+    "tailwindcss": "^4.3.3",
+    "vitest": "^4.1.10"
+  }
+}

@@ -10,6 +10,7 @@ import type {
   UserDesktopSettings,
   UserMemorySettings,
   UserReviewModelSettings,
+  UserWorkspaceRunSettings,
   ReasoningMode,
   ReasoningExecutionMode,
   ContextWindow,
@@ -129,6 +130,15 @@ export interface DesktopSettingsControls {
   saving: boolean;
   message: SettingsStatusMessage | null;
   onSave: (settings: UserDesktopSettings) => Promise<void> | void;
+}
+
+export interface WorkspaceRunSettingsControls {
+  settings: UserWorkspaceRunSettings;
+  saving: boolean;
+  message: SettingsStatusMessage | null;
+  onSave: (
+    settings: UserWorkspaceRunSettings,
+  ) => Promise<boolean | void> | boolean | void;
 }
 
 export interface AgentLimitsSettingsControls {

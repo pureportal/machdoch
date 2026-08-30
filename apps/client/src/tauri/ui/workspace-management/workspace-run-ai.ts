@@ -51,13 +51,14 @@ export const createWorkspaceRunDetectionTask = (): string =>
     "Inspect the active workspace and draft viable launch configurations for its applications and servers.",
     "Use the available read-only workspace tools to inspect manifests, scripts, project files, documentation, and existing launch or container configuration. Do not execute project commands and do not modify files.",
     "Choose commands only from workspace evidence. Do not select from or assume a fixed catalog of frameworks or launch-command variants. Omit ports, URLs, and health checks that cannot be established from the workspace.",
+    "Set primary to true on exactly one configuration when any configurations are returned. Choose the configuration that best represents the workspace's usual complete runnable setup from architectural and launch evidence. Set primary to false on every other configuration. Do not choose it from configuration names, keywords, or string comparisons.",
     "Each task workingDirectory must be relative to the active workspace, use forward slashes, exist in the workspace, and be the directory from which its command should run. Do not put directory-changing commands in command.",
     "Return only one JSON object between <machdoch_workspace_run_detection> and </machdoch_workspace_run_detection>.",
     "The object must have document and detections fields. document must use this exact shape:",
-    '{"schemaVersion":1,"primaryConfigurationId":null,"configurations":[{"id":"stable-id","name":"Name","kind":"task","command":"workspace-supported command","workingDirectory":".","environment":{},"hotReload":false,"ports":[],"urls":[],"healthCheck":null,"restartPolicy":{"onCrash":false,"maxRestarts":5,"windowMs":60000,"backoffMs":1000,"maxBackoffMs":30000}}]}',
-    'A composite configuration instead uses {"id":"stable-id","name":"Name","kind":"composite","children":["task-id"],"startOrder":"parallel"}. Composite children must be task ids. Use a composite primary only when multiple independent tasks must launch together.',
+    '{"schemaVersion":2,"configurations":[{"id":"stable-id","name":"Name","kind":"task","primary":true,"command":"workspace-supported command","workingDirectory":".","environment":{},"hotReload":false,"ports":[],"urls":[],"healthCheck":null,"restartPolicy":{"onCrash":false,"maxRestarts":5,"windowMs":60000,"backoffMs":1000,"maxBackoffMs":30000}}]}',
+    'A composite configuration instead uses {"id":"stable-id","name":"Name","kind":"composite","primary":true,"children":["task-id"],"startOrder":"parallel"}. Composite children must be task ids. Prefer a composite as primary when workspace evidence shows that multiple tasks form the usual complete application.',
     'detections must be an array with one item per drafted configuration: {"configurationId":"id","confidence":"high","evidence":["workspace evidence"],"uncertainFields":["fieldName"]}. confidence may be "high" or "medium".',
-    "Return an empty configurations and detections array with a null primaryConfigurationId when the workspace has no evidenced launch configuration.",
+    "Return empty configurations and detections arrays when the workspace has no evidenced launch configuration.",
   ].join("\n\n");
 
 export const extractWorkspaceRunDetection = (
@@ -100,6 +101,14 @@ export const validateWorkspaceRunDetections = (
   const detectionIds = new Set(
     detections.map((detection) => detection.configurationId),
   );
+  const primaryCount = document.configurations.filter(
+    (configuration) => configuration.primary,
+  ).length;
+  if (document.configurations.length > 0 && primaryCount !== 1) {
+    throw new Error(
+      "AI run detection must choose exactly one primary configuration.",
+    );
+  }
   if (
     detections.length !== document.configurations.length ||
     detectionIds.size !== detections.length ||

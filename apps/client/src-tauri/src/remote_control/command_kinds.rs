@@ -1,6 +1,7 @@
-const TASK_ID_COMMANDS: &[&str] = &["cancel", "retry", "continue"];
+const TASK_ID_COMMANDS: &[&str] = &["cancel", "retry", "continue", "cancel-prompt-enhancement"];
 
 const SESSION_ID_COMMANDS: &[&str] = &[
+    "submit-message",
     "activate-session",
     "archive-session",
     "pin-session",
@@ -10,10 +11,16 @@ const SESSION_ID_COMMANDS: &[&str] = &[
     "rename-session",
     "tag-session",
     "clear-session-history",
+    "clear-session-mode",
+    "clear-session-reasoning",
     "update-draft",
     "set-session-model",
     "set-session-mode",
     "set-session-reasoning",
+    "set-session-workspace",
+    "clear-session-workspace",
+    "set-prompt-enhancement-mode",
+    "set-interview",
     "set-session-memory",
     "set-global-memory",
     "set-ui-control",
@@ -25,13 +32,18 @@ const SESSION_ID_COMMANDS: &[&str] = &[
 ];
 
 const SESSION_MUTATION_COMMANDS: &[&str] = &[
-    "follow-up",
     "create-session",
     "stop-speaking",
     "delete-context-pack",
+    "generate-media",
 ];
 
-const ENABLED_COMMANDS: &[&str] = &["set-session-memory", "set-global-memory", "set-ui-control"];
+const ENABLED_COMMANDS: &[&str] = &[
+    "set-session-memory",
+    "set-global-memory",
+    "set-ui-control",
+    "set-interview",
+];
 
 const CONTEXT_PACK_ID_COMMANDS: &[&str] = &["apply-context-pack", "delete-context-pack"];
 const MESSAGE_ID_COMMANDS: &[&str] = &["save-message-context-pack", "speak-message"];
@@ -43,7 +55,11 @@ const JOB_ID_COMMANDS: &[&str] = &[
     "scheduler-delete",
 ];
 
-const RUN_ID_COMMANDS: &[&str] = &["scheduler-retry-run", "scheduler-cancel-run"];
+const RUN_ID_COMMANDS: &[&str] = &[
+    "scheduler-retry-run",
+    "scheduler-cancel-run",
+    "cancel-media-run",
+];
 
 const SUPPORTED_REASONING_MODES: &[&str] = &[
     "default", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
@@ -141,9 +157,11 @@ mod tests {
         assert!(is_supported_command("cancel"));
         assert!(is_supported_command("update-draft"));
         assert!(is_supported_command("set-session-reasoning"));
-        assert!(is_supported_command("follow-up"));
+        assert!(is_supported_command("submit-message"));
         assert!(is_supported_command("scheduler-trigger"));
         assert!(is_supported_command("scheduler-cancel-run"));
+        assert!(is_supported_command("generate-media"));
+        assert!(is_supported_command("cancel-media-run"));
         assert!(!is_supported_command("approval-decision"));
     }
 
@@ -157,7 +175,8 @@ mod tests {
         assert!(requires_job_id("scheduler-pause"));
         assert!(requires_run_id("scheduler-retry-run"));
 
-        assert!(!requires_task_id("follow-up"));
+        assert!(!requires_task_id("submit-message"));
+        assert!(requires_session_id("submit-message"));
         assert!(!requires_session_id("create-session"));
         assert!(!requires_job_id("scheduler-retry-run"));
     }
@@ -195,6 +214,7 @@ mod tests {
         assert!(requires_enabled("set-session-memory"));
         assert!(requires_enabled("set-global-memory"));
         assert!(requires_enabled("set-ui-control"));
+        assert!(!requires_enabled("submit-message"));
         assert!(!requires_enabled("set-session-mode"));
         assert!(!requires_enabled("set-session-reasoning"));
     }

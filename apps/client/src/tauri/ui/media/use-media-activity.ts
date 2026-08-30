@@ -4,9 +4,9 @@ import type { AppActivityState } from "../app-shell/app-rail";
 import { toAppActivityState } from "../app-shell/operation-activity";
 import type { MainAppId } from "../lib/shell-store";
 import type { MediaRuntimeRunRecord } from "../../../core/media/contracts.js";
+import { isMediaRunActive } from "./media-run-activity";
 
 const POLL_INTERVAL_MS = 2_000;
-const ACTIVE_STATUSES = new Set(["queued", "running", "canceling"]);
 
 const loadRunsForActivity = async (): Promise<MediaRuntimeRunRecord[]> => {
   if (
@@ -24,7 +24,7 @@ const loadRunsForActivity = async (): Promise<MediaRuntimeRunRecord[]> => {
 export const useMediaActivity = (activeApp: MainAppId): AppActivityState => {
   const [running, setRunning] = useState(false);
   const [completedSinceView, setCompletedSinceView] = useState(false);
-  const previousStatusesRef = useRef<Map<string, string>>(new Map());
+  const previousActiveRunIdsRef = useRef<Set<string>>(new Set());
   const firstPollRef = useRef(true);
 
   useEffect(() => {
@@ -48,15 +48,12 @@ export const useMediaActivity = (activeApp: MainAppId): AppActivityState => {
           return;
         }
 
-        const nextStatuses = new Map(runs.map((run) => [run.id, run.status]));
-        const hasNewTerminalRun = [...nextStatuses].some(([runId, status]) => {
-          const previous = previousStatusesRef.current.get(runId);
-          return (
-            previous !== undefined &&
-            ACTIVE_STATUSES.has(previous) &&
-            !ACTIVE_STATUSES.has(status)
-          );
-        });
+        const nextActiveRunIds = new Set(
+          runs.filter(isMediaRunActive).map((run) => run.id),
+        );
+        const hasNewTerminalRun = [...previousActiveRunIdsRef.current].some(
+          (runId) => !nextActiveRunIds.has(runId),
+        );
         if (
           !firstPollRef.current &&
           hasNewTerminalRun &&
@@ -66,8 +63,8 @@ export const useMediaActivity = (activeApp: MainAppId): AppActivityState => {
         }
 
         firstPollRef.current = false;
-        previousStatusesRef.current = nextStatuses;
-        setRunning(runs.some((run) => ACTIVE_STATUSES.has(run.status)));
+        previousActiveRunIdsRef.current = nextActiveRunIds;
+        setRunning(nextActiveRunIds.size > 0);
       } catch {
         // The Media Studio surface owns detailed runtime error reporting.
       } finally {

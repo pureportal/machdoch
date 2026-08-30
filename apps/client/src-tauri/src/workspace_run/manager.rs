@@ -17,7 +17,9 @@ use crate::{
         assign_child_process_to_kill_on_close_job, configure_child_process_group,
         terminate_child_process_tree, ChildProcessJob,
     },
-    runtime_snapshot::resolve_workspace_root_path,
+    runtime_snapshot::{
+        load_user_workspace_run_settings, resolve_workspace_root_path, UserWorkspaceRunSettings,
+    },
 };
 
 use super::{
@@ -38,6 +40,11 @@ const MAX_LOG_LINE_BYTES: usize = 4_096;
 const LOG_EVENT_DELAY: Duration = Duration::from_millis(150);
 const LOG_READER_JOIN_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_LOG_EVENT_ENTRIES: usize = 200;
+
+pub(super) struct RunWorkspaceHandoffSnapshot {
+    pub snapshot: Option<RunWorkspaceSnapshot>,
+    pub load_error: Option<String>,
+}
 
 struct TaskRuntime {
     state: RunLifecycleState,
@@ -64,6 +71,7 @@ struct AttemptMonitorContext<'a> {
     generation: u64,
     cancel: &'a AtomicBool,
     health_check: Option<&'a RunHealthCheck>,
+    settings: &'a UserWorkspaceRunSettings,
 }
 
 impl LogReaderWorker {
@@ -113,6 +121,8 @@ pub struct RunManager {
     operation_locks: Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>,
     event_sink: Mutex<Option<EventSink>>,
     log_event_sink: Mutex<Option<LogEventSink>>,
+    #[cfg(test)]
+    settings_override: Mutex<Option<UserWorkspaceRunSettings>>,
 }
 
 impl Default for RunManager {
@@ -122,11 +132,27 @@ impl Default for RunManager {
             operation_locks: Mutex::new(HashMap::new()),
             event_sink: Mutex::new(None),
             log_event_sink: Mutex::new(None),
+            #[cfg(test)]
+            settings_override: Mutex::new(None),
         }
     }
 }
 
 impl RunManager {
+    fn workspace_run_settings(&self) -> Result<UserWorkspaceRunSettings, String> {
+        #[cfg(test)]
+        if let Some(settings) = self
+            .settings_override
+            .lock()
+            .map_err(|_| "Workspace Run settings are unavailable.".to_string())?
+            .clone()
+        {
+            return Ok(settings);
+        }
+
+        load_user_workspace_run_settings()
+    }
+
     pub fn set_event_sink(&self, event_sink: EventSink) {
         if let Ok(mut sink) = self.event_sink.lock() {
             *sink = Some(event_sink);
@@ -184,6 +210,58 @@ impl RunManager {
         self.snapshot_for_path(&workspace, &document)
     }
 
+    pub(super) fn snapshot_for_handoff(
+        &self,
+        workspace_root: &str,
+    ) -> Result<RunWorkspaceHandoffSnapshot, String> {
+        let workspace = resolve_workspace_root_path(workspace_root)?;
+        let (cached_document, active) = self
+            .inner
+            .lock()
+            .ok()
+            .and_then(|inner| {
+                let runtime = inner.workspaces.get(&workspace)?;
+                Some((
+                    runtime.document.clone(),
+                    workspace_runtime_is_active(runtime),
+                ))
+            })
+            .unwrap_or((None, false));
+
+        match load_document(&workspace) {
+            Ok(document) => {
+                if !active || cached_document.is_none() {
+                    self.remember_document(&workspace, &document);
+                }
+                let document = if active {
+                    cached_document.unwrap_or(document)
+                } else {
+                    document
+                };
+                match self.snapshot_for_path(&workspace, &document) {
+                    Ok(snapshot) => Ok(RunWorkspaceHandoffSnapshot {
+                        snapshot: Some(snapshot),
+                        load_error: None,
+                    }),
+                    Err(error) => Ok(RunWorkspaceHandoffSnapshot {
+                        snapshot: None,
+                        load_error: Some(error),
+                    }),
+                }
+            }
+            Err(error) => {
+                let snapshot = cached_document
+                    .as_ref()
+                    .and_then(|document| self.snapshot_for_path(&workspace, document).ok());
+
+                Ok(RunWorkspaceHandoffSnapshot {
+                    snapshot,
+                    load_error: Some(error),
+                })
+            }
+        }
+    }
+
     pub fn start(
         self: &Arc<Self>,
         workspace_root: &str,
@@ -199,7 +277,13 @@ impl RunManager {
         }
         let document = self.configuration_document_for_start(&workspace)?;
         let configuration = resolve_configuration(&document, configuration_id)?.clone();
-        self.start_resolved_configuration(workspace.clone(), document.clone(), configuration)?;
+        let settings = self.workspace_run_settings()?;
+        self.start_resolved_configuration(
+            workspace.clone(),
+            document.clone(),
+            configuration,
+            settings,
+        )?;
         self.snapshot_for_path(&workspace, &document)
     }
 
@@ -235,7 +319,13 @@ impl RunManager {
         let configuration = resolve_configuration(&document, configuration_id)?.clone();
         self.stop_resolved_configuration(&workspace, &configuration);
         self.wait_for_configuration_stop(&workspace, &configuration, Duration::from_secs(15))?;
-        self.start_resolved_configuration(workspace.clone(), document.clone(), configuration)?;
+        let settings = self.workspace_run_settings()?;
+        self.start_resolved_configuration(
+            workspace.clone(),
+            document.clone(),
+            configuration,
+            settings,
+        )?;
         self.snapshot_for_path(&workspace, &document)
     }
 
@@ -378,9 +468,12 @@ impl RunManager {
         workspace: PathBuf,
         document: RunConfigurationDocument,
         configuration: RunConfiguration,
+        settings: UserWorkspaceRunSettings,
     ) -> Result<(), String> {
         match configuration {
-            task @ RunConfiguration::Task { .. } => self.start_task(workspace, task).map(|_| ()),
+            task @ RunConfiguration::Task { .. } => {
+                self.start_task(workspace, task, settings).map(|_| ())
+            }
             RunConfiguration::Composite {
                 id,
                 children,
@@ -416,7 +509,7 @@ impl RunManager {
                     let mut started_tasks = Vec::new();
                     for task in child_tasks {
                         let task_id = task.id().to_string();
-                        match self.start_task(workspace.clone(), task) {
+                        match self.start_task(workspace.clone(), task, settings.clone()) {
                             Ok(true) => started_tasks.push(task_id),
                             Ok(false) => {}
                             Err(error) => {
@@ -454,7 +547,7 @@ impl RunManager {
                             break;
                         }
                         let task_id = task.id().to_string();
-                        match manager.start_task(workspace.clone(), task) {
+                        match manager.start_task(workspace.clone(), task, settings.clone()) {
                             Ok(true) => started_tasks.push(task_id.clone()),
                             Ok(false) => {}
                             Err(_) => {
@@ -466,7 +559,7 @@ impl RunManager {
                             &workspace,
                             &task_id,
                             &cancel,
-                            Duration::from_secs(120),
+                            Duration::from_millis(settings.sequential_readiness_timeout_ms),
                         ) {
                             if !cancel.load(Ordering::SeqCst) {
                                 manager.cancel_tasks(&workspace, &started_tasks);
@@ -496,6 +589,7 @@ impl RunManager {
         self: &Arc<Self>,
         workspace: PathBuf,
         configuration: RunConfiguration,
+        settings: UserWorkspaceRunSettings,
     ) -> Result<bool, String> {
         let RunConfiguration::Task {
             id,
@@ -558,6 +652,7 @@ impl RunManager {
                 resolved_working_directory,
                 cancel,
                 generation,
+                settings,
             );
         });
         Ok(true)
@@ -570,6 +665,7 @@ impl RunManager {
         working_directory: PathBuf,
         cancel: Arc<AtomicBool>,
         generation: u64,
+        settings: UserWorkspaceRunSettings,
     ) {
         let RunConfiguration::Task {
             id,
@@ -669,6 +765,7 @@ impl RunManager {
                     generation,
                     cancel: &cancel,
                     health_check: health_check.as_deref(),
+                    settings: &settings,
                 },
                 &mut child,
                 &child_job,
@@ -760,9 +857,10 @@ impl RunManager {
             generation,
             cancel,
             health_check,
+            settings,
         } = context;
-        let mut next_health_check = health_check
-            .map(|check| Instant::now() + Duration::from_millis(check.startup_delay_ms));
+        let mut next_health_check =
+            health_check.map(|_| Instant::now() + Duration::from_millis(settings.startup_delay_ms));
         let mut pending_health_check: Option<mpsc::Receiver<Result<(), String>>> = None;
         let mut consecutive_failures = 0_u32;
 
@@ -841,7 +939,7 @@ impl RunManager {
                             consecutive_failures,
                             Some(error.clone()),
                         );
-                        if consecutive_failures >= check.failure_threshold {
+                        if consecutive_failures >= settings.health_check_failure_threshold {
                             self.set_state(
                                 workspace,
                                 configuration_id,
@@ -858,16 +956,18 @@ impl RunManager {
                         }
                     }
                 }
-                next_health_check = Some(Instant::now() + Duration::from_millis(check.interval_ms));
+                next_health_check =
+                    Some(Instant::now() + Duration::from_millis(settings.health_check_interval_ms));
             }
 
             if pending_health_check.is_none() {
                 if let (Some(check), Some(next_check)) = (health_check, next_health_check) {
                     if Instant::now() >= next_check {
                         let check = check.clone();
+                        let timeout_ms = settings.health_check_timeout_ms;
                         let (sender, receiver) = mpsc::channel();
                         thread::spawn(move || {
-                            let _ = sender.send(check_health(&check));
+                            let _ = sender.send(check_health(&check, timeout_ms));
                         });
                         pending_health_check = Some(receiver);
                         next_health_check = None;
@@ -1410,7 +1510,9 @@ impl RunManager {
             });
         Ok(RunWorkspaceSnapshot {
             workspace_root: workspace.display().to_string(),
-            primary_configuration_id: document.primary_configuration_id.clone(),
+            primary_configuration_id: document
+                .primary_configuration()
+                .map(|configuration| configuration.id().to_string()),
             configurations: statuses,
         })
     }
@@ -1513,10 +1615,12 @@ fn resolve_configuration<'a>(
     document: &'a RunConfigurationDocument,
     requested_id: Option<&str>,
 ) -> Result<&'a RunConfiguration, String> {
-    let id = requested_id
-        .filter(|value| !value.trim().is_empty())
-        .or(document.primary_configuration_id.as_deref())
-        .ok_or_else(|| "No primary run configuration is configured.".to_string())?;
+    let Some(id) = requested_id.filter(|value| !value.trim().is_empty()) else {
+        return document
+            .primary_configuration()
+            .ok_or_else(|| "No primary run configuration is configured.".to_string());
+    };
+
     document
         .configurations
         .iter()
@@ -1769,11 +1873,29 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    fn use_workspace_run_settings(manager: &RunManager, settings: UserWorkspaceRunSettings) {
+        *manager
+            .settings_override
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(settings);
+    }
+
+    fn fast_workspace_run_settings() -> UserWorkspaceRunSettings {
+        UserWorkspaceRunSettings {
+            startup_delay_ms: 0,
+            health_check_interval_ms: 250,
+            health_check_timeout_ms: 100,
+            health_check_failure_threshold: 1,
+            sequential_readiness_timeout_ms: 5_000,
+        }
+    }
+
     fn status(state: RunLifecycleState) -> RunConfigurationStatus {
         RunConfigurationStatus {
             configuration: RunConfiguration::Task {
                 id: "task".to_string(),
                 name: "Task".to_string(),
+                primary: false,
                 command: "example".to_string(),
                 working_directory: ".".to_string(),
                 environment: Default::default(),
@@ -1837,6 +1959,7 @@ mod tests {
         RunConfiguration::Task {
             id: id.to_string(),
             name: id.to_string(),
+            primary: false,
             command: child_command(),
             working_directory: working_directory.to_string(),
             environment,
@@ -1852,18 +1975,68 @@ mod tests {
         manager: &RunManager,
         workspace: &Path,
         primary: &str,
-        configurations: Vec<RunConfiguration>,
+        mut configurations: Vec<RunConfiguration>,
     ) {
+        for configuration in &mut configurations {
+            match configuration {
+                RunConfiguration::Task {
+                    id,
+                    primary: is_primary,
+                    ..
+                }
+                | RunConfiguration::Composite {
+                    id,
+                    primary: is_primary,
+                    ..
+                } => *is_primary = id == primary,
+            }
+        }
         manager
             .save_configuration_document(
                 workspace.to_string_lossy().as_ref(),
                 &RunConfigurationDocument {
                     schema_version: RUN_SCHEMA_VERSION,
-                    primary_configuration_id: Some(primary.to_string()),
                     configurations,
                 },
             )
             .expect("test run document should save");
+    }
+
+    #[test]
+    fn resolves_the_flagged_primary_without_using_configuration_names() {
+        let mut named_like_a_default = task_configuration(
+            "complete-stack",
+            "output-exit",
+            ".",
+            RunRestartPolicy::default(),
+            None,
+            None,
+        );
+        let mut flagged_primary = task_configuration(
+            "worker",
+            "output-exit",
+            ".",
+            RunRestartPolicy::default(),
+            None,
+            None,
+        );
+        if let RunConfiguration::Task { primary, .. } = &mut named_like_a_default {
+            *primary = false;
+        }
+        if let RunConfiguration::Task { primary, .. } = &mut flagged_primary {
+            *primary = true;
+        }
+        let document = RunConfigurationDocument {
+            schema_version: RUN_SCHEMA_VERSION,
+            configurations: vec![named_like_a_default, flagged_primary],
+        };
+
+        assert_eq!(
+            resolve_configuration(&document, None)
+                .expect("primary configuration should resolve")
+                .id(),
+            "worker"
+        );
     }
 
     fn wait_for_status(
@@ -2376,6 +2549,7 @@ mod tests {
         let composite = RunConfiguration::Composite {
             id: "fullstack".to_string(),
             name: "Fullstack".to_string(),
+            primary: false,
             children: vec!["valid".to_string(), "missing".to_string()],
             start_order: CompositeStartOrder::Parallel,
         };
@@ -2427,6 +2601,7 @@ mod tests {
         let composite = RunConfiguration::Composite {
             id: "fullstack".to_string(),
             name: "Fullstack Start".to_string(),
+            primary: false,
             children: vec!["backend".to_string(), "frontend".to_string()],
             start_order: CompositeStartOrder::Parallel,
         };
@@ -2489,6 +2664,7 @@ mod tests {
         let composite = RunConfiguration::Composite {
             id: "application".to_string(),
             name: "Application".to_string(),
+            primary: false,
             children: vec!["prepare".to_string(), "server".to_string()],
             start_order: CompositeStartOrder::Sequence,
         };
@@ -2594,6 +2770,7 @@ mod tests {
             .expect("temporary address should resolve")
             .port();
         let manager = Arc::new(RunManager::default());
+        use_workspace_run_settings(&manager, fast_workspace_run_settings());
         let task = task_configuration(
             "server",
             "hold",
@@ -2610,10 +2787,6 @@ mod tests {
                 host: Some("127.0.0.1".to_string()),
                 port: Some(unavailable_port),
                 url: None,
-                startup_delay_ms: 0,
-                interval_ms: 250,
-                timeout_ms: 100,
-                failure_threshold: 1,
                 restart_on_failure: true,
             }),
             None,
@@ -2668,6 +2841,16 @@ mod tests {
             }
         });
         let manager = Arc::new(RunManager::default());
+        use_workspace_run_settings(
+            &manager,
+            UserWorkspaceRunSettings {
+                startup_delay_ms: 0,
+                health_check_interval_ms: 60_000,
+                health_check_timeout_ms: 60_000,
+                health_check_failure_threshold: 1,
+                sequential_readiness_timeout_ms: 5_000,
+            },
+        );
         let task = task_configuration(
             "server",
             "hold",
@@ -2678,10 +2861,6 @@ mod tests {
                 host: None,
                 port: None,
                 url: Some(format!("http://127.0.0.1:{port}/health")),
-                startup_delay_ms: 0,
-                interval_ms: 60_000,
-                timeout_ms: 60_000,
-                failure_threshold: 1,
                 restart_on_failure: false,
             }),
             None,

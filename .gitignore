@@ -7,9 +7,11 @@ dist-ssr/
 coverage/
 .nyc_output/
 .vite/
+.next/
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 *.tsbuildinfo
+next-env.d.ts
 
 # Package manager caches
 .npm/
@@ -37,6 +39,10 @@ lerna-debug.log*
 # Rust / Tauri build artifacts
 apps/client/src-tauri/target/
 apps/client/src-tauri/target-*/
+apps/fleet-manager/data/
+apps/fleet-manager/fleet-manager.json
+packages/fleet-protocol/target/
+packages/fleet-protocol/Cargo.lock
 **/*.rs.bk
 *.pdb
 
@@ -54,6 +60,7 @@ apps/client/src-tauri/target-*/
 Thumbs.db
 
 # Temp folders
+.tmp/
 tmp/
 temp/
 

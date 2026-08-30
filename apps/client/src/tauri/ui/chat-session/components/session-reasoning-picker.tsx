@@ -11,7 +11,7 @@ import {
   Tally5,
   type LucideIcon,
 } from "lucide-react";
-import { useMemo, type JSX } from "react";
+import { useCallback, useMemo, useState, type JSX } from "react";
 import type { ReasoningMode } from "../../runtime";
 import { getDefaultCommandShortcut } from "../../commands/command-defaults";
 import { useOptionalRegisterCommands } from "../../commands/command-context";
@@ -153,6 +153,7 @@ export const SessionReasoningPicker = ({
   isUsingWorkspaceDefaultReasoning,
   onSessionReasoningSelection,
 }: SessionReasoningPickerProps): JSX.Element => {
+  const [open, setOpen] = useState(false);
   const reasoningModes = useMemo(
     () => getReasoningModesForProvider(provider, model),
     [model, provider],
@@ -171,6 +172,13 @@ export const SessionReasoningPicker = ({
   const defaultMeta = REASONING_META[displayDefaultReasoning];
   const ActiveReasoningIcon = activeMeta.icon;
   const WorkspaceDefaultReasoningIcon = defaultMeta.icon;
+  const selectReasoning = useCallback(
+    (reasoning: ReasoningMode | null): void => {
+      onSessionReasoningSelection(reasoning);
+      setOpen(false);
+    },
+    [onSessionReasoningSelection],
+  );
   const sessionReasoningOptions = useMemo(
     () => reasoningModes.filter((reasoning) => reasoning !== "default"),
     [reasoningModes],
@@ -182,7 +190,7 @@ export const SessionReasoningPicker = ({
         title: `Workspace default (${defaultMeta.label})`,
         current: isUsingWorkspaceDefaultReasoning,
         numericKey: "1",
-        execute: () => onSessionReasoningSelection(null),
+        execute: () => selectReasoning(null),
       },
       ...sessionReasoningOptions.map(
         (reasoning, index): CommandPageItem => ({
@@ -192,7 +200,7 @@ export const SessionReasoningPicker = ({
             !isUsingWorkspaceDefaultReasoning &&
             displayActiveReasoning === reasoning,
           numericKey: String(index + 2) as CommandPageItem["numericKey"],
-          execute: () => onSessionReasoningSelection(reasoning),
+          execute: () => selectReasoning(reasoning),
         }),
       ),
     ];
@@ -207,7 +215,7 @@ export const SessionReasoningPicker = ({
     defaultMeta.label,
     displayActiveReasoning,
     isUsingWorkspaceDefaultReasoning,
-    onSessionReasoningSelection,
+    selectReasoning,
     sessionReasoningOptions,
   ]);
   const reasoningCommands = useMemo<readonly CommandDefinition[]>(
@@ -239,7 +247,7 @@ export const SessionReasoningPicker = ({
   useOptionalRegisterCommands(reasoningCommands);
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <ControlTooltip
         content={`Reasoning mode: ${activeMeta.label}${
           isUsingWorkspaceDefaultReasoning ? " (workspace default)" : ""
@@ -281,7 +289,7 @@ export const SessionReasoningPicker = ({
           <button
             type="button"
             aria-label="Use workspace default reasoning"
-            onClick={() => onSessionReasoningSelection(null)}
+            onClick={() => selectReasoning(null)}
             className={cn(
               "flex w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left transition-all",
               isUsingWorkspaceDefaultReasoning
@@ -327,7 +335,7 @@ export const SessionReasoningPicker = ({
                   key={reasoning}
                   type="button"
                   aria-label={`Choose ${meta.label} reasoning`}
-                  onClick={() => onSessionReasoningSelection(reasoning)}
+                  onClick={() => selectReasoning(reasoning)}
                   className={cn(
                     "flex w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left transition-all",
                     isSelected

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { ChatSessionQueuedMessage } from "../../chat-session.model";
 import {
+  createSession,
+  type ChatSessionQueuedMessage,
+} from "../../chat-session.model";
+import {
+  canStartQueuedMessageDispatch,
   createFailedQueuedMessageRecovery,
   createQueuedMessageDispatchAttempt,
   createQueuedMessageRetry,
@@ -96,6 +100,65 @@ describe("queued message lifecycle", () => {
     expect(retry.message.id).toBe("queued-retry");
     expect(retry.prompt).toEqual(firstAttempt.prompt);
     expect(retry.message.promptEnhancementRequest).toBeUndefined();
+  });
+
+  it("starts an enhanced queued prompt after its enhancement placeholder is removed", () => {
+    const enhancementTaskId = "prompt-enhancement-1";
+    const renderedSession = createSession({
+      id: "session-1",
+      messages: [
+        {
+          id: `${enhancementTaskId}-user`,
+          taskId: enhancementTaskId,
+          role: "user",
+          content: "Original request",
+          lifecycle: {
+            kind: "transient",
+            owner: "prompt-enhancement",
+            operationId: enhancementTaskId,
+            slot: "user",
+            ownerLaunchId: "launch-1",
+            ownerWindowId: "window-1",
+            ownerInstanceId: "instance-1",
+            placement: "queued-message",
+          },
+        },
+      ],
+    });
+    const currentSession = { ...renderedSession, messages: [] };
+    const attempt = createQueuedMessageDispatchAttempt(
+      createQueuedMessage({ promptEnhancementRequest: { mode: "simple" } }),
+      "Enhanced request",
+      20,
+    );
+
+    expect(
+      canStartQueuedMessageDispatch(
+        attempt.message,
+        attempt.message.id,
+        renderedSession,
+        null,
+      ),
+    ).toBe(false);
+    expect(
+      canStartQueuedMessageDispatch(
+        attempt.message,
+        attempt.message.id,
+        currentSession,
+        null,
+      ),
+    ).toBe(true);
+
+    const submitted = reconcileQueuedMessagesForTaskSubmission({
+      queuedSessionMessages: [attempt.message],
+      queuedMessageTombstones: {},
+      sessionId: currentSession.id,
+      consumedQueuedMessageId: attempt.message.id,
+      timestamp: 30,
+    });
+
+    expect(attempt.prompt.task).toBe("Enhanced request");
+    expect(submitted?.queuedSessionMessages).toEqual([]);
   });
 
   it("turns execution conflicts into a terminal manual-retry state", () => {

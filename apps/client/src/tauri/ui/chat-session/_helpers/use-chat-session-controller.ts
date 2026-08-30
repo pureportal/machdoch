@@ -147,7 +147,6 @@ import {
   resolveFilePreviewSyntax,
 } from "./file-preview-language";
 import { getRenderedMessageContent } from "./execution-message.tsx";
-import { shouldDispatchQueuedFollowUp } from "./queued-follow-up-policy";
 import {
   createMessagePromptEnhancement,
   createPromptEnhancementTask,
@@ -163,6 +162,8 @@ import {
   type PromptEnhancementMode,
 } from "./prompt-enhancement";
 import {
+  canDispatchQueuedMessage,
+  canStartQueuedMessageDispatch,
   createFailedQueuedMessageRecovery,
   createQueuedMessageDispatchAttempt,
   createQueuedMessageRetry,
@@ -232,6 +233,7 @@ import {
   useDesktopTaskProgress,
   type DesktopTaskProgressRoute,
 } from "./use-desktop-task-progress";
+import { useFleetManagedSettings } from "./use-fleet-managed-settings";
 import { useRemoteMissionControl } from "./use-remote-mission-control";
 import { useSessionComposerState } from "./use-session-composer-state";
 import { useSessionFileDrops } from "./use-session-file-drops";
@@ -319,26 +321,6 @@ interface PromptEnhancementPreviewState {
 
 const getMessageTaskId = (message: ChatSessionMessage): string => {
   return message.taskId ?? message.id;
-};
-
-const canDispatchQueuedMessage = (
-  message: ChatSessionQueuedMessage,
-  session: ChatSessionRecord,
-  unsettledDesktopTaskId: string | null,
-): boolean => {
-  if (unsettledDesktopTaskId) {
-    return false;
-  }
-
-  if (!message.blockedByTaskId) {
-    return true;
-  }
-
-  return shouldDispatchQueuedFollowUp(
-    message.dispatchPolicy,
-    getSessionTaskOutcome(session, message.blockedByTaskId),
-    getActiveChatOperationIds(session).includes(message.blockedByTaskId),
-  );
 };
 
 const createPromptEnhancementThinkingTrace = (
@@ -741,6 +723,14 @@ export const useChatSessionController = (
   const ignoredDesktopTaskIdsRef = useRef<Set<string>>(new Set());
   const sessionOperationConflictHandlerRef = useRef<
     (submission: SessionOperationConflictSubmission) => boolean
+  >(() => false);
+  const remoteSessionMessageSubmitRef = useRef<
+    (input: {
+      sessionId: string;
+      prompt: string;
+      promptEnhancementMode: PromptEnhancementMode;
+      interviewEnabled: boolean;
+    }) => boolean
   >(() => false);
   const inactiveDesktopTaskObservationsRef = useRef<
     Map<string, InactiveDesktopTaskObservation>
@@ -2690,6 +2680,39 @@ export const useChatSessionController = (
       });
     },
     [state.activeSessionId, state.applyShellState, updateMessageEditSession],
+  );
+
+  const applyRemoteWorkspaceSelection = useCallback(
+    (sessionId: string, workspace: string | null): void => {
+      const normalizedWorkspace = workspace?.trim() || null;
+      state.applyShellState((previous) => {
+        const session = previous.sessions.find(
+          (entry) => entry.id === sessionId,
+        );
+        if (!session || isSessionWorkspaceLocked(session)) {
+          return previous;
+        }
+        return {
+          ...previous,
+          recentWorkspaces: normalizedWorkspace
+            ? rememberRecentWorkspace(
+                previous.recentWorkspaces,
+                normalizedWorkspace,
+              )
+            : previous.recentWorkspaces,
+          sessions: previous.sessions.map((entry) =>
+            entry.id === sessionId
+              ? {
+                  ...entry,
+                  workspace: normalizedWorkspace,
+                  updatedAt: Date.now(),
+                }
+              : entry,
+          ),
+        };
+      });
+    },
+    [state.applyShellState],
   );
 
   const removeWorkspaceFromHistory = useCallback(
@@ -5707,9 +5730,7 @@ export const useChatSessionController = (
               shellStateRef.current.queuedSessionMessages.find(
                 (message) => message.id === nextQueuedMessage.id,
               );
-            let latestSession = shellStateRef.current.sessions.find(
-              (entry) => entry.id === session.id,
-            );
+            let latestSession = state.getSessionById(session.id);
             const queuedHeadAtDispatch =
               shellStateRef.current.queuedSessionMessages.find(
                 (message) =>
@@ -5797,9 +5818,7 @@ export const useChatSessionController = (
               shellStateRef.current.queuedSessionMessages.find(
                 (message) => message.id === queuedMessageAtDispatch.id,
               );
-            const refreshedSession = shellStateRef.current.sessions.find(
-              (entry) => entry.id === session.id,
-            );
+            const refreshedSession = state.getSessionById(session.id);
             const refreshedQueuedHead =
               shellStateRef.current.queuedSessionMessages.find(
                 (message) =>
@@ -5860,14 +5879,12 @@ export const useChatSessionController = (
               return;
             }
 
-            const canStartDispatch =
-              refreshedQueuedHead?.id === refreshedQueuedMessage.id &&
-              canDispatchQueuedMessage(
-                dispatchAttempt.message,
-                refreshedSession,
-                getUnsettledDesktopTaskIdForSession(refreshedSession.id),
-              ) &&
-              getSessionOverviewStatus(refreshedSession) !== "running";
+            const canStartDispatch = canStartQueuedMessageDispatch(
+              dispatchAttempt.message,
+              refreshedQueuedHead?.id,
+              refreshedSession,
+              getUnsettledDesktopTaskIdForSession(refreshedSession.id),
+            );
 
             if (!canStartDispatch) {
               updateQueuedMessageStatus(
@@ -5932,9 +5949,7 @@ export const useChatSessionController = (
                   promptEnhancementTaskId,
                 );
               }
-              const currentSession = shellStateRef.current.sessions.find(
-                (entry) => entry.id === latestSession.id,
-              );
+              const currentSession = state.getSessionById(latestSession.id);
               updateQueuedMessageStatus(
                 queuedMessageToSubmit.id,
                 "failed",
@@ -5978,6 +5993,7 @@ export const useChatSessionController = (
       queuedSessionMessages,
       rebindQueuedPromptEnhancementFollowers,
       shouldActivateSubmittedSession,
+      state.getSessionById,
       taskSubmission,
       updateQueuedMessageStatus,
       updateQueuedSessionMessages,
@@ -6835,16 +6851,15 @@ export const useChatSessionController = (
     ],
   );
 
-  const handleQueueRemoteSessionFollowUp = useCallback(
-    (sessionId: string, task: string): boolean =>
-      queueActiveSessionMessage("back", {
-        sessionId,
-        task,
-        contextAttachments: [],
-        clearComposer: false,
-      }) !== null,
-    [queueActiveSessionMessage],
-  );
+  useFleetManagedSettings({
+    hasHydrated: state.hasHydrated,
+    shellState: state.shellState,
+    applyShellState: state.applyShellState,
+    userAgentLimitsSettings: runtime.userAgentLimitsSettings,
+    applyLoadedUserAgentLimitsSettings:
+      runtime.applyLoadedUserAgentLimitsSettings,
+    refreshInstructions: refreshInstructionRegistry,
+  });
 
   const remoteMissionControl = useRemoteMissionControl({
     hasHydrated: state.hasHydrated,
@@ -6861,6 +6876,17 @@ export const useChatSessionController = (
     activeRunMode,
     activeReasoning,
     composerWorkspaceLabel: memorySummaryState.composerWorkspaceLabel,
+    recentWorkspaces: state.shellState.recentWorkspaces,
+    promptEnhancementMode: activePromptEnhancementMode,
+    interviewEnabled: chatInterviewEnabled,
+    interviewAvailable: !chatInterviewBusy,
+    instructionRegistry,
+    instructionRegistryLoading,
+    instructionRegistryError:
+      instructionRegistryMessage?.tone === "error"
+        ? instructionRegistryMessage.text
+        : null,
+    onRefreshInstructions: refreshInstructionRegistry,
     isGlobalMemoryAvailable: memorySummaryState.isGlobalMemoryAvailable,
     isGlobalMemoryActive: memorySummaryState.isGlobalMemoryActive,
     isUiControlAvailable,
@@ -6906,7 +6932,6 @@ export const useChatSessionController = (
         };
       });
     },
-    submitTaskToSession: taskSubmission.submitTaskToSession,
     onRetryTask: taskSubmission.handleRetryTask,
     onContinueTask: taskSubmission.handleContinueTask,
     onCreateSession: handleCreateSession,
@@ -6925,6 +6950,17 @@ export const useChatSessionController = (
     onSetSessionModel: handleRemoteSetSessionModel,
     onSetSessionMode: handleRemoteSetSessionMode,
     onSetSessionReasoning: handleRemoteSetSessionReasoning,
+    onSetSessionWorkspace: applyRemoteWorkspaceSelection,
+    onSetPromptEnhancementMode: handlePromptEnhancementModeChange,
+    onSetInterview: handleInterviewEnabledChange,
+    onCancelPromptEnhancement: (taskId: string) => {
+      ignoredDesktopTaskIdsRef.current.add(taskId);
+      void cancelDesktopTask(taskId).catch((error) => {
+        console.error("Failed to cancel prompt enhancement", error);
+      });
+    },
+    onSubmitSessionMessage: (input) =>
+      remoteSessionMessageSubmitRef.current(input),
     onSetSessionMemory: (sessionId: string, enabled: boolean) =>
       handleRemoteSetSessionFlag(sessionId, "sessionMemoryEnabled", enabled),
     onSetGlobalMemory: (sessionId: string, enabled: boolean) =>
@@ -6933,7 +6969,6 @@ export const useChatSessionController = (
       handleRemoteSetSessionFlag(sessionId, "uiControlEnabled", enabled),
     onRemoveContextAttachment: handleRemoteRemoveContextAttachment,
     onClearContextAttachments: handleRemoteClearContextAttachments,
-    onQueueSessionFollowUp: handleQueueRemoteSessionFollowUp,
     onApplyContextPack: handleRemoteApplyContextPack,
     onDeleteContextPack: handleDeleteContextPack,
     onSaveMessageAsContextPack: handleSaveMessageAsContextPack,
@@ -7917,6 +7952,50 @@ export const useChatSessionController = (
     ],
   );
 
+  const submitRemoteSessionMessage = useCallback(
+    (input: {
+      sessionId: string;
+      prompt: string;
+      promptEnhancementMode: PromptEnhancementMode;
+      interviewEnabled: boolean;
+    }): boolean => {
+      const prompt = input.prompt.trim();
+      const session = state.getSessionById(input.sessionId);
+      if (!prompt || !session) {
+        return false;
+      }
+      const activeTaskId = getActiveDesktopTaskIdForSession(session.id);
+      submitResolvedChatInputNeededSubmission(
+        {
+          kind: "active-session",
+          sessionSnapshot: session,
+          task: prompt,
+          contextAttachments: [],
+          runningAction:
+            getSessionOverviewStatus(session) === "running" || activeTaskId
+              ? "queue"
+              : null,
+          composerClearGuard: createComposerClearGuard(session),
+          messageSettings: createSessionMessageSettings(
+            session,
+            input.promptEnhancementMode,
+            input.interviewEnabled,
+          ),
+          promptEnhancementMode: input.promptEnhancementMode,
+          interviewEnabled: input.interviewEnabled,
+        },
+        prompt,
+      );
+      return true;
+    },
+    [
+      getActiveDesktopTaskIdForSession,
+      state.getSessionById,
+      submitResolvedChatInputNeededSubmission,
+    ],
+  );
+  remoteSessionMessageSubmitRef.current = submitRemoteSessionMessage;
+
   const cancelChatInputNeeded = useCallback((): void => {
     setChatInputNeeded(null);
   }, []);
@@ -8572,6 +8651,12 @@ export const useChatSessionController = (
         saving: runtime.desktopSetupSaving,
         message: runtime.desktopSetupMessage,
         onSave: runtime.handleDesktopSettingsSave,
+      },
+      workspaceRunSetup: {
+        settings: runtime.userWorkspaceRunSettings,
+        saving: runtime.workspaceRunSetupSaving,
+        message: runtime.workspaceRunSetupMessage,
+        onSave: runtime.handleWorkspaceRunSettingsSave,
       },
       agentLimitsSetup: {
         settings: runtime.userAgentLimitsSettings,

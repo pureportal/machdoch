@@ -1,5 +1,5 @@
 import { Check, CircleDashed } from "lucide-react";
-import { useMemo, type JSX } from "react";
+import { useCallback, useMemo, useState, type JSX } from "react";
 import type { RunMode } from "../../../../core/runtime-contract.generated.js";
 import { useOptionalRegisterCommands } from "../../commands/command-context";
 import type {
@@ -32,7 +32,15 @@ export const SessionModePicker = ({
   isUsingWorkspaceDefaultMode,
   onSessionModeSelection,
 }: SessionModePickerProps): JSX.Element => {
+  const [open, setOpen] = useState(false);
   const ActiveRunModeIcon = activeRunModeMeta.icon;
+  const selectMode = useCallback(
+    (mode: RunMode | null): void => {
+      onSessionModeSelection(mode);
+      setOpen(false);
+    },
+    [onSessionModeSelection],
+  );
   const modeCommands = useMemo<readonly CommandDefinition[]>(
     () => [
       {
@@ -57,7 +65,7 @@ export const SessionModePicker = ({
                   title: `Workspace default (${RUN_MODE_META[defaultRunMode].label})`,
                   current: isUsingWorkspaceDefaultMode,
                   numericKey: "1",
-                  execute: () => onSessionModeSelection(null),
+                  execute: () => selectMode(null),
                 },
                 ...RUN_MODE_ORDER.map(
                   (mode, index): CommandPageItem => ({
@@ -69,7 +77,7 @@ export const SessionModePicker = ({
                     numericKey: String(
                       index + 2,
                     ) as CommandPageItem["numericKey"],
-                    execute: () => onSessionModeSelection(mode),
+                    execute: () => selectMode(mode),
                   }),
                 ),
               ],
@@ -78,17 +86,12 @@ export const SessionModePicker = ({
         }),
       },
     ],
-    [
-      activeRunMode,
-      defaultRunMode,
-      isUsingWorkspaceDefaultMode,
-      onSessionModeSelection,
-    ],
+    [activeRunMode, defaultRunMode, isUsingWorkspaceDefaultMode, selectMode],
   );
   useOptionalRegisterCommands(modeCommands);
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <ControlTooltip content={`Execution mode: ${activeRunModeMeta.label}`}>
         <PopoverTrigger asChild>
           <Button
@@ -124,7 +127,7 @@ export const SessionModePicker = ({
           <button
             type="button"
             aria-label="Use workspace default mode"
-            onClick={() => onSessionModeSelection(null)}
+            onClick={() => selectMode(null)}
             className={cn(
               "flex w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left transition-all",
               isUsingWorkspaceDefaultMode
@@ -164,7 +167,7 @@ export const SessionModePicker = ({
                   key={mode}
                   type="button"
                   aria-label={`Choose ${meta.label}`}
-                  onClick={() => onSessionModeSelection(mode)}
+                  onClick={() => selectMode(mode)}
                   className={cn(
                     "flex w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left transition-all",
                     isSelected

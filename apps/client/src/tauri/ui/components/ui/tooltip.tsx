@@ -71,10 +71,12 @@ function ControlTooltip({
   }
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent {...props}>{content}</TooltipContent>
-    </Tooltip>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipContent {...props}>{content}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
