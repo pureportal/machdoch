@@ -77,6 +77,8 @@ jobs:
 
           const packageVersion = readJsonFile('package.json').version ?? '';
           const clientVersion = readJsonFile('apps/client/package.json').version ?? '';
+          const fleetManagerVersion =
+            readJsonFile('apps/fleet-manager/package.json').version ?? '';
           const landingVersion = readJsonFile('apps/landing/package.json').version ?? '';
           const tauriVersion =
             readJsonFile('apps/client/src-tauri/tauri.conf.json').version ?? '';
@@ -103,13 +105,19 @@ jobs:
             process.exit(1);
           }
 
+          if (!fleetManagerVersion) {
+            console.error('apps/fleet-manager/package.json is missing a version.');
+            process.exit(1);
+          }
+
           if (
             packageVersion !== clientVersion ||
+            packageVersion !== fleetManagerVersion ||
             packageVersion !== landingVersion ||
             packageVersion !== tauriVersion
           ) {
             console.error(
-              `Release versions do not match: package.json=${packageVersion}, apps/client/package.json=${clientVersion}, apps/landing/package.json=${landingVersion}, apps/client/src-tauri/tauri.conf.json=${tauriVersion}.`,
+              `Release versions do not match: package.json=${packageVersion}, apps/client/package.json=${clientVersion}, apps/fleet-manager/package.json=${fleetManagerVersion}, apps/landing/package.json=${landingVersion}, apps/client/src-tauri/tauri.conf.json=${tauriVersion}.`,
             );
             process.exit(1);
           }
@@ -238,16 +246,71 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: windows-latest
-            asset_platform: windows
-          - platform: ubuntu-24.04
-            asset_platform: linux
-    runs-on: ${{ matrix.platform }}
+          - runner: windows-latest
+            container: ""
+            release_target: windows-x64
+            bundle_args: "--bundles msi,nsis"
+            debian_architecture: ""
+            debian_asset: ""
+            rpm_architecture: ""
+            rpm_asset: ""
+          - runner: ubuntu-24.04
+            container: debian:12-slim
+            release_target: linux-amd64
+            bundle_args: "--bundles deb,rpm,appimage"
+            debian_architecture: amd64
+            debian_asset: release-assets/machdoch-linux-amd64.deb
+            rpm_architecture: x86_64
+            rpm_asset: release-assets/machdoch-linux-x86_64.rpm
+          - runner: ubuntu-24.04-arm
+            container: debian:12-slim
+            release_target: linux-arm64
+            bundle_args: "--bundles deb"
+            debian_architecture: arm64
+            debian_asset: release-assets/machdoch-linux-arm64.deb
+            rpm_architecture: ""
+            rpm_asset: ""
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
     permissions:
       contents: write
       id-token: write
       attestations: write
     steps:
+      - name: Install Linux build dependencies
+        if: startsWith(matrix.release_target, 'linux-')
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            binutils \
+            build-essential \
+            ca-certificates \
+            clang \
+            cmake \
+            cpio \
+            curl \
+            file \
+            gh \
+            git \
+            libayatana-appindicator3-dev \
+            libclang-dev \
+            libgbm-dev \
+            libpipewire-0.3-dev \
+            librsvg2-dev \
+            libspa-0.2-dev \
+            libwebkit2gtk-4.1-dev \
+            patchelf \
+            pkg-config \
+            python3 \
+            rpm \
+            wget \
+            xz-utils
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh
+          sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
       - uses: actions/checkout@v7
 
       - name: Setup pnpm
@@ -260,13 +323,8 @@ jobs:
           cache: pnpm
 
       - name: Install Rust stable
+        if: matrix.release_target == 'windows-x64'
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-24.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libgbm-dev librsvg2-dev libpipewire-0.3-dev libspa-0.2-dev patchelf
 
       - name: Install dependencies
         shell: bash
@@ -274,7 +332,9 @@ jobs:
 
       - name: Build release assets
         shell: bash
-        run: pnpm tauri:build
+        env:
+          TAURI_LINUX_AYATANA_APPINDICATOR: ${{ startsWith(matrix.release_target, 'linux-') && 'true' || '' }}
+        run: pnpm --filter @machdoch/client tauri build ${{ matrix.bundle_args }}
 
       - name: List bundle outputs
         shell: bash
@@ -287,11 +347,29 @@ jobs:
         shell: bash
         run: >-
           node .github/scripts/release-assets.mjs prepare
-          "${{ matrix.asset_platform }}"
+          "${{ matrix.release_target }}"
           apps/client/src-tauri/target/release/bundle
           release-assets
           apps/client/src-tauri/tauri.conf.json
           "$GITHUB_OUTPUT"
+
+      - name: Verify Debian package
+        if: matrix.debian_architecture != ''
+        shell: bash
+        run: >-
+          node .github/scripts/verify-linux-package.mjs deb
+          "${{ matrix.debian_asset }}"
+          "${{ matrix.debian_architecture }}"
+          apps/client/src-tauri/tauri.conf.json
+
+      - name: Verify RPM package
+        if: matrix.rpm_architecture != ''
+        shell: bash
+        run: >-
+          node .github/scripts/verify-linux-package.mjs rpm
+          "${{ matrix.rpm_asset }}"
+          "${{ matrix.rpm_architecture }}"
+          apps/client/src-tauri/tauri.conf.json
 
       - name: Upload release assets
         env:
@@ -309,8 +387,8 @@ jobs:
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
         with:
-          artifact-name: sbom-${{ matrix.platform }}.spdx.json
-          output-file: sbom-${{ matrix.platform }}.spdx.json
+          artifact-name: sbom-${{ matrix.release_target }}.spdx.json
+          output-file: sbom-${{ matrix.release_target }}.spdx.json
           format: spdx-json
           upload-release-assets: false
 
@@ -325,7 +403,7 @@ jobs:
         uses: actions/attest-sbom@v3
         with:
           subject-path: ${{ steps.assets.outputs.paths }}
-          sbom-path: sbom-${{ matrix.platform }}.spdx.json
+          sbom-path: sbom-${{ matrix.release_target }}.spdx.json
 
   build-and-publish-landing:
     needs: prepare-release
@@ -411,8 +489,8 @@ jobs:
             MACHDOCH_LANDING_URL=${{ vars.MACHDOCH_LANDING_URL }}
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=landing
+          cache-to: type=gha,mode=max,scope=landing
 
       - name: Attest image provenance
         if: ${{ github.event.repository.visibility == 'public' }}
@@ -420,6 +498,114 @@ jobs:
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+
+  build-and-publish-fleet-manager:
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}-fleet-manager
+      SMOKE_IMAGE: machdoch-fleet-manager:smoke
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Fleet Manager image for verification
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/fleet-manager/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: ${{ env.SMOKE_IMAGE }}
+          cache-from: type=gha,scope=fleet-manager
+          cache-to: type=gha,mode=max,scope=fleet-manager
+
+      - name: Verify Fleet Manager image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          container_name="fleet-manager-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          volume_name="fleet-manager-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            docker rm --force "$container_name" >/dev/null 2>&1 || true
+            docker volume rm --force "$volume_name" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker volume create "$volume_name" >/dev/null
+          docker run --rm \
+            --network host \
+            --mount "type=bind,source=${GITHUB_WORKSPACE}/apps/fleet-manager/fleet-manager.example.json,target=/config/fleet-manager.json,readonly" \
+            --mount "type=volume,source=${volume_name},target=/config/data" \
+            --env FLEET_MANAGER_SEED_USERNAME=owner \
+            --env FLEET_MANAGER_SEED_PASSWORD=FleetSmoke-2026-Strong \
+            "$SMOKE_IMAGE" seed --config /config/fleet-manager.json
+
+          docker run --detach \
+            --name "$container_name" \
+            --network host \
+            --mount "type=bind,source=${GITHUB_WORKSPACE}/apps/fleet-manager/fleet-manager.example.json,target=/config/fleet-manager.json,readonly" \
+            --mount "type=volume,source=${volume_name},target=/config/data" \
+            "$SMOKE_IMAGE" >/dev/null
+
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error http://127.0.0.1:43188/healthz >/dev/null; then
+              exit 0
+            fi
+            if [ "$(docker inspect --format '{{.State.Running}}' "$container_name")" != "true" ]; then
+              break
+            fi
+            sleep 1
+          done
+
+          docker logs "$container_name"
+          exit 1
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image metadata
+        id: fleet-metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+            type=raw,value=${{ needs.prepare-release.outputs.tag_name }},enable=${{ needs.prepare-release.outputs.should_release == 'true' }}
+            type=sha,format=long
+
+      - name: Build and publish Fleet Manager image
+        id: fleet-image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/fleet-manager/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.fleet-metadata.outputs.tags }}
+          labels: ${{ steps.fleet-metadata.outputs.labels }}
+          cache-from: type=gha,scope=fleet-manager
+
+      - name: Attest image provenance
+        if: ${{ github.event.repository.visibility == 'public' }}
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.fleet-image.outputs.digest }}
           push-to-registry: true
 
   finalize-release-assets:
@@ -462,7 +648,13 @@ jobs:
           node .github/scripts/release-assets.mjs verify "$VERSION" release.json
 
   publish-release:
-    needs: [prepare-release, finalize-release-assets, build-and-publish-landing]
+    needs:
+      [
+        prepare-release,
+        finalize-release-assets,
+        build-and-publish-landing,
+        build-and-publish-fleet-manager,
+      ]
     if: needs.prepare-release.outputs.should_release == 'true' && needs.prepare-release.outputs.publish_on_success == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -476,7 +668,15 @@ jobs:
 
   cleanup-release:
     name: Cleanup Draft Release on Failure
-    needs: [prepare-release, build-and-release, build-and-publish-landing, finalize-release-assets, publish-release]
+    needs:
+      [
+        prepare-release,
+        build-and-release,
+        build-and-publish-landing,
+        build-and-publish-fleet-manager,
+        finalize-release-assets,
+        publish-release,
+      ]
     if: always() && needs.prepare-release.outputs.should_release == 'true' && failure() && needs.prepare-release.outputs.delete_on_failure == 'true'
     runs-on: ubuntu-latest
     permissions:

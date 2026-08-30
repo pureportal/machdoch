@@ -49,6 +49,11 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "machdoch",
+    "homepage": "https://github.com/pureportal/machdoch",
+    "category": "Productivity",
+    "shortDescription": "Local-first OS AI agent for CLI and desktop.",
+    "longDescription": "Machdoch is a local-first AI assistant for Windows and Linux that works with folders, runs tasks, and automates repeatable workflows from the desktop or CLI.",
     "resources": {
       "python/media_diffusers_worker.py": "python/media_diffusers_worker.py",
       "python/media_diffusers_requirements.txt": "python/media_diffusers_requirements.txt",
@@ -63,6 +68,7 @@
     ],
     "windows": {
       "wix": {
+        "upgradeCode": "47638e6f-1542-5d67-bc57-e5ae45db5fd8",
         "fragmentPaths": [
           "windows/file-manager-context-menu.wxs"
         ],
@@ -71,11 +77,16 @@
         ]
       },
       "nsis": {
+        "installMode": "currentUser",
         "installerHooks": "windows/nsis-hooks.nsh"
       }
     },
     "linux": {
       "deb": {
+        "depends": [
+          "libgbm1",
+          "libpipewire-0.3-0"
+        ],
         "recommends": [
           "python3-nautilus"
         ],
@@ -86,6 +97,10 @@
         }
       },
       "rpm": {
+        "depends": [
+          "libgbm.so.1()(64bit)",
+          "libpipewire-0.3.so.0()(64bit)"
+        ],
         "recommends": [
           "nautilus-python"
         ],
