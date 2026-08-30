@@ -10,39 +10,46 @@ import { fileURLToPath } from "node:url";
 
 export const installerAssetDefinitions = [
   {
-    platform: "windows",
+    releaseTarget: "windows-x64",
     sourceDirectory: "msi",
-    sourcePattern: /\.msi$/u,
-    sourceLabel: "MSI",
+    sourcePattern: /_x64(?:_[^.]+)?\.msi$/u,
+    sourceLabel: "x64 MSI",
     canonicalName: "machdoch-windows-x64.msi",
   },
   {
-    platform: "windows",
+    releaseTarget: "windows-x64",
     sourceDirectory: "nsis",
-    sourcePattern: /-setup\.exe$/u,
-    sourceLabel: "NSIS",
+    sourcePattern: /_x64-setup\.exe$/u,
+    sourceLabel: "x64 NSIS",
     canonicalName: "machdoch-windows-x64-setup.exe",
   },
   {
-    platform: "linux",
+    releaseTarget: "linux-amd64",
     sourceDirectory: "deb",
-    sourcePattern: /\.deb$/u,
-    sourceLabel: "Debian",
+    sourcePattern: /_amd64\.deb$/u,
+    sourceLabel: "amd64 Debian",
     canonicalName: "machdoch-linux-amd64.deb",
   },
   {
-    platform: "linux",
+    releaseTarget: "linux-amd64",
     sourceDirectory: "rpm",
-    sourcePattern: /\.rpm$/u,
-    sourceLabel: "RPM",
+    sourcePattern: /\.x86_64\.rpm$/u,
+    sourceLabel: "x86_64 RPM",
     canonicalName: "machdoch-linux-x86_64.rpm",
   },
   {
-    platform: "linux",
+    releaseTarget: "linux-amd64",
     sourceDirectory: "appimage",
-    sourcePattern: /\.AppImage$/u,
-    sourceLabel: "AppImage",
+    sourcePattern: /_amd64\.AppImage$/u,
+    sourceLabel: "amd64 AppImage",
     canonicalName: "machdoch-linux-amd64.AppImage",
+  },
+  {
+    releaseTarget: "linux-arm64",
+    sourceDirectory: "deb",
+    sourcePattern: /_arm64\.deb$/u,
+    sourceLabel: "ARM64 Debian",
+    canonicalName: "machdoch-linux-arm64.deb",
   },
 ];
 
@@ -85,13 +92,13 @@ export function validateConfiguredBundleTargets(targets) {
   }
 }
 
-function getPlatformDefinitions(platform) {
+function getReleaseTargetDefinitions(releaseTarget) {
   const definitions = installerAssetDefinitions.filter(
-    (definition) => definition.platform === platform,
+    (definition) => definition.releaseTarget === releaseTarget,
   );
 
   if (definitions.length === 0) {
-    throw new Error(`Unsupported installer platform: ${platform}`);
+    throw new Error(`Unsupported installer release target: ${releaseTarget}`);
   }
 
   return definitions;
@@ -130,11 +137,11 @@ async function resolveSourceAsset(bundleDirectory, definition) {
 }
 
 export async function prepareReleaseAssets({
-  platform,
+  releaseTarget,
   bundleDirectory,
   outputDirectory,
 }) {
-  const definitions = getPlatformDefinitions(platform);
+  const definitions = getReleaseTargetDefinitions(releaseTarget);
   const resolvedAssets = await Promise.all(
     definitions.map(async (definition) => ({
       definition,
@@ -286,12 +293,12 @@ async function runCli() {
   if (command === "prepare") {
     if (args.length !== 5) {
       throw new Error(
-        "Usage: release-assets.mjs prepare <platform> <bundle-directory> <output-directory> <tauri-configuration> <github-output>",
+        "Usage: release-assets.mjs prepare <release-target> <bundle-directory> <output-directory> <tauri-configuration> <github-output>",
       );
     }
 
     const [
-      platform,
+      releaseTarget,
       bundleDirectory,
       outputDirectory,
       tauriConfiguration,
@@ -299,7 +306,7 @@ async function runCli() {
     ] = args;
     await validateTauriConfiguration(tauriConfiguration);
     const paths = await prepareReleaseAssets({
-      platform,
+      releaseTarget,
       bundleDirectory,
       outputDirectory,
     });

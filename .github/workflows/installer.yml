@@ -18,14 +18,69 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: windows-latest
-            asset_platform: windows
-            artifact_name: installers-windows
-          - platform: ubuntu-24.04
-            asset_platform: linux
-            artifact_name: installers-linux
-    runs-on: ${{ matrix.platform }}
+          - runner: windows-latest
+            container: ""
+            release_target: windows-x64
+            artifact_name: installers-windows-x64
+            bundle_args: "--bundles msi,nsis"
+            debian_architecture: ""
+            debian_asset: ""
+            rpm_architecture: ""
+            rpm_asset: ""
+          - runner: ubuntu-24.04
+            container: debian:12-slim
+            release_target: linux-amd64
+            artifact_name: installers-linux-amd64
+            bundle_args: "--bundles deb,rpm,appimage"
+            debian_architecture: amd64
+            debian_asset: release-assets/machdoch-linux-amd64.deb
+            rpm_architecture: x86_64
+            rpm_asset: release-assets/machdoch-linux-x86_64.rpm
+          - runner: ubuntu-24.04-arm
+            container: debian:12-slim
+            release_target: linux-arm64
+            artifact_name: installers-linux-arm64
+            bundle_args: "--bundles deb"
+            debian_architecture: arm64
+            debian_asset: release-assets/machdoch-linux-arm64.deb
+            rpm_architecture: ""
+            rpm_asset: ""
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
     steps:
+      - name: Install Linux build dependencies
+        if: startsWith(matrix.release_target, 'linux-')
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            binutils \
+            build-essential \
+            ca-certificates \
+            clang \
+            cmake \
+            cpio \
+            curl \
+            file \
+            git \
+            libayatana-appindicator3-dev \
+            libclang-dev \
+            libgbm-dev \
+            libpipewire-0.3-dev \
+            librsvg2-dev \
+            libspa-0.2-dev \
+            libwebkit2gtk-4.1-dev \
+            patchelf \
+            pkg-config \
+            python3 \
+            rpm \
+            wget \
+            xz-utils
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh
+          sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
       - uses: actions/checkout@v7
 
       - name: Setup pnpm
@@ -38,13 +93,8 @@ jobs:
           cache: pnpm
 
       - name: Install Rust stable
+        if: matrix.release_target == 'windows-x64'
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-24.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libgbm-dev librsvg2-dev libpipewire-0.3-dev libspa-0.2-dev patchelf
 
       - name: Install dependencies
         shell: bash
@@ -52,7 +102,9 @@ jobs:
 
       - name: Build Tauri installers
         shell: bash
-        run: pnpm tauri:build
+        env:
+          TAURI_LINUX_AYATANA_APPINDICATOR: ${{ startsWith(matrix.release_target, 'linux-') && 'true' || '' }}
+        run: pnpm --filter @machdoch/client tauri build ${{ matrix.bundle_args }}
 
       - name: List bundle outputs
         shell: bash
@@ -65,11 +117,29 @@ jobs:
         shell: bash
         run: >-
           node .github/scripts/release-assets.mjs prepare
-          "${{ matrix.asset_platform }}"
+          "${{ matrix.release_target }}"
           apps/client/src-tauri/target/release/bundle
           release-assets
           apps/client/src-tauri/tauri.conf.json
           "$GITHUB_OUTPUT"
+
+      - name: Verify Debian package
+        if: matrix.debian_architecture != ''
+        shell: bash
+        run: >-
+          node .github/scripts/verify-linux-package.mjs deb
+          "${{ matrix.debian_asset }}"
+          "${{ matrix.debian_architecture }}"
+          apps/client/src-tauri/tauri.conf.json
+
+      - name: Verify RPM package
+        if: matrix.rpm_architecture != ''
+        shell: bash
+        run: >-
+          node .github/scripts/verify-linux-package.mjs rpm
+          "${{ matrix.rpm_asset }}"
+          "${{ matrix.rpm_architecture }}"
+          apps/client/src-tauri/tauri.conf.json
 
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v7
@@ -81,8 +151,8 @@ jobs:
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
         with:
-          artifact-name: sbom-${{ matrix.platform }}.spdx.json
-          output-file: sbom-${{ matrix.platform }}.spdx.json
+          artifact-name: sbom-${{ matrix.release_target }}.spdx.json
+          output-file: sbom-${{ matrix.release_target }}.spdx.json
           format: spdx-json
           upload-release-assets: false
 
@@ -97,4 +167,4 @@ jobs:
         uses: actions/attest-sbom@v3
         with:
           subject-path: ${{ steps.assets.outputs.paths }}
-          sbom-path: sbom-${{ matrix.platform }}.spdx.json
+          sbom-path: sbom-${{ matrix.release_target }}.spdx.json
