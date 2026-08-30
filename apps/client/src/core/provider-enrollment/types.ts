@@ -199,7 +199,12 @@ export interface MaterializedCliEnrollment {
   env: NodeJS.ProcessEnv;
   manifest: EnrollmentManifest;
   manifestPath: string;
-  dispose(): Promise<void>;
+  dispose(): Promise<EnrollmentDisposalResult>;
+}
+
+export interface EnrollmentDisposalResult {
+  status: "removed" | "deferred";
+  errorCode?: string;
 }
 
 export interface ProviderEnrollmentMcpConfig {

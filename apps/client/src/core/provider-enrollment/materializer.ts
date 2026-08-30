@@ -42,6 +42,7 @@ import type { MachdochCliLaunch } from "./machdoch-cli-launch.js";
 import { quoteTomlKey, renderCodexMcpToml } from "./toml.js";
 import {
   PROVIDER_ENROLLMENT_MANIFEST_SCHEMA_VERSION,
+  type EnrollmentDisposalResult,
   type EnrollmentCoverageEntry,
   type EnrollmentManifest,
   type MaterializedInstructionDelivery,
@@ -51,8 +52,9 @@ import {
 
 const SESSION_ROOT_PREFIX = "machdoch-instruction-run-";
 const SESSION_MARKER_NAME = ".machdoch-instruction-session.json";
-const SESSION_MARKER_SCHEMA_VERSION = 2;
+const SESSION_MARKER_SCHEMA_VERSION = 3;
 const STALE_SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
+const SESSION_REMOVAL_RETRY_DELAYS_MS = [50, 100, 200, 400, 800] as const;
 const MAX_SESSION_MARKER_BYTES = 16 * 1024;
 const MAX_PROVIDER_STATE_BYTES = 4 * 1024 * 1024;
 const MAX_COPILOT_WORKSPACE_MCP_FILES = 256;
@@ -128,7 +130,13 @@ const decodeStrictUtf8 = (content: Uint8Array, label: string): string => {
 };
 
 interface InstructionSessionMarker {
+  schemaVersion: typeof SESSION_MARKER_SCHEMA_VERSION;
+  kind: "machdoch-instruction-run";
+  runId: string;
+  rootPath: string;
   ownerProcessId: number;
+  createdAt: string;
+  state: "active" | "cleanup-pending";
 }
 
 const readValidSessionMarker = async (
@@ -155,7 +163,8 @@ const readValidSessionMarker = async (
       parsed.runId.length === 0 ||
       parsed.rootPath !== path ||
       typeof parsed.createdAt !== "string" ||
-      !Number.isFinite(Date.parse(parsed.createdAt))
+      !Number.isFinite(Date.parse(parsed.createdAt)) ||
+      (parsed.state !== "active" && parsed.state !== "cleanup-pending")
     ) {
       return undefined;
     }
@@ -165,14 +174,19 @@ const readValidSessionMarker = async (
     ) {
       return undefined;
     }
-    return { ownerProcessId: Number(parsed.ownerProcessId) };
+    return {
+      schemaVersion: SESSION_MARKER_SCHEMA_VERSION,
+      kind: "machdoch-instruction-run",
+      runId: parsed.runId,
+      rootPath: path,
+      ownerProcessId: Number(parsed.ownerProcessId),
+      createdAt: parsed.createdAt,
+      state: parsed.state,
+    };
   } catch {
     return undefined;
   }
 };
-
-const hasValidSessionMarker = async (path: string): Promise<boolean> =>
-  (await readValidSessionMarker(path)) !== undefined;
 
 const processMayStillBeRunning = (processId: number): boolean => {
   try {
@@ -183,23 +197,123 @@ const processMayStillBeRunning = (processId: number): boolean => {
   }
 };
 
-const removeSessionRoot = async (path: string): Promise<void> => {
-  if (
-    !(await isContainedTemporarySession(path)) ||
-    !(await hasValidSessionMarker(path))
-  ) {
-    return;
+const writeSessionMarker = async (
+  marker: InstructionSessionMarker,
+): Promise<void> => {
+  const markerPath = join(marker.rootPath, SESSION_MARKER_NAME);
+  await writeJsonAtomically(markerPath, marker);
+  await chmod(markerPath, 0o600).catch(() => undefined);
+};
+
+const getErrorCode = (error: unknown): string | undefined =>
+  typeof (error as NodeJS.ErrnoException).code === "string"
+    ? (error as NodeJS.ErrnoException).code
+    : undefined;
+
+const TRANSIENT_SESSION_REMOVAL_ERROR_CODES = new Set([
+  "EACCES",
+  "EBUSY",
+  "EMFILE",
+  "ENFILE",
+  "ENOTEMPTY",
+  "EPERM",
+]);
+
+const removeSessionEntry = async (path: string): Promise<void> => {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rm(path, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const errorCode = getErrorCode(error);
+      const retryDelay = SESSION_REMOVAL_RETRY_DELAYS_MS[attempt];
+      if (
+        !errorCode ||
+        !TRANSIENT_SESSION_REMOVAL_ERROR_CODES.has(errorCode) ||
+        retryDelay === undefined
+      ) {
+        throw error;
+      }
+      await new Promise<void>((resolveDelay) =>
+        setTimeout(resolveDelay, retryDelay),
+      );
+    }
   }
-  const before = await lstat(path).catch(() => undefined);
+};
+
+const removeSessionRootOnce = async (
+  path: string,
+): Promise<EnrollmentDisposalResult> => {
+  if (!(await isContainedTemporarySession(path))) {
+    throw new Error(
+      `Refusing to remove an invalid temporary session root: ${path}`,
+    );
+  }
+  const marker = await readValidSessionMarker(path);
+  if (!marker) {
+    const metadata = await lstat(path).catch((error: unknown) => {
+      if (getErrorCode(error) === "ENOENT") return undefined;
+      throw error;
+    });
+    if (!metadata) return { status: "removed" };
+    throw new Error(
+      `Refusing to remove an unmarked temporary session root: ${path}`,
+    );
+  }
+  const cleanupMarker: InstructionSessionMarker = {
+    ...marker,
+    state: "cleanup-pending",
+  };
+  if (marker.state !== "cleanup-pending") {
+    await writeSessionMarker(cleanupMarker);
+  }
+  const before = await lstat(path).catch((error: unknown) => {
+    if (getErrorCode(error) === "ENOENT") return undefined;
+    throw error;
+  });
+  if (!before) return { status: "removed" };
   if (
-    before === undefined ||
     before.isSymbolicLink() ||
     !before.isDirectory() ||
     !(await isContainedTemporarySession(path))
   ) {
-    return;
+    throw new Error(`Temporary session root changed before cleanup: ${path}`);
   }
-  await rm(path, { recursive: true, force: true });
+  try {
+    const entries = await readdir(path, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name !== SESSION_MARKER_NAME) {
+        await removeSessionEntry(join(path, entry.name));
+      }
+    }
+    await removeSessionEntry(join(path, SESSION_MARKER_NAME));
+    await removeSessionEntry(path);
+    return { status: "removed" };
+  } catch (error) {
+    const errorCode = getErrorCode(error);
+    if (errorCode === "ENOENT") return { status: "removed" };
+    if (errorCode && TRANSIENT_SESSION_REMOVAL_ERROR_CODES.has(errorCode)) {
+      return { status: "deferred", errorCode };
+    }
+    throw error;
+  }
+};
+
+const sessionRootRemovalPromises = new Map<
+  string,
+  Promise<EnrollmentDisposalResult>
+>();
+
+const removeSessionRoot = (path: string): Promise<EnrollmentDisposalResult> => {
+  const existingRemoval = sessionRootRemovalPromises.get(path);
+  if (existingRemoval) return existingRemoval;
+  const removal = removeSessionRootOnce(path).finally(() => {
+    if (sessionRootRemovalPromises.get(path) === removal) {
+      sessionRootRemovalPromises.delete(path);
+    }
+  });
+  sessionRootRemovalPromises.set(path, removal);
+  return removal;
 };
 
 export const cleanupStaleEnrollmentArtifacts = async (
@@ -214,19 +328,20 @@ export const cleanupStaleEnrollmentArtifacts = async (
     }
     const path = join(tmpdir(), entry.name);
     const metadata = await lstat(path).catch(() => undefined);
-    if (
-      metadata &&
-      metadata.isDirectory() &&
-      !metadata.isSymbolicLink() &&
-      now - metadata.mtimeMs >= STALE_SESSION_MAX_AGE_MS
-    ) {
-      const marker = await readValidSessionMarker(path);
-      if (!marker) continue;
-      if (processMayStillBeRunning(marker.ownerProcessId)) {
-        continue;
-      }
-      await removeSessionRoot(path).catch(() => undefined);
+    if (!metadata || !metadata.isDirectory() || metadata.isSymbolicLink()) {
+      continue;
     }
+    const marker = await readValidSessionMarker(path);
+    if (!marker) continue;
+    const cleanupPending = marker.state === "cleanup-pending";
+    if (
+      !cleanupPending &&
+      (now - metadata.mtimeMs < STALE_SESSION_MAX_AGE_MS ||
+        processMayStillBeRunning(marker.ownerProcessId))
+    ) {
+      continue;
+    }
+    await removeSessionRoot(path).catch(() => undefined);
   }
 };
 
@@ -778,17 +893,15 @@ export const materializeCliEnrollment = async (
   await cleanupStaleEnrollmentArtifacts();
   const rootPath = await mkdtemp(join(tmpdir(), SESSION_ROOT_PREFIX));
   await chmod(rootPath, 0o700).catch(() => undefined);
-  await writeJsonAtomically(join(rootPath, SESSION_MARKER_NAME), {
+  await writeSessionMarker({
     schemaVersion: SESSION_MARKER_SCHEMA_VERSION,
     kind: "machdoch-instruction-run",
     runId: params.runId,
     rootPath,
     ownerProcessId: process.pid,
     createdAt: new Date().toISOString(),
+    state: "active",
   });
-  await chmod(join(rootPath, SESSION_MARKER_NAME), 0o600).catch(
-    () => undefined,
-  );
 
   try {
     const [probe, projection] = await Promise.all([
@@ -917,13 +1030,17 @@ export const materializeCliEnrollment = async (
       env: enrollmentEnvironment,
       manifest,
       manifestPath,
-      dispose: async (): Promise<void> => {
-        await removeSessionRoot(rootPath);
-      },
+      dispose: async (): Promise<EnrollmentDisposalResult> =>
+        removeSessionRoot(rootPath),
     };
   } catch (error) {
     try {
-      await removeSessionRoot(rootPath);
+      const cleanupResult = await removeSessionRoot(rootPath);
+      if (cleanupResult.status === "deferred") {
+        throw new Error(
+          `Temporary enrollment cleanup was deferred after ${cleanupResult.errorCode ?? "an unknown filesystem error"}.`,
+        );
+      }
     } catch (cleanupError) {
       throw new AggregateError(
         [error, cleanupError],
