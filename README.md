@@ -9,6 +9,7 @@
   <img alt="Status: active development" src="https://img.shields.io/badge/status-active%20development-orange" />
   <img alt="Windows x64" src="https://img.shields.io/badge/Windows-x64-0078D4?logo=windows&amp;logoColor=white" />
   <img alt="Linux x64" src="https://img.shields.io/badge/Linux-x64-FCC624?logo=linux&amp;logoColor=black" />
+  <img alt="Linux ARM64" src="https://img.shields.io/badge/Linux-ARM64-FCC624?logo=linux&amp;logoColor=black" />
 </p>
 
 > [!WARNING]
@@ -47,6 +48,7 @@ Machdoch connects an AI model to practical tools on your computer. Give it a **w
 | Marketplace and MCP  | Add third-party tools, resources, and prompts through Model Context Protocol servers.                 |
 | Quick Chat and voice | Open a small assistant from a global shortcut, dictate requests, and hear replies.                    |
 | Mission Control      | Monitor and control sessions from a browser on another device on the same local network.              |
+| Fleet                | Connect enrolled hosts to a self-hosted dashboard for remote access and managed settings.             |
 
 ### Choose how much control to give it
 
@@ -69,8 +71,9 @@ Current release packages support:
 
 - 64-bit Windows on Intel/AMD hardware (`x64`)
 - 64-bit Linux on Intel/AMD hardware (`amd64`/`x86_64`)
+- 64-bit Debian-based Linux on ARM hardware (`arm64`/`aarch64`), including 64-bit Raspberry Pi OS
 
-There is currently no published macOS or ARM/ARM64 package. The project does not state a minimum Windows or Linux version, so avoid assuming that an older system is supported until you have tested the current release.
+There is currently no published macOS or 32-bit ARM package. The project does not state a minimum Windows or Linux version, so avoid assuming that an older system is supported until you have tested the current release.
 
 To run normal AI tasks, you also need one of the following:
 
@@ -109,11 +112,16 @@ Start-Process -FilePath .\machdoch-setup.exe -Wait
 
 ### Debian or Ubuntu
 
-1. Download the [Debian/Ubuntu package](https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-amd64.deb).
+1. Download the package for your system: [Intel/AMD 64-bit](https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-amd64.deb) or [ARM64](https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-arm64.deb).
 2. Open it with your graphical package installer, or install it from a terminal:
 
 ```bash
-wget -O machdoch.deb https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-amd64.deb
+architecture="$(dpkg --print-architecture)"
+case "$architecture" in
+  amd64|arm64) ;;
+  *) echo "Machdoch does not provide a Debian package for $architecture." >&2; exit 1 ;;
+esac
+wget -O machdoch.deb "https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-${architecture}.deb"
 sudo apt install ./machdoch.deb
 ```
 
@@ -325,6 +333,12 @@ Mission Control serves a browser view directly from your computer so another dev
 > [!CAUTION]
 > Mission Control currently uses plain local HTTP rather than encrypted HTTPS (TLS) and listens on the selected local-network port (default `43187`). Use it only on a trusted network. Anyone who obtains the active link/token or an authorized browser session may gain substantial control over Machdoch. A firewall, guest Wi-Fi isolation, or VPN can also prevent the devices from connecting.
 
+### Fleet Manager
+
+Fleet connects desktop or CLI hosts to a self-hosted Fleet Manager. Its browser dashboard can enroll and revoke instances, show connection state, and open supported remote controls. Desktop hosts can also apply managed settings.
+
+Deploy Fleet Manager behind HTTPS, initialize its owner account, and create an enrollment key. In the desktop app, enter the manager URL, enrollment key, and instance name under **Mission Control > Fleet Manager**. Each host can belong to only one manager. See [Run Fleet without the desktop UI](#run-fleet-without-the-desktop-ui) for a terminal-only host and the [Fleet Manager deployment guide](apps/fleet-manager/README.md) for Docker, configuration, proxy, and backup instructions.
+
 ### Transfer settings to another computer
 
 Open **Settings > Settings transfer** to move selected global settings without uploading them to a Machdoch cloud service.
@@ -421,6 +435,7 @@ Run commands in a terminal where the packaged `machdoch` executable is available
 | `machdoch memory list`                 | Show workspace and global memory.                                 |
 | `machdoch inspect`                     | Show discovered prompts and skills.                               |
 | `machdoch tools`                       | Show available tool areas and function calls.                     |
+| `machdoch fleet status`                | Show Fleet enrollment and enablement.                             |
 
 RALPH, Smart Scheduler, instructions, MCP, and delegated-provider synchronization also have terminal commands. Start with `machdoch help ralph`, `machdoch help scheduler`, `machdoch help instructions`, `machdoch help mcp`, or `machdoch help provider-sync` rather than guessing their options.
 
@@ -445,6 +460,34 @@ machdoch --cli --cwd .
 ```
 
 Inside terminal chat, use `/help`, `/paste` for multiline input ending with `/end`, and `/exit` or `/quit` to leave.
+
+### Run Fleet without the desktop UI
+
+The installed `machdoch` executable can host Fleet directly. Enroll it, select a workspace, and run the foreground service:
+
+```bash
+machdoch fleet enroll --manager-url https://fleet.example.com --enrollment-key <key> --display-name "Build host"
+machdoch config set fleet.enabled on
+machdoch fleet service --cwd /absolute/path/to/workspace
+```
+
+`fleet service` requires no graphical session and handles normal service-stop signals. Run it as the OS account that enrolled the host and owns its workspace and provider credentials. A service manager can supervise that command. For example, a Linux user unit can use:
+
+```ini
+[Unit]
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/machdoch --cli fleet service --cwd=/absolute/path/to/workspace
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target
+```
+
+Use the installed executable's actual absolute path. On Windows, the same foreground command can be hosted by a service wrapper; the standard Windows Service Control Manager cannot register a normal CLI process directly. Run either the desktop client gateway or the CLI service for an enrollment, not both. Disable the gateway with `machdoch config set fleet.enabled off`; a running CLI service observes the change and exits.
 
 Inspect and change a workspace default:
 
@@ -507,7 +550,7 @@ Chat history, memory, flows, schedules, and Media Studio data are also ordinary 
 ## Limitations
 
 - Machdoch is under active development. Features, settings, data formats, provider models, and compatibility can change, and data loss is possible.
-- Published installers currently cover Windows x64 and Linux x64 only. There is no published macOS or ARM package.
+- There is no published macOS or 32-bit ARM package. Linux ARM64 is available as a Debian package only.
 - Normal chat requires an available cloud API provider or an authenticated supported CLI provider. Offline mode does not provide a local language model and blocks model-driven tasks.
 - AI models can misunderstand instructions, overlook files, invent facts, or incorrectly claim success. Tool verification reduces risk but does not eliminate it.
 - Ask mode limits function calls to read-only operations but does not prevent the selected provider from receiving task context.
@@ -518,6 +561,7 @@ Chat history, memory, flows, schedules, and Media Studio data are also ordinary 
 - Local media support varies by hardware, operating system, runtime, model, and available disk space. Passing a readiness check is not a guarantee that every workload will succeed.
 - Scheduled tasks do not run while the computer or scheduler service is unavailable, and event-based jobs require a matching event source.
 - Mission Control is intended for the same trusted local network; it is not a cloud remote-access service.
+- Fleet requires a separately operated Fleet Manager with HTTPS. Remote access is unavailable while the manager or enrolled host is offline.
 - Settings transfer moves selected global settings, not a complete backup of sessions, workspaces, or Media Studio.
 
 ## Troubleshooting
@@ -567,13 +611,14 @@ Third-party model providers, MCP servers, websites, search services, media model
 
 ## Development
 
-Open `machdoch.code-workspace` to load the repository root, desktop client, and landing page together.
+Open `machdoch.code-workspace` to load the repository root and applications together.
 
-| Path              | Purpose                                                                   |
-| ----------------- | ------------------------------------------------------------------------- |
-| `apps/client`     | Desktop application, CLI, Tauri crate, tests, and client-specific scripts |
-| `apps/landing`    | Public landing page                                                       |
-| `assets/branding` | Shared Machdoch branding                                                  |
+| Path                 | Purpose                                                                   |
+| -------------------- | ------------------------------------------------------------------------- |
+| `apps/client`        | Desktop application, CLI, Tauri crate, tests, and client-specific scripts |
+| `apps/fleet-manager` | Next.js fleet, relay, enrollment, and centralized settings manager        |
+| `apps/landing`       | Public landing page                                                       |
+| `assets/branding`    | Shared Machdoch branding                                                  |
 
 Run workspace commands from the repository root:
 
@@ -584,4 +629,4 @@ pnpm build:ui
 pnpm tauri:build
 ```
 
-Use `pnpm dev:ui` for the browser UI, `pnpm tauri:dev` for the desktop app, and `pnpm dev:landing` for the landing page.
+Use `pnpm dev:ui` for the browser UI, `pnpm tauri:dev` for the desktop app, `pnpm dev:fleet-manager` for Fleet Manager, and `pnpm dev:landing` for the landing page.
