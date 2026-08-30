@@ -6,7 +6,8 @@ use std::{
 use super::settings_types::{
     UserAgentLimitsConfigFile, UserAgentLimitsSettings, UserDesktopSettings,
     UserInternalTaskModelConfigFile, UserInternalTaskModelSettings, UserMemoryEntry,
-    UserReviewModelConfigFile, UserReviewModelSettings,
+    UserReviewModelConfigFile, UserReviewModelSettings, UserWorkspaceRunConfigFile,
+    UserWorkspaceRunSettings,
 };
 use super::{is_valid_model_provider, normalize_optional_string};
 use crate::runtime_contract_generated::{
@@ -14,18 +15,25 @@ use crate::runtime_contract_generated::{
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS, DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
     DEFAULT_MAX_EXECUTOR_TURNS, DEFAULT_USER_AGENT_LIMITS_INFINITE,
     DEFAULT_USER_INTERNAL_TASK_MODEL_REASONING, DEFAULT_USER_REVIEW_MODEL_MODE,
+    DEFAULT_WORKSPACE_RUN_HEALTH_CHECK_FAILURE_THRESHOLD,
+    DEFAULT_WORKSPACE_RUN_HEALTH_CHECK_INTERVAL_MS, DEFAULT_WORKSPACE_RUN_HEALTH_CHECK_TIMEOUT_MS,
+    DEFAULT_WORKSPACE_RUN_SEQUENTIAL_READINESS_TIMEOUT_MS, DEFAULT_WORKSPACE_RUN_STARTUP_DELAY_MS,
     MAX_CONFIGURED_AUTOPILOT_ITERATIONS, MAX_CONFIGURED_EXECUTOR_TURNS,
     MAX_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
     MAX_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
     MAX_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
     MAX_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     MAX_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES, MAX_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
-    MIN_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
+    MAX_WORKSPACE_RUN_HEALTH_CHECK_FAILURE_THRESHOLD, MAX_WORKSPACE_RUN_HEALTH_CHECK_INTERVAL_MS,
+    MAX_WORKSPACE_RUN_HEALTH_CHECK_TIMEOUT_MS, MAX_WORKSPACE_RUN_SEQUENTIAL_READINESS_TIMEOUT_MS,
+    MAX_WORKSPACE_RUN_STARTUP_DELAY_MS, MIN_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
     MIN_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
     MIN_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
     MIN_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     MIN_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES, MIN_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
-    REASONING_MODES, USER_REVIEW_MODEL_MODES,
+    MIN_WORKSPACE_RUN_HEALTH_CHECK_FAILURE_THRESHOLD, MIN_WORKSPACE_RUN_HEALTH_CHECK_INTERVAL_MS,
+    MIN_WORKSPACE_RUN_HEALTH_CHECK_TIMEOUT_MS, MIN_WORKSPACE_RUN_SEQUENTIAL_READINESS_TIMEOUT_MS,
+    MIN_WORKSPACE_RUN_STARTUP_DELAY_MS, REASONING_MODES, USER_REVIEW_MODEL_MODES,
 };
 
 const MAX_GLOBAL_MEMORY_ENTRIES: usize = 40;
@@ -116,6 +124,74 @@ pub(super) fn normalize_user_agent_limits_settings_input(
             settings.autopilot_executor_iterations,
         ),
     }
+}
+
+pub(super) fn normalize_user_workspace_run_settings(
+    settings: &UserWorkspaceRunConfigFile,
+) -> UserWorkspaceRunSettings {
+    let health_check_interval_ms = settings
+        .health_check_interval_ms
+        .map(|value| {
+            value.clamp(
+                MIN_WORKSPACE_RUN_HEALTH_CHECK_INTERVAL_MS,
+                MAX_WORKSPACE_RUN_HEALTH_CHECK_INTERVAL_MS,
+            )
+        })
+        .unwrap_or(DEFAULT_WORKSPACE_RUN_HEALTH_CHECK_INTERVAL_MS);
+    let health_check_timeout_ms = settings
+        .health_check_timeout_ms
+        .map(|value| {
+            value.clamp(
+                MIN_WORKSPACE_RUN_HEALTH_CHECK_TIMEOUT_MS,
+                MAX_WORKSPACE_RUN_HEALTH_CHECK_TIMEOUT_MS,
+            )
+        })
+        .unwrap_or(DEFAULT_WORKSPACE_RUN_HEALTH_CHECK_TIMEOUT_MS)
+        .min(health_check_interval_ms);
+
+    UserWorkspaceRunSettings {
+        startup_delay_ms: settings
+            .startup_delay_ms
+            .map(|value| {
+                value.clamp(
+                    MIN_WORKSPACE_RUN_STARTUP_DELAY_MS,
+                    MAX_WORKSPACE_RUN_STARTUP_DELAY_MS,
+                )
+            })
+            .unwrap_or(DEFAULT_WORKSPACE_RUN_STARTUP_DELAY_MS),
+        health_check_interval_ms,
+        health_check_timeout_ms,
+        health_check_failure_threshold: settings
+            .health_check_failure_threshold
+            .map(|value| {
+                value.clamp(
+                    MIN_WORKSPACE_RUN_HEALTH_CHECK_FAILURE_THRESHOLD,
+                    MAX_WORKSPACE_RUN_HEALTH_CHECK_FAILURE_THRESHOLD,
+                )
+            })
+            .unwrap_or(DEFAULT_WORKSPACE_RUN_HEALTH_CHECK_FAILURE_THRESHOLD),
+        sequential_readiness_timeout_ms: settings
+            .sequential_readiness_timeout_ms
+            .map(|value| {
+                value.clamp(
+                    MIN_WORKSPACE_RUN_SEQUENTIAL_READINESS_TIMEOUT_MS,
+                    MAX_WORKSPACE_RUN_SEQUENTIAL_READINESS_TIMEOUT_MS,
+                )
+            })
+            .unwrap_or(DEFAULT_WORKSPACE_RUN_SEQUENTIAL_READINESS_TIMEOUT_MS),
+    }
+}
+
+pub(super) fn normalize_user_workspace_run_settings_input(
+    settings: &UserWorkspaceRunSettings,
+) -> UserWorkspaceRunSettings {
+    normalize_user_workspace_run_settings(&UserWorkspaceRunConfigFile {
+        startup_delay_ms: Some(settings.startup_delay_ms),
+        health_check_interval_ms: Some(settings.health_check_interval_ms),
+        health_check_timeout_ms: Some(settings.health_check_timeout_ms),
+        health_check_failure_threshold: Some(settings.health_check_failure_threshold),
+        sequential_readiness_timeout_ms: Some(settings.sequential_readiness_timeout_ms),
+    })
 }
 
 fn is_user_review_model_mode(value: &str) -> bool {
@@ -450,6 +526,32 @@ mod tests {
             });
 
         assert_eq!(normalized.reasoning, "default");
+    }
+
+    #[test]
+    fn workspace_run_settings_use_increased_defaults_and_bounded_values() {
+        let defaults =
+            normalize_user_workspace_run_settings(&UserWorkspaceRunConfigFile::default());
+
+        assert_eq!(defaults.startup_delay_ms, 4_000);
+        assert_eq!(defaults.health_check_interval_ms, 6_000);
+        assert_eq!(defaults.health_check_timeout_ms, 2_500);
+        assert_eq!(defaults.health_check_failure_threshold, 3);
+        assert_eq!(defaults.sequential_readiness_timeout_ms, 150_000);
+
+        let normalized = normalize_user_workspace_run_settings(&UserWorkspaceRunConfigFile {
+            startup_delay_ms: Some(u64::MAX),
+            health_check_interval_ms: Some(1_000),
+            health_check_timeout_ms: Some(50_000),
+            health_check_failure_threshold: Some(0),
+            sequential_readiness_timeout_ms: Some(0),
+        });
+
+        assert_eq!(normalized.startup_delay_ms, 3_600_000);
+        assert_eq!(normalized.health_check_interval_ms, 1_000);
+        assert_eq!(normalized.health_check_timeout_ms, 1_000);
+        assert_eq!(normalized.health_check_failure_threshold, 1);
+        assert_eq!(normalized.sequential_readiness_timeout_ms, 1_000);
     }
 
     #[test]

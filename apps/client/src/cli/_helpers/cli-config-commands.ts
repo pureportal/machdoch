@@ -14,6 +14,10 @@ import {
 } from "../../core/config.js";
 import { parseContextWindow } from "../../core/context-windows.js";
 import {
+  loadFleetConnectionStatus,
+  setFleetConnectionEnabled,
+} from "../../core/fleet-connection.js";
+import {
   clearUserConfigValue,
   hasConfiguredValue,
   loadUserAgentCliPaths,
@@ -21,6 +25,7 @@ import {
   loadUserConfigFile,
   loadUserMemorySettings,
   loadUserReviewModelSettings,
+  loadUserWorkspaceRunSettings,
   loadRuntimeEnvironment,
   saveUserAgentCliPath,
   saveUserAgentLimitsSettings,
@@ -33,6 +38,7 @@ import {
   saveUserVoiceActiveProvider,
   saveUserWebSearchActiveProvider,
   saveUserWebSearchApiKey,
+  saveUserWorkspaceRunSettings,
 } from "../../core/env.js";
 import { resolveRuntimeAgentLimits } from "../../core/_helpers/agent-runtime-types.js";
 import {
@@ -47,6 +53,7 @@ import {
   USER_WEB_SEARCH_PROVIDERS,
   VALID_MODEL_PROVIDERS,
   WEB_SEARCH_ENV_KEY_BY_PROVIDER,
+  WORKSPACE_RUN_SETTING_BOUNDS,
   isAgentCliProvider,
   isReasoningExecutionMode,
   isUserApiProvider,
@@ -60,6 +67,7 @@ import type {
   UserApiProvider,
   UserConfigFile,
   UserDesktopSettings,
+  UserWorkspaceRunSettings,
   UserWebSearchProvider,
   VoiceAiProvider,
   WebSearchProvider,
@@ -104,6 +112,13 @@ interface DesktopConfigSetting {
   description: string;
   min?: number;
   max?: number;
+}
+
+interface WorkspaceRunConfigSetting {
+  key: keyof UserWorkspaceRunSettings;
+  description: string;
+  min: number;
+  max: number;
 }
 
 const BOOLEAN_CHOICES = ["on", "off"] as const;
@@ -186,6 +201,34 @@ const DESKTOP_CONFIG_SETTINGS = {
     ...DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages,
   },
 } as const satisfies Record<string, DesktopConfigSetting>;
+
+const WORKSPACE_RUN_CONFIG_SETTINGS = {
+  "startup-delay-ms": {
+    key: "startupDelayMs",
+    description: "Delay before the first health check.",
+    ...WORKSPACE_RUN_SETTING_BOUNDS.startupDelayMs,
+  },
+  "health-check-interval-ms": {
+    key: "healthCheckIntervalMs",
+    description: "Time between health checks.",
+    ...WORKSPACE_RUN_SETTING_BOUNDS.healthCheckIntervalMs,
+  },
+  "health-check-timeout-ms": {
+    key: "healthCheckTimeoutMs",
+    description: "Maximum duration of each health check.",
+    ...WORKSPACE_RUN_SETTING_BOUNDS.healthCheckTimeoutMs,
+  },
+  "health-check-failure-threshold": {
+    key: "healthCheckFailureThreshold",
+    description: "Failed health checks before a run becomes unhealthy.",
+    ...WORKSPACE_RUN_SETTING_BOUNDS.healthCheckFailureThreshold,
+  },
+  "sequential-readiness-timeout-ms": {
+    key: "sequentialReadinessTimeoutMs",
+    description: "Maximum readiness wait for each sequential run.",
+    ...WORKSPACE_RUN_SETTING_BOUNDS.sequentialReadinessTimeoutMs,
+  },
+} as const satisfies Record<string, WorkspaceRunConfigSetting>;
 
 const desktopAcceptedValues = (setting: DesktopConfigSetting): string => {
   if (setting.type === "boolean") {
@@ -338,6 +381,14 @@ const createConfigSettingDefinitions = (): CliConfigSettingDefinition[] => [
     choices: BOOLEAN_CHOICES,
   },
   {
+    setting: "fleet.enabled",
+    category: "Fleet",
+    scope: "user",
+    description: "Enable the enrolled Fleet host gateway.",
+    acceptedValues: "on|off",
+    choices: BOOLEAN_CHOICES,
+  },
+  {
     setting: "voice.provider",
     category: "Voice",
     scope: "user",
@@ -368,6 +419,15 @@ const createConfigSettingDefinitions = (): CliConfigSettingDefinition[] => [
       description: definition.description,
       acceptedValues: desktopAcceptedValues(definition),
       ...(definition.type === "boolean" ? { choices: BOOLEAN_CHOICES } : {}),
+    }),
+  ),
+  ...Object.entries(WORKSPACE_RUN_CONFIG_SETTINGS).map(
+    ([setting, definition]): CliConfigSettingDefinition => ({
+      setting: `workspace-run.${setting}`,
+      category: "Workspace Run",
+      scope: "user",
+      description: definition.description,
+      acceptedValues: `${definition.min}..${definition.max}`,
     }),
   ),
 ];
@@ -421,6 +481,11 @@ const isDesktopConfigSetting = (
   setting: string,
 ): setting is keyof typeof DESKTOP_CONFIG_SETTINGS =>
   setting in DESKTOP_CONFIG_SETTINGS;
+
+const isWorkspaceRunConfigSetting = (
+  setting: string,
+): setting is keyof typeof WORKSPACE_RUN_CONFIG_SETTINGS =>
+  setting in WORKSPACE_RUN_CONFIG_SETTINGS;
 
 const parseDesktopSettingValue = (
   setting: string,
@@ -494,6 +559,17 @@ export const saveConfigSetting = async (
       scope: "user",
       configPath: await saveUserApiKey(provider, normalizedValue),
       status: "configured",
+    };
+  }
+
+  if (normalizedSetting === "fleet.enabled") {
+    const enabled = parseConfigBoolean(normalizedSetting, normalizedValue);
+    return {
+      setting: normalizedSetting,
+      scope: "user",
+      configPath: await setFleetConnectionEnabled(enabled),
+      status: "configured",
+      value: enabled,
     };
   }
 
@@ -591,6 +667,42 @@ export const saveConfigSetting = async (
       configPath: await saveUserDesktopSettingsPatch(parsed.patch),
       status: "configured",
       value: parsed.value,
+    };
+  }
+
+  if (parts.length === 2 && parts[0] === "workspace-run") {
+    const name = parts[1] ?? "";
+    if (!isWorkspaceRunConfigSetting(name)) {
+      return unsupportedConfigSetting(setting);
+    }
+    const definition = WORKSPACE_RUN_CONFIG_SETTINGS[name];
+    const parsedValue = parseConfigNumber(normalizedSetting, normalizedValue, {
+      integer: true,
+      min: definition.min,
+      max: definition.max,
+    });
+    const current = await loadUserWorkspaceRunSettings();
+    if (
+      definition.key === "healthCheckTimeoutMs" &&
+      parsedValue > current.healthCheckIntervalMs
+    ) {
+      return fail(
+        `Expected ${normalizedSetting} to be at most ${current.healthCheckIntervalMs}.`,
+      );
+    }
+    const next = { ...current, [definition.key]: parsedValue };
+    if (
+      definition.key === "healthCheckIntervalMs" &&
+      next.healthCheckTimeoutMs > parsedValue
+    ) {
+      next.healthCheckTimeoutMs = parsedValue;
+    }
+    return {
+      setting: normalizedSetting,
+      scope: "user",
+      configPath: await saveUserWorkspaceRunSettings(next),
+      status: "configured",
+      value: parsedValue,
     };
   }
 
@@ -831,6 +943,15 @@ export const clearConfigSetting = async (
   }
 
   const parts = normalizedSetting.split(".");
+  if (normalizedSetting === "fleet.enabled") {
+    return {
+      setting: normalizedSetting,
+      scope: "user",
+      configPath: await setFleetConnectionEnabled(false),
+      status: "reset",
+      value: false,
+    };
+  }
   let scope: CliConfigScope;
   let configPath: string;
 
@@ -882,6 +1003,12 @@ export const clearConfigSetting = async (
         "agent-limits.autopilot-iterations": "autopilotExecutorIterations",
       };
       path = ["agentLimits", agentLimitPaths[normalizedSetting] ?? ""];
+    } else if (normalizedSetting.startsWith("workspace-run.")) {
+      const name = normalizedSetting.slice("workspace-run.".length);
+      if (!isWorkspaceRunConfigSetting(name)) {
+        return unsupportedConfigSetting(setting);
+      }
+      path = ["workspaceRun", WORKSPACE_RUN_CONFIG_SETTINGS[name].key];
     } else if (normalizedSetting.startsWith("desktop.")) {
       const desktopName = normalizedSetting.slice("desktop.".length);
       const desktopSetting =
@@ -912,21 +1039,34 @@ interface ConfigSnapshot {
   memory: Awaited<ReturnType<typeof loadUserMemorySettings>>;
   reviewModel: Awaited<ReturnType<typeof loadUserReviewModelSettings>>;
   agentCliPaths: Awaited<ReturnType<typeof loadUserAgentCliPaths>>;
+  workspaceRun: Awaited<ReturnType<typeof loadUserWorkspaceRunSettings>>;
+  fleet: Awaited<ReturnType<typeof loadFleetConnectionStatus>>;
 }
 
 const loadConfigSnapshot = async (
   workspaceRoot: string,
 ): Promise<ConfigSnapshot> => {
-  const [runtime, workspace, user, env, memory, reviewModel, agentCliPaths] =
-    await Promise.all([
-      loadRuntimeConfig(workspaceRoot),
-      loadWorkspaceConfigFile(workspaceRoot),
-      loadUserConfigFile(),
-      loadRuntimeEnvironment(),
-      loadUserMemorySettings(),
-      loadUserReviewModelSettings(),
-      loadUserAgentCliPaths(),
-    ]);
+  const [
+    runtime,
+    workspace,
+    user,
+    env,
+    memory,
+    reviewModel,
+    agentCliPaths,
+    workspaceRun,
+    fleet,
+  ] = await Promise.all([
+    loadRuntimeConfig(workspaceRoot),
+    loadWorkspaceConfigFile(workspaceRoot),
+    loadUserConfigFile(),
+    loadRuntimeEnvironment(),
+    loadUserMemorySettings(),
+    loadUserReviewModelSettings(),
+    loadUserAgentCliPaths(),
+    loadUserWorkspaceRunSettings(),
+    loadFleetConnectionStatus(),
+  ]);
 
   return {
     runtime,
@@ -936,6 +1076,8 @@ const loadConfigSnapshot = async (
     memory,
     reviewModel,
     agentCliPaths,
+    workspaceRun,
+    fleet,
   };
 };
 
@@ -1072,6 +1214,17 @@ const resolveConfigEntry = (
       snapshot.userConfig.desktop?.[desktop.key] ??
       DEFAULT_USER_DESKTOP_SETTINGS[desktop.key];
     source = configSource(snapshot.userConfig.desktop?.[desktop.key]);
+  } else if (setting.startsWith("workspace-run.")) {
+    const name = setting.slice("workspace-run.".length);
+    const workspaceRun =
+      WORKSPACE_RUN_CONFIG_SETTINGS[
+        name as keyof typeof WORKSPACE_RUN_CONFIG_SETTINGS
+      ];
+    value = snapshot.workspaceRun[workspaceRun.key];
+    source = configSource(snapshot.userConfig.workspaceRun?.[workspaceRun.key]);
+  } else if (setting === "fleet.enabled") {
+    value = snapshot.fleet.enabled;
+    source = snapshot.fleet.configured ? "saved" : "default";
   } else {
     switch (setting) {
       case "workspace.mode":

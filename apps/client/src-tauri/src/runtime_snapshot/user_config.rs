@@ -205,6 +205,18 @@ fn merge_typed_user_config(original: Value, typed: &UserConfigFile) -> Result<Va
         "agentLimits",
         &["infinite", "executorTurns", "autopilotExecutorIterations"],
     );
+    merge_known_object_members(
+        &mut target,
+        source,
+        "workspaceRun",
+        &[
+            "startupDelayMs",
+            "healthCheckIntervalMs",
+            "healthCheckTimeoutMs",
+            "healthCheckFailureThreshold",
+            "sequentialReadinessTimeoutMs",
+        ],
+    );
     merge_known_object_members(&mut target, source, "memory", &["globalEnabled", "entries"]);
     merge_known_object_members(
         &mut target,
@@ -362,6 +374,10 @@ mod tests {
                 "assistantBubbleEnabled": true,
                 "futurePortableSetting": "keep-me"
             },
+            "workspaceRun": {
+                "healthCheckTimeoutMs": 2_500,
+                "futureTimingSetting": "keep-me"
+            },
             "providerEnrollment": {
                 "schemaVersion": 1,
                 "enabled": true
@@ -374,12 +390,15 @@ mod tests {
             .api_keys
             .insert("openai".to_string(), "new".to_string());
         typed.desktop.assistant_bubble_enabled = Some(false);
+        typed.workspace_run.health_check_timeout_ms = Some(3_000);
 
         let merged = merge_typed_user_config(original, &typed).expect("merge should succeed");
 
         assert_eq!(merged["apiKeys"]["openai"], "new");
         assert_eq!(merged["desktop"]["assistantBubbleEnabled"], false);
         assert_eq!(merged["desktop"]["futurePortableSetting"], "keep-me");
+        assert_eq!(merged["workspaceRun"]["healthCheckTimeoutMs"], 3_000);
+        assert_eq!(merged["workspaceRun"]["futureTimingSetting"], "keep-me");
         assert_eq!(merged["providerEnrollment"]["enabled"], true);
         assert_eq!(merged["futureRoot"]["nested"], true);
     }

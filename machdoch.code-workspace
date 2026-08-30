@@ -9,6 +9,10 @@
       "path": "apps/client",
     },
     {
+      "name": "fleet-manager",
+      "path": "apps/fleet-manager",
+    },
+    {
       "name": "landing",
       "path": "apps/landing",
     },

@@ -39,6 +39,13 @@ pub(super) fn mission_control_script_render() -> &'static str {
         ...extra,
         "X-Machdoch-Remote": "1"
       };
+      const csrfToken = document.cookie
+        .split(";")
+        .map((part) => part.trim().split("="))
+        .find(([name]) => name === "__Host-machdoch_fleet_csrf")?.[1];
+      if (csrfToken) {
+        headers["X-Machdoch-Fleet-CSRF"] = decodeURIComponent(csrfToken);
+      }
       if (includePairingToken && pairingToken) {
         headers.Authorization = `Bearer ${pairingToken}`;
       }
@@ -99,7 +106,7 @@ pub(super) fn mission_control_script_render() -> &'static str {
     async function sendCommand(command) {
       command.commandId ||= globalThis.crypto?.randomUUID?.()
         || `command-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const request = () => fetch("/api/command", {
+      const request = () => fetch(api("/api/command"), {
           method: "POST",
           headers: {
             ...authHeaders(),

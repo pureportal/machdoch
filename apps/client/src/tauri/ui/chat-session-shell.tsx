@@ -920,6 +920,7 @@ export const ChatSession = (): JSX.Element => {
                 appearanceSetup={appearance}
                 memorySetup={controller.settingsDialog.memorySetup}
                 desktopSetup={controller.settingsDialog.desktopSetup}
+                workspaceRunSetup={controller.settingsDialog.workspaceRunSetup}
                 voiceSetup={controller.settingsDialog.voiceSetup}
                 onSelectFolder={controller.composer.onSelectFolder}
                 onSessionModelSelection={
@@ -1131,6 +1132,7 @@ export const ChatSession = (): JSX.Element => {
               appearanceSetup={appearance}
               memorySetup={controller.settingsDialog.memorySetup}
               desktopSetup={controller.settingsDialog.desktopSetup}
+              workspaceRunSetup={controller.settingsDialog.workspaceRunSetup}
               voiceSetup={controller.settingsDialog.voiceSetup}
             />
           </Suspense>

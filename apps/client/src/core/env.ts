@@ -21,6 +21,7 @@ import {
   AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER,
   DEFAULT_USER_INTERNAL_TASK_MODEL_SETTINGS,
   DEFAULT_USER_REVIEW_MODEL_SETTINGS,
+  DEFAULT_USER_WORKSPACE_RUN_SETTINGS,
   PROVIDER_ENV_KEY_BY_PROVIDER,
   RUNTIME_ENV_KEYS,
   USER_API_PROVIDERS as SCHEMA_USER_API_PROVIDERS,
@@ -34,6 +35,7 @@ import {
   isVoiceAiProvider,
   isWebSearchProvider as isSchemaWebSearchProvider,
   USER_REVIEW_MODEL_MODES,
+  WORKSPACE_RUN_SETTING_BOUNDS,
 } from "./runtime-contract.generated.js";
 import type {
   ConfiguredModelProvider,
@@ -46,6 +48,7 @@ import type {
   UserInternalTaskModelSettings as SharedUserInternalTaskModelSettings,
   UserApiProvider,
   UserReviewModelSettings as SharedUserReviewModelSettings,
+  UserWorkspaceRunSettings as SharedUserWorkspaceRunSettings,
   UserReviewModelMode,
   VoiceAiProvider,
 } from "./runtime-contract.generated.js";
@@ -66,6 +69,7 @@ const USER_API_PROVIDER_DESCRIPTION = USER_API_PROVIDERS.join(", ");
 export type UserAgentLimitsSettings = SharedUserAgentLimitsSettings;
 export type UserInternalTaskModelSettings = SharedUserInternalTaskModelSettings;
 export type UserReviewModelSettings = SharedUserReviewModelSettings;
+export type UserWorkspaceRunSettings = SharedUserWorkspaceRunSettings;
 type UserConfigFile = SharedUserConfigFile;
 
 /**
@@ -123,6 +127,56 @@ const normalizeUserAgentLimitsSettings = (
     autopilotExecutorIterations: normalizePositiveIntegerSetting(
       settings?.autopilotExecutorIterations,
       DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
+    ),
+  };
+};
+
+const normalizeBoundedIntegerSetting = (
+  value: unknown,
+  fallback: number,
+  bounds: { min: number; max: number },
+): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.min(bounds.max, Math.max(bounds.min, Math.round(value)));
+};
+
+const normalizeUserWorkspaceRunSettings = (
+  settings: Partial<UserWorkspaceRunSettings> | undefined,
+): UserWorkspaceRunSettings => {
+  const healthCheckIntervalMs = normalizeBoundedIntegerSetting(
+    settings?.healthCheckIntervalMs,
+    DEFAULT_USER_WORKSPACE_RUN_SETTINGS.healthCheckIntervalMs,
+    WORKSPACE_RUN_SETTING_BOUNDS.healthCheckIntervalMs,
+  );
+  const healthCheckTimeoutMs = Math.min(
+    healthCheckIntervalMs,
+    normalizeBoundedIntegerSetting(
+      settings?.healthCheckTimeoutMs,
+      DEFAULT_USER_WORKSPACE_RUN_SETTINGS.healthCheckTimeoutMs,
+      WORKSPACE_RUN_SETTING_BOUNDS.healthCheckTimeoutMs,
+    ),
+  );
+
+  return {
+    startupDelayMs: normalizeBoundedIntegerSetting(
+      settings?.startupDelayMs,
+      DEFAULT_USER_WORKSPACE_RUN_SETTINGS.startupDelayMs,
+      WORKSPACE_RUN_SETTING_BOUNDS.startupDelayMs,
+    ),
+    healthCheckIntervalMs,
+    healthCheckTimeoutMs,
+    healthCheckFailureThreshold: normalizeBoundedIntegerSetting(
+      settings?.healthCheckFailureThreshold,
+      DEFAULT_USER_WORKSPACE_RUN_SETTINGS.healthCheckFailureThreshold,
+      WORKSPACE_RUN_SETTING_BOUNDS.healthCheckFailureThreshold,
+    ),
+    sequentialReadinessTimeoutMs: normalizeBoundedIntegerSetting(
+      settings?.sequentialReadinessTimeoutMs,
+      DEFAULT_USER_WORKSPACE_RUN_SETTINGS.sequentialReadinessTimeoutMs,
+      WORKSPACE_RUN_SETTING_BOUNDS.sequentialReadinessTimeoutMs,
     ),
   };
 };
@@ -657,6 +711,24 @@ export const saveUserAgentLimitsSettings = async (
   return updateUserConfigFile((config) => ({
     ...config,
     agentLimits: normalizedSettings,
+  }));
+};
+
+export const loadUserWorkspaceRunSettings =
+  async (): Promise<UserWorkspaceRunSettings> => {
+    const { config } = await loadUserConfigFile();
+
+    return normalizeUserWorkspaceRunSettings(config.workspaceRun);
+  };
+
+export const saveUserWorkspaceRunSettings = async (
+  settings: UserWorkspaceRunSettings,
+): Promise<string> => {
+  const normalizedSettings = normalizeUserWorkspaceRunSettings(settings);
+
+  return updateUserConfigFile((config) => ({
+    ...config,
+    workspaceRun: normalizedSettings,
   }));
 };
 

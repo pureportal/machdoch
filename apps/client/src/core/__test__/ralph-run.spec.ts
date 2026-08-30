@@ -9937,12 +9937,22 @@ describe("runRalphFlow", () => {
         const json = JSON.parse(await readFile(path, "utf8")) as {
           tasks: Array<{ lease: { heartbeatAt: string; expiresAt: string } }>;
         };
+        const forcedExpiry = new Date(Date.now() + 100).toISOString();
         json.tasks[0]!.lease.heartbeatAt = new Date().toISOString();
-        json.tasks[0]!.lease.expiresAt = new Date(
-          Date.now() + 100,
-        ).toISOString();
+        json.tasks[0]!.lease.expiresAt = forcedExpiry;
         await writeFile(path, JSON.stringify(json), "utf8");
-        await new Promise((resolveDelay) => setTimeout(resolveDelay, 400));
+        await vi.waitFor(
+          async () => {
+            const refreshed = JSON.parse(await readFile(path, "utf8")) as {
+              tasks: Array<{ lease: { expiresAt: string } }>;
+            };
+            expect(refreshed.tasks[0]?.lease.expiresAt).not.toBe(forcedExpiry);
+            expect(
+              Date.parse(refreshed.tasks[0]!.lease.expiresAt),
+            ).toBeGreaterThan(Date.now());
+          },
+          { interval: 25, timeout: 2_000 },
+        );
         rivalResult = await runRalphFlow(
           rivalFlow,
           { ...runtimeConfig, workspaceRoot: workspace },

@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-pub const RUN_SCHEMA_VERSION: u32 = 1;
+pub const RUN_SCHEMA_VERSION: u32 = 2;
 pub const RUN_EVENT_NAME: &str = "workspace-run-state-changed";
 pub const RUN_LOG_EVENT_NAME: &str = "workspace-run-log-appended";
 pub const MAX_LOG_ENTRIES: usize = 400;
@@ -12,7 +12,6 @@ pub const MAX_FAILURE_ENTRIES: usize = 12;
 #[serde(rename_all = "camelCase")]
 pub struct RunConfigurationDocument {
     pub schema_version: u32,
-    pub primary_configuration_id: Option<String>,
     pub configurations: Vec<RunConfiguration>,
 }
 
@@ -20,18 +19,22 @@ impl Default for RunConfigurationDocument {
     fn default() -> Self {
         Self {
             schema_version: RUN_SCHEMA_VERSION,
-            primary_configuration_id: None,
             configurations: Vec::new(),
         }
     }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum RunConfiguration {
     Task {
         id: String,
         name: String,
+        primary: bool,
         command: String,
         #[serde(default = "default_working_directory")]
         working_directory: String,
@@ -50,6 +53,7 @@ pub enum RunConfiguration {
     Composite {
         id: String,
         name: String,
+        primary: bool,
         children: Vec<String>,
         #[serde(default)]
         start_order: CompositeStartOrder,
@@ -72,6 +76,20 @@ impl RunConfiguration {
             Self::Task { name, .. } | Self::Composite { name, .. } => name,
         }
     }
+
+    pub fn is_primary(&self) -> bool {
+        match self {
+            Self::Task { primary, .. } | Self::Composite { primary, .. } => *primary,
+        }
+    }
+}
+
+impl RunConfigurationDocument {
+    pub fn primary_configuration(&self) -> Option<&RunConfiguration> {
+        self.configurations
+            .iter()
+            .find(|configuration| configuration.is_primary())
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -89,32 +107,8 @@ pub struct RunHealthCheck {
     pub host: Option<String>,
     pub port: Option<u16>,
     pub url: Option<String>,
-    #[serde(default = "default_startup_delay_ms")]
-    pub startup_delay_ms: u64,
-    #[serde(default = "default_health_interval_ms")]
-    pub interval_ms: u64,
-    #[serde(default = "default_health_timeout_ms")]
-    pub timeout_ms: u64,
-    #[serde(default = "default_failure_threshold")]
-    pub failure_threshold: u32,
     #[serde(default)]
     pub restart_on_failure: bool,
-}
-
-fn default_startup_delay_ms() -> u64 {
-    3_000
-}
-
-fn default_health_interval_ms() -> u64 {
-    5_000
-}
-
-fn default_health_timeout_ms() -> u64 {
-    2_000
-}
-
-fn default_failure_threshold() -> u32 {
-    3
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -270,6 +264,12 @@ pub struct RunWorkspaceSnapshot {
 }
 
 pub fn validate_document(document: &RunConfigurationDocument) -> Result<(), String> {
+    if document.schema_version > RUN_SCHEMA_VERSION {
+        return Err(format!(
+            "Run configuration schemaVersion {} is newer than supported version {RUN_SCHEMA_VERSION}.",
+            document.schema_version
+        ));
+    }
     if document.schema_version != RUN_SCHEMA_VERSION {
         return Err(format!(
             "Run configuration schemaVersion must be {RUN_SCHEMA_VERSION}."
@@ -378,14 +378,13 @@ pub fn validate_document(document: &RunConfigurationDocument) -> Result<(), Stri
         .map(|configuration| (configuration.id(), configuration))
         .collect::<HashMap<_, _>>();
 
-    if let Some(primary_id) = document.primary_configuration_id.as_deref() {
-        if !by_id.contains_key(primary_id) {
-            return Err(format!(
-                "Primary run configuration `{primary_id}` does not exist."
-            ));
-        }
-    } else if !document.configurations.is_empty() {
-        return Err("Choose a primary run configuration.".to_string());
+    let primary_count = document
+        .configurations
+        .iter()
+        .filter(|configuration| configuration.is_primary())
+        .count();
+    if !document.configurations.is_empty() && primary_count != 1 {
+        return Err("Choose exactly one primary run configuration.".to_string());
     }
 
     let mut composite_owners = HashMap::<&str, &str>::new();
@@ -457,19 +456,6 @@ fn validate_restart_policy(id: &str, policy: &RunRestartPolicy) -> Result<(), St
 }
 
 fn validate_health_check(id: &str, health_check: &RunHealthCheck) -> Result<(), String> {
-    if health_check.interval_ms < 250
-        || health_check.interval_ms > 3_600_000
-        || health_check.timeout_ms < 100
-        || health_check.timeout_ms > 60_000
-        || health_check.timeout_ms > health_check.interval_ms
-        || health_check.startup_delay_ms > 3_600_000
-        || !(1..=100).contains(&health_check.failure_threshold)
-    {
-        return Err(format!(
-            "Run configuration `{id}` has invalid health-check timing."
-        ));
-    }
-
     match health_check.kind {
         RunHealthCheckKind::Tcp => {
             if health_check.port.is_none_or(|port| port == 0) {
@@ -523,6 +509,7 @@ mod tests {
         RunConfiguration::Task {
             id: id.to_string(),
             name: id.to_string(),
+            primary: false,
             command: "example".to_string(),
             working_directory: ".".to_string(),
             environment: BTreeMap::new(),
@@ -534,17 +521,25 @@ mod tests {
         }
     }
 
+    fn primary(mut configuration: RunConfiguration) -> RunConfiguration {
+        match &mut configuration {
+            RunConfiguration::Task { primary, .. }
+            | RunConfiguration::Composite { primary, .. } => *primary = true,
+        }
+        configuration
+    }
+
     #[test]
     fn validates_task_and_composite_documents() {
         let document = RunConfigurationDocument {
             schema_version: RUN_SCHEMA_VERSION,
-            primary_configuration_id: Some("fullstack".to_string()),
             configurations: vec![
                 task("backend"),
                 task("frontend"),
                 RunConfiguration::Composite {
                     id: "fullstack".to_string(),
                     name: "Fullstack Start".to_string(),
+                    primary: true,
                     children: vec!["backend".to_string(), "frontend".to_string()],
                     start_order: CompositeStartOrder::Parallel,
                 },
@@ -555,20 +550,64 @@ mod tests {
     }
 
     #[test]
+    fn requires_exactly_one_primary_configuration() {
+        let without_primary = RunConfigurationDocument {
+            schema_version: RUN_SCHEMA_VERSION,
+            configurations: vec![task("application"), task("worker")],
+        };
+        assert_eq!(
+            validate_document(&without_primary),
+            Err("Choose exactly one primary run configuration.".to_string())
+        );
+
+        let multiple_primary = RunConfigurationDocument {
+            schema_version: RUN_SCHEMA_VERSION,
+            configurations: vec![primary(task("application")), primary(task("worker"))],
+        };
+        assert_eq!(
+            validate_document(&multiple_primary),
+            Err("Choose exactly one primary run configuration.".to_string())
+        );
+    }
+
+    #[test]
+    fn serializes_primary_on_camel_case_configurations() {
+        let document = RunConfigurationDocument {
+            schema_version: RUN_SCHEMA_VERSION,
+            configurations: vec![primary(task("application"))],
+        };
+
+        let serialized = serde_json::to_value(&document).expect("document should serialize");
+        assert_eq!(serialized["schemaVersion"], RUN_SCHEMA_VERSION);
+        assert_eq!(serialized["configurations"][0]["primary"], true);
+        assert_eq!(serialized["configurations"][0]["workingDirectory"], ".");
+        assert!(serialized.get("primaryConfigurationId").is_none());
+        assert!(serialized["configurations"][0]
+            .get("working_directory")
+            .is_none());
+        assert_eq!(
+            serde_json::from_value::<RunConfigurationDocument>(serialized)
+                .expect("document should deserialize"),
+            document
+        );
+    }
+
+    #[test]
     fn rejects_missing_and_composite_children() {
         let document = RunConfigurationDocument {
             schema_version: RUN_SCHEMA_VERSION,
-            primary_configuration_id: Some("outer".to_string()),
             configurations: vec![
                 RunConfiguration::Composite {
                     id: "inner".to_string(),
                     name: "Inner".to_string(),
+                    primary: false,
                     children: vec!["missing".to_string()],
                     start_order: CompositeStartOrder::Parallel,
                 },
                 RunConfiguration::Composite {
                     id: "outer".to_string(),
                     name: "Outer".to_string(),
+                    primary: true,
                     children: vec!["inner".to_string()],
                     start_order: CompositeStartOrder::Parallel,
                 },
@@ -579,30 +618,27 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unbounded_health_and_restart_settings() {
+    fn rejects_unbounded_restart_settings() {
         let mut configuration = task("server");
         if let RunConfiguration::Task {
+            primary,
             health_check,
             restart_policy,
             ..
         } = &mut configuration
         {
+            *primary = true;
             *health_check = Some(Box::new(RunHealthCheck {
                 kind: RunHealthCheckKind::Tcp,
                 host: None,
                 port: Some(3000),
                 url: None,
-                startup_delay_ms: 0,
-                interval_ms: 100,
-                timeout_ms: 100,
-                failure_threshold: 3,
                 restart_on_failure: true,
             }));
             restart_policy.max_restarts = 101;
         }
         let document = RunConfigurationDocument {
             schema_version: RUN_SCHEMA_VERSION,
-            primary_configuration_id: Some("server".to_string()),
             configurations: vec![configuration],
         };
 
@@ -612,31 +648,38 @@ mod tests {
     #[test]
     fn rejects_invalid_urls_ports_names_and_shared_composite_children() {
         let mut invalid_task = task("server");
-        if let RunConfiguration::Task { ports, urls, .. } = &mut invalid_task {
+        if let RunConfiguration::Task {
+            primary,
+            ports,
+            urls,
+            ..
+        } = &mut invalid_task
+        {
+            *primary = true;
             *ports = vec![0, 3000, 3000];
             *urls = vec!["javascript:alert(1)".to_string()];
         }
         let invalid_document = RunConfigurationDocument {
             schema_version: RUN_SCHEMA_VERSION,
-            primary_configuration_id: Some("server".to_string()),
             configurations: vec![invalid_task],
         };
         assert!(validate_document(&invalid_document).is_err());
 
         let shared_document = RunConfigurationDocument {
             schema_version: RUN_SCHEMA_VERSION,
-            primary_configuration_id: Some("first".to_string()),
             configurations: vec![
                 task("server"),
                 RunConfiguration::Composite {
                     id: "first".to_string(),
                     name: "First".to_string(),
+                    primary: true,
                     children: vec!["server".to_string()],
                     start_order: CompositeStartOrder::Parallel,
                 },
                 RunConfiguration::Composite {
                     id: "second".to_string(),
                     name: "Second".to_string(),
+                    primary: false,
                     children: vec!["server".to_string()],
                     start_order: CompositeStartOrder::Parallel,
                 },
@@ -645,12 +688,12 @@ mod tests {
         assert!(validate_document(&shared_document).is_err());
 
         let mut invalid_name = task("named");
-        if let RunConfiguration::Task { name, .. } = &mut invalid_name {
+        if let RunConfiguration::Task { name, primary, .. } = &mut invalid_name {
             *name = " Named ".to_string();
+            *primary = true;
         }
         assert!(validate_document(&RunConfigurationDocument {
             schema_version: RUN_SCHEMA_VERSION,
-            primary_configuration_id: Some("named".to_string()),
             configurations: vec![invalid_name],
         })
         .is_err());

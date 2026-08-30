@@ -326,7 +326,6 @@ describe("CommandProvider and command palette", () => {
 
   it("keeps disabled commands inert and exposes the recovery reason", async () => {
     const execute = vi.fn();
-    const user = userEvent.setup();
     renderProvider([
       {
         ...visibleCommand("test.disabled", "Unavailable action", execute),
@@ -337,8 +336,10 @@ describe("CommandProvider and command palette", () => {
       },
     ]);
     openPalette();
-    const row = await screen.findByTitle("Select a flow first");
-    await user.click(row);
+    const reason = await screen.findByText("Select a flow first");
+    const row = reason.closest("[cmdk-item]");
+    expect(row?.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(row!);
     expect(execute).not.toHaveBeenCalled();
     expect(screen.getByPlaceholderText("Search commands…")).toBeTruthy();
   });

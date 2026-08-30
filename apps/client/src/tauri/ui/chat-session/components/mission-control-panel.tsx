@@ -3,6 +3,7 @@ import {
   ExternalLink,
   QrCode,
   Save,
+  Server,
   Square,
   Trash2,
   Wifi,
@@ -25,7 +26,13 @@ import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
 } from "../../components/ui/submit-shortcut";
-import type { RemoteControlStatus } from "../../runtime";
+import {
+  enrollFleetManager,
+  getFleetConnectionStatus,
+  resetFleetManagerConnection,
+  type FleetConnectionStatus,
+  type RemoteControlStatus,
+} from "../../runtime";
 import { cn } from "../../lib/utils";
 
 export interface MissionControlPanelProps {
@@ -109,6 +116,14 @@ export const MissionControlPanel = ({
   const pairedDeviceCount = status?.pairedDeviceCount ?? 0;
   const [portDraft, setPortDraft] = useState(String(configuredPort));
   const [portTouched, setPortTouched] = useState(false);
+  const [fleetStatus, setFleetStatus] = useState<FleetConnectionStatus | null>(
+    null,
+  );
+  const [fleetLoading, setFleetLoading] = useState(false);
+  const [fleetError, setFleetError] = useState<string | null>(null);
+  const [managerUrl, setManagerUrl] = useState("");
+  const [enrollmentKey, setEnrollmentKey] = useState("");
+  const [instanceName, setInstanceName] = useState("");
   const parsedPort = Number(portDraft);
   const portIsValid =
     Number.isInteger(parsedPort) &&
@@ -141,6 +156,59 @@ export const MissionControlPanel = ({
       setPortDraft(String(configuredPort));
     }
   }, [configuredPort, portTouched]);
+
+  useEffect(() => {
+    let disposed = false;
+    const refresh = async (): Promise<void> => {
+      try {
+        const nextStatus = await getFleetConnectionStatus();
+        if (!disposed) {
+          setFleetStatus(nextStatus);
+          setFleetError(nextStatus.lastError ?? null);
+        }
+      } catch (error) {
+        if (!disposed) {
+          setFleetError(error instanceof Error ? error.message : String(error));
+        }
+      }
+    };
+    void refresh();
+    const interval = window.setInterval(() => void refresh(), 15_000);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  const enroll = async (): Promise<void> => {
+    setFleetLoading(true);
+    setFleetError(null);
+    try {
+      const nextStatus = await enrollFleetManager(
+        managerUrl,
+        enrollmentKey,
+        instanceName,
+      );
+      setFleetStatus(nextStatus);
+      setEnrollmentKey("");
+    } catch (error) {
+      setFleetError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setFleetLoading(false);
+    }
+  };
+
+  const resetFleet = async (): Promise<void> => {
+    setFleetLoading(true);
+    setFleetError(null);
+    try {
+      setFleetStatus(await resetFleetManagerConnection());
+    } catch (error) {
+      setFleetError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setFleetLoading(false);
+    }
+  };
 
   const copyLink = async (): Promise<void> => {
     if (!displayUrl || !navigator.clipboard) {
@@ -490,6 +558,136 @@ export const MissionControlPanel = ({
                   </Button>
                 </div>
               </div>
+            </div>
+
+            <div className="grid gap-3 rounded-lg border border-slate-800 bg-slate-900/50 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-white">
+                  <Server className="h-4 w-4 text-sky-300" />
+                  Fleet Manager
+                </div>
+                {fleetStatus?.enabled ? (
+                  <span className="text-xs capitalize text-slate-400">
+                    {fleetStatus.phase}
+                  </span>
+                ) : null}
+              </div>
+
+              {fleetStatus?.enabled ? (
+                <div className="grid gap-3">
+                  <div className="grid gap-1 text-sm">
+                    <span className="text-slate-100">
+                      {fleetStatus.displayName}
+                    </span>
+                    <span className="truncate text-xs text-slate-500">
+                      {fleetStatus.managerUrl}
+                    </span>
+                  </div>
+                  <div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={fleetLoading}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            "Disconnect from Fleet Manager and remove this enrollment?",
+                          )
+                        ) {
+                          void resetFleet();
+                        }
+                      }}
+                      className="h-9 rounded-lg border-rose-500/30 bg-rose-500/10 px-3 text-xs text-rose-100 hover:bg-rose-500/15 hover:text-white"
+                    >
+                      Disconnect
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <form
+                  className="grid gap-3"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void enroll();
+                  }}
+                >
+                  <div className="grid gap-1">
+                    <label
+                      htmlFor="fleet-manager-url"
+                      className="text-xs font-medium text-slate-500"
+                    >
+                      Manager URL
+                    </label>
+                    <Input
+                      id="fleet-manager-url"
+                      type="url"
+                      value={managerUrl}
+                      maxLength={2048}
+                      onChange={(event) =>
+                        setManagerUrl(event.currentTarget.value)
+                      }
+                      required
+                      className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <label
+                      htmlFor="fleet-enrollment-key"
+                      className="text-xs font-medium text-slate-500"
+                    >
+                      Enrollment key
+                    </label>
+                    <Input
+                      id="fleet-enrollment-key"
+                      type="password"
+                      autoComplete="off"
+                      value={enrollmentKey}
+                      maxLength={54}
+                      onChange={(event) =>
+                        setEnrollmentKey(event.currentTarget.value)
+                      }
+                      required
+                      className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <label
+                      htmlFor="fleet-instance-name"
+                      className="text-xs font-medium text-slate-500"
+                    >
+                      Instance name
+                    </label>
+                    <Input
+                      id="fleet-instance-name"
+                      value={instanceName}
+                      maxLength={80}
+                      onChange={(event) =>
+                        setInstanceName(event.currentTarget.value)
+                      }
+                      required
+                      className="h-9 border-slate-700 bg-slate-950 text-sm text-slate-100"
+                    />
+                  </div>
+                  <div>
+                    <Button
+                      type="submit"
+                      disabled={
+                        fleetLoading ||
+                        !managerUrl.trim() ||
+                        !enrollmentKey.trim() ||
+                        !instanceName.trim()
+                      }
+                      className="h-9 rounded-lg bg-sky-500 px-3 text-xs text-white hover:bg-sky-400"
+                    >
+                      Connect
+                    </Button>
+                  </div>
+                </form>
+              )}
+
+              {fleetError ? (
+                <div className="text-xs text-rose-300">{fleetError}</div>
+              ) : null}
             </div>
 
             <div className="grid gap-3 rounded-lg border border-slate-800 bg-slate-900/50 p-4">

@@ -23,6 +23,7 @@ Automation and integration:
   instructions   Manage central instruction files and assignments
   mcp            Inspect and use MCP servers, tools, resources, and prompts
   provider-sync  Manage delegated CLI-provider integration
+  fleet          Connect this CLI host to Fleet Manager
 
 Examples:
   machdoch run "summarize the changes in this repository"
@@ -112,6 +113,7 @@ Setting groups:
   agent-limits.<infinite|executor-turns|autopilot-iterations>
   review-model
   memory.global
+  fleet.enabled
   voice.provider
   speech-to-text.<provider|input-device>
   desktop.<setting>
@@ -247,6 +249,19 @@ Usage:
 Providers: codex-cli, claude-cli, copilot-cli. The daemon is an internal
 long-running process normally managed by provider-sync enable.`;
 
+const FLEET_HELP = `machdoch fleet - connect this CLI host to Fleet Manager
+
+Usage:
+  machdoch fleet status [--json]
+  machdoch fleet enroll --manager-url <origin> --enrollment-key <key> \\
+    --display-name <name> [--json]
+  machdoch fleet enable|disable [--json]
+  machdoch fleet reset [--json]
+  machdoch fleet service [--cwd <workspace>] [--json]
+
+The service stays in the foreground for an operating-system service manager.
+Run one Fleet host gateway for an enrollment at a time.`;
+
 const SCHEDULER_HELP = `machdoch scheduler - scheduled and event-triggered tasks
 
 Usage:
@@ -284,6 +299,7 @@ const HELP_BY_TOPIC: Readonly<Record<string, string>> = {
   ralph: RALPH_HELP,
   mcp: MCP_HELP,
   "provider-sync": PROVIDER_SYNC_HELP,
+  fleet: FLEET_HELP,
   scheduler: SCHEDULER_HELP,
 };
 

@@ -228,7 +228,7 @@ export const WorkspaceRunPanel = ({
           (status) => status.configuration.id === current,
         )
           ? current
-          : next.primaryConfigurationId,
+          : (workspaceRunPrimaryStatus(next)?.configuration.id ?? null),
       );
       setSnapshotError(null);
     } catch (cause) {
@@ -255,7 +255,8 @@ export const WorkspaceRunPanel = ({
           (status) => status.configuration.id === current,
         )
           ? current
-          : snapshotResult.value.primaryConfigurationId,
+          : (workspaceRunPrimaryStatus(snapshotResult.value)?.configuration
+              .id ?? null),
       );
       setSnapshotError(null);
     } else {
@@ -326,7 +327,6 @@ export const WorkspaceRunPanel = ({
           documentRootKeyRef.current = rootKey;
           setDocument({
             schemaVersion: WORKSPACE_RUN_SCHEMA_VERSION,
-            primaryConfigurationId: nextSnapshot.primaryConfigurationId,
             configurations: nextSnapshot.configurations.map(
               (status) => status.configuration,
             ),
@@ -338,7 +338,8 @@ export const WorkspaceRunPanel = ({
             (status) => status.configuration.id === current,
           )
             ? current
-            : nextSnapshot.primaryConfigurationId,
+            : (workspaceRunPrimaryStatus(nextSnapshot)?.configuration.id ??
+              null),
         );
         setSnapshotError(null);
       }
@@ -464,114 +465,110 @@ export const WorkspaceRunPanel = ({
     <section
       aria-label="Workspace run"
       aria-busy={loading || busyAction !== null}
-      className={cn(
-        "min-w-0",
-        view !== "all" &&
-          "overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20 shadow-[0_16px_48px_rgba(0,0,0,0.16)]",
-      )}
+      className="min-w-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20 shadow-[0_16px_48px_rgba(0,0,0,0.16)]"
     >
       <SubmitShortcut asChild>
-        <div
-          className={cn(
-            "flex min-w-0 flex-wrap items-center gap-2.5",
-            view === "all" ? "pb-4" : "px-4 py-3.5",
-          )}
-        >
-        <Play aria-hidden="true" className="size-4 shrink-0 text-emerald-300" />
-        <div className="min-w-[8rem] flex-1">
-          {(snapshot?.configurations.length ?? 0) > 1 && displayedStatus ? (
-            <select
-              aria-label="Run configuration"
-              value={displayedStatus.configuration.id}
-              onChange={(event) =>
-                setSelectedConfigurationId(event.currentTarget.value)
-              }
-              className="h-7 max-w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-sm font-medium text-slate-100 outline-none focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-500/40"
-            >
-              {snapshot?.configurations.map((status) => (
-                <option
-                  key={status.configuration.id}
-                  value={status.configuration.id}
-                >
-                  {workspaceRunConfigurationLabel(
-                    status,
-                    snapshot?.configurations ?? [],
+        <div className="flex min-w-0 flex-wrap items-center gap-2.5 px-4 py-3.5">
+          <div className="min-w-[8rem] flex-1">
+            {(snapshot?.configurations.length ?? 0) > 1 && displayedStatus ? (
+              <select
+                aria-label="Run configuration"
+                value={displayedStatus.configuration.id}
+                onChange={(event) =>
+                  setSelectedConfigurationId(event.currentTarget.value)
+                }
+                className="h-7 max-w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-sm font-medium text-slate-100 outline-none focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-500/40"
+              >
+                {snapshot?.configurations.map((status) => (
+                  <option
+                    key={status.configuration.id}
+                    value={status.configuration.id}
+                  >
+                    {workspaceRunConfigurationLabel(
+                      status,
+                      snapshot?.configurations ?? [],
+                    )}
+                    {status.configuration.primary ? " (Default)" : ""}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="truncate text-sm font-medium text-slate-100">
+                {displayedStatus?.configuration.name ?? "Run"}
+              </div>
+            )}
+            {presentation ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500"
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "size-1.5 rounded-full",
+                    STATE_TONE_CLASS[presentation.tone],
+                    presentation.tone === "progress" && "animate-pulse",
                   )}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <div className="truncate text-sm font-medium text-slate-100">
-              {displayedStatus?.configuration.name ?? "Run"}
-            </div>
-          )}
-          {presentation ? (
-            <div
-              role="status"
-              aria-live="polite"
-              className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500"
-            >
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "size-1.5 rounded-full",
-                  STATE_TONE_CLASS[presentation.tone],
-                  presentation.tone === "progress" && "animate-pulse",
-                )}
-              />
-              {presentation.label}
-            </div>
+                />
+                {presentation.label}
+              </div>
+            ) : null}
+          </div>
+          {loading && !snapshot ? (
+            <LoaderCircle
+              aria-label="Loading run state"
+              className="size-4 animate-spin text-slate-500"
+            />
           ) : null}
-        </div>
-        {loading && !snapshot ? (
-          <LoaderCircle
-            aria-label="Loading run state"
-            className="size-4 animate-spin text-slate-500"
-          />
-        ) : null}
-        {displayedStatus && workspaceRunCanRestart(displayedStatus) ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={busyAction !== null}
-            onClick={() => void runAction("restart")}
-          >
-            {busyAction === "restart" ? (
-              <LoaderCircle
-                aria-hidden="true"
-                className="size-4 animate-spin"
-              />
-            ) : (
-              <RotateCw aria-hidden="true" className="size-4" />
-            )}
-            Restart
-          </Button>
-        ) : null}
-        {directAction !== "none" && displayedStatus ? (
-          <Button
-            type="button"
-            size="sm"
-            variant={directAction === "start" ? "default" : "outline"}
-            disabled={busyAction !== null}
-            onClick={() => void runAction(directAction)}
-            {...(directAction === "start"
-              ? SUBMIT_SHORTCUT_ACTION_PROPS
-              : {})}
-          >
-            {busyAction === directAction ? (
-              <LoaderCircle
-                aria-hidden="true"
-                className="size-4 animate-spin"
-              />
-            ) : directAction === "start" ? (
-              <Play aria-hidden="true" className="size-4" />
-            ) : (
-              <Square aria-hidden="true" className="size-3.5 fill-current" />
-            )}
-            {directAction === "start" ? "Start" : "Stop"}
-          </Button>
-        ) : null}
+          {displayedStatus && workspaceRunCanRestart(displayedStatus) ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busyAction !== null}
+              onClick={() => void runAction("restart")}
+            >
+              {busyAction === "restart" ? (
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="size-4 animate-spin"
+                />
+              ) : (
+                <RotateCw aria-hidden="true" className="size-4" />
+              )}
+              Restart
+            </Button>
+          ) : null}
+          {directAction !== "none" && displayedStatus ? (
+            <Button
+              type="button"
+              size="sm"
+              variant={directAction === "start" ? "default" : "outline"}
+              aria-label={
+                directAction === "start"
+                  ? `Run ${displayedStatus.configuration.name}`
+                  : `Stop ${displayedStatus.configuration.name}`
+              }
+              disabled={busyAction !== null}
+              onClick={() => void runAction(directAction)}
+              {...(directAction === "start"
+                ? SUBMIT_SHORTCUT_ACTION_PROPS
+                : {})}
+            >
+              {busyAction === directAction ? (
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="size-4 animate-spin"
+                />
+              ) : directAction === "start" ? (
+                <Play aria-hidden="true" className="size-4" />
+              ) : (
+                <Square aria-hidden="true" className="size-3.5 fill-current" />
+              )}
+              {directAction === "start" ? "Run" : "Stop"}
+            </Button>
+          ) : null}
         </div>
       </SubmitShortcut>
       {error ? (
@@ -634,7 +631,10 @@ export const WorkspaceRunPanel = ({
               onSaved={(nextDocument, nextSnapshot) => {
                 setDocument(nextDocument);
                 setSnapshot(nextSnapshot);
-                setSelectedConfigurationId(nextSnapshot.primaryConfigurationId);
+                setSelectedConfigurationId(
+                  workspaceRunPrimaryStatus(nextSnapshot)?.configuration.id ??
+                    null,
+                );
                 setDocumentError(null);
                 setSnapshotError(null);
                 setActionError(null);
@@ -656,7 +656,10 @@ export const WorkspaceRunPanel = ({
             onSaved={(nextDocument, nextSnapshot) => {
               setDocument(nextDocument);
               setSnapshot(nextSnapshot);
-              setSelectedConfigurationId(nextSnapshot.primaryConfigurationId);
+              setSelectedConfigurationId(
+                workspaceRunPrimaryStatus(nextSnapshot)?.configuration.id ??
+                  null,
+              );
               setDocumentError(null);
               setSnapshotError(null);
               setActionError(null);

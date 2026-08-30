@@ -1,12 +1,14 @@
+use machdoch_fleet_protocol::{ProductCommand, ProductCommandKind};
+
 use super::{
-    commands::{create_command_record, normalize_command, truncate_chars, RemoteCommandRequest},
+    commands::{create_command_record, normalize_command, truncate_chars},
     MAX_COMMAND_TEXT_CHARS,
 };
 
-fn command_request(kind: &str) -> RemoteCommandRequest {
-    RemoteCommandRequest {
+fn command_request(kind: ProductCommandKind) -> ProductCommand {
+    ProductCommand {
         command_id: None,
-        kind: kind.to_string(),
+        kind,
         task_id: None,
         session_id: None,
         prompt: None,
@@ -14,8 +16,11 @@ fn command_request(kind: &str) -> RemoteCommandRequest {
         tags: None,
         provider: None,
         model: None,
+        model_id: None,
         mode: None,
         reasoning: None,
+        prompt_enhancement_mode: None,
+        interview_enabled: None,
         workspace: None,
         enabled: None,
         attachment_id: None,
@@ -23,15 +28,20 @@ fn command_request(kind: &str) -> RemoteCommandRequest {
         message_id: None,
         job_id: None,
         run_id: None,
+        target: None,
+        aspect_ratio: None,
+        output_count: None,
+        output_format: None,
+        transparent_background: None,
     }
 }
 
 #[test]
 fn client_command_ids_are_preserved_for_idempotent_retries() {
-    let event = normalize_command(RemoteCommandRequest {
+    let event = normalize_command(ProductCommand {
         command_id: Some(" client-command-1 ".to_string()),
         session_id: Some("session-1".to_string()),
-        ..command_request("activate-session")
+        ..command_request(ProductCommandKind::ActivateSession)
     })
     .expect("a client command id should be accepted");
 
@@ -41,20 +51,22 @@ fn client_command_ids_are_preserved_for_idempotent_retries() {
 #[test]
 fn grouped_commands_require_their_target_fields() {
     let cases = [
-        ("cancel", "taskId"),
-        ("rename-session", "sessionId"),
-        ("apply-context-pack", "contextPackId"),
-        ("speak-message", "messageId"),
-        ("scheduler-pause", "jobId"),
-        ("scheduler-retry-run", "runId"),
-        ("set-ui-control", "enabled value"),
+        (ProductCommandKind::Cancel, "taskId"),
+        (ProductCommandKind::RenameSession, "sessionId"),
+        (ProductCommandKind::ApplyContextPack, "contextPackId"),
+        (ProductCommandKind::SpeakMessage, "messageId"),
+        (ProductCommandKind::SchedulerPause, "jobId"),
+        (ProductCommandKind::SchedulerRetryRun, "runId"),
+        (ProductCommandKind::SetUiControl, "enabled value"),
     ];
 
     for (kind, expected_message) in cases {
         let mut request = command_request(kind);
         if matches!(
             kind,
-            "apply-context-pack" | "speak-message" | "set-ui-control"
+            ProductCommandKind::ApplyContextPack
+                | ProductCommandKind::SpeakMessage
+                | ProductCommandKind::SetUiControl
         ) {
             request.session_id = Some("session-1".to_string());
         }
@@ -63,49 +75,52 @@ fn grouped_commands_require_their_target_fields() {
 
         assert!(
             error.contains(expected_message),
-            "expected {kind} error to contain {expected_message}, got {error}"
+            "expected {} error to contain {expected_message}, got {error}",
+            kind.as_str()
         );
     }
 }
 
 #[test]
-fn follow_up_commands_require_prompt_text() {
-    let result = normalize_command(RemoteCommandRequest {
-        task_id: Some("task-1".to_string()),
+fn submit_message_commands_require_prompt_text() {
+    let result = normalize_command(ProductCommand {
+        session_id: Some("session-1".to_string()),
         prompt: Some("   ".to_string()),
-        ..command_request("follow-up")
+        prompt_enhancement_mode: Some("off".to_string()),
+        interview_enabled: Some(false),
+        ..command_request(ProductCommandKind::SubmitMessage)
     });
 
     assert!(result.is_err());
-}
 
-#[test]
-fn approval_decision_commands_are_not_supported() {
-    let result = normalize_command(RemoteCommandRequest {
-        task_id: Some("task-1".to_string()),
-        prompt: None,
-        ..command_request("approval-decision")
+    let missing_interview = normalize_command(ProductCommand {
+        session_id: Some("session-1".to_string()),
+        prompt: Some("Run the task".to_string()),
+        prompt_enhancement_mode: Some("off".to_string()),
+        ..command_request(ProductCommandKind::SubmitMessage)
     });
 
-    assert!(result.is_err());
+    assert!(missing_interview
+        .expect_err("message submission requires an explicit interview state")
+        .contains("interviewEnabled"));
 }
 
 #[test]
 fn set_session_mode_accepts_only_supported_modes() {
-    let invalid = normalize_command(RemoteCommandRequest {
+    let invalid = normalize_command(ProductCommand {
         session_id: Some("session-1".to_string()),
         mode: Some("auto".to_string()),
-        ..command_request("set-session-mode")
+        ..command_request(ProductCommandKind::SetSessionMode)
     });
 
     assert!(invalid
         .expect_err("invalid session mode should be rejected")
         .contains("ask or machdoch"));
 
-    let allowed = normalize_command(RemoteCommandRequest {
+    let allowed = normalize_command(ProductCommand {
         session_id: Some("session-1".to_string()),
         mode: Some("ask".to_string()),
-        ..command_request("set-session-mode")
+        ..command_request(ProductCommandKind::SetSessionMode)
     })
     .expect("supported session mode should normalize");
 
@@ -115,10 +130,10 @@ fn set_session_mode_accepts_only_supported_modes() {
 #[test]
 fn set_session_reasoning_requires_supported_reasoning() {
     for reasoning in [None, Some("   ".to_string()), Some("maximum".to_string())] {
-        let error = normalize_command(RemoteCommandRequest {
+        let error = normalize_command(ProductCommand {
             session_id: Some("session-1".to_string()),
             reasoning,
-            ..command_request("set-session-reasoning")
+            ..command_request(ProductCommandKind::SetSessionReasoning)
         })
         .expect_err("missing or unsupported reasoning should reject");
 
@@ -128,10 +143,10 @@ fn set_session_reasoning_requires_supported_reasoning() {
         );
     }
 
-    let allowed = normalize_command(RemoteCommandRequest {
+    let allowed = normalize_command(ProductCommand {
         session_id: Some("session-1".to_string()),
         reasoning: Some(" high ".to_string()),
-        ..command_request("set-session-reasoning")
+        ..command_request(ProductCommandKind::SetSessionReasoning)
     })
     .expect("supported reasoning should normalize");
 
@@ -142,10 +157,10 @@ fn set_session_reasoning_requires_supported_reasoning() {
 
 #[test]
 fn toggle_commands_preserve_false_enabled_values() {
-    let event = normalize_command(RemoteCommandRequest {
+    let event = normalize_command(ProductCommand {
         session_id: Some("session-1".to_string()),
         enabled: Some(false),
-        ..command_request("set-ui-control")
+        ..command_request(ProductCommandKind::SetUiControl)
     })
     .expect("false enabled values are explicit toggle inputs");
 
@@ -154,27 +169,63 @@ fn toggle_commands_preserve_false_enabled_values() {
 }
 
 #[test]
-fn follow_up_prompts_are_trimmed_and_truncated() {
+fn submitted_message_prompts_are_trimmed_and_truncated() {
     let prompt = format!("  {}  ", "x".repeat(MAX_COMMAND_TEXT_CHARS + 1));
-    let event = normalize_command(RemoteCommandRequest {
-        task_id: Some("task-1".to_string()),
+    let event = normalize_command(ProductCommand {
+        session_id: Some("session-1".to_string()),
         prompt: Some(prompt),
-        ..command_request("follow-up")
+        prompt_enhancement_mode: Some("simple".to_string()),
+        interview_enabled: Some(false),
+        ..command_request(ProductCommandKind::SubmitMessage)
     })
-    .expect("valid follow-up command should normalize");
+    .expect("valid message command should normalize");
 
     assert_eq!(
         event.prompt.expect("prompt").chars().count(),
         MAX_COMMAND_TEXT_CHARS
     );
+    assert_eq!(event.enabled, Some(false));
+}
+
+#[test]
+fn media_generation_requires_a_complete_bounded_recipe() {
+    let event = normalize_command(ProductCommand {
+        prompt: Some("Create a blue geometric owl".to_string()),
+        model_id: Some("openai:gpt-image-2".to_string()),
+        target: Some("image".to_string()),
+        aspect_ratio: Some("1:1".to_string()),
+        output_count: Some(2),
+        output_format: Some("png".to_string()),
+        transparent_background: Some(true),
+        ..command_request(ProductCommandKind::GenerateMedia)
+    })
+    .expect("a complete media recipe should normalize");
+
+    assert_eq!(event.kind, "generate-media");
+    assert_eq!(event.model_id.as_deref(), Some("openai:gpt-image-2"));
+    assert_eq!(event.output_count, Some(2));
+
+    let error = normalize_command(ProductCommand {
+        prompt: Some("Create a blue geometric owl".to_string()),
+        model_id: Some("openai:gpt-image-2".to_string()),
+        target: Some("svg".to_string()),
+        aspect_ratio: Some("1:1".to_string()),
+        output_count: Some(1),
+        output_format: Some("png".to_string()),
+        transparent_background: Some(false),
+        ..command_request(ProductCommandKind::GenerateMedia)
+    })
+    .expect_err("SVG generation must produce SVG output");
+
+    assert!(error.contains("output format"));
 }
 
 #[test]
 fn command_records_prefer_session_target_preview() {
-    let event = normalize_command(RemoteCommandRequest {
+    let event = normalize_command(ProductCommand {
         session_id: Some("session-1".to_string()),
         prompt: Some("queued prompt".to_string()),
-        ..command_request("update-draft")
+        ..command_request(ProductCommandKind::UpdateDraft)
     })
     .expect("valid session command should normalize");
     let record = create_command_record(&event);

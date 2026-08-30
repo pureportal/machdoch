@@ -556,6 +556,70 @@
         }
       }
     },
+    "UserWorkspaceRunSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startupDelayMs",
+        "healthCheckIntervalMs",
+        "healthCheckTimeoutMs",
+        "healthCheckFailureThreshold",
+        "sequentialReadinessTimeoutMs"
+      ],
+      "properties": {
+        "startupDelayMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600000,
+          "default": 4000
+        },
+        "healthCheckIntervalMs": {
+          "type": "integer",
+          "minimum": 250,
+          "maximum": 3600000,
+          "default": 6000
+        },
+        "healthCheckTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 60000,
+          "default": 2500
+        },
+        "healthCheckFailureThreshold": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 3
+        },
+        "sequentialReadinessTimeoutMs": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 3600000,
+          "default": 150000
+        }
+      }
+    },
+    "UserWorkspaceRunConfigFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "startupDelayMs": {
+          "$ref": "#/$defs/UserWorkspaceRunSettings/properties/startupDelayMs"
+        },
+        "healthCheckIntervalMs": {
+          "$ref": "#/$defs/UserWorkspaceRunSettings/properties/healthCheckIntervalMs"
+        },
+        "healthCheckTimeoutMs": {
+          "$ref": "#/$defs/UserWorkspaceRunSettings/properties/healthCheckTimeoutMs"
+        },
+        "healthCheckFailureThreshold": {
+          "$ref": "#/$defs/UserWorkspaceRunSettings/properties/healthCheckFailureThreshold"
+        },
+        "sequentialReadinessTimeoutMs": {
+          "$ref": "#/$defs/UserWorkspaceRunSettings/properties/sequentialReadinessTimeoutMs"
+        }
+      }
+    },
     "UserDesktopConfigFile": {
       "type": "object",
       "additionalProperties": false,
@@ -780,6 +844,9 @@
         },
         "agentLimits": {
           "$ref": "#/$defs/RuntimeAgentLimitOverrides"
+        },
+        "workspaceRun": {
+          "$ref": "#/$defs/UserWorkspaceRunConfigFile"
         },
         "memory": {
           "$ref": "#/$defs/UserMemoryConfigFile"

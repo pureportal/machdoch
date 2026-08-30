@@ -11,6 +11,7 @@ import type {
 } from "../../core/runtime-contract.generated.js";
 import type {
   CommandName,
+  FleetCliAction,
   InstructionCliAction,
   McpCliAction,
   ProviderSyncCliAction,
@@ -128,6 +129,14 @@ export const PROVIDER_SYNC_ACTIONS: ReadonlySet<ProviderSyncCliAction> =
     "doctor",
     "daemon",
   ]);
+export const FLEET_ACTIONS: ReadonlySet<FleetCliAction> = new Set([
+  "status",
+  "enroll",
+  "enable",
+  "disable",
+  "reset",
+  "service",
+]);
 export const INSTRUCTION_ACTIONS: ReadonlySet<InstructionCliAction> = new Set([
   "validate",
   "resolve",

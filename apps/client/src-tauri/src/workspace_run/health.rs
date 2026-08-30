@@ -5,14 +5,14 @@ use std::{
 
 use super::model::{RunHealthCheck, RunHealthCheckKind};
 
-pub fn check_health(check: &RunHealthCheck) -> Result<(), String> {
+pub fn check_health(check: &RunHealthCheck, timeout_ms: u64) -> Result<(), String> {
     match check.kind {
-        RunHealthCheckKind::Tcp => check_tcp(check),
-        RunHealthCheckKind::Http => check_http(check),
+        RunHealthCheckKind::Tcp => check_tcp(check, timeout_ms),
+        RunHealthCheckKind::Http => check_http(check, timeout_ms),
     }
 }
 
-fn check_tcp(check: &RunHealthCheck) -> Result<(), String> {
+fn check_tcp(check: &RunHealthCheck, timeout_ms: u64) -> Result<(), String> {
     let host = check
         .host
         .as_deref()
@@ -28,7 +28,7 @@ fn check_tcp(check: &RunHealthCheck) -> Result<(), String> {
     if addresses.is_empty() {
         return Err(format!("No address resolved for {host}:{port}."));
     }
-    let timeout = Duration::from_millis(check.timeout_ms);
+    let timeout = Duration::from_millis(timeout_ms);
     let mut last_error = None;
     for address in addresses {
         match TcpStream::connect_timeout(&address, timeout) {
@@ -44,13 +44,13 @@ fn check_tcp(check: &RunHealthCheck) -> Result<(), String> {
     ))
 }
 
-fn check_http(check: &RunHealthCheck) -> Result<(), String> {
+fn check_http(check: &RunHealthCheck, timeout_ms: u64) -> Result<(), String> {
     let url = check
         .url
         .as_deref()
         .ok_or_else(|| "HTTP health check needs a URL.".to_string())?;
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_millis(check.timeout_ms))
+        .timeout(Duration::from_millis(timeout_ms))
         .build()
         .map_err(|error| format!("Unable to create the HTTP health client: {error}"))?;
     let response = client

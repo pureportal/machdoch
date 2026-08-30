@@ -39,15 +39,17 @@ use mcp_config::{
 };
 use model_catalog::{create_provider_model_http_client, fetch_provider_model_catalog};
 use settings::create_timestamp_millis;
+pub(crate) use settings_commands::load_user_workspace_run_settings;
 use settings_commands::{
-    forget_user_global_memory_value, load_user_agent_limits_settings, load_user_api_keys,
-    load_user_internal_task_model_settings, load_user_memory_settings,
-    load_user_review_model_settings, load_user_speech_to_text_settings, load_user_voice_settings,
-    load_user_web_search_settings, save_user_agent_limits_settings_value, save_user_api_key,
-    save_user_global_memory_enabled_value, save_user_internal_task_model_settings_value,
-    save_user_review_model_settings_value, save_user_speech_to_text_active_provider_value,
-    save_user_speech_to_text_input_device_value, save_user_voice_active_provider_value,
-    save_user_web_search_active_provider_value, save_user_web_search_api_key_value,
+    delete_user_api_key, delete_user_web_search_api_key_value, forget_user_global_memory_value,
+    load_user_agent_limits_settings, load_user_api_keys, load_user_internal_task_model_settings,
+    load_user_memory_settings, load_user_review_model_settings, load_user_speech_to_text_settings,
+    load_user_voice_settings, load_user_web_search_settings, save_user_agent_limits_settings_value,
+    save_user_api_key, save_user_global_memory_enabled_value,
+    save_user_internal_task_model_settings_value, save_user_review_model_settings_value,
+    save_user_speech_to_text_active_provider_value, save_user_speech_to_text_input_device_value,
+    save_user_voice_active_provider_value, save_user_web_search_active_provider_value,
+    save_user_web_search_api_key_value, save_user_workspace_run_settings_value,
 };
 pub(super) use settings_commands::{
     merge_user_agent_cli_paths_into_env, merge_user_api_keys_into_env,
@@ -58,7 +60,7 @@ pub use settings_types::{ContextWindow, ReasoningExecutionMode};
 pub use settings_types::{
     McpConfigDocument, UserAgentLimitsSettings, UserDesktopSettings, UserInternalTaskModelSettings,
     UserMemoryEntry, UserMemorySettings, UserReviewModelSettings, UserSpeechToTextSettings,
-    UserVoiceSettings, UserWebSearchSettings,
+    UserVoiceSettings, UserWebSearchSettings, UserWorkspaceRunSettings,
 };
 pub use types::{
     AudioProviderAvailability, ProviderAvailability, ProviderModelCatalogProvider,
@@ -178,6 +180,17 @@ pub async fn save_user_provider_api_key(
 }
 
 #[tauri::command]
+pub async fn delete_user_provider_api_key(
+    provider: String,
+) -> Result<Vec<ProviderAvailability>, String> {
+    delete_user_api_key(&provider)?;
+    invalidate_provider_model_catalog_cache().await;
+
+    let env = load_global_env()?;
+    Ok(get_provider_availability(&env))
+}
+
+#[tauri::command]
 pub async fn get_user_web_search_settings() -> Result<UserWebSearchSettings, String> {
     load_user_web_search_settings()
 }
@@ -260,6 +273,11 @@ pub async fn get_user_agent_limits_settings() -> Result<UserAgentLimitsSettings,
 }
 
 #[tauri::command]
+pub async fn get_user_workspace_run_settings() -> Result<UserWorkspaceRunSettings, String> {
+    load_user_workspace_run_settings()
+}
+
+#[tauri::command]
 pub async fn get_user_review_model_settings() -> Result<UserReviewModelSettings, String> {
     load_user_review_model_settings()
 }
@@ -309,6 +327,14 @@ pub async fn save_user_web_search_api_key(
     api_key: String,
 ) -> Result<UserWebSearchSettings, String> {
     save_user_web_search_api_key_value(&provider, &api_key)?;
+    load_user_web_search_settings()
+}
+
+#[tauri::command]
+pub async fn delete_user_web_search_api_key(
+    provider: String,
+) -> Result<UserWebSearchSettings, String> {
+    delete_user_web_search_api_key_value(&provider)?;
     load_user_web_search_settings()
 }
 
@@ -370,6 +396,14 @@ pub async fn save_user_agent_limits_settings(
 ) -> Result<UserAgentLimitsSettings, String> {
     save_user_agent_limits_settings_value(&settings)?;
     load_user_agent_limits_settings()
+}
+
+#[tauri::command]
+pub async fn save_user_workspace_run_settings(
+    settings: UserWorkspaceRunSettings,
+) -> Result<UserWorkspaceRunSettings, String> {
+    save_user_workspace_run_settings_value(&settings)?;
+    load_user_workspace_run_settings()
 }
 
 #[tauri::command]

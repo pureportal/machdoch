@@ -9,11 +9,12 @@ use super::{
         normalize_user_internal_task_model_settings,
         normalize_user_internal_task_model_settings_input, normalize_user_memory_entries,
         normalize_user_review_model_settings, normalize_user_review_model_settings_input,
+        normalize_user_workspace_run_settings, normalize_user_workspace_run_settings_input,
     },
     settings_types::{
         UserAgentLimitsSettings, UserInternalTaskModelSettings, UserMemorySettings,
         UserReviewModelSettings, UserSpeechToTextSettings, UserVoiceSettings,
-        UserWebSearchSettings,
+        UserWebSearchSettings, UserWorkspaceRunSettings,
     },
     user_config::{load_user_config_file, update_user_config_file},
 };
@@ -37,6 +38,32 @@ fn is_agent_cli_provider(value: &str) -> bool {
 
 fn is_user_web_search_provider(value: &str) -> bool {
     USER_WEB_SEARCH_PROVIDERS.contains(&value)
+}
+
+fn normalize_user_api_provider(provider: &str) -> Result<String, String> {
+    let normalized_provider = normalize_optional_string(Some(provider)).ok_or_else(|| {
+        format!(
+            "Expected provider to be one of {}.",
+            user_api_provider_description()
+        )
+    })?;
+    if !is_user_api_provider(&normalized_provider) {
+        return Err(format!(
+            "Expected provider to be one of {}.",
+            user_api_provider_description()
+        ));
+    }
+    Ok(normalized_provider)
+}
+
+fn normalize_user_web_search_provider(provider: &str) -> Result<String, String> {
+    let normalized_provider = normalize_optional_string(Some(provider)).ok_or_else(|| {
+        "Expected provider to be one of perplexity, tavily, or serper.".to_string()
+    })?;
+    if !is_user_web_search_provider(&normalized_provider) {
+        return Err("Expected provider to be one of perplexity, tavily, or serper.".to_string());
+    }
+    Ok(normalized_provider)
 }
 
 fn is_user_audio_ai_provider(value: &str) -> bool {
@@ -152,26 +179,21 @@ pub(crate) fn merge_user_web_search_api_keys_into_env(
 }
 
 pub(super) fn save_user_api_key(provider: &str, api_key: &str) -> Result<PathBuf, String> {
-    let normalized_provider = normalize_optional_string(Some(provider)).ok_or_else(|| {
-        format!(
-            "Expected provider to be one of {}.",
-            user_api_provider_description()
-        )
-    })?;
+    let normalized_provider = normalize_user_api_provider(provider)?;
     let normalized_api_key = normalize_optional_string(Some(api_key))
         .ok_or_else(|| "Expected a non-empty API key.".to_string())?;
-
-    if !is_user_api_provider(&normalized_provider) {
-        return Err(format!(
-            "Expected provider to be one of {}.",
-            user_api_provider_description()
-        ));
-    }
 
     update_user_config_file(|config| {
         config
             .api_keys
             .insert(normalized_provider, normalized_api_key);
+    })
+}
+
+pub(super) fn delete_user_api_key(provider: &str) -> Result<PathBuf, String> {
+    let normalized_provider = normalize_user_api_provider(provider)?;
+    update_user_config_file(|config| {
+        config.api_keys.remove(&normalized_provider);
     })
 }
 
@@ -242,21 +264,22 @@ pub(super) fn save_user_web_search_api_key_value(
     provider: &str,
     api_key: &str,
 ) -> Result<PathBuf, String> {
-    let normalized_provider = normalize_optional_string(Some(provider)).ok_or_else(|| {
-        "Expected provider to be one of perplexity, tavily, or serper.".to_string()
-    })?;
+    let normalized_provider = normalize_user_web_search_provider(provider)?;
     let normalized_api_key = normalize_optional_string(Some(api_key))
         .ok_or_else(|| "Expected a non-empty API key.".to_string())?;
-
-    if !is_user_web_search_provider(&normalized_provider) {
-        return Err("Expected provider to be one of perplexity, tavily, or serper.".to_string());
-    }
 
     update_user_config_file(|config| {
         config
             .web_search
             .api_keys
             .insert(normalized_provider, normalized_api_key);
+    })
+}
+
+pub(super) fn delete_user_web_search_api_key_value(provider: &str) -> Result<PathBuf, String> {
+    let normalized_provider = normalize_user_web_search_provider(provider)?;
+    update_user_config_file(|config| {
+        config.web_search.api_keys.remove(&normalized_provider);
     })
 }
 
@@ -339,6 +362,12 @@ pub(super) fn load_user_agent_limits_settings() -> Result<UserAgentLimitsSetting
     Ok(normalize_user_agent_limits_settings(&config.agent_limits))
 }
 
+pub(crate) fn load_user_workspace_run_settings() -> Result<UserWorkspaceRunSettings, String> {
+    let (config, _) = load_user_config_file()?;
+
+    Ok(normalize_user_workspace_run_settings(&config.workspace_run))
+}
+
 pub(super) fn save_user_agent_limits_settings_value(
     settings: &UserAgentLimitsSettings,
 ) -> Result<PathBuf, String> {
@@ -373,5 +402,23 @@ pub(super) fn save_user_internal_task_model_settings_value(
         config.internal_task_model.provider = normalized_settings.provider.clone();
         config.internal_task_model.model = normalized_settings.model.clone();
         config.internal_task_model.reasoning = Some(normalized_settings.reasoning.clone());
+    })
+}
+
+pub(super) fn save_user_workspace_run_settings_value(
+    settings: &UserWorkspaceRunSettings,
+) -> Result<PathBuf, String> {
+    let normalized_settings = normalize_user_workspace_run_settings_input(settings);
+
+    update_user_config_file(|config| {
+        config.workspace_run.startup_delay_ms = Some(normalized_settings.startup_delay_ms);
+        config.workspace_run.health_check_interval_ms =
+            Some(normalized_settings.health_check_interval_ms);
+        config.workspace_run.health_check_timeout_ms =
+            Some(normalized_settings.health_check_timeout_ms);
+        config.workspace_run.health_check_failure_threshold =
+            Some(normalized_settings.health_check_failure_threshold);
+        config.workspace_run.sequential_readiness_timeout_ms =
+            Some(normalized_settings.sequential_readiness_timeout_ms);
     })
 }

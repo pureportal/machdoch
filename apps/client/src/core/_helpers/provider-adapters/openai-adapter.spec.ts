@@ -36,10 +36,14 @@ const startParams: AgentModelStartParams = {
 
 describe("OpenAI Responses conformance", () => {
   it("requires one tool call per turn", () => {
-    expect(createOpenAIResponseToolSelection()).toEqual({
+    expect(createOpenAIResponseToolSelection([tool])).toEqual({
       parallel_tool_calls: false,
       tool_choice: "required",
     });
+  });
+
+  it("omits tool selection when no tools are available", () => {
+    expect(createOpenAIResponseToolSelection([])).toEqual({});
   });
 
   it("preserves non-strict tool schemas for arbitrary nested JSON arguments", () => {
@@ -298,6 +302,30 @@ describe("OpenAI Responses conformance", () => {
         },
       ],
     });
+  });
+
+  it("sends tool-free internal task requests without required tool choice", async () => {
+    const create = vi.fn(async (_request: unknown) => ({
+      id: "resp_internal_task",
+      output_text: "Done.",
+      output: [],
+    }));
+    const client = {
+      responses: { create },
+    } as unknown as OpenAI;
+    const adapter = new OpenAIResponsesAdapter(client, []);
+
+    await adapter.startTurn({
+      model: "gpt-5.2",
+      systemPrompt: "Extract memory.",
+      userPrompt: "Task trace.",
+      tools: [],
+    });
+
+    expect(create).toHaveBeenCalledOnce();
+    const request = create.mock.calls[0]?.[0];
+    expect(request).not.toHaveProperty("parallel_tool_calls");
+    expect(request).not.toHaveProperty("tool_choice");
   });
 
   it("routes GPT-5.6 Ultra turns through the multi-agent beta", async () => {

@@ -56,6 +56,7 @@ const getSettingsSavePending = ({
   appearanceSetup,
   memorySetup,
   desktopSetup,
+  workspaceRunSetup,
   voiceSetup,
 }: SettingsControlsProps): boolean => {
   return (
@@ -67,6 +68,7 @@ const getSettingsSavePending = ({
     appearanceSetup.saving ||
     memorySetup.saving ||
     desktopSetup.saving ||
+    workspaceRunSetup.saving ||
     voiceSetup.speechToTextProviderSaving ||
     voiceSetup.speechInputDeviceSaving ||
     voiceSetup.aiProviderSaving
@@ -260,6 +262,7 @@ export const OnboardingWizard = ({
           activeProvider={activeSession.provider}
           activeModel={activeSession.model}
           onSessionModelSelection={selectSessionModel}
+          registerCommand={false}
         />
       </SettingPanel>
 

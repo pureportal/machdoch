@@ -70,6 +70,7 @@ const taskStatus = (
     id,
     name: id,
     kind: "task",
+    primary: true,
     command,
     workingDirectory: ".",
     environment: { API_TOKEN: "secret-value" },

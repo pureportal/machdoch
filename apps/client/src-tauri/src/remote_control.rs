@@ -14,6 +14,8 @@ mod command_kinds;
 mod command_tests;
 mod commands;
 mod config;
+mod dispatch;
+mod fleet_gateway;
 mod mission_control_html;
 mod mission_control_script_events;
 mod mission_control_script_render;
@@ -33,6 +35,7 @@ mod web;
 
 use commands::RemoteCommandRecord;
 pub use commands::RemoteControlCommandEvent;
+pub(crate) use fleet_gateway::handle_fleet_request;
 use pairing::open_url_in_system_browser;
 pub use shell::RemoteShellSnapshot;
 pub use status::RemoteControlStatus;
@@ -53,6 +56,10 @@ const MAX_REMOTE_CONTEXT_PACKS: usize = 60;
 const MAX_REMOTE_PROMPT_HISTORY: usize = 30;
 const MAX_REMOTE_SCHEDULER_JOBS: usize = 80;
 const MAX_REMOTE_SCHEDULER_RUNS: usize = 120;
+const MAX_REMOTE_MEDIA_MODELS: usize = 128;
+const MAX_REMOTE_MEDIA_ASSETS: usize = 48;
+const MAX_REMOTE_MEDIA_RUNS: usize = 80;
+const MAX_REMOTE_MEDIA_PREVIEW_CHARS: usize = 120_000;
 const MAX_REMOTE_TEXT_CHARS: usize = 12_000;
 const MAX_REMOTE_SHORT_TEXT_CHARS: usize = 240;
 const DEFAULT_REMOTE_CONTROL_PORT: u16 = 43187;
@@ -170,6 +177,7 @@ pub struct RemoteTaskSession {
 struct RemoteLogEntry {
     created_at: u64,
     stream: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     tool_name: Option<String>,
     chunk: String,
 }
@@ -181,8 +189,11 @@ struct RemoteTimelineEntry {
     kind: String,
     phase: String,
     label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     tone: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     tool_name: Option<String>,
 }
 

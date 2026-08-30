@@ -13,13 +13,13 @@ const internalTask = vi.hoisted(() => ({
 vi.mock("../internal-task-model", () => internalTask);
 
 const document: WorkspaceRunConfigurationDocument = {
-  schemaVersion: 1,
-  primaryConfigurationId: "server",
+  schemaVersion: 2,
   configurations: [
     {
       id: "server",
       name: "Server",
       kind: "task",
+      primary: true,
       command: "pnpm run dev",
       workingDirectory: "apps/server",
       environment: {},
@@ -49,6 +49,9 @@ describe("workspace run AI detection", () => {
     expect(task).toContain("Do not execute project commands");
     expect(task).toContain("Do not select from or assume a fixed catalog");
     expect(task).toContain("workingDirectory must be relative");
+    expect(task).toContain("Set primary to true on exactly one configuration");
+    expect(task).toContain("Do not choose it from configuration names");
+    expect(task).toContain('"schemaVersion":2');
   });
 
   it("extracts tagged JSON and rejects malformed output", () => {
@@ -86,6 +89,27 @@ describe("workspace run AI detection", () => {
         },
       ]),
     ).toThrow("does not match");
+  });
+
+  it("requires one primary configuration in generated documents", () => {
+    const withoutPrimary = {
+      ...document,
+      configurations: document.configurations.map((configuration) => ({
+        ...configuration,
+        primary: false,
+      })),
+    };
+
+    expect(() =>
+      validateWorkspaceRunDetections(withoutPrimary, [
+        {
+          configurationId: "server",
+          confidence: "high",
+          evidence: [],
+          uncertainFields: [],
+        },
+      ]),
+    ).toThrow("exactly one primary");
   });
 
   it("runs the AI inspection in the active workspace and Ask mode", async () => {

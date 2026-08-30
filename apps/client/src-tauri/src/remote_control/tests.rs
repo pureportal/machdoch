@@ -27,8 +27,10 @@ fn cancel_command(command_id: &str, task_id: &str, created_at: u64) -> RemoteCon
         tags: None,
         provider: None,
         model: None,
+        model_id: None,
         mode: None,
         reasoning: None,
+        prompt_enhancement_mode: None,
         workspace: None,
         enabled: None,
         attachment_id: None,
@@ -36,6 +38,11 @@ fn cancel_command(command_id: &str, task_id: &str, created_at: u64) -> RemoteCon
         message_id: None,
         job_id: None,
         run_id: None,
+        target: None,
+        aspect_ratio: None,
+        output_count: None,
+        output_format: None,
+        transparent_background: None,
         created_at,
     }
 }
@@ -269,8 +276,10 @@ fn snapshots_return_newest_commands_first() {
             tags: None,
             provider: None,
             model: None,
+            model_id: None,
             mode: None,
             reasoning: None,
+            prompt_enhancement_mode: None,
             workspace: None,
             enabled: None,
             attachment_id: None,
@@ -278,6 +287,11 @@ fn snapshots_return_newest_commands_first() {
             message_id: None,
             job_id: None,
             run_id: None,
+            target: None,
+            aspect_ratio: None,
+            output_count: None,
+            output_format: None,
+            transparent_background: None,
             created_at: 100,
         })
         .expect("first command should persist");
@@ -292,8 +306,10 @@ fn snapshots_return_newest_commands_first() {
             tags: None,
             provider: None,
             model: None,
+            model_id: None,
             mode: None,
             reasoning: None,
+            prompt_enhancement_mode: None,
             workspace: None,
             enabled: None,
             attachment_id: None,
@@ -301,6 +317,11 @@ fn snapshots_return_newest_commands_first() {
             message_id: None,
             job_id: None,
             run_id: None,
+            target: None,
+            aspect_ratio: None,
+            output_count: None,
+            output_format: None,
+            transparent_background: None,
             created_at: 200,
         })
         .expect("second command should persist");
@@ -345,8 +366,10 @@ fn remote_commands_remain_pending_until_acknowledged() {
             tags: None,
             provider: None,
             model: None,
+            model_id: None,
             mode: None,
             reasoning: None,
+            prompt_enhancement_mode: None,
             workspace: None,
             enabled: None,
             attachment_id: None,
@@ -354,6 +377,11 @@ fn remote_commands_remain_pending_until_acknowledged() {
             message_id: None,
             job_id: None,
             run_id: None,
+            target: None,
+            aspect_ratio: None,
+            output_count: None,
+            output_format: None,
+            transparent_background: None,
             created_at: 100,
         })
         .expect("pending command should persist");
@@ -448,7 +476,7 @@ fn shell_snapshot_preserves_reasoning_fields_after_sanitization() {
     let _env = use_user_config_dir(&directory);
     let state = RemoteControlState::default();
     let snapshot = serde_json::from_value(json!({
-        "version": 1,
+        "version": 3,
         "capturedAt": 123,
         "activeSessionId": "session-1",
         "sessions": [{
@@ -483,11 +511,24 @@ fn shell_snapshot_preserves_reasoning_fields_after_sanitization() {
             "sessionId": "session-1",
             "draft": "",
             "provider": "openai",
+            "providerLabel": "OpenAI",
             "model": "gpt-5.5",
+            "modelLabel": "GPT-5.5",
+            "modelCatalogLoading": false,
+            "modelCatalog": [{
+                "provider": "openai",
+                "label": "OpenAI",
+                "available": true,
+                "models": [{ "id": "gpt-5.5", "label": "GPT-5.5" }]
+            }],
             "mode": "machdoch",
             "defaultMode": "machdoch",
             "reasoning": "medium",
             "defaultReasoning": "low",
+            "reasoningOptions": ["default", "low", "medium", "high"],
+            "promptEnhancementMode": "simple",
+            "interviewEnabled": false,
+            "interviewAvailable": true,
             "workspace": "C:/workspace",
             "workspaceLabel": "workspace",
             "canSend": true,
@@ -536,7 +577,56 @@ fn shell_snapshot_preserves_reasoning_fields_after_sanitization() {
             "model": "gpt-5.5",
             "mode": "machdoch",
             "reasoning": "minimal"
-        }]
+        }],
+        "media": {
+            "loading": false,
+            "runtimeMode": "native",
+            "generation": {
+                "prompt": "Create a geometric owl",
+                "target": "image",
+                "modelId": "openai:gpt-image-2",
+                "aspectRatio": "1:1",
+                "outputCount": 12,
+                "outputFormat": "png",
+                "transparentBackground": false,
+                "available": true
+            },
+            "models": [{
+                "id": "openai:gpt-image-2",
+                "label": "GPT Image 2",
+                "target": "remote",
+                "targets": ["image"],
+                "recommended": true
+            }],
+            "assets": [{
+                "id": "asset-1",
+                "runId": "media-run-1",
+                "kind": "image",
+                "mimeType": "image/png",
+                "byteSize": 1200,
+                "width": 512,
+                "height": 512,
+                "createdAt": "2026-08-30T12:00:00Z",
+                "previewDataUrl": "https://example.invalid/preview.png",
+                "tags": []
+            }],
+            "assetCount": 1,
+            "runs": [{
+                "id": "media-run-1",
+                "status": "completed",
+                "createdAt": "2026-08-30T12:00:00Z",
+                "updatedAt": "2026-08-30T12:01:00Z",
+                "prompt": "Create a geometric owl",
+                "modelLabel": "GPT Image 2",
+                "target": null,
+                "outputCount": 1,
+                "progress": 1.5,
+                "currentStep": "Completed"
+            }],
+            "runCount": 1,
+            "busy": false,
+            "updatedAt": 123
+        }
     }))
     .expect("shell snapshot should deserialize");
 
@@ -567,6 +657,12 @@ fn shell_snapshot_preserves_reasoning_fields_after_sanitization() {
         payload["contextPacks"][0]["reasoning"].as_str(),
         Some("minimal")
     );
+    assert_eq!(payload["media"]["generation"]["outputCount"], 8);
+    assert!(payload["media"]["assets"][0]
+        .get("previewDataUrl")
+        .is_none());
+    assert!(payload["media"]["runs"][0]["target"].is_null());
+    assert_eq!(payload["media"]["runs"][0]["progress"], 1.0);
 
     drop(inner);
     let _ = fs::remove_dir_all(&directory);
@@ -587,7 +683,7 @@ fn noncurrent_shell_snapshot_is_rejected() {
         .update_shell_snapshot(snapshot)
         .expect_err("noncurrent shell snapshot should be rejected");
 
-    assert!(error.contains("schema version 1"));
+    assert!(error.contains("schema version 3"));
     let _ = fs::remove_dir_all(&directory);
 }
 
@@ -597,13 +693,13 @@ fn older_shell_snapshot_cannot_overwrite_a_newer_snapshot() {
     let _env = use_user_config_dir(&directory);
     let state = RemoteControlState::default();
     let newer = serde_json::from_value(json!({
-        "version": 1,
+        "version": 3,
         "capturedAt": 200,
         "activeSessionId": "newer"
     }))
     .expect("newer shell snapshot should deserialize");
     let older = serde_json::from_value(json!({
-        "version": 1,
+        "version": 3,
         "capturedAt": 100,
         "activeSessionId": "older"
     }))

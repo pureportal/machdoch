@@ -1,4 +1,5 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use machdoch_fleet_protocol::ProductCommand;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -30,9 +31,13 @@ pub struct RemoteControlCommandEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) model_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) reasoning: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) prompt_enhancement_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) workspace: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -47,6 +52,16 @@ pub struct RemoteControlCommandEvent {
     pub(super) job_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) run_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) target: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) aspect_ratio: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) output_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) output_format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) transparent_background: Option<bool>,
     pub(super) created_at: u64,
 }
 
@@ -68,29 +83,6 @@ pub(super) struct RemoteCommandRecord {
     pub(super) created_at: u64,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct RemoteCommandRequest {
-    pub(super) command_id: Option<String>,
-    pub(super) kind: String,
-    pub(super) task_id: Option<String>,
-    pub(super) session_id: Option<String>,
-    pub(super) prompt: Option<String>,
-    pub(super) title: Option<String>,
-    pub(super) tags: Option<Vec<String>>,
-    pub(super) provider: Option<String>,
-    pub(super) model: Option<String>,
-    pub(super) mode: Option<String>,
-    pub(super) reasoning: Option<String>,
-    pub(super) workspace: Option<String>,
-    pub(super) enabled: Option<bool>,
-    pub(super) attachment_id: Option<String>,
-    pub(super) context_pack_id: Option<String>,
-    pub(super) message_id: Option<String>,
-    pub(super) job_id: Option<String>,
-    pub(super) run_id: Option<String>,
-}
-
 struct NormalizedCommandFields {
     task_id: Option<String>,
     session_id: Option<String>,
@@ -99,8 +91,10 @@ struct NormalizedCommandFields {
     tags: Option<Vec<String>>,
     provider: Option<String>,
     model: Option<String>,
+    model_id: Option<String>,
     mode: Option<String>,
     reasoning: Option<String>,
+    prompt_enhancement_mode: Option<String>,
     workspace: Option<String>,
     enabled: Option<bool>,
     attachment_id: Option<String>,
@@ -108,12 +102,17 @@ struct NormalizedCommandFields {
     message_id: Option<String>,
     job_id: Option<String>,
     run_id: Option<String>,
+    target: Option<String>,
+    aspect_ratio: Option<String>,
+    output_count: Option<u32>,
+    output_format: Option<String>,
+    transparent_background: Option<bool>,
 }
 
 pub(super) fn normalize_command(
-    request: RemoteCommandRequest,
+    request: ProductCommand,
 ) -> Result<RemoteControlCommandEvent, String> {
-    let kind = request.kind.trim().to_ascii_lowercase();
+    let kind = request.kind.as_str().to_string();
     let command_id = optional_trimmed_string(request.command_id.as_deref());
 
     if command_id
@@ -139,8 +138,10 @@ pub(super) fn normalize_command(
         tags: fields.tags,
         provider: fields.provider,
         model: fields.model,
+        model_id: fields.model_id,
         mode: fields.mode,
         reasoning: fields.reasoning,
+        prompt_enhancement_mode: fields.prompt_enhancement_mode,
         workspace: fields.workspace,
         enabled: fields.enabled,
         attachment_id: fields.attachment_id,
@@ -148,13 +149,18 @@ pub(super) fn normalize_command(
         message_id: fields.message_id,
         job_id: fields.job_id,
         run_id: fields.run_id,
+        target: fields.target,
+        aspect_ratio: fields.aspect_ratio,
+        output_count: fields.output_count,
+        output_format: fields.output_format,
+        transparent_background: fields.transparent_background,
         created_at: now_millis(),
     })
 }
 
 fn normalize_command_fields(
     kind: &str,
-    request: RemoteCommandRequest,
+    request: ProductCommand,
 ) -> Result<NormalizedCommandFields, String> {
     let requirements = command_requirements(kind);
     let task_id = optional_trimmed_string(request.task_id.as_deref());
@@ -173,8 +179,12 @@ fn normalize_command_fields(
     )?;
 
     let prompt = optional_truncated_text(request.prompt.as_deref(), MAX_COMMAND_TEXT_CHARS);
-    if kind == "follow-up" && prompt.is_none() {
-        return Err("Queued follow-up commands require a prompt.".to_string());
+    if matches!(kind, "submit-message" | "generate-media") && prompt.is_none() {
+        return Err(if kind == "generate-media" {
+            "Media generation requires a prompt.".to_string()
+        } else {
+            "Submitting a message requires a prompt.".to_string()
+        });
     }
 
     let title = optional_truncated_text(request.title.as_deref(), MAX_REMOTE_SHORT_TEXT_CHARS);
@@ -193,6 +203,11 @@ fn normalize_command_fields(
     if kind == "set-session-model" && (provider.is_none() || model.is_none()) {
         return Err("Model selection requires provider and model.".to_string());
     }
+    let model_id =
+        optional_truncated_text(request.model_id.as_deref(), MAX_REMOTE_SHORT_TEXT_CHARS);
+    if kind == "generate-media" && model_id.is_none() {
+        return Err("Media generation requires a modelId.".to_string());
+    }
 
     let mode = optional_truncated_text(request.mode.as_deref(), MAX_REMOTE_SHORT_TEXT_CHARS);
     if kind == "set-session-mode" && !matches!(mode.as_deref(), Some("ask" | "machdoch")) {
@@ -208,10 +223,34 @@ fn normalize_command_fields(
         ));
     }
 
+    let prompt_enhancement_mode = optional_truncated_text(
+        request.prompt_enhancement_mode.as_deref(),
+        MAX_REMOTE_SHORT_TEXT_CHARS,
+    );
+    if matches!(kind, "submit-message" | "set-prompt-enhancement-mode")
+        && !matches!(
+            prompt_enhancement_mode.as_deref(),
+            Some("off" | "simple" | "web-search")
+        )
+    {
+        return Err("Prompt enhancement mode must be off, simple, or web-search.".to_string());
+    }
+
     let workspace = optional_truncated_text(request.workspace.as_deref(), MAX_REMOTE_TEXT_CHARS);
+    if kind == "set-session-workspace" && workspace.is_none() {
+        return Err("Workspace selection requires a workspace.".to_string());
+    }
+    let enabled = if kind == "submit-message" {
+        request.interview_enabled
+    } else {
+        request.enabled
+    };
+    if kind == "submit-message" && enabled.is_none() {
+        return Err("Submitting a message requires an interviewEnabled value.".to_string());
+    }
     require_value(
         requirements.enabled,
-        &request.enabled,
+        &enabled,
         "This Mission Control command requires an enabled value.",
     )?;
 
@@ -248,6 +287,41 @@ fn normalize_command_fields(
         "This Mission Control command requires a runId.",
     )?;
 
+    let target = optional_truncated_text(request.target.as_deref(), MAX_REMOTE_SHORT_TEXT_CHARS);
+    let aspect_ratio =
+        optional_truncated_text(request.aspect_ratio.as_deref(), MAX_REMOTE_SHORT_TEXT_CHARS);
+    let output_format = optional_truncated_text(
+        request.output_format.as_deref(),
+        MAX_REMOTE_SHORT_TEXT_CHARS,
+    );
+    let output_count = request.output_count;
+    let transparent_background = request.transparent_background;
+    if kind == "generate-media" {
+        if !matches!(target.as_deref(), Some("image" | "svg")) {
+            return Err("Media target must be image or svg.".to_string());
+        }
+        if !matches!(
+            aspect_ratio.as_deref(),
+            Some("1:1" | "4:5" | "16:9" | "9:16")
+        ) {
+            return Err("Media aspect ratio is unsupported.".to_string());
+        }
+        if !matches!(output_count, Some(1..=8)) {
+            return Err("Media output count must be between 1 and 8.".to_string());
+        }
+        let output_matches_target = match target.as_deref() {
+            Some("svg") => matches!(output_format.as_deref(), Some("svg")),
+            Some("image") => matches!(output_format.as_deref(), Some("png" | "jpeg" | "webp")),
+            _ => false,
+        };
+        if !output_matches_target {
+            return Err("Media output format does not match the selected target.".to_string());
+        }
+        if transparent_background.is_none() {
+            return Err("Media generation requires transparentBackground.".to_string());
+        }
+    }
+
     Ok(NormalizedCommandFields {
         task_id,
         session_id,
@@ -256,15 +330,22 @@ fn normalize_command_fields(
         tags,
         provider,
         model,
+        model_id,
         mode,
         reasoning,
+        prompt_enhancement_mode,
         workspace,
-        enabled: request.enabled,
+        enabled,
         attachment_id,
         context_pack_id,
         message_id,
         job_id,
         run_id,
+        target,
+        aspect_ratio,
+        output_count,
+        output_format,
+        transparent_background,
     })
 }
 
@@ -297,8 +378,10 @@ pub(super) fn command_payloads_match(
         && left.tags == right.tags
         && left.provider == right.provider
         && left.model == right.model
+        && left.model_id == right.model_id
         && left.mode == right.mode
         && left.reasoning == right.reasoning
+        && left.prompt_enhancement_mode == right.prompt_enhancement_mode
         && left.workspace == right.workspace
         && left.enabled == right.enabled
         && left.attachment_id == right.attachment_id
@@ -306,6 +389,11 @@ pub(super) fn command_payloads_match(
         && left.message_id == right.message_id
         && left.job_id == right.job_id
         && left.run_id == right.run_id
+        && left.target == right.target
+        && left.aspect_ratio == right.aspect_ratio
+        && left.output_count == right.output_count
+        && left.output_format == right.output_format
+        && left.transparent_background == right.transparent_background
 }
 
 pub(super) fn command_payload_hash(event: &RemoteControlCommandEvent) -> String {
@@ -318,8 +406,10 @@ pub(super) fn command_payload_hash(event: &RemoteControlCommandEvent) -> String 
         "tags": event.tags,
         "provider": event.provider,
         "model": event.model,
+        "modelId": event.model_id,
         "mode": event.mode,
         "reasoning": event.reasoning,
+        "promptEnhancementMode": event.prompt_enhancement_mode,
         "workspace": event.workspace,
         "enabled": event.enabled,
         "attachmentId": event.attachment_id,
@@ -327,6 +417,11 @@ pub(super) fn command_payload_hash(event: &RemoteControlCommandEvent) -> String 
         "messageId": event.message_id,
         "jobId": event.job_id,
         "runId": event.run_id,
+        "target": event.target,
+        "aspectRatio": event.aspect_ratio,
+        "outputCount": event.output_count,
+        "outputFormat": event.output_format,
+        "transparentBackground": event.transparent_background,
     });
     let bytes = serde_json::to_vec(&canonical)
         .expect("serializing a remote command payload should not fail");

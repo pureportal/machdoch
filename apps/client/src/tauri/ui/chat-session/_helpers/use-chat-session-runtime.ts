@@ -10,6 +10,7 @@ import {
 import { getProviderLabel, type RuntimeProvider } from "../../model-catalog";
 import { isMcpConfigConflictError } from "../../mcp-config-error";
 import type { ConversationMemoryEntry } from "../../../../core/types.js";
+import { DEFAULT_USER_WORKSPACE_RUN_SETTINGS } from "../../../../core/runtime-contract.generated.js";
 import {
   forgetUserGlobalMemoryEntry,
   forgetWorkspaceMemoryEntry,
@@ -22,6 +23,7 @@ import {
   loadUserProviderApiKeys,
   loadUserAgentLimitsSettings,
   loadUserReviewModelSettings,
+  loadUserWorkspaceRunSettings,
   loadUserDesktopSettings,
   loadUserSpeechToTextSettings,
   loadUserMemorySettings,
@@ -35,6 +37,7 @@ import {
   saveUserDesktopSettings,
   saveUserAgentLimitsSettings,
   saveUserReviewModelSettings,
+  saveUserWorkspaceRunSettings,
   saveUserGlobalMemoryEnabled,
   saveMcpConfigDocument,
   refreshMcpDiscoveryCache,
@@ -64,6 +67,7 @@ import {
   type UserAgentLimitsSettings,
   type UserReviewModelSettings,
   type UserDesktopSettings,
+  type UserWorkspaceRunSettings,
   type SpeechToTextProvider,
   type UserApiKeyProvider,
   type UserMemorySettings,
@@ -117,6 +121,9 @@ export interface ChatSessionRuntimeController {
   userDesktopSettingsLoaded: boolean;
   desktopSetupSaving: boolean;
   desktopSetupMessage: SettingsStatusMessage | null;
+  userWorkspaceRunSettings: UserWorkspaceRunSettings;
+  workspaceRunSetupSaving: boolean;
+  workspaceRunSetupMessage: SettingsStatusMessage | null;
   userAgentLimitsSettings: UserAgentLimitsSettings;
   userReviewModelSettings: UserReviewModelSettings;
   agentLimitsSetupSaving: boolean;
@@ -169,6 +176,9 @@ export interface ChatSessionRuntimeController {
   handleWebSearchSetupKeyChange: (value: string) => void;
   handleWebSearchSetupSave: (keyValue?: string) => Promise<boolean>;
   handleDesktopSettingsSave: (settings: UserDesktopSettings) => Promise<void>;
+  handleWorkspaceRunSettingsSave: (
+    settings: UserWorkspaceRunSettings,
+  ) => Promise<boolean>;
   handleAgentLimitsSettingsSave: (
     settings: UserAgentLimitsSettings,
   ) => Promise<boolean>;
@@ -207,6 +217,9 @@ export interface ChatSessionRuntimeController {
   handleWorkspaceMemoryForget: (id: string) => Promise<void>;
   refreshWorkspaceMemoryEntries: () => Promise<void>;
   applyLoadedUserDesktopSettings: (settings: UserDesktopSettings) => void;
+  applyLoadedUserWorkspaceRunSettings: (
+    settings: UserWorkspaceRunSettings,
+  ) => void;
   applyLoadedUserAgentLimitsSettings: (
     settings: UserAgentLimitsSettings,
   ) => void;
@@ -463,6 +476,13 @@ export const useChatSessionRuntime = (
   const [desktopSetupSaving, setDesktopSetupSaving] = useState(false);
   const [desktopSetupMessage, setDesktopSetupMessage] =
     useState<SettingsStatusMessage | null>(null);
+  const [userWorkspaceRunSettings, setUserWorkspaceRunSettings] =
+    useState<UserWorkspaceRunSettings>({
+      ...DEFAULT_USER_WORKSPACE_RUN_SETTINGS,
+    });
+  const [workspaceRunSetupSaving, setWorkspaceRunSetupSaving] = useState(false);
+  const [workspaceRunSetupMessage, setWorkspaceRunSetupMessage] =
+    useState<SettingsStatusMessage | null>(null);
   const [userAgentLimitsSettings, setUserAgentLimitsSettings] =
     useState<UserAgentLimitsSettings>(createEmptyUserAgentLimitsSettings());
   const [userReviewModelSettings, setUserReviewModelSettings] =
@@ -665,6 +685,13 @@ export const useChatSessionRuntime = (
         ...createEmptyUserAgentLimitsSettings(),
         ...settings,
       });
+    },
+    [],
+  );
+
+  const applyLoadedUserWorkspaceRunSettings = useCallback(
+    (settings: UserWorkspaceRunSettings): void => {
+      setUserWorkspaceRunSettings(settings);
     },
     [],
   );
@@ -1029,6 +1056,26 @@ export const useChatSessionRuntime = (
   useEffect(() => {
     let cancelled = false;
 
+    void loadUserWorkspaceRunSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          applyLoadedUserWorkspaceRunSettings(settings);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error("Failed to load Workspace Run settings", error);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyLoadedUserWorkspaceRunSettings]);
+
+  useEffect(() => {
+    let cancelled = false;
+
     void loadUserReviewModelSettings()
       .then((settings) => {
         if (!cancelled) {
@@ -1141,6 +1188,14 @@ export const useChatSessionRuntime = (
             ) {
               applyLoadedUserAgentLimitsSettings(settings);
             }
+          } else if (kind === "workspace-run") {
+            const settings = await loadUserWorkspaceRunSettings();
+            if (
+              !disposed &&
+              settingsEventSequenceRef.current.get(kind) === sequence
+            ) {
+              applyLoadedUserWorkspaceRunSettings(settings);
+            }
           } else if (kind === "review-model") {
             const settings = await loadUserReviewModelSettings();
             if (
@@ -1180,6 +1235,7 @@ export const useChatSessionRuntime = (
     applyLoadedUserAgentLimitsSettings,
     applyLoadedUserMemorySettings,
     applyLoadedUserReviewModelSettings,
+    applyLoadedUserWorkspaceRunSettings,
     applyLoadedUserSpeechToTextSettings,
     applyLoadedUserVoiceSettings,
     options.activeSessionWorkspace,
@@ -2061,6 +2117,35 @@ export const useChatSessionRuntime = (
       options.activeSessionWorkspace,
       refreshWorkspaceRuntimeSnapshot,
     ],
+  );
+
+  const handleWorkspaceRunSettingsSave = useCallback(
+    async (settings: UserWorkspaceRunSettings): Promise<boolean> => {
+      setWorkspaceRunSetupSaving(true);
+      setWorkspaceRunSetupMessage(null);
+
+      try {
+        const nextSettings = await saveUserWorkspaceRunSettings(settings);
+        applyLoadedUserWorkspaceRunSettings(nextSettings);
+        setWorkspaceRunSetupMessage({
+          tone: "success",
+          text: "Run timeouts saved.",
+        });
+        return true;
+      } catch (error) {
+        setWorkspaceRunSetupMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? error.message
+              : "Run timeouts could not be saved.",
+        });
+        return false;
+      } finally {
+        setWorkspaceRunSetupSaving(false);
+      }
+    },
+    [applyLoadedUserWorkspaceRunSettings],
   );
 
   const handleReviewModelSettingsSave = useCallback(
@@ -3063,6 +3148,9 @@ export const useChatSessionRuntime = (
     userDesktopSettingsLoaded,
     desktopSetupSaving,
     desktopSetupMessage,
+    userWorkspaceRunSettings,
+    workspaceRunSetupSaving,
+    workspaceRunSetupMessage,
     userAgentLimitsSettings,
     userReviewModelSettings,
     agentLimitsSetupSaving,
@@ -3101,6 +3189,7 @@ export const useChatSessionRuntime = (
     handleWebSearchSetupKeyChange,
     handleWebSearchSetupSave,
     handleDesktopSettingsSave,
+    handleWorkspaceRunSettingsSave,
     handleAgentLimitsSettingsSave,
     handleReviewModelSettingsSave,
     handleWorkspaceDefaultModeSave,
@@ -3124,6 +3213,7 @@ export const useChatSessionRuntime = (
     handleWorkspaceMemoryForget,
     refreshWorkspaceMemoryEntries,
     applyLoadedUserDesktopSettings,
+    applyLoadedUserWorkspaceRunSettings,
     applyLoadedUserAgentLimitsSettings,
     applyLoadedUserReviewModelSettings,
     applyLoadedUserMemorySettings,

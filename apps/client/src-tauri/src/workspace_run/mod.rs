@@ -26,6 +26,11 @@ const MAX_AI_ENVIRONMENT_NAMES: usize = 16;
 const MAX_AI_LOG_ENTRIES: usize = 3;
 const MAX_AI_FAILURE_ENTRIES: usize = 2;
 
+pub(crate) struct ConversationContextHandoff {
+    pub(crate) context: Option<Value>,
+    pub(crate) warning: Option<String>,
+}
+
 #[derive(Default)]
 pub struct WorkspaceRunState {
     manager: Arc<RunManager>,
@@ -162,24 +167,57 @@ pub fn precheck_workspace_run_configuration_json(
     precheck_document(&workspace, &request.document_json)
 }
 
-pub fn enrich_conversation_context(
+pub(crate) fn enrich_conversation_context(
     app: &tauri::AppHandle,
     workspace_root: &str,
     conversation_context: Option<Value>,
-) -> Result<Option<Value>, String> {
+) -> Result<ConversationContextHandoff, String> {
     let state = app.state::<WorkspaceRunState>();
+    enrich_conversation_context_with_manager(&state.manager, workspace_root, conversation_context)
+}
+
+fn enrich_conversation_context_with_manager(
+    manager: &RunManager,
+    workspace_root: &str,
+    conversation_context: Option<Value>,
+) -> Result<ConversationContextHandoff, String> {
     let mut context = conversation_context.unwrap_or_else(|| serde_json::json!({ "history": [] }));
     let Value::Object(context_object) = &mut context else {
         return Err("Expected the desktop conversation context to be a JSON object.".to_string());
     };
-    let mut snapshot = state.manager.snapshot(workspace_root)?;
-    trim_snapshot_for_ai(&mut snapshot);
-    context_object.insert(
-        "workspaceRun".to_string(),
-        serde_json::to_value(snapshot)
-            .map_err(|error| format!("Failed to serialize workspace run context: {error}"))?,
-    );
-    Ok(Some(context))
+    let handoff = manager.snapshot_for_handoff(workspace_root)?;
+    let used_cached_snapshot = handoff.snapshot.is_some() && handoff.load_error.is_some();
+    let mut warning = handoff.load_error.map(|error| {
+        if used_cached_snapshot {
+            format!(
+                "Run configuration could not be refreshed; using the last loaded version. {error}"
+            )
+        } else {
+            format!("Run configuration was not included. {error}")
+        }
+    });
+
+    if let Some(mut snapshot) = handoff.snapshot {
+        trim_snapshot_for_ai(&mut snapshot);
+        match serde_json::to_value(snapshot) {
+            Ok(snapshot) => {
+                context_object.insert("workspaceRun".to_string(), snapshot);
+            }
+            Err(error) => {
+                context_object.remove("workspaceRun");
+                warning = Some(format!(
+                    "Run configuration was not included. Failed to serialize workspace run context: {error}"
+                ));
+            }
+        }
+    } else {
+        context_object.remove("workspaceRun");
+    }
+
+    Ok(ConversationContextHandoff {
+        context: Some(context),
+        warning,
+    })
 }
 
 fn trim_snapshot_for_ai(snapshot: &mut RunWorkspaceSnapshot) {
@@ -285,12 +323,145 @@ fn limit_ai_text(value: &mut String, max_chars: usize) {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::{
+        collections::BTreeMap,
+        env, fs,
+        path::{Path, PathBuf},
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     use super::*;
     use crate::workspace_run::model::{
         RunConfiguration, RunConfigurationStatus, RunLifecycleState, RunRestartPolicy,
+        RUN_SCHEMA_VERSION,
     };
+
+    fn temporary_workspace(name: &str) -> PathBuf {
+        let path = env::temp_dir().join(format!(
+            "machdoch-run-handoff-{}-{}-{name}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        fs::create_dir_all(path.join(".machdoch")).expect("temporary workspace should be created");
+        path.canonicalize().expect("workspace should canonicalize")
+    }
+
+    fn write_run_configuration(workspace: &Path, contents: &str) {
+        fs::write(workspace.join(".machdoch").join("run.json"), contents)
+            .expect("run configuration should be written");
+    }
+
+    fn run_configuration_json(schema_version: u32) -> String {
+        serde_json::json!({
+            "schemaVersion": schema_version,
+            "configurations": [{
+                "id": "server",
+                "name": "Server",
+                "kind": "task",
+                "primary": true,
+                "command": "run-server"
+            }]
+        })
+        .to_string()
+    }
+
+    fn handoff_context(outcome: &ConversationContextHandoff) -> &serde_json::Map<String, Value> {
+        outcome
+            .context
+            .as_ref()
+            .and_then(Value::as_object)
+            .expect("handoff context should remain an object")
+    }
+
+    #[test]
+    fn desktop_handoff_warns_and_continues_for_a_newer_run_schema() {
+        let workspace = temporary_workspace("newer-schema");
+        write_run_configuration(&workspace, &run_configuration_json(RUN_SCHEMA_VERSION + 1));
+
+        let outcome = enrich_conversation_context_with_manager(
+            &RunManager::default(),
+            workspace.to_string_lossy().as_ref(),
+            Some(serde_json::json!({
+                "history": [{ "role": "user", "content": "Continue" }]
+            })),
+        )
+        .expect("newer run schema should not block desktop handoff");
+
+        assert_eq!(
+            handoff_context(&outcome)["history"][0]["content"],
+            "Continue"
+        );
+        assert!(handoff_context(&outcome).get("workspaceRun").is_none());
+        let warning = outcome
+            .warning
+            .expect("newer schema should produce a warning");
+        assert!(warning.contains(&format!(
+            "schemaVersion {} is newer than supported version {RUN_SCHEMA_VERSION}",
+            RUN_SCHEMA_VERSION + 1
+        )));
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn desktop_handoff_warns_and_continues_for_malformed_run_json() {
+        let workspace = temporary_workspace("malformed-json");
+        write_run_configuration(&workspace, "{ not-json");
+
+        let outcome = enrich_conversation_context_with_manager(
+            &RunManager::default(),
+            workspace.to_string_lossy().as_ref(),
+            Some(serde_json::json!({ "history": [] })),
+        )
+        .expect("malformed run JSON should not block desktop handoff");
+
+        assert_eq!(handoff_context(&outcome)["history"], serde_json::json!([]));
+        assert!(handoff_context(&outcome).get("workspaceRun").is_none());
+        let warning = outcome
+            .warning
+            .expect("malformed run JSON should produce a warning");
+        assert!(warning.contains("Failed to parse"));
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn desktop_handoff_uses_cached_run_context_with_a_refresh_warning() {
+        let workspace = temporary_workspace("cached-context");
+        let manager = RunManager::default();
+        write_run_configuration(&workspace, &run_configuration_json(RUN_SCHEMA_VERSION));
+
+        let initial = enrich_conversation_context_with_manager(
+            &manager,
+            workspace.to_string_lossy().as_ref(),
+            Some(serde_json::json!({ "history": [] })),
+        )
+        .expect("supported run configuration should be imported");
+        assert!(initial.warning.is_none());
+        assert_eq!(
+            handoff_context(&initial)["workspaceRun"]["configurations"][0]["configuration"]["id"],
+            "server"
+        );
+
+        write_run_configuration(&workspace, &run_configuration_json(RUN_SCHEMA_VERSION + 1));
+        let refreshed = enrich_conversation_context_with_manager(
+            &manager,
+            workspace.to_string_lossy().as_ref(),
+            Some(serde_json::json!({ "history": [] })),
+        )
+        .expect("cached run context should keep desktop handoff available");
+
+        assert_eq!(
+            handoff_context(&refreshed)["workspaceRun"]["configurations"][0]["configuration"]["id"],
+            "server"
+        );
+        assert!(refreshed
+            .warning
+            .expect("refresh failure should produce a warning")
+            .contains("using the last loaded version"));
+        let _ = fs::remove_dir_all(workspace);
+    }
 
     #[test]
     fn ai_snapshots_redact_environment_values() {
@@ -306,6 +477,7 @@ mod tests {
                 configuration: RunConfiguration::Task {
                     id: "server".to_string(),
                     name: "Server".to_string(),
+                    primary: true,
                     command: "start-server secret-value".to_string(),
                     working_directory: ".".to_string(),
                     environment,

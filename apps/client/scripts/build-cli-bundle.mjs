@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -6,7 +6,11 @@ import { build } from "rolldown";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputFile = resolve(projectRoot, "dist", "machdoch-cli.cjs");
+const packageMetadata = JSON.parse(
+  await readFile(resolve(projectRoot, "package.json"), "utf8"),
+);
 const requireResolveShim = String.raw`
+globalThis.__MACHDOCH_PRODUCT_VERSION__ = ${JSON.stringify(packageMetadata.version)};
 const __machdochRequireResolve = require.resolve.bind(require);
 require.resolve = (request, options) => {
   if (request === "../../../package.json") {

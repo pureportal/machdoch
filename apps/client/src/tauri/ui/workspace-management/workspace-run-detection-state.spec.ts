@@ -19,8 +19,7 @@ import {
 } from "./workspace-run-detection-state";
 
 const document: WorkspaceRunConfigurationDocument = {
-  schemaVersion: 1,
-  primaryConfigurationId: null,
+  schemaVersion: 2,
   configurations: [],
 };
 
@@ -39,9 +38,7 @@ describe("workspace run detection lifecycle", () => {
     const unsubscribe = subscribeWorkspaceRunDetection(workspaceRoot, vi.fn());
 
     await startWorkspaceRunDetection(workspaceRoot);
-    expect(getWorkspaceRunDetectionState(workspaceRoot).phase).toBe(
-      "complete",
-    );
+    expect(getWorkspaceRunDetectionState(workspaceRoot).phase).toBe("complete");
 
     unsubscribe();
 
@@ -72,7 +69,9 @@ describe("workspace run detection lifecycle", () => {
     });
     await operation;
 
-    expect(runtime.precheckWorkspaceRunConfigurationJson).not.toHaveBeenCalled();
+    expect(
+      runtime.precheckWorkspaceRunConfigurationJson,
+    ).not.toHaveBeenCalled();
     expect(getWorkspaceRunDetectionState(workspaceRoot).phase).toBe("idle");
   });
 

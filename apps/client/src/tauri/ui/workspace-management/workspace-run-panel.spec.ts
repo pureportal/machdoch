@@ -42,6 +42,7 @@ const taskStatus = (
     id,
     name: id,
     kind: "task",
+    primary: true,
     command: "example",
     workingDirectory: ".",
     environment: {},
@@ -71,8 +72,7 @@ const taskStatus = (
 const documentFromSnapshot = (
   snapshot: WorkspaceRunSnapshot,
 ): WorkspaceRunConfigurationDocument => ({
-  schemaVersion: 1,
-  primaryConfigurationId: snapshot.primaryConfigurationId,
+  schemaVersion: 2,
   configurations: snapshot.configurations.map((status) => status.configuration),
 });
 
@@ -145,8 +145,7 @@ describe("WorkspaceRunPanel", () => {
     };
     runtime.loadWorkspaceRunSnapshot.mockResolvedValue(snapshot);
     runtime.loadWorkspaceRunConfigurationDocument.mockResolvedValue({
-      schemaVersion: 1,
-      primaryConfigurationId: null,
+      schemaVersion: 2,
       configurations: [],
     });
     const onConfigurationRequired = vi.fn();
@@ -177,8 +176,7 @@ describe("WorkspaceRunPanel", () => {
     };
     runtime.loadWorkspaceRunSnapshot.mockResolvedValue(snapshot);
     runtime.loadWorkspaceRunConfigurationDocument.mockResolvedValue({
-      schemaVersion: 1,
-      primaryConfigurationId: null,
+      schemaVersion: 2,
       configurations: [],
     });
 
@@ -195,10 +193,12 @@ describe("WorkspaceRunPanel", () => {
 
   it("shows live composite stdout and stderr without disclosure", async () => {
     const backend = taskStatus("Backend", "running");
+    backend.configuration.primary = false;
     backend.logs = [
       { sequence: 2, at: 2, stream: "stderr", line: "backend error" },
     ];
     const frontend = taskStatus("Frontend", "running");
+    frontend.configuration.primary = false;
     frontend.logs = [
       { sequence: 1, at: 1, stream: "stdout", line: "frontend ready" },
     ];
@@ -208,6 +208,7 @@ describe("WorkspaceRunPanel", () => {
         id: "fullstack",
         name: "Fullstack",
         kind: "composite",
+        primary: true,
         children: ["Backend", "Frontend"],
         startOrder: "parallel",
       },
@@ -245,8 +246,11 @@ describe("WorkspaceRunPanel", () => {
     expect(selection?.toString()).toContain("frontend ready");
     expect(fireEvent.copy(output)).toBe(true);
     expect(
-      (screen.getByRole("button", { name: "Stop" }) as HTMLButtonElement)
-        .disabled,
+      (
+        screen.getByRole("button", {
+          name: "Stop Fullstack",
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(false);
     expect(
       (screen.getByRole("button", { name: "Restart" }) as HTMLButtonElement)
@@ -296,7 +300,7 @@ describe("WorkspaceRunPanel", () => {
     expect(await screen.findByText("build complete")).toBeTruthy();
     expect(screen.getByText("Completed")).toBeTruthy();
     expect(
-      (screen.getByRole("button", { name: "Start" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "Run Build" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false);
   });
@@ -397,7 +401,7 @@ describe("WorkspaceRunPanel", () => {
         view: "all",
       }),
     );
-    const start = await screen.findByRole("button", { name: "Start" });
+    const start = await screen.findByRole("button", { name: "Run Server" });
 
     fireEvent.click(start);
     fireEvent.click(start);

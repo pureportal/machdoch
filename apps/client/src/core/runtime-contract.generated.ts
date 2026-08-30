@@ -187,6 +187,35 @@ export const AGENT_LIMIT_BOUNDS = {
     max: 100,
   },
 } as const;
+export const DEFAULT_USER_WORKSPACE_RUN_SETTINGS = {
+  startupDelayMs: 4000,
+  healthCheckIntervalMs: 6000,
+  healthCheckTimeoutMs: 2500,
+  healthCheckFailureThreshold: 3,
+  sequentialReadinessTimeoutMs: 150000,
+} as const satisfies UserWorkspaceRunSettings;
+export const WORKSPACE_RUN_SETTING_BOUNDS = {
+  startupDelayMs: {
+    min: 0,
+    max: 3600000,
+  },
+  healthCheckIntervalMs: {
+    min: 250,
+    max: 3600000,
+  },
+  healthCheckTimeoutMs: {
+    min: 100,
+    max: 60000,
+  },
+  healthCheckFailureThreshold: {
+    min: 1,
+    max: 100,
+  },
+  sequentialReadinessTimeoutMs: {
+    min: 1000,
+    max: 3600000,
+  },
+} as const;
 export const DEFAULT_USER_REVIEW_MODEL_SETTINGS = {
   mode: "base",
 } as const satisfies UserReviewModelSettings;
@@ -492,6 +521,7 @@ export interface UserConfigFile {
   speechToText?: UserSpeechToTextConfigFile;
   desktop?: Partial<UserDesktopSettings>;
   agentLimits?: RuntimeAgentLimitOverrides;
+  workspaceRun?: Partial<UserWorkspaceRunSettings>;
   memory?: UserMemoryConfigFile;
   reviewModel?: UserReviewModelConfigFile;
   internalTaskModel?: UserInternalTaskModelConfigFile;
@@ -502,6 +532,14 @@ export interface UserAgentLimitsSettings {
   infinite: boolean;
   executorTurns: number;
   autopilotExecutorIterations: number;
+}
+
+export interface UserWorkspaceRunSettings {
+  startupDelayMs: number;
+  healthCheckIntervalMs: number;
+  healthCheckTimeoutMs: number;
+  healthCheckFailureThreshold: number;
+  sequentialReadinessTimeoutMs: number;
 }
 
 export interface UserReviewModelSettings {

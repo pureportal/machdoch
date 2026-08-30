@@ -21,22 +21,19 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use machdoch_fleet_protocol::ProductCommand;
 use serde_json::{json, Value};
-use tauri::{Emitter, Manager};
 use tokio::net::TcpListener as TokioTcpListener;
-
-use crate::desktop_task::{request_desktop_task_cancel, DesktopTaskCancelMap};
 
 use super::{
     auth::{
         create_session_cookie, header_to_str, headers_are_authorized,
         headers_have_current_pairing_token, state_changing_headers_allowed,
     },
-    commands::{normalize_command, RemoteCommandRequest},
+    dispatch::{dispatch_error_response, dispatch_remote_command},
     mission_control_html::mission_control_html,
     status::create_snapshot_locked,
-    RemoteControlShared, RemoteControlState, REMOTE_CONTROL_COMMAND_EVENT,
-    SERVER_ACCEPT_POLL_INTERVAL, SSE_KEEPALIVE_INTERVAL,
+    RemoteControlShared, RemoteControlState, SERVER_ACCEPT_POLL_INTERVAL, SSE_KEEPALIVE_INTERVAL,
 };
 
 #[derive(Clone)]
@@ -214,7 +211,7 @@ async fn stream_remote_web_events(
 async fn post_remote_web_command(
     AxumState(state): AxumState<RemoteWebServerState>,
     headers: HeaderMap,
-    Json(parsed): Json<RemoteCommandRequest>,
+    Json(parsed): Json<ProductCommand>,
 ) -> Response {
     if !headers_are_authorized(&headers, &state.shared) {
         return json_response(
@@ -230,56 +227,16 @@ async fn post_remote_web_command(
         );
     }
 
-    let event = match normalize_command(parsed) {
-        Ok(event) => event,
-        Err(error) => return json_response(StatusCode::BAD_REQUEST, json!({ "error": error })),
-    };
-
     let control_state = RemoteControlState {
         shared: state.shared.clone(),
     };
-    let record_outcome = match control_state.record_command(&event) {
-        Ok(outcome) => outcome,
-        Err(super::state::RecordCommandError::CommandIdConflict) => {
-            return json_response(
-                StatusCode::CONFLICT,
-                json!({ "error": "The command id was already used for a different command." }),
-            );
-        }
-        Err(super::state::RecordCommandError::Unavailable(error)) => {
-            return json_response(StatusCode::SERVICE_UNAVAILABLE, json!({ "error": error }));
-        }
-    };
-
-    if record_outcome == super::state::RecordCommandOutcome::Duplicate {
-        return json_response(
-            StatusCode::ACCEPTED,
-            json!({
-                "ok": true,
-                "duplicate": true,
-                "commandId": event.command_id,
-            }),
-        );
-    }
-
-    if event.kind == "cancel" {
-        if let Some(task_id) = event.task_id.as_deref() {
-            let cancel_state = state.app_handle.state::<DesktopTaskCancelMap>();
-            request_desktop_task_cancel(&cancel_state, task_id);
+    match dispatch_remote_command(&control_state, &state.app_handle, parsed) {
+        Ok(receipt) => json_response(StatusCode::ACCEPTED, json!(receipt)),
+        Err(error) => {
+            let (status, body) = dispatch_error_response(error);
+            json_response(status, body)
         }
     }
-
-    let _ = state
-        .app_handle
-        .emit(REMOTE_CONTROL_COMMAND_EVENT, event.clone());
-
-    json_response(
-        StatusCode::ACCEPTED,
-        json!({
-            "ok": true,
-            "commandId": event.command_id,
-        }),
-    )
 }
 
 async fn remote_web_not_found(method: Method, uri: Uri) -> Response {
