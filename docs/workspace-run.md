@@ -30,17 +30,17 @@ The desktop process injects a fresh, size-bounded `workspaceRun` snapshot into e
 
 ## Configuration model
 
-Run documents use schema version 1 and live at `.machdoch/run.json`.
+Run documents use schema version 2 and live at `.machdoch/run.json`.
 
 ```json
 {
-  "schemaVersion": 1,
-  "primaryConfigurationId": "fullstack-start",
+  "schemaVersion": 2,
   "configurations": [
     {
       "id": "backend",
       "name": "Backend",
       "kind": "task",
+      "primary": false,
       "command": "pnpm run dev",
       "workingDirectory": "backend",
       "environment": {},
@@ -50,10 +50,6 @@ Run documents use schema version 1 and live at `.machdoch/run.json`.
       "healthCheck": {
         "kind": "http",
         "url": "http://localhost:3000/health",
-        "startupDelayMs": 3000,
-        "intervalMs": 5000,
-        "timeoutMs": 2000,
-        "failureThreshold": 3,
         "restartOnFailure": true
       },
       "restartPolicy": {
@@ -68,6 +64,7 @@ Run documents use schema version 1 and live at `.machdoch/run.json`.
       "id": "frontend",
       "name": "Frontend",
       "kind": "task",
+      "primary": false,
       "command": "pnpm run dev",
       "workingDirectory": "frontend",
       "environment": {},
@@ -86,6 +83,7 @@ Run documents use schema version 1 and live at `.machdoch/run.json`.
       "id": "fullstack-start",
       "name": "Fullstack Start",
       "kind": "composite",
+      "primary": true,
       "children": ["backend", "frontend"],
       "startOrder": "parallel"
     }
@@ -93,15 +91,17 @@ Run documents use schema version 1 and live at `.machdoch/run.json`.
 }
 ```
 
-Task configurations carry the command, workspace-relative directory, environment, hot-reload capability, known ports and URLs, optional TCP or HTTP health check, and bounded restart policy. Composites reference task ids and start in parallel by default; sequence is available when service order matters. The primary configuration is the one surfaced in chat and at the top of Workspace Management.
+Task configurations carry the command, workspace-relative directory, environment, hot-reload capability, known ports and URLs, optional TCP or HTTP health check, and bounded restart policy. Composites reference task ids and start in parallel by default; sequence is available when service order matters. A non-empty document must mark exactly one configuration as `primary`; the Run dialog selects it whenever it opens.
 
-Validation rejects duplicate or missing ids, nested or overlapping composites, paths outside the workspace, invalid health targets, duplicate or invalid ports and URLs, unbounded timings, excessive restart limits, and documents larger than 1 MB. Configuration changes are blocked while workspace tasks are active.
+Validation rejects duplicate or missing ids, nested or overlapping composites, paths outside the workspace, invalid health targets, duplicate or invalid ports and URLs, excessive restart limits, and documents larger than 1 MB. Configuration changes are blocked while workspace tasks are active.
 
 ## Lifecycle and reliability
 
 A task moves through `stopped`, `starting`, `running`, `unhealthy`, `restarting`, `crashed`, and `stopping`. A successful zero-code exit remains canonically `stopped` and is presented as Completed. A composite derives its state from its children and exposes every child snapshot, including partial running and failed states.
 
-Health checks have a startup delay, interval, timeout, and consecutive-failure threshold. A successful check moves the task to running and resets its failure counter. A failed check marks it unhealthy at the threshold. When `restartOnFailure` is enabled, the supervisor terminates the process tree and applies the same bounded restart budget used for crashes. Checks run independently from process monitoring so stop and shutdown remain responsive during a slow endpoint check.
+Health-check timing and sequential readiness use global Run timeout settings. The defaults are a 4,000 ms startup delay, 6,000 ms interval, 2,500 ms probe timeout, three consecutive failures, and a 150,000 ms sequential readiness timeout. They can be changed in Settings under Run timeouts or with the `workspace-run.*` entries in `machdoch config`.
+
+A successful check moves the task to running and resets its failure counter. A failed check marks it unhealthy at the threshold. When `restartOnFailure` is enabled, the supervisor terminates the process tree and applies the same bounded restart budget used for crashes. Checks run independently from process monitoring so stop and shutdown remain responsive during a slow endpoint check.
 
 Restart attempts use exponential backoff capped by `maxBackoffMs`. `maxRestarts` is enforced within `windowMs`; reaching the limit records a diagnostic and stops automatic recovery. Explicit stop cancels pending sequence starts and restart delays. Manual restart waits for the prior tree to stop before starting another generation.
 
@@ -111,7 +111,7 @@ The manager keeps the last valid document while a run is active. This keeps the 
 
 ## Detection and review
 
-Detection runs a read-only Ask task in the active workspace. The AI inspects manifests, scripts, project files, documentation, and launch or container configuration with workspace tools, then chooses commands from that evidence instead of matching an exhaustive framework or command list. Unknown ports, URLs, and health checks remain omitted and marked for review.
+Detection runs a read-only Ask task in the active workspace with the configured internal-task AI model. The AI inspects manifests, scripts, project files, documentation, and launch or container configuration with workspace tools, then chooses commands and one primary configuration from that evidence instead of matching an exhaustive framework, command, or configuration-name list. Unknown ports, URLs, and health checks remain omitted and marked for review.
 
 Detection never saves or executes a result. The tagged AI response must parse as JSON, its metadata must match the drafted configurations, and the Rust precheck must accept the complete schema and every workspace-relative working directory before the dialog replaces the editable draft. Edited JSON passes the same precheck before save. Starting a configuration independently reloads and validates saved state before creating a process.
 

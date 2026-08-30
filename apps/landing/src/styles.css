@@ -728,7 +728,7 @@ h2 {
 
 .download-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
   margin-top: clamp(56px, 7vw, 90px);
 }
@@ -835,6 +835,12 @@ footer {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@media (max-width: 1280px) {
+  .download-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
