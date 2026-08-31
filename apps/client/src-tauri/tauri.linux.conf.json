@@ -1,0 +1,7 @@
+{
+  "bundle": {
+    "resources": {
+      "target/onnxruntime/libonnxruntime.so.1": "libonnxruntime.so.1"
+    }
+  }
+}
