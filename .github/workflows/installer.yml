@@ -104,14 +104,20 @@ jobs:
         shell: bash
         run: pnpm install --frozen-lockfile
 
-      - name: Build Tauri installers
+      - name: Build Linux Tauri installers
+        if: startsWith(matrix.release_target, 'linux-')
         shell: bash
         env:
-          TAURI_LINUX_AYATANA_APPINDICATOR: ${{ startsWith(matrix.release_target, 'linux-') && 'true' || '' }}
-          ORT_LIB_LOCATION: ${{ startsWith(matrix.release_target, 'linux-') && 'apps/client/src-tauri/target/onnxruntime' || '' }}
-          ORT_PREFER_DYNAMIC_LINK: ${{ startsWith(matrix.release_target, 'linux-') && 'true' || '' }}
-          ORT_SKIP_DOWNLOAD: ${{ startsWith(matrix.release_target, 'linux-') && 'true' || '' }}
-          RUSTFLAGS: ${{ startsWith(matrix.release_target, 'linux-') && '-C link-arg=-Wl,-rpath,$ORIGIN/../lib/machdoch' || '' }}
+          TAURI_LINUX_AYATANA_APPINDICATOR: "true"
+          ORT_LIB_LOCATION: ${{ github.workspace }}/apps/client/src-tauri/target/onnxruntime
+          ORT_PREFER_DYNAMIC_LINK: "true"
+          ORT_SKIP_DOWNLOAD: "true"
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,$ORIGIN/../lib/machdoch
+        run: pnpm --filter @machdoch/client tauri build ${{ matrix.bundle_args }}
+
+      - name: Build non-Linux Tauri installers
+        if: "!startsWith(matrix.release_target, 'linux-')"
+        shell: bash
         run: pnpm --filter @machdoch/client tauri build ${{ matrix.bundle_args }}
 
       - name: List bundle outputs
