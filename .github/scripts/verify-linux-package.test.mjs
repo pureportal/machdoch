@@ -8,6 +8,7 @@ import {
   requiredRpmDependencies,
   validateDebianPackage,
   validateGlibcBaseline,
+  validateOnnxRuntimeRunpath,
   validateRpmPackage,
 } from "./verify-linux-package.mjs";
 
@@ -99,5 +100,17 @@ test("enforces the Debian 12 glibc baseline", () => {
   assert.throws(
     () => validateGlibcBaseline("Name: GLIBC_2.39", "2.36"),
     /requires glibc 2\.39/u,
+  );
+});
+
+test("requires the bundled ONNX Runtime library path", () => {
+  assert.doesNotThrow(() =>
+    validateOnnxRuntimeRunpath(
+      "0x000000000000001d (RUNPATH) Library runpath: [$ORIGIN/../lib/machdoch]",
+    ),
+  );
+  assert.throws(
+    () => validateOnnxRuntimeRunpath("0x000000000000001d (RUNPATH) []"),
+    /bundled ONNX Runtime/u,
   );
 });

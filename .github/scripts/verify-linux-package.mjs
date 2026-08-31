@@ -25,6 +25,7 @@ export const requiredRpmDependencies = [
 
 export const requiredLinuxPackagePaths = [
   "/usr/bin/machdoch",
+  "/usr/lib/machdoch/libonnxruntime.so.1",
   "/usr/lib/machdoch/python/build_source_anchored_loop.py",
   "/usr/lib/machdoch/python/media_diffusers_requirements.txt",
   "/usr/lib/machdoch/python/media_diffusers_worker.py",
@@ -211,6 +212,14 @@ export function validateGlibcBaseline(versionInformation, maximumVersion) {
   }
 }
 
+export function validateOnnxRuntimeRunpath(dynamicSection) {
+  if (!dynamicSection.includes("$ORIGIN/../lib/machdoch")) {
+    throw new Error(
+      "Linux executable does not search the bundled ONNX Runtime library path.",
+    );
+  }
+}
+
 function run(command, args) {
   return execFileSync(command, args, {
     encoding: "utf8",
@@ -237,8 +246,20 @@ function verifyGlibcBaseline(packagePath, configuration) {
       "bin",
       configuration.productName,
     );
+    const onnxRuntimePath = join(
+      extractionDirectory,
+      "usr",
+      "lib",
+      configuration.productName,
+      "libonnxruntime.so.1",
+    );
     validateGlibcBaseline(
       run("readelf", ["--version-info", executablePath]),
+      "2.36",
+    );
+    validateOnnxRuntimeRunpath(run("readelf", ["--dynamic", executablePath]));
+    validateGlibcBaseline(
+      run("readelf", ["--version-info", onnxRuntimePath]),
       "2.36",
     );
   } finally {
