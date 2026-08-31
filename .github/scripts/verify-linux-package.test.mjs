@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   expectedDebianMaintainer,
+  parseDebianPackagePaths,
   requiredDebianDependencies,
   requiredLinuxPackagePaths,
   requiredRpmDependencies,
@@ -40,6 +41,18 @@ test("accepts the expected ARM64 Debian metadata and paths", () => {
         recommends: "python3-nautilus",
       },
     }),
+  );
+});
+
+test("parses Debian archive paths produced by Tauri", () => {
+  assert.deepEqual(
+    parseDebianPackagePaths(
+      [
+        "-rwxr-xr-x root/root 0 2026-08-31 09:39 usr/bin/machdoch",
+        "-rw-r--r-- root/root 0 2026-08-31 09:39 ./usr/share/applications/machdoch.desktop",
+      ].join("\n"),
+    ),
+    ["/usr/bin/machdoch", "/usr/share/applications/machdoch.desktop"],
   );
 });
 

@@ -82,9 +82,13 @@ export function parseDebianRelationshipNames(value) {
 export function parseDebianPackagePaths(contents) {
   return contents
     .split(/\r?\n/u)
-    .map((line) => line.trim().split(/\s+/u).at(-1) ?? "")
-    .filter((path) => path.startsWith("./"))
-    .map((path) => path.slice(1));
+    .map((line) => line.trim().split(/\s+/u))
+    .map((parts) => {
+      const targetSeparator = parts.lastIndexOf("->");
+      return parts.at(targetSeparator > 0 ? targetSeparator - 1 : -1) ?? "";
+    })
+    .filter((path) => path.startsWith("./") || path.startsWith("usr/"))
+    .map((path) => `/${path.replace(/^\.\//u, "")}`);
 }
 
 export function validateDebianPackage({
