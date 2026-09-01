@@ -5,8 +5,8 @@ use serde_json::Value;
 use std::{error::Error, fmt};
 
 pub const GATEWAY_PROTOCOL_VERSION: u32 = 4;
-pub const PRODUCT_CAPABILITY: &str = "product.v3";
-pub const PRODUCT_SNAPSHOT_VERSION: u32 = 4;
+pub const PRODUCT_CAPABILITY: &str = "product.v4";
+pub const PRODUCT_SNAPSHOT_VERSION: u32 = 5;
 pub const MAX_GATEWAY_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_MANAGED_SETTINGS_DELIVERY_BYTES: usize = 18 * 1024 * 1024;
 pub const MANAGED_SETTINGS_SCHEMA_VERSION: u8 = 2;
@@ -658,6 +658,8 @@ pub struct ProductCommand {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attachment_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_pack_id: Option<String>,
@@ -716,6 +718,7 @@ pub enum ProductCommandKind {
     SetInterview,
     CancelPromptEnhancement,
     SetSessionMemory,
+    ForgetSessionMemory,
     SetGlobalMemory,
     SetUiControl,
     RemoveAttachment,
@@ -772,6 +775,8 @@ struct RawProductCommand {
     #[serde(default)]
     enabled: Option<bool>,
     #[serde(default)]
+    memory_id: Option<String>,
+    #[serde(default)]
     attachment_id: Option<String>,
     #[serde(default)]
     context_pack_id: Option<String>,
@@ -824,6 +829,7 @@ impl<'de> Deserialize<'de> for ProductCommand {
             interview_enabled: raw.interview_enabled,
             workspace: raw.workspace,
             enabled: raw.enabled,
+            memory_id: raw.memory_id,
             attachment_id: raw.attachment_id,
             context_pack_id: raw.context_pack_id,
             message_id: raw.message_id,
@@ -920,6 +926,10 @@ impl ProductCommand {
             | ProductCommandKind::SetUiControl => required.extend([
                 ("sessionId", self.session_id.is_some()),
                 ("enabled", self.enabled.is_some()),
+            ]),
+            ProductCommandKind::ForgetSessionMemory => required.extend([
+                ("sessionId", self.session_id.is_some()),
+                ("memoryId", self.memory_id.is_some()),
             ]),
             ProductCommandKind::RemoveAttachment => required.extend([
                 ("sessionId", self.session_id.is_some()),
@@ -1062,6 +1072,10 @@ impl ProductCommand {
             | ProductCommandKind::SetSessionMemory
             | ProductCommandKind::SetGlobalMemory
             | ProductCommandKind::SetUiControl => valid_identifier(self.session_id.as_deref()),
+            ProductCommandKind::ForgetSessionMemory => {
+                valid_identifier(self.session_id.as_deref())
+                    && valid_identifier(self.memory_id.as_deref())
+            }
             ProductCommandKind::RemoveAttachment => {
                 valid_identifier(self.session_id.as_deref())
                     && valid_identifier(self.attachment_id.as_deref())
@@ -1234,6 +1248,7 @@ impl ProductCommandKind {
             Self::SetInterview => "set-interview",
             Self::CancelPromptEnhancement => "cancel-prompt-enhancement",
             Self::SetSessionMemory => "set-session-memory",
+            Self::ForgetSessionMemory => "forget-session-memory",
             Self::SetGlobalMemory => "set-global-memory",
             Self::SetUiControl => "set-ui-control",
             Self::RemoveAttachment => "remove-attachment",
@@ -1340,6 +1355,7 @@ mod tests {
             interview_enabled: None,
             workspace: None,
             enabled: None,
+            memory_id: None,
             attachment_id: None,
             context_pack_id: None,
             message_id: None,
@@ -1375,6 +1391,7 @@ mod tests {
             "interviewEnabled": true,
             "workspace": "C:\\workspace",
             "enabled": true,
+            "memoryId": "memory-1",
             "attachmentId": "attachment-1",
             "contextPackId": "pack-1",
             "messageId": "message-1",
@@ -1448,7 +1465,7 @@ mod tests {
                 "instanceId": "instance-1",
                 "protocolVersion": GATEWAY_PROTOCOL_VERSION,
                 "productVersion": "6.3.0",
-                "capabilities": ["product.v3"]
+                "capabilities": ["product.v4"]
             })
         );
     }
@@ -1549,6 +1566,7 @@ mod tests {
             ("set-interview", &["sessionId", "enabled"][..]),
             ("cancel-prompt-enhancement", &["taskId"][..]),
             ("set-session-memory", &["sessionId", "enabled"][..]),
+            ("forget-session-memory", &["sessionId", "memoryId"][..]),
             ("set-global-memory", &["sessionId", "enabled"][..]),
             ("set-ui-control", &["sessionId", "enabled"][..]),
             ("remove-attachment", &["sessionId", "attachmentId"][..]),

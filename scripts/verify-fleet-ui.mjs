@@ -814,7 +814,7 @@ function productFixture() {
     sessions: [],
     commands: [],
     shell: {
-      version: 4,
+      version: 5,
       capturedAt: now,
       activeSessionId: "session_ui_check",
       sessions: [
@@ -974,6 +974,7 @@ function productFixture() {
         canSend: true,
         isExecuting: false,
         sessionMemoryEnabled: true,
+        sessionMemory: [],
         globalMemoryAvailable: true,
         globalMemoryEnabled: false,
         uiControlAvailable: true,

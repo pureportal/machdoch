@@ -139,6 +139,7 @@ export interface ConversationHistoryEntry {
 export interface ConversationMemoryEntry {
   id: string;
   scope: ConversationMemoryScope;
+  sourceSessionId?: string;
   key: string;
   kind: ConversationMemoryKind;
   content: string;
@@ -150,6 +151,7 @@ export interface ConversationMemoryEntry {
 }
 
 export interface TaskConversationContext {
+  sessionId?: string;
   workspace?: {
     selection: "selected" | "not-set";
     root?: string;

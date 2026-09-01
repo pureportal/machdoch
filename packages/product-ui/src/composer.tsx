@@ -24,8 +24,15 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { ComposerModelPicker } from "./composer-model-picker";
+import { SessionMemoryDialog } from "./memory-management";
 import type { ProductCommandHandler } from "./product-runtime";
 
 type ProductComposer = NonNullable<ProductShell["composer"]>;
@@ -150,7 +157,9 @@ export function Composer({
 }): React.ReactElement {
   const [draft, setDraft] = useState(composer.draft);
   const [draftSessionId, setDraftSessionId] = useState(composer.sessionId);
+  const [sessionMemoryOpen, setSessionMemoryOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const closeSessionMemory = useCallback(() => setSessionMemoryOpen(false), []);
 
   useEffect(() => {
     if (draftSessionId !== composer.sessionId) {
@@ -158,6 +167,10 @@ export function Composer({
       setDraft(composer.draft);
     }
   }, [composer.draft, composer.sessionId, draftSessionId]);
+
+  useEffect(() => {
+    setSessionMemoryOpen(false);
+  }, [composer.sessionId]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -358,6 +371,8 @@ export function Composer({
             icon={<Brain />}
             tone="emerald"
             pressed={composer.sessionMemoryEnabled}
+            onManage={() => setSessionMemoryOpen(true)}
+            manageLabel="Manage session memory"
             onClick={() =>
               onCommand({
                 kind: "set-session-memory",
@@ -463,6 +478,35 @@ export function Composer({
           {composer.sendDisabledReason}
         </p>
       ) : null}
+      <SessionMemoryDialog
+        open={sessionMemoryOpen}
+        enabled={composer.sessionMemoryEnabled}
+        entries={composer.sessionMemory.map((entry) => ({
+          id: entry.id,
+          content: entry.content,
+          createdAt: entry.createdAt,
+          ...(entry.sourceSession
+            ? { sourceLabel: entry.sourceSession.title }
+            : {}),
+        }))}
+        emptyLabel="No session memory saved."
+        disabled={pending}
+        onEnabledChange={(enabled) =>
+          onCommand({
+            kind: "set-session-memory",
+            sessionId: session.id,
+            enabled,
+          })
+        }
+        onForget={(memoryId) =>
+          onCommand({
+            kind: "forget-session-memory",
+            sessionId: session.id,
+            memoryId,
+          })
+        }
+        onClose={closeSessionMemory}
+      />
     </div>
   );
 }
@@ -636,6 +680,8 @@ function Toggle({
   tone,
   pressed,
   disabled = false,
+  onManage,
+  manageLabel,
   onClick,
 }: {
   icon: React.ReactNode;
@@ -644,9 +690,11 @@ function Toggle({
   tone: "emerald" | "sky" | "cyan" | "violet";
   pressed: boolean;
   disabled?: boolean;
+  onManage?: () => void;
+  manageLabel?: string;
   onClick: () => Promise<boolean>;
 }): React.ReactElement {
-  return (
+  const button = (
     <button
       type="button"
       className="m-product-toggle-button app-composer-toggle-button"
@@ -662,5 +710,26 @@ function Toggle({
     >
       {icon}
     </button>
+  );
+
+  if (!onManage) return button;
+
+  return (
+    <div
+      className="m-product-toggle-group"
+      role="group"
+      aria-label={`${label} controls`}
+    >
+      {button}
+      <button
+        type="button"
+        className="m-product-toggle-manage"
+        aria-label={manageLabel ?? `Manage ${label}`}
+        title={manageLabel ?? `Manage ${label}`}
+        onClick={onManage}
+      >
+        <ChevronDown aria-hidden="true" />
+      </button>
+    </div>
   );
 }

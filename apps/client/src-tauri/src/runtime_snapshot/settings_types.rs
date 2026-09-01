@@ -254,6 +254,8 @@ pub(super) struct UserWorkspaceRunConfigFile {
 pub struct UserMemoryEntry {
     pub(super) id: String,
     pub(super) scope: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) source_session_id: Option<String>,
     #[serde(default)]
     pub(super) key: String,
     #[serde(default)]

@@ -1798,13 +1798,19 @@ body {
   height: 1.85rem !important;
 }
 
+:root[data-density="compact"] .app-composer-toggle-manage-button {
+  width: 1.1rem !important;
+  height: 1.85rem !important;
+}
+
 :root[data-density="compact"]
   :is(
     .app-model-picker-button,
     .app-composer-toolbar-pill,
     .app-mode-picker-button,
     .app-reasoning-picker-button,
-    .app-composer-toggle-button
+    .app-composer-toggle-button,
+    .app-composer-toggle-manage-button
   )
   svg {
   width: 0.8rem !important;

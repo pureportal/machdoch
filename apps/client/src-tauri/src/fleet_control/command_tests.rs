@@ -23,6 +23,7 @@ fn command_request(kind: ProductCommandKind) -> ProductCommand {
         interview_enabled: None,
         workspace: None,
         enabled: None,
+        memory_id: None,
         attachment_id: None,
         context_pack_id: None,
         message_id: None,
@@ -62,6 +63,7 @@ fn grouped_commands_require_their_target_fields() {
         (ProductCommandKind::SchedulerPause, "jobId"),
         (ProductCommandKind::SchedulerRetryRun, "runId"),
         (ProductCommandKind::SetUiControl, "enabled value"),
+        (ProductCommandKind::ForgetSessionMemory, "memoryId"),
     ];
 
     for (kind, expected_message) in cases {
@@ -71,6 +73,7 @@ fn grouped_commands_require_their_target_fields() {
             ProductCommandKind::ApplyContextPack
                 | ProductCommandKind::SpeakMessage
                 | ProductCommandKind::SetUiControl
+                | ProductCommandKind::ForgetSessionMemory
         ) {
             request.session_id = Some("session-1".to_string());
         }
@@ -83,6 +86,23 @@ fn grouped_commands_require_their_target_fields() {
             kind.as_str()
         );
     }
+}
+
+#[test]
+fn forget_session_memory_preserves_its_target() {
+    let event = normalize_command(ProductCommand {
+        session_id: Some(" session-1 ".to_string()),
+        memory_id: Some(" memory-1 ".to_string()),
+        ..command_request(ProductCommandKind::ForgetSessionMemory)
+    })
+    .expect("session memory target should normalize");
+
+    assert_eq!(event.session_id.as_deref(), Some("session-1"));
+    assert_eq!(event.memory_id.as_deref(), Some("memory-1"));
+    assert_eq!(
+        create_command_record(&event).target_preview.as_deref(),
+        Some("memory:memory-1")
+    );
 }
 
 #[test]

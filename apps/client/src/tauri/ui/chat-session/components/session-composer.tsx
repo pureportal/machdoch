@@ -7,12 +7,24 @@ import {
   Monitor,
   Square,
 } from "lucide-react";
-import { useMemo, type JSX, type KeyboardEvent } from "react";
+import { SessionMemoryDialog } from "@machdoch/product-ui";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type JSX,
+  type KeyboardEvent,
+} from "react";
 import type {
   ReasoningMode,
   RunMode,
 } from "../../../../core/runtime-contract.generated.js";
 import { AppNotification } from "../../components/ui/notification";
+import {
+  createMemoryManagementEntries,
+  type MemorySourceSession,
+} from "../../components/memory-management-entries";
 import {
   isQuickVoiceSession,
   type ChatSessionContextAttachment,
@@ -75,6 +87,7 @@ export interface SessionComposerProps {
   } | null;
   onStatusMessageDismiss?: () => void;
   contextAttachments: ChatSessionContextAttachment[];
+  memorySourceSessions: readonly MemorySourceSession[];
   contextPacks: SmartContextPack[];
   matchedContextPackIds: string[];
   imageInputSupported: boolean;
@@ -100,6 +113,7 @@ export interface SessionComposerProps {
   onSessionModeSelection: (mode: RunMode | null) => void;
   onSessionReasoningSelection: (reasoning: ReasoningMode | null) => void;
   onSessionMemoryEnabledChange: (enabled: boolean) => void;
+  onForgetSessionMemory: (memoryId: string) => Promise<unknown> | unknown;
   onUseGlobalMemoryChange: (enabled: boolean) => void;
   onUiControlEnabledChange: (enabled: boolean) => void;
   onInterviewEnabledChange: (enabled: boolean) => void;
@@ -178,6 +192,7 @@ export const SessionComposer = ({
   statusMessage,
   onStatusMessageDismiss,
   contextAttachments,
+  memorySourceSessions,
   contextPacks,
   matchedContextPackIds,
   imageInputSupported,
@@ -194,6 +209,7 @@ export const SessionComposer = ({
   onSessionModeSelection,
   onSessionReasoningSelection,
   onSessionMemoryEnabledChange,
+  onForgetSessionMemory,
   onUseGlobalMemoryChange,
   onUiControlEnabledChange,
   onInterviewEnabledChange,
@@ -229,7 +245,23 @@ export const SessionComposer = ({
   isExecuting,
   isPromptEnhancementActive = false,
 }: SessionComposerProps): JSX.Element => {
+  const [sessionMemoryOpen, setSessionMemoryOpen] = useState(false);
+  const openSessionMemory = useCallback(() => setSessionMemoryOpen(true), []);
+  const closeSessionMemory = useCallback(() => setSessionMemoryOpen(false), []);
+
+  useEffect(() => {
+    setSessionMemoryOpen(false);
+  }, [activeSession.id]);
+
   const showSessionMemoryButton = !isQuickVoiceSession(activeSession);
+  const sessionMemoryEntries = useMemo(
+    () =>
+      createMemoryManagementEntries(
+        activeSession.sessionMemory,
+        memorySourceSessions,
+      ),
+    [activeSession.sessionMemory, memorySourceSessions],
+  );
   const notification =
     statusMessage ??
     (speechInput.statusText
@@ -323,6 +355,8 @@ export const SessionComposer = ({
         icon: <Brain className="h-4 w-4" />,
         pressed: activeSession.sessionMemoryEnabled,
         onPressedChange: onSessionMemoryEnabledChange,
+        onManage: openSessionMemory,
+        manageLabel: "Manage session memory",
         activeClassName:
           "border-emerald-500/30 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/15 hover:text-white",
       });
@@ -380,6 +414,7 @@ export const SessionComposer = ({
     isGlobalMemoryAvailable,
     isUiControlAvailable,
     onInterviewEnabledChange,
+    openSessionMemory,
     onSessionMemoryEnabledChange,
     onUiControlEnabledChange,
     onUseGlobalMemoryChange,
@@ -514,6 +549,15 @@ export const SessionComposer = ({
         }
         onSend={onSend}
         onCancel={onCancel}
+      />
+      <SessionMemoryDialog
+        open={sessionMemoryOpen}
+        enabled={activeSession.sessionMemoryEnabled}
+        entries={sessionMemoryEntries}
+        emptyLabel="No session memory saved."
+        onEnabledChange={onSessionMemoryEnabledChange}
+        onForget={onForgetSessionMemory}
+        onClose={closeSessionMemory}
       />
     </div>
   );

@@ -326,6 +326,9 @@
         "scope": {
           "$ref": "#/$defs/RuntimeMemoryScope"
         },
+        "sourceSessionId": {
+          "type": "string"
+        },
         "key": {
           "type": "string"
         },

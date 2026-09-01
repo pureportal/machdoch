@@ -3,8 +3,8 @@ import { z } from "zod";
 export const gatewayProtocolVersion = 4;
 export const maximumGatewayMessageBytes = 4 * 1024 * 1024;
 export const maximumManagedSettingsDeliveryBytes = 18 * 1024 * 1024;
-export const productCapability = "product.v3";
-export const productSnapshotVersion = 4;
+export const productCapability = "product.v4";
+export const productSnapshotVersion = 5;
 export const managedSettingsSchemaVersion = 2;
 export const maximumManagedSettingsCollectionEntries = 128;
 export const maximumManagedSettingsSecrets = 128;
@@ -599,6 +599,11 @@ export const productCommandSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({
     ...sessionCommandShape,
+    kind: z.literal("forget-session-memory"),
+    memoryId: identifier,
+  }),
+  z.strictObject({
+    ...sessionCommandShape,
     kind: z.literal("set-global-memory"),
     enabled: z.boolean(),
   }),
@@ -693,6 +698,20 @@ export const productAttachmentSchema = z.discriminatedUnion("source", [
 ]);
 
 export type ProductAttachment = z.infer<typeof productAttachmentSchema>;
+
+export const productMemoryEntrySchema = z.strictObject({
+  id: identifier,
+  content: text,
+  createdAt: timestamp,
+  sourceSession: z
+    .strictObject({
+      id: identifier,
+      title: text,
+    })
+    .optional(),
+});
+
+export type ProductMemoryEntry = z.infer<typeof productMemoryEntrySchema>;
 
 export const productSessionSchema = z.strictObject({
   id: identifier,
@@ -1003,6 +1022,7 @@ export const productShellSchema = z.strictObject({
       sendDisabledReason: text.optional(),
       isExecuting: z.boolean(),
       sessionMemoryEnabled: z.boolean(),
+      sessionMemory: z.array(productMemoryEntrySchema).max(24),
       globalMemoryAvailable: z.boolean(),
       globalMemoryEnabled: z.boolean(),
       uiControlAvailable: z.boolean(),

@@ -1476,6 +1476,38 @@
   cursor: pointer;
 }
 
+.m-product-toggle-group {
+  display: inline-flex;
+  align-items: center;
+}
+
+.m-product-toggle-group .m-product-toggle-button {
+  border-radius: 999px 0 0 999px;
+}
+
+.m-product-toggle-manage {
+  display: grid;
+  width: 20px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--app-slate-800);
+  border-left: 0;
+  border-radius: 0 999px 999px 0;
+  background: color-mix(in srgb, var(--app-slate-950) 70%, transparent);
+  color: var(--app-slate-500);
+  cursor: pointer;
+}
+
+.m-product-toggle-manage:hover {
+  background: var(--app-slate-900);
+  color: var(--app-slate-100);
+}
+
+.m-product-toggle-manage svg {
+  width: 12px;
+  height: 12px;
+}
+
 .m-product-toggle-button:hover:not([aria-disabled="true"]) {
   background: var(--app-slate-900);
   color: var(--app-slate-100);

@@ -117,9 +117,9 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
   },
   {
     id: "memory",
-    label: "Memory",
+    label: "Global memory",
     group: "Agent",
-    description: "Global memory and saved facts.",
+    description: "Saved facts across chats.",
     keywords: ["facts", "global", "remember"],
   },
   {
@@ -475,6 +475,7 @@ export const createConversationContextFromSession = (
   const history = createAiContextHistory(session.messages, maxHistoryMessages);
 
   return {
+    sessionId: session.id,
     workspace: session.workspace
       ? { selection: "selected", root: session.workspace }
       : { selection: "not-set" },

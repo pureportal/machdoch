@@ -13,7 +13,6 @@ import type { ConversationMemoryEntry } from "../../../../core/types.js";
 import { DEFAULT_USER_WORKSPACE_RUN_SETTINGS } from "../../../../core/runtime-contract.generated.js";
 import {
   forgetUserGlobalMemoryEntry,
-  forgetWorkspaceMemoryEntry,
   loadGlobalProviderAvailability,
   authorizeMcpOAuth,
   discoverMcpServer,
@@ -214,7 +213,6 @@ export interface ChatSessionRuntimeController {
   ) => Promise<void>;
   handleGlobalMemoryEnabledSave: (enabled: boolean) => Promise<void>;
   handleGlobalMemoryForget: (id: string) => Promise<void>;
-  handleWorkspaceMemoryForget: (id: string) => Promise<void>;
   refreshWorkspaceMemoryEntries: () => Promise<void>;
   applyLoadedUserDesktopSettings: (settings: UserDesktopSettings) => void;
   applyLoadedUserWorkspaceRunSettings: (
@@ -3087,38 +3085,6 @@ export const useChatSessionRuntime = (
     [applyLoadedUserMemorySettings, userMemorySettings],
   );
 
-  const handleWorkspaceMemoryForget = useCallback(
-    async (id: string): Promise<void> => {
-      const workspaceRoot = options.activeSessionWorkspace?.trim();
-
-      if (!workspaceRoot) {
-        return;
-      }
-
-      setMemorySetupSaving(true);
-      setMemorySetupMessage(null);
-
-      try {
-        const entries = isTauri()
-          ? await forgetWorkspaceMemoryEntry(workspaceRoot, id)
-          : workspaceMemoryEntries.filter((entry) => entry.id !== id);
-        setWorkspaceMemoryEntries(entries);
-        setMemorySetupMessage({ tone: "success", text: "Memory removed." });
-      } catch (error) {
-        setMemorySetupMessage({
-          tone: "error",
-          text:
-            error instanceof Error
-              ? error.message
-              : "Memory could not be removed.",
-        });
-      } finally {
-        setMemorySetupSaving(false);
-      }
-    },
-    [options.activeSessionWorkspace, workspaceMemoryEntries],
-  );
-
   return {
     globalProviders,
     runtimeSnapshot,
@@ -3210,7 +3176,6 @@ export const useChatSessionRuntime = (
     handleMcpOAuthFinish,
     handleGlobalMemoryEnabledSave,
     handleGlobalMemoryForget,
-    handleWorkspaceMemoryForget,
     refreshWorkspaceMemoryEntries,
     applyLoadedUserDesktopSettings,
     applyLoadedUserWorkspaceRunSettings,

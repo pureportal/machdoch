@@ -614,6 +614,9 @@ export const prepareConversationPromptContext = async (
         : []),
     ],
     memory: {
+      ...(conversationContext?.sessionId
+        ? { sourceSessionId: conversationContext.sessionId }
+        : {}),
       sessionEnabled,
       sessionEntries,
       workspaceEnabled,

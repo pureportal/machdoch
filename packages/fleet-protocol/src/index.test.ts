@@ -6,6 +6,7 @@ import {
   hostMessageSchema,
   maximumGatewayMessageBytes,
   maximumManagedSettingsCollectionEntries,
+  productCommandSchema,
   serializedGatewayMessageBytes,
 } from "./index.ts";
 
@@ -112,8 +113,9 @@ const snapshotMessageAtPayloadSize = (size: number) => {
   let message = snapshotMessage(chunks);
 
   while (
-    serializedGatewayMessageBytes(snapshotMessage([...chunks, "x".repeat(12_000)])) <=
-    size
+    serializedGatewayMessageBytes(
+      snapshotMessage([...chunks, "x".repeat(12_000)]),
+    ) <= size
   ) {
     chunks.push("x".repeat(12_000));
     message = snapshotMessage(chunks);
@@ -123,7 +125,9 @@ const snapshotMessageAtPayloadSize = (size: number) => {
     serializedGatewayMessageBytes(snapshotMessage([...chunks, ""])) -
     serializedGatewayMessageBytes(message);
   chunks.push(
-    "x".repeat(size - serializedGatewayMessageBytes(message) - finalChunkOverhead),
+    "x".repeat(
+      size - serializedGatewayMessageBytes(message) - finalChunkOverhead,
+    ),
   );
   return snapshotMessage(chunks);
 };
@@ -131,7 +135,10 @@ const snapshotMessageAtPayloadSize = (size: number) => {
 void test("accepts a gateway snapshot at the payload budget", () => {
   const message = snapshotMessageAtPayloadSize(maximumGatewayMessageBytes);
 
-  assert.equal(serializedGatewayMessageBytes(message), maximumGatewayMessageBytes);
+  assert.equal(
+    serializedGatewayMessageBytes(message),
+    maximumGatewayMessageBytes,
+  );
   assert.equal(hostMessageSchema.safeParse(message).success, true);
 });
 
@@ -139,18 +146,23 @@ void test("rejects a gateway snapshot over the payload budget", () => {
   const message = snapshotMessageAtPayloadSize(maximumGatewayMessageBytes + 1);
   const result = hostMessageSchema.safeParse(message);
 
-  assert.equal(serializedGatewayMessageBytes(message), maximumGatewayMessageBytes + 1);
+  assert.equal(
+    serializedGatewayMessageBytes(message),
+    maximumGatewayMessageBytes + 1,
+  );
   assert.equal(result.success, false);
   if (!result.success) {
-    assert.deepEqual(result.error.issues.map((issue) => issue.message), [
-      "Gateway message exceeds the 4 MiB payload budget.",
-    ]);
+    assert.deepEqual(
+      result.error.issues.map((issue) => issue.message),
+      ["Gateway message exceeds the 4 MiB payload budget."],
+    );
   }
 });
 
 void test("accepts a complete managed settings delivery", () => {
   assert.equal(
-    fleetManagedSettingsDeliverySchema.safeParse(managedSettingsDelivery()).success,
+    fleetManagedSettingsDeliverySchema.safeParse(managedSettingsDelivery())
+      .success,
     true,
   );
 });
@@ -190,9 +202,18 @@ void test("rejects invalid managed settings identifiers and relationships", () =
     },
   };
 
-  assert.equal(fleetManagedSettingsDeliverySchema.safeParse(invalidManager).success, false);
-  assert.equal(fleetManagedSettingsDeliverySchema.safeParse(invalidUuid).success, false);
-  assert.equal(fleetManagedSettingsDeliverySchema.safeParse(invalidDefaults).success, false);
+  assert.equal(
+    fleetManagedSettingsDeliverySchema.safeParse(invalidManager).success,
+    false,
+  );
+  assert.equal(
+    fleetManagedSettingsDeliverySchema.safeParse(invalidUuid).success,
+    false,
+  );
+  assert.equal(
+    fleetManagedSettingsDeliverySchema.safeParse(invalidDefaults).success,
+    false,
+  );
   assert.equal(
     fleetManagedSettingsDeliverySchema.safeParse(invalidContextPack).success,
     false,
@@ -212,5 +233,23 @@ void test("rejects excessive managed settings collections", () => {
     }),
   );
 
-  assert.equal(fleetManagedSettingsDeliverySchema.safeParse(delivery).success, false);
+  assert.equal(
+    fleetManagedSettingsDeliverySchema.safeParse(delivery).success,
+    false,
+  );
+});
+
+void test("validates session-memory forget commands", () => {
+  const command = {
+    kind: "forget-session-memory",
+    commandId: "command-1",
+    sessionId: "session-1",
+    memoryId: "memory-1",
+  };
+
+  assert.equal(productCommandSchema.safeParse(command).success, true);
+  assert.equal(
+    productCommandSchema.safeParse({ ...command, memoryId: "" }).success,
+    false,
+  );
 });

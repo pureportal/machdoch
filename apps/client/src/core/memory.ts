@@ -20,6 +20,7 @@ const DEFAULT_MEMORY_IMPORTANCE = 3;
 const DEFAULT_MEMORY_CONFIDENCE = 1;
 
 export interface ConversationMemoryMetadata {
+  sourceSessionId?: string;
   key?: string;
   kind?: ConversationMemoryKind;
   searchTerms?: string[];
@@ -148,9 +149,12 @@ export const createConversationMemoryEntry = (
   timestamp = Date.now(),
   metadata: ConversationMemoryMetadata = {},
 ): ConversationMemoryEntry => {
+  const sourceSessionId = normalizeOptionalString(metadata.sourceSessionId);
+
   return {
     id: crypto.randomUUID(),
     scope,
+    ...(sourceSessionId ? { sourceSessionId } : {}),
     key: normalizeMemoryKey(metadata.key, content),
     kind: normalizeMemoryKind(metadata.kind),
     content,
@@ -183,6 +187,7 @@ export const normalizeConversationMemoryEntries = (
       return [];
     }
     const content = normalizeMemoryStatement(normalizedContent);
+    const sourceSessionId = normalizeOptionalString(candidate.sourceSessionId);
 
     const createdAt =
       typeof candidate.createdAt === "number" &&
@@ -202,6 +207,7 @@ export const normalizeConversationMemoryEntries = (
             ? candidate.id
             : crypto.randomUUID(),
         scope,
+        ...(sourceSessionId ? { sourceSessionId } : {}),
         key: normalizeMemoryKey(candidate.key, content),
         kind: normalizedKind,
         content,

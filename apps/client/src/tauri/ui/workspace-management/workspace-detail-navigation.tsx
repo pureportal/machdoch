@@ -1,4 +1,5 @@
 import {
+  Brain,
   FileCode2,
   GitBranch,
   ScrollText,
@@ -13,6 +14,7 @@ export type WorkspaceDetailSection =
   | "files"
   | "configuration"
   | "git"
+  | "memory"
   | "settings";
 
 const WORKSPACE_DETAIL_SECTIONS = [
@@ -24,6 +26,7 @@ const WORKSPACE_DETAIL_SECTIONS = [
     icon: SlidersHorizontal,
   },
   { value: "git", label: "Git", icon: GitBranch },
+  { value: "memory", label: "Memory", icon: Brain },
   { value: "settings", label: "Settings", icon: Settings2 },
 ] as const;
 

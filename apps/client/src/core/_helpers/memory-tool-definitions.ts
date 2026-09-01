@@ -155,7 +155,12 @@ export const createMemoryToolDefinitions = (
           fact,
           MAX_SESSION_MEMORY_ENTRIES,
           Date.now(),
-          metadata,
+          {
+            ...metadata,
+            ...(context.memory.sourceSessionId
+              ? { sourceSessionId: context.memory.sourceSessionId }
+              : {}),
+          },
         );
         const status = remembered.added
           ? "saved"
@@ -207,7 +212,12 @@ export const createMemoryToolDefinitions = (
         const rememberedEntry = await rememberWorkspaceMemory(
           context.workspaceRoot,
           fact,
-          metadata,
+          {
+            ...metadata,
+            ...(context.memory.sourceSessionId
+              ? { sourceSessionId: context.memory.sourceSessionId }
+              : {}),
+          },
         );
         context.memory.workspaceEntries = mergeConversationMemoryEntries(
           context.memory.workspaceEntries ?? [],
@@ -255,7 +265,12 @@ export const createMemoryToolDefinitions = (
           return createInvalidMemoryResult("remember_global_memory");
         }
 
-        const rememberedEntry = await rememberUserGlobalMemory(fact, metadata);
+        const rememberedEntry = await rememberUserGlobalMemory(fact, {
+          ...metadata,
+          ...(context.memory.sourceSessionId
+            ? { sourceSessionId: context.memory.sourceSessionId }
+            : {}),
+        });
         context.memory.globalEntries = mergeConversationMemoryEntries(
           context.memory.globalEntries,
           [rememberedEntry],

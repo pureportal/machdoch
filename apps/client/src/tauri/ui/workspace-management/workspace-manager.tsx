@@ -81,6 +81,7 @@ import {
   workspaceDetailTabId,
 } from "./workspace-detail-navigation";
 import { WorkspaceGitStatus } from "./workspace-git-status";
+import { WorkspaceMemoryPanel } from "./workspace-memory-panel";
 import type { WorkspaceManagementControls } from "./types";
 import {
   selectWorkspaceGitRepository,
@@ -174,6 +175,18 @@ export const WorkspaceManager = ({
   const [workspaceRunDirty, setWorkspaceRunDirty] = useState(false);
   const [workspaceToolsRefreshToken, setWorkspaceToolsRefreshToken] =
     useState(0);
+  const [workspaceMemoryEntries, setWorkspaceMemoryEntries] = useState<
+    Awaited<ReturnType<WorkspaceManagementControls["onLoadMemory"]>>
+  >([]);
+  const [workspaceMemoryRoot, setWorkspaceMemoryRoot] = useState<string | null>(
+    null,
+  );
+  const [workspaceMemoryLoading, setWorkspaceMemoryLoading] = useState(false);
+  const [workspaceMemoryError, setWorkspaceMemoryError] = useState<
+    string | null
+  >(null);
+  const [workspaceMemoryForgetting, setWorkspaceMemoryForgetting] =
+    useState(false);
   const displayNameErrorId = useId();
   const pendingTagMessageId = useId();
   const selectedRootRef = useRef<string | null>(null);
@@ -270,6 +283,76 @@ export const WorkspaceManager = ({
 
   selectedRootRef.current = selectedWorkspace?.root ?? null;
   selectedGitRepositoryRootRef.current = selectedGitRepositoryRoot;
+
+  useEffect(() => {
+    if (workspaceSection !== "memory") return;
+
+    const workspaceRoot = selectedWorkspace?.root;
+    if (!workspaceRoot) {
+      setWorkspaceMemoryEntries([]);
+      setWorkspaceMemoryRoot(null);
+      setWorkspaceMemoryError(null);
+      setWorkspaceMemoryLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setWorkspaceMemoryLoading(true);
+    setWorkspaceMemoryError(null);
+    setWorkspaceMemoryEntries([]);
+    setWorkspaceMemoryRoot(null);
+
+    void workspaceSetup
+      .onLoadMemory(workspaceRoot)
+      .then((entries) => {
+        if (!cancelled && selectedRootRef.current === workspaceRoot) {
+          setWorkspaceMemoryEntries(entries);
+          setWorkspaceMemoryRoot(workspaceRoot);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled && selectedRootRef.current === workspaceRoot) {
+          setWorkspaceMemoryError(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled && selectedRootRef.current === workspaceRoot) {
+          setWorkspaceMemoryLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedWorkspace?.root, workspaceSection, workspaceSetup.onLoadMemory]);
+
+  const forgetWorkspaceMemory = useCallback(
+    async (id: string): Promise<void> => {
+      const workspaceRoot = selectedRootRef.current;
+      if (!workspaceRoot) return;
+
+      setWorkspaceMemoryForgetting(true);
+      setWorkspaceMemoryError(null);
+      try {
+        const entries = await workspaceSetup.onForgetMemory(workspaceRoot, id);
+        if (selectedRootRef.current === workspaceRoot) {
+          setWorkspaceMemoryEntries(entries);
+          setWorkspaceMemoryRoot(workspaceRoot);
+        }
+      } catch (error) {
+        if (selectedRootRef.current === workspaceRoot) {
+          setWorkspaceMemoryError(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      } finally {
+        setWorkspaceMemoryForgetting(false);
+      }
+    },
+    [workspaceSetup.onForgetMemory],
+  );
 
   useEffect(() => {
     const snapshot = selectedWorkspaceFormSnapshotRef.current;
@@ -1683,72 +1766,94 @@ export const WorkspaceManager = ({
                   />
                 </div>
 
+                {workspaceSection === "memory" ? (
+                  <WorkspaceMemoryPanel
+                    entries={workspaceMemoryEntries}
+                    sourceSessions={workspaceSetup.memorySourceSessions}
+                    loading={
+                      workspaceMemoryLoading &&
+                      workspaceMemoryRoot !== selectedWorkspace.root
+                    }
+                    disabled={
+                      workspaceMemoryLoading || workspaceMemoryForgetting
+                    }
+                    error={workspaceMemoryError}
+                    onForget={forgetWorkspaceMemory}
+                  />
+                ) : null}
+
                 {workspaceSection === "settings" ? (
                   <SubmitShortcut asChild>
                     <section className="grid gap-4 rounded-xl border border-slate-800 bg-slate-900/20 p-4 md:grid-cols-[minmax(12rem,0.65fr)_minmax(0,1.35fr)_auto] md:items-end">
-                    <label className="grid gap-1.5 text-xs font-medium text-slate-400">
-                      Name
-                      <Input
-                        value={displayName}
-                        maxLength={
-                          MAX_INSTRUCTION_WORKSPACE_DISPLAY_NAME_LENGTH * 2
+                      <label className="grid gap-1.5 text-xs font-medium text-slate-400">
+                        Name
+                        <Input
+                          value={displayName}
+                          maxLength={
+                            MAX_INSTRUCTION_WORKSPACE_DISPLAY_NAME_LENGTH * 2
+                          }
+                          disabled={
+                            setup.saving || !instructionLibraryAvailable
+                          }
+                          aria-invalid={displayNameError !== null}
+                          aria-describedby={
+                            displayNameError && workspaceSettingsDirty
+                              ? displayNameErrorId
+                              : undefined
+                          }
+                          onChange={(event) =>
+                            setDisplayName(event.target.value)
+                          }
+                          className="h-9 border-slate-800 bg-slate-950"
+                        />
+                      </label>
+                      <label className="grid gap-1.5 text-xs font-medium text-slate-400">
+                        Tags
+                        <TagEditor
+                          value={tags}
+                          disabled={
+                            setup.saving || !instructionLibraryAvailable
+                          }
+                          onChange={setTags}
+                          onPendingChange={setTagDraftPending}
+                        />
+                      </label>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={
+                          setup.saving ||
+                          !instructionLibraryAvailable ||
+                          !workspaceSettingsDirty ||
+                          tagDraftPending ||
+                          displayNameError !== null
                         }
-                        disabled={setup.saving || !instructionLibraryAvailable}
-                        aria-invalid={displayNameError !== null}
                         aria-describedby={
-                          displayNameError && workspaceSettingsDirty
-                            ? displayNameErrorId
-                            : undefined
+                          tagDraftPending ? pendingTagMessageId : undefined
                         }
-                        onChange={(event) => setDisplayName(event.target.value)}
-                        className="h-9 border-slate-800 bg-slate-950"
-                      />
-                    </label>
-                    <label className="grid gap-1.5 text-xs font-medium text-slate-400">
-                      Tags
-                      <TagEditor
-                        value={tags}
-                        disabled={setup.saving || !instructionLibraryAvailable}
-                        onChange={setTags}
-                        onPendingChange={setTagDraftPending}
-                      />
-                    </label>
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={
-                        setup.saving ||
-                        !instructionLibraryAvailable ||
-                        !workspaceSettingsDirty ||
-                        tagDraftPending ||
-                        displayNameError !== null
-                      }
-                      aria-describedby={
-                        tagDraftPending ? pendingTagMessageId : undefined
-                      }
-                      onClick={saveWorkspaceSettings}
-                      {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                    >
-                      <Save className="size-4" />
-                      Save
-                    </Button>
-                    {displayNameError && workspaceSettingsDirty ? (
-                      <p
-                        id={displayNameErrorId}
-                        role="alert"
-                        className="text-xs text-red-300 md:col-span-3"
+                        onClick={saveWorkspaceSettings}
+                        {...SUBMIT_SHORTCUT_ACTION_PROPS}
                       >
-                        {displayNameError}
-                      </p>
-                    ) : null}
-                    {tagDraftPending ? (
-                      <p
-                        id={pendingTagMessageId}
-                        className="text-xs text-slate-500 md:col-span-3"
-                      >
-                        Add or clear the pending tag before saving.
-                      </p>
-                    ) : null}
+                        <Save className="size-4" />
+                        Save
+                      </Button>
+                      {displayNameError && workspaceSettingsDirty ? (
+                        <p
+                          id={displayNameErrorId}
+                          role="alert"
+                          className="text-xs text-red-300 md:col-span-3"
+                        >
+                          {displayNameError}
+                        </p>
+                      ) : null}
+                      {tagDraftPending ? (
+                        <p
+                          id={pendingTagMessageId}
+                          className="text-xs text-slate-500 md:col-span-3"
+                        >
+                          Add or clear the pending tag before saving.
+                        </p>
+                      ) : null}
                     </section>
                   </SubmitShortcut>
                 ) : null}
@@ -2016,29 +2121,29 @@ export const WorkspaceManager = ({
                               <div className="space-y-2">
                                 <SubmitShortcut asChild>
                                   <div className="flex gap-2">
-                                  <Input
-                                    value={branchName}
-                                    onChange={(event) =>
-                                      setBranchName(event.target.value)
-                                    }
-                                    placeholder="New branch"
-                                    className="h-9 border-slate-800 bg-slate-950"
-                                  />
-                                  <Button
-                                    size="sm"
-                                    disabled={
-                                      gitAction !== null || !branchName.trim()
-                                    }
-                                    onClick={() =>
-                                      void runGitAction("create-branch", {
-                                        branchName,
-                                      })
-                                    }
-                                    {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                                  >
-                                    <Plus className="size-4" />
-                                    Create
-                                  </Button>
+                                    <Input
+                                      value={branchName}
+                                      onChange={(event) =>
+                                        setBranchName(event.target.value)
+                                      }
+                                      placeholder="New branch"
+                                      className="h-9 border-slate-800 bg-slate-950"
+                                    />
+                                    <Button
+                                      size="sm"
+                                      disabled={
+                                        gitAction !== null || !branchName.trim()
+                                      }
+                                      onClick={() =>
+                                        void runGitAction("create-branch", {
+                                          branchName,
+                                        })
+                                      }
+                                      {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                                    >
+                                      <Plus className="size-4" />
+                                      Create
+                                    </Button>
                                   </div>
                                 </SubmitShortcut>
                                 {selectedGitOverview.localBranches.map(
@@ -2122,40 +2227,40 @@ export const WorkspaceManager = ({
                             <div className="space-y-3">
                               <SubmitShortcut asChild>
                                 <div className="grid gap-2 sm:grid-cols-[10rem_minmax(0,1fr)_auto]">
-                                <Input
-                                  value={remoteName}
-                                  onChange={(event) =>
-                                    setRemoteName(event.target.value)
-                                  }
-                                  placeholder="Name"
-                                  className="h-9 border-slate-800 bg-slate-950"
-                                />
-                                <Input
-                                  value={remoteUrl}
-                                  onChange={(event) =>
-                                    setRemoteUrl(event.target.value)
-                                  }
-                                  placeholder="Remote URL"
-                                  className="h-9 border-slate-800 bg-slate-950"
-                                />
-                                <Button
-                                  size="sm"
-                                  disabled={
-                                    gitAction !== null ||
-                                    !remoteName.trim() ||
-                                    !remoteUrl.trim()
-                                  }
-                                  onClick={() =>
-                                    void runGitAction("add-remote", {
-                                      remoteName,
-                                      remoteUrl,
-                                    })
-                                  }
-                                  {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                                >
-                                  <Plus className="size-4" />
-                                  Add
-                                </Button>
+                                  <Input
+                                    value={remoteName}
+                                    onChange={(event) =>
+                                      setRemoteName(event.target.value)
+                                    }
+                                    placeholder="Name"
+                                    className="h-9 border-slate-800 bg-slate-950"
+                                  />
+                                  <Input
+                                    value={remoteUrl}
+                                    onChange={(event) =>
+                                      setRemoteUrl(event.target.value)
+                                    }
+                                    placeholder="Remote URL"
+                                    className="h-9 border-slate-800 bg-slate-950"
+                                  />
+                                  <Button
+                                    size="sm"
+                                    disabled={
+                                      gitAction !== null ||
+                                      !remoteName.trim() ||
+                                      !remoteUrl.trim()
+                                    }
+                                    onClick={() =>
+                                      void runGitAction("add-remote", {
+                                        remoteName,
+                                        remoteUrl,
+                                      })
+                                    }
+                                    {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                                  >
+                                    <Plus className="size-4" />
+                                    Add
+                                  </Button>
                                 </div>
                               </SubmitShortcut>
                               {selectedGitOverview.remotes.length === 0 ? (

@@ -22,6 +22,7 @@ import type {
 } from "../../../runtime";
 import type { RunMode } from "../../../../../core/runtime-contract.generated.js";
 import type { AppearanceSettings } from "../../../lib/shell-store";
+import type { MemorySourceSession } from "../../../components/memory-management-entries";
 import type { RuntimeProvider } from "../../../model-catalog";
 import type { SpeechInputDeviceOption } from "../../_helpers/speech-audio";
 import type { ChatSessionVoiceOption } from "../../_helpers/use-chat-session-voice";
@@ -60,13 +61,11 @@ export interface WebSearchSetupControls {
 
 export interface MemorySettingsControls {
   settings: UserMemorySettings;
-  workspaceRoot: string | null;
-  workspaceEntries: UserMemorySettings["entries"];
+  sourceSessions: MemorySourceSession[];
   saving: boolean;
   message: SettingsStatusMessage | null;
   onGlobalEnabledChange: (enabled: boolean) => Promise<void> | void;
   onForgetGlobal: (id: string) => Promise<void> | void;
-  onForgetWorkspace: (id: string) => Promise<void> | void;
 }
 
 export interface WorkspaceSettingsControls {

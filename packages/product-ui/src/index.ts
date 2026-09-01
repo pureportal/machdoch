@@ -24,6 +24,13 @@ export {
 } from "./markdown";
 export { PromptEnhancementIndicator } from "./prompt-enhancement";
 export {
+  MemoryManagementTable,
+  SessionMemoryDialog,
+  type MemoryManagementEntry,
+  type MemoryManagementTableProps,
+  type SessionMemoryDialogProps,
+} from "./memory-management";
+export {
   ComposerModelPicker,
   type ComposerModelOption,
   type ComposerModelPickerProps,

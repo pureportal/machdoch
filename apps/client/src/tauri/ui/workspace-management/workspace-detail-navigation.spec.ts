@@ -49,7 +49,11 @@ describe("WorkspaceDetailNavigation", () => {
         .getAttribute("aria-selected"),
     ).toBe("true");
 
-    fireEvent.keyDown(document.activeElement ?? files, { key: "End" });
+    const memory = screen.getByRole("tab", { name: "Memory" });
+    fireEvent.click(memory);
+    expect(memory.getAttribute("aria-selected")).toBe("true");
+
+    fireEvent.keyDown(memory, { key: "End" });
     expect(
       screen
         .getByRole("tab", { name: "Settings" })

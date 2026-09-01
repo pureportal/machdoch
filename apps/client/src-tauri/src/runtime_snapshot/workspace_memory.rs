@@ -128,6 +128,7 @@ mod tests {
             entries: vec![UserMemoryEntry {
                 id: "package-manager".to_string(),
                 scope: "workspace".to_string(),
+                source_session_id: None,
                 key: "package-manager".to_string(),
                 kind: "decision".to_string(),
                 content: "Package manager: pnpm".to_string(),
