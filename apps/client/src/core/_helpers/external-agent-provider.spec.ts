@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
@@ -449,6 +449,7 @@ beforeEach(() => {
   isolateEnvironment();
   spawnCalls.splice(0);
   vi.mocked(spawn).mockClear();
+  vi.mocked(spawnSync).mockClear();
 });
 
 afterEach(async () => {
@@ -519,6 +520,42 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.child.listenerCount("exit")).toBe(0);
     expect(call?.child.listenerCount("close")).toBe(0);
     expect(call?.child.listenerCount("error")).toBe(0);
+  });
+
+  it("starts Codex after a transient run-scoped capability probe", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    vi.mocked(spawnSync)
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: "fixture-cli 1.0.0",
+        stderr: "",
+      } as never)
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: "Usage: codex",
+        stderr: "",
+      } as never)
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: "Usage: codex exec --json",
+        stderr: "",
+      } as never);
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot),
+    );
+
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    expect(vi.mocked(spawnSync)).toHaveBeenCalledTimes(6);
+    writeStructuredAnswer(call, "Codex started after the probe recovered.");
+    call.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: "executed",
+      response: { markdown: "Codex started after the probe recovered." },
+    });
   });
 
   it.each([

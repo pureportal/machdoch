@@ -48,6 +48,7 @@ import {
   type MaterializedInstructionDelivery,
   type MaterializedCliEnrollment,
   type McpProjection,
+  type ProviderProbeResult,
 } from "./types.js";
 
 const SESSION_ROOT_PREFIX = "machdoch-instruction-run-";
@@ -55,6 +56,7 @@ const SESSION_MARKER_NAME = ".machdoch-instruction-session.json";
 const SESSION_MARKER_SCHEMA_VERSION = 3;
 const STALE_SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
 const SESSION_REMOVAL_RETRY_DELAYS_MS = [50, 100, 200, 400, 800] as const;
+const PROVIDER_CAPABILITY_PROBE_ATTEMPTS = 3;
 const MAX_SESSION_MARKER_BYTES = 16 * 1024;
 const MAX_PROVIDER_STATE_BYTES = 4 * 1024 * 1024;
 const MAX_COPILOT_WORKSPACE_MCP_FILES = 256;
@@ -869,6 +871,61 @@ const redactArgumentValues = (args: readonly string[]): string[] =>
     arg.startsWith("--") ? (arg.split("=")[0] ?? arg) : "<value>",
   );
 
+const probeMatchingCliDeliveryPlan = async (
+  params: MaterializeCliEnrollmentParams,
+): Promise<{
+  probe: ProviderProbeResult;
+  plan: InstructionDeliveryPlan;
+}> => {
+  let latest:
+    | {
+        probe: ProviderProbeResult;
+        plan: InstructionDeliveryPlan;
+      }
+    | undefined;
+
+  for (
+    let attempt = 0;
+    attempt < PROVIDER_CAPABILITY_PROBE_ATTEMPTS;
+    attempt += 1
+  ) {
+    const probe = await probeProviderCli(params.provider, params.executable, {
+      force: true,
+    });
+    const capability = createCliInstructionCapabilityFromProbe(
+      params.resolution,
+      probe,
+    );
+    const plan = createInstructionDeliveryPlan(params.resolution, {
+      capability,
+    });
+    latest = { probe, plan };
+
+    if (
+      plan.grade !== "unsupported" &&
+      plan.blockingReasons.length === 0 &&
+      plan.planId === params.deliveryPlan.planId
+    ) {
+      return latest;
+    }
+  }
+
+  if (!latest) {
+    throw new Error("The selected CLI could not be probed before launch.");
+  }
+  if (
+    latest.plan.grade === "unsupported" ||
+    latest.plan.blockingReasons.length > 0
+  ) {
+    throw new Error(
+      `The selected CLI cannot satisfy the native instruction contract: ${latest.plan.blockingReasons.join(" ") || "the current provider probe is unsupported."}`,
+    );
+  }
+  throw new Error(
+    "The provider capability probe changed after instruction preflight; Machdoch blocked the invocation instead of using an unreviewed delivery route.",
+  );
+};
+
 export const materializeCliEnrollment = async (
   params: MaterializeCliEnrollmentParams,
 ): Promise<MaterializedCliEnrollment> => {
@@ -909,8 +966,8 @@ export const materializeCliEnrollment = async (
   });
 
   try {
-    const [probe, projection] = await Promise.all([
-      probeProviderCli(params.provider, params.executable, { force: true }),
+    const [{ probe, plan: probedPlan }, projection] = await Promise.all([
+      probeMatchingCliDeliveryPlan(params),
       projectMcpForProvider(params.provider, params.workspaceRoot, {
         machdochCliLaunch: params.machdochCliLaunch,
         ...(params.workspacePresence
@@ -918,26 +975,6 @@ export const materializeCliEnrollment = async (
           : {}),
       }),
     ]);
-    const probedCapability = createCliInstructionCapabilityFromProbe(
-      params.resolution,
-      probe,
-    );
-    const probedPlan = createInstructionDeliveryPlan(params.resolution, {
-      capability: probedCapability,
-    });
-    if (
-      probedPlan.grade === "unsupported" ||
-      probedPlan.blockingReasons.length > 0
-    ) {
-      throw new Error(
-        `The selected CLI cannot satisfy the native instruction contract: ${probedPlan.blockingReasons.join(" ") || "the current provider probe is unsupported."}`,
-      );
-    }
-    if (probedPlan.planId !== params.deliveryPlan.planId) {
-      throw new Error(
-        "The provider capability probe changed after instruction preflight; Machdoch blocked the invocation instead of using an unreviewed delivery route.",
-      );
-    }
     const instructionPayload = renderInstructionTransportPayload(
       params.resolution.renderedEnvelope,
       params.resolution.mcpInitializationInstructions,
