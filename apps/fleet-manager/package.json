@@ -1,6 +1,6 @@
 {
   "name": "@machdoch/fleet-manager",
-  "version": "8.0.0",
+  "version": "9.0.0",
   "private": true,
   "type": "module",
   "scripts": {
