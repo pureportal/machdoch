@@ -30,7 +30,7 @@ The desktop process injects a fresh, size-bounded `workspaceRun` snapshot into e
 
 ## Configuration model
 
-Run documents use schema version 2 and live at `.machdoch/run.json`.
+Run documents use schema version 2 and live at `.machdoch/run.json`. Version 1 documents are upgraded when read and use version 2 the next time they are saved.
 
 ```json
 {

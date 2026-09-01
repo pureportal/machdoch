@@ -34,7 +34,7 @@ Unavoidable or conventional non-kebab filenames:
 - Web entry and styles: `apps/client/src/tauri/ui/preview/index.html`, `apps/client/src/tauri/ui/preview/main.tsx`, `apps/client/src/tauri/ui/preview/app.tsx`, `apps/client/src/tauri/ui/styles.css`, and `apps/client/src/shared/runtime-config.schema.json`.
 - Generated outputs, not refactor targets: `apps/client/src/core/runtime-contract.generated.ts`, `apps/client/src/core/runtime-contract.generated.spec.ts`, `apps/client/src-tauri/src/runtime_contract_generated.rs`, `apps/client/src-tauri/gen/**`, `apps/client/src-tauri/icons/**`.
 
-Rust snake_case module filenames are conventional for Rust but violate a language-agnostic kebab-only filename rule: `desktop_shell.rs`, `desktop_task.rs`, `remote_control.rs`, `runtime_contract_generated.rs`, `runtime_snapshot.rs`, `shared_cli.rs`, and `ui_control.rs`.
+Rust snake_case module filenames are conventional for Rust but violate a language-agnostic kebab-only filename rule: `desktop_shell.rs`, `desktop_task.rs`, `fleet_control.rs`, `runtime_contract_generated.rs`, `runtime_snapshot.rs`, `shared_cli.rs`, and `ui_control.rs`.
 
 ## Available And Unavailable Validation
 
@@ -65,7 +65,6 @@ There are 87 source or test files over 500 lines. Highest-risk files:
 - `apps/client/src/tauri/ui/runtime.ts` - 4,679 lines
 - `apps/client/src/tauri/ui/chat-session.spec.tsx` - 4,379 lines
 - `apps/client/src-tauri/src/runtime_snapshot.rs` - 3,935 lines
-- `apps/client/src-tauri/src/remote_control.rs` - 3,870 lines
 - `apps/client/src/core/ralph-generation.ts` - 3,214 lines
 - `apps/client/src/core/scheduler.ts` - 3,073 lines after scheduler event-trigger matching extraction
 - `apps/client/src/tauri/ui/chat-session/_helpers/use-chat-session-controller.ts` - 2,707 lines
@@ -108,9 +107,8 @@ Conservative candidates where business logic is embedded in broad modules instea
 - `apps/client/src/core/scheduler.ts`: schedule/trigger types, state locking, current-schema validation, cron/time parsing, trigger filtering, queue dedupe, persistence, retry policy, event matching, and execution dispatch are mixed.
 - `apps/client/src/cli/_helpers/cli-args.ts`: command definitions, validation sets, help text, aliases, and parsing are mixed.
 - `apps/client/src/tauri/ui/runtime.ts`: UI-facing contract types, Tauri invoke wrappers, runtime config normalization, preview fixture fallback, event listeners, scheduler/Ralph/MCP APIs, and API-shape validation are mixed.
-- `apps/client/src/tauri/ui/chat-session/_helpers/use-chat-session-controller.ts`: React wiring, instruction registry mutations, attachment handling, speech input, session lifecycle, remote mission control, and task submission are mixed.
+- `apps/client/src/tauri/ui/chat-session/_helpers/use-chat-session-controller.ts`: React wiring, instruction registry mutations, attachment handling, speech input, session lifecycle, Fleet control, and task submission are mixed.
 - `apps/client/src/tauri/ui/marketplace/mcp-marketplace.tsx`: marketplace loading, filtering, selection, install state, enrichment, and rendering are mixed.
-- `apps/client/src-tauri/src/remote_control.rs`: config persistence, pairing/token logic, Axum/manual HTTP routes, SSE state, HTML rendering, shell sessions, command normalization, sanitization, and dispatch are mixed.
 - `apps/client/src-tauri/src/runtime_snapshot.rs`: config loading, provider availability, runtime serialization, user settings, MCP state, scheduler state, and snapshot construction are mixed.
 
 Refactor action: extract pure domain helpers adjacent to the owning module first. Promote cross-module helpers to `apps/client/src/helpers` only when reused outside the owning feature and behavior is identical.
@@ -143,7 +141,7 @@ There are 140 TypeScript/TSX source files without a direct same-name spec. The m
 - `apps/client/src/core/ralph-layout.ts`, `apps/client/src/core/ralph-watches.ts`, `apps/client/src/core/mcp/presets.ts`, and `apps/client/src/core/mcp/types.ts` have no direct same-name specs.
 - `apps/client/src/cli/_helpers/cli-mcp-commands.ts`, `apps/client/src/cli/_helpers/cli-output.ts`, `apps/client/src/cli/_helpers/cli-ralph-commands.ts`, `apps/client/src/cli/_helpers/cli-summary-commands.ts`, and `apps/client/src/cli/_helpers/create-parsed-cli-args.helper.ts` have no direct same-name specs, though broader CLI specs cover some command behavior.
 - UI business/model modules without direct same-name specs include `apps/client/src/tauri/ui/lib/shell-store.ts`, `apps/client/src/tauri/ui/marketplace/mcp-marketplace-cache.ts`, `apps/client/src/tauri/ui/marketplace/mcp-marketplace.tsx`, `apps/client/src/tauri/ui/marketplace/mcp-marketplace-ui.tsx`, and several chat-session hooks under `apps/client/src/tauri/ui/chat-session/_helpers`.
-- Rust source has no Rust unit/integration tests visible under `apps/client/src-tauri/src` for `remote_control`, `runtime_snapshot`, `desktop_task`, `ui_control`, or `voice`.
+- Rust source has no Rust unit/integration tests visible under `apps/client/src-tauri/src` for `runtime_snapshot`, `desktop_task`, `ui_control`, or `voice`.
 
 Refactor action: add focused specs when extracting pure helpers from the listed modules. Do not treat broad integration specs as sufficient for small helper behavior unless assertions already cover the exact branch being moved.
 
@@ -151,7 +149,7 @@ Refactor action: add focused specs when extracting pure helpers from the listed 
 
 Actual source filename violations after excluding generated/vendor/build artifacts and documented framework/convention exceptions:
 
-- Rust conventional snake_case modules: `apps/client/src-tauri/src/desktop_shell.rs`, `apps/client/src-tauri/src/desktop_task.rs`, `apps/client/src-tauri/src/remote_control.rs`, `apps/client/src-tauri/src/runtime_snapshot.rs`, `apps/client/src-tauri/src/shared_cli.rs`, `apps/client/src-tauri/src/ui_control.rs`.
+- Rust conventional snake_case modules: `apps/client/src-tauri/src/desktop_shell.rs`, `apps/client/src-tauri/src/desktop_task.rs`, `apps/client/src-tauri/src/fleet_control.rs`, `apps/client/src-tauri/src/runtime_snapshot.rs`, `apps/client/src-tauri/src/shared_cli.rs`, `apps/client/src-tauri/src/ui_control.rs`.
 - Generated Rust contract file: `apps/client/src-tauri/src/runtime_contract_generated.rs`.
 - Generated TypeScript contract files: `apps/client/src/core/runtime-contract.generated.ts` and `apps/client/src/core/runtime-contract.generated.spec.ts`.
 - Framework/schema exceptions that are non-kebab by policy but should remain stable: `apps/client/src-tauri/tauri.conf.json` and `apps/client/src/shared/runtime-config.schema.json`.

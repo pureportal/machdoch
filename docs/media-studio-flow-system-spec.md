@@ -774,82 +774,82 @@ Port constraints:
 
 Primitive values:
 
-| Type | Purpose |
-| --- | --- |
-| `string` | Generic text |
-| `prompt` | Positive generation prompt with structured prompt metadata |
-| `negativePrompt` | Negative prompt |
-| `number` | Float |
-| `integer` | Integer |
-| `boolean` | Boolean |
-| `enum` | Closed option set |
-| `json` | Structured payload |
-| `seed` | Reproducibility seed, including random and fixed modes |
-| `resolution` | Width, height, aspect ratio, multiple constraints |
-| `rationalTime` | Exact tick/rate media position |
-| `timeRange` | Exact start and duration pair |
-| `duration` | Duration expressed as exact media time plus a display unit |
-| `fps` | Rational frame rate, never an unqualified float |
-| `colorTransform` | Pinned source/destination color transform contract |
-| `scheduler` | Sampler/scheduler id |
-| `providerRef` | Provider selection |
-| `modelRef` | Model selection |
-| `adapterRef` | LoRA, ControlNet, IP adapter, or other model adapter |
-| `adapterWeight` | Adapter id with weight, start/end step, and scope |
-| `providerCapability` | Resolved provider/model capability snapshot |
-| `costEstimate` | Provider and local resource estimate |
-| `licenseRef` | Model, asset, dataset, or output license metadata |
-| `contentPolicy` | Safety/provider/workspace policy reference |
-| `optimizationPolicy` | Local runtime acceleration and memory policy |
-| `qualityThreshold` | Metric threshold for validation, ranking, or acceptance |
-| `assetRef` | Stable logical media asset reference |
-| `tagSet` | Normalized user, taxonomy, or analyzer tags with confidence/source metadata |
+| Type                 | Purpose                                                                     |
+| -------------------- | --------------------------------------------------------------------------- |
+| `string`             | Generic text                                                                |
+| `prompt`             | Positive generation prompt with structured prompt metadata                  |
+| `negativePrompt`     | Negative prompt                                                             |
+| `number`             | Float                                                                       |
+| `integer`            | Integer                                                                     |
+| `boolean`            | Boolean                                                                     |
+| `enum`               | Closed option set                                                           |
+| `json`               | Structured payload                                                          |
+| `seed`               | Reproducibility seed, including random and fixed modes                      |
+| `resolution`         | Width, height, aspect ratio, multiple constraints                           |
+| `rationalTime`       | Exact tick/rate media position                                              |
+| `timeRange`          | Exact start and duration pair                                               |
+| `duration`           | Duration expressed as exact media time plus a display unit                  |
+| `fps`                | Rational frame rate, never an unqualified float                             |
+| `colorTransform`     | Pinned source/destination color transform contract                          |
+| `scheduler`          | Sampler/scheduler id                                                        |
+| `providerRef`        | Provider selection                                                          |
+| `modelRef`           | Model selection                                                             |
+| `adapterRef`         | LoRA, ControlNet, IP adapter, or other model adapter                        |
+| `adapterWeight`      | Adapter id with weight, start/end step, and scope                           |
+| `providerCapability` | Resolved provider/model capability snapshot                                 |
+| `costEstimate`       | Provider and local resource estimate                                        |
+| `licenseRef`         | Model, asset, dataset, or output license metadata                           |
+| `contentPolicy`      | Safety/provider/workspace policy reference                                  |
+| `optimizationPolicy` | Local runtime acceleration and memory policy                                |
+| `qualityThreshold`   | Metric threshold for validation, ranking, or acceptance                     |
+| `assetRef`           | Stable logical media asset reference                                        |
+| `tagSet`             | Normalized user, taxonomy, or analyzer tags with confidence/source metadata |
 
 Media values:
 
-| Type | Purpose |
-| --- | --- |
-| `image` | RGB/RGBA still image |
-| `imageList` | Ordered image batch |
-| `svg` | Sanitized SVG document retained as source data until explicit rasterization |
-| `mask` | Single-channel mask aligned to an image |
-| `maskList` | Ordered mask batch |
-| `alphaMatte` | Matte with soft edges and foreground confidence |
-| `segmentation` | Object masks and labels |
-| `depthMap` | Monocular depth result |
-| `videoDepthMap` | Temporally consistent depth sequence |
-| `edgeMap` | Canny, HED, lineart, or other edges |
-| `poseMap` | Human/hand/face pose conditioning |
-| `normalMap` | Surface normal estimate |
-| `motionMap` | Motion brush, region motion, or camera motion field |
-| `opticalFlow` | Per-frame optical flow for analysis or conditioning |
-| `video` | Encoded video asset |
-| `frameSequence` | Ordered image frames with timing |
-| `keyframeSet` | Timed start, end, and intermediate keyframes |
-| `audio` | Audio waveform or encoded audio |
-| `transcript` | Dialogue, captions, lyrics, or shot-level spoken text |
-| `mesh` | 3D mesh, Gaussian, radiance field, or converted asset |
-| `materialSet` | PBR textures and material metadata |
-| `cameraPath` | Camera motion path for video or 3D |
-| `timeline` | Editorial tracks, clips, ranges, transitions, markers, and external asset references |
-| `layerStack` | Ordered canvas layers with blend modes and masks |
-| `editRegion` | Spatial or temporal region, mask, and tracking hints |
-| `editIntent` | Structured creative edit instruction with target, scope, constraints, and acceptance checks |
-| `conditionSet` | Packed model conditions: references, masks, depth, motion, pose, style |
-| `continuityProfile` | Characters, props, locations, style, audio, and continuity constraints across shots |
-| `storyboard` | Shots, prompts, references, timing, and transitions |
-| `variantSet` | Named generated alternatives |
-| `characterProfile` | Character identity, style, outfit, level/state references |
-| `productProfile` | Product reference, masks, materials, dimensions, brand constraints |
-| `styleProfile` | Reusable visual style references, prompts, palettes, and negative constraints |
-| `trainingDataset` | Curated examples with captions and splits |
-| `trainedAdapter` | Generated LoRA, textual inversion, ControlNet, or model adapter artifact |
-| `modelCheckpoint` | Training checkpoint or resumable adapter checkpoint |
-| `optimizationProfile` | Quantization, tiling, offload, parallelism, caching, and engine settings |
-| `provenanceManifest` | Local lineage or standards-based provenance manifest |
-| `contentCredential` | C2PA-style signed credential bundle where supported |
-| `watermarkReport` | Detection result for provider or open watermark schemes |
-| `runReport` | Metrics, warnings, comparisons, and selected candidates |
+| Type                  | Purpose                                                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------- |
+| `image`               | RGB/RGBA still image                                                                        |
+| `imageList`           | Ordered image batch                                                                         |
+| `svg`                 | Sanitized SVG document retained as source data until explicit rasterization                 |
+| `mask`                | Single-channel mask aligned to an image                                                     |
+| `maskList`            | Ordered mask batch                                                                          |
+| `alphaMatte`          | Matte with soft edges and foreground confidence                                             |
+| `segmentation`        | Object masks and labels                                                                     |
+| `depthMap`            | Monocular depth result                                                                      |
+| `videoDepthMap`       | Temporally consistent depth sequence                                                        |
+| `edgeMap`             | Canny, HED, lineart, or other edges                                                         |
+| `poseMap`             | Human/hand/face pose conditioning                                                           |
+| `normalMap`           | Surface normal estimate                                                                     |
+| `motionMap`           | Motion brush, region motion, or camera motion field                                         |
+| `opticalFlow`         | Per-frame optical flow for analysis or conditioning                                         |
+| `video`               | Encoded video asset                                                                         |
+| `frameSequence`       | Ordered image frames with timing                                                            |
+| `keyframeSet`         | Timed start, end, and intermediate keyframes                                                |
+| `audio`               | Audio waveform or encoded audio                                                             |
+| `transcript`          | Dialogue, captions, lyrics, or shot-level spoken text                                       |
+| `mesh`                | 3D mesh, Gaussian, radiance field, or converted asset                                       |
+| `materialSet`         | PBR textures and material metadata                                                          |
+| `cameraPath`          | Camera motion path for video or 3D                                                          |
+| `timeline`            | Editorial tracks, clips, ranges, transitions, markers, and external asset references        |
+| `layerStack`          | Ordered canvas layers with blend modes and masks                                            |
+| `editRegion`          | Spatial or temporal region, mask, and tracking hints                                        |
+| `editIntent`          | Structured creative edit instruction with target, scope, constraints, and acceptance checks |
+| `conditionSet`        | Packed model conditions: references, masks, depth, motion, pose, style                      |
+| `continuityProfile`   | Characters, props, locations, style, audio, and continuity constraints across shots         |
+| `storyboard`          | Shots, prompts, references, timing, and transitions                                         |
+| `variantSet`          | Named generated alternatives                                                                |
+| `characterProfile`    | Character identity, style, outfit, level/state references                                   |
+| `productProfile`      | Product reference, masks, materials, dimensions, brand constraints                          |
+| `styleProfile`        | Reusable visual style references, prompts, palettes, and negative constraints               |
+| `trainingDataset`     | Curated examples with captions and splits                                                   |
+| `trainedAdapter`      | Generated LoRA, textual inversion, ControlNet, or model adapter artifact                    |
+| `modelCheckpoint`     | Training checkpoint or resumable adapter checkpoint                                         |
+| `optimizationProfile` | Quantization, tiling, offload, parallelism, caching, and engine settings                    |
+| `provenanceManifest`  | Local lineage or standards-based provenance manifest                                        |
+| `contentCredential`   | C2PA-style signed credential bundle where supported                                         |
+| `watermarkReport`     | Detection result for provider or open watermark schemes                                     |
+| `runReport`           | Metrics, warnings, comparisons, and selected candidates                                     |
 
 Implicit conversions are intentionally limited:
 
@@ -931,12 +931,12 @@ Every node declares:
 
 A full-feature system does not require every user to manipulate sampler, text encoder, VAE, latent, or tensor nodes. Classify every node definition into one of four layers:
 
-| Layer | Visible by default | Examples | Contract |
-| --- | --- | --- | --- |
-| Recipe | Simple Mode | Create image, product cutout, animate first/last frame, make variants | Versioned parameterized flow template |
-| Task | Flow Mode default | Generate image, edit with references, remove background, generate video, analyze quality | Semantic capability request independent of provider plumbing |
-| Operation/orchestration | Advanced node browser | Crop, composite SVG, extract mask, map, iterate, rank, quality gate, provider route | Explicit typed transformation or bounded control behavior |
-| Runtime primitive | Compiled-plan inspector only | Tokenize, encode/decode latent, load VAE, quantize/offload, upload, poll, download, create preview | Adapter-generated execution step, never a saved-flow dependency |
+| Layer                   | Visible by default           | Examples                                                                                           | Contract                                                        |
+| ----------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Recipe                  | Simple Mode                  | Create image, product cutout, animate first/last frame, make variants                              | Versioned parameterized flow template                           |
+| Task                    | Flow Mode default            | Generate image, edit with references, remove background, generate video, analyze quality           | Semantic capability request independent of provider plumbing    |
+| Operation/orchestration | Advanced node browser        | Crop, composite SVG, extract mask, map, iterate, rank, quality gate, provider route                | Explicit typed transformation or bounded control behavior       |
+| Runtime primitive       | Compiled-plan inspector only | Tokenize, encode/decode latent, load VAE, quantize/offload, upload, poll, download, create preview | Adapter-generated execution step, never a saved-flow dependency |
 
 Node definitions are schema-driven, following the useful part of InvokeAI's invocation model: stable type id, exact version, strongly typed inputs/outputs, constraints, defaults, conditional field visibility, examples, and cost/privacy effects. The same definition renders the inspector, validates a flow, feeds node search, documents the node, and supplies compiler metadata. Avoid hand-building a separate form for each provider.
 
@@ -963,239 +963,239 @@ surface.
 
 ### Source Nodes
 
-| Node | Inputs | Outputs | Purpose |
-| --- | --- | --- | --- |
-| `TEXT_PROMPT` | text, optional style vars | prompt | Prompt source with variables |
-| `NEGATIVE_PROMPT` | text | negativePrompt | Negative prompt source |
-| `IMAGE_INPUT` | file picker, asset id, clipboard | image | User image source |
-| `SVG_INPUT` | file picker, asset id | svg | Sanitized vector source |
-| `IMAGE_FOLDER_INPUT` | folder, filters | imageList | Batch image source |
-| `VIDEO_INPUT` | file picker, asset id | video | User video source |
-| `AUDIO_INPUT` | file picker, asset id | audio | User audio source |
-| `SCRIPT_INPUT` | text/file | transcript/storyboard | Script, beat sheet, or shot list source |
-| `BRIEF_INPUT` | text, brand/project constraints | prompt, continuityProfile | Creative brief source |
-| `MODEL_SELECT` | provider, task, hardware policy | modelRef | Model choice |
-| `ADAPTER_SELECT` | LoRA/ControlNet/IP adapter refs | adapterRef/list | Adapter choice |
-| `OPTIMIZATION_SELECT` | target device, quality/speed policy | optimizationPolicy | Runtime optimization policy |
-| `SEED` | fixed/random/range | seed/list | Seed source |
-| `PROMPT_MATRIX` | dimensions, values | prompt/list | Prompt permutations |
-| `REFERENCE_BOARD` | images and labels | imageList, characterProfile, productProfile | Multi-reference source |
-| `STYLE_PROFILE_INPUT` | style refs, palette, text constraints | styleProfile | Reusable style source |
-| `CONTINUITY_PROFILE_INPUT` | characters, props, locations, style | continuityProfile | Continuity source |
-| `KEYFRAME_INPUT` | images, timing, labels | keyframeSet | Start/end/intermediate keyframes |
-| `EDIT_REGION_INPUT` | masks, boxes, tracks, frame ranges | editRegion/list | Spatial and temporal edit regions |
-| `TRAINING_DATASET_INPUT` | folder/assets, captions, license notes | trainingDataset | Dataset for LoRA/adapter training |
-| `TIMELINE_IMPORT` | OTIO/EDL file, asset relink policy | timeline, runReport | Import editorial structure without embedding or rendering media |
+| Node                       | Inputs                                 | Outputs                                     | Purpose                                                         |
+| -------------------------- | -------------------------------------- | ------------------------------------------- | --------------------------------------------------------------- |
+| `TEXT_PROMPT`              | text, optional style vars              | prompt                                      | Prompt source with variables                                    |
+| `NEGATIVE_PROMPT`          | text                                   | negativePrompt                              | Negative prompt source                                          |
+| `IMAGE_INPUT`              | file picker, asset id, clipboard       | image                                       | User image source                                               |
+| `SVG_INPUT`                | file picker, asset id                  | svg                                         | Sanitized vector source                                         |
+| `IMAGE_FOLDER_INPUT`       | folder, filters                        | imageList                                   | Batch image source                                              |
+| `VIDEO_INPUT`              | file picker, asset id                  | video                                       | User video source                                               |
+| `AUDIO_INPUT`              | file picker, asset id                  | audio                                       | User audio source                                               |
+| `SCRIPT_INPUT`             | text/file                              | transcript/storyboard                       | Script, beat sheet, or shot list source                         |
+| `BRIEF_INPUT`              | text, brand/project constraints        | prompt, continuityProfile                   | Creative brief source                                           |
+| `MODEL_SELECT`             | provider, task, hardware policy        | modelRef                                    | Model choice                                                    |
+| `ADAPTER_SELECT`           | LoRA/ControlNet/IP adapter refs        | adapterRef/list                             | Adapter choice                                                  |
+| `OPTIMIZATION_SELECT`      | target device, quality/speed policy    | optimizationPolicy                          | Runtime optimization policy                                     |
+| `SEED`                     | fixed/random/range                     | seed/list                                   | Seed source                                                     |
+| `PROMPT_MATRIX`            | dimensions, values                     | prompt/list                                 | Prompt permutations                                             |
+| `REFERENCE_BOARD`          | images and labels                      | imageList, characterProfile, productProfile | Multi-reference source                                          |
+| `STYLE_PROFILE_INPUT`      | style refs, palette, text constraints  | styleProfile                                | Reusable style source                                           |
+| `CONTINUITY_PROFILE_INPUT` | characters, props, locations, style    | continuityProfile                           | Continuity source                                               |
+| `KEYFRAME_INPUT`           | images, timing, labels                 | keyframeSet                                 | Start/end/intermediate keyframes                                |
+| `EDIT_REGION_INPUT`        | masks, boxes, tracks, frame ranges     | editRegion/list                             | Spatial and temporal edit regions                               |
+| `TRAINING_DATASET_INPUT`   | folder/assets, captions, license notes | trainingDataset                             | Dataset for LoRA/adapter training                               |
+| `TIMELINE_IMPORT`          | OTIO/EDL file, asset relink policy     | timeline, runReport                         | Import editorial structure without embedding or rendering media |
 
 ### Prompt And Planning Nodes
 
-| Node | Inputs | Outputs | Purpose |
-| --- | --- | --- | --- |
-| `PROMPT_ENHANCE` | prompt, style, model target | prompt | Expand prompt for a chosen model |
-| `PROMPT_COMPRESS` | prompt, model target | prompt | Fit prompt limits |
-| `PROMPT_TRANSLATE` | prompt, language | prompt | Translate prompts |
-| `IMAGE_CAPTION` | image/video frame | prompt/tags | Caption an input |
-| `SHOT_PLANNER` | script, style, duration | storyboard | Create shots and keyframes |
-| `SCRIPT_TO_STORYBOARD` | script/transcript, continuityProfile | storyboard | Convert script to scenes and shots |
-| `STORYBOARD_RETAKE_PLAN` | storyboard, feedback/editIntent | storyboard, editIntent/list | Plan retakes while preserving continuity |
-| `KEYFRAME_PLAN` | storyboard/prompt, references, duration | keyframeSet | Plan start/end/intermediate frames |
-| `CONDITION_PACK_PLAN` | references, regions, depth, pose, motion | conditionSet | Build model condition inputs |
-| `EDIT_INTENT_PARSE` | natural language edit, target asset/context | editIntent | Convert conversational request to structured edit intent |
-| `EDIT_INTENT_VALIDATE` | editIntent, asset/context/policy | runReport, pass/fail | Check target, scope, safety, and feasibility |
-| `CONTINUITY_PROFILE_CREATE` | storyboard, characters, props, style refs | continuityProfile | Create cross-shot consistency constraints |
-| `CONTINUITY_UPDATE` | continuityProfile, selected assets/retakes | continuityProfile | Update continuity from approved outputs |
-| `CHARACTER_PROFILE_CREATE` | prompt, references | characterProfile | Define reusable character |
-| `CHARACTER_LEVEL_PLAN` | characterProfile, levels | characterProfile/list | Plan level progression |
-| `PRODUCT_PROFILE_CREATE` | product images, brand constraints | productProfile | Define product identity |
-| `STYLE_PROFILE_CREATE` | references, prompt, palette | styleProfile | Define reusable style |
-| `PROMPT_REWRITE_FOR_PROVIDER` | prompt, modelRef, policy | prompt, runReport | Rewrite for provider limits without changing intent |
-| `PROMPT_NEGATIVE_SUGGEST` | prompt, target model | negativePrompt | Suggest model-specific negative prompt |
-| `PROMPT_ROLE_TAG` | prompt, references, continuityProfile | prompt, conditionSet | Assign named roles for multi-reference providers |
+| Node                          | Inputs                                      | Outputs                     | Purpose                                                  |
+| ----------------------------- | ------------------------------------------- | --------------------------- | -------------------------------------------------------- |
+| `PROMPT_ENHANCE`              | prompt, style, model target                 | prompt                      | Expand prompt for a chosen model                         |
+| `PROMPT_COMPRESS`             | prompt, model target                        | prompt                      | Fit prompt limits                                        |
+| `PROMPT_TRANSLATE`            | prompt, language                            | prompt                      | Translate prompts                                        |
+| `IMAGE_CAPTION`               | image/video frame                           | prompt/tags                 | Caption an input                                         |
+| `SHOT_PLANNER`                | script, style, duration                     | storyboard                  | Create shots and keyframes                               |
+| `SCRIPT_TO_STORYBOARD`        | script/transcript, continuityProfile        | storyboard                  | Convert script to scenes and shots                       |
+| `STORYBOARD_RETAKE_PLAN`      | storyboard, feedback/editIntent             | storyboard, editIntent/list | Plan retakes while preserving continuity                 |
+| `KEYFRAME_PLAN`               | storyboard/prompt, references, duration     | keyframeSet                 | Plan start/end/intermediate frames                       |
+| `CONDITION_PACK_PLAN`         | references, regions, depth, pose, motion    | conditionSet                | Build model condition inputs                             |
+| `EDIT_INTENT_PARSE`           | natural language edit, target asset/context | editIntent                  | Convert conversational request to structured edit intent |
+| `EDIT_INTENT_VALIDATE`        | editIntent, asset/context/policy            | runReport, pass/fail        | Check target, scope, safety, and feasibility             |
+| `CONTINUITY_PROFILE_CREATE`   | storyboard, characters, props, style refs   | continuityProfile           | Create cross-shot consistency constraints                |
+| `CONTINUITY_UPDATE`           | continuityProfile, selected assets/retakes  | continuityProfile           | Update continuity from approved outputs                  |
+| `CHARACTER_PROFILE_CREATE`    | prompt, references                          | characterProfile            | Define reusable character                                |
+| `CHARACTER_LEVEL_PLAN`        | characterProfile, levels                    | characterProfile/list       | Plan level progression                                   |
+| `PRODUCT_PROFILE_CREATE`      | product images, brand constraints           | productProfile              | Define product identity                                  |
+| `STYLE_PROFILE_CREATE`        | references, prompt, palette                 | styleProfile                | Define reusable style                                    |
+| `PROMPT_REWRITE_FOR_PROVIDER` | prompt, modelRef, policy                    | prompt, runReport           | Rewrite for provider limits without changing intent      |
+| `PROMPT_NEGATIVE_SUGGEST`     | prompt, target model                        | negativePrompt              | Suggest model-specific negative prompt                   |
+| `PROMPT_ROLE_TAG`             | prompt, references, continuityProfile       | prompt, conditionSet        | Assign named roles for multi-reference providers         |
 
 ### Image Generation Nodes
 
-| Node | Inputs | Outputs | Purpose |
-| --- | --- | --- | --- |
-| `TEXT_TO_IMAGE` | prompt, modelRef, seed, resolution, settings | image/list, runReport | Generate images |
-| `IMAGE_TO_IMAGE` | image, prompt, modelRef, strength, seed | image/list, runReport | Transform an image |
-| `INPAINT` | image, mask, prompt, modelRef | image/list, runReport | Fill masked region |
-| `OUTPAINT` | image, canvas bounds, prompt, modelRef | image | Extend beyond edges |
-| `MULTI_REFERENCE_EDIT` | imageList, prompt, modelRef | image/list | Edit/fuse references |
-| `CONTROL_GENERATE` | prompt, control image/maps, modelRef, adapters | image/list | ControlNet-style generation |
-| `CHARACTER_GENERATE` | characterProfile, prompt, pose/style | image/list | Character-consistent image |
-| `PRODUCT_SHOT_GENERATE` | productProfile, prompt/background | image/list | Product images |
-| `STYLE_PROFILE_GENERATE` | styleProfile, prompt, modelRef | image/list | Generate within a saved style |
-| `STYLE_TRANSFER` | image, style reference/prompt | image/list | Restyle image |
-| `VARIANT_GENERATE` | image, prompt deltas, strength, seeds | variantSet | Generate variants |
-| `REFERENCE_EXPAND_GENERATE` | imageList, prompt, roles, modelRef | image/list | Create new images from labeled references |
+| Node                        | Inputs                                         | Outputs               | Purpose                                   |
+| --------------------------- | ---------------------------------------------- | --------------------- | ----------------------------------------- |
+| `TEXT_TO_IMAGE`             | prompt, modelRef, seed, resolution, settings   | image/list, runReport | Generate images                           |
+| `IMAGE_TO_IMAGE`            | image, prompt, modelRef, strength, seed        | image/list, runReport | Transform an image                        |
+| `INPAINT`                   | image, mask, prompt, modelRef                  | image/list, runReport | Fill masked region                        |
+| `OUTPAINT`                  | image, canvas bounds, prompt, modelRef         | image                 | Extend beyond edges                       |
+| `MULTI_REFERENCE_EDIT`      | imageList, prompt, modelRef                    | image/list            | Edit/fuse references                      |
+| `CONTROL_GENERATE`          | prompt, control image/maps, modelRef, adapters | image/list            | ControlNet-style generation               |
+| `CHARACTER_GENERATE`        | characterProfile, prompt, pose/style           | image/list            | Character-consistent image                |
+| `PRODUCT_SHOT_GENERATE`     | productProfile, prompt/background              | image/list            | Product images                            |
+| `STYLE_PROFILE_GENERATE`    | styleProfile, prompt, modelRef                 | image/list            | Generate within a saved style             |
+| `STYLE_TRANSFER`            | image, style reference/prompt                  | image/list            | Restyle image                             |
+| `VARIANT_GENERATE`          | image, prompt deltas, strength, seeds          | variantSet            | Generate variants                         |
+| `REFERENCE_EXPAND_GENERATE` | imageList, prompt, roles, modelRef             | image/list            | Create new images from labeled references |
 
 ### Image Utility Nodes
 
-| Node | Inputs | Outputs | Purpose |
-| --- | --- | --- | --- |
-| `REMOVE_BACKGROUND` | image, modelRef/settings | image, alphaMatte, mask | Transparent cutout |
-| `SEGMENT_ANYTHING` | image/video, points/boxes/text hints | segmentation, mask/list | Object masks |
-| `MASK_REFINE` | image, mask, feather/expand/contract | mask, alphaMatte | Clean mask |
-| `DEPTH_ESTIMATE` | image | depthMap | Depth Anything/MiDaS-style depth |
-| `VIDEO_DEPTH_ESTIMATE` | video/frameSequence | videoDepthMap | Temporally consistent video depth |
-| `EDGE_DETECT` | image, method/thresholds | edgeMap | Canny/HED/lineart |
-| `POSE_DETECT` | image/video frame | poseMap | Human pose conditioning |
-| `NORMAL_ESTIMATE` | image/depth | normalMap | Surface normals |
-| `OPTICAL_FLOW_ESTIMATE` | video/frameSequence | opticalFlow | Estimate motion between frames |
-| `MOTION_BRUSH` | video/image, user strokes, tracks | motionMap, editRegion | Author region motion controls |
-| `MOTION_TRANSFER_EXTRACT` | reference video | motionMap, opticalFlow, runReport | Extract reusable motion from a reference clip |
-| `UPSCALE` | image/video, scale/model | image/video | Super-resolution |
-| `RESTORE_IMAGE` | image, model/settings | image | Denoise/deblur/restore |
-| `COLOR_MATCH` | source image, reference image | image | Match colors |
-| `COLOR_SPACE_CONVERT` | image, colorTransform | image, runReport | Apply a pinned ICC/OCIO transform and record output color metadata |
-| `STYLE_AND_LAYOUT_MATCH` | source image, reference image, strength | image, runReport | Match composition/style constraints |
-| `BACKGROUND_REPLACE` | foreground, alpha/mask, background prompt/image | image | Replace background |
-| `RELIGHT` | image, mask/depth, lighting prompt | image | Change lighting while preserving subject |
-| `COMPOSE_LAYERS` | layerStack | image | Render canvas layers |
-| `ALPHA_COMPOSITE` | foreground, alpha/mask, background | image | Product/composite output |
-| `CROP_RESIZE_PAD` | image/video, target resolution | image/video | Format conversion |
-| `SVG_TO_IMAGE` | svg, target resolution, background policy | image, runReport | Sanitize and rasterize SVG without scripts or external resources |
-| `AUTO_TAG` | image/video, taxonomy/analyzer | tagSet, runReport | Suggest content/technical tags with source and confidence |
-| `TAG_ASSET` | assetRef, tagSet, merge policy | assetRef, runReport | Create a metadata revision with normalized tags; never rewrite media bytes |
-| `SPRITE_SHEET` | imageList/frameSequence | image | Sprite sheet output |
-| `TILE_SEAMLESS` | image | image | Tileable texture correction |
+| Node                      | Inputs                                          | Outputs                           | Purpose                                                                    |
+| ------------------------- | ----------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------- |
+| `REMOVE_BACKGROUND`       | image, modelRef/settings                        | image, alphaMatte, mask           | Transparent cutout                                                         |
+| `SEGMENT_ANYTHING`        | image/video, points/boxes/text hints            | segmentation, mask/list           | Object masks                                                               |
+| `MASK_REFINE`             | image, mask, feather/expand/contract            | mask, alphaMatte                  | Clean mask                                                                 |
+| `DEPTH_ESTIMATE`          | image                                           | depthMap                          | Depth Anything/MiDaS-style depth                                           |
+| `VIDEO_DEPTH_ESTIMATE`    | video/frameSequence                             | videoDepthMap                     | Temporally consistent video depth                                          |
+| `EDGE_DETECT`             | image, method/thresholds                        | edgeMap                           | Canny/HED/lineart                                                          |
+| `POSE_DETECT`             | image/video frame                               | poseMap                           | Human pose conditioning                                                    |
+| `NORMAL_ESTIMATE`         | image/depth                                     | normalMap                         | Surface normals                                                            |
+| `OPTICAL_FLOW_ESTIMATE`   | video/frameSequence                             | opticalFlow                       | Estimate motion between frames                                             |
+| `MOTION_BRUSH`            | video/image, user strokes, tracks               | motionMap, editRegion             | Author region motion controls                                              |
+| `MOTION_TRANSFER_EXTRACT` | reference video                                 | motionMap, opticalFlow, runReport | Extract reusable motion from a reference clip                              |
+| `UPSCALE`                 | image/video, scale/model                        | image/video                       | Super-resolution                                                           |
+| `RESTORE_IMAGE`           | image, model/settings                           | image                             | Denoise/deblur/restore                                                     |
+| `COLOR_MATCH`             | source image, reference image                   | image                             | Match colors                                                               |
+| `COLOR_SPACE_CONVERT`     | image, colorTransform                           | image, runReport                  | Apply a pinned ICC/OCIO transform and record output color metadata         |
+| `STYLE_AND_LAYOUT_MATCH`  | source image, reference image, strength         | image, runReport                  | Match composition/style constraints                                        |
+| `BACKGROUND_REPLACE`      | foreground, alpha/mask, background prompt/image | image                             | Replace background                                                         |
+| `RELIGHT`                 | image, mask/depth, lighting prompt              | image                             | Change lighting while preserving subject                                   |
+| `COMPOSE_LAYERS`          | layerStack                                      | image                             | Render canvas layers                                                       |
+| `ALPHA_COMPOSITE`         | foreground, alpha/mask, background              | image                             | Product/composite output                                                   |
+| `CROP_RESIZE_PAD`         | image/video, target resolution                  | image/video                       | Format conversion                                                          |
+| `SVG_TO_IMAGE`            | svg, target resolution, background policy       | image, runReport                  | Sanitize and rasterize SVG without scripts or external resources           |
+| `AUTO_TAG`                | image/video, taxonomy/analyzer                  | tagSet, runReport                 | Suggest content/technical tags with source and confidence                  |
+| `TAG_ASSET`               | assetRef, tagSet, merge policy                  | assetRef, runReport               | Create a metadata revision with normalized tags; never rewrite media bytes |
+| `SPRITE_SHEET`            | imageList/frameSequence                         | image                             | Sprite sheet output                                                        |
+| `TILE_SEAMLESS`           | image                                           | image                             | Tileable texture correction                                                |
 
 ### Video Nodes
 
-| Node | Inputs | Outputs | Purpose |
-| --- | --- | --- | --- |
-| `TEXT_TO_VIDEO` | prompt, modelRef, seed, duration, fps, resolution | video, frameSequence, runReport | Generate video from text |
-| `IMAGE_TO_VIDEO` | image, prompt, modelRef, motion settings | video, frameSequence, runReport | Animate image |
-| `START_END_TO_VIDEO` | start image, end image, prompt, duration, fps | video, frameSequence, runReport | Generate transition between keyframes |
-| `KEYFRAMES_TO_VIDEO` | keyframeSet, prompt, modelRef, duration, fps | video, frameSequence, runReport | Generate between timed keyframes |
-| `REFERENCE_TO_VIDEO` | references/conditionSet, prompt, modelRef | video, frameSequence, runReport | Generate video from references |
-| `VIDEO_TO_VIDEO` | video, prompt, modelRef, strength, conditionSet | video, runReport | Transform a whole clip |
-| `MASKED_VIDEO_EDIT` | video, editRegion/mask sequence, prompt, modelRef | video, runReport | Edit selected temporal regions |
-| `VIDEO_OBJECT_SWAP` | video, source object/region, replacement reference/prompt | video, runReport | Swap subject/object across frames |
-| `VIDEO_MOTION_EDIT` | video/image, motionMap, prompt, modelRef | video, runReport | Apply motion brush or movement controls |
-| `VIDEO_MOTION_TRANSFER` | source/reference, motionMap, prompt, modelRef | video, runReport | Transfer motion from a reference video |
-| `CONVERSATIONAL_VIDEO_EDIT` | video, editIntent/list, conditionSet, modelRef | video, runReport | Apply structured conversational edit intents |
-| `SHOT_RETAKE` | shot video/keyframes, editIntent, continuityProfile | video, runReport | Regenerate one shot while preserving sequence continuity |
-| `VIDEO_EXPAND` | video, canvas bounds/aspect, prompt, modelRef | video | Outpaint video spatially |
-| `VIDEO_STYLE_TRANSFER` | video, styleProfile/reference, strength | video | Restyle a clip |
-| `VIDEO_EXTEND` | video, prompt, direction, duration | video | Extend before/after |
-| `VIDEO_INTERPOLATE` | video/frameSequence, target fps | video/frameSequence | Frame interpolation |
-| `VIDEO_INPAINT` | video, mask/segmentation, prompt | video | Replace region over time |
-| `VIDEO_BACKGROUND_REMOVE` | video, object hints | video, alpha video, mask sequence | Transparent or replaced background |
-| `FRAME_EXTRACT` | video, frame range/stride | frameSequence/imageList | Extract frames |
-| `VIDEO_ENCODE` | frameSequence, audio, codec settings | video | Encode final video |
-| `SHOT_ASSEMBLE` | storyboard, shot videos, transitions, audio | video | Timeline assembly |
-| `CAMERA_MOTION` | image/depth/camera path | video | Parallax or camera movement |
-| `VIDEO_RETIME` | video, speed curve, interpolation policy | video | Speed ramp or retime |
-| `VIDEO_CONFORM` | video, target rational rate/time range, frame policy | video/frameSequence, runReport | Explicitly conform VFR/rate/duration with a drop/duplicate/interpolation report |
-| `LOOPABLE_VIDEO` | video, transition policy | video, runReport | Create seamless loop |
-| `VIDEO_STABILIZE` | video, crop policy | video, runReport | Stabilize camera motion |
-| `VIDEO_SCENE_CUT_DETECT` | video | storyboard, frameSequence, runReport | Detect cuts and scene boundaries |
-| `VIDEO_COLOR_GRADE` | video, reference/look | video | Apply or match color grade |
+| Node                        | Inputs                                                    | Outputs                              | Purpose                                                                         |
+| --------------------------- | --------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------- |
+| `TEXT_TO_VIDEO`             | prompt, modelRef, seed, duration, fps, resolution         | video, frameSequence, runReport      | Generate video from text                                                        |
+| `IMAGE_TO_VIDEO`            | image, prompt, modelRef, motion settings                  | video, frameSequence, runReport      | Animate image                                                                   |
+| `START_END_TO_VIDEO`        | start image, end image, prompt, duration, fps             | video, frameSequence, runReport      | Generate transition between keyframes                                           |
+| `KEYFRAMES_TO_VIDEO`        | keyframeSet, prompt, modelRef, duration, fps              | video, frameSequence, runReport      | Generate between timed keyframes                                                |
+| `REFERENCE_TO_VIDEO`        | references/conditionSet, prompt, modelRef                 | video, frameSequence, runReport      | Generate video from references                                                  |
+| `VIDEO_TO_VIDEO`            | video, prompt, modelRef, strength, conditionSet           | video, runReport                     | Transform a whole clip                                                          |
+| `MASKED_VIDEO_EDIT`         | video, editRegion/mask sequence, prompt, modelRef         | video, runReport                     | Edit selected temporal regions                                                  |
+| `VIDEO_OBJECT_SWAP`         | video, source object/region, replacement reference/prompt | video, runReport                     | Swap subject/object across frames                                               |
+| `VIDEO_MOTION_EDIT`         | video/image, motionMap, prompt, modelRef                  | video, runReport                     | Apply motion brush or movement controls                                         |
+| `VIDEO_MOTION_TRANSFER`     | source/reference, motionMap, prompt, modelRef             | video, runReport                     | Transfer motion from a reference video                                          |
+| `CONVERSATIONAL_VIDEO_EDIT` | video, editIntent/list, conditionSet, modelRef            | video, runReport                     | Apply structured conversational edit intents                                    |
+| `SHOT_RETAKE`               | shot video/keyframes, editIntent, continuityProfile       | video, runReport                     | Regenerate one shot while preserving sequence continuity                        |
+| `VIDEO_EXPAND`              | video, canvas bounds/aspect, prompt, modelRef             | video                                | Outpaint video spatially                                                        |
+| `VIDEO_STYLE_TRANSFER`      | video, styleProfile/reference, strength                   | video                                | Restyle a clip                                                                  |
+| `VIDEO_EXTEND`              | video, prompt, direction, duration                        | video                                | Extend before/after                                                             |
+| `VIDEO_INTERPOLATE`         | video/frameSequence, target fps                           | video/frameSequence                  | Frame interpolation                                                             |
+| `VIDEO_INPAINT`             | video, mask/segmentation, prompt                          | video                                | Replace region over time                                                        |
+| `VIDEO_BACKGROUND_REMOVE`   | video, object hints                                       | video, alpha video, mask sequence    | Transparent or replaced background                                              |
+| `FRAME_EXTRACT`             | video, frame range/stride                                 | frameSequence/imageList              | Extract frames                                                                  |
+| `VIDEO_ENCODE`              | frameSequence, audio, codec settings                      | video                                | Encode final video                                                              |
+| `SHOT_ASSEMBLE`             | storyboard, shot videos, transitions, audio               | video                                | Timeline assembly                                                               |
+| `CAMERA_MOTION`             | image/depth/camera path                                   | video                                | Parallax or camera movement                                                     |
+| `VIDEO_RETIME`              | video, speed curve, interpolation policy                  | video                                | Speed ramp or retime                                                            |
+| `VIDEO_CONFORM`             | video, target rational rate/time range, frame policy      | video/frameSequence, runReport       | Explicitly conform VFR/rate/duration with a drop/duplicate/interpolation report |
+| `LOOPABLE_VIDEO`            | video, transition policy                                  | video, runReport                     | Create seamless loop                                                            |
+| `VIDEO_STABILIZE`           | video, crop policy                                        | video, runReport                     | Stabilize camera motion                                                         |
+| `VIDEO_SCENE_CUT_DETECT`    | video                                                     | storyboard, frameSequence, runReport | Detect cuts and scene boundaries                                                |
+| `VIDEO_COLOR_GRADE`         | video, reference/look                                     | video                                | Apply or match color grade                                                      |
 
 ### 3D And Asset Nodes
 
-| Node | Inputs | Outputs | Purpose |
-| --- | --- | --- | --- |
-| `IMAGE_TO_3D` | image, modelRef, quality | mesh, materialSet, runReport | Generate 3D asset |
-| `TEXT_TO_3D` | prompt, modelRef, quality | mesh, materialSet, runReport | Generate 3D asset from prompt |
-| `MESH_RETOPO` | mesh, target topology | mesh | Retopology |
-| `MESH_DECIMATE` | mesh, poly budget | mesh | Reduce polygons |
-| `UV_UNWRAP` | mesh | mesh | UV unwrap |
-| `TEXTURE_GENERATE` | mesh, prompt/reference | materialSet | Generate PBR textures |
-| `PBR_VALIDATE` | mesh, materialSet | runReport, pass/fail | Validate PBR channels and texture completeness |
-| `MESH_COLLISION_GENERATE` | mesh, target engine | mesh | Generate collision/proxy geometry |
-| `LOD_GENERATE` | mesh, levels | mesh/list, runReport | Generate level-of-detail meshes |
-| `GLB_EXPORT` | mesh, materials | file/report | Export GLB |
+| Node                      | Inputs                    | Outputs                      | Purpose                                        |
+| ------------------------- | ------------------------- | ---------------------------- | ---------------------------------------------- |
+| `IMAGE_TO_3D`             | image, modelRef, quality  | mesh, materialSet, runReport | Generate 3D asset                              |
+| `TEXT_TO_3D`              | prompt, modelRef, quality | mesh, materialSet, runReport | Generate 3D asset from prompt                  |
+| `MESH_RETOPO`             | mesh, target topology     | mesh                         | Retopology                                     |
+| `MESH_DECIMATE`           | mesh, poly budget         | mesh                         | Reduce polygons                                |
+| `UV_UNWRAP`               | mesh                      | mesh                         | UV unwrap                                      |
+| `TEXTURE_GENERATE`        | mesh, prompt/reference    | materialSet                  | Generate PBR textures                          |
+| `PBR_VALIDATE`            | mesh, materialSet         | runReport, pass/fail         | Validate PBR channels and texture completeness |
+| `MESH_COLLISION_GENERATE` | mesh, target engine       | mesh                         | Generate collision/proxy geometry              |
+| `LOD_GENERATE`            | mesh, levels              | mesh/list, runReport         | Generate level-of-detail meshes                |
+| `GLB_EXPORT`              | mesh, materials           | file/report                  | Export GLB                                     |
 
 ### Audio Nodes
 
-| Node | Inputs | Outputs | Purpose |
-| --- | --- | --- | --- |
-| `TEXT_TO_AUDIO` | prompt, duration, modelRef | audio | Generate sound/music |
-| `TEXT_TO_VOICE` | transcript, voice/profile, policy | audio, runReport | Generate voiceover where configured |
-| `FOLEY_GENERATE` | video/storyboard, prompt | audio | Generate effects |
-| `SOUNDTRACK_GENERATE` | storyboard/video, music prompt | audio, runReport | Generate music bed |
-| `AUDIO_STEM_SPLIT` | audio | audio/list, runReport | Separate dialogue/music/effects when supported |
-| `AUDIO_TRIM_MIX` | audio/list, timing | audio | Mix audio |
-| `AUDIO_LOUDNESS_ANALYZE` | audio/video, measurement profile | runReport | Measure integrated loudness, range, and true peak without changing samples |
-| `AUDIO_LOUDNESS_NORMALIZE` | audio/video, target profile | audio/video, runReport | Explicit two-pass file loudness normalization and true-peak limiting |
-| `AUDIO_TO_VIDEO_SYNC` | video, audio, markers | video | Sync generated audio |
-| `TRANSCRIPT_ALIGN` | transcript, audio/video | transcript, runReport | Align text to timecodes |
+| Node                       | Inputs                            | Outputs                | Purpose                                                                    |
+| -------------------------- | --------------------------------- | ---------------------- | -------------------------------------------------------------------------- |
+| `TEXT_TO_AUDIO`            | prompt, duration, modelRef        | audio                  | Generate sound/music                                                       |
+| `TEXT_TO_VOICE`            | transcript, voice/profile, policy | audio, runReport       | Generate voiceover where configured                                        |
+| `FOLEY_GENERATE`           | video/storyboard, prompt          | audio                  | Generate effects                                                           |
+| `SOUNDTRACK_GENERATE`      | storyboard/video, music prompt    | audio, runReport       | Generate music bed                                                         |
+| `AUDIO_STEM_SPLIT`         | audio                             | audio/list, runReport  | Separate dialogue/music/effects when supported                             |
+| `AUDIO_TRIM_MIX`           | audio/list, timing                | audio                  | Mix audio                                                                  |
+| `AUDIO_LOUDNESS_ANALYZE`   | audio/video, measurement profile  | runReport              | Measure integrated loudness, range, and true peak without changing samples |
+| `AUDIO_LOUDNESS_NORMALIZE` | audio/video, target profile       | audio/video, runReport | Explicit two-pass file loudness normalization and true-peak limiting       |
+| `AUDIO_TO_VIDEO_SYNC`      | video, audio, markers             | video                  | Sync generated audio                                                       |
+| `TRANSCRIPT_ALIGN`         | transcript, audio/video           | transcript, runReport  | Align text to timecodes                                                    |
 
 ### Training And Adapter Nodes
 
-| Node | Inputs | Outputs | Purpose |
-| --- | --- | --- | --- |
-| `DATASET_CURATE` | assets/folder, labels, rules | trainingDataset, runReport | Select and validate training examples |
-| `DATASET_CAPTION` | trainingDataset, caption model/policy | trainingDataset, runReport | Caption or normalize captions |
-| `DATASET_AUGMENT` | trainingDataset, transforms | trainingDataset | Controlled augmentation |
-| `LORA_TRAIN` | trainingDataset, base modelRef, training config | trainedAdapter, runReport | Train LoRA/adapter |
-| `ADAPTER_EVALUATE` | trainedAdapter, validation prompts/assets | runReport, variantSet | Evaluate adapter behavior |
-| `ADAPTER_PACKAGE` | trainedAdapter, license, metadata | trainedAdapter/file/report | Package adapter for reuse |
-| `ADAPTER_MERGE` | adapter list, weights, compatibility policy | trainedAdapter, runReport | Merge compatible adapters |
-| `CHECKPOINT_RESUME` | modelCheckpoint, training config | trainedAdapter/modelCheckpoint, runReport | Resume supported training |
+| Node                | Inputs                                          | Outputs                                   | Purpose                               |
+| ------------------- | ----------------------------------------------- | ----------------------------------------- | ------------------------------------- |
+| `DATASET_CURATE`    | assets/folder, labels, rules                    | trainingDataset, runReport                | Select and validate training examples |
+| `DATASET_CAPTION`   | trainingDataset, caption model/policy           | trainingDataset, runReport                | Caption or normalize captions         |
+| `DATASET_AUGMENT`   | trainingDataset, transforms                     | trainingDataset                           | Controlled augmentation               |
+| `LORA_TRAIN`        | trainingDataset, base modelRef, training config | trainedAdapter, runReport                 | Train LoRA/adapter                    |
+| `ADAPTER_EVALUATE`  | trainedAdapter, validation prompts/assets       | runReport, variantSet                     | Evaluate adapter behavior             |
+| `ADAPTER_PACKAGE`   | trainedAdapter, license, metadata               | trainedAdapter/file/report                | Package adapter for reuse             |
+| `ADAPTER_MERGE`     | adapter list, weights, compatibility policy     | trainedAdapter, runReport                 | Merge compatible adapters             |
+| `CHECKPOINT_RESUME` | modelCheckpoint, training config                | trainedAdapter/modelCheckpoint, runReport | Resume supported training             |
 
 ### Optimization Nodes
 
-| Node | Inputs | Outputs | Purpose |
-| --- | --- | --- | --- |
-| `RUNTIME_OPTIMIZE` | modelRef, optimizationPolicy, hardware snapshot | optimizationProfile, runReport | Resolve allowed runtime optimizations |
-| `QUANTIZE_MODEL` | modelRef, calibration policy | modelRef/optimizationProfile, runReport | Create or select quantized variant |
-| `ENGINE_BUILD` | modelRef, optimizationProfile, dimensions | optimizationProfile, runReport | Build TensorRT/Windows ML/ONNX optimized engine |
-| `CACHE_ACCELERATION_CONFIG` | modelRef, acceleration policy | optimizationProfile, runReport | Configure TeaCache/AdaCache/BWCache/ParaAttention/Cache-DiT-style acceleration |
-| `VAE_TILING_CONFIG` | modelRef, dimensions, memory policy | optimizationProfile | Configure image/video VAE tiling |
-| `OFFLOAD_PLAN` | modelRef, hardware, memory policy | optimizationProfile | CPU/GPU/NVMe offload strategy |
-| `OPTIMIZATION_VALIDATE` | output asset/list, baseline/thresholds | runReport, pass/fail | Validate quality drift after optimization |
+| Node                        | Inputs                                          | Outputs                                 | Purpose                                                                        |
+| --------------------------- | ----------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------ |
+| `RUNTIME_OPTIMIZE`          | modelRef, optimizationPolicy, hardware snapshot | optimizationProfile, runReport          | Resolve allowed runtime optimizations                                          |
+| `QUANTIZE_MODEL`            | modelRef, calibration policy                    | modelRef/optimizationProfile, runReport | Create or select quantized variant                                             |
+| `ENGINE_BUILD`              | modelRef, optimizationProfile, dimensions       | optimizationProfile, runReport          | Build TensorRT/Windows ML/ONNX optimized engine                                |
+| `CACHE_ACCELERATION_CONFIG` | modelRef, acceleration policy                   | optimizationProfile, runReport          | Configure TeaCache/AdaCache/BWCache/ParaAttention/Cache-DiT-style acceleration |
+| `VAE_TILING_CONFIG`         | modelRef, dimensions, memory policy             | optimizationProfile                     | Configure image/video VAE tiling                                               |
+| `OFFLOAD_PLAN`              | modelRef, hardware, memory policy               | optimizationProfile                     | CPU/GPU/NVMe offload strategy                                                  |
+| `OPTIMIZATION_VALIDATE`     | output asset/list, baseline/thresholds          | runReport, pass/fail                    | Validate quality drift after optimization                                      |
 
 ### Provenance And Credential Nodes
 
-| Node | Inputs | Outputs | Purpose |
-| --- | --- | --- | --- |
-| `PROVENANCE_CAPTURE` | asset/list, run metadata | provenanceManifest | Create local lineage manifest |
-| `CONTENT_CREDENTIAL_ATTACH` | asset, provenanceManifest, signing policy | asset, contentCredential, runReport | Attach C2PA-style credential where supported |
-| `CONTENT_CREDENTIAL_VERIFY` | asset | contentCredential, runReport | Inspect embedded or sidecar credentials |
-| `WATERMARK_DETECT` | asset, detector policy | watermarkReport, runReport | Detect supported watermark/provenance signals |
-| `EXPORT_METADATA_POLICY` | asset, policy | asset/report | Strip, preserve, or write sidecar metadata |
-| `LICENSE_AND_POLICY_CHECK` | asset/model/dataset | runReport, pass/fail | Check license and workspace policy constraints |
+| Node                        | Inputs                                    | Outputs                             | Purpose                                        |
+| --------------------------- | ----------------------------------------- | ----------------------------------- | ---------------------------------------------- |
+| `PROVENANCE_CAPTURE`        | asset/list, run metadata                  | provenanceManifest                  | Create local lineage manifest                  |
+| `CONTENT_CREDENTIAL_ATTACH` | asset, provenanceManifest, signing policy | asset, contentCredential, runReport | Attach C2PA-style credential where supported   |
+| `CONTENT_CREDENTIAL_VERIFY` | asset                                     | contentCredential, runReport        | Inspect embedded or sidecar credentials        |
+| `WATERMARK_DETECT`          | asset, detector policy                    | watermarkReport, runReport          | Detect supported watermark/provenance signals  |
+| `EXPORT_METADATA_POLICY`    | asset, policy                             | asset/report                        | Strip, preserve, or write sidecar metadata     |
+| `LICENSE_AND_POLICY_CHECK`  | asset/model/dataset                       | runReport, pass/fail                | Check license and workspace policy constraints |
 
 ### Evaluation And Selection Nodes
 
-| Node | Inputs | Outputs | Purpose |
-| --- | --- | --- | --- |
-| `IMAGE_QUALITY_SCORE` | image/list | runReport, ranked imageList | Rank images |
-| `IMAGE_TECHNICAL_ANALYZE` | image/list, metric profile | runReport | Deterministic decode, dimensions, alpha, clipping, blur, noise, and compression checks |
-| `REFERENCE_SIMILARITY_SCORE` | asset/list, references, metric profile | runReport | Versioned perceptual, identity, or product similarity metrics |
-| `PROMPT_ALIGNMENT_SCORE` | image/video, prompt | runReport | Check prompt alignment |
-| `OCR_CHECK` | image/video frame, expected text | runReport, pass/fail | Validate rendered text |
-| `IDENTITY_CONSISTENCY_CHECK` | image/list, characterProfile | runReport, pass/fail | Character consistency |
-| `PRODUCT_CONSISTENCY_CHECK` | image/list, productProfile | runReport, pass/fail | Product consistency |
-| `KEYFRAME_MATCH_CHECK` | video/frameSequence, keyframeSet | runReport, pass/fail | Validate start/end/intermediate keyframes |
-| `VIDEO_CONTINUITY_CHECK` | video/frameSequence | runReport | Detect flicker, scene breaks |
-| `VIDEO_TECHNICAL_ANALYZE` | video, metric/sampling profile | runReport | Decode, timing, color, frame, audio, black/freeze, clipping, and transport checks |
-| `VIDEO_PERCEPTUAL_EVALUATE` | video/list, references, evaluator profile | runReport | Versioned temporal, aesthetic, and motion evaluation without a universal score |
-| `DEPTH_CONSISTENCY_CHECK` | videoDepthMap, video | runReport | Detect unstable depth or geometry drift |
-| `TEMPORAL_IDENTITY_CHECK` | video, characterProfile/reference | runReport, pass/fail | Check identity consistency across frames |
-| `SAFETY_CHECK` | asset/list, policy | runReport, pass/fail | Safety policy gate |
-| `PROVENANCE_CHECK` | asset/list, policy | runReport, pass/fail | Verify required provenance/watermark conditions |
-| `SELECT_TOP_N` | asset list, scores, n | asset list | Choose candidates |
-| `COMPARE_GRID` | image/video list | image/video/report | Visual comparison |
-| `A_B_SELECTION` | asset pair/list, criteria | asset, runReport | User or model-assisted selection |
+| Node                         | Inputs                                    | Outputs                     | Purpose                                                                                |
+| ---------------------------- | ----------------------------------------- | --------------------------- | -------------------------------------------------------------------------------------- |
+| `IMAGE_QUALITY_SCORE`        | image/list                                | runReport, ranked imageList | Rank images                                                                            |
+| `IMAGE_TECHNICAL_ANALYZE`    | image/list, metric profile                | runReport                   | Deterministic decode, dimensions, alpha, clipping, blur, noise, and compression checks |
+| `REFERENCE_SIMILARITY_SCORE` | asset/list, references, metric profile    | runReport                   | Versioned perceptual, identity, or product similarity metrics                          |
+| `PROMPT_ALIGNMENT_SCORE`     | image/video, prompt                       | runReport                   | Check prompt alignment                                                                 |
+| `OCR_CHECK`                  | image/video frame, expected text          | runReport, pass/fail        | Validate rendered text                                                                 |
+| `IDENTITY_CONSISTENCY_CHECK` | image/list, characterProfile              | runReport, pass/fail        | Character consistency                                                                  |
+| `PRODUCT_CONSISTENCY_CHECK`  | image/list, productProfile                | runReport, pass/fail        | Product consistency                                                                    |
+| `KEYFRAME_MATCH_CHECK`       | video/frameSequence, keyframeSet          | runReport, pass/fail        | Validate start/end/intermediate keyframes                                              |
+| `VIDEO_CONTINUITY_CHECK`     | video/frameSequence                       | runReport                   | Detect flicker, scene breaks                                                           |
+| `VIDEO_TECHNICAL_ANALYZE`    | video, metric/sampling profile            | runReport                   | Decode, timing, color, frame, audio, black/freeze, clipping, and transport checks      |
+| `VIDEO_PERCEPTUAL_EVALUATE`  | video/list, references, evaluator profile | runReport                   | Versioned temporal, aesthetic, and motion evaluation without a universal score         |
+| `DEPTH_CONSISTENCY_CHECK`    | videoDepthMap, video                      | runReport                   | Detect unstable depth or geometry drift                                                |
+| `TEMPORAL_IDENTITY_CHECK`    | video, characterProfile/reference         | runReport, pass/fail        | Check identity consistency across frames                                               |
+| `SAFETY_CHECK`               | asset/list, policy                        | runReport, pass/fail        | Safety policy gate                                                                     |
+| `PROVENANCE_CHECK`           | asset/list, policy                        | runReport, pass/fail        | Verify required provenance/watermark conditions                                        |
+| `SELECT_TOP_N`               | asset list, scores, n                     | asset list                  | Choose candidates                                                                      |
+| `COMPARE_GRID`               | image/video list                          | image/video/report          | Visual comparison                                                                      |
+| `A_B_SELECTION`              | asset pair/list, criteria                 | asset, runReport            | User or model-assisted selection                                                       |
 
 ### Output Nodes
 
-| Node | Inputs | Outputs | Purpose |
-| --- | --- | --- | --- |
-| `PREVIEW_OUTPUT` | image/video/audio/mesh/report | preview reference | Show in run UI only |
-| `ASSET_OUTPUT` | any media asset | asset id | Save to asset library |
-| `CANVAS_OUTPUT` | image/layerStack | canvas state | Stage on canvas |
-| `TIMELINE_OUTPUT` | video/storyboard/audio | timeline state | Stage on timeline |
-| `TIMELINE_EXPORT_OTIO` | timeline, adapter/options | file/report | Export editorial references/timing and disclose unsupported semantics |
-| `EXPORT_FILE` | asset/list, export profile | file/report | Write export files |
-| `EXPORT_PACKAGE` | assets, manifest | folder/zip/report | Package outputs |
-| `EXPORT_WITH_CREDENTIALS` | asset/list, credential policy, export profile | file/report | Export with local lineage and optional content credentials |
-| `TRAINED_ADAPTER_OUTPUT` | trainedAdapter, metadata | asset id/file/report | Save trained adapter |
-| `DATASET_OUTPUT` | trainingDataset | asset id/folder/report | Save curated dataset |
+| Node                      | Inputs                                        | Outputs                | Purpose                                                               |
+| ------------------------- | --------------------------------------------- | ---------------------- | --------------------------------------------------------------------- |
+| `PREVIEW_OUTPUT`          | image/video/audio/mesh/report                 | preview reference      | Show in run UI only                                                   |
+| `ASSET_OUTPUT`            | any media asset                               | asset id               | Save to asset library                                                 |
+| `CANVAS_OUTPUT`           | image/layerStack                              | canvas state           | Stage on canvas                                                       |
+| `TIMELINE_OUTPUT`         | video/storyboard/audio                        | timeline state         | Stage on timeline                                                     |
+| `TIMELINE_EXPORT_OTIO`    | timeline, adapter/options                     | file/report            | Export editorial references/timing and disclose unsupported semantics |
+| `EXPORT_FILE`             | asset/list, export profile                    | file/report            | Write export files                                                    |
+| `EXPORT_PACKAGE`          | assets, manifest                              | folder/zip/report      | Package outputs                                                       |
+| `EXPORT_WITH_CREDENTIALS` | asset/list, credential policy, export profile | file/report            | Export with local lineage and optional content credentials            |
+| `TRAINED_ADAPTER_OUTPUT`  | trainedAdapter, metadata                      | asset id/file/report   | Save trained adapter                                                  |
+| `DATASET_OUTPUT`          | trainingDataset                               | asset id/folder/report | Save curated dataset                                                  |
 
 ## Flow Creation
 
@@ -1710,7 +1710,10 @@ interface RemoteProviderAdapter {
   submit(request: PreparedProviderRequest): Promise<ProviderSubmission>;
   reconcile(job: DurableProviderJob): Promise<ProviderObservation>;
   requestCancel(job: DurableProviderJob): Promise<ProviderCancelObservation>;
-  download(job: DurableProviderJob, output: ProviderOutputReference): Promise<DownloadedOutput>;
+  download(
+    job: DurableProviderJob,
+    output: ProviderOutputReference,
+  ): Promise<DownloadedOutput>;
 }
 ```
 
@@ -1777,24 +1780,24 @@ Lifecycle requirements:
 
 ### Provider Capability Matrix Examples
 
-| Provider/runtime | Strong fit | Important constraints |
-| --- | --- | --- |
-| OpenAI GPT Image 2 | text-to-image, image-to-image, multi-reference editing, iterative edits, optional partial-image streaming | GPT Image 2 does not output transparent backgrounds; mask edits are guidance rather than pixel-exact masks, and generated bytes must be decoded/ingested rather than retained as base64 |
-| Google Gemini image generation | instruction image editing, multiple references, and fast iteration | exact reference limits and supported sizes vary by model; deprecated Imagen models are scheduled to shut down on 2026-08-17 |
-| Google Veo | video generation, first/last-frame transition, audio where supported | long-running jobs, model-specific keyframe support, provider upload policy |
-| Google Gemini Omni/Flow | conversational multimodal video creation/editing, reference-to-video | product/API availability may differ from consumer Flow UI; adapter must expose only callable capabilities |
-| OpenAI Sora APIs | unsupported | do not build an adapter: the official shutdown date for the API is 2026-09-24 |
-| BFL/FLUX APIs | FLUX image generation/editing | local FLUX.2 and remote BFL capabilities may differ |
-| fal/Replicate | broad model routing and fast access to new models | adapter must normalize async jobs, expiry, model-specific inputs, and cost visibility |
-| Runway/Luma | commercial video quality, image-to-video, extension/interpolation/video editing where exposed | provider-specific output constraints and nondeterministic reruns |
-| Kling/Pika through official/API partners | first/last-frame transitions, image-to-video, fast iteration | capabilities may be routed through partner APIs; provider lineage must record actual execution provider |
-| Adobe Firefly Services | commercially oriented creative APIs, credentials ecosystem, first/last-frame UI workflows | API feature parity with Firefly UI must be checked before exposing nodes |
-| LTX API | video with synchronized audio and sync/async API modes | model/version/duration constraints and job mode must be explicit |
-| Local Diffusers/PyTorch | broad local image/video model support | support varies by pipeline, wheel, device, precision, and VRAM |
-| Local native video runners | Wan, VACE, HunyuanVideo, LTX, FramePack-style support | runners must be wrapped by typed adapters and not leak script-specific assumptions into flows |
-| Local optimization libraries | TeaCache, xDiT, ParaAttention, Cache-DiT-style accelerators | optimization must be opt-in/policy-driven and quality-validated |
-| ONNX Runtime DirectML/Windows ML | Windows GPU coverage including AMD and other vendors for compatible models | requires converted/validated ONNX graphs; training and custom diffusion ops may be unsupported |
-| TensorRT/TensorRT for RTX | optimized NVIDIA inference on supported models and dimensions | engine build/cache invalidation, dynamic shape limits, precision differences |
+| Provider/runtime                         | Strong fit                                                                                                | Important constraints                                                                                                                                                                   |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenAI GPT Image 2                       | text-to-image, image-to-image, multi-reference editing, iterative edits, optional partial-image streaming | GPT Image 2 does not output transparent backgrounds; mask edits are guidance rather than pixel-exact masks, and generated bytes must be decoded/ingested rather than retained as base64 |
+| Google Gemini image generation           | instruction image editing, multiple references, and fast iteration                                        | exact reference limits and supported sizes vary by model; deprecated Imagen models are scheduled to shut down on 2026-08-17                                                             |
+| Google Veo                               | video generation, first/last-frame transition, audio where supported                                      | long-running jobs, model-specific keyframe support, provider upload policy                                                                                                              |
+| Google Gemini Omni/Flow                  | conversational multimodal video creation/editing, reference-to-video                                      | product/API availability may differ from consumer Flow UI; adapter must expose only callable capabilities                                                                               |
+| OpenAI Sora APIs                         | unsupported                                                                                               | do not build an adapter: the official shutdown date for the API is 2026-09-24                                                                                                           |
+| BFL/FLUX APIs                            | FLUX image generation/editing                                                                             | local FLUX.2 and remote BFL capabilities may differ                                                                                                                                     |
+| fal/Replicate                            | broad model routing and fast access to new models                                                         | adapter must normalize async jobs, expiry, model-specific inputs, and cost visibility                                                                                                   |
+| Runway/Luma                              | commercial video quality, image-to-video, extension/interpolation/video editing where exposed             | provider-specific output constraints and nondeterministic reruns                                                                                                                        |
+| Kling/Pika through official/API partners | first/last-frame transitions, image-to-video, fast iteration                                              | capabilities may be routed through partner APIs; provider lineage must record actual execution provider                                                                                 |
+| Adobe Firefly Services                   | commercially oriented creative APIs, credentials ecosystem, first/last-frame UI workflows                 | API feature parity with Firefly UI must be checked before exposing nodes                                                                                                                |
+| LTX API                                  | video with synchronized audio and sync/async API modes                                                    | model/version/duration constraints and job mode must be explicit                                                                                                                        |
+| Local Diffusers/PyTorch                  | broad local image/video model support                                                                     | support varies by pipeline, wheel, device, precision, and VRAM                                                                                                                          |
+| Local native video runners               | Wan, VACE, HunyuanVideo, LTX, FramePack-style support                                                     | runners must be wrapped by typed adapters and not leak script-specific assumptions into flows                                                                                           |
+| Local optimization libraries             | TeaCache, xDiT, ParaAttention, Cache-DiT-style accelerators                                               | optimization must be opt-in/policy-driven and quality-validated                                                                                                                         |
+| ONNX Runtime DirectML/Windows ML         | Windows GPU coverage including AMD and other vendors for compatible models                                | requires converted/validated ONNX graphs; training and custom diffusion ops may be unsupported                                                                                          |
+| TensorRT/TensorRT for RTX                | optimized NVIDIA inference on supported models and dimensions                                             | engine build/cache invalidation, dynamic shape limits, precision differences                                                                                                            |
 
 ### Remote Providers
 
@@ -1839,13 +1842,13 @@ Remote provider request mapping must be covered by adapter tests. Each adapter n
 
 Current adapter-specific contract notes, to be captured as dated capability fixtures rather than permanent assumptions:
 
-| Adapter | Current official behavior that affects the contract | Required machdoch handling |
-| --- | --- | --- |
-| BFL FLUX.2 | Editing returns a request id/polling URL; current FLUX.2 editing documentation exposes up to ten references and up to 4 MP for the documented endpoints; signed result URLs may last only ten minutes | Model-specific limits, immediate download, expired-result recovery, and no generic "FLUX supports ten references" claim |
-| Runway | Uses asynchronous tasks and a dated API version header; official SDK guidance recommends polling no faster than five seconds with jitter/backoff; output URLs are documented as ephemeral, generally 24-48 hours | Pin API version, persist poll schedule, ingest on success, and never expose provider output URLs directly to the UI |
-| Luma Ray | Uses `frame0`/`frame1` image references for first/last frames; extend/reverse/interpolate operations currently require a video generated by Luma; callbacks are retried but are not a durable local queue | Compile lineage predicates, retain provider generation id, use polling as baseline, and treat callbacks as hints |
-| fal | Queue states include in-queue/in-progress/completed; cancellation can be accepted while work still completes; current CDN URLs are publicly accessible; retention/no-store and provider-side retry behavior are configurable | Disclose public-link/retention policy, choose retry/no-store headers explicitly, distinguish request and gateway attempt ids, reconcile cancellation races, and ingest immediately |
-| Replicate | API prediction inputs, outputs, files, and logs currently expire after one hour by default; webhooks can be duplicated or reordered | Persist prediction id before waiting, poll/reconcile after restart, download immediately, and deduplicate webhook observations |
+| Adapter    | Current official behavior that affects the contract                                                                                                                                                                          | Required machdoch handling                                                                                                                                                         |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| BFL FLUX.2 | Editing returns a request id/polling URL; current FLUX.2 editing documentation exposes up to ten references and up to 4 MP for the documented endpoints; signed result URLs may last only ten minutes                        | Model-specific limits, immediate download, expired-result recovery, and no generic "FLUX supports ten references" claim                                                            |
+| Runway     | Uses asynchronous tasks and a dated API version header; official SDK guidance recommends polling no faster than five seconds with jitter/backoff; output URLs are documented as ephemeral, generally 24-48 hours             | Pin API version, persist poll schedule, ingest on success, and never expose provider output URLs directly to the UI                                                                |
+| Luma Ray   | Uses `frame0`/`frame1` image references for first/last frames; extend/reverse/interpolate operations currently require a video generated by Luma; callbacks are retried but are not a durable local queue                    | Compile lineage predicates, retain provider generation id, use polling as baseline, and treat callbacks as hints                                                                   |
+| fal        | Queue states include in-queue/in-progress/completed; cancellation can be accepted while work still completes; current CDN URLs are publicly accessible; retention/no-store and provider-side retry behavior are configurable | Disclose public-link/retention policy, choose retry/no-store headers explicitly, distinguish request and gateway attempt ids, reconcile cancellation races, and ingest immediately |
+| Replicate  | API prediction inputs, outputs, files, and logs currently expire after one hour by default; webhooks can be duplicated or reordered                                                                                          | Persist prediction id before waiting, poll/reconcile after restart, download immediately, and deduplicate webhook observations                                                     |
 
 For Phase 5, use Luma Ray as the provisional second commercial video adapter after Google Veo because its documented first/last-frame and provider-lineage constraints exercise the abstraction directly. This is a release candidate decision, not a permanent default: it must still pass region, terms/data-use, price, quota, deletion, cancellation, output-quality, and endpoint-stability review at implementation time. Runway is the next candidate when multi-reference/commercial video breadth is more important than first/last-frame contract coverage.
 
@@ -1903,15 +1906,15 @@ Hardware discovery must be read-only.
 
 ### Runtime Selection Matrix
 
-| Hardware/platform | Primary local path | Optimized path | Notes |
-| --- | --- | --- | --- |
-| NVIDIA RTX on Windows | PyTorch CUDA workers | TensorRT/TensorRT for RTX or Windows ML NvTensorRtRtx for compatible ONNX models | Prefer CUDA for model breadth, TensorRT for stable production dimensions |
-| NVIDIA RTX on Linux | PyTorch CUDA workers | TensorRT engines for supported models | Best path for most open image/video models |
-| AMD on Linux | PyTorch ROCm workers | MIGraphX/ONNX where compatible | Use official support matrix; do not assume every Radeon works |
-| AMD on Windows | AMD PyTorch only on the exact officially supported Windows/GPU/driver matrix; otherwise validated ONNX Runtime DirectML/Windows ML models | Vendor execution provider where it supports the model | Do not advertise generic Radeon support; treat DirectML as inference-only unless a model path proves training support |
-| Intel/other Windows GPUs | ONNX Runtime DirectML/Windows ML | OpenVINO where integrated later | Useful for utility models and compatible ONNX inference |
-| Apple Silicon on macOS | PyTorch/Diffusers MPS for validated models | MLX or Core ML model-specific pack after benchmarking | Unified memory pressure can cause severe swapping; some MPS models cannot batch reliably |
-| CPU only | CPU utility workers and tiny models | none | Offer only tasks with realistic runtime estimates |
+| Hardware/platform        | Primary local path                                                                                                                        | Optimized path                                                                   | Notes                                                                                                                 |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| NVIDIA RTX on Windows    | PyTorch CUDA workers                                                                                                                      | TensorRT/TensorRT for RTX or Windows ML NvTensorRtRtx for compatible ONNX models | Prefer CUDA for model breadth, TensorRT for stable production dimensions                                              |
+| NVIDIA RTX on Linux      | PyTorch CUDA workers                                                                                                                      | TensorRT engines for supported models                                            | Best path for most open image/video models                                                                            |
+| AMD on Linux             | PyTorch ROCm workers                                                                                                                      | MIGraphX/ONNX where compatible                                                   | Use official support matrix; do not assume every Radeon works                                                         |
+| AMD on Windows           | AMD PyTorch only on the exact officially supported Windows/GPU/driver matrix; otherwise validated ONNX Runtime DirectML/Windows ML models | Vendor execution provider where it supports the model                            | Do not advertise generic Radeon support; treat DirectML as inference-only unless a model path proves training support |
+| Intel/other Windows GPUs | ONNX Runtime DirectML/Windows ML                                                                                                          | OpenVINO where integrated later                                                  | Useful for utility models and compatible ONNX inference                                                               |
+| Apple Silicon on macOS   | PyTorch/Diffusers MPS for validated models                                                                                                | MLX or Core ML model-specific pack after benchmarking                            | Unified memory pressure can cause severe swapping; some MPS models cannot batch reliably                              |
+| CPU only                 | CPU utility workers and tiny models                                                                                                       | none                                                                             | Offer only tasks with realistic runtime estimates                                                                     |
 
 Runtime selection rules:
 
@@ -2080,14 +2083,22 @@ interface MediaModelDescriptor {
 interface MediaModelVariant {
   id: string;
   modelVersionId: string;
-  packageType: "pytorch" | "diffusers" | "onnx" | "windows-ml" | "tensorrt" | "native-runner" | "remote-endpoint";
+  packageType:
+    | "pytorch"
+    | "diffusers"
+    | "onnx"
+    | "windows-ml"
+    | "tensorrt"
+    | "native-runner"
+    | "remote-endpoint";
   precisionModes: string[];
   runtimeFamilies: string[];
   hardwareVendors: string[];
   minVramMbByTask: Record<string, number>;
   recommendedVramMbByTask: Record<string, number>;
   supportedAdapters: string[];
-  trainingSupport: "none" | "lora" | "textual-inversion" | "control-adapter" | "full-finetune";
+  trainingSupport:
+    "none" | "lora" | "textual-inversion" | "control-adapter" | "full-finetune";
   knownLimitations: string[];
 }
 ```
@@ -2681,14 +2692,27 @@ interface QualityObservation {
   metricId: string;
   metricVersion: string;
   family: "technical" | "reference" | "learned" | "policy" | "human";
-  scope: "asset" | "frame" | "frame-range" | "region" | "audio" | "pair" | "collection";
+  scope:
+    | "asset"
+    | "frame"
+    | "frame-range"
+    | "region"
+    | "audio"
+    | "pair"
+    | "collection";
   status: "observed" | "unknown" | "error";
   value?: number | boolean | string | Record<string, number>;
   unit?: string;
-  direction?: "higher-is-better" | "lower-is-better" | "target-range" | "categorical";
+  direction?:
+    "higher-is-better" | "lower-is-better" | "target-range" | "categorical";
   inputAssetIds: string[];
   referenceAssetIds: string[];
-  evaluator?: { id: string; version: string; digest?: string; license?: string };
+  evaluator?: {
+    id: string;
+    version: string;
+    digest?: string;
+    license?: string;
+  };
   preprocessingProfileId: string;
   samplingProfileId?: string;
   calibrationProfileId?: string;
@@ -2731,17 +2755,17 @@ Package principles:
 
 ### Recommended Core UI Packages
 
-| Package | Current checked version | Role | Recommendation |
-| --- | --- | --- | --- |
-| `@xyflow/react` | 12.11.0 already installed | Flow builder canvas | Keep as the graph UI layer, but store semantic flow separately |
-| `elkjs` | 0.11.1 | Automatic graph layout with ports | Add for flow auto-layout and subflow layout |
-| `@dnd-kit/core` / `@dnd-kit/sortable` | 6.3.1 / 10.0.0 | Accessible drag/drop | Add for boards, sortable panels, timelines, asset collections |
-| `react-resizable-panels` | 4.11.2 | Split panes | Add for editor/layout shells |
-| `cmdk` | 1.1.1 | Command palette | Add for node search, command menu, asset actions |
-| `sonner` | 2.0.7 | Toasts | Add for run events and concise errors |
-| `react-hotkeys-hook` | 5.3.2 | Keyboard shortcuts | Add for editor, canvas, timeline shortcuts |
-| `motion` | 12.40.0 | Small UI animation | Add sparingly for transitions, progress, selection feedback |
-| `vaul` | 1.1.2 | Drawers | Optional for inspector sheets and mobile/narrow layouts |
+| Package                               | Current checked version   | Role                              | Recommendation                                                 |
+| ------------------------------------- | ------------------------- | --------------------------------- | -------------------------------------------------------------- |
+| `@xyflow/react`                       | 12.11.0 already installed | Flow builder canvas               | Keep as the graph UI layer, but store semantic flow separately |
+| `elkjs`                               | 0.11.1                    | Automatic graph layout with ports | Add for flow auto-layout and subflow layout                    |
+| `@dnd-kit/core` / `@dnd-kit/sortable` | 6.3.1 / 10.0.0            | Accessible drag/drop              | Add for boards, sortable panels, timelines, asset collections  |
+| `react-resizable-panels`              | 4.11.2                    | Split panes                       | Add for editor/layout shells                                   |
+| `cmdk`                                | 1.1.1                     | Command palette                   | Add for node search, command menu, asset actions               |
+| `sonner`                              | 2.0.7                     | Toasts                            | Add for run events and concise errors                          |
+| `react-hotkeys-hook`                  | 5.3.2                     | Keyboard shortcuts                | Add for editor, canvas, timeline shortcuts                     |
+| `motion`                              | 12.40.0                   | Small UI animation                | Add sparingly for transitions, progress, selection feedback    |
+| `vaul`                                | 1.1.2                     | Drawers                           | Optional for inspector sheets and mobile/narrow layouts        |
 
 Core UI notes:
 
@@ -2752,20 +2776,20 @@ Core UI notes:
 
 ### Recommended State, Data, And Validation Packages
 
-| Package | Current checked version | Role | Recommendation |
-| --- | --- | --- | --- |
-| `zustand` | 5.0.14, transitive today | Local editor state | Add direct dependency for flow editor, board, timeline, and transient UI state |
-| `@tanstack/react-query` | 5.101.0 | Server/worker/query state | Add for assets, runs, models, provider capabilities, hardware probes |
-| `@tanstack/react-table` | 8.21.3 | Data grids | Add for model manager, asset table, run history |
-| `@tanstack/react-virtual` | 3.14.3 | Virtualized lists/grids | Add for large asset libraries and logs |
-| `react-hook-form` | 7.79.0 | Forms | Add for node inspectors, model/provider settings, export dialogs |
-| `@hookform/resolvers` | 5.4.0 | Schema resolvers | Add with Zod schemas for form validation |
-| `zod` | 4.4.3, transitive today | TypeScript schemas | Add direct dependency for UI/core validation and type inference |
-| `ajv` | 8.20.0 | JSON Schema validation | Add for imported/exported flow JSON and worker contract schemas |
-| `nanoid` | 5.1.11 | Stable ids | Add for node ids, edge ids, run-local ids where content hash is not appropriate |
-| `p-queue` | 9.3.0 | Promise queue | Add for frontend-side request throttling and preview tasks |
-| `p-limit` | 7.3.0 | Concurrency helper | Optional when full queue semantics are not needed |
-| `comlink` | 4.4.2 | Web Worker RPC | Add for UI-only worker tasks like thumbnails, waveform prep, metadata parsing |
+| Package                   | Current checked version  | Role                      | Recommendation                                                                  |
+| ------------------------- | ------------------------ | ------------------------- | ------------------------------------------------------------------------------- |
+| `zustand`                 | 5.0.14, transitive today | Local editor state        | Add direct dependency for flow editor, board, timeline, and transient UI state  |
+| `@tanstack/react-query`   | 5.101.0                  | Server/worker/query state | Add for assets, runs, models, provider capabilities, hardware probes            |
+| `@tanstack/react-table`   | 8.21.3                   | Data grids                | Add for model manager, asset table, run history                                 |
+| `@tanstack/react-virtual` | 3.14.3                   | Virtualized lists/grids   | Add for large asset libraries and logs                                          |
+| `react-hook-form`         | 7.79.0                   | Forms                     | Add for node inspectors, model/provider settings, export dialogs                |
+| `@hookform/resolvers`     | 5.4.0                    | Schema resolvers          | Add with Zod schemas for form validation                                        |
+| `zod`                     | 4.4.3, transitive today  | TypeScript schemas        | Add direct dependency for UI/core validation and type inference                 |
+| `ajv`                     | 8.20.0                   | JSON Schema validation    | Add for imported/exported flow JSON and worker contract schemas                 |
+| `nanoid`                  | 5.1.11                   | Stable ids                | Add for node ids, edge ids, run-local ids where content hash is not appropriate |
+| `p-queue`                 | 9.3.0                    | Promise queue             | Add for frontend-side request throttling and preview tasks                      |
+| `p-limit`                 | 7.3.0                    | Concurrency helper        | Optional when full queue semantics are not needed                               |
+| `comlink`                 | 4.4.2                    | Web Worker RPC            | Add for UI-only worker tasks like thumbnails, waveform prep, metadata parsing   |
 
 State and validation notes:
 
@@ -2775,14 +2799,14 @@ State and validation notes:
 
 ### Recommended Creative Surface Packages
 
-| Package | Current checked version | Role | Recommendation |
-| --- | --- | --- | --- |
-| `konva` / `react-konva` | 10.3.0 / 19.2.5 | 2D canvas editing | Add for masks, layers, region selection, image overlays |
-| `@tldraw/tldraw` | 5.1.1 | Infinite board/whiteboard | Evaluate for ideation/reference boards only after license/state-model review |
-| `pixi.js` / `@pixi/react` | 8.19.0 / 8.0.5 | High-performance 2D/WebGL | Optional for large animated boards, thumbnails, shader previews |
-| `three` | 0.184.0 | 3D rendering | Add for mesh/GLB preview if 3D asset surface is built |
-| `@react-three/fiber` / `@react-three/drei` | 9.6.1 / 10.7.7 | React Three integration | Add for React-based 3D asset inspector |
-| `@use-gesture/react` | 10.3.1 | Gestures | Optional for canvas pan/zoom/brush gestures if Konva/XYFlow are insufficient |
+| Package                                    | Current checked version | Role                      | Recommendation                                                               |
+| ------------------------------------------ | ----------------------- | ------------------------- | ---------------------------------------------------------------------------- |
+| `konva` / `react-konva`                    | 10.3.0 / 19.2.5         | 2D canvas editing         | Add for masks, layers, region selection, image overlays                      |
+| `@tldraw/tldraw`                           | 5.1.1                   | Infinite board/whiteboard | Evaluate for ideation/reference boards only after license/state-model review |
+| `pixi.js` / `@pixi/react`                  | 8.19.0 / 8.0.5          | High-performance 2D/WebGL | Optional for large animated boards, thumbnails, shader previews              |
+| `three`                                    | 0.184.0                 | 3D rendering              | Add for mesh/GLB preview if 3D asset surface is built                        |
+| `@react-three/fiber` / `@react-three/drei` | 9.6.1 / 10.7.7          | React Three integration   | Add for React-based 3D asset inspector                                       |
+| `@use-gesture/react`                       | 10.3.1                  | Gestures                  | Optional for canvas pan/zoom/brush gestures if Konva/XYFlow are insufficient |
 
 Creative surface notes:
 
@@ -2793,15 +2817,15 @@ Creative surface notes:
 
 ### Recommended Media Preview And Timeline Packages
 
-| Package | Current checked version | Role | Recommendation |
-| --- | --- | --- | --- |
-| `wavesurfer.js` | 7.12.8 | Audio waveform | Add for audio tracks, generated foley, voiceover alignment |
-| `mediabunny` | 1.47.0 | Browser media read/write/conversion | Evaluate for lightweight frame/audio/container handling in the UI |
-| `mp4box` | 2.3.0 | MP4 parsing | Optional for precise MP4 metadata and frame/sample inspection |
-| `@ffmpeg/ffmpeg` / `@ffmpeg/util` | 0.12.15 / 0.12.2 | FFmpeg WASM | Use only as lazy-loaded fallback for small local preview conversions |
-| `remotion` / `@remotion/player` | 4.0.478 | Programmatic video composition/player | Evaluate license and bundle/runtime cost before using for timeline preview |
-| `recharts` | 3.8.1 | Charts | Add for simple run metrics, training charts, cost/VRAM dashboards |
-| `@visx/xychart` | 4.0.0 | Custom charts | Optional if Recharts is too rigid for timeline/training diagnostics |
+| Package                           | Current checked version | Role                                  | Recommendation                                                             |
+| --------------------------------- | ----------------------- | ------------------------------------- | -------------------------------------------------------------------------- |
+| `wavesurfer.js`                   | 7.12.8                  | Audio waveform                        | Add for audio tracks, generated foley, voiceover alignment                 |
+| `mediabunny`                      | 1.47.0                  | Browser media read/write/conversion   | Evaluate for lightweight frame/audio/container handling in the UI          |
+| `mp4box`                          | 2.3.0                   | MP4 parsing                           | Optional for precise MP4 metadata and frame/sample inspection              |
+| `@ffmpeg/ffmpeg` / `@ffmpeg/util` | 0.12.15 / 0.12.2        | FFmpeg WASM                           | Use only as lazy-loaded fallback for small local preview conversions       |
+| `remotion` / `@remotion/player`   | 4.0.478                 | Programmatic video composition/player | Evaluate license and bundle/runtime cost before using for timeline preview |
+| `recharts`                        | 3.8.1                   | Charts                                | Add for simple run metrics, training charts, cost/VRAM dashboards          |
+| `@visx/xychart`                   | 4.0.0                   | Custom charts                         | Optional if Recharts is too rigid for timeline/training diagnostics        |
 
 Media package notes:
 
@@ -2813,12 +2837,12 @@ Media package notes:
 
 ### Recommended File And Metadata Packages
 
-| Package | Current checked version | Role | Recommendation |
-| --- | --- | --- | --- |
-| `file-type` | 22.0.1 | Detect media type from bytes | Add for import validation in Node/CLI paths |
-| `mime` | 4.1.0 | MIME mappings | Add for export/import metadata |
-| `exifr` | 7.1.3 | EXIF parsing | Add for image metadata inspection and remote-upload stripping previews |
-| `date-fns` | 4.4.0 | Date formatting/math | Optional for run history and retention UI |
+| Package     | Current checked version | Role                         | Recommendation                                                         |
+| ----------- | ----------------------- | ---------------------------- | ---------------------------------------------------------------------- |
+| `file-type` | 22.0.1                  | Detect media type from bytes | Add for import validation in Node/CLI paths                            |
+| `mime`      | 4.1.0                   | MIME mappings                | Add for export/import metadata                                         |
+| `exifr`     | 7.1.3                   | EXIF parsing                 | Add for image metadata inspection and remote-upload stripping previews |
+| `date-fns`  | 4.4.0                   | Date formatting/math         | Optional for run history and retention UI                              |
 
 File/metadata notes:
 
@@ -3068,11 +3092,11 @@ CLI requirements:
 
 OS containment is explicit and tested per packaged platform:
 
-| Platform | Baseline containment | Important limitation |
-| --- | --- | --- |
-| Windows | Put each worker process tree in a Job Object with kill-on-close, active-process, memory/CPU/time limits where supported, and no intentional breakaway; pass only granted staging paths and a minimal environment | Job Objects provide lifecycle/resource containment, not a complete security sandbox. A restricted-token/AppContainer design needs a separate compatibility spike for Python, GPU drivers, model caches, and Tauri packaging |
-| Linux | Dedicated low-authority process identity where packaging permits; private staging/cache grants; no inherited secrets/network sockets; Landlock restrict-only filesystem rules when the running kernel ABI supports the required access controls | Landlock availability and covered access types vary by kernel ABI and it is defense in depth. Namespace/seccomp/container hardening must be validated against GPU/device/driver access rather than advertised generically |
-| macOS | Inherit the signed app's App Sandbox/entitlement boundary when distributed that way; restrict helper locations, temporary grants, environment, and child processes | Entitlements and helper signing are packaging-wide constraints, not an ad hoc per-node sandbox. Non-App-Store packaging needs an explicit hardened-runtime/helper design and cannot claim App Sandbox isolation automatically |
+| Platform | Baseline containment                                                                                                                                                                                                                            | Important limitation                                                                                                                                                                                                          |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Windows  | Put each worker process tree in a Job Object with kill-on-close, active-process, memory/CPU/time limits where supported, and no intentional breakaway; pass only granted staging paths and a minimal environment                                | Job Objects provide lifecycle/resource containment, not a complete security sandbox. A restricted-token/AppContainer design needs a separate compatibility spike for Python, GPU drivers, model caches, and Tauri packaging   |
+| Linux    | Dedicated low-authority process identity where packaging permits; private staging/cache grants; no inherited secrets/network sockets; Landlock restrict-only filesystem rules when the running kernel ABI supports the required access controls | Landlock availability and covered access types vary by kernel ABI and it is defense in depth. Namespace/seccomp/container hardening must be validated against GPU/device/driver access rather than advertised generically     |
+| macOS    | Inherit the signed app's App Sandbox/entitlement boundary when distributed that way; restrict helper locations, temporary grants, environment, and child processes                                                                              | Entitlements and helper signing are packaging-wide constraints, not an ad hoc per-node sandbox. Non-App-Store packaging needs an explicit hardened-runtime/helper design and cannot claim App Sandbox isolation automatically |
 
 Process-tree termination, path grants, and resource limits are release gates on each platform. No OS mechanism makes an untrusted model pickle, Python repository, native library, GPU kernel, or driver safe. Those artifacts remain outside the allowed extension surface.
 
@@ -3080,12 +3104,12 @@ Process-tree termination, path grants, and resource limits are release gates on 
 
 Signatures establish publisher/integrity; they do not establish safety. The extension system uses distinct trust tiers:
 
-| Tier | Allowed extension | Execution and permissions |
-| --- | --- | --- |
-| 0: declarative | Recipes, subflows, presets, node UI metadata, schemas, templates, capability mappings | No code. Compiler validates known node ids and bubbles side effects. This is the default third-party ecosystem surface |
-| 1: constrained utility | Future small deterministic CPU transforms/validators compiled to WebAssembly | Wasmtime/WASI host with no network, no environment/secrets, no process spawn, no host filesystem except explicit per-call preopened staging directories, typed asset streams, memory/output limits, fuel/epoch deadline, and host-side output validation |
-| 2: trusted runtime pack | Built-in or machdoch-release-signed Python/native/GPU model runner, FFmpeg wrapper, credential/provenance integration, or provider adapter | Separate locked environment/process, reviewed dependencies, exact permission manifest/host allowlist, platform containment, revocation, compatibility and malicious-fixture tests. Not installable merely because a marketplace publisher signed it |
-| 3: developer integration | User-specified external executable/service for local development | Disabled by default, unmistakable full-trust warning, separate settings scope, never used by Ralph unattended, and excluded from normal shareable-flow guarantees |
+| Tier                     | Allowed extension                                                                                                                          | Execution and permissions                                                                                                                                                                                                                                |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0: declarative           | Recipes, subflows, presets, node UI metadata, schemas, templates, capability mappings                                                      | No code. Compiler validates known node ids and bubbles side effects. This is the default third-party ecosystem surface                                                                                                                                   |
+| 1: constrained utility   | Future small deterministic CPU transforms/validators compiled to WebAssembly                                                               | Wasmtime/WASI host with no network, no environment/secrets, no process spawn, no host filesystem except explicit per-call preopened staging directories, typed asset streams, memory/output limits, fuel/epoch deadline, and host-side output validation |
+| 2: trusted runtime pack  | Built-in or machdoch-release-signed Python/native/GPU model runner, FFmpeg wrapper, credential/provenance integration, or provider adapter | Separate locked environment/process, reviewed dependencies, exact permission manifest/host allowlist, platform containment, revocation, compatibility and malicious-fixture tests. Not installable merely because a marketplace publisher signed it      |
+| 3: developer integration | User-specified external executable/service for local development                                                                           | Disabled by default, unmistakable full-trust warning, separate settings scope, never used by Ralph unattended, and excluded from normal shareable-flow guarantees                                                                                        |
 
 Wasm is suitable for bounded metadata/image utilities, not PyTorch/GPU inference or a way to conceal native code. The host exposes task-specific functions rather than general WASI capabilities. Never accept and deserialize an untrusted precompiled Wasmtime artifact; accept a hashed module in the supported source format, validate/compile it locally, and treat the local compiled cache as invalidatable implementation data. Validate all guest offsets, lengths, handles, paths, and output manifests because a sandboxed guest can still attempt denial of service or exploit host API mistakes.
 
@@ -3791,7 +3815,7 @@ Deliverables, each as an independently gated pack:
 - Tier-0 declarative third-party recipes/subflows first. Evaluate Tier-1 Wasm/WASI utilities only after typed host APIs, fuel/memory/deadline/output limits, locally compiled cache rules, malicious guest tests, signing, updates, and revocation work.
 - Keep Python/native/GPU runners and provider adapters at Tier 2: built-in or machdoch-release-signed, reviewed, permission-pinned runtime packs. Do not generalize marketplace publisher signatures into arbitrary code trust.
 - Optional ComfyUI workflow importer that maps known semantic patterns, reports unsupported custom nodes, and never downloads or executes their code.
-- CLI/MCP/remote-control surfaces after desktop semantics are stable, with the same approval, reference, and dry-run contracts.
+- CLI, MCP, and Fleet Manager surfaces after desktop semantics are stable, with the same approval, reference, and dry-run contracts.
 
 Gate:
 
@@ -3799,23 +3823,23 @@ Gate:
 
 ### Release Risk Register
 
-| Risk | Mitigation and release gate |
-| --- | --- |
-| Model files execute code or compromise a worker | Pinned commit/file allowlist/checksums, prefer safetensors, quarantine, no remote code/repo scripts, isolated low-authority worker, malicious-fixture tests |
-| Local hardware support is overstated | Exact device/runtime catalog, tiny real probe, per-machine envelope, labeled hardware CI, unsupported rather than best-effort late failure |
-| Video scope delays all value | Image-first vertical slice; video pack depends on proven queue/CAS/provider reconciliation |
-| Provider API/model disappears | Live signed lifecycle catalog, pre-run refresh, explicit unsupported-state diagnostics, no silent model substitution |
-| Duplicate remote charge after retry/restart | Transactional provider job record before/after acceptance, idempotency keys where supported, reconcile before resubmit, user approval for cost-risking retry |
-| Provider callback/cancel race corrupts state | Callbacks are idempotent reconciliation hints, compare-and-set transitions, raw state retention, late-success ingestion, terminal-state replay fixtures |
-| Public or expired provider media leaks/vanishes | Preflight visibility/retention disclosure, no-store controls where documented, signed/public URL redaction, immediate bounded download, expiry fixtures |
-| Disk/VRAM exhaustion corrupts outputs | Preflight reservations, streaming temp files, worker resource leases, atomic promotion, partial artifacts marked non-final, cleanup dry run |
-| Flow power overwhelms normal users | Recipe/task/advanced/runtime layers, schema-driven progressive disclosure, compound nodes, explainable compiled plans |
-| Ralph or Chat bypasses media policy | Stable references plus one bridge API; backend preflight is authoritative; approval requirements survive calling surface |
-| AI quality scores mislead users | Versioned rubric/model, calibration fixtures, multiple metrics, human review, no universal score claim |
-| Timeline, VFR, audio, or color silently drifts | Rational time/sample positions, explicit conform/color nodes, source-versus-display separation, probe-after-output, OTIO/color round-trip fixtures |
-| Signed extension compromises host | Tiered surface, declarative default, capability-limited Wasm utilities, release-signed trusted native packs only, OS containment and malicious-fixture gates |
-| Provenance is mistaken for authenticity | Separate local lineage/credentials/watermarks, preserve limitations, C2PA adapter isolation, no truth claim |
-| New dependencies bloat or destabilize Chat | Lazy-loaded app/packs, phase-specific dependencies, bundle budgets, worker/runtime isolation, cold-start regression gate |
+| Risk                                            | Mitigation and release gate                                                                                                                                  |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Model files execute code or compromise a worker | Pinned commit/file allowlist/checksums, prefer safetensors, quarantine, no remote code/repo scripts, isolated low-authority worker, malicious-fixture tests  |
+| Local hardware support is overstated            | Exact device/runtime catalog, tiny real probe, per-machine envelope, labeled hardware CI, unsupported rather than best-effort late failure                   |
+| Video scope delays all value                    | Image-first vertical slice; video pack depends on proven queue/CAS/provider reconciliation                                                                   |
+| Provider API/model disappears                   | Live signed lifecycle catalog, pre-run refresh, explicit unsupported-state diagnostics, no silent model substitution                                         |
+| Duplicate remote charge after retry/restart     | Transactional provider job record before/after acceptance, idempotency keys where supported, reconcile before resubmit, user approval for cost-risking retry |
+| Provider callback/cancel race corrupts state    | Callbacks are idempotent reconciliation hints, compare-and-set transitions, raw state retention, late-success ingestion, terminal-state replay fixtures      |
+| Public or expired provider media leaks/vanishes | Preflight visibility/retention disclosure, no-store controls where documented, signed/public URL redaction, immediate bounded download, expiry fixtures      |
+| Disk/VRAM exhaustion corrupts outputs           | Preflight reservations, streaming temp files, worker resource leases, atomic promotion, partial artifacts marked non-final, cleanup dry run                  |
+| Flow power overwhelms normal users              | Recipe/task/advanced/runtime layers, schema-driven progressive disclosure, compound nodes, explainable compiled plans                                        |
+| Ralph or Chat bypasses media policy             | Stable references plus one bridge API; backend preflight is authoritative; approval requirements survive calling surface                                     |
+| AI quality scores mislead users                 | Versioned rubric/model, calibration fixtures, multiple metrics, human review, no universal score claim                                                       |
+| Timeline, VFR, audio, or color silently drifts  | Rational time/sample positions, explicit conform/color nodes, source-versus-display separation, probe-after-output, OTIO/color round-trip fixtures           |
+| Signed extension compromises host               | Tiered surface, declarative default, capability-limited Wasm utilities, release-signed trusted native packs only, OS containment and malicious-fixture gates |
+| Provenance is mistaken for authenticity         | Separate local lineage/credentials/watermarks, preserve limitations, C2PA adapter isolation, no truth claim                                                  |
+| New dependencies bloat or destabilize Chat      | Lazy-loaded app/packs, phase-specific dependencies, bundle budgets, worker/runtime isolation, cold-start regression gate                                     |
 
 ## Open Questions
 
