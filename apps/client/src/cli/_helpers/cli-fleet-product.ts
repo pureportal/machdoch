@@ -18,6 +18,7 @@ import {
   MAX_SESSION_MEMORY_ENTRIES,
   mergeConversationMemoryEntries,
 } from "../../core/memory.js";
+import { getReasoningModesForProviderModel } from "../../core/reasoning-modes.js";
 import {
   REASONING_MODES,
   isConfiguredModelProvider,
@@ -548,6 +549,8 @@ export class FleetCliProductRuntime {
       case "scheduler-delete":
       case "scheduler-retry-run":
       case "scheduler-cancel-run":
+      case "ralph-run":
+      case "ralph-resume-run":
       case "generate-media":
       case "cancel-media-run":
         throw new FleetProductError(
@@ -1125,7 +1128,18 @@ export class FleetCliProductRuntime {
             available: entry.configured,
             models:
               entry.provider === activeSession.provider
-                ? [{ id: activeSession.model, label: activeSession.model }]
+                ? [
+                    {
+                      id: activeSession.model,
+                      label: activeSession.model,
+                      reasoningOptions: [
+                        ...getReasoningModesForProviderModel(
+                          activeSession.provider,
+                          activeSession.model,
+                        ),
+                      ],
+                    },
+                  ]
                 : [],
           })),
           mode: activeSession.mode,

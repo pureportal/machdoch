@@ -93,6 +93,23 @@ afterEach(async () => {
 });
 
 describe("instruction profiles and assignments", () => {
+  it("accepts a caller-provided profile identity", async () => {
+    const fixture = await createTestRoot();
+    const id = "123e4567-e89b-42d3-a456-426614174000";
+    const created = await createInstructionProfile(
+      { id, name: "Managed", body: "Apply this policy." },
+      { path: fixture.libraryPath },
+    );
+
+    expect(created.profile.id).toBe(id);
+    await expect(
+      createInstructionProfile(
+        { id: "invalid", name: "Invalid", body: "Invalid identity." },
+        { path: fixture.libraryPath, expectedRevision: 1 },
+      ),
+    ).rejects.toThrow(/UUID/u);
+  });
+
   it("stores one stable profile body while assigning references to multiple workspaces", async () => {
     const first = await createTestRoot();
     const secondWorkspace = join(first.root, "second-workspace");

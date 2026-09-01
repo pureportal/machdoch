@@ -1026,6 +1026,8 @@ export interface RalphFlowSummary {
   blockCount: number;
   edgeCount: number;
   variableCount: number;
+  variables: RalphFlowVariable[];
+  maxTransitions?: number;
 }
 
 export interface RalphFlowRevisionSummary {
@@ -1497,6 +1499,7 @@ export interface RalphRunSummary {
   flowId: string;
   flowName: string;
   status: RalphRunSummaryStatus;
+  recoverable: boolean;
   outcome?: RalphRunOutcome;
   summary: string;
   simpleLogPath?: string;
@@ -1897,6 +1900,10 @@ export const listRalphFlows = async (
           blockCount: flow.blocks.length,
           edgeCount: flow.edges.length,
           variableCount: variables.length,
+          variables,
+          ...(flow.settings?.maxTransitions
+            ? { maxTransitions: flow.settings.maxTransitions }
+            : {}),
         });
       } catch {
         summaries.push({
@@ -1907,6 +1914,7 @@ export const listRalphFlows = async (
           blockCount: 0,
           edgeCount: 0,
           variableCount: 0,
+          variables: [],
         });
       }
     }
@@ -2980,6 +2988,7 @@ const createPartialRalphRunSummary = async (
     flowId: flowEntry?.flowId ?? "unknown",
     flowName: flowEntry?.flowName ?? "Unknown Ralph flow",
     status: "partial",
+    recoverable: false,
     summary,
     ...(existsSync(simpleMarkdownPath)
       ? { simpleLogPath: simpleMarkdownPath }
@@ -3068,7 +3077,11 @@ const createLiveAwareRalphRunSummary = async (
         }
         return independentLease.active
           ? summary
-          : { ...summary, status: "abandoned" };
+          : {
+              ...summary,
+              status: "abandoned",
+              recoverable: Boolean(record.checkpoint),
+            };
       }
     } catch {
       // An unreadable lease is not evidence that the owner is gone.
@@ -3093,7 +3106,11 @@ const createLiveAwareRalphRunSummary = async (
     return summary;
   }
 
-  return { ...summary, status: "abandoned" };
+  return {
+    ...summary,
+    status: "abandoned",
+    recoverable: Boolean(record.checkpoint),
+  };
 };
 
 export const listRalphRunRecords = async (
@@ -3260,7 +3277,7 @@ const resolveVariableValues = (
   variables: RalphFlowVariable[],
   supplied: Record<string, string> = {},
 ): ResolvedVariableValues => {
-  const values: Record<string, string> = {};
+  const values = Object.create(null) as Record<string, string>;
   const variableNames = new Set(variables.map((variable) => variable.name));
   const missing: string[] = [];
   const unknown = Object.keys(supplied).filter(
@@ -3268,7 +3285,9 @@ const resolveVariableValues = (
   );
 
   for (const variable of variables) {
-    const suppliedValue = supplied[variable.name];
+    const suppliedValue = Object.hasOwn(supplied, variable.name)
+      ? supplied[variable.name]
+      : undefined;
 
     if (
       suppliedValue !== undefined &&

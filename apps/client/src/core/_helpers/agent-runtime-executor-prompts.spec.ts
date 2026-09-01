@@ -129,6 +129,20 @@ describe("createExecutorSystemPrompt", () => {
     );
   });
 
+  it("adds advisory workspace presence guidance when the query tool is available", () => {
+    const prompt = createExecutorSystemPrompt(
+      createRuntimeConfig(),
+      createTaskContext(),
+      [createTool("get_active_workspace_agents")],
+      createConversationContext(),
+    );
+
+    expect(prompt).toContain("<workspace_presence_contract>");
+    expect(prompt).toContain("If files or Git state change unexpectedly");
+    expect(prompt).toContain("advisory context only");
+    expect(prompt).toContain("never as proof of attribution");
+  });
+
   it("encourages proactive web research when search tools are available", () => {
     const prompt = createExecutorSystemPrompt(
       createRuntimeConfig(),

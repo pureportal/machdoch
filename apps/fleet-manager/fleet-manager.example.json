@@ -28,6 +28,7 @@
       "maximumProfiles": 64,
       "maximumInstructionsPerProfile": 128,
       "maximumPacksPerProfile": 128,
+      "maximumPromptsPerProfile": 128,
       "maximumRevisionsPerProfile": 100,
       "maximumDocumentBytes": 1048576,
       "maximumSecretBytes": 8192

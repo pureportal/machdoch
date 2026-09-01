@@ -34,6 +34,7 @@ import {
 import { consolidateTaskExecutionMemory } from "./memory-consolidation.js";
 import { runWithTaskModelUsageRecording } from "./model-usage.js";
 import { resolveTaskContext } from "./task-context.js";
+import { runWithWorkspaceAgentPresence } from "./_helpers/workspace-agent-presence.js";
 import {
   createInstructionDeliveryPlan,
   resolveInstructionSet,
@@ -683,7 +684,7 @@ export const createTaskExecutionController = (
 ): TaskExecutionController => {
   const abortController = new AbortController();
 
-  return {
+  const controller: TaskExecutionController = {
     signal: abortController.signal,
     cancel: (reason?: string): void => {
       if (!abortController.signal.aborted) {
@@ -731,9 +732,20 @@ export const createTaskExecutionController = (
       }
     },
   };
+
+  return {
+    ...controller,
+    execute: () =>
+      runWithWorkspaceAgentPresence(
+        config.workspaceRoot,
+        config.mode,
+        options.executionRole ?? "executor",
+        controller.execute,
+      ),
+  };
 };
 
-export const executeTask = async (
+const executeTaskWithoutWorkspacePresence = async (
   task: string,
   config: RuntimeConfig,
   customizations: CustomizationDiscoveryResult,
@@ -764,4 +776,24 @@ export const executeTask = async (
   } finally {
     managedTimeout.cleanup();
   }
+};
+
+export const executeTask = async (
+  task: string,
+  config: RuntimeConfig,
+  customizations: CustomizationDiscoveryResult,
+  options: TaskExecutionOptions = {},
+): Promise<TaskExecutionResult> => {
+  return runWithWorkspaceAgentPresence(
+    config.workspaceRoot,
+    config.mode,
+    options.executionRole ?? "executor",
+    () =>
+      executeTaskWithoutWorkspacePresence(
+        task,
+        config,
+        customizations,
+        options,
+      ),
+  );
 };

@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -170,6 +177,63 @@ describe("getNextCronRunAfter", () => {
 });
 
 describe("readSmartSchedulerState", () => {
+  it("upgrades version 1 state and preserves scheduler job provenance", async () => {
+    const workspaceRoot = await createWorkspace();
+    const statePath = join(workspaceRoot, "scheduler-state.json");
+    const scheduler = new DurableSmartScheduler({ statePath });
+
+    for (const [name, dedupeKey] of [
+      ["User job", "custom:user-job"],
+      ["Scheduled prompt", "prompt:.machdoch/prompts/daily.prompt.md"],
+      ["Ralph watch", "ralph-watch:incoming-files"],
+    ] as const) {
+      await scheduler.upsertJob({
+        name,
+        schedule: { type: "interval", intervalMs: 60_000 },
+        target: { workspaceRoot, prompt: "Run" },
+        dedupeKey,
+      });
+    }
+
+    const currentState = await scheduler.getState();
+    const previousJobs = currentState.jobs.map((job) => {
+      const previousJob: Partial<typeof job> = { ...job };
+      delete previousJob.provenance;
+      return previousJob;
+    });
+    await writeFile(
+      statePath,
+      JSON.stringify({
+        ...currentState,
+        schemaVersion: 1,
+        jobs: previousJobs,
+      }),
+      "utf8",
+    );
+
+    const upgradedState = await new DurableSmartScheduler({
+      statePath,
+    }).getState();
+
+    expect(upgradedState.jobs.map((job) => job.provenance)).toEqual([
+      { kind: "user" },
+      {
+        kind: "workspace-prompt",
+        definitionPath: ".machdoch/prompts/daily.prompt.md",
+      },
+      { kind: "ralph-watch", watchId: "incoming-files" },
+    ]);
+
+    const persistedState = JSON.parse(await readFile(statePath, "utf8")) as {
+      schemaVersion: unknown;
+      jobs: Array<{ provenance?: unknown }>;
+    };
+    expect(persistedState.schemaVersion).toBe(SMART_SCHEDULER_SCHEMA_VERSION);
+    expect(persistedState.jobs.map((job) => job.provenance)).toEqual(
+      upgradedState.jobs.map((job) => job.provenance),
+    );
+  });
+
   it("rejects job records without the current trigger and target contract", async () => {
     const workspaceRoot = await createWorkspace();
     const statePath = join(workspaceRoot, "scheduler-state.json");

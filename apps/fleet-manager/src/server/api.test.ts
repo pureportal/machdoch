@@ -1,17 +1,18 @@
 import { randomBytes } from "node:crypto";
 import { gatewayProtocolVersion } from "@machdoch/fleet-protocol";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AuthStore } from "./auth-store";
+import { AuthenticationRateLimiter } from "./authentication-rate-limiter";
 import { handleApiRequest } from "./api";
 import type { FleetManagerConfig } from "./config";
 import { createSecret } from "./crypto";
 import { FleetDatabase, nowSeconds } from "./database";
 import { FleetStore } from "./fleet-store";
 import { GatewayHub } from "./gateway";
-import { LoginThrottle } from "./login-throttle";
 import { setRuntimeForTests, type FleetRuntime } from "./runtime";
 import { SettingsCipher, verifySettingsCipher } from "./settings-crypto";
 import { SettingsStore } from "./settings-store";
+import { emptySettingsDocument } from "./settings";
 
 let runtime: FleetRuntime | null = null;
 
@@ -26,11 +27,15 @@ describe("Fleet Manager API", () => {
   it("covers login, enrollment, registry, settings, assignment, and delivery", async () => {
     runtime = testRuntime();
     setRuntimeForTests(runtime);
-    runtime.authStore.seedOwner("owner", "password", nowSeconds());
+    runtime.authStore.seedOwner(
+      "owner",
+      "a secure test password",
+      nowSeconds(),
+    );
 
     const login = await apiRequest("/api/auth/login", "POST", {
       username: "owner",
-      password: "password",
+      password: "a secure test password",
     });
     expect(login.status).toBe(200);
     const cookies = login.headers.getSetCookie();
@@ -77,6 +82,7 @@ describe("Fleet Manager API", () => {
           protocolVersion: gatewayProtocolVersion,
         }),
       }),
+      { clientAddress: "198.51.100.10" },
     );
     expect(enrollment.status).toBe(200);
     const enrollmentBody = (await enrollment.json()) as { instanceId: string };
@@ -118,6 +124,21 @@ describe("Fleet Manager API", () => {
     };
     expect(updated.profile.revision).toBe(2);
 
+    const staleUpdate = await apiRequest(
+      `/api/settings/profiles/${created.profile.profileId}`,
+      "PUT",
+      {
+        expectedRevision: created.profile.revision,
+        name: created.profile.name,
+        description: created.profile.description,
+        document: created.profile.document,
+        changeSummary: "Stale update",
+      },
+      cookieHeader,
+      csrf,
+    );
+    expect(staleUpdate.status).toBe(409);
+
     const secretResponse = await apiRequest(
       `/api/settings/profiles/${updated.profile.profileId}/secrets/openai`,
       "PUT",
@@ -147,14 +168,151 @@ describe("Fleet Manager API", () => {
         `https://fleet.example.test/api/client/settings/${enrollmentBody.instanceId}`,
         { headers: { Authorization: `Bearer ${instanceSecret}` } },
       ),
+      { clientAddress: "198.51.100.10" },
     );
     expect(delivery.status).toBe(200);
-    expect(await delivery.json()).toMatchObject({
-      assigned: true,
+    const etag = delivery.headers.get("etag");
+    expect(etag).toBeTruthy();
+    const deliveryBody = (await delivery.json()) as {
+      schemaVersion: number;
+      managerId: string;
+      profile: { profileId: string; revision: number; name: string };
+    };
+    expect(deliveryBody).toMatchObject({
+      schemaVersion: 2,
       profile: {
         name: "Engineering",
         secrets: { openai: "sk-test-secret" },
       },
+    });
+
+    const pendingAssignments = await apiRequest(
+      "/api/settings/assignments",
+      "GET",
+      undefined,
+      cookieHeader,
+    );
+    expect(await pendingAssignments.json()).toMatchObject({
+      assignments: [
+        expect.objectContaining({
+          lastAppliedRevision: null,
+          syncStatus: "pending",
+        }),
+      ],
+    });
+
+    const decrypt = vi.spyOn(runtime.settingsCipher!, "decrypt");
+    const unchanged = await handleApiRequest(
+      new Request(
+        `https://fleet.example.test/api/client/settings/${enrollmentBody.instanceId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${instanceSecret}`,
+            "If-None-Match": etag ?? "",
+          },
+        },
+      ),
+      { clientAddress: "198.51.100.10" },
+    );
+    expect(unchanged.status).toBe(304);
+    expect(decrypt).not.toHaveBeenCalled();
+    decrypt.mockRestore();
+
+    const failedSync = await handleApiRequest(
+      new Request(
+        `https://fleet.example.test/api/client/settings/${enrollmentBody.instanceId}/sync-status`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${instanceSecret}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            managerId: deliveryBody.managerId,
+            status: "failed",
+            profileId: deliveryBody.profile.profileId,
+            revision: deliveryBody.profile.revision,
+            error: "Managed prompt could not be written.",
+          }),
+        },
+      ),
+      { clientAddress: "198.51.100.10" },
+    );
+    expect(failedSync.status).toBe(204);
+
+    const failedAssignments = await apiRequest(
+      "/api/settings/assignments",
+      "GET",
+      undefined,
+      cookieHeader,
+    );
+    expect(await failedAssignments.json()).toMatchObject({
+      assignments: [
+        expect.objectContaining({
+          syncStatus: "failed",
+          lastSyncRevision: deliveryBody.profile.revision,
+          lastSyncAttemptAt: expect.any(Number),
+          syncError: "Managed prompt could not be written.",
+        }),
+      ],
+    });
+
+    const staleApplication = await handleApiRequest(
+      new Request(
+        `https://fleet.example.test/api/client/settings/${enrollmentBody.instanceId}/sync-status`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${instanceSecret}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            managerId: deliveryBody.managerId,
+            status: "applied",
+            profileId: deliveryBody.profile.profileId,
+            revision: deliveryBody.profile.revision - 1,
+          }),
+        },
+      ),
+      { clientAddress: "198.51.100.10" },
+    );
+    expect(staleApplication.status).toBe(409);
+
+    const applied = await handleApiRequest(
+      new Request(
+        `https://fleet.example.test/api/client/settings/${enrollmentBody.instanceId}/sync-status`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${instanceSecret}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            managerId: deliveryBody.managerId,
+            status: "applied",
+            profileId: deliveryBody.profile.profileId,
+            revision: deliveryBody.profile.revision,
+          }),
+        },
+      ),
+      { clientAddress: "198.51.100.10" },
+    );
+    expect(applied.status).toBe(204);
+
+    const assignmentsResponse = await apiRequest(
+      "/api/settings/assignments",
+      "GET",
+      undefined,
+      cookieHeader,
+    );
+    expect(await assignmentsResponse.json()).toMatchObject({
+      assignments: [
+        expect.objectContaining({
+          lastAppliedRevision: deliveryBody.profile.revision,
+          syncStatus: "applied",
+          syncError: null,
+        }),
+      ],
     });
 
     const instances = await apiRequest(
@@ -172,6 +330,131 @@ describe("Fleet Manager API", () => {
       ],
     });
   });
+
+  it("records client settings failures and clears them after application", async () => {
+    runtime = testRuntime();
+    setRuntimeForTests(runtime);
+    const now = nowSeconds();
+    const enrollmentKey = createSecret("mch_enroll");
+    const instanceSecret = createSecret("mch_instance");
+    runtime.fleetStore.createEnrollmentGrant(
+      enrollmentKey,
+      now,
+      runtime.config.enrollmentPolicy,
+    );
+    const instance = runtime.fleetStore.enrollInstance(
+      {
+        enrollmentKey,
+        instanceSecret,
+        displayName: "Sync client",
+        productVersion: "7.0.6",
+        protocolVersion: gatewayProtocolVersion,
+      },
+      now,
+    );
+    const profileId = runtime.settingsStore.createProfile(
+      "Engineering",
+      "",
+      emptySettingsDocument(),
+      now,
+      runtime.config.settingsManager.limits.maximumProfiles,
+    );
+    runtime.settingsStore.setAssignment(instance.instanceId, profileId, now);
+    const managerId = runtime.database.managerId();
+
+    const failed = await clientSettingsStatusRequest(
+      instance.instanceId,
+      instanceSecret,
+      {
+        managerId,
+        status: "failed",
+        profileId,
+        revision: 1,
+        error: "Managed prompt could not be written.",
+      },
+    );
+
+    expect(failed.status).toBe(204);
+    expect(runtime.settingsStore.listAssignments()[0]).toMatchObject({
+      syncStatus: "failed",
+      lastSyncRevision: 1,
+      syncError: "Managed prompt could not be written.",
+    });
+
+    const staleFailure = await clientSettingsStatusRequest(
+      instance.instanceId,
+      instanceSecret,
+      {
+        managerId,
+        status: "failed",
+        profileId,
+        revision: 2,
+        error: "This failure belongs to another revision.",
+      },
+    );
+    expect(staleFailure.status).toBe(409);
+
+    const unsafeFailure = await clientSettingsStatusRequest(
+      instance.instanceId,
+      instanceSecret,
+      {
+        managerId,
+        status: "failed",
+        profileId,
+        revision: 1,
+        error: "\u001b[31mspoofed",
+      },
+    );
+    expect(unsafeFailure.status).toBe(400);
+
+    const applied = await clientSettingsStatusRequest(
+      instance.instanceId,
+      instanceSecret,
+      {
+        managerId,
+        status: "applied",
+        profileId,
+        revision: 1,
+      },
+    );
+
+    expect(applied.status).toBe(204);
+    expect(runtime.settingsStore.listAssignments()[0]).toMatchObject({
+      syncStatus: "applied",
+      lastAppliedRevision: 1,
+      syncError: null,
+    });
+
+    const profile = runtime.settingsStore.getProfile(profileId);
+    runtime.settingsStore.updateProfile(
+      profileId,
+      profile.revision,
+      profile.name,
+      profile.description,
+      profile.document,
+      "Changed profile",
+      now + 1,
+      runtime.config.settingsManager.limits.maximumRevisionsPerProfile,
+    );
+
+    expect(runtime.settingsStore.listAssignments()[0]).toMatchObject({
+      profileRevision: 2,
+      lastAppliedRevision: 1,
+      syncStatus: "pending",
+      syncError: null,
+    });
+
+    runtime.fleetStore.revokeInstance(instance.instanceId, now + 2);
+    expect(
+      runtime.settingsStore.recordFailure(
+        instance.instanceId,
+        profileId,
+        2,
+        "Late report",
+        now + 2,
+      ),
+    ).toBe(false);
+  });
 });
 
 interface SettingsProfileResponse {
@@ -184,7 +467,7 @@ interface SettingsProfileResponse {
     agentLimits: Record<string, number | boolean | null>;
     instructions: Array<Record<string, unknown>>;
     contextPacks: Array<Record<string, unknown>>;
-    customValues: Record<string, unknown>;
+    prompts: Array<Record<string, unknown>>;
   };
   secrets: Array<{ secretId: string; lastFour: string }>;
 }
@@ -206,6 +489,28 @@ async function apiRequest(
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     }),
+    { clientAddress: "198.51.100.10" },
+  );
+}
+
+async function clientSettingsStatusRequest(
+  instanceId: string,
+  instanceSecret: string,
+  body: unknown,
+): Promise<Response> {
+  return handleApiRequest(
+    new Request(
+      `https://fleet.example.test/api/client/settings/${instanceId}/sync-status`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${instanceSecret}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      },
+    ),
+    { clientAddress: "198.51.100.10" },
   );
 }
 
@@ -229,6 +534,7 @@ function testRuntime(): FleetRuntime {
         maximumProfiles: 64,
         maximumInstructionsPerProfile: 128,
         maximumPacksPerProfile: 128,
+        maximumPromptsPerProfile: 128,
         maximumRevisionsPerProfile: 100,
         maximumDocumentBytes: 1024 * 1024,
         maximumSecretBytes: 8192,
@@ -248,6 +554,6 @@ function testRuntime(): FleetRuntime {
     settingsStore: new SettingsStore(database),
     settingsCipher,
     gateways: new GatewayHub(config, fleetStore),
-    loginThrottle: new LoginThrottle(),
+    authenticationRateLimiter: new AuthenticationRateLimiter(),
   };
 }

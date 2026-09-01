@@ -577,6 +577,15 @@ describe("cli args public parser", () => {
 
   it("parses the internal user-scoped MCP proxy launch without leaking scope to other actions", () => {
     expect(
+      parseCliArgs(["mcp", "presence", "--cwd", "C:/workspace"], {
+        currentWorkingDirectory: "C:/other",
+      }),
+    ).toMatchObject({
+      command: "mcp",
+      workspaceRoot: "C:/workspace",
+      mcp: { action: "presence" },
+    });
+    expect(
       parseCliArgs(["mcp", "proxy", "linear", "--scope", "user"], {
         currentWorkingDirectory: "C:/workspace",
       }),

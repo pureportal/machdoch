@@ -80,6 +80,11 @@ interface MaterializeCliEnrollmentParams {
   deliveryPlan: InstructionDeliveryPlan;
   runtimeSystemInstructions: string;
   machdochCliLaunch: MachdochCliLaunch;
+  workspacePresence?: {
+    address: string;
+    token: string;
+    agentId: string;
+  };
 }
 
 interface RenderedEnrollmentFiles {
@@ -908,6 +913,9 @@ export const materializeCliEnrollment = async (
       probeProviderCli(params.provider, params.executable, { force: true }),
       projectMcpForProvider(params.provider, params.workspaceRoot, {
         machdochCliLaunch: params.machdochCliLaunch,
+        ...(params.workspacePresence
+          ? { workspacePresence: params.workspacePresence }
+          : {}),
       }),
     ]);
     const probedCapability = createCliInstructionCapabilityFromProbe(

@@ -98,7 +98,8 @@ export type McpCliAction =
   | "lifecycle-hook"
   | "cleanup"
   | "proxy"
-  | "broker";
+  | "broker"
+  | "presence";
 
 export type ProviderSyncCliAction =
   | "plan"

@@ -285,7 +285,11 @@ pub(super) fn execute_desktop_task(
         cli_command
             .command
             .env("MACHDOCH_RUN_CONTROL_ADDRESS", credentials.address)
-            .env("MACHDOCH_RUN_CONTROL_TOKEN", credentials.token);
+            .env("MACHDOCH_RUN_CONTROL_TOKEN", credentials.token)
+            .env(
+                "MACHDOCH_WORKSPACE_PRESENCE_TOKEN",
+                credentials.presence_token,
+            );
     }
 
     let mut child = SupervisedChild::spawn_with_required_isolation(&mut cli_command.command)

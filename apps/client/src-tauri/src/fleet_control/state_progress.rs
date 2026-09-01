@@ -1,0 +1,223 @@
+use std::collections::VecDeque;
+
+use serde_json::Value;
+
+use super::{
+    commands::truncate_chars, push_bounded, string_field, FleetControlInner, FleetControlShared,
+    FleetLogEntry, FleetTaskSession, FleetTimelineEntry, MAX_COMMAND_TEXT_CHARS, MAX_LOG_ENTRIES,
+    MAX_PROGRESS_LOG_BYTES, MAX_SESSIONS, MAX_TIMELINE_ENTRIES,
+};
+
+pub(super) fn record_progress_update(
+    shared: &FleetControlShared,
+    task_id: &str,
+    progress: &Value,
+    timestamp: u64,
+) {
+    let normalized_task_id = task_id.trim();
+
+    if normalized_task_id.is_empty() {
+        return;
+    }
+
+    let Ok(mut inner) = shared.inner.lock() else {
+        return;
+    };
+
+    let (added_log_bytes, removed_log_bytes) = {
+        let session = progress_session(&mut inner, normalized_task_id, timestamp);
+        apply_progress_fields(session, progress, timestamp);
+        let log_delta = record_action_output(session, progress, timestamp);
+        record_timeline_event(session, progress, timestamp);
+        log_delta
+    };
+    inner.progress_log_bytes = inner
+        .progress_log_bytes
+        .saturating_sub(removed_log_bytes)
+        .saturating_add(added_log_bytes);
+    trim_progress_logs_to_byte_budget(&mut inner);
+    notify_state_changed(&mut inner);
+}
+
+fn progress_session<'a>(
+    inner: &'a mut FleetControlInner,
+    task_id: &str,
+    timestamp: u64,
+) -> &'a mut FleetTaskSession {
+    remove_stale_session_if_needed(inner, task_id);
+
+    inner
+        .sessions
+        .entry(task_id.to_string())
+        .or_insert_with(|| FleetTaskSession {
+            task_id: task_id.to_string(),
+            task: task_id.to_string(),
+            mode: "machdoch".to_string(),
+            state: "starting".to_string(),
+            message: "Task started.".to_string(),
+            cancellable: true,
+            started_at: timestamp,
+            updated_at: timestamp,
+            progress_count: 0,
+            logs: VecDeque::new(),
+            timeline: VecDeque::new(),
+        })
+}
+
+fn remove_stale_session_if_needed(inner: &mut FleetControlInner, task_id: &str) {
+    if inner.sessions.len() < MAX_SESSIONS || inner.sessions.contains_key(task_id) {
+        return;
+    }
+
+    if let Some(stale_task_id) = inner
+        .sessions
+        .values()
+        .min_by_key(|session| session.updated_at)
+        .map(|session| session.task_id.clone())
+    {
+        if let Some(session) = inner.sessions.remove(&stale_task_id) {
+            let removed_bytes = session
+                .logs
+                .iter()
+                .map(|entry| entry.chunk.len())
+                .sum::<usize>();
+            inner.progress_log_bytes = inner.progress_log_bytes.saturating_sub(removed_bytes);
+        }
+    }
+}
+
+fn apply_progress_fields(session: &mut FleetTaskSession, progress: &Value, timestamp: u64) {
+    session.progress_count = session.progress_count.saturating_add(1);
+    session.updated_at = timestamp;
+
+    if let Some(task) = string_field(progress, "task").filter(|value| !value.is_empty()) {
+        session.task = task;
+    }
+
+    if let Some(mode) = string_field(progress, "mode").filter(|value| !value.is_empty()) {
+        session.mode = mode;
+    }
+
+    if let Some(state) = string_field(progress, "state").filter(|value| !value.is_empty()) {
+        session.state = state;
+    }
+
+    if let Some(message) = string_field(progress, "message") {
+        session.message = message;
+    }
+
+    if let Some(cancellable) = progress.get("cancellable").and_then(Value::as_bool) {
+        session.cancellable = cancellable;
+    }
+}
+
+fn record_action_output(
+    session: &mut FleetTaskSession,
+    progress: &Value,
+    timestamp: u64,
+) -> (usize, usize) {
+    let Some(action_output) = progress.get("actionOutput").and_then(Value::as_object) else {
+        return (0, 0);
+    };
+    let Some(chunk) = action_output.get("chunk").and_then(Value::as_str) else {
+        return (0, 0);
+    };
+
+    if chunk.is_empty() {
+        return (0, 0);
+    }
+
+    let chunk = truncate_chars(chunk, MAX_COMMAND_TEXT_CHARS);
+    let removed_bytes = if session.logs.len() >= MAX_LOG_ENTRIES {
+        session
+            .logs
+            .pop_front()
+            .map_or(0, |entry| entry.chunk.len())
+    } else {
+        0
+    };
+    let added_bytes = chunk.len();
+    session.logs.push_back(FleetLogEntry {
+        created_at: timestamp,
+        stream: action_output
+            .get("stream")
+            .and_then(Value::as_str)
+            .unwrap_or("stdout")
+            .to_string(),
+        tool_name: action_output
+            .get("toolName")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        chunk,
+    });
+
+    (added_bytes, removed_bytes)
+}
+
+fn trim_progress_logs_to_byte_budget(inner: &mut FleetControlInner) {
+    while inner.progress_log_bytes > MAX_PROGRESS_LOG_BYTES {
+        let oldest_task_id = inner
+            .sessions
+            .values()
+            .filter_map(|session| {
+                session
+                    .logs
+                    .front()
+                    .map(|entry| (entry.created_at, session.task_id.clone()))
+            })
+            .min_by_key(|(created_at, _)| *created_at)
+            .map(|(_, task_id)| task_id);
+        let Some(oldest_task_id) = oldest_task_id else {
+            inner.progress_log_bytes = 0;
+            break;
+        };
+        let Some(session) = inner.sessions.get_mut(&oldest_task_id) else {
+            continue;
+        };
+        let Some(entry) = session.logs.pop_front() else {
+            continue;
+        };
+
+        inner.progress_log_bytes = inner.progress_log_bytes.saturating_sub(entry.chunk.len());
+    }
+}
+
+fn record_timeline_event(session: &mut FleetTaskSession, progress: &Value, timestamp: u64) {
+    let Some(timeline_event) = progress.get("timelineEvent").and_then(Value::as_object) else {
+        return;
+    };
+    let (Some(kind), Some(phase), Some(label)) = (
+        timeline_event.get("kind").and_then(Value::as_str),
+        timeline_event.get("phase").and_then(Value::as_str),
+        timeline_event.get("label").and_then(Value::as_str),
+    ) else {
+        return;
+    };
+
+    push_bounded(
+        &mut session.timeline,
+        FleetTimelineEntry {
+            created_at: timestamp,
+            kind: kind.to_string(),
+            phase: phase.to_string(),
+            label: label.to_string(),
+            detail: timeline_event
+                .get("detail")
+                .and_then(Value::as_str)
+                .map(|value| truncate_chars(value, 1_000)),
+            tone: timeline_event
+                .get("tone")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            tool_name: timeline_event
+                .get("toolName")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        },
+        MAX_TIMELINE_ENTRIES,
+    );
+}
+
+fn notify_state_changed(inner: &mut FleetControlInner) {
+    inner.event_id = inner.event_id.saturating_add(1);
+}

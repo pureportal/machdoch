@@ -36,10 +36,16 @@ export function AssignmentsEditor({
                 </Badge>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                {assignment.lastFetchedAt
-                  ? `Fetched revision ${assignment.lastFetchedRevision} · ${formatTime(assignment.lastFetchedAt)}`
-                  : "Not fetched"}
+                {syncSummary(assignment)}
               </p>
+              {assignment.syncError ? (
+                <p
+                  role="alert"
+                  className="mt-1 break-words text-xs text-destructive"
+                >
+                  {assignment.syncError}
+                </p>
+              ) : null}
             </div>
             <Select
               value={assignment.profileId ?? ""}
@@ -77,4 +83,18 @@ export function AssignmentsEditor({
       )}
     </div>
   );
+}
+
+function syncSummary(assignment: SettingsAssignment): string {
+  if (assignment.syncStatus === "unassigned") return "Not assigned";
+  if (assignment.syncStatus === "failed") {
+    return `Sync failed · ${formatTime(assignment.lastSyncAttemptAt)}`;
+  }
+  if (assignment.syncStatus === "applied") {
+    return `Revision ${assignment.profileRevision} applied · ${formatTime(assignment.lastAppliedAt)}`;
+  }
+  if (assignment.lastAppliedRevision !== null) {
+    return `Revision ${assignment.profileRevision} pending · Last applied ${assignment.lastAppliedRevision}`;
+  }
+  return `Revision ${assignment.profileRevision} pending`;
 }

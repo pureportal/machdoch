@@ -2,10 +2,11 @@ import type { RalphFlowVariable } from "../../../../core/ralph.js";
 import {
   createDefaultRalphVariableValues,
   getRalphVariableValue,
+  maximumRalphParameterValueLength,
   normalizeRalphBooleanVariableValue,
   validateRalphFlowVariableValue,
   validateRalphFlowVariableValues,
-} from "./validate-ralph-flow-variable-values.helper";
+} from "@machdoch/product-ui";
 
 const createVariable = (
   overrides: Partial<RalphFlowVariable> = {},
@@ -34,6 +35,15 @@ describe("createDefaultRalphVariableValues", () => {
     expect(getRalphVariableValue(text, {})).toBe("draft");
     expect(getRalphVariableValue(number, {})).toBe("");
   });
+
+  it("does not read inherited object properties as variable values", () => {
+    const variable = createVariable({ name: "toString", default: "draft" });
+    const values = createDefaultRalphVariableValues([variable]);
+
+    expect(Object.hasOwn(values, variable.name)).toBe(true);
+    expect(getRalphVariableValue(variable, {})).toBe("draft");
+    expect(getRalphVariableValue(variable, values)).toBe("draft");
+  });
 });
 
 describe("normalizeRalphBooleanVariableValue", () => {
@@ -60,13 +70,22 @@ describe("validateRalphFlowVariableValue", () => {
       validateRalphFlowVariableValue(createVariable({ type: "number" }), "3.5"),
     ).toBeNull();
     expect(
-      validateRalphFlowVariableValue(createVariable({ type: "boolean" }), "yes"),
+      validateRalphFlowVariableValue(
+        createVariable({ type: "boolean" }),
+        "yes",
+      ),
     ).toBe("Choose true or false.");
     expect(
-      validateRalphFlowVariableValue(createVariable({ type: "boolean" }), "false"),
+      validateRalphFlowVariableValue(
+        createVariable({ type: "boolean" }),
+        "false",
+      ),
     ).toBeNull();
     expect(
-      validateRalphFlowVariableValue(createVariable({ type: "url" }), "localhost"),
+      validateRalphFlowVariableValue(
+        createVariable({ type: "url" }),
+        "localhost",
+      ),
     ).toBe("Enter a valid URL.");
     expect(
       validateRalphFlowVariableValue(
@@ -74,6 +93,13 @@ describe("validateRalphFlowVariableValue", () => {
         "https://example.com",
       ),
     ).toBeNull();
+    expect(
+      validateRalphFlowVariableValue(
+        createVariable(),
+        "x".repeat(maximumRalphParameterValueLength + 1),
+        { maximumValueLength: maximumRalphParameterValueLength },
+      ),
+    ).toBe("Enter 8,000 characters or fewer.");
   });
 });
 
@@ -93,5 +119,15 @@ describe("validateRalphFlowVariableValues", () => {
       count: "Enter a valid number.",
       enabled: "Choose true or false.",
     });
+  });
+
+  it("supports variable names inherited by ordinary objects", () => {
+    const errors = validateRalphFlowVariableValues(
+      [createVariable({ name: "toString", required: true })],
+      {},
+    );
+
+    expect(Object.hasOwn(errors, "toString")).toBe(true);
+    expect(errors["toString"]).toBe("This variable is required.");
   });
 });

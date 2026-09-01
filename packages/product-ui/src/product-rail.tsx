@@ -5,15 +5,17 @@ import {
   PanelRight,
   Settings2,
   TerminalSquare,
+  Workflow,
 } from "lucide-react";
 
-export type ProductView = "chat" | "media" | "scheduler";
+export type ProductView = "chat" | "media" | "scheduler" | "ralph";
 
 export function ProductRail({
   inspectorOpen,
   activeView,
   mediaAvailable,
   schedulerAvailable,
+  ralphAvailable,
   onSelectView,
   onToggleInspector,
 }: {
@@ -21,6 +23,7 @@ export function ProductRail({
   activeView: ProductView;
   mediaAvailable: boolean;
   schedulerAvailable: boolean;
+  ralphAvailable: boolean;
   onSelectView: (view: ProductView) => void;
   onToggleInspector: () => void;
 }): React.ReactElement {
@@ -63,6 +66,18 @@ export function ProductRail({
             onClick={() => onSelectView("scheduler")}
           >
             <CalendarClock aria-hidden="true" />
+          </button>
+        ) : null}
+        {ralphAvailable ? (
+          <button
+            type="button"
+            className="m-product-rail-button"
+            data-active={activeView === "ralph"}
+            aria-label="RALPH"
+            aria-current={activeView === "ralph" ? "page" : undefined}
+            onClick={() => onSelectView("ralph")}
+          >
+            <Workflow aria-hidden="true" />
           </button>
         ) : null}
       </div>

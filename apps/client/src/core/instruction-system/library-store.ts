@@ -1466,6 +1466,7 @@ export const mutateInstructionLibrary = async (
 
 export const createInstructionProfile = async (
   input: {
+    id?: string;
     name: string;
     description?: string;
     body: string;
@@ -1478,7 +1479,13 @@ export const createInstructionProfile = async (
 ): Promise<
   InstructionStoreMutationResult & { profile: InstructionProfile }
 > => {
-  const id = randomUUID();
+  const id = input.id ?? randomUUID();
+  if (!isUuid(id)) {
+    throw new InstructionSystemError(
+      "INSTRUCTION_PROFILE_INVALID",
+      "Instruction profile id must be a UUID.",
+    );
+  }
   const at = new Date().toISOString();
   const description =
     input.description === undefined

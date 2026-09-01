@@ -387,6 +387,7 @@ describe("createRalphRunSummaryFromRecord", () => {
       flowId: "flow-1",
       flowName: "Flow",
       status: "completed",
+      recoverable: false,
       summary: "Run completed.",
       simpleLogPath: "/runs/run-1/simple.md",
       traceLogPath: "/runs/run-1/trace.jsonl",
@@ -404,4 +405,34 @@ describe("createRalphRunSummaryFromRecord", () => {
     expect(summary).not.toHaveProperty("simpleLogPath");
     expect(summary).not.toHaveProperty("traceLogPath");
   });
+
+  it.each(["blocked", "crashed"] as const)(
+    "marks a %s run recoverable only when it has a checkpoint",
+    (status) => {
+      const withoutCheckpoint = createRalphRunSummaryFromRecord(
+        createRecord({ status }),
+        "/runs/run-1/run.json",
+      );
+      const withCheckpoint = createRalphRunSummaryFromRecord(
+        createRecord({
+          status,
+          checkpoint: {
+            currentBlockId: "fix",
+            transitions: 1,
+            variables: {},
+            resultsByBlock: {},
+            runLog: [],
+            blockResults: [],
+            events: [],
+            errorCounts: {},
+            repeatedFailures: {},
+          },
+        }),
+        "/runs/run-1/run.json",
+      );
+
+      expect(withoutCheckpoint.recoverable).toBe(false);
+      expect(withCheckpoint.recoverable).toBe(true);
+    },
+  );
 });

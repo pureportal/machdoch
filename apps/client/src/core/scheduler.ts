@@ -81,6 +81,7 @@ export type {
 
 export const SMART_SCHEDULER_SCHEMA = "machdoch.smartScheduler" as const;
 export const SMART_SCHEDULER_SCHEMA_VERSION = 2 as const;
+const PREVIOUS_SMART_SCHEDULER_SCHEMA_VERSION = 1 as const;
 export const SMART_SCHEDULER_FILE_NAME = "scheduler.json";
 export const SMART_SCHEDULER_WORKSPACE_REGISTRY_FILE_NAME =
   "scheduler-workspaces.json";
@@ -993,14 +994,25 @@ const getEarliestTriggerRunAt = (
     .sort((left, right) => left - right)[0];
 };
 
-const isCurrentScheduledJobRecord = (value: unknown): value is ScheduledJob => {
+type PreviousScheduledJob = Omit<ScheduledJob, "provenance">;
+
+const isScheduledJobRecord = (
+  value: unknown,
+): value is PreviousScheduledJob & Record<string, unknown> => {
   if (
     !isRecordValue(value) ||
     !Array.isArray(value.triggers) ||
     value.triggers.length === 0 ||
-    !isRecordValue(value.target) ||
-    !isRecordValue(value.provenance)
+    !isRecordValue(value.target)
   ) {
+    return false;
+  }
+
+  return value.target.type === "prompt" || value.target.type === "ralph-flow";
+};
+
+const isCurrentScheduledJobRecord = (value: unknown): value is ScheduledJob => {
+  if (!isScheduledJobRecord(value) || !isRecordValue(value.provenance)) {
     return false;
   }
 
@@ -1016,46 +1028,131 @@ const isCurrentScheduledJobRecord = (value: unknown): value is ScheduledJob => {
       typeof provenance.watchId === "string" &&
       provenance.watchId.length > 0);
 
+  return validProvenance;
+};
+
+const isPreviousScheduledJobRecord = (
+  value: unknown,
+): value is PreviousScheduledJob => {
   return (
-    validProvenance &&
-    (value.target.type === "prompt" || value.target.type === "ralph-flow")
+    isScheduledJobRecord(value) &&
+    !Object.prototype.hasOwnProperty.call(value, "provenance")
   );
+};
+
+const inferPreviousScheduledJobProvenance = (
+  job: PreviousScheduledJob,
+): ScheduledJobProvenance => {
+  if (job.dedupeKey?.startsWith("ralph-watch:")) {
+    const watchId = job.dedupeKey.slice("ralph-watch:".length);
+    if (watchId.length > 0) {
+      return { kind: "ralph-watch", watchId };
+    }
+  }
+
+  if (job.dedupeKey?.startsWith("prompt:")) {
+    const definitionPath = job.dedupeKey.slice("prompt:".length);
+    if (definitionPath.length > 0) {
+      return { kind: "workspace-prompt", definitionPath };
+    }
+  }
+
+  return { kind: "user" };
+};
+
+interface SmartSchedulerStateReadResult {
+  state: SmartSchedulerState;
+  requiresPersistence: boolean;
+}
+
+const readSmartSchedulerStateResult = async (
+  statePath: string,
+): Promise<SmartSchedulerStateReadResult> => {
+  if (!existsSync(statePath)) {
+    return {
+      state: createEmptySchedulerState(Date.now()),
+      requiresPersistence: false,
+    };
+  }
+
+  const raw = await readFile(statePath, "utf8");
+  const parsedValue: unknown = JSON.parse(raw);
+
+  if (
+    !isRecordValue(parsedValue) ||
+    parsedValue.schema !== SMART_SCHEDULER_SCHEMA ||
+    (parsedValue.schemaVersion !== SMART_SCHEDULER_SCHEMA_VERSION &&
+      parsedValue.schemaVersion !== PREVIOUS_SMART_SCHEDULER_SCHEMA_VERSION) ||
+    !Array.isArray(parsedValue.jobs) ||
+    !Array.isArray(parsedValue.runs) ||
+    !Array.isArray(parsedValue.events) ||
+    !Array.isArray(parsedValue.mutationReceipts)
+  ) {
+    throw new Error(`Unsupported smart scheduler state file: ${statePath}`);
+  }
+
+  const parsed = parsedValue as {
+    schemaVersion:
+      | typeof SMART_SCHEDULER_SCHEMA_VERSION
+      | typeof PREVIOUS_SMART_SCHEDULER_SCHEMA_VERSION;
+    createdAt?: unknown;
+    updatedAt?: unknown;
+    jobs: unknown[];
+    runs: ScheduledJobRun[];
+    events: ScheduledTriggerEvent[];
+    mutationReceipts: unknown[];
+  };
+  const createdAt =
+    typeof parsed.createdAt === "number" ? parsed.createdAt : Date.now();
+  const updatedAt =
+    typeof parsed.updatedAt === "number" ? parsed.updatedAt : Date.now();
+
+  if (parsed.schemaVersion === PREVIOUS_SMART_SCHEDULER_SCHEMA_VERSION) {
+    if (!parsed.jobs.every(isPreviousScheduledJobRecord)) {
+      throw new Error(`Unsupported smart scheduler state file: ${statePath}`);
+    }
+
+    return {
+      state: {
+        schema: SMART_SCHEDULER_SCHEMA,
+        schemaVersion: SMART_SCHEDULER_SCHEMA_VERSION,
+        createdAt,
+        updatedAt,
+        jobs: parsed.jobs.map((job) => ({
+          ...job,
+          provenance: inferPreviousScheduledJobProvenance(job),
+        })),
+        runs: parsed.runs,
+        events: parsed.events,
+        mutationReceipts: normalizeMutationReceipts(parsed.mutationReceipts),
+      },
+      requiresPersistence: true,
+    };
+  }
+
+  if (!parsed.jobs.every(isCurrentScheduledJobRecord)) {
+    throw new Error(`Unsupported smart scheduler state file: ${statePath}`);
+  }
+
+  return {
+    state: {
+      schema: SMART_SCHEDULER_SCHEMA,
+      schemaVersion: SMART_SCHEDULER_SCHEMA_VERSION,
+      createdAt,
+      updatedAt,
+      jobs: parsed.jobs,
+      runs: parsed.runs,
+      events: parsed.events,
+      mutationReceipts: normalizeMutationReceipts(parsed.mutationReceipts),
+    },
+    requiresPersistence: false,
+  };
 };
 
 export const readSmartSchedulerState = async (
   statePath: string,
 ): Promise<SmartSchedulerState> => {
-  if (!existsSync(statePath)) {
-    return createEmptySchedulerState(Date.now());
-  }
-
-  const raw = await readFile(statePath, "utf8");
-  const parsed = JSON.parse(raw) as Partial<SmartSchedulerState>;
-
-  if (
-    parsed.schema !== SMART_SCHEDULER_SCHEMA ||
-    parsed.schemaVersion !== SMART_SCHEDULER_SCHEMA_VERSION ||
-    !Array.isArray(parsed.jobs) ||
-    !Array.isArray(parsed.runs) ||
-    !Array.isArray(parsed.events) ||
-    !Array.isArray(parsed.mutationReceipts) ||
-    !parsed.jobs.every(isCurrentScheduledJobRecord)
-  ) {
-    throw new Error(`Unsupported smart scheduler state file: ${statePath}`);
-  }
-
-  return {
-    schema: SMART_SCHEDULER_SCHEMA,
-    schemaVersion: SMART_SCHEDULER_SCHEMA_VERSION,
-    createdAt:
-      typeof parsed.createdAt === "number" ? parsed.createdAt : Date.now(),
-    updatedAt:
-      typeof parsed.updatedAt === "number" ? parsed.updatedAt : Date.now(),
-    jobs: parsed.jobs,
-    runs: parsed.runs,
-    events: parsed.events,
-    mutationReceipts: normalizeMutationReceipts(parsed.mutationReceipts),
-  };
+  return (await readSmartSchedulerStateResult(statePath)).state;
 };
 
 const replaceSmartSchedulerStateFile = async (
@@ -1127,6 +1224,18 @@ const writeSmartSchedulerStateUnlocked = async (
     await rm(tempPath, { force: true });
     throw error;
   }
+};
+
+const readAndUpgradeSmartSchedulerStateUnlocked = async (
+  statePath: string,
+): Promise<SmartSchedulerState> => {
+  const result = await readSmartSchedulerStateResult(statePath);
+
+  if (result.requiresPersistence) {
+    await writeSmartSchedulerStateUnlocked(statePath, result.state);
+  }
+
+  return result.state;
 };
 
 export const writeSmartSchedulerState = async (
@@ -3175,7 +3284,7 @@ export class DurableSmartScheduler {
   async getState(): Promise<SmartSchedulerState> {
     await this.ensureWorkspaceRegistered();
     return withSchedulerStateLock(this.statePath, () =>
-      readSmartSchedulerState(this.statePath),
+      readAndUpgradeSmartSchedulerStateUnlocked(this.statePath),
     );
   }
 

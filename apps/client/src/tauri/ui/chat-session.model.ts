@@ -1,4 +1,4 @@
-import { normalizeConversationMemoryEntries } from "../../core/memory.js";
+﻿import { normalizeConversationMemoryEntries } from "../../core/memory.js";
 import {
   MODEL_PROVIDERS,
   REASONING_MODES,
@@ -117,6 +117,7 @@ export interface ChatSessionMessageLifecycle {
   ownerWindowId: string;
   ownerInstanceId: string;
   placement?: "edit-composer" | "message" | "queued-message";
+  targetMessageId?: string;
 }
 
 export type ChatSessionTaskOutcomeStatus =
@@ -198,6 +199,40 @@ export const isPromptEnhancementPlaceholderMessage = (
     : lifecycle.slot === "thinking" &&
         message.role === "agent" &&
         message.source?.kind === "thinking";
+};
+
+export const getActivePromptEnhancementEditMessageId = (
+  session: ChatSessionRecord,
+): string | null => {
+  let targetMessageId: string | undefined;
+
+  for (let index = session.messages.length - 1; index >= 0; index -= 1) {
+    const message = session.messages[index];
+    const lifecycle = message.lifecycle;
+
+    if (
+      isTransientChatOperationMessage(message) &&
+      lifecycle?.owner === "prompt-enhancement" &&
+      lifecycle.slot === "marker" &&
+      lifecycle.placement === "edit-composer"
+    ) {
+      targetMessageId = lifecycle.targetMessageId;
+      break;
+    }
+  }
+
+  if (!targetMessageId) {
+    return null;
+  }
+
+  return session.messages.some(
+    (message) =>
+      message.id === targetMessageId &&
+      message.role === "user" &&
+      !isTransientChatOperationMessage(message),
+  )
+    ? targetMessageId
+    : null;
 };
 
 export interface ChatSessionRecord {
@@ -323,7 +358,7 @@ export interface ShellPersistedState {
   sessionTombstones?: Record<string, number>;
   queuedSessionMessages: ChatSessionQueuedMessage[];
   queuedMessageTombstones: Record<string, number>;
-  handledRemoteCommandIds: string[];
+  handledFleetCommandIds: string[];
   contextPacks: SmartContextPack[];
   recentWorkspaces: string[];
   voice: ShellVoiceSettings;
@@ -1319,7 +1354,7 @@ export const getSessionTitle = (session: ChatSessionRecord): string => {
     return normalized;
   }
 
-  return `${normalized.slice(0, 45)}…`;
+  return `${normalized.slice(0, 45)}â€¦`;
 };
 
 export const createInitialShellState = (): ShellPersistedState => {
@@ -1333,7 +1368,7 @@ export const createInitialShellState = (): ShellPersistedState => {
     sessionTombstones: {},
     queuedSessionMessages: [],
     queuedMessageTombstones: {},
-    handledRemoteCommandIds: [],
+    handledFleetCommandIds: [],
     contextPacks: [],
     recentWorkspaces: [],
     voice: createDefaultShellVoiceSettings(),
@@ -2256,10 +2291,18 @@ const normalizeMessageLifecycle = (
     "message",
     "queued-message",
   ] as const;
+  const isPromptEnhancementEdit =
+    isRecord(value) &&
+    value.owner === "prompt-enhancement" &&
+    value.placement === "edit-composer";
   if (
     !isRecord(value) ||
     Object.keys(value).length !==
-      (value.owner === "prompt-enhancement" ? 8 : 7) ||
+      (value.owner === "prompt-enhancement"
+        ? isPromptEnhancementEdit
+          ? 9
+          : 8
+        : 7) ||
     value.kind !== "transient" ||
     (value.owner !== "prompt-enhancement" &&
       value.owner !== "task-interview") ||
@@ -2276,6 +2319,10 @@ const normalizeMessageLifecycle = (
       !promptEnhancementPlacements.includes(
         value.placement as (typeof promptEnhancementPlacements)[number],
       )) ||
+    (isPromptEnhancementEdit
+      ? typeof value.targetMessageId !== "string" ||
+        value.targetMessageId.trim().length === 0
+      : value.targetMessageId !== undefined) ||
     (value.owner === "task-interview" && value.placement !== undefined) ||
     (value.slot !== "user" &&
       value.slot !== "thinking" &&
@@ -2306,6 +2353,9 @@ const normalizeMessageLifecycle = (
           placement: value.placement as NonNullable<
             ChatSessionMessageLifecycle["placement"]
           >,
+          ...(isPromptEnhancementEdit
+            ? { targetMessageId: (value.targetMessageId as string).trim() }
+            : {}),
         }
       : {}),
   };
@@ -2956,12 +3006,10 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
   const recentWorkspaces = Array.isArray(candidate.recentWorkspaces)
     ? normalizedRecentWorkspaces
     : deriveRecentWorkspacesFromSessions(normalizedSessions);
-  const handledRemoteCommandIds = Array.isArray(
-    candidate.handledRemoteCommandIds,
-  )
+  const handledFleetCommandIds = Array.isArray(candidate.handledFleetCommandIds)
     ? [
         ...new Set(
-          candidate.handledRemoteCommandIds
+          candidate.handledFleetCommandIds
             .filter(
               (commandId): commandId is string =>
                 typeof commandId === "string" && commandId.trim().length > 0,
@@ -3003,7 +3051,7 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
       candidate.queuedSessionMessages,
       normalizedSessions,
     ).filter((message) => !(message.id in queuedMessageTombstones)),
-    handledRemoteCommandIds,
+    handledFleetCommandIds,
     queuedMessageTombstones,
     contextPacks: normalizeSmartContextPacks(candidate.contextPacks),
     recentWorkspaces,

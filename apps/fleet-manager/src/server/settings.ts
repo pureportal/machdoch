@@ -3,17 +3,11 @@ import type { FleetManagerConfig } from "./config";
 
 export class SettingsValidationError extends Error {}
 
-export const toolingAgents = [
-  "codex-cli",
-  "claude-cli",
-  "copilot-cli",
-] as const;
 export const modelProviders = [
   "openai",
   "anthropic",
   "google",
   "langdock",
-  "quiver",
   "codex-cli",
   "claude-cli",
   "copilot-cli",
@@ -58,7 +52,6 @@ const optionalEnum = <T extends readonly [string, ...string[]]>(values: T) =>
 
 const defaultsSchema = z
   .strictObject({
-    preferredToolingAgent: optionalEnum(toolingAgents),
     provider: optionalEnum(modelProviders),
     model: optionalText,
     mode: optionalEnum(modes),
@@ -68,8 +61,10 @@ const defaultsSchema = z
     density: optionalEnum(densities),
     accent: optionalEnum(accents),
   })
+  .refine((defaults) => defaults.model === null || defaults.provider !== null, {
+    message: "A default model requires a provider.",
+  })
   .default({
-    preferredToolingAgent: null,
     provider: null,
     model: null,
     mode: null,
@@ -134,15 +129,47 @@ const contextPackSchema = z
     mode: optionalEnum(modes),
     reasoning: optionalEnum(reasoningLevels),
     variables: z
-      .array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,79}$/))
+      .array(
+        z.strictObject({
+          name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,79}$/),
+          defaultValue: z.string().max(8_000).refine(noNullByte).nullable(),
+        }),
+      )
       .max(64)
       .default([]),
     triggerPhrases: z.array(validListValue(500)).max(64).default([]),
     pathPatterns: z.array(validListValue(500)).max(64).default([]),
+    promptEnhancementMode: optionalEnum([
+      "off",
+      "simple",
+      "web-search",
+    ] as const),
+    interviewEnabled: z.boolean().nullable().default(null),
+    sessionMemoryEnabled: z.boolean().nullable().default(null),
+    useGlobalMemory: z.boolean().nullable().default(null),
+    uiControlEnabled: z.boolean().nullable().default(null),
+  })
+  .refine((pack) => (pack.provider === null) === (pack.model === null), {
+    message: "Context pack provider and model must be set together.",
   })
   .refine((pack) => Boolean(pack.instructions || pack.prompt), {
     message: "A context pack requires instructions or a prompt.",
   });
+
+const promptSchema = z.strictObject({
+  id: z.string().uuid(),
+  relativePath: z
+    .string()
+    .trim()
+    .min(1)
+    .max(1_000)
+    .refine(isPromptRelativePath, "Prompt path is invalid."),
+  content: z
+    .string()
+    .min(1)
+    .max(128 * 1024)
+    .refine(noNullByte),
+});
 
 const documentSchema = z
   .strictObject({
@@ -150,19 +177,20 @@ const documentSchema = z
     agentLimits: agentLimitsSchema,
     instructions: z.array(instructionSchema).default([]),
     contextPacks: z.array(contextPackSchema).default([]),
-    customValues: z.record(z.string(), z.json()).default({}),
+    prompts: z.array(promptSchema).default([]),
   })
   .default({
     defaults: defaultsSchema.parse(undefined),
     agentLimits: agentLimitsSchema.parse(undefined),
     instructions: [],
     contextPacks: [],
-    customValues: {},
+    prompts: [],
   });
 
 export type ManagedSettingsDocument = z.infer<typeof documentSchema>;
 export type ManagedInstruction = z.infer<typeof instructionSchema>;
 export type ManagedContextPack = z.infer<typeof contextPackSchema>;
+export type ManagedPrompt = z.infer<typeof promptSchema>;
 
 export function emptySettingsDocument(): ManagedSettingsDocument {
   return documentSchema.parse({});
@@ -191,13 +219,20 @@ export function validateSettingsDocument(
       "Context pack count exceeds the configured limit.",
     );
   }
+  if (document.prompts.length > limits.maximumPromptsPerProfile) {
+    throw new SettingsValidationError(
+      "Prompt count exceeds the configured limit.",
+    );
+  }
   ensureUnique(document.instructions, "Instruction");
   ensureUnique(document.contextPacks, "Context pack");
+  ensureUniquePrompts(document.prompts);
   document.instructions.forEach((instruction) =>
     ensureUniqueStrings(instruction.tags),
   );
-  document.contextPacks.forEach((pack) => ensureUniqueStrings(pack.variables));
-  validateCustomValues(document.customValues);
+  document.contextPacks.forEach((pack) =>
+    ensureUniqueStrings(pack.variables.map((variable) => variable.name)),
+  );
   return document;
 }
 
@@ -210,7 +245,7 @@ export function normalizeProfileDescription(value: unknown): string {
   if (typeof value !== "string")
     throw new SettingsValidationError("Profile description is invalid.");
   const normalized = value.trim();
-  if ([...normalized].length > 500 || /\p{Cc}/u.test(normalized)) {
+  if ([...normalized].length > 500 || /[\p{Cc}\p{Cf}]/u.test(normalized)) {
     throw new SettingsValidationError("Profile description is invalid.");
   }
   return normalized;
@@ -232,7 +267,7 @@ export function normalizeSecret(
   if (
     !normalized ||
     Buffer.byteLength(normalized) > limits.maximumSecretBytes ||
-    /\p{Cc}/u.test(normalized)
+    /[\p{Cc}\p{Cf}]/u.test(normalized)
   ) {
     throw new SettingsValidationError("API key is invalid.");
   }
@@ -240,9 +275,7 @@ export function normalizeSecret(
 }
 
 export function isSecretId(value: string): boolean {
-  if (secretDescriptors.some((descriptor) => descriptor.id === value))
-    return true;
-  return /^custom\.[a-z0-9][a-z0-9._-]{0,71}$/.test(value);
+  return secretDescriptors.some((descriptor) => descriptor.id === value);
 }
 
 function validName(maximum: number): z.ZodString {
@@ -251,7 +284,7 @@ function validName(maximum: number): z.ZodString {
     .trim()
     .min(1)
     .max(maximum)
-    .refine((value) => !/\p{Cc}/u.test(value));
+    .refine((value) => !/[\p{Cc}\p{Cf}]/u.test(value));
 }
 
 function validListValue(maximum: number): z.ZodString {
@@ -260,7 +293,7 @@ function validListValue(maximum: number): z.ZodString {
     .trim()
     .min(1)
     .max(maximum)
-    .refine((value) => !/\p{Cc}/u.test(value));
+    .refine((value) => !/[\p{Cc}\p{Cf}]/u.test(value));
 }
 
 function noNullByte(value: string): boolean {
@@ -299,28 +332,37 @@ function ensureUniqueStrings(values: string[]): void {
   }
 }
 
-function validateCustomValues(values: Record<string, unknown>): void {
-  const entries = Object.entries(values);
-  if (entries.length > 64) {
-    throw new SettingsValidationError(
-      "Custom settings contain too many values.",
-    );
-  }
-  for (const [key, value] of entries) {
-    if (!/^[A-Za-z0-9._-]{1,120}$/.test(key) || jsonDepth(value) > 8) {
-      throw new SettingsValidationError(
-        "Custom settings contain an invalid key or value.",
-      );
+function ensureUniquePrompts(prompts: ManagedPrompt[]): void {
+  const ids = new Set<string>();
+  const paths = new Set<string>();
+  for (const prompt of prompts) {
+    const normalizedPath = prompt.relativePath.toLowerCase();
+    if (ids.has(prompt.id) || paths.has(normalizedPath)) {
+      throw new SettingsValidationError("Prompt ids and paths must be unique.");
     }
+    ids.add(prompt.id);
+    paths.add(normalizedPath);
   }
 }
 
-function jsonDepth(value: unknown): number {
-  if (Array.isArray(value)) return 1 + Math.max(0, ...value.map(jsonDepth));
-  if (value && typeof value === "object") {
-    return 1 + Math.max(0, ...Object.values(value).map(jsonDepth));
+function isPromptRelativePath(value: string): boolean {
+  if (
+    value.includes("\\") ||
+    value.startsWith("/") ||
+    !value.endsWith(".prompt.md")
+  ) {
+    return false;
   }
-  return 1;
+  const components = value.split("/");
+  return (
+    components.length <= 16 &&
+    components.every(
+      (component) =>
+        component !== "." &&
+        component !== ".." &&
+        /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/.test(component),
+    )
+  );
 }
 
 function firstIssue(error: z.ZodError): string {

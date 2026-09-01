@@ -65,6 +65,33 @@ describe("session picker popovers", () => {
     );
   });
 
+  it("does not expose stale models for an unavailable provider", () => {
+    render(
+      createElement(ComposerModelPicker, {
+        providers: [
+          {
+            id: "openai",
+            label: "OpenAI",
+            available: false,
+            error: "Not configured",
+            models: [{ id: "gpt-5.6", label: "GPT-5.6" }],
+          },
+        ],
+        activeProvider: "openai",
+        activeProviderLabel: "OpenAI",
+        activeModel: "gpt-5.6",
+        activeModelLabel: "GPT-5.6",
+        loading: false,
+        onSelect: vi.fn(),
+      }),
+    );
+
+    fireEvent.click(screen.getByLabelText("Session model: OpenAI GPT-5.6"));
+
+    expect(screen.getByText("Not configured")).toBeTruthy();
+    expect(screen.queryByLabelText("Choose OpenAI GPT-5.6")).toBeNull();
+  });
+
   it("closes after choosing a session mode", async () => {
     const onSelection = vi.fn();
     render(

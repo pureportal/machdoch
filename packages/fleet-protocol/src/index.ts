@@ -2,12 +2,17 @@ import { z } from "zod";
 
 export const gatewayProtocolVersion = 4;
 export const maximumGatewayMessageBytes = 4 * 1024 * 1024;
-export const productCapability = "product.v2";
-export const productSnapshotVersion = 3;
-export const managedSettingsSchemaVersion = 1;
+export const maximumManagedSettingsDeliveryBytes = 18 * 1024 * 1024;
+export const productCapability = "product.v3";
+export const productSnapshotVersion = 4;
+export const managedSettingsSchemaVersion = 2;
+export const maximumManagedSettingsCollectionEntries = 128;
+export const maximumManagedSettingsSecrets = 128;
+
+export const serializedGatewayMessageBytes = (message: unknown): number =>
+  new TextEncoder().encode(JSON.stringify(message)).byteLength;
 
 export interface FleetManagedSettingsDefaults {
-  preferredToolingAgent: string | null;
   provider: string | null;
   model: string | null;
   mode: string | null;
@@ -42,25 +47,61 @@ export interface FleetManagedSettingsDocument {
     model: string | null;
     mode: string | null;
     reasoning: string | null;
-    variables: string[];
+    variables: Array<{
+      name: string;
+      defaultValue: string | null;
+    }>;
     triggerPhrases: string[];
     pathPatterns: string[];
+    promptEnhancementMode: "off" | "simple" | "web-search" | null;
+    interviewEnabled: boolean | null;
+    sessionMemoryEnabled: boolean | null;
+    useGlobalMemory: boolean | null;
+    uiControlEnabled: boolean | null;
   }>;
-  customValues: Record<string, unknown>;
+  prompts: FleetManagedPrompt[];
+}
+
+export interface FleetManagedPrompt {
+  id: string;
+  relativePath: string;
+  content: string;
 }
 
 export interface FleetManagedSettingsDelivery {
   schemaVersion: typeof managedSettingsSchemaVersion;
-  assigned: boolean;
-  managerId?: string;
-  profile?: {
+  managerId: string;
+  profile: {
     profileId: string;
     name: string;
     revision: number;
     document: FleetManagedSettingsDocument;
     secrets: Record<string, string>;
-  };
+  } | null;
 }
+
+export type FleetManagedSettingsSyncReport =
+  | {
+      managerId: string;
+      status: "applied";
+      profileId: string | null;
+      revision: number | null;
+    }
+  | {
+      managerId: string;
+      status: "failed";
+      profileId: string | null;
+      revision: number | null;
+      error: string;
+    };
+
+export const createFleetManagedSettingsEtag = (delivery: {
+  managerId: string;
+  profile: { profileId: string; revision: number } | null;
+}): string =>
+  delivery.profile
+    ? `"managed-settings.${delivery.managerId}.${delivery.profile.profileId}.${delivery.profile.revision}"`
+    : `"managed-settings.${delivery.managerId}.unassigned"`;
 
 const identifier = z.string().trim().min(1).max(240);
 const commandId = z.string().trim().min(1).max(128).optional();
@@ -193,6 +234,295 @@ export const promptEnhancementModeSchema = z.enum([
   "web-search",
 ]);
 
+const managedSettingsText = z
+  .string()
+  .max(128 * 1024)
+  .refine((value) => !value.includes("\0"), {
+    message: "Managed settings text must not contain null bytes.",
+  });
+const managedSettingsName = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .refine((value) => !/\p{Cc}/u.test(value));
+const managedSettingsListValue = z
+  .string()
+  .trim()
+  .min(1)
+  .max(500)
+  .refine((value) => !/\p{Cc}/u.test(value));
+const managedSettingsIdentifier = (prefix: "manager" | "profile") =>
+  z.string().regex(new RegExp(`^${prefix}_[A-Za-z0-9_-]{24}$`));
+const managedSettingsUuid = z.string().uuid();
+const managedSettingsProviderSchema = z.enum([
+  "openai",
+  "anthropic",
+  "google",
+  "langdock",
+  "codex-cli",
+  "claude-cli",
+  "copilot-cli",
+]);
+const managedSettingsModeSchema = z.enum(["ask", "machdoch"]);
+const managedSettingsReasoningSchema = reasoningModeSchema;
+const managedSettingsNullableText = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .nullable();
+
+const managedSettingsDefaultsSchema = z
+  .strictObject({
+    provider: managedSettingsProviderSchema.nullable(),
+    model: managedSettingsNullableText,
+    mode: managedSettingsModeSchema.nullable(),
+    reasoning: managedSettingsReasoningSchema.nullable(),
+    webSearchProvider: z
+      .enum(["none", "perplexity", "tavily", "serper"])
+      .nullable(),
+    theme: z.enum(["dark", "light"]).nullable(),
+    density: z.enum(["comfortable", "compact"]).nullable(),
+    accent: z.enum(["sky", "emerald", "violet", "amber"]).nullable(),
+  })
+  .refine((defaults) => defaults.model === null || defaults.provider !== null, {
+    message: "A default model requires a provider.",
+  });
+
+const managedSettingsInstructionSchema = z
+  .strictObject({
+    id: managedSettingsUuid,
+    name: managedSettingsName,
+    body: managedSettingsText.min(1),
+    enabled: z.boolean(),
+    global: z.boolean(),
+    tags: z
+      .array(
+        managedSettingsListValue.max(80).refine((tag) => !tag.includes(",")),
+      )
+      .max(64),
+  })
+  .superRefine((instruction, context) => {
+    const tags = instruction.tags.map((tag) => tag.toLocaleLowerCase());
+    if (new Set(tags).size !== tags.length) {
+      context.addIssue({
+        code: "custom",
+        message: "Instruction tags must be unique.",
+      });
+    }
+  });
+
+const managedSettingsContextPackSchema = z
+  .strictObject({
+    id: managedSettingsUuid,
+    name: managedSettingsName,
+    instructions: managedSettingsText,
+    prompt: managedSettingsText,
+    provider: managedSettingsProviderSchema.nullable(),
+    model: managedSettingsNullableText,
+    mode: managedSettingsModeSchema.nullable(),
+    reasoning: managedSettingsReasoningSchema.nullable(),
+    variables: z
+      .array(
+        z.strictObject({
+          name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,79}$/),
+          defaultValue: z
+            .string()
+            .max(8_000)
+            .refine((value) => !value.includes("\0"))
+            .nullable(),
+        }),
+      )
+      .max(64),
+    triggerPhrases: z.array(managedSettingsListValue).max(64),
+    pathPatterns: z.array(managedSettingsListValue).max(64),
+    promptEnhancementMode: promptEnhancementModeSchema.nullable(),
+    interviewEnabled: z.boolean().nullable(),
+    sessionMemoryEnabled: z.boolean().nullable(),
+    useGlobalMemory: z.boolean().nullable(),
+    uiControlEnabled: z.boolean().nullable(),
+  })
+  .superRefine((pack, context) => {
+    if ((pack.provider === null) !== (pack.model === null)) {
+      context.addIssue({
+        code: "custom",
+        message: "Context pack provider and model must be set together.",
+      });
+    }
+    if (!pack.instructions && !pack.prompt) {
+      context.addIssue({
+        code: "custom",
+        message: "A context pack requires instructions or a prompt.",
+      });
+    }
+    const variableNames = pack.variables.map((variable) => variable.name);
+    if (new Set(variableNames).size !== variableNames.length) {
+      context.addIssue({
+        code: "custom",
+        message: "Context pack variable names must be unique.",
+      });
+    }
+  });
+
+const managedSettingsPromptSchema = z.strictObject({
+  id: managedSettingsUuid,
+  relativePath: z
+    .string()
+    .trim()
+    .min(1)
+    .max(1_000)
+    .refine(
+      (value) => {
+        if (
+          value.includes("\\") ||
+          value.startsWith("/") ||
+          !value.endsWith(".prompt.md")
+        ) {
+          return false;
+        }
+        const components = value.split("/");
+        return (
+          components.length <= 16 &&
+          components.every(
+            (component) =>
+              component !== "." &&
+              component !== ".." &&
+              /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/.test(component),
+          )
+        );
+      },
+      { message: "Prompt path is invalid." },
+    ),
+  content: managedSettingsText.min(1),
+});
+
+const managedSettingsDocumentSchema = z
+  .strictObject({
+    defaults: managedSettingsDefaultsSchema,
+    agentLimits: z.strictObject({
+      infinite: z.boolean().nullable(),
+      executorTurns: z.number().int().min(1).max(100_000).nullable(),
+      autopilotExecutorIterations: z
+        .number()
+        .int()
+        .min(1)
+        .max(100_000)
+        .nullable(),
+    }),
+    instructions: z
+      .array(managedSettingsInstructionSchema)
+      .max(maximumManagedSettingsCollectionEntries),
+    contextPacks: z
+      .array(managedSettingsContextPackSchema)
+      .max(maximumManagedSettingsCollectionEntries),
+    prompts: z
+      .array(managedSettingsPromptSchema)
+      .max(maximumManagedSettingsCollectionEntries),
+  })
+  .superRefine((document, context) => {
+    const ensureUnique = (
+      values: Array<{ id: string; name: string }>,
+      label: string,
+    ) => {
+      const ids = values.map((value) => value.id);
+      const names = values.map((value) => value.name.toLocaleLowerCase());
+      if (
+        new Set(ids).size !== ids.length ||
+        new Set(names).size !== names.length
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: `${label} ids and names must be unique.`,
+        });
+      }
+    };
+    ensureUnique(document.instructions, "Instruction");
+    ensureUnique(document.contextPacks, "Context pack");
+    const promptIds = document.prompts.map((prompt) => prompt.id);
+    const promptPaths = document.prompts.map((prompt) =>
+      prompt.relativePath.toLocaleLowerCase(),
+    );
+    if (
+      new Set(promptIds).size !== promptIds.length ||
+      new Set(promptPaths).size !== promptPaths.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Prompt ids and paths must be unique.",
+      });
+    }
+  });
+
+export const fleetManagedSettingsDeliverySchema = z.strictObject({
+  schemaVersion: z.literal(managedSettingsSchemaVersion),
+  managerId: managedSettingsIdentifier("manager"),
+  profile: z
+    .strictObject({
+      profileId: managedSettingsIdentifier("profile"),
+      name: managedSettingsName.max(120),
+      revision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+      document: managedSettingsDocumentSchema,
+      secrets: z.record(
+        z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
+        z
+          .string()
+          .min(1)
+          .max(8_192)
+          .refine((value) => !value.includes("\0")),
+      ),
+    })
+    .superRefine((profile, context) => {
+      if (Object.keys(profile.secrets).length > maximumManagedSettingsSecrets) {
+        context.addIssue({
+          code: "custom",
+          message: "Managed settings support at most 128 secrets.",
+        });
+      }
+    })
+    .nullable(),
+});
+
+export const ralphScopeSchema = z.enum(["workspace", "user"]);
+
+const ralphParameterNameSchema = z.string().refine(
+  (name) => {
+    const length = name.trim().length;
+    return length >= 1 && length <= 240;
+  },
+  { message: "RALPH parameter names must contain 1 to 240 characters." },
+);
+
+const ralphParametersSchema = z
+  .record(ralphParameterNameSchema, z.string().max(8_000))
+  .refine((parameters) => Object.keys(parameters).length <= 64, {
+    message: "RALPH runs support at most 64 parameters.",
+  })
+  .superRefine((parameters, context) => {
+    const normalizedNames = Object.keys(parameters).map((name) => name.trim());
+    if (new Set(normalizedNames).size !== normalizedNames.length) {
+      context.addIssue({
+        code: "custom",
+        message: "RALPH parameter names must be unique after trimming.",
+      });
+    }
+  })
+  .transform((parameters) =>
+    Object.fromEntries(
+      Object.entries(parameters).map(([name, value]) => [name.trim(), value]),
+    ),
+  );
+
+const ralphRuntimeCommandShape = {
+  ...baseCommandShape,
+  workspace,
+  scope: ralphScopeSchema,
+  provider: shortText,
+  model: shortText,
+  reasoning: reasoningModeSchema,
+  maxTransitions: z.number().int().min(1).max(1_000_000).optional(),
+};
+
 export const productCommandSchema = z.discriminatedUnion("kind", [
   ...taskCommandSchema.options,
   z.strictObject({
@@ -308,6 +638,17 @@ export const productCommandSchema = z.discriminatedUnion("kind", [
   }),
   ...schedulerJobCommandSchema.options,
   ...schedulerRunCommandSchema.options,
+  z.strictObject({
+    ...ralphRuntimeCommandShape,
+    kind: z.literal("ralph-run"),
+    flowId: identifier,
+    parameters: ralphParametersSchema,
+  }),
+  z.strictObject({
+    ...ralphRuntimeCommandShape,
+    kind: z.literal("ralph-resume-run"),
+    runId: identifier,
+  }),
   z.strictObject({
     ...baseCommandShape,
     kind: z.literal("generate-media"),
@@ -469,10 +810,84 @@ const productModelProviderSchema = z.strictObject({
       z.strictObject({
         id: z.string().max(240),
         label: text,
+        reasoningOptions: z.array(reasoningModeSchema).min(1).max(9),
       }),
     )
     .max(256),
 });
+
+export const ralphVariableTypeSchema = z.enum([
+  "string",
+  "text",
+  "path",
+  "file",
+  "files",
+  "url",
+  "number",
+  "boolean",
+  "image",
+  "images",
+  "model",
+  "provider",
+  "pack",
+]);
+
+const productRalphFlowSchema = z.strictObject({
+  id: identifier,
+  alias: identifier.optional(),
+  name: text,
+  scope: ralphScopeSchema,
+  description: text.optional(),
+  blockCount: z.number().int().nonnegative(),
+  edgeCount: z.number().int().nonnegative(),
+  variables: z
+    .array(
+      z.strictObject({
+        name: identifier,
+        type: ralphVariableTypeSchema,
+        default: text.optional(),
+        required: z.boolean(),
+      }),
+    )
+    .max(64),
+  maxTransitions: z.number().int().min(1).max(1_000_000).optional(),
+});
+
+const productRalphRunSchema = z.strictObject({
+  id: identifier,
+  flowId: identifier,
+  flowName: text,
+  scope: ralphScopeSchema,
+  status: z.enum([
+    "running",
+    "completed",
+    "crashed",
+    "blocked",
+    "stopped",
+    "waiting-for-input",
+    "abandoned",
+    "partial",
+  ]),
+  summary: text,
+  createdAt: timestamp,
+  finishedAt: optionalTimestamp,
+  blockCount: z.number().int().nonnegative(),
+  eventCount: z.number().int().nonnegative(),
+  taskId: identifier.optional(),
+  cancellable: z.boolean(),
+  recoverable: z.boolean(),
+});
+
+export const productRalphSchema = z.strictObject({
+  workspaceRoot: workspace.optional(),
+  loading: z.boolean(),
+  error: text.optional(),
+  flows: z.array(productRalphFlowSchema).max(160),
+  runs: z.array(productRalphRunSchema).max(160),
+  updatedAt: timestamp,
+});
+
+export type ProductRalph = z.infer<typeof productRalphSchema>;
 
 const productMediaModelSchema = z.strictObject({
   id: identifier,
@@ -628,6 +1043,7 @@ export const productShellSchema = z.strictObject({
       updatedAt: timestamp,
     })
     .optional(),
+  ralph: productRalphSchema.optional(),
   contextPacks: z
     .array(
       z.strictObject({
@@ -803,7 +1219,7 @@ export const managerMessageSchema = z.discriminatedUnion("type", [
 
 export type ManagerMessage = z.infer<typeof managerMessageSchema>;
 
-export const hostMessageSchema = z.discriminatedUnion("type", [
+const hostMessageShapeSchema = z.discriminatedUnion("type", [
   z.strictObject({
     type: z.literal("hello"),
     instanceId: identifier,
@@ -818,5 +1234,16 @@ export const hostMessageSchema = z.discriminatedUnion("type", [
     response: hostResponseSchema,
   }),
 ]);
+
+export const hostMessageSchema = hostMessageShapeSchema.superRefine(
+  (message, context) => {
+    if (serializedGatewayMessageBytes(message) > maximumGatewayMessageBytes) {
+      context.addIssue({
+        code: "custom",
+        message: "Gateway message exceeds the 4 MiB payload budget.",
+      });
+    }
+  },
+);
 
 export type HostMessage = z.infer<typeof hostMessageSchema>;

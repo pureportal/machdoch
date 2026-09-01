@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { createId } from "./crypto";
@@ -9,17 +9,26 @@ export class FleetDatabase {
   readonly connection: DatabaseSync;
 
   constructor(path: string) {
-    if (path !== ":memory:")
-      mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    if (path !== ":memory:") {
+      const directory = dirname(path);
+      mkdirSync(directory, { recursive: true, mode: 0o700 });
+      securePath(directory, 0o700);
+    }
     this.connection = new DatabaseSync(path, {
       enableForeignKeyConstraints: true,
       enableDoubleQuotedStringLiterals: false,
     });
-    this.connection.exec(
-      "PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000;",
-    );
-    this.migrate();
-    this.ensureManagerId();
+    try {
+      if (path !== ":memory:") securePath(path, 0o600);
+      this.connection.exec(
+        "PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000;",
+      );
+      this.migrate();
+      this.ensureManagerId();
+    } catch (error) {
+      this.connection.close();
+      throw error;
+    }
   }
 
   close(): void {
@@ -78,18 +87,45 @@ export class FleetDatabase {
     this.connection.exec(
       "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL) STRICT",
     );
-    if (this.get("SELECT version FROM schema_migrations WHERE version = 1"))
-      return;
-    const migration = readFileSync(
-      new URL("./migrations/001-initial.sql", import.meta.url),
-      "utf8",
-    );
-    this.transaction(() => {
-      this.connection.exec(migration);
-      this.run(
-        "INSERT INTO schema_migrations (version, applied_at) VALUES (1, ?)",
-        nowSeconds(),
+    const migrations = [
+      "001-initial.sql",
+      "002-settings-application-status.sql",
+      "003-settings-sync-status.sql",
+    ];
+    const appliedVersions = this.all(
+      "SELECT version FROM schema_migrations ORDER BY version",
+    ).map((row) => requiredNumber(row, "version"));
+    if (
+      appliedVersions.some(
+        (version, index) =>
+          !Number.isSafeInteger(version) || version !== index + 1,
+      ) ||
+      appliedVersions.length > migrations.length
+    ) {
+      throw new Error("Fleet database migration history is incompatible.");
+    }
+    migrations.forEach((filename, index) => {
+      const version = index + 1;
+      if (
+        this.get(
+          "SELECT version FROM schema_migrations WHERE version = ?",
+          version,
+        )
+      ) {
+        return;
+      }
+      const migration = readFileSync(
+        new URL(`./migrations/${filename}`, import.meta.url),
+        "utf8",
       );
+      this.transaction(() => {
+        this.connection.exec(migration);
+        this.run(
+          "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+          version,
+          nowSeconds(),
+        );
+      });
     });
   }
 
@@ -99,6 +135,10 @@ export class FleetDatabase {
       createId("manager"),
     );
   }
+}
+
+function securePath(path: string, mode: number): void {
+  if (process.platform !== "win32") chmodSync(path, mode);
 }
 
 export function nowSeconds(): number {

@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import type { AuthenticatedSession } from "./auth-store";
-import { createSecret } from "./crypto";
+import { createSecret, validateSecret } from "./crypto";
 import { nowSeconds } from "./database";
 import { HttpError } from "./errors";
 import type { FleetRuntime } from "./runtime";
@@ -14,7 +14,7 @@ export function authenticateRequest(
   request: Request,
 ): AuthenticatedSession | null {
   const token = cookieValue(request, sessionCookieName);
-  if (!token) return null;
+  if (!token || !validateSecret(token, "mch_session")) return null;
   return runtime.authStore.authenticateSession(
     token,
     nowSeconds(),
@@ -42,6 +42,8 @@ export function requireMutation(
     !hasSameOrigin(runtime, request) ||
     !cookieToken ||
     !headerToken ||
+    !validateSecret(cookieToken, "mch_csrf") ||
+    !validateSecret(headerToken, "mch_csrf") ||
     !constantTimeTextEqual(cookieToken, headerToken) ||
     !runtime.authStore.verifySessionCsrf(session.sessionHash, headerToken)
   ) {
@@ -58,18 +60,7 @@ export function hasSameOrigin(
   const origin = request.headers.get("origin");
   if (!origin) return false;
   const externalOrigin = new URL(runtime.config.externalBaseUrl).origin;
-  const forwardedProtocol = firstHeaderValue(
-    request.headers.get("x-forwarded-proto"),
-  );
-  const forwardedHost = firstHeaderValue(
-    request.headers.get("x-forwarded-host"),
-  );
-  const requestUrl = new URL(request.url);
-  const protocol = forwardedProtocol
-    ? `${forwardedProtocol}:`
-    : requestUrl.protocol;
-  const host = forwardedHost ?? request.headers.get("host") ?? requestUrl.host;
-  return origin === externalOrigin || origin === `${protocol}//${host}`;
+  return origin === externalOrigin;
 }
 
 export function createBrowserCredentials(): {
@@ -84,7 +75,7 @@ export function createBrowserCredentials(): {
 
 export function bearerToken(request: Request): string | null {
   const authorization = request.headers.get("authorization");
-  return authorization?.startsWith("Bearer ") ? authorization.slice(7) : null;
+  return /^Bearer ([^\s]+)$/iu.exec(authorization ?? "")?.[1] ?? null;
 }
 
 export function sessionCookie(token: string, maximumAge: number): string {
@@ -120,8 +111,4 @@ function constantTimeTextEqual(left: string, right: string): boolean {
     leftBuffer.length === rightBuffer.length &&
     timingSafeEqual(leftBuffer, rightBuffer)
   );
-}
-
-function firstHeaderValue(value: string | null): string | null {
-  return value?.split(",")[0]?.trim() || null;
 }

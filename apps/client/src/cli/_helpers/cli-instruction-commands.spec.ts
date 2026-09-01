@@ -45,6 +45,35 @@ afterEach(async () => {
 });
 
 describe("printInstructionSummary", () => {
+  it("passes a managed profile identity through creation metadata", async () => {
+    const workspaceRoot = await createWorkspace();
+    const id = "123e4567-e89b-42d3-a456-426614174000";
+    const output = await captureStdout(async () => {
+      await printInstructionSummary(
+        parseCliArgs(
+          [
+            "--json",
+            "--cwd",
+            workspaceRoot,
+            "instructions",
+            "profiles",
+            "create",
+            "Managed",
+            "--prompt",
+            "Apply this policy.",
+            "--metadata-json",
+            JSON.stringify({ id }),
+          ],
+          { currentWorkingDirectory: workspaceRoot },
+        ),
+      );
+    });
+
+    expect((JSON.parse(output) as { profile: { id: string } }).profile.id).toBe(
+      id,
+    );
+  });
+
   it("creates one reusable profile and lists metadata without bodies by default", async () => {
     const workspaceRoot = await createWorkspace();
     const createOutput = await captureStdout(async () => {

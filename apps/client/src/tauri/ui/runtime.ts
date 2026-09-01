@@ -1,6 +1,7 @@
 import * as tauriCore from "@tauri-apps/api/core";
 import type {
   FleetManagedSettingsDelivery,
+  FleetManagedPrompt,
   ProductAttachment,
   ProductCommandKind,
   ProductMessage,
@@ -128,7 +129,6 @@ import {
   createMockExecutionFixture,
   createPreviewFixture,
 } from "./preview/fixtures";
-import { normalizeRemoteControlStatus } from "./_helpers/normalize-remote-control-status.helper";
 import {
   createPreviewWorkspaceEntry,
   deletePreviewWorkspaceEntry,
@@ -520,6 +520,7 @@ export type WorkspaceTerminalEvent =
 export type InstructionMutationInput =
   | {
       operation: "profile-create";
+      profileId?: string;
       name: string;
       description?: string;
       body: string;
@@ -688,52 +689,6 @@ export interface DesktopTaskProgressEvent {
   timestamp: number;
 }
 
-export interface RemoteControlLogEntry {
-  createdAt: number;
-  stream: "stdout" | "stderr" | string;
-  toolName?: string;
-  chunk: string;
-}
-
-export interface RemoteControlTimelineEntry {
-  createdAt: number;
-  kind: string;
-  phase: string;
-  label: string;
-  detail?: string;
-  tone?: string;
-  toolName?: string;
-}
-
-export interface RemoteControlTaskSession {
-  taskId: string;
-  task: string;
-  mode: string;
-  state: string;
-  message: string;
-  cancellable: boolean;
-  startedAt: number;
-  updatedAt: number;
-  progressCount: number;
-  logs: RemoteControlLogEntry[];
-  timeline: RemoteControlTimelineEntry[];
-}
-
-export interface RemoteControlStatus {
-  enabled: boolean;
-  localUrl?: string;
-  lanUrl?: string;
-  displayUrl?: string;
-  qrSvg?: string;
-  tokenHint?: string;
-  startedAt?: number;
-  bindAddress?: string;
-  port?: number;
-  pairedDeviceCount?: number;
-  eventId: number;
-  sessions: RemoteControlTaskSession[];
-}
-
 export interface FleetConnectionStatus {
   enabled: boolean;
   phase: "disabled" | "connecting" | "connected" | "error";
@@ -742,13 +697,24 @@ export interface FleetConnectionStatus {
   instanceId?: string;
   displayName?: string;
   lastError?: string;
+  settingsSync?: FleetManagedSettingsSyncStatus;
 }
 
-export type RemoteControlCommandKind = ProductCommandKind;
+export interface FleetManagedSettingsSyncStatus {
+  phase: "syncing" | "applied" | "error";
+  profileId?: string;
+  profileName?: string;
+  revision?: number;
+  lastAttemptAt: number;
+  lastAppliedAt?: number;
+  lastError?: string;
+}
 
-export interface RemoteControlCommandEvent {
+export type FleetControlCommandKind = ProductCommandKind;
+
+export interface FleetControlCommandEvent {
   commandId: string;
-  kind: RemoteControlCommandKind;
+  kind: FleetControlCommandKind;
   taskId?: string;
   sessionId?: string;
   prompt?: string;
@@ -767,6 +733,10 @@ export interface RemoteControlCommandEvent {
   messageId?: string;
   jobId?: string;
   runId?: string;
+  flowId?: string;
+  scope?: "workspace" | "user";
+  parameters?: Record<string, string>;
+  maxTransitions?: number;
   target?: "image" | "svg";
   aspectRatio?: "1:1" | "4:5" | "16:9" | "9:16";
   outputCount?: number;
@@ -775,58 +745,60 @@ export interface RemoteControlCommandEvent {
   createdAt: number;
 }
 
-export type RemoteShellAttachmentSnapshot = ProductAttachment;
+export type FleetShellAttachmentSnapshot = ProductAttachment;
 
-export type RemoteShellSessionSnapshot = ProductSession;
+export type FleetShellSessionSnapshot = ProductSession;
 
-export type RemoteShellTraceEntrySnapshot = NonNullable<
+export type FleetShellTraceEntrySnapshot = NonNullable<
   ProductMessage["source"]
 >["entries"][number];
 
-export type RemoteShellMessageSourceSnapshot = NonNullable<
+export type FleetShellMessageSourceSnapshot = NonNullable<
   ProductMessage["source"]
 >;
 
-export type RemoteShellMessageActionsSnapshot = ProductMessage["actions"];
+export type FleetShellMessageActionsSnapshot = ProductMessage["actions"];
 
-export type RemoteShellMessageSnapshot = ProductMessage;
+export type FleetShellMessageSnapshot = ProductMessage;
 
-export type RemoteShellComposerSnapshot = NonNullable<ProductShell["composer"]>;
+export type FleetShellComposerSnapshot = NonNullable<ProductShell["composer"]>;
 
-export type RemoteShellProviderStatusSnapshot = NonNullable<
+export type FleetShellProviderStatusSnapshot = NonNullable<
   ProductShell["runtime"]
 >["providerStatuses"][number];
 
-export type RemoteShellRuntimeCapabilitySnapshot = NonNullable<
+export type FleetShellRuntimeCapabilitySnapshot = NonNullable<
   NonNullable<ProductShell["runtime"]>["uiControl"]
 >;
 
-export type RemoteShellRuntimeSnapshot = NonNullable<ProductShell["runtime"]>;
+export type FleetShellRuntimeSnapshot = NonNullable<ProductShell["runtime"]>;
 
-export type RemoteShellSchedulerJobSnapshot = NonNullable<
+export type FleetShellSchedulerJobSnapshot = NonNullable<
   ProductShell["scheduler"]
 >["jobs"][number];
 
-export type RemoteShellSchedulerRunSnapshot = NonNullable<
+export type FleetShellSchedulerRunSnapshot = NonNullable<
   ProductShell["scheduler"]
 >["runs"][number];
 
-export type RemoteShellSchedulerSnapshot = NonNullable<
+export type FleetShellSchedulerSnapshot = NonNullable<
   ProductShell["scheduler"]
 >;
 
-export type RemoteShellContextPackSnapshot =
+export type FleetShellRalphSnapshot = NonNullable<ProductShell["ralph"]>;
+
+export type FleetShellContextPackSnapshot =
   ProductShell["contextPacks"][number];
 
-export type RemoteShellVoiceSnapshot = NonNullable<ProductShell["voice"]>;
+export type FleetShellVoiceSnapshot = NonNullable<ProductShell["voice"]>;
 
-export type RemoteShellQuickTaskSnapshot = NonNullable<
+export type FleetShellQuickTaskSnapshot = NonNullable<
   ProductShell["quickTask"]
 >;
 
-export type RemoteShellMediaSnapshot = NonNullable<ProductShell["media"]>;
+export type FleetShellMediaSnapshot = NonNullable<ProductShell["media"]>;
 
-export type RemoteControlShellSnapshot = ProductShell;
+export type FleetControlShellSnapshot = ProductShell;
 
 export type SchedulerJobStatus = "active" | "paused" | "completed" | "deleted";
 
@@ -1416,8 +1388,8 @@ export interface RecentDesktopTaskResult {
 
 const DEFAULT_MOCK_WORKSPACE_ROOT = "/mock/home/path";
 const DESKTOP_TASK_PROGRESS_EVENT = "desktop-task-progress";
-const REMOTE_CONTROL_COMMAND_EVENT = "remote-control-command";
-const REMOTE_CONTROL_COMMAND_KINDS = [
+const FLEET_CONTROL_COMMAND_EVENT = "fleet-control-command";
+const FLEET_CONTROL_COMMAND_KINDS = [
   "cancel",
   "retry",
   "continue",
@@ -1459,10 +1431,12 @@ const REMOTE_CONTROL_COMMAND_KINDS = [
   "scheduler-delete",
   "scheduler-retry-run",
   "scheduler-cancel-run",
+  "ralph-run",
+  "ralph-resume-run",
   "generate-media",
   "cancel-media-run",
-] as const satisfies ReadonlyArray<RemoteControlCommandKind>;
-const REMOTE_CONTROL_RUN_MODES = ["ask", "machdoch"] as const;
+] as const satisfies ReadonlyArray<FleetControlCommandKind>;
+const FLEET_CONTROL_RUN_MODES = ["ask", "machdoch"] as const;
 const SCHEDULER_JOB_STATUSES = [
   "active",
   "paused",
@@ -1846,14 +1820,14 @@ const isNullableNumberPayloadField = (value: unknown): boolean => {
   );
 };
 
-const isRemoteControlCommandEvent = (
+const isFleetControlCommandEvent = (
   value: unknown,
-): value is RemoteControlCommandEvent => {
+): value is FleetControlCommandEvent => {
   return (
     isRecord(value) &&
     typeof value.commandId === "string" &&
-    REMOTE_CONTROL_COMMAND_KINDS.includes(
-      value.kind as RemoteControlCommandKind,
+    FLEET_CONTROL_COMMAND_KINDS.includes(
+      value.kind as FleetControlCommandKind,
     ) &&
     (value.taskId === undefined || typeof value.taskId === "string") &&
     (value.sessionId === undefined || typeof value.sessionId === "string") &&
@@ -1867,13 +1841,15 @@ const isRemoteControlCommandEvent = (
     (value.modelId === undefined || typeof value.modelId === "string") &&
     (value.mode === undefined || typeof value.mode === "string") &&
     (value.kind !== "set-session-mode" ||
-      REMOTE_CONTROL_RUN_MODES.includes(
-        value.mode as (typeof REMOTE_CONTROL_RUN_MODES)[number],
+      FLEET_CONTROL_RUN_MODES.includes(
+        value.mode as (typeof FLEET_CONTROL_RUN_MODES)[number],
       )) &&
     (value.reasoning === undefined || typeof value.reasoning === "string") &&
     (value.promptEnhancementMode === undefined ||
       typeof value.promptEnhancementMode === "string") &&
-    (value.kind !== "set-session-reasoning" ||
+    (!["set-session-reasoning", "ralph-run", "ralph-resume-run"].includes(
+      value.kind as string,
+    ) ||
       value.reasoning === undefined ||
       isRuntimeReasoningMode(value.reasoning)) &&
     (value.workspace === undefined || typeof value.workspace === "string") &&
@@ -1885,6 +1861,20 @@ const isRemoteControlCommandEvent = (
     (value.messageId === undefined || typeof value.messageId === "string") &&
     (value.jobId === undefined || typeof value.jobId === "string") &&
     (value.runId === undefined || typeof value.runId === "string") &&
+    (value.flowId === undefined || typeof value.flowId === "string") &&
+    (value.scope === undefined ||
+      value.scope === "workspace" ||
+      value.scope === "user") &&
+    (value.parameters === undefined ||
+      (isRecord(value.parameters) &&
+        Object.values(value.parameters).every(
+          (parameter) => typeof parameter === "string",
+        ))) &&
+    (value.maxTransitions === undefined ||
+      (typeof value.maxTransitions === "number" &&
+        Number.isInteger(value.maxTransitions) &&
+        value.maxTransitions >= 1 &&
+        value.maxTransitions <= 1_000_000)) &&
     (value.target === undefined ||
       value.target === "image" ||
       value.target === "svg") &&
@@ -4196,27 +4186,6 @@ export const cancelDesktopTask = async (taskId: string): Promise<void> => {
   }
 };
 
-export const getRemoteControlStatus =
-  async (): Promise<RemoteControlStatus | null> => {
-    if (!canInvokeTauriCommands()) {
-      return {
-        enabled: false,
-        eventId: 0,
-        sessions: [],
-      };
-    }
-
-    const status = normalizeRemoteControlStatus(
-      await tauriCore.invoke<unknown>("get_remote_control_status"),
-    );
-
-    if (!status) {
-      throw new Error("The Mission Control status payload was invalid.");
-    }
-
-    return status;
-  };
-
 const normalizeFleetConnectionStatus = (
   value: unknown,
 ): FleetConnectionStatus | null => {
@@ -4237,11 +4206,45 @@ const normalizeFleetConnectionStatus = (
   if (
     optionalFields.some(
       (field) => value[field] !== undefined && typeof value[field] !== "string",
-    )
+    ) ||
+    (value.settingsSync !== undefined &&
+      !normalizeFleetManagedSettingsSyncStatus(value.settingsSync))
   ) {
     return null;
   }
   return value as unknown as FleetConnectionStatus;
+};
+
+const normalizeFleetManagedSettingsSyncStatus = (
+  value: unknown,
+): FleetManagedSettingsSyncStatus | null => {
+  if (!isRecord(value)) return null;
+  if (!new Set(["syncing", "applied", "error"]).has(String(value.phase))) {
+    return null;
+  }
+  const optionalStrings = ["profileId", "profileName", "lastError"] as const;
+  if (
+    optionalStrings.some(
+      (field) => value[field] !== undefined && typeof value[field] !== "string",
+    ) ||
+    typeof value.lastAttemptAt !== "number" ||
+    !Number.isInteger(value.lastAttemptAt) ||
+    value.lastAttemptAt < 0
+  ) {
+    return null;
+  }
+  for (const field of ["revision", "lastAppliedAt"] as const) {
+    const fieldValue = value[field];
+    if (
+      fieldValue !== undefined &&
+      (typeof fieldValue !== "number" ||
+        !Number.isInteger(fieldValue) ||
+        fieldValue < 0)
+    ) {
+      return null;
+    }
+  }
+  return value as unknown as FleetManagedSettingsSyncStatus;
 };
 
 export const getFleetConnectionStatus =
@@ -4258,15 +4261,56 @@ export const getFleetConnectionStatus =
     return status;
   };
 
-export const getFleetManagedSettings =
-  async (): Promise<FleetManagedSettingsDelivery> => {
-    if (!canInvokeTauriCommands()) {
-      return { schemaVersion: 1, assigned: false };
-    }
-    return tauriCore.invoke<FleetManagedSettingsDelivery>(
-      "get_fleet_managed_settings",
-    );
-  };
+export const getFleetManagedSettings = async (
+  knownEtag?: string,
+): Promise<FleetManagedSettingsDelivery | null> => {
+  if (!canInvokeTauriCommands()) {
+    return null;
+  }
+  return tauriCore.invoke<FleetManagedSettingsDelivery | null>(
+    "get_fleet_managed_settings",
+    { knownEtag: knownEtag ?? null },
+  );
+};
+
+export const reportFleetManagedSettingsApplied = async (
+  managerId: string,
+  profileId: string | null,
+  revision: number | null,
+): Promise<void> => {
+  if (!canInvokeTauriCommands()) return;
+  await tauriCore.invoke("report_fleet_managed_settings_applied", {
+    managerId,
+    profileId,
+    revision,
+  });
+};
+
+export const reportFleetManagedSettingsFailure = async (
+  managerId: string,
+  profileId: string | null,
+  revision: number | null,
+  error: string,
+): Promise<void> => {
+  if (!canInvokeTauriCommands()) return;
+  await tauriCore.invoke("report_fleet_managed_settings_failure", {
+    managerId,
+    profileId,
+    revision,
+    error,
+  });
+};
+
+export const synchronizeFleetManagedPrompts = async (
+  managerId: string,
+  prompts: FleetManagedPrompt[],
+): Promise<void> => {
+  if (!canInvokeTauriCommands()) return;
+  await tauriCore.invoke("synchronize_fleet_managed_prompts", {
+    managerId,
+    prompts,
+  });
+};
 
 export const enrollFleetManager = async (
   managerUrl: string,
@@ -4305,126 +4349,38 @@ export const resetFleetManagerConnection =
     return status;
   };
 
-export const enableRemoteControlServer =
-  async (): Promise<RemoteControlStatus | null> => {
-    if (!canInvokeTauriCommands()) {
-      return {
-        enabled: false,
-        eventId: 0,
-        sessions: [],
-      };
-    }
-
-    const status = normalizeRemoteControlStatus(
-      await tauriCore.invoke<unknown>("enable_remote_control_server"),
-    );
-
-    if (!status) {
-      throw new Error("The Mission Control enable payload was invalid.");
-    }
-
-    return status;
-  };
-
-export const disableRemoteControlServer =
-  async (): Promise<RemoteControlStatus | null> => {
-    if (!canInvokeTauriCommands()) {
-      return {
-        enabled: false,
-        eventId: 0,
-        sessions: [],
-      };
-    }
-
-    const status = normalizeRemoteControlStatus(
-      await tauriCore.invoke<unknown>("disable_remote_control_server"),
-    );
-
-    if (!status) {
-      throw new Error("The Mission Control disable payload was invalid.");
-    }
-
-    return status;
-  };
-
-export const setRemoteControlPort = async (
-  port: number,
-): Promise<RemoteControlStatus | null> => {
-  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
-    throw new Error("Mission Control port must be between 1024 and 65535.");
-  }
-
+export const getPendingFleetControlCommands = async (): Promise<
+  FleetControlCommandEvent[]
+> => {
   if (!canInvokeTauriCommands()) {
-    return {
-      enabled: false,
-      eventId: 0,
-      port,
-      sessions: [],
-    };
+    return [];
   }
-
-  const status = normalizeRemoteControlStatus(
-    await tauriCore.invoke<unknown>("set_remote_control_port", { port }),
+  return tauriCore.invoke<FleetControlCommandEvent[]>(
+    "get_pending_fleet_control_commands",
   );
-
-  if (!status) {
-    throw new Error("The Mission Control port payload was invalid.");
-  }
-
-  return status;
 };
 
-export const forgetRemoteControlPairings =
-  async (): Promise<RemoteControlStatus | null> => {
-    if (!canInvokeTauriCommands()) {
-      return {
-        enabled: false,
-        eventId: 0,
-        pairedDeviceCount: 0,
-        sessions: [],
-      };
-    }
-
-    const status = normalizeRemoteControlStatus(
-      await tauriCore.invoke<unknown>("forget_remote_control_pairings"),
-    );
-
-    if (!status) {
-      throw new Error("The Mission Control pairing payload was invalid.");
-    }
-
-    return status;
-  };
-
-export const updateRemoteControlShellSnapshot = async (
-  snapshot: RemoteControlShellSnapshot,
-): Promise<void> => {
+export const acknowledgeFleetControlCommand = async (
+  commandId: string,
+): Promise<boolean> => {
   if (!canInvokeTauriCommands()) {
-    return;
+    return false;
   }
-
-  await tauriCore.invoke("update_remote_control_shell_snapshot", {
-    snapshot,
+  return tauriCore.invoke<boolean>("acknowledge_fleet_control_command", {
+    commandId,
   });
 };
 
-export const openRemoteControlUrl = async (
-  displayUrl?: string,
+export const updateFleetControlShellSnapshot = async (
+  snapshot: FleetControlShellSnapshot,
 ): Promise<void> => {
-  if (canInvokeTauriCommands()) {
-    return await tauriCore.invoke("open_remote_control_url");
-  }
-
-  if (
-    displayUrl &&
-    typeof window !== "undefined" &&
-    typeof window.open === "function"
-  ) {
-    window.open(displayUrl, "_blank", "noopener,noreferrer");
+  if (!canInvokeTauriCommands()) {
     return;
   }
 
-  throw new Error("Mission Control could not be opened.");
+  await tauriCore.invoke("update_fleet_control_shell_snapshot", {
+    snapshot,
+  });
 };
 
 const assertSchedulerDesktopAvailable = (): never => {
@@ -4599,6 +4555,7 @@ const createInstructionMutationArguments = (
         args,
         "--metadata-json",
         JSON.stringify({
+          ...(input.profileId === undefined ? {} : { id: input.profileId }),
           ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
           ...(input.global === undefined ? {} : { global: input.global }),
           ...(input.tags === undefined ? {} : { tags: input.tags }),
@@ -6833,21 +6790,21 @@ export const syncScheduledPrompts = async (
   );
 };
 
-export const subscribeToRemoteControlCommands = async (
-  onCommand: (event: RemoteControlCommandEvent) => void,
+export const subscribeToFleetControlCommands = async (
+  onCommand: (event: FleetControlCommandEvent) => void,
 ): Promise<() => void> => {
   if (!canListenToDesktopTaskProgress()) {
     return () => {};
   }
 
   try {
-    return await listen<unknown>(REMOTE_CONTROL_COMMAND_EVENT, (event) => {
-      if (isRemoteControlCommandEvent(event.payload)) {
+    return await listen<unknown>(FLEET_CONTROL_COMMAND_EVENT, (event) => {
+      if (isFleetControlCommandEvent(event.payload)) {
         onCommand(event.payload);
       }
     });
   } catch (error) {
-    console.error("Failed to subscribe to Mission Control commands", error);
+    console.error("Failed to subscribe to Fleet Manager commands", error);
     return () => {};
   }
 };

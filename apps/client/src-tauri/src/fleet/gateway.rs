@@ -5,23 +5,29 @@ use std::{
 
 use futures_util::{SinkExt, StreamExt};
 use machdoch_fleet_protocol::{
-    HostMessage, ManagerMessage, GATEWAY_PROTOCOL_VERSION, MAX_GATEWAY_MESSAGE_BYTES,
-    PRODUCT_CAPABILITY,
+    serialize_host_message, HostMessage, ManagerMessage, GATEWAY_PROTOCOL_VERSION,
+    MAX_GATEWAY_MESSAGE_BYTES, PRODUCT_CAPABILITY,
 };
 use tokio_tungstenite::{
-    connect_async,
+    connect_async_with_config,
     tungstenite::{
         client::IntoClientRequest,
         http::HeaderValue,
-        protocol::frame::{coding::CloseCode, CloseFrame},
+        protocol::{
+            frame::{coding::CloseCode, CloseFrame},
+            WebSocketConfig,
+        },
         Message,
     },
 };
 
 use super::{
     config::{validate_fleet_manager_url, FleetConnectionConfig},
-    FleetConnectionInner, FleetConnectionPhase,
+    http::normalized_manager_message,
+    now_seconds, FleetConnectionInner, FleetConnectionPhase,
 };
+
+const GATEWAY_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub(super) async fn run(
     app_handle: tauri::AppHandle,
@@ -81,7 +87,23 @@ async fn connect_once(
         }
     };
     request.headers_mut().insert("authorization", authorization);
-    let (socket, _) = match connect_async(request).await {
+    let mut websocket_config = WebSocketConfig::default();
+    websocket_config.max_message_size = Some(MAX_GATEWAY_MESSAGE_BYTES);
+    websocket_config.max_frame_size = Some(MAX_GATEWAY_MESSAGE_BYTES);
+    let connection = match tokio::time::timeout(
+        GATEWAY_CONNECT_TIMEOUT,
+        connect_async_with_config(request, Some(websocket_config), false),
+    )
+    .await
+    {
+        Ok(connection) => connection,
+        Err(_) => {
+            return ConnectionResult::Reconnect(
+                "Fleet gateway connection attempt timed out.".to_string(),
+            )
+        }
+    };
+    let (socket, _) = match connection {
         Ok(connection) => connection,
         Err(tokio_tungstenite::tungstenite::Error::Http(response))
             if matches!(response.status().as_u16(), 401 | 403 | 404 | 409) =>
@@ -132,12 +154,18 @@ async fn connect_once(
                         }
                         match serde_json::from_str::<ManagerMessage>(&payload) {
                             Ok(ManagerMessage::Request { request_id, request }) => {
-                                let response = crate::remote_control::handle_fleet_request(app_handle, request);
+                                let response = crate::fleet_control::handle_fleet_request(app_handle, request);
                                 if send_host_message(&mut sender, &HostMessage::Response { request_id, response }).await.is_err() {
                                     return ConnectionResult::Reconnect("Fleet gateway connection closed.".to_string());
                                 }
                             }
-                            Ok(ManagerMessage::Disconnect { reason }) => return ConnectionResult::Stopped(reason),
+                            Ok(ManagerMessage::Disconnect { reason }) => {
+                                return ConnectionResult::Stopped(
+                                    normalized_manager_message(&reason, 500).unwrap_or_else(|| {
+                                        "Fleet Manager disconnected the instance.".to_string()
+                                    }),
+                                )
+                            }
                             Err(_) => return ConnectionResult::Stopped("Fleet Manager sent an invalid gateway message.".to_string()),
                         }
                     }
@@ -149,6 +177,16 @@ async fn connect_once(
                     Some(Ok(Message::Pong(_))) => {}
                     Some(Ok(Message::Close(frame))) => return connection_result_from_close(frame),
                     None => return ConnectionResult::Reconnect("Fleet gateway connection closed.".to_string()),
+                    Some(Err(tokio_tungstenite::tungstenite::Error::Capacity(_))) => {
+                        return ConnectionResult::Stopped("Fleet gateway message exceeded the configured limit.".to_string())
+                    }
+                    Some(Err(
+                        tokio_tungstenite::tungstenite::Error::Protocol(_)
+                        | tokio_tungstenite::tungstenite::Error::Utf8(_)
+                        | tokio_tungstenite::tungstenite::Error::AttackAttempt,
+                    )) => {
+                        return ConnectionResult::Stopped("Fleet Manager sent an invalid gateway message.".to_string())
+                    }
                     Some(Err(error)) => return ConnectionResult::Reconnect(format!("Fleet gateway connection failed: {error}")),
                     Some(Ok(Message::Binary(_))) | Some(Ok(Message::Frame(_))) => {
                         return ConnectionResult::Stopped("Fleet Manager sent an unsupported gateway message.".to_string())
@@ -163,7 +201,7 @@ fn connection_result_from_close(frame: Option<CloseFrame>) -> ConnectionResult {
     let Some(frame) = frame else {
         return ConnectionResult::Reconnect("Fleet gateway connection closed.".to_string());
     };
-    let reason = frame.reason.trim();
+    let reason = normalized_manager_message(&frame.reason, 500);
     let permanent = matches!(
         frame.code,
         CloseCode::Protocol
@@ -174,16 +212,16 @@ fn connection_result_from_close(frame: Option<CloseFrame>) -> ConnectionResult {
             | CloseCode::Extension
     );
     if permanent {
-        return ConnectionResult::Stopped(if reason.is_empty() {
-            format!("Fleet Manager rejected the connection ({}).", frame.code)
-        } else {
+        return ConnectionResult::Stopped(if let Some(reason) = reason {
             format!("Fleet Manager rejected the connection: {reason}")
+        } else {
+            format!("Fleet Manager rejected the connection ({}).", frame.code)
         });
     }
-    ConnectionResult::Reconnect(if reason.is_empty() {
-        format!("Fleet gateway connection closed ({}).", frame.code)
-    } else {
+    ConnectionResult::Reconnect(if let Some(reason) = reason {
         format!("Fleet gateway connection closed: {reason}")
+    } else {
+        format!("Fleet gateway connection closed ({}).", frame.code)
     })
 }
 
@@ -192,11 +230,7 @@ where
     S: futures_util::Sink<Message> + Unpin,
     S::Error: std::fmt::Display,
 {
-    let payload = serde_json::to_string(message)
-        .map_err(|error| format!("Failed to encode gateway message: {error}"))?;
-    if payload.len() > MAX_GATEWAY_MESSAGE_BYTES {
-        return Err("Gateway message exceeded the configured limit.".to_string());
-    }
+    let payload = serialize_host_message(message).map_err(|error| error.to_string())?;
     sender
         .send(Message::Text(payload.into()))
         .await
@@ -254,13 +288,6 @@ async fn wait_for_reconnect(
     is_current(state, generation)
 }
 
-fn now_seconds() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -300,6 +327,21 @@ mod tests {
                 error,
                 "Fleet Manager rejected the connection: Invalid hello message."
             ),
+            _ => panic!("policy close should stop reconnecting"),
+        }
+    }
+
+    #[test]
+    fn unsafe_close_reasons_are_not_exposed() {
+        let result = connection_result_from_close(Some(CloseFrame {
+            code: CloseCode::Policy,
+            reason: "\u{1b}[31mspoofed".into(),
+        }));
+
+        match result {
+            ConnectionResult::Stopped(error) => {
+                assert_eq!(error, "Fleet Manager rejected the connection (1008).")
+            }
             _ => panic!("policy close should stop reconnecting"),
         }
     }

@@ -1,4 +1,5 @@
 import { once } from "node:events";
+import { productCapability } from "@machdoch/fleet-protocol";
 import { WebSocketServer } from "ws";
 import type { FleetConnectionConfig } from "../../core/fleet-connection.ts";
 import {
@@ -17,8 +18,17 @@ const config = (managerUrl: string): FleetConnectionConfig => ({
   instanceSecret: "instance-secret",
 });
 
+let originalEntryPoint: string | undefined;
+
+beforeEach(() => {
+  originalEntryPoint = process.argv[1];
+  process.argv[1] = "src/cli/main.ts";
+});
+
 afterEach(() => {
   vi.unstubAllEnvs();
+  if (originalEntryPoint === undefined) process.argv.splice(1, 1);
+  else process.argv[1] = originalEntryPoint;
 });
 
 describe("Fleet CLI gateway", () => {
@@ -32,7 +42,6 @@ describe("Fleet CLI gateway", () => {
   });
 
   it("exchanges protocol messages without a desktop UI", async () => {
-    vi.stubEnv("MACHDOCH_FLEET_ALLOW_LOOPBACK_HTTP", "1");
     const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
     await once(server, "listening");
     const address = server.address();
@@ -84,7 +93,7 @@ describe("Fleet CLI gateway", () => {
           type: "hello",
           protocolVersion: 4,
           productVersion: "6.3.0",
-          capabilities: ["product.v2"],
+          capabilities: [productCapability],
         }),
         expect.objectContaining({ type: "response", requestId: "request-1" }),
       ]),
@@ -105,7 +114,6 @@ describe("Fleet CLI gateway", () => {
     ).resolves.toEqual({ reason: "disabled" });
     expect(statuses).toEqual(["disabled"]);
 
-    vi.stubEnv("MACHDOCH_FLEET_ALLOW_LOOPBACK_HTTP", "1");
     let loads = 0;
     statuses.length = 0;
     await expect(

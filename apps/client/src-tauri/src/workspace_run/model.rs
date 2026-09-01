@@ -263,18 +263,23 @@ pub struct RunWorkspaceSnapshot {
     pub configurations: Vec<RunConfigurationStatus>,
 }
 
-pub fn validate_document(document: &RunConfigurationDocument) -> Result<(), String> {
-    if document.schema_version > RUN_SCHEMA_VERSION {
+pub(super) fn validate_schema_version(schema_version: u32) -> Result<(), String> {
+    if schema_version > RUN_SCHEMA_VERSION {
         return Err(format!(
             "Run configuration schemaVersion {} is newer than supported version {RUN_SCHEMA_VERSION}.",
-            document.schema_version
+            schema_version
         ));
     }
-    if document.schema_version != RUN_SCHEMA_VERSION {
+    if schema_version != RUN_SCHEMA_VERSION {
         return Err(format!(
             "Run configuration schemaVersion must be {RUN_SCHEMA_VERSION}."
         ));
     }
+    Ok(())
+}
+
+pub fn validate_document(document: &RunConfigurationDocument) -> Result<(), String> {
+    validate_schema_version(document.schema_version)?;
     if document.configurations.len() > 64 {
         return Err("A workspace can contain at most 64 run configurations.".to_string());
     }

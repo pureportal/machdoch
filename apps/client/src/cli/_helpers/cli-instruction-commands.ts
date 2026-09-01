@@ -59,6 +59,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 interface InstructionProfileMetadataInput {
+  id?: string;
   enabled?: boolean;
   global?: boolean;
   tags?: string[];
@@ -77,7 +78,7 @@ const parseInstructionProfileMetadata = (
   }
   if (!isRecord(value)) return fail("--metadata-json must contain an object.");
   const unsupported = Object.keys(value).filter(
-    (key) => !["enabled", "global", "tags", "match"].includes(key),
+    (key) => !["id", "enabled", "global", "tags", "match"].includes(key),
   );
   if (unsupported.length > 0) {
     return fail(`Unsupported profile metadata: ${unsupported.join(", ")}.`);
@@ -88,7 +89,17 @@ const parseInstructionProfileMetadata = (
   if (value.global !== undefined && typeof value.global !== "boolean") {
     return fail("Profile metadata global must be a boolean.");
   }
+  if (
+    value.id !== undefined &&
+    (typeof value.id !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+        value.id,
+      ))
+  ) {
+    return fail("Profile metadata id must be a UUID.");
+  }
   return {
+    ...(value.id === undefined ? {} : { id: value.id }),
     ...(value.enabled === undefined ? {} : { enabled: value.enabled }),
     ...(value.global === undefined ? {} : { global: value.global }),
     ...(value.tags === undefined
@@ -449,6 +460,11 @@ export const printInstructionSummary = async (
       );
       const body = await readBody(args, options, false);
       const metadata = parseInstructionProfileMetadata(options.metadataJson);
+      if (metadata.id !== undefined) {
+        fail("Profile metadata id is only supported when creating a profile.");
+      }
+      const editableMetadata = { ...metadata };
+      delete editableMetadata.id;
       if (
         body === undefined &&
         options.name === undefined &&
@@ -470,7 +486,7 @@ export const printInstructionSummary = async (
                   options.description.length === 0 ? null : options.description,
               }),
           ...(body === undefined ? {} : { body }),
-          ...metadata,
+          ...editableMetadata,
         },
         mutationOptions(options),
       );

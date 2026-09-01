@@ -7273,6 +7273,41 @@ describe("runRalphFlow", () => {
     expect(executeTask).not.toHaveBeenCalled();
   });
 
+  it("does not treat inherited object properties as supplied variables", async () => {
+    const result = await runRalphFlow(
+      createFlow({
+        blocks: [
+          {
+            id: "start",
+            type: "START",
+            title: "Start",
+          },
+          {
+            id: "inspect",
+            type: "PROMPT",
+            title: "Inspect",
+            prompt: "Inspect {{toString:string}}.",
+          },
+        ],
+        edges: [
+          {
+            id: "start-to-inspect",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "inspect",
+          },
+        ],
+      }),
+      runtimeConfig,
+      customizations,
+      { maxTransitions: 10 },
+    );
+
+    expect(result.status).toBe("blocked");
+    expect(result.missingVariables).toEqual(["toString"]);
+    expect(executeTask).not.toHaveBeenCalled();
+  });
+
   it("finalizes full execution history and outcome in a run-scoped report", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-final-report-"));
     const userLogDirectory = await mkdtemp(join(tmpdir(), "ralph-user-log-"));

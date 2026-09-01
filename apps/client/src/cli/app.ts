@@ -13,7 +13,9 @@ export const runCli = async (argv: string[]): Promise<void> => {
   const isInternalProviderProcess =
     args.command === "provider-sync" ||
     (args.command === "mcp" &&
-      (args.mcp?.action === "proxy" || args.mcp?.action === "broker"));
+      (args.mcp?.action === "proxy" ||
+        args.mcp?.action === "broker" ||
+        args.mcp?.action === "presence"));
   const isSideEffectFreeRalphValidation =
     args.command === "ralph" && args.ralph?.action === "validate-json";
   if (

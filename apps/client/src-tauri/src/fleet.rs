@@ -5,9 +5,11 @@ use tauri::Manager;
 
 mod config;
 mod gateway;
+mod http;
+mod managed_prompts;
 mod settings;
 
-pub use settings::FleetManagedSettingsDelivery;
+pub use machdoch_fleet_protocol::FleetManagedSettingsDelivery;
 
 use config::{
     delete_fleet_connection_config, load_fleet_connection_config, validate_fleet_manager_url,
@@ -25,6 +27,7 @@ struct FleetConnectionInner {
     config: Option<FleetConnectionConfig>,
     phase: FleetConnectionPhase,
     last_error: Option<String>,
+    settings_sync: Option<FleetSettingsSyncStatus>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
@@ -35,6 +38,31 @@ enum FleetConnectionPhase {
     Connecting,
     Connected,
     Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum FleetSettingsSyncPhase {
+    Syncing,
+    Applied,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FleetSettingsSyncStatus {
+    phase: FleetSettingsSyncPhase,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    profile_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    profile_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    revision: Option<u64>,
+    last_attempt_at: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_applied_at: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -52,6 +80,8 @@ pub struct FleetConnectionStatus {
     display_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    settings_sync: Option<FleetSettingsSyncStatus>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -61,6 +91,8 @@ struct EnrollmentResponse {
     manager_url: String,
     instance_id: String,
 }
+
+const MAX_ENROLLMENT_RESPONSE_BYTES: usize = 64 * 1024;
 
 struct FleetConnectionUpdate {
     gateway_config: Option<FleetConnectionConfig>,
@@ -88,8 +120,40 @@ pub async fn get_fleet_connection_status(
 #[tauri::command]
 pub async fn get_fleet_managed_settings(
     state: tauri::State<'_, FleetConnectionState>,
-) -> Result<FleetManagedSettingsDelivery, String> {
-    settings::fetch(&state).await
+    known_etag: Option<String>,
+) -> Result<Option<FleetManagedSettingsDelivery>, String> {
+    settings::fetch(&state, known_etag.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn report_fleet_managed_settings_applied(
+    state: tauri::State<'_, FleetConnectionState>,
+    manager_id: String,
+    profile_id: Option<String>,
+    revision: Option<u64>,
+) -> Result<(), String> {
+    settings::report_applied(&state, &manager_id, profile_id.as_deref(), revision).await
+}
+
+#[tauri::command]
+pub async fn report_fleet_managed_settings_failure(
+    state: tauri::State<'_, FleetConnectionState>,
+    manager_id: String,
+    profile_id: Option<String>,
+    revision: Option<u64>,
+    error: String,
+) -> Result<(), String> {
+    settings::report_failure(&state, &manager_id, profile_id.as_deref(), revision, &error).await
+}
+
+#[tauri::command]
+pub async fn synchronize_fleet_managed_prompts(
+    manager_id: String,
+    prompts: Vec<machdoch_fleet_protocol::FleetManagedPrompt>,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || managed_prompts::synchronize(&manager_id, &prompts))
+        .await
+        .map_err(|error| format!("Managed prompt synchronization stopped unexpectedly: {error}"))?
 }
 
 #[tauri::command]
@@ -133,24 +197,22 @@ pub async fn enroll_fleet_manager(
         .await
         .map_err(|error| format!("Fleet Manager enrollment failed: {error}"))?;
     if !response.status().is_success() {
-        let status = response.status();
-        let message = response
-            .json::<serde_json::Value>()
-            .await
-            .ok()
-            .and_then(|value| {
-                value
-                    .get("error")
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::to_string)
-            })
-            .unwrap_or_else(|| format!("Fleet Manager rejected enrollment ({status})."));
-        return Err(message);
+        return Err(
+            http::manager_response_error(response, "Fleet Manager rejected enrollment").await,
+        );
     }
-    let enrollment = response
-        .json::<EnrollmentResponse>()
+    let response_body = http::read_bounded_response(response, MAX_ENROLLMENT_RESPONSE_BYTES)
         .await
-        .map_err(|error| {
+        .map_err(|error| match error {
+            http::ResponseBodyError::TooLarge => {
+                "Fleet Manager enrollment response exceeded the size limit.".to_string()
+            }
+            http::ResponseBodyError::Read(error) => {
+                format!("Fleet Manager enrollment response could not be read: {error}")
+            }
+        })?;
+    let enrollment =
+        serde_json::from_slice::<EnrollmentResponse>(&response_body).map_err(|error| {
             format!("Fleet Manager returned an invalid enrollment response: {error}")
         })?;
     let returned_url = validate_fleet_manager_url(&enrollment.manager_url)?;
@@ -181,6 +243,7 @@ pub async fn enroll_fleet_manager(
         inner.config = Some(config.clone());
         inner.phase = FleetConnectionPhase::Connecting;
         inner.last_error = None;
+        inner.settings_sync = None;
         inner.generation = inner.generation.saturating_add(1);
         inner.generation
     };
@@ -202,6 +265,7 @@ pub async fn reset_fleet_manager_connection(
         inner.config = None;
         inner.phase = FleetConnectionPhase::Disabled;
         inner.last_error = None;
+        inner.settings_sync = None;
     }
     status(&state)
 }
@@ -233,6 +297,7 @@ fn status(state: &FleetConnectionState) -> Result<FleetConnectionStatus, String>
         instance_id: config.map(|config| config.instance_id.clone()),
         display_name: config.map(|config| config.display_name.clone()),
         last_error: inner.last_error.clone(),
+        settings_sync: inner.settings_sync.clone(),
     })
 }
 
@@ -315,6 +380,7 @@ fn update_connection_inner(
                 FleetConnectionPhase::Disabled
             };
             inner.last_error = None;
+            inner.settings_sync = None;
             Some(FleetConnectionUpdate {
                 gateway_config,
                 generation: inner.generation,
@@ -324,6 +390,7 @@ fn update_connection_inner(
             inner.config = None;
             inner.phase = FleetConnectionPhase::Error;
             inner.last_error = Some(error);
+            inner.settings_sync = None;
             Some(FleetConnectionUpdate {
                 gateway_config: None,
                 generation: inner.generation,
@@ -349,7 +416,7 @@ fn validate_display_name(value: &str) -> Result<String, String> {
     let normalized = value.trim();
     if normalized.is_empty()
         || normalized.chars().count() > 80
-        || normalized.chars().any(char::is_control)
+        || normalized.chars().any(http::is_unsafe_text_character)
     {
         return Err("Instance name must contain between 1 and 80 characters.".to_string());
     }
@@ -382,6 +449,13 @@ fn create_secret(prefix: &str) -> Result<String, String> {
     ))
 }
 
+fn now_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -396,6 +470,7 @@ mod tests {
             instance_id: None,
             display_name: None,
             last_error: None,
+            settings_sync: None,
         };
         let value = serde_json::to_value(status).expect("status should serialize");
 
@@ -432,6 +507,11 @@ mod tests {
                 .as_str(),
             "https://fleet.example.test/"
         );
+    }
+
+    #[test]
+    fn display_names_reject_directional_controls() {
+        assert!(validate_display_name("safe\u{202e}txt").is_err());
     }
 
     #[test]

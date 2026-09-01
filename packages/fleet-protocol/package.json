@@ -9,6 +9,7 @@
   "scripts": {
     "check": "pnpm run lint && pnpm run typecheck",
     "lint": "oxlint src",
+    "test": "node --test --experimental-strip-types src/**/*.test.ts",
     "typecheck": "tsc --noEmit --pretty false"
   },
   "dependencies": {

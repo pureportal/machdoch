@@ -26,6 +26,12 @@ export interface EnrollmentInput {
   protocolVersion: number;
 }
 
+export class FleetStoreError extends Error {
+  constructor(readonly code: "enrollment-limit" | "invalid-enrollment-grant") {
+    super(code);
+  }
+}
+
 export class FleetStore {
   constructor(private readonly database: FleetDatabase) {}
 
@@ -48,9 +54,7 @@ export class FleetStore {
         "count",
       );
       if (outstanding >= policy.maximumOutstandingKeys) {
-        throw new Error(
-          "The outstanding enrollment key limit has been reached.",
-        );
+        throw new FleetStoreError("enrollment-limit");
       }
       const grantId = createId("grant");
       const expiresAt = now + policy.keyLifetimeSeconds;
@@ -79,7 +83,7 @@ export class FleetStore {
         grant.used_at !== null ||
         requiredNumber(grant, "expires_at") <= now
       ) {
-        throw new Error("Enrollment key is invalid, expired, or already used.");
+        throw new FleetStoreError("invalid-enrollment-grant");
       }
       const grantId = requiredString(grant, "id");
       if (
@@ -89,7 +93,7 @@ export class FleetStore {
           grantId,
         ) !== 1
       ) {
-        throw new Error("Enrollment key is invalid, expired, or already used.");
+        throw new FleetStoreError("invalid-enrollment-grant");
       }
       const instanceId = createId("instance");
       this.database.run(

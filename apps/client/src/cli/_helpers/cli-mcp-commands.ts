@@ -272,6 +272,13 @@ export const printMcpSummary = async (args: ParsedCliArgs): Promise<void> => {
 
   try {
     switch (options.action) {
+      case "presence": {
+        proxyOwnsClientLifecycle = true;
+        const { runWorkspacePresenceMcpServer } =
+          await import("../../core/provider-enrollment/workspace-presence-mcp/server.js");
+        await runWorkspacePresenceMcpServer(args.workspaceRoot);
+        return;
+      }
       case "proxy": {
         proxyOwnsClientLifecycle = true;
         const serverId =

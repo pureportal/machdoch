@@ -14,6 +14,8 @@ import {
 const secretRuntime = vi.hoisted(() => ({
   deleteUserProviderApiKey: vi.fn(),
   deleteUserWebSearchApiKey: vi.fn(),
+  loadUserProviderApiKeys: vi.fn(),
+  loadUserWebSearchSettings: vi.fn(),
   saveUserProviderApiKey: vi.fn(),
   saveUserWebSearchApiKey: vi.fn(),
 }));
@@ -45,7 +47,6 @@ const localPack = (id: string, name: string): SmartContextPack => ({
 
 const document = (): FleetManagedSettingsDocument => ({
   defaults: {
-    preferredToolingAgent: null,
     provider: "openai",
     model: "gpt-5.6",
     mode: "ask",
@@ -71,12 +72,17 @@ const document = (): FleetManagedSettingsDocument => ({
       model: "gpt-5.6",
       mode: "machdoch",
       reasoning: "medium",
-      variables: ["target"],
+      variables: [{ name: "target", defaultValue: "production" }],
       triggerPhrases: ["ship it"],
       pathPatterns: ["src/**"],
+      promptEnhancementMode: "web-search",
+      interviewEnabled: true,
+      sessionMemoryEnabled: false,
+      useGlobalMemory: true,
+      uiControlEnabled: false,
     },
   ],
-  customValues: {},
+  prompts: [],
 });
 
 const metadata: FleetManagedSettingsState = {
@@ -84,7 +90,7 @@ const metadata: FleetManagedSettingsState = {
   profileId: "profile-one",
   revision: 2,
   instructionProfileIds: {},
-  contextPackIds: ["managed-pack"],
+  contextPackIds: ["fleet:manager-one:managed-pack"],
   secretIds: [],
   appliedAt: 100,
 };
@@ -92,6 +98,12 @@ const metadata: FleetManagedSettingsState = {
 describe("Fleet managed settings", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    secretRuntime.loadUserProviderApiKeys.mockResolvedValue({});
+    secretRuntime.loadUserWebSearchSettings.mockResolvedValue({
+      activeProvider: "none",
+      apiKeys: {},
+      providerAvailability: [],
+    });
   });
 
   it("replaces managed packs without removing local packs", () => {
@@ -109,6 +121,7 @@ describe("Fleet managed settings", () => {
     const managedPacks = createManagedContextPacks(
       document(),
       state.contextPacks,
+      "manager-one",
     );
     const next = applyManagedShellSettings(
       state,
@@ -118,7 +131,7 @@ describe("Fleet managed settings", () => {
     );
 
     expect(next.contextPacks.map((pack) => pack.id)).toEqual([
-      "managed-pack",
+      "fleet:manager-one:managed-pack",
       "local-pack",
     ]);
     expect(next.contextPacks[0]).toMatchObject({
@@ -127,8 +140,13 @@ describe("Fleet managed settings", () => {
       model: "gpt-5.6",
       mode: "machdoch",
       reasoning: "medium",
-      variables: [{ name: "target" }],
+      variables: [{ name: "target", defaultValue: "production" }],
       trigger: { phrases: ["ship it"], pathPatterns: ["src/**"] },
+      promptEnhancementMode: "web-search",
+      interviewEnabled: true,
+      sessionMemoryEnabled: false,
+      useGlobalMemory: true,
+      uiControlEnabled: false,
     });
     expect(next.fleetManagedSettings).toEqual(metadata);
     expect(next.lastSelectedProvider).toBe("openai");
@@ -138,15 +156,44 @@ describe("Fleet managed settings", () => {
   });
 
   it("preserves usage metadata when a managed pack is revised", () => {
-    const current = localPack("managed-pack", "Previous managed pack");
-    const [managed] = createManagedContextPacks(document(), [current]);
+    const current = localPack(
+      "fleet:manager-one:managed-pack",
+      "Previous managed pack",
+    );
+    const [managed] = createManagedContextPacks(
+      document(),
+      [current],
+      "manager-one",
+      [current.id],
+    );
 
     expect(managed).toMatchObject({
-      id: "managed-pack",
+      id: "fleet:manager-one:managed-pack",
       createdAt: 10,
       lastUsedAt: 30,
       useCount: 4,
     });
+  });
+
+  it("rejects a managed pack collision with local data", () => {
+    const current = localPack("fleet:manager-one:managed-pack", "Local pack");
+
+    expect(() =>
+      createManagedContextPacks(document(), [current], "manager-one"),
+    ).toThrow(/conflicts with a local pack/u);
+  });
+
+  it("reuses an unchanged managed pack", () => {
+    const [first] = createManagedContextPacks(document(), [], "manager-one");
+    if (!first) throw new Error("Managed pack was not created.");
+    const [second] = createManagedContextPacks(
+      document(),
+      [first],
+      "manager-one",
+      [first.id],
+    );
+
+    expect(second).toBe(first);
   });
 
   it("removes managed credentials that are no longer assigned", async () => {
@@ -168,5 +215,24 @@ describe("Fleet managed settings", () => {
       "anthropic",
     );
     expect(secretRuntime.deleteUserWebSearchApiKey).not.toHaveBeenCalled();
+  });
+
+  it("does not rewrite credentials that already match", async () => {
+    secretRuntime.loadUserProviderApiKeys.mockResolvedValue({
+      openai: "openai-key",
+    });
+    secretRuntime.loadUserWebSearchSettings.mockResolvedValue({
+      activeProvider: "tavily",
+      apiKeys: { tavily: "tavily-key" },
+      providerAvailability: [],
+    });
+
+    await synchronizeSecrets({ openai: "openai-key", tavily: "tavily-key" }, [
+      "openai",
+      "tavily",
+    ]);
+
+    expect(secretRuntime.saveUserProviderApiKey).not.toHaveBeenCalled();
+    expect(secretRuntime.saveUserWebSearchApiKey).not.toHaveBeenCalled();
   });
 });

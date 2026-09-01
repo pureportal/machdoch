@@ -12,7 +12,11 @@ afterEach(() => {
   }
 });
 
-function configurationPath(externalBaseUrl: string): string {
+function configurationPath(
+  externalBaseUrl: string,
+  listenAddress = "127.0.0.1",
+  settingsManager?: Record<string, unknown>,
+): string {
   const directory = mkdtempSync(join(tmpdir(), "machdoch-fleet-config-"));
   temporaryDirectories.push(directory);
   const path = join(directory, "fleet-manager.json");
@@ -21,8 +25,9 @@ function configurationPath(externalBaseUrl: string): string {
     JSON.stringify({
       schemaVersion: 1,
       externalBaseUrl,
-      listen: { address: "127.0.0.1", port: 43188 },
+      listen: { address: listenAddress, port: 43188 },
       database: { path: "./fleet-manager.sqlite" },
+      ...(settingsManager ? { settingsManager } : {}),
     }),
   );
   return path;
@@ -36,6 +41,13 @@ describe("Fleet Manager configuration", () => {
     );
 
     expect(config.externalBaseUrl).toBe("http://127.0.0.1:43188");
+
+    expect(
+      loadConfig(
+        configurationPath("http://127.0.0.2:43188", "127.0.0.2"),
+        "development",
+      ).listen.address,
+    ).toBe("127.0.0.2");
   });
 
   it("requires HTTPS in production", () => {
@@ -51,5 +63,23 @@ describe("Fleet Manager configuration", () => {
         "development",
       ),
     ).toThrow(/loopback HTTP origin/u);
+  });
+
+  it("rejects secret limits that exceed the delivery protocol", () => {
+    expect(() =>
+      loadConfig(
+        configurationPath("https://fleet.example.test", "127.0.0.1", {
+          limits: {
+            maximumProfiles: 64,
+            maximumInstructionsPerProfile: 128,
+            maximumPacksPerProfile: 128,
+            maximumPromptsPerProfile: 128,
+            maximumRevisionsPerProfile: 100,
+            maximumDocumentBytes: 1024 * 1024,
+            maximumSecretBytes: 8 * 1024 + 1,
+          },
+        }),
+      ),
+    ).toThrow();
   });
 });

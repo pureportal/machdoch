@@ -100,6 +100,7 @@ export function UsersView(): React.ReactElement {
                 id="owner-username"
                 name="username"
                 defaultValue={account?.username ?? ""}
+                maxLength={64}
                 required
               />
             </Field>
@@ -109,6 +110,7 @@ export function UsersView(): React.ReactElement {
                 name="currentPassword"
                 type="password"
                 autoComplete="current-password"
+                maxLength={1024}
                 required
               />
             </Field>
@@ -123,6 +125,7 @@ export function UsersView(): React.ReactElement {
                 type="password"
                 autoComplete="new-password"
                 minLength={12}
+                maxLength={1024}
                 required
               />
             </Field>

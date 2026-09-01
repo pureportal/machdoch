@@ -83,7 +83,7 @@ pub(super) fn emit_progress_event(
     };
     let timestamp = create_progress_timestamp();
 
-    crate::remote_control::record_task_progress(app_handle, task_id, &progress, timestamp);
+    crate::fleet_control::record_task_progress(app_handle, task_id, &progress, timestamp);
 
     let _ = app_handle.emit_to(
         window_label,
