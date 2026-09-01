@@ -1,10 +1,11 @@
 import { getCurrentWindow, type DragDropEvent } from "@tauri-apps/api/window";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { Check, Import, LoaderCircle, Upload, X } from "lucide-react";
+import { Eye, FileUp, Import, LoaderCircle, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import {
   inferMediaAssetImportType,
   listCompatibleMediaAssetImportTypes,
+  parseMediaAssetImportFilename,
   type MediaAssetImportProgress,
   type MediaAssetImportType,
 } from "../../../../core/media/asset-import.js";
@@ -23,6 +24,7 @@ import type {
   MediaAssetRecord,
   MediaCivitaiModelAddonInspection,
   MediaGenerationAssetMetadata,
+  MediaCivitaiSampleImage,
   MediaLocalModelArchitecture,
   MediaLocalModelImportInspection,
   MediaModelAddonImportInspection,
@@ -35,7 +37,7 @@ import {
 import { ControlTooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 import { MediaCategoryPicker } from "./media-category-picker";
-import { MediaAssetPreview } from "./media-visual-preview";
+import { MediaSampleImagesInput } from "./media-sample-images-input";
 
 interface MediaAssetImportDialogProps {
   assets: readonly MediaAssetRecord[];
@@ -61,6 +63,8 @@ interface MediaAssetImportDialogProps {
     request: ImportMediaModelAddonRequest,
     metadata: MediaGenerationAssetMetadata,
   ) => Promise<boolean>;
+  onImportSampleUrl: (url: string) => Promise<MediaAssetImportResult | null>;
+  onViewResource: (resourceId: string) => void;
   onDismissInspection: () => void;
   onManageCategories: () => void;
   onClose: () => void;
@@ -139,6 +143,8 @@ export const MediaAssetImportDialog = ({
   onImportMedia,
   onImportModel,
   onImportAddon,
+  onImportSampleUrl,
+  onViewResource,
   onDismissInspection,
   onManageCategories,
   onClose,
@@ -149,23 +155,22 @@ export const MediaAssetImportDialog = ({
   );
   const [displayName, setDisplayName] = useState("");
   const [architecture, setArchitecture] =
-    useState<MediaLocalModelArchitecture>("flux-1");
+    useState<MediaLocalModelArchitecture | null>(null);
   const [categoryIds, setCategoryIds] = useState<string[]>([]);
   const [tags, setTags] = useState("");
   const [triggerWords, setTriggerWords] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [licenseName, setLicenseName] = useState("");
   const [commercialUse, setCommercialUse] = useState<
-    "allowed" | "review-required"
-  >("review-required");
-  const [confirmRights, setConfirmRights] = useState(false);
+    "" | "allowed" | "review-required"
+  >("");
   const [sampleAssetIds, setSampleAssetIds] = useState<string[]>([]);
+  const [sampleImages, setSampleImages] = useState<MediaCivitaiSampleImage[]>(
+    [],
+  );
   const [fileError, setFileError] = useState<string | null>(null);
   const dirtyEnrichmentFields = useRef(
     new Set<"displayName" | "architecture" | "tags" | "triggerWords">(),
-  );
-  const imageAssets = assets.filter(
-    (asset) => asset.kind === "image" || asset.kind === "vector",
   );
   const importIsAddon = importType === "lora" || importType === "embedding";
   const importIsGenerationAsset = importType === "model" || importIsAddon;
@@ -202,18 +207,32 @@ export const MediaAssetImportDialog = ({
     compatibleImportTypes.includes(importType) &&
     localTypeMatches &&
     civitaiTypeMatches;
+  const importActionLabel =
+    inspection?.duplicate?.kind === "model"
+      ? "View model"
+      : inspection?.duplicate?.kind === "lora"
+        ? "View LoRA"
+        : inspection?.duplicate?.kind === "embedding"
+          ? "View embedding"
+          : importType === "model"
+            ? "Import model"
+            : importType === "lora"
+              ? "Import LoRA"
+              : importType === "embedding"
+                ? "Import embedding"
+                : "Import asset";
 
   const resetFields = useCallback((): void => {
     setDisplayName("");
-    setArchitecture("flux-1");
+    setArchitecture(null);
     setCategoryIds([]);
     setTags("");
     setTriggerWords("");
     setSourceUrl("");
     setLicenseName("");
-    setCommercialUse("review-required");
-    setConfirmRights(false);
+    setCommercialUse("");
     setSampleAssetIds([]);
+    setSampleImages([]);
     dirtyEnrichmentFields.current.clear();
     onDismissInspection();
   }, [onDismissInspection]);
@@ -221,6 +240,9 @@ export const MediaAssetImportDialog = ({
   const chooseType = (type: MediaAssetImportType): void => {
     if (loading || !compatibleImportTypes.includes(type)) return;
     resetFields();
+    const prefill = parseMediaAssetImportFilename(path);
+    setDisplayName(prefill.displayName);
+    setArchitecture(prefill.architecture);
     setImportType(type);
     if (type === "model") onInspectModel(path);
     if (type === "lora" || type === "embedding") onInspectAddon(path);
@@ -230,6 +252,9 @@ export const MediaAssetImportDialog = ({
     (selectedPath: string): void => {
       resetFields();
       setPath(selectedPath);
+      const prefill = parseMediaAssetImportFilename(selectedPath);
+      setDisplayName(prefill.displayName);
+      setArchitecture(prefill.architecture);
       const inferredType = inferMediaAssetImportType(selectedPath);
       setImportType(inferredType);
       if (inferredType === "model") onInspectModel(selectedPath);
@@ -261,24 +286,91 @@ export const MediaAssetImportDialog = ({
     }
   };
 
+  const importSamplePaths = useCallback(
+    async (paths: string[]): Promise<string[]> => {
+      const importedAssetIds: string[] = [];
+      for (const samplePath of paths.slice(0, 12)) {
+        const result = await onImportMedia(
+          samplePath,
+          createEmptyMediaGenerationAssetMetadata(),
+        );
+        if (!result) throw new Error("The sample image could not be imported.");
+        importedAssetIds.push(result.asset.id);
+      }
+      return [...new Set(importedAssetIds)];
+    },
+    [onImportMedia],
+  );
+
+  const addSamplePaths = useCallback(
+    async (paths: string[]): Promise<void> => {
+      const available = 12 - sampleAssetIds.length - sampleImages.length;
+      if (available <= 0) return;
+      setFileError(null);
+      try {
+        const importedAssetIds = await importSamplePaths(
+          paths.slice(0, available),
+        );
+        setSampleAssetIds((current) =>
+          [...new Set([...current, ...importedAssetIds])].slice(
+            0,
+            12 - sampleImages.length,
+          ),
+        );
+      } catch (sampleError: unknown) {
+        setFileError(
+          sampleError instanceof Error
+            ? sampleError.message
+            : "The sample images could not be added.",
+        );
+      }
+    },
+    [importSamplePaths, sampleAssetIds.length, sampleImages.length],
+  );
+
+  const downloadSampleUrl = useCallback(
+    async (url: string): Promise<string | null> =>
+      (await onImportSampleUrl(url))?.asset.id ?? null,
+    [onImportSampleUrl],
+  );
+
   useEffect(() => {
+    let disposed = false;
     let unlisten: (() => void) | undefined;
     void getCurrentWindow()
       .onDragDropEvent((event: { payload: DragDropEvent }) => {
         if (loading || event.payload.type !== "drop") return;
-        const dropped = event.payload.paths[0];
+        const droppedPaths = event.payload.paths;
+        const samplePaths = droppedPaths.filter((droppedPath) =>
+          listCompatibleMediaAssetImportTypes(droppedPath).some((type) =>
+            ["image", "svg"].includes(type),
+          ),
+        );
+        if (
+          path &&
+          importIsGenerationAsset &&
+          samplePaths.length === droppedPaths.length
+        ) {
+          void addSamplePaths(samplePaths);
+          return;
+        }
+        const dropped = droppedPaths[0];
         if (!dropped) return;
         setFileError(null);
         selectPath(dropped);
       })
       .then((dispose) => {
-        unlisten = dispose;
+        if (disposed) dispose();
+        else unlisten = dispose;
       })
       .catch(() =>
         setFileError("File drop is unavailable. Select a file instead."),
       );
-    return () => unlisten?.();
-  }, [loading, selectPath]);
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [addSamplePaths, importIsGenerationAsset, loading, path, selectPath]);
 
   useEffect(() => {
     if (!inspection) return;
@@ -329,6 +421,7 @@ export const MediaAssetImportDialog = ({
     if (!dirtyEnrichmentFields.current.has("tags")) {
       setTags(civitaiInspection.tags.join(", "));
     }
+    setSampleImages(civitaiInspection.sampleImages.slice(0, 12));
   }, [civitaiInspection]);
 
   useEffect(() => {
@@ -345,17 +438,29 @@ export const MediaAssetImportDialog = ({
     triggerWords: normalizeMediaTriggerWords(triggerWords),
     sourceUrl: normalizedSourceUrl,
     sampleAssetIds,
-    sampleImages: civitaiInspection?.sampleImages ?? [],
+    sampleImages,
   });
 
   const submitImport = async (): Promise<void> => {
+    if (inspection?.duplicate) {
+      onViewResource(inspection.duplicate.resourceId);
+      onClose();
+      return;
+    }
     if (!path || !importType || !sourceUrlValid || !importTypeMatches) return;
     if (!importIsGenerationAsset) {
       const result = await onImportMedia(path, generationMetadata());
       if (result) onClose();
       return;
     }
-    if (!inspection || !displayName.trim()) return;
+    if (
+      !inspection ||
+      !inspection.canImport ||
+      !displayName.trim() ||
+      !architecture
+    ) {
+      return;
+    }
     if (importType === "model") {
       const imported = await onImportModel(
         {
@@ -365,9 +470,8 @@ export const MediaAssetImportDialog = ({
           architecture,
           sourceUrl: normalizedSourceUrl,
           contentDigest: inspection.contentDigest,
-          licenseName: licenseName.trim(),
-          commercialUse,
-          confirmRights,
+          licenseName: licenseName.trim() || null,
+          commercialUse: commercialUse || null,
         },
         generationMetadata(),
       );
@@ -390,9 +494,8 @@ export const MediaAssetImportDialog = ({
             : null,
         sourceUrl: normalizedSourceUrl,
         contentDigest: addonImportInspection.contentDigest,
-        licenseName: licenseName.trim(),
-        commercialUse,
-        confirmRights,
+        licenseName: licenseName.trim() || null,
+        commercialUse: commercialUse || null,
       },
       generationMetadata(),
     );
@@ -436,7 +539,7 @@ export const MediaAssetImportDialog = ({
               {loading ? (
                 <LoaderCircle className="h-6 w-6 animate-spin" />
               ) : path ? (
-                <Check className="h-6 w-6 text-emerald-300" />
+                <FileUp className="h-6 w-6 text-slate-300" />
               ) : (
                 <Upload className="h-6 w-6" />
               )}
@@ -529,18 +632,20 @@ export const MediaAssetImportDialog = ({
                 </label>
                 {importIsGenerationAsset ? (
                   <>
-                    <label className="space-y-1 text-xs text-slate-400">
+                    <label className="space-y-1 text-xs text-slate-400 sm:col-span-2">
                       <span>Base model</span>
                       <select
-                        value={architecture}
+                        value={architecture ?? ""}
                         onChange={(event) => {
                           dirtyEnrichmentFields.current.add("architecture");
                           setArchitecture(
-                            event.target.value as MediaLocalModelArchitecture,
+                            (event.target.value ||
+                              null) as MediaLocalModelArchitecture | null,
                           );
                         }}
                         className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
                       >
+                        <option value="">Select base model</option>
                         {ARCHITECTURES.map((item) => (
                           <option key={item.value} value={item.value}>
                             {item.label}
@@ -562,25 +667,18 @@ export const MediaAssetImportDialog = ({
                         value={commercialUse}
                         onChange={(event) =>
                           setCommercialUse(
-                            event.target.value as "allowed" | "review-required",
+                            event.target.value as
+                              | ""
+                              | "allowed"
+                              | "review-required",
                           )
                         }
                         className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
                       >
-                        <option value="review-required">Review required</option>
+                        <option value="">Not set</option>
                         <option value="allowed">Allowed</option>
+                        <option value="review-required">Review required</option>
                       </select>
-                    </label>
-                    <label className="flex items-center gap-2 text-xs text-slate-300 sm:col-span-2">
-                      <input
-                        type="checkbox"
-                        checked={confirmRights}
-                        onChange={(event) =>
-                          setConfirmRights(event.target.checked)
-                        }
-                        className="h-4 w-4 rounded border-slate-600 bg-slate-900"
-                      />
-                      I have the right to use these weights.
                     </label>
                   </>
                 ) : null}
@@ -633,58 +731,19 @@ export const MediaAssetImportDialog = ({
                   </label>
                 ) : null}
                 {importIsGenerationAsset ? (
-                  <>
-                    <label className="space-y-1 text-xs text-slate-400 sm:col-span-2">
-                      <span>Sample images</span>
-                      <div className="grid max-h-48 grid-cols-6 gap-2 overflow-y-auto rounded-xl border border-slate-800 p-2">
-                        {imageAssets.map((asset) => {
-                          const selected = sampleAssetIds.includes(asset.id);
-                          return (
-                            <button
-                              key={asset.id}
-                              type="button"
-                              aria-pressed={selected}
-                              onClick={() =>
-                                setSampleAssetIds((current) =>
-                                  selected
-                                    ? current.filter((id) => id !== asset.id)
-                                    : [...current, asset.id].slice(0, 12),
-                                )
-                              }
-                              className={cn(
-                                "relative aspect-square overflow-hidden rounded-lg border",
-                                selected
-                                  ? "border-sky-400"
-                                  : "border-slate-700",
-                              )}
-                            >
-                              <MediaAssetPreview
-                                asset={asset}
-                                className="h-full w-full"
-                              />
-                              {selected ? (
-                                <Check className="absolute right-1 top-1 h-4 w-4 rounded-full bg-sky-500 p-0.5 text-white" />
-                              ) : null}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </label>
-                  </>
-                ) : null}
-              </div>
-            ) : null}
-            {civitaiInspection?.sampleImages.length ? (
-              <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
-                {civitaiInspection.sampleImages.map((sample) => (
-                  <img
-                    key={sample.url}
-                    src={sample.url}
-                    alt=""
-                    referrerPolicy="no-referrer"
-                    className="aspect-square w-full rounded-lg object-cover"
+                  <MediaSampleImagesInput
+                    assets={assets}
+                    sampleAssetIds={sampleAssetIds}
+                    sampleImages={sampleImages}
+                    disabled={loading}
+                    onChange={(nextAssetIds, nextImages) => {
+                      setSampleAssetIds(nextAssetIds);
+                      setSampleImages(nextImages);
+                    }}
+                    onImportPaths={importSamplePaths}
+                    onDownloadUrl={downloadSampleUrl}
                   />
-                ))}
+                ) : null}
               </div>
             ) : null}
             {civitaiInspection && !civitaiInspection.canEnrich ? (
@@ -695,6 +754,11 @@ export const MediaAssetImportDialog = ({
             {inspection?.duplicate ? (
               <p className="text-sm text-amber-300">
                 Already imported as {inspection.duplicate.displayName}.
+              </p>
+            ) : null}
+            {inspection?.blockingReason ? (
+              <p className="text-sm text-rose-300">
+                {inspection.blockingReason}
               </p>
             ) : null}
             {importType && !importTypeMatches ? (
@@ -717,26 +781,28 @@ export const MediaAssetImportDialog = ({
               type="button"
               onClick={() => void submitImport()}
               disabled={
-                !path ||
-                !importType ||
                 loading ||
-                !sourceUrlValid ||
-                !importTypeMatches ||
-                (importIsGenerationAsset &&
-                  (!inspection ||
-                    !displayName.trim() ||
-                    !licenseName.trim() ||
-                    !confirmRights ||
-                    inspection.duplicate !== null))
+                (!inspection?.duplicate &&
+                  (!path ||
+                    !importType ||
+                    !sourceUrlValid ||
+                    !importTypeMatches ||
+                    (importIsGenerationAsset &&
+                      (!inspection ||
+                        !inspection.canImport ||
+                        !displayName.trim() ||
+                        !architecture))))
               }
               {...SUBMIT_SHORTCUT_ACTION_PROPS}
             >
               {loading ? (
                 <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : inspection?.duplicate ? (
+                <Eye className="h-4 w-4" />
               ) : (
                 <Import className="h-4 w-4" />
               )}
-              Import
+              {importActionLabel}
             </Button>
           </footer>
         </div>

@@ -3,7 +3,8 @@ import { createMediaModelCatalogSnapshot } from "./catalog.js";
 import {
   getMediaModelPrimaryGenerationTarget,
   isMediaGenerationModel,
-  listManageableMediaGenerationModels,
+  listAvailableMediaGenerationModels,
+  listMediaLibraryModels,
   listSelectableMediaModels,
   matchesMediaModelQuery,
   mediaModelSupportsGenerationTarget,
@@ -75,7 +76,7 @@ describe("matchesMediaModelQuery", () => {
     expect(selectable.every((model) => model.configured)).toBe(true);
   });
 
-  it("keeps installed generation models manageable while excluding unused entries", () => {
+  it("lists only generation models that are currently available to use", () => {
     const configuredCatalog = createMediaModelCatalogSnapshot({
       isOpenAiConfigured: true,
       isLocalFluxInstalled: true,
@@ -83,29 +84,82 @@ describe("matchesMediaModelQuery", () => {
     const flux = configuredCatalog.models.find(
       (model) => model.id === "local:flux-2-klein-4b",
     )!;
-    const brokenInstalled = {
+    const providerReady = configuredCatalog.models.find(
+      (model) => model.id === "openai:gpt-image-2",
+    )!;
+    const importedReady = {
       ...flux,
+      id: "user:imported-ready",
+      displayName: "Imported Ready",
+      userImported: true,
+      management: {
+        acquisition: "file-import" as const,
+        verification: "model-probe" as const,
+      },
+      runtimeReadiness: "ready" as const,
+    };
+    const providerUnconfigured = {
+      ...providerReady,
+      id: "remote:unconfigured",
+      configured: false,
+    };
+    const brokenInstalled = {
+      ...importedReady,
       id: "local:broken",
       runtimeReadiness: "failed" as const,
     };
-    const unusedCatalogEntry = {
+    const unverified = {
+      ...importedReady,
+      id: "local:unverified",
+      runtimeReadiness: "unverified" as const,
+    };
+    const runtimeUnavailable = {
+      ...importedReady,
+      id: "local:runtime-unavailable",
+      runtimeReadiness: "runtime-unavailable" as const,
+    };
+    const notInstalled = {
       ...flux,
       id: "local:not-installed",
       installed: false,
       configured: false,
       installationStatus: "not-installed" as const,
     };
-    const manageable = listManageableMediaGenerationModels([
+    const removed = {
+      ...providerReady,
+      id: "remote:removed",
+      lifecycle: "removed" as const,
+    };
+    const available = listAvailableMediaGenerationModels([
+      providerReady,
+      importedReady,
+      providerUnconfigured,
       brokenInstalled,
-      unusedCatalogEntry,
-      ...configuredCatalog.models,
+      unverified,
+      runtimeUnavailable,
+      notInstalled,
+      removed,
     ]);
 
-    expect(manageable.some((model) => model.id === brokenInstalled.id)).toBe(
-      true,
-    );
-    expect(manageable.some((model) => model.id === unusedCatalogEntry.id)).toBe(
-      false,
-    );
+    expect(available.map((model) => model.id)).toEqual([
+      providerReady.id,
+      importedReady.id,
+    ]);
+
+    expect(
+      listMediaLibraryModels([
+        providerReady,
+        importedReady,
+        providerUnconfigured,
+        brokenInstalled,
+        runtimeUnavailable,
+        notInstalled,
+      ]).map((model) => model.id),
+    ).toEqual([
+      providerReady.id,
+      importedReady.id,
+      brokenInstalled.id,
+      runtimeUnavailable.id,
+    ]);
   });
 });

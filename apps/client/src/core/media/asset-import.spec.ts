@@ -2,15 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   inferMediaAssetImportType,
   listCompatibleMediaAssetImportTypes,
+  parseMediaAssetImportFilename,
   type MediaAssetFolderTypeRule,
 } from "./asset-import.js";
 
 describe("media asset import types", () => {
   it("restricts each file extension to compatible asset types", () => {
     expect(listCompatibleMediaAssetImportTypes("cat.PNG")).toEqual(["image"]);
-    expect(listCompatibleMediaAssetImportTypes("clip.webm")).toEqual([
-      "video",
-    ]);
+    expect(listCompatibleMediaAssetImportTypes("clip.webm")).toEqual(["video"]);
     expect(
       listCompatibleMediaAssetImportTypes("checkpoint.safetensors"),
     ).toEqual(["model", "lora", "embedding"]);
@@ -41,5 +40,34 @@ describe("media asset import types", () => {
     expect(
       inferMediaAssetImportType("C:\\assets\\dora\\style.safetensors", rules),
     ).toBe("lora");
+  });
+
+  it.each([
+    [
+      "moodyKrea2Mix_v50.safetensors",
+      {
+        displayName: "Moody Krea 2 Mix v50",
+        importType: "model",
+        architecture: "krea-2",
+      },
+    ],
+    [
+      "cinematic_portrait-SDXL-v2_lora.safetensors",
+      {
+        displayName: "Cinematic Portrait SDXL v2 LoRA",
+        importType: "lora",
+        architecture: "stable-diffusion-xl",
+      },
+    ],
+    [
+      "paper-cut_textual-inversion_sd1.5.safetensors",
+      {
+        displayName: "Paper Cut Textual Inversion SD 1.5",
+        importType: "embedding",
+        architecture: "stable-diffusion-1",
+      },
+    ],
+  ] as const)("prefills import fields from %s", (path, expected) => {
+    expect(parseMediaAssetImportFilename(path)).toEqual(expected);
   });
 });

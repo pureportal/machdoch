@@ -1,16 +1,19 @@
 use std::{
     fs::{self, File, OpenOptions},
     io::{BufReader, Read, Seek, SeekFrom, Write},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use image::{ImageFormat, ImageReader, Limits};
+use reqwest::{redirect::Policy, Client, Url};
 use sha2::{Digest as _, Sha256};
+use tokio::io::AsyncWriteExt as _;
 
 use super::{database, svg, transform, MediaImageImportResult, MediaResult, MediaRuntimePaths};
 
-const MAX_ENCODED_BYTES: u64 = 64 * 1024 * 1024;
+pub(super) const MAX_ENCODED_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_DIMENSION: u32 = 20_000;
 const MAX_DECODED_PIXELS: u64 = 100_000_000;
 const MAX_DECODE_ALLOC: u64 = 512 * 1024 * 1024;
@@ -51,6 +54,174 @@ pub(crate) fn import_image(
         let _ = fs::remove_file(&staged.path);
     }
     result
+}
+
+fn validated_remote_image_url(source_url: &str) -> MediaResult<Url> {
+    let source_url = source_url.trim();
+    if source_url.is_empty() || source_url.chars().count() > 2_048 {
+        return Err("Image URL must contain at most 2048 characters".to_string());
+    }
+    let url = Url::parse(source_url).map_err(|_| "Image URL is invalid".to_string())?;
+    if url.scheme() != "https"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.port_or_known_default() != Some(443)
+    {
+        return Err("Image URL must be a public HTTPS URL".to_string());
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| "Image URL must include a host".to_string())?;
+    let normalized_host = host.trim_end_matches('.').to_ascii_lowercase();
+    if normalized_host == "localhost"
+        || normalized_host.ends_with(".localhost")
+        || normalized_host.ends_with(".local")
+    {
+        return Err("Image URL must use a public host".to_string());
+    }
+    Ok(url)
+}
+
+fn is_public_ipv4(address: Ipv4Addr) -> bool {
+    let [first, second, third, _] = address.octets();
+    !(first == 0
+        || first == 10
+        || first == 127
+        || first >= 224
+        || (first == 100 && (64..=127).contains(&second))
+        || (first == 169 && second == 254)
+        || (first == 172 && (16..=31).contains(&second))
+        || (first == 192 && second == 0 && third == 0)
+        || (first == 192 && second == 0 && third == 2)
+        || (first == 192 && second == 168)
+        || (first == 198 && (second == 18 || second == 19))
+        || (first == 198 && second == 51 && third == 100)
+        || (first == 203 && second == 0 && third == 113))
+}
+
+fn is_public_ipv6(address: Ipv6Addr) -> bool {
+    if let Some(mapped) = address.to_ipv4_mapped() {
+        return is_public_ipv4(mapped);
+    }
+    let first = address.segments()[0];
+    (0x2000..=0x3fff).contains(&first) && !(first == 0x2001 && address.segments()[1] == 0x0db8)
+}
+
+fn is_public_ip(address: IpAddr) -> bool {
+    match address {
+        IpAddr::V4(address) => is_public_ipv4(address),
+        IpAddr::V6(address) => is_public_ipv6(address),
+    }
+}
+
+async fn remote_image_client(url: &Url) -> MediaResult<Client> {
+    let host = url
+        .host_str()
+        .ok_or_else(|| "Image URL must include a host".to_string())?;
+    let addresses = tokio::net::lookup_host((host, 443))
+        .await
+        .map_err(|error| format!("Image host could not be resolved: {error}"))?
+        .collect::<Vec<_>>();
+    if addresses.is_empty() || addresses.iter().any(|address| !is_public_ip(address.ip())) {
+        return Err("Image URL must resolve only to public addresses".to_string());
+    }
+    let address = SocketAddr::new(addresses[0].ip(), 443);
+    Client::builder()
+        .redirect(Policy::none())
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(45))
+        .user_agent("machdoch-media-studio/1.0")
+        .resolve(host, address)
+        .build()
+        .map_err(|error| format!("failed to prepare image download: {error}"))
+}
+
+pub(crate) async fn import_image_url(
+    paths: MediaRuntimePaths,
+    source_url: &str,
+) -> MediaResult<MediaImageImportResult> {
+    let url = validated_remote_image_url(source_url)?;
+    let client = remote_image_client(&url).await?;
+    let mut response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| format!("Image download failed: {error}"))?;
+    if response.status().is_redirection() {
+        return Err("Image URL redirected; use the final image URL".to_string());
+    }
+    if !response.status().is_success() {
+        return Err(format!(
+            "Image download returned HTTP {}",
+            response.status()
+        ));
+    }
+    if response
+        .content_length()
+        .is_some_and(|size| size == 0 || size > MAX_ENCODED_BYTES)
+    {
+        return Err(format!(
+            "Image download must be between 1 byte and {} MB",
+            MAX_ENCODED_BYTES / 1024 / 1024
+        ));
+    }
+
+    let staging_directory = paths.blobs.join(".staging");
+    tokio::fs::create_dir_all(&staging_directory)
+        .await
+        .map_err(|error| format!("failed to prepare image download: {error}"))?;
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let staging_path =
+        staging_directory.join(format!("download-{}-{unique}.partial", std::process::id()));
+    let mut file = tokio::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&staging_path)
+        .await
+        .map_err(|error| format!("failed to create image download: {error}"))?;
+    let download_result: MediaResult<()> = async {
+        let mut byte_size = 0_u64;
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| format!("failed while downloading image: {error}"))?
+        {
+            byte_size = byte_size.saturating_add(chunk.len() as u64);
+            if byte_size > MAX_ENCODED_BYTES {
+                return Err(format!(
+                    "Image download exceeded the {} MB limit",
+                    MAX_ENCODED_BYTES / 1024 / 1024
+                ));
+            }
+            file.write_all(&chunk)
+                .await
+                .map_err(|error| format!("failed to write image download: {error}"))?;
+        }
+        if byte_size == 0 {
+            return Err("Image download was empty".to_string());
+        }
+        file.sync_all()
+            .await
+            .map_err(|error| format!("failed to flush image download: {error}"))?;
+        Ok(())
+    }
+    .await;
+    drop(file);
+    if let Err(error) = download_result {
+        let _ = tokio::fs::remove_file(&staging_path).await;
+        return Err(error);
+    }
+    let import_path = staging_path.clone();
+    let import_paths = paths.clone();
+    let worker_result = tauri::async_runtime::spawn_blocking(move || {
+        import_image(&import_paths, import_path.to_string_lossy().as_ref())
+    })
+    .await;
+    let _ = tokio::fs::remove_file(staging_path).await;
+    worker_result.map_err(|error| format!("image import worker could not be joined: {error}"))?
 }
 
 fn import_svg_raster(
@@ -346,6 +517,18 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ))
+    }
+
+    #[test]
+    fn remote_image_urls_require_public_https_hosts() {
+        assert!(validated_remote_image_url("https://images.example.com/sample.webp").is_ok());
+        assert!(validated_remote_image_url("http://images.example.com/sample.webp").is_err());
+        assert!(validated_remote_image_url("https://localhost/sample.webp").is_err());
+        assert!(!is_public_ip("127.0.0.1".parse().unwrap()));
+        assert!(!is_public_ip("192.168.1.4".parse().unwrap()));
+        assert!(!is_public_ip("2001:db8::1".parse().unwrap()));
+        assert!(is_public_ip("1.1.1.1".parse().unwrap()));
+        assert!(is_public_ip("2606:4700:4700::1111".parse().unwrap()));
     }
 
     #[test]

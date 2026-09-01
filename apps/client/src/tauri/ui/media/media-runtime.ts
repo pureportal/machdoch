@@ -2805,6 +2805,17 @@ export const importMediaAsset = async (
   return invoke<MediaAssetImportResult>("media_import_image", { path });
 };
 
+export const importMediaAssetFromUrl = async (
+  url: string,
+): Promise<MediaAssetImportResult> => {
+  if (!canInvokeNativeRuntime()) {
+    throw new Error(
+      "Image download is available in the native desktop app only.",
+    );
+  }
+  return invoke<MediaAssetImportResult>("media_import_image_url", { url });
+};
+
 export const readMediaAssetPreview = async (
   asset: MediaAssetRecord,
   maxEdge = 512,

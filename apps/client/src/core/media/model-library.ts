@@ -72,13 +72,21 @@ export const listSelectableMediaModels = (
         requirements.allowedModelIds.includes(model.id)),
   );
 
-export const listManageableMediaGenerationModels = (
+export const listAvailableMediaGenerationModels = (
+  models: readonly MediaModelDescriptor[],
+): MediaModelDescriptor[] =>
+  models.filter(
+    (model) => isMediaGenerationModel(model) && isMediaModelReady(model),
+  );
+
+export const listMediaLibraryModels = (
   models: readonly MediaModelDescriptor[],
 ): MediaModelDescriptor[] =>
   models.filter(
     (model) =>
       isMediaGenerationModel(model) &&
-      (model.installed || model.configured || model.userImported),
+      (model.userImported ||
+        (model.target === "local" ? model.installed : model.configured)),
   );
 
 const normalizeSearchValue = (value: string): string =>

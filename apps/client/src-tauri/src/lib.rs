@@ -302,6 +302,7 @@ pub fn run() {
             media::media_initialize_runtime,
             media::media_refresh_local_diffusers_runtime,
             media::media_import_image,
+            media::media_import_image_url,
             media::media_inspect_hardware,
             media::media_inspect_flow_import,
             media::media_import_flow,

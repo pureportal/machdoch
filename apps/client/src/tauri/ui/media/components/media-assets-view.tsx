@@ -9,7 +9,7 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState, type JSX } from "react";
+import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import {
   mediaAssetCategoryNames,
   matchesMediaAssetCategoryFilter,
@@ -18,7 +18,7 @@ import {
   createEmptyMediaGenerationAssetMetadata,
   normalizeMediaTriggerWords,
 } from "../../../../core/media/asset-metadata.js";
-import { listManageableMediaGenerationModels } from "../../../../core/media/model-library.js";
+import { listMediaLibraryModels } from "../../../../core/media/model-library.js";
 import type { MediaAssetImportProgress } from "../../../../core/media/asset-import.js";
 import { inspectMediaModelAddonCompatibility } from "../../../../core/media/model-addons.js";
 import {
@@ -87,8 +87,11 @@ interface MediaAssetsViewProps {
   addonImportInspection: MediaModelAddonImportInspection | null;
   civitaiInspection: MediaCivitaiModelAddonInspection | null;
   importError: string | null;
+  persistenceError: string | null;
   openAssetId?: string | null;
   onOpenAssetHandled?: () => void;
+  openResourceId?: string | null;
+  onOpenResourceHandled?: () => void;
   onInspectModel: (path: string) => void;
   onInspectAddon: (path: string) => void;
   onInspectCivitai: (source: string) => void;
@@ -104,6 +107,8 @@ interface MediaAssetsViewProps {
     request: ImportMediaModelAddonRequest,
     metadata: MediaGenerationAssetMetadata,
   ) => Promise<boolean>;
+  onImportSampleUrl: (url: string) => Promise<MediaAssetImportResult | null>;
+  onRetryPersistence: () => void;
   onDismissImport: () => void;
   onUseModel: (model: MediaModelDescriptor) => void;
   onRefreshLocalRuntime: () => void;
@@ -161,14 +166,19 @@ export const MediaAssetsView = ({
   addonImportInspection,
   civitaiInspection,
   importError,
+  persistenceError,
   openAssetId,
   onOpenAssetHandled,
+  openResourceId,
+  onOpenResourceHandled,
   onInspectModel,
   onInspectAddon,
   onInspectCivitai,
   onImportMedia,
   onImportModel,
   onImportAddon,
+  onImportSampleUrl,
+  onRetryPersistence,
   onDismissImport,
   onUseModel,
   onRefreshLocalRuntime,
@@ -203,12 +213,14 @@ export const MediaAssetsView = ({
     useState<MediaAssetDeletionImpact | null>(null);
   const [deletionPending, setDeletionPending] = useState(false);
   const [deletionError, setDeletionError] = useState<string | null>(null);
+  const cardRefs = useRef<Record<string, HTMLElement | null>>({});
   const selectedModel =
     catalog.models.find((model) => model.id === selectedModelId) ?? null;
   const selectedAsset =
     assets.find((asset) => asset.id === selectedAssetId) ?? null;
+  const libraryModels = listMediaLibraryModels(catalog.models);
   const selectedResourceModel =
-    catalog.models.find((model) => model.id === selectedResourceId) ?? null;
+    libraryModels.find((model) => model.id === selectedResourceId) ?? null;
   const selectedResourceAddon =
     catalog.addons.find((addon) => addon.id === selectedResourceId) ?? null;
   const selectedResourceMetadata = selectedResourceId
@@ -229,7 +241,6 @@ export const MediaAssetsView = ({
   const selectedModelReadiness = selectedResourceModel
     ? describeMediaModelReadiness(selectedResourceModel)
     : null;
-  const importedModels = listManageableMediaGenerationModels(catalog.models);
   const categoryNamesFor = (resourceId: string): string[] =>
     mediaAssetCategoryNames(
       metadata[resourceId]?.categoryIds ?? [],
@@ -242,7 +253,7 @@ export const MediaAssetsView = ({
     );
   const visibleModels =
     filter === "all" || filter === "model"
-      ? importedModels
+      ? libraryModels
           .filter((model) => matchesCategoryFilter(model.id))
           .filter((model) =>
             resourceMatches(
@@ -310,18 +321,46 @@ export const MediaAssetsView = ({
     );
   const totalVisible =
     visibleModels.length + visibleAddons.length + visibleMedia.length;
-  const cardRefs = useRef<Record<string, HTMLElement | null>>({});
+
+  const showResource = useCallback(
+    (resourceId: string): boolean => {
+      const model = listMediaLibraryModels(catalog.models).find(
+        (item) => item.id === resourceId,
+      );
+      const addon = catalog.addons.find((item) => item.id === resourceId);
+      if (!model && !addon) return false;
+      setSelectedAssetId(null);
+      setSelectedResourceId(resourceId);
+      setFilter(
+        model ? "model" : addon?.kind === "lora" ? "lora" : "embedding",
+      );
+      setQuery("");
+      setCategoryFilterIds([]);
+      requestAnimationFrame(() =>
+        cardRefs.current[resourceId]?.scrollIntoView?.({ block: "center" }),
+      );
+      return true;
+    },
+    [catalog.addons, catalog.models],
+  );
 
   useEffect(() => {
     if (!openAssetId) return;
     setSelectedAssetId(openAssetId);
+    setSelectedResourceId(null);
     setFilter("all");
     setQuery("");
+    setCategoryFilterIds([]);
     requestAnimationFrame(() =>
-      cardRefs.current[openAssetId]?.scrollIntoView({ block: "center" }),
+      cardRefs.current[openAssetId]?.scrollIntoView?.({ block: "center" }),
     );
     onOpenAssetHandled?.();
   }, [onOpenAssetHandled, openAssetId]);
+
+  useEffect(() => {
+    if (!openResourceId) return;
+    if (showResource(openResourceId)) onOpenResourceHandled?.();
+  }, [onOpenResourceHandled, openResourceId, showResource]);
 
   useEffect(() => {
     const validCategoryIds = new Set(categories.map((category) => category.id));
@@ -398,6 +437,22 @@ export const MediaAssetsView = ({
         >
           <Import className="h-4 w-4" /> Import
         </Button>
+        {persistenceError ? (
+          <div
+            role="alert"
+            className="flex w-full items-center gap-3 text-xs text-rose-300"
+          >
+            <span className="min-w-0 flex-1">{persistenceError}</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onRetryPersistence}
+            >
+              Retry save
+            </Button>
+          </div>
+        ) : null}
       </header>
       <div className="flex gap-2 overflow-x-auto border-b border-slate-800/70 px-5 py-2">
         {FILTERS.map((item) => (
@@ -434,7 +489,15 @@ export const MediaAssetsView = ({
               return (
                 <article
                   key={model.id}
-                  className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/55"
+                  ref={(element) => {
+                    cardRefs.current[model.id] = element;
+                  }}
+                  className={cn(
+                    "overflow-hidden rounded-2xl border bg-slate-900/55",
+                    selectedResourceId === model.id
+                      ? "border-sky-400"
+                      : "border-slate-800",
+                  )}
                 >
                   <button
                     type="button"
@@ -458,7 +521,7 @@ export const MediaAssetsView = ({
                         {model.displayName}
                       </h2>
                       <p className="truncate text-xs text-slate-500">
-                        {categorySummary || model.family}
+                        {categorySummary || readiness?.action || model.family}
                       </p>
                     </div>
                     {ready ? (
@@ -471,12 +534,33 @@ export const MediaAssetsView = ({
                       >
                         Use model
                       </Button>
-                    ) : readiness ? (
-                      <ControlTooltip content={readiness.message}>
-                        <p className="line-clamp-2 min-h-8 text-[10px] leading-4 text-amber-300">
-                          {readiness.action}
-                        </p>
-                      </ControlTooltip>
+                    ) : model.runtimeReadiness === "runtime-unavailable" ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={onRefreshLocalRuntime}
+                        disabled={localRuntimeRefreshing}
+                        className="w-full"
+                      >
+                        {localRuntimeRefreshing
+                          ? "Refreshing…"
+                          : "Refresh runtime"}
+                      </Button>
+                    ) : model.installed &&
+                      model.management.verification !== "none" ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onVerifyModel(model)}
+                        disabled={verifyingModelId === model.id}
+                        className="w-full"
+                      >
+                        {verifyingModelId === model.id
+                          ? "Verifying…"
+                          : "Verify model"}
+                      </Button>
                     ) : null}
                   </div>
                 </article>
@@ -487,7 +571,15 @@ export const MediaAssetsView = ({
               return (
                 <article
                   key={addon.id}
-                  className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/55"
+                  ref={(element) => {
+                    cardRefs.current[addon.id] = element;
+                  }}
+                  className={cn(
+                    "overflow-hidden rounded-2xl border bg-slate-900/55",
+                    selectedResourceId === addon.id
+                      ? "border-sky-400"
+                      : "border-slate-800",
+                  )}
                 >
                   <button
                     type="button"
@@ -716,12 +808,10 @@ export const MediaAssetsView = ({
               </Button>
             ) : selectedResourceModel && selectedModelReadiness ? (
               <div className="space-y-2">
-                <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-[10px] leading-4 text-amber-100">
-                  <p>
-                    {selectedResourceModel.runtimeReadinessDiagnostic ??
-                      selectedModelReadiness.message}
-                  </p>
-                </div>
+                <p className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-[10px] leading-4 text-amber-100">
+                  {selectedResourceModel.runtimeReadinessDiagnostic ??
+                    selectedModelReadiness.message}
+                </p>
                 {selectedResourceModel.runtimeReadiness ===
                 "runtime-unavailable" ? (
                   <Button
@@ -734,7 +824,8 @@ export const MediaAssetsView = ({
                   >
                     {localRuntimeRefreshing ? "Refreshing…" : "Refresh runtime"}
                   </Button>
-                ) : selectedResourceModel.management.verification !== "none" ? (
+                ) : selectedResourceModel.installed &&
+                  selectedResourceModel.management.verification !== "none" ? (
                   <Button
                     type="button"
                     variant="outline"
@@ -854,6 +945,10 @@ export const MediaAssetsView = ({
           onImportMedia={onImportMedia}
           onImportModel={onImportModel}
           onImportAddon={onImportAddon}
+          onImportSampleUrl={onImportSampleUrl}
+          onViewResource={(resourceId) => {
+            if (showResource(resourceId)) setImportOpen(false);
+          }}
           onDismissInspection={onDismissImport}
           onManageCategories={() => setCategoryManagerOpen(true)}
           onClose={() => {
