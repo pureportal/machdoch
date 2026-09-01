@@ -11,7 +11,7 @@ import {
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createInstructionPlanFixture,
   createInstructionResolutionFixture,
@@ -259,6 +259,10 @@ const createCodexEnrollment = async (runId: string) => {
   });
 };
 
+beforeEach(() => {
+  probeProviderCliMock.mockClear();
+});
+
 afterEach(async () => {
   vi.unstubAllEnvs();
   await Promise.all(
@@ -267,6 +271,52 @@ afterEach(async () => {
 });
 
 describe("CLI provider enrollment materializer", () => {
+  it("retries transient capability probes before materializing Codex", async () => {
+    const expectedProbe = createProbe("codex-cli");
+    probeProviderCliMock
+      .mockResolvedValueOnce({
+        ...expectedProbe,
+        features: [],
+      })
+      .mockResolvedValueOnce({
+        ...expectedProbe,
+        version: "transient-version-output",
+      })
+      .mockResolvedValueOnce(expectedProbe);
+
+    const enrollment = await createCodexEnrollment(
+      "test-transient-capability-probes",
+    );
+
+    expect(probeProviderCliMock).toHaveBeenCalledTimes(3);
+    expect(probeProviderCliMock).toHaveBeenNthCalledWith(
+      1,
+      "codex-cli",
+      process.execPath,
+      { force: true },
+    );
+    expect(enrollment.manifest.providerVersion).toBe(expectedProbe.version);
+    await enrollment.dispose();
+  });
+
+  it("blocks after repeated capability probes disagree with preflight", async () => {
+    const changedProbe = {
+      ...createProbe("codex-cli"),
+      version: "changed-cli 2.0.0",
+    };
+    probeProviderCliMock
+      .mockResolvedValueOnce(changedProbe)
+      .mockResolvedValueOnce(changedProbe)
+      .mockResolvedValueOnce(changedProbe);
+
+    await expect(
+      createCodexEnrollment("test-persistent-capability-change"),
+    ).rejects.toThrow(
+      "provider capability probe changed after instruction preflight",
+    );
+    expect(probeProviderCliMock).toHaveBeenCalledTimes(3);
+  });
+
   it.each([
     "codex-cli",
     "claude-cli",

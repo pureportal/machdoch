@@ -167,9 +167,20 @@ export const probeProviderCli = async (
   probeCache.delete(key);
 
   const pending = (async (): Promise<ProviderProbeResult> => {
-    const versionResult = captureCommand(executable, ["--version"]);
-    let helpResult = captureCommand(executable, ["--help"]);
     const warnings: string[] = [];
+    let versionResult = captureCommand(executable, ["--version"]);
+    if (versionResult.exitCode !== 0) {
+      versionResult = captureCommand(
+        executable,
+        ["--version"],
+        PROVIDER_PROBE_RETRY_TIMEOUT_MS,
+      );
+      warnings.push(
+        "Provider version probe did not complete successfully on the first attempt and was retried.",
+      );
+    }
+
+    let helpResult = captureCommand(executable, ["--help"]);
 
     if (helpResult.exitCode !== 0) {
       helpResult = captureCommand(

@@ -53,6 +53,46 @@ describe("provider capability registry", () => {
     ]);
   });
 
+  it("retries a transiently incomplete version probe", async () => {
+    spawnSyncMock
+      .mockReturnValueOnce({
+        status: null,
+        stdout: "",
+        stderr: "",
+        error: Object.assign(new Error("timed out"), { code: "ETIMEDOUT" }),
+      })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: "codex-cli 1.0.0",
+        stderr: "",
+      })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: "Usage: codex --config <key=value>",
+        stderr: "",
+      })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: "Usage: codex exec --json",
+        stderr: "",
+      });
+
+    const result = await probeProviderCli(
+      "codex-cli",
+      "C:\\tools\\transient-version-codex.exe",
+      { force: true },
+    );
+
+    expect(result.version).toBe("codex-cli 1.0.0");
+    expect(result.features).toEqual(["--config", "--json"]);
+    expect(spawnSyncMock.mock.calls.map((call) => call[1])).toEqual([
+      ["--version"],
+      ["--version"],
+      ["--help"],
+      ["exec", "--help"],
+    ]);
+  });
+
   it("does not retry a completed help probe that genuinely lacks required flags", async () => {
     spawnSyncMock
       .mockReturnValueOnce({
