@@ -34,6 +34,11 @@ export const parseRalphWorkItemState = (
     : undefined;
 };
 
+export const isTerminalRalphWorkItemState = (value: unknown): boolean => {
+  const state = parseRalphWorkItemState(value);
+  return state === "completed" || state === "deferred";
+};
+
 export const transitionRalphWorkItemState = (
   current: unknown,
   requested: unknown,

@@ -22,25 +22,72 @@ const isRepeatableRalphFailureOutput = (
 
 const compactFailureSignatureText = (value: string): string => {
   const normalized = value
-    .replace(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b/gu, "<timestamp>")
-    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/giu, "<uuid>")
+    .replace(
+      /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b/gu,
+      "<timestamp>",
+    )
+    .replace(
+      /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/giu,
+      "<uuid>",
+    )
     .replace(/\b\d+(?:\.\d+)?\s*ms\b/giu, "<duration>");
   return normalized.length > MAX_RALPH_FAILURE_SIGNATURE_CHARS
     ? normalized.slice(0, MAX_RALPH_FAILURE_SIGNATURE_CHARS)
     : normalized;
 };
 
-const stringifyFailureSignatureValue = (value: unknown): string => {
+const normalizeFailureSignatureValue = (
+  value: unknown,
+  ancestors = new WeakSet<object>(),
+): unknown => {
+  if (typeof value === "string") {
+    return compactFailureSignatureText(value);
+  }
+  if (
+    value === null ||
+    typeof value === "boolean" ||
+    typeof value === "number"
+  ) {
+    return value;
+  }
   if (value === undefined) {
-    return "";
+    return { type: "undefined" };
+  }
+  if (typeof value === "bigint") {
+    return { type: "bigint", value: value.toString() };
+  }
+  if (typeof value === "symbol") {
+    return { type: "symbol", description: value.description ?? "" };
+  }
+  if (typeof value === "function") {
+    return { type: "function", name: value.name };
+  }
+  if (ancestors.has(value)) {
+    return { type: "circular-reference" };
   }
 
-  try {
-    return compactFailureSignatureText(JSON.stringify(value));
-  } catch {
-    return compactFailureSignatureText(String(value));
-  }
+  ancestors.add(value);
+  const normalized = Array.isArray(value)
+    ? value.map((entry) => normalizeFailureSignatureValue(entry, ancestors))
+    : Object.fromEntries(
+        Object.keys(value)
+          .sort((left, right) => left.localeCompare(right))
+          .map((key) => [
+            key,
+            normalizeFailureSignatureValue(
+              (value as Record<string, unknown>)[key],
+              ancestors,
+            ),
+          ]),
+      );
+  ancestors.delete(value);
+  return normalized;
 };
+
+const serializeFailureSignatureValue = (value: unknown): string =>
+  compactFailureSignatureText(
+    JSON.stringify(normalizeFailureSignatureValue(value)),
+  );
 
 export const createRalphFailureSignature = (
   result: RalphBlockExecutionResult,
@@ -49,15 +96,17 @@ export const createRalphFailureSignature = (
     return undefined;
   }
 
-  const payload = [
-    result.blockId,
-    result.output,
-    result.status,
-    compactFailureSignatureText(result.summary),
-    compactFailureSignatureText(result.error ?? ""),
-    compactFailureSignatureText(result.markdown ?? ""),
-    stringifyFailureSignatureValue(result.data),
-  ].join("\n");
+  const payload = {
+    blockId: result.blockId,
+    output: result.output,
+    status: result.status,
+    summary: compactFailureSignatureText(result.summary),
+    error: compactFailureSignatureText(result.error ?? ""),
+    markdown: compactFailureSignatureText(result.markdown ?? ""),
+    ...(result.data === undefined
+      ? {}
+      : { data: serializeFailureSignatureValue(result.data) }),
+  };
 
-  return createHash("sha256").update(payload).digest("hex");
+  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 };

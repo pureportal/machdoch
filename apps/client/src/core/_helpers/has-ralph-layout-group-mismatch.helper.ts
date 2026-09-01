@@ -24,7 +24,12 @@ export const hasRalphLayoutGroupMismatch = (flow: RalphFlow): boolean => {
       childBlockIds,
     );
 
-    if (normalizedChildBlockIds.join("\n") !== block.childBlockIds.join("\n")) {
+    if (
+      normalizedChildBlockIds.length !== block.childBlockIds.length ||
+      normalizedChildBlockIds.some(
+        (childBlockId, index) => childBlockId !== block.childBlockIds[index],
+      )
+    ) {
       return true;
     }
 

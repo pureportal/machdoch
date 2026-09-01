@@ -90,6 +90,14 @@ describe("validateRalphUtilityBlock", () => {
       { type: "SEARCH_FILES", glob: "**/*.ts" },
       { type: "SET_VARIABLE", variableName: "result", value: "" },
       { type: "TRANSFORM_JSON", expression: "input" },
+      {
+        type: "TRANSFORM_JSON",
+        deterministicTransform: {
+          type: "repository-work-yield",
+          baselineBlockId: "before",
+          currentBlockId: "after",
+        },
+      },
       { type: "VALIDATE_JSON", schema: null },
       { type: "GIT_STATUS" },
       { type: "GIT_SNAPSHOT" },
@@ -328,5 +336,35 @@ describe("validateRalphUtilityBlock", () => {
         }),
       ),
     ).toContain("utility-condition-path-required");
+
+    const advancedCodes = getCodes(
+      validateUtility({
+        type: "CONDITION",
+        condition: {
+          style: "json-path",
+          path: "result.status",
+          operator: "is-one-of",
+          conditions: [
+            {
+              style: "json-path",
+              path: "result.identity",
+              operator: "equals-path",
+            },
+            {
+              style: "json-path",
+              path: "result.tasks",
+              operator: "array-every",
+            },
+          ],
+        },
+      }),
+    );
+    expect(advancedCodes).toEqual(
+      expect.arrayContaining([
+        "utility-condition-match-values-required",
+        "utility-condition-value-path-required",
+        "utility-condition-item-required",
+      ]),
+    );
   });
 });

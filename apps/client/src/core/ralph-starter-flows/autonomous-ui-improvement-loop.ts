@@ -438,9 +438,18 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            'variables.enableOnlineResearch === "true" && lastData?.output?.researchDecision?.needsResearch === true',
+          style: "json-path",
+          path: "variables.enableOnlineResearch",
+          operator: "equals",
+          value: "true",
+          conditions: [
+            {
+              style: "json-path",
+              path: "lastData.output.researchDecision.needsResearch",
+              operator: "equals",
+              value: "true",
+            },
+          ],
         },
       },
     },
@@ -672,9 +681,23 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "(() => { const output = context.resultsByBlock?.['choose-ui-improvement']?.data?.output; const decision = output?.decision; if (!['IMPLEMENT', 'STOP', 'DEFER'].includes(decision)) throw new Error('UI improvement selection decision is missing or invalid.'); if (decision !== 'IMPLEMENT') return false; const selected = output?.selectedCandidate; if (!selected || typeof selected !== 'object' || Array.isArray(selected) || Object.keys(selected).length === 0) throw new Error('IMPLEMENT requires a structured selected UI candidate.'); return true; })()",
+          style: "json-path",
+          path: "resultsByBlock.choose-ui-improvement.data.output.decision",
+          operator: "equals",
+          value: "IMPLEMENT",
+          allowedValues: ["IMPLEMENT", "STOP", "DEFER"],
+          invalidMessage:
+            "UI improvement selection decision is missing or invalid.",
+          conditions: [
+            {
+              style: "json-path",
+              path: "resultsByBlock.choose-ui-improvement.data.output.selectedCandidate",
+              operator: "non-empty-record",
+              assertMatch: true,
+              invalidMessage:
+                "IMPLEMENT requires a structured selected UI candidate.",
+            },
+          ],
         },
       },
     },
@@ -687,9 +710,13 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "(() => { const decision = context.resultsByBlock?.['choose-ui-improvement']?.data?.output?.decision; if (!['IMPLEMENT', 'STOP', 'DEFER'].includes(decision)) throw new Error('UI improvement selection decision is missing or invalid.'); return decision === 'DEFER'; })()",
+          style: "json-path",
+          path: "resultsByBlock.choose-ui-improvement.data.output.decision",
+          operator: "equals",
+          value: "DEFER",
+          allowedValues: ["IMPLEMENT", "STOP", "DEFER"],
+          invalidMessage:
+            "UI improvement selection decision is missing or invalid.",
         },
       },
     },
@@ -795,8 +822,13 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "TRANSFORM_JSON",
         input: "{}",
-        expression:
-          "(() => { const candidate = context.resultsByBlock?.get?.('choose-ui-improvement')?.data?.output?.selectedCandidate ?? {}; const commands = context.resultsByBlock?.get?.('detect-project-commands')?.data ?? {}; const declaredTier = candidate.verificationTier; const tierValid = declaredTier === 'focused' || declaredTier === 'standard' || declaredTier === 'broad'; const tier = tierValid ? declaredTier : 'broad'; const declaredReviewTier = candidate.reviewTier; const reviewTierValid = declaredReviewTier === 'validator-only' || declaredReviewTier === 'strict'; const reviewTier = tier === 'broad' || !reviewTierValid ? 'strict' : declaredReviewTier; const detectedCommand = tier === 'broad' ? commands.broadVerificationCommand : tier === 'standard' ? commands.standardVerificationCommand : commands.focusedVerificationCommand; const command = (variables.verificationCommand ?? '').trim() || detectedCommand || commands.verificationCommand || ''; return { tier, command, reviewTier, protocolValid: tierValid && reviewTierValid, source: (variables.verificationCommand ?? '').trim() ? 'variable' : 'detected', focusedCommand: commands.focusedVerificationCommand || '', standardCommand: commands.standardVerificationCommand || '', broadCommand: commands.broadVerificationCommand || '' }; })()",
+        deterministicTransform: {
+          type: "verification-command",
+          selectionBlockId: "choose-ui-improvement",
+          selectionPath: "output.selectedCandidate",
+          commandsBlockId: "detect-project-commands",
+          configuredCommandVariable: "verificationCommand",
+        },
       },
     },
     {
@@ -808,9 +840,9 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "Boolean(context.resultsByBlock?.['select-verification-command']?.data?.output?.command?.trim())",
+          style: "json-path",
+          path: "resultsByBlock.select-verification-command.data.output.command",
+          operator: "truthy",
         },
       },
     },
@@ -867,8 +899,15 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "TRANSFORM_JSON",
         input: "{}",
-        expression:
-          "(() => { const detected = context.resultsByBlock?.get?.('detect-project-commands')?.data ?? {}; const configuredTargetUrl = (variables.targetUrl ?? '').trim(); const configuredHealthUrl = (variables.healthUrl ?? '').trim(); const configuredCommand = (variables.visualServerCommand ?? '').trim(); const targetUrl = configuredTargetUrl || String(detected.targetUrl ?? '').trim(); const healthUrl = configuredHealthUrl || targetUrl; const serverCommand = configuredCommand || String(detected.serveCommand ?? '').trim(); const serverCwd = (variables.visualServerCwd ?? '').trim() || String(detected.rootPath ?? '.'); const visualStatus = targetUrl ? (serverCommand ? 'managed-or-reused' : 'existing-only') : (variables.screenshotPath?.trim() ? 'screenshot-only' : 'degraded-unavailable'); return { targetUrl, healthUrl, serverCommand, serverCwd, visualStatus, degradedReason: visualStatus === 'degraded-unavailable' ? 'No configured or detected target URL; code verification continues and FINAL_REPORT records degraded visual coverage.' : '', targetSource: targetUrl ? (configuredTargetUrl ? 'variable' : 'detected') : '', healthSource: healthUrl ? (configuredHealthUrl ? 'variable' : 'target') : '', commandSource: serverCommand ? (configuredCommand ? 'variable' : detected.serveCommandSource || 'detected') : '' }; })()",
+        deterministicTransform: {
+          type: "visual-runtime",
+          commandsBlockId: "detect-project-commands",
+          targetUrlVariable: "targetUrl",
+          healthUrlVariable: "healthUrl",
+          serverCommandVariable: "visualServerCommand",
+          serverCwdVariable: "visualServerCwd",
+          screenshotPathVariable: "screenshotPath",
+        },
       },
     },
     {
@@ -880,9 +919,25 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            'variables.enableVisualReview === "true" && (Boolean(context.resultsByBlock?.["resolve-runtime-urls"]?.data?.output?.targetUrl?.trim()) || Boolean(variables.screenshotPath?.trim()))',
+          style: "json-path",
+          path: "variables.enableVisualReview",
+          operator: "equals",
+          value: "true",
+          conditions: [
+            {
+              style: "json-path",
+              path: "resultsByBlock.resolve-runtime-urls.data.output.targetUrl",
+              operator: "non-empty-string",
+              combinator: "any",
+              conditions: [
+                {
+                  style: "json-path",
+                  path: "variables.screenshotPath",
+                  operator: "non-empty-string",
+                },
+              ],
+            },
+          ],
         },
       },
     },
@@ -956,8 +1011,12 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "TRANSFORM_JSON",
         input: "{}",
-        expression:
-          "(() => { const diff = context.resultsByBlock?.get?.('git-diff-summary'); const baseline = context.resultsByBlock?.get?.('git-snapshot-before'); const current = Array.isArray(diff?.data?.files) ? diff.data.files : []; const before = new Map((Array.isArray(baseline?.data?.files) ? baseline.data.files : []).map((file) => [String(file?.path ?? '').replace(/\\\\/gu, '/'), file?.signature])); const changedFiles = current.filter((file) => before.get(String(file?.path ?? '').replace(/\\\\/gu, '/')) !== file?.signature).map((file) => String(file?.path ?? '').replace(/\\\\/gu, '/')).filter(Boolean); return { changedFiles, changedFileCount: changedFiles.length, producedWork: changedFiles.length > 0, scopeGuard: context.resultsByBlock?.get?.('scope-change-guard')?.output ?? '', visualStatus: context.resultsByBlock?.get?.('resolve-runtime-urls')?.data?.output?.visualStatus ?? '' }; })()",
+        deterministicTransform: {
+          type: "repository-work-yield",
+          baselineBlockId: "git-snapshot-before",
+          currentBlockId: "git-diff-summary",
+          scopeGuardBlockId: "scope-change-guard",
+        },
       },
     },
     {
@@ -969,9 +1028,10 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "lastData?.producedWork === true && lastData?.scopeGuard === 'IN_SCOPE'",
+          style: "json-path",
+          path: "lastData.output.usefulWorkProduced",
+          operator: "equals",
+          value: "true",
         },
       },
     },
@@ -984,9 +1044,10 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            'context.resultsByBlock?.["select-verification-command"]?.data?.output?.reviewTier === "strict"',
+          style: "json-path",
+          path: "resultsByBlock.select-verification-command.data.output.reviewTier",
+          operator: "equals",
+          value: "strict",
         },
       },
     },
@@ -1055,9 +1116,13 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "(() => { const decision = context.resultsByBlock?.['independent-ui-review']?.data?.output?.decision; if (!['PASS', 'FIX', 'DEFER'].includes(decision)) throw new Error('UI improvement review decision is missing or invalid.'); return decision === 'DEFER'; })()",
+          style: "json-path",
+          path: "resultsByBlock.independent-ui-review.data.output.decision",
+          operator: "equals",
+          value: "DEFER",
+          allowedValues: ["PASS", "FIX", "DEFER"],
+          invalidMessage:
+            "UI improvement review decision is missing or invalid.",
         },
       },
     },
@@ -1070,9 +1135,13 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "(() => { const decision = context.resultsByBlock?.['independent-ui-review']?.data?.output?.decision; if (!['PASS', 'FIX', 'DEFER'].includes(decision)) throw new Error('UI improvement review decision is missing or invalid.'); return decision === 'FIX'; })()",
+          style: "json-path",
+          path: "resultsByBlock.independent-ui-review.data.output.decision",
+          operator: "equals",
+          value: "FIX",
+          allowedValues: ["PASS", "FIX", "DEFER"],
+          invalidMessage:
+            "UI improvement review decision is missing or invalid.",
         },
       },
     },
@@ -2266,7 +2335,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
 
 export const autonomousUiImprovementLoopStarterFlow = {
   id: "autonomous-ui-improvement-loop",
-  version: 19,
+  version: 20,
   defaultAlias: "autonomous-ui-improvement-loop",
   category: "Design Quality",
   tags: ["autonomous", "ui", "design", "visual-check"],

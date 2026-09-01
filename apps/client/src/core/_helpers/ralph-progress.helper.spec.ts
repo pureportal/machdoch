@@ -207,4 +207,37 @@ describe("RALPH progress detector", () => {
     expect(assessment.evidence.meaningful).toBe(true);
     expect(assessment.state.meaningfulTransitions).toBe(1);
   });
+
+  it("keeps work-item path and block fallback identities distinct", () => {
+    const pathTarget: RalphFlowBlock = {
+      id: "mark-with-path",
+      type: "UTILITY",
+      title: "Mark with path",
+      utility: { type: "MARK_JSON_TASK", path: "shared-identity" },
+    };
+    const blockTarget: RalphFlowBlock = {
+      id: "shared-identity",
+      type: "UTILITY",
+      title: "Mark with block identity",
+      utility: { type: "MARK_JSON_TASK" },
+    };
+    const first = assessRalphProgress(
+      createRalphProgressState(),
+      pathTarget,
+      result(pathTarget.id, { taskIds: ["task"] }),
+      1,
+      { maxStagnantTransitions: 20, maxRepeatedCycle: 3 },
+    );
+    const second = assessRalphProgress(
+      first.state,
+      blockTarget,
+      result(blockTarget.id, { taskIds: ["task"] }),
+      2,
+      { maxStagnantTransitions: 20, maxRepeatedCycle: 3 },
+    );
+
+    expect(first.evidence.meaningful).toBe(true);
+    expect(second.evidence.meaningful).toBe(true);
+    expect(second.state.channelFingerprints).toHaveLength(2);
+  });
 });

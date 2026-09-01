@@ -15,6 +15,7 @@ import {
   isRalphScopeOutcome,
   normalizeRalphScopeSelectionStrategy,
 } from "./ralph-scope-registry.helper.js";
+import type { RalphDeterministicJsonTransform } from "./ralph-repository-work-yield.helper.js";
 
 export const RALPH_UTILITY_TYPES = [
   "WAIT",
@@ -61,6 +62,21 @@ export const RALPH_UTILITY_TYPES = [
 ] as const;
 
 type RalphUtilityType = (typeof RALPH_UTILITY_TYPES)[number];
+
+export class InvalidRalphUtilityConfigurationError extends TypeError {
+  readonly field: "type" | "condition" | "deterministicTransform";
+  readonly value: unknown;
+
+  constructor(
+    field: InvalidRalphUtilityConfigurationError["field"],
+    value: unknown,
+  ) {
+    super(`Ralph utility config contains an invalid ${field}.`);
+    this.name = "InvalidRalphUtilityConfigurationError";
+    this.field = field;
+    this.value = value;
+  }
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -176,20 +192,74 @@ const coerceUtilityConditionOperator = (
     value === "gt" ||
     value === "gte" ||
     value === "lt" ||
-    value === "lte"
+    value === "lte" ||
+    value === "is-one-of" ||
+    value === "non-empty-string" ||
+    value === "non-empty-array" ||
+    value === "non-empty-record" ||
+    value === "equals-path" ||
+    value === "array-every"
     ? value
     : undefined;
 };
 
 const coerceUtilityCondition = (
   value: unknown,
+  depth = 0,
 ): RalphUtilityCondition | undefined => {
-  if (!isRecord(value)) {
+  if (!isRecord(value) || depth > 16) {
     return undefined;
   }
 
-  const style = coerceUtilityConditionStyle(value.style) ?? "simple";
+  const style =
+    value.style === undefined
+      ? "simple"
+      : coerceUtilityConditionStyle(value.style);
   const operator = coerceUtilityConditionOperator(value.operator);
+  if (
+    !style ||
+    (value.operator !== undefined && !operator) ||
+    (value.expression !== undefined && typeof value.expression !== "string") ||
+    (value.path !== undefined && typeof value.path !== "string") ||
+    (value.value !== undefined && typeof value.value !== "string") ||
+    (value.valuePath !== undefined && typeof value.valuePath !== "string") ||
+    (value.invalidMessage !== undefined &&
+      typeof value.invalidMessage !== "string") ||
+    (value.assertMatch !== undefined &&
+      typeof value.assertMatch !== "boolean") ||
+    (value.combinator !== undefined &&
+      value.combinator !== "all" &&
+      value.combinator !== "any") ||
+    (value.matchValues !== undefined &&
+      (!Array.isArray(value.matchValues) ||
+        !value.matchValues.every((entry) => typeof entry === "string"))) ||
+    (value.allowedValues !== undefined &&
+      (!Array.isArray(value.allowedValues) ||
+        !value.allowedValues.every((entry) => typeof entry === "string"))) ||
+    (value.conditions !== undefined && !Array.isArray(value.conditions))
+  ) {
+    return undefined;
+  }
+
+  const nestedConditions = (value.conditions ?? []).map((condition) =>
+    coerceUtilityCondition(condition, depth + 1),
+  );
+  if (
+    !nestedConditions.every(
+      (condition): condition is RalphUtilityCondition =>
+        condition !== undefined,
+    )
+  ) {
+    return undefined;
+  }
+
+  const itemCondition =
+    value.itemCondition === undefined
+      ? undefined
+      : coerceUtilityCondition(value.itemCondition, depth + 1);
+  if (value.itemCondition !== undefined && !itemCondition) {
+    return undefined;
+  }
 
   return {
     style,
@@ -199,6 +269,26 @@ const coerceUtilityCondition = (
     ...(typeof value.path === "string" ? { path: value.path } : {}),
     ...(operator ? { operator } : {}),
     ...(typeof value.value === "string" ? { value: value.value } : {}),
+    ...(typeof value.valuePath === "string"
+      ? { valuePath: value.valuePath }
+      : {}),
+    ...(Array.isArray(value.matchValues)
+      ? { matchValues: [...value.matchValues] }
+      : {}),
+    ...(Array.isArray(value.allowedValues)
+      ? { allowedValues: [...value.allowedValues] }
+      : {}),
+    ...(typeof value.invalidMessage === "string"
+      ? { invalidMessage: value.invalidMessage }
+      : {}),
+    ...(typeof value.assertMatch === "boolean"
+      ? { assertMatch: value.assertMatch }
+      : {}),
+    ...(value.combinator === "all" || value.combinator === "any"
+      ? { combinator: value.combinator }
+      : {}),
+    ...(nestedConditions.length > 0 ? { conditions: nestedConditions } : {}),
+    ...(itemCondition ? { itemCondition } : {}),
   };
 };
 
@@ -353,11 +443,118 @@ const coerceFirstString = (...values: unknown[]): string | undefined => {
   return undefined;
 };
 
+const coerceDeterministicJsonTransform = (
+  value: unknown,
+): RalphDeterministicJsonTransform | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  if (
+    value.type === "repository-work-yield" &&
+    typeof value.baselineBlockId === "string" &&
+    typeof value.currentBlockId === "string" &&
+    (value.scopeGuardBlockId === undefined ||
+      typeof value.scopeGuardBlockId === "string") &&
+    (value.workItemBlockId === undefined ||
+      typeof value.workItemBlockId === "string") &&
+    (value.excludedPaths === undefined ||
+      (Array.isArray(value.excludedPaths) &&
+        value.excludedPaths.every((entry) => typeof entry === "string"))) &&
+    (value.trackPrevious === undefined ||
+      typeof value.trackPrevious === "boolean") &&
+    (value.verifyOnObservationError === undefined ||
+      typeof value.verifyOnObservationError === "boolean")
+  ) {
+    return {
+      type: value.type,
+      baselineBlockId: value.baselineBlockId,
+      currentBlockId: value.currentBlockId,
+      ...(typeof value.scopeGuardBlockId === "string"
+        ? { scopeGuardBlockId: value.scopeGuardBlockId }
+        : {}),
+      ...(typeof value.workItemBlockId === "string"
+        ? { workItemBlockId: value.workItemBlockId }
+        : {}),
+      ...(Array.isArray(value.excludedPaths)
+        ? { excludedPaths: [...value.excludedPaths] }
+        : {}),
+      ...(typeof value.trackPrevious === "boolean"
+        ? { trackPrevious: value.trackPrevious }
+        : {}),
+      ...(typeof value.verifyOnObservationError === "boolean"
+        ? { verifyOnObservationError: value.verifyOnObservationError }
+        : {}),
+    };
+  }
+
+  if (
+    value.type === "verification-command" &&
+    typeof value.selectionBlockId === "string" &&
+    typeof value.selectionPath === "string" &&
+    typeof value.commandsBlockId === "string" &&
+    typeof value.configuredCommandVariable === "string"
+  ) {
+    return {
+      type: value.type,
+      selectionBlockId: value.selectionBlockId,
+      selectionPath: value.selectionPath,
+      commandsBlockId: value.commandsBlockId,
+      configuredCommandVariable: value.configuredCommandVariable,
+    };
+  }
+
+  if (
+    value.type === "code-improvement-plan" &&
+    typeof value.draftBlockId === "string" &&
+    typeof value.selectionBlockId === "string" &&
+    typeof value.constitutionBlockId === "string" &&
+    typeof value.researchBlockId === "string"
+  ) {
+    return {
+      type: value.type,
+      draftBlockId: value.draftBlockId,
+      selectionBlockId: value.selectionBlockId,
+      constitutionBlockId: value.constitutionBlockId,
+      researchBlockId: value.researchBlockId,
+    };
+  }
+
+  if (
+    value.type === "visual-runtime" &&
+    typeof value.commandsBlockId === "string" &&
+    typeof value.targetUrlVariable === "string" &&
+    typeof value.healthUrlVariable === "string" &&
+    typeof value.serverCommandVariable === "string" &&
+    typeof value.serverCwdVariable === "string" &&
+    typeof value.screenshotPathVariable === "string"
+  ) {
+    return {
+      type: value.type,
+      commandsBlockId: value.commandsBlockId,
+      targetUrlVariable: value.targetUrlVariable,
+      healthUrlVariable: value.healthUrlVariable,
+      serverCommandVariable: value.serverCommandVariable,
+      serverCwdVariable: value.serverCwdVariable,
+      screenshotPathVariable: value.screenshotPathVariable,
+    };
+  }
+
+  return undefined;
+};
+
 export const coerceRalphUtilityConfig = (
   value: unknown,
 ): RalphUtilityConfig => {
-  const record = isRecord(value) ? value : {};
-  const type = isRalphUtilityType(record.type) ? record.type : "WAIT";
+  if (!isRecord(value)) {
+    throw new InvalidRalphUtilityConfigurationError("type", value);
+  }
+
+  const record = value;
+  if (!isRalphUtilityType(record.type)) {
+    throw new InvalidRalphUtilityConfigurationError("type", record.type);
+  }
+  const type = record.type;
   const mode = coerceUtilityWaitMode(record.mode);
   const condition = coerceUtilityCondition(record.condition);
   const headers = coerceStringRecord(record.headers);
@@ -387,6 +584,21 @@ export const coerceRalphUtilityConfig = (
   const pattern = coerceFirstString(record.pattern);
   const glob = coerceFirstString(record.glob, record.patterns, record.globs);
   const strategy = normalizeRalphScopeSelectionStrategy(record.strategy);
+  const deterministicTransform = coerceDeterministicJsonTransform(
+    record.deterministicTransform,
+  );
+  if (record.condition !== undefined && !condition) {
+    throw new InvalidRalphUtilityConfigurationError(
+      "condition",
+      record.condition,
+    );
+  }
+  if (record.deterministicTransform !== undefined && !deterministicTransform) {
+    throw new InvalidRalphUtilityConfigurationError(
+      "deterministicTransform",
+      record.deterministicTransform,
+    );
+  }
 
   return {
     type,
@@ -529,6 +741,7 @@ export const coerceRalphUtilityConfig = (
     ...(typeof record.expression === "string"
       ? { expression: record.expression }
       : {}),
+    ...(deterministicTransform ? { deterministicTransform } : {}),
     ...(typeof record.prompt === "string" ? { prompt: record.prompt } : {}),
     ...(Object.hasOwn(record, "schema") ? { schema: record.schema } : {}),
     ...(typeof record.structuredOutput === "boolean"

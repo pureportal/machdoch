@@ -14,20 +14,136 @@ import {
   validateRalphFlow,
   type RalphFlowBlock,
   type RalphFlow,
+  type RalphBlockExecutionResult,
   type RalphUtilityBlock,
 } from "./ralph.js";
+import {
+  evaluateRalphUtilityCondition,
+  readRalphUtilityValuePath,
+} from "./_helpers/evaluate-ralph-utility-condition.helper.js";
 import {
   parseRalphValidatorJsonResult,
   RALPH_VALIDATOR_JSON_SCHEMA,
 } from "./_helpers/parse-ralph-validator-json-result.helper.js";
+import { canonicalDigest } from "./instruction-system/index.js";
+import {
+  assessRalphRepositoryWorkYield,
+  isRalphRepositoryWorkYield,
+  parseRalphRepositoryObservation,
+  parseRalphWorkSelectionIdentity,
+  resolveRalphCodeImprovementPlan,
+  resolveRalphVerificationCommand,
+  resolveRalphVisualRuntime,
+} from "./_helpers/ralph-repository-work-yield.helper.js";
 
-const evaluateStarterTransform = (
+const asStarterResult = (value: unknown): RalphBlockExecutionResult =>
+  value as RalphBlockExecutionResult;
+
+const evaluateStarterTransformWithContext = (
   block: RalphUtilityBlock,
-  sourceBlockId: string,
-  sourceOutput: Record<string, unknown>,
-  sourceData?: Record<string, unknown>,
+  resultsByBlock: Map<string, unknown>,
+  variables: Record<string, string> = {},
 ): Record<string, unknown> => {
-  if (block.utility.type !== "TRANSFORM_JSON" || !block.utility.expression) {
+  if (block.utility.type !== "TRANSFORM_JSON") {
+    throw new Error(`Expected ${block.id} to contain a JSON transform.`);
+  }
+
+  const transform = block.utility.deterministicTransform;
+  if (transform?.type === "verification-command") {
+    const selectionResult = asStarterResult(
+      resultsByBlock.get(transform.selectionBlockId),
+    );
+    const commandsResult = asStarterResult(
+      resultsByBlock.get(transform.commandsBlockId),
+    );
+    return {
+      ...resolveRalphVerificationCommand({
+        selection: readRalphUtilityValuePath(
+          selectionResult?.data,
+          transform.selectionPath,
+        ),
+        commands: commandsResult?.data,
+        ...(variables[transform.configuredCommandVariable] === undefined
+          ? {}
+          : {
+              configuredCommand: variables[transform.configuredCommandVariable],
+            }),
+      }),
+    };
+  }
+  if (transform?.type === "code-improvement-plan") {
+    return {
+      ...resolveRalphCodeImprovementPlan({
+        draft: readRalphUtilityValuePath(
+          asStarterResult(resultsByBlock.get(transform.draftBlockId))?.data,
+          "output",
+        ),
+        selection: asStarterResult(
+          resultsByBlock.get(transform.selectionBlockId),
+        )?.data,
+        constitution: readRalphUtilityValuePath(
+          asStarterResult(resultsByBlock.get(transform.constitutionBlockId))
+            ?.data,
+          "output.constitution",
+        ),
+        research: asStarterResult(resultsByBlock.get(transform.researchBlockId))
+          ?.summary,
+        stableDigest: canonicalDigest,
+      }),
+    };
+  }
+  if (transform?.type === "visual-runtime") {
+    return {
+      ...resolveRalphVisualRuntime({
+        commands: asStarterResult(resultsByBlock.get(transform.commandsBlockId))
+          ?.data,
+        variables,
+        transform,
+      }),
+    };
+  }
+  if (transform?.type === "repository-work-yield") {
+    const baseline = parseRalphRepositoryObservation(
+      asStarterResult(resultsByBlock.get(transform.baselineBlockId))?.data,
+    );
+    const currentResult = asStarterResult(
+      resultsByBlock.get(transform.currentBlockId),
+    );
+    const current = parseRalphRepositoryObservation(currentResult?.data);
+    if (!baseline || !current) {
+      throw new Error(`Expected ${block.id} repository observations.`);
+    }
+    const previous = readRalphUtilityValuePath(
+      asStarterResult(resultsByBlock.get(block.id))?.data,
+      "output",
+    );
+    const workSelection = transform.workItemBlockId
+      ? parseRalphWorkSelectionIdentity(
+          asStarterResult(resultsByBlock.get(transform.workItemBlockId))?.data,
+        )
+      : undefined;
+
+    return {
+      ...assessRalphRepositoryWorkYield({
+        baseline,
+        current,
+        ...(workSelection ? { workSelection } : {}),
+        ...(isRalphRepositoryWorkYield(previous) ? { previous } : {}),
+        ...(transform.excludedPaths
+          ? { excludedPaths: transform.excludedPaths }
+          : {}),
+        ...(transform.trackPrevious !== undefined
+          ? { trackPrevious: transform.trackPrevious }
+          : {}),
+        scopeAccepted: transform.scopeGuardBlockId
+          ? asStarterResult(resultsByBlock.get(transform.scopeGuardBlockId))
+              ?.output === "IN_SCOPE"
+          : true,
+      }),
+    };
+  }
+
+  if (!block.utility.expression) {
     throw new Error(`Expected ${block.id} to contain a transform expression.`);
   }
 
@@ -43,8 +159,24 @@ const evaluateStarterTransform = (
     lastResult: unknown,
     context: unknown,
   ) => unknown;
-  const output = evaluator({}, {}, undefined, {
-    resultsByBlock: new Map<string, unknown>([
+  const output = evaluator({}, variables, undefined, { resultsByBlock });
+
+  if (typeof output !== "object" || output === null || Array.isArray(output)) {
+    throw new Error(`Expected ${block.id} to return an object.`);
+  }
+
+  return output as Record<string, unknown>;
+};
+
+const evaluateStarterTransform = (
+  block: RalphUtilityBlock,
+  sourceBlockId: string,
+  sourceOutput: Record<string, unknown>,
+  sourceData?: Record<string, unknown>,
+): Record<string, unknown> => {
+  return evaluateStarterTransformWithContext(
+    block,
+    new Map<string, unknown>([
       [sourceBlockId, { data: sourceData ?? { output: sourceOutput } }],
       [
         "detect-project-commands",
@@ -58,13 +190,7 @@ const evaluateStarterTransform = (
         },
       ],
     ]),
-  });
-
-  if (typeof output !== "object" || output === null || Array.isArray(output)) {
-    throw new Error(`Expected ${block.id} to return an object.`);
-  }
-
-  return output as Record<string, unknown>;
+  );
 };
 
 const evaluateStarterCondition = (
@@ -73,37 +199,30 @@ const evaluateStarterCondition = (
   resultsByBlock: Record<string, unknown> = {},
   lastDataOverride?: Record<string, unknown>,
 ): boolean => {
-  if (
-    block.utility.type !== "CONDITION" ||
-    block.utility.condition?.style !== "javascript" ||
-    !block.utility.condition.expression
-  ) {
-    throw new Error(`Expected ${block.id} to contain a JavaScript condition.`);
+  if (block.utility.type !== "CONDITION" || !block.utility.condition) {
+    throw new Error(`Expected ${block.id} to contain a condition.`);
   }
 
-  const lastResult = { data: lastDataOverride ?? { output: lastOutput } };
-  const evaluator = new Function(
-    "context",
-    "result",
-    "variables",
-    "lastResult",
-    "lastData",
-    `"use strict"; return Boolean(${block.utility.condition.expression});`,
-  ) as (
-    context: Record<string, unknown>,
-    result: unknown,
-    variables: Record<string, string>,
-    lastResult: unknown,
-    lastData: unknown,
-  ) => boolean;
+  const lastResult: RalphBlockExecutionResult = {
+    blockId: "starter-test-result",
+    output: "SUCCESS",
+    status: "completed",
+    attempt: 1,
+    summary: "Starter test result",
+    data: lastDataOverride ?? { output: lastOutput },
+  };
 
-  return evaluator(
-    { resultsByBlock },
-    undefined,
-    {},
+  return evaluateRalphUtilityCondition(block.utility.condition, {
     lastResult,
-    lastResult.data,
-  );
+    runLog: [],
+    variables: {},
+    resultsByBlock: new Map(
+      Object.entries(resultsByBlock).map(([id, result]) => [
+        id,
+        asStarterResult(result),
+      ]),
+    ),
+  });
 };
 
 function calculateReachableDominators(flow: RalphFlow): {
@@ -285,6 +404,18 @@ describe("Ralph starter flows", () => {
       expect(summary.variableCount).toBe(
         discoverRalphFlowVariables(starterFlow.flow).length,
       );
+
+      for (const block of starterFlow.flow.blocks) {
+        if (block.type === "UTILITY" && block.utility.type === "CONDITION") {
+          const condition = block.utility.condition;
+          if (!condition) {
+            throw new Error(`${starterFlow.id}:${block.id} lacks a condition.`);
+          }
+          expect(condition.style, `${starterFlow.id}:${block.id}`).not.toBe(
+            "javascript",
+          );
+        }
+      }
     }
   });
 
@@ -1547,7 +1678,11 @@ describe("Ralph starter flows", () => {
       utility: {
         type: "CONDITION",
         condition: {
-          expression: expect.stringContaining("no_action"),
+          style: "json-path",
+          path: "lastData.output.status",
+          operator: "is-one-of",
+          matchValues: ["planned", "implementing"],
+          allowedValues: expect.arrayContaining(["no_action"]),
         },
       },
     });
@@ -1651,13 +1786,13 @@ describe("Ralph starter flows", () => {
       type: "UTILITY",
       utility: {
         type: "TRANSFORM_JSON",
-        expression: expect.stringContaining("changedSinceBaselineFiles"),
-      },
-    });
-    expect(workYieldAnalysis).toMatchObject({
-      type: "UTILITY",
-      utility: {
-        expression: expect.stringContaining("onlyStateFileChanged"),
+        deterministicTransform: {
+          type: "repository-work-yield",
+          baselineBlockId: "git-snapshot-before",
+          currentBlockId: "git-diff-summary",
+          workItemBlockId: "select-next-task",
+          verifyOnObservationError: true,
+        },
       },
     });
     expect(workYieldDecision).toMatchObject({
@@ -1665,7 +1800,10 @@ describe("Ralph starter flows", () => {
       utility: {
         type: "CONDITION",
         condition: {
-          expression: "lastData?.shouldVerify === true",
+          style: "json-path",
+          path: "lastData.output.shouldVerify",
+          operator: "equals",
+          value: "true",
         },
       },
     });
@@ -1881,13 +2019,13 @@ describe("Ralph starter flows", () => {
       type: "UTILITY",
       utility: {
         type: "TRANSFORM_JSON",
-        expression: expect.stringContaining("changedSinceBaselineFiles"),
-      },
-    });
-    expect(workYieldAnalysis).toMatchObject({
-      type: "UTILITY",
-      utility: {
-        expression: expect.stringContaining("onlyStateFileChanged"),
+        deterministicTransform: {
+          type: "repository-work-yield",
+          baselineBlockId: "git-snapshot-before",
+          currentBlockId: "git-diff-summary",
+          workItemBlockId: "select-next-task",
+          verifyOnObservationError: true,
+        },
       },
     });
     expect(workYieldDecision).toMatchObject({
@@ -1895,7 +2033,10 @@ describe("Ralph starter flows", () => {
       utility: {
         type: "CONDITION",
         condition: {
-          expression: "lastData?.shouldVerify === true",
+          style: "json-path",
+          path: "lastData.output.shouldVerify",
+          operator: "equals",
+          value: "true",
         },
       },
     });
@@ -2042,7 +2183,13 @@ describe("Ralph starter flows", () => {
       utility: {
         type: "CONDITION",
         condition: {
-          expression: expect.stringContaining("passes.length > 0"),
+          style: "json-path",
+          path: "resultsByBlock.audit-against-policy.data.output.outcome",
+          operator: "equals",
+          value: "IMPLEMENT",
+          conditions: expect.arrayContaining([
+            expect.objectContaining({ operator: "non-empty-array" }),
+          ]),
         },
       },
     });
@@ -2058,7 +2205,9 @@ describe("Ralph starter flows", () => {
       type: "UTILITY",
       utility: {
         condition: {
-          expression: expect.stringContaining("select-validation-command"),
+          style: "json-path",
+          path: "resultsByBlock.select-validation-command.data.output.command",
+          operator: "truthy",
         },
       },
     });
@@ -2066,7 +2215,11 @@ describe("Ralph starter flows", () => {
       type: "UTILITY",
       utility: {
         type: "TRANSFORM_JSON",
-        expression: expect.stringContaining("focusedVerificationCommand"),
+        deterministicTransform: {
+          type: "verification-command",
+          selectionBlockId: "audit-against-policy",
+          selectionPath: "output",
+        },
       },
     });
     expect(runValidation).toMatchObject({
@@ -2115,7 +2268,13 @@ describe("Ralph starter flows", () => {
       type: "UTILITY",
       utility: {
         type: "TRANSFORM_JSON",
-        expression: expect.stringContaining("previous.diffSignature"),
+        deterministicTransform: {
+          type: "repository-work-yield",
+          baselineBlockId: "git-snapshot-before",
+          currentBlockId: "git-diff-summary",
+          scopeGuardBlockId: "scope-change-guard",
+          trackPrevious: true,
+        },
       },
     });
     expect(readRefactorOutcomes).toMatchObject({
@@ -2381,6 +2540,9 @@ describe("Ralph starter flows", () => {
     const chooseImprovement = flow?.blocks.find(
       (block) => block.id === "choose-improvement",
     );
+    const buildImprovementPlan = flow?.blocks.find(
+      (block) => block.id === "build-improvement-plan",
+    );
     const actionableDecision = flow?.blocks.find(
       (block) => block.id === "has-actionable-improvement",
     );
@@ -2447,6 +2609,37 @@ describe("Ralph starter flows", () => {
         prompt: expect.stringContaining("Return decision IMPLEMENT only"),
       },
     });
+    if (
+      buildImprovementPlan?.type !== "UTILITY" ||
+      buildImprovementPlan.utility.type !== "TRANSFORM_JSON"
+    ) {
+      throw new Error("Expected code improvement plan transform.");
+    }
+    const createPlan = (taskIds: string[]): Record<string, unknown> =>
+      evaluateStarterTransformWithContext(
+        buildImprovementPlan,
+        new Map<string, unknown>([
+          [
+            "choose-improvement",
+            {
+              data: {
+                output: {
+                  decision: "IMPLEMENT",
+                  rationale: "Implement",
+                  tasks: taskIds.map((id) => ({ id, status: "planned" })),
+                },
+              },
+            },
+          ],
+          ["select-scope", { data: { scope: { id: "scope" } } }],
+        ]),
+      );
+    expect(buildImprovementPlan.utility.deterministicTransform).toMatchObject({
+      type: "code-improvement-plan",
+      draftBlockId: "choose-improvement",
+      selectionBlockId: "select-scope",
+    });
+    expect(createPlan(["a", "b"]).planId).not.toBe(createPlan(["a,b"]).planId);
     expect(chooseImprovement).toMatchObject({
       utility: {
         prompt: expect.stringContaining(
@@ -2464,7 +2657,10 @@ describe("Ralph starter flows", () => {
       utility: {
         type: "CONDITION",
         condition: {
-          expression: expect.stringContaining("build-improvement-plan"),
+          style: "json-path",
+          path: "resultsByBlock.build-improvement-plan.data.output.decision",
+          operator: "equals",
+          value: "IMPLEMENT",
         },
       },
     });
@@ -2505,15 +2701,96 @@ describe("Ralph starter flows", () => {
       type: "UTILITY",
       utility: {
         type: "TRANSFORM_JSON",
-        expression: expect.stringContaining("prior.signature"),
+        deterministicTransform: {
+          type: "repository-work-yield",
+          baselineBlockId: "git-snapshot-before",
+          currentBlockId: "git-diff-summary",
+          scopeGuardBlockId: "scope-change-guard",
+          workItemBlockId: "select-improvement-task",
+          trackPrevious: true,
+        },
       },
     });
+    if (
+      workYieldAnalysis?.type !== "UTILITY" ||
+      workYieldAnalysis.utility.type !== "TRANSFORM_JSON"
+    ) {
+      throw new Error("Expected code work-yield analysis transform.");
+    }
+    const createYieldContext = (
+      signature: string,
+      prior?: Record<string, unknown>,
+    ): Map<string, unknown> =>
+      new Map<string, unknown>([
+        [
+          "git-snapshot-before",
+          {
+            data: {
+              head: "head-one",
+              files: [{ path: "src/a.ts", signature: "before" }],
+            },
+          },
+        ],
+        [
+          "git-diff-summary",
+          {
+            data: {
+              head: "head-one",
+              files: [{ path: "src/a.ts", signature }],
+            },
+          },
+        ],
+        [
+          "select-improvement-task",
+          {
+            data: {
+              path: ".machdoch/tasks.json",
+              jsonPath: "tasks",
+              taskIds: ["task-1"],
+            },
+          },
+        ],
+        ["scope-change-guard", { output: "IN_SCOPE" }],
+        ...(prior
+          ? ([["work-yield-analysis", { data: { output: prior } }]] as Array<
+              [string, unknown]
+            >)
+          : []),
+      ]);
+    const firstYield = evaluateStarterTransformWithContext(
+      workYieldAnalysis,
+      createYieldContext("after-one"),
+    );
+    const repairedYield = evaluateStarterTransformWithContext(
+      workYieldAnalysis,
+      createYieldContext("after-two", firstYield),
+    );
+    const unchangedYield = evaluateStarterTransformWithContext(
+      workYieldAnalysis,
+      createYieldContext("after-two", repairedYield),
+    );
+
+    expect(firstYield).toMatchObject({
+      changedFiles: ["src/a.ts"],
+      madeProgress: true,
+    });
+    expect(repairedYield).toMatchObject({
+      changedFiles: ["src/a.ts"],
+      madeProgress: true,
+    });
+    expect(repairedYield.repositoryFingerprint).not.toBe(
+      firstYield.repositoryFingerprint,
+    );
+    expect(unchangedYield).toMatchObject({ madeProgress: false });
     expect(usefulWorkProduced).toMatchObject({
       type: "UTILITY",
       utility: {
         type: "CONDITION",
         condition: {
-          expression: expect.stringContaining("lastData?.output?.madeProgress"),
+          style: "json-path",
+          path: "lastData.output.usefulWorkProduced",
+          operator: "equals",
+          value: "true",
         },
       },
     });
@@ -3639,8 +3916,11 @@ describe("Ralph starter flows", () => {
         reviewTier: "strict",
         protocolValid: false,
       });
-      expect(block.utility.expression).not.toContain("riskText");
-      expect(block.utility.expression).not.toMatch(
+      expect(block.utility.deterministicTransform).toMatchObject({
+        type: "verification-command",
+        selectionBlockId: testCase.sourceBlockId,
+      });
+      expect(JSON.stringify(block.utility.deterministicTransform)).not.toMatch(
         /security|secret|migration/u,
       );
     }

@@ -29,9 +29,9 @@ describe("Ralph flow graph lookup helpers", () => {
       status: "success",
     };
 
-    expect(getRalphBlockById(createEmptyFlow({ blocks: [first, second] }))).toEqual(
-      new Map([["same", second]]),
-    );
+    expect(
+      getRalphBlockById(createEmptyFlow({ blocks: [first, second] })),
+    ).toEqual(new Map([["same", second]]));
   });
 
   it("finds outgoing edges by block id and output", () => {
@@ -47,6 +47,30 @@ describe("Ralph flow graph lookup helpers", () => {
       to: "success",
     });
     expect(findOutgoingRalphEdge(flow, "missing", "SUCCESS")).toBeUndefined();
+  });
+
+  it("keeps block and output identity fields separate", () => {
+    const first = {
+      id: "first",
+      from: "block\0SUCCESS",
+      fromOutput: "ERROR" as const,
+      to: "first-target",
+    };
+    const second = {
+      id: "second",
+      from: "block",
+      fromOutput: "SUCCESS" as const,
+      to: "second-target",
+    };
+    const flow = createEmptyFlow({ edges: [first, second] });
+    const index = createRalphFlowGraphIndex(flow);
+
+    expect(
+      findOutgoingRalphEdge(flow, first.from, first.fromOutput, index),
+    ).toEqual(first);
+    expect(
+      findOutgoingRalphEdge(flow, second.from, second.fromOutput, index),
+    ).toEqual(second);
   });
 });
 
@@ -74,7 +98,12 @@ describe("Ralph flow graph traversal helpers", () => {
         createEmptyFlow({
           blocks: [
             { id: "start", type: "START", title: "Start" },
-            { id: "review", type: "PROMPT", title: "Review", prompt: "Review." },
+            {
+              id: "review",
+              type: "PROMPT",
+              title: "Review",
+              prompt: "Review.",
+            },
             { id: "end", type: "END", title: "End" },
           ],
           edges: [
@@ -101,7 +130,12 @@ describe("Ralph flow graph traversal helpers", () => {
             { id: "end", type: "END", title: "End" },
           ],
           edges: [
-            { id: "start-to-end", from: "start", fromOutput: "SUCCESS", to: "end" },
+            {
+              id: "start-to-end",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "end",
+            },
           ],
         }),
       ),

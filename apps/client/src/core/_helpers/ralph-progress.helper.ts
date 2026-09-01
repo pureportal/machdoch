@@ -1,11 +1,35 @@
 import { createHash } from "node:crypto";
-import type { RalphBlockExecutionResult, RalphFlowBlock } from "../ralph.js";
+import type {
+  RalphBlockExecutionResult,
+  RalphFlowBlock,
+  RalphUtilityType,
+} from "../ralph.js";
+
+export type RalphProgressChannelIdentity =
+  | { kind: "repository-execution" }
+  | { kind: "control" }
+  | { kind: "repository" }
+  | {
+      kind: "work-item";
+      target:
+        | { kind: "path"; path: string }
+        | { kind: "block"; blockId: string };
+    }
+  | { kind: "scope-verification" }
+  | { kind: "verification" }
+  | { kind: "utility"; utilityType: RalphUtilityType };
+
+export interface RalphProgressChannelFingerprint {
+  channel: RalphProgressChannelIdentity;
+  fingerprint: string;
+}
 
 export interface RalphProgressEvidence {
   transition: number;
   blockId: string;
   output: string;
   channel: string;
+  channelIdentity: RalphProgressChannelIdentity;
   signature: string;
   meaningful: boolean;
   reason: string;
@@ -17,7 +41,7 @@ export interface RalphProgressState {
   meaningfulTransitions: number;
   lastProgressAt?: string;
   lastProgressTransition?: number;
-  channelFingerprints: Record<string, string>;
+  channelFingerprints: RalphProgressChannelFingerprint[];
   recent: RalphProgressEvidence[];
   stalledReason?: string;
 }
@@ -54,6 +78,55 @@ const hash = (value: unknown): string =>
   createHash("sha256")
     .update(JSON.stringify(canonicalize(value)))
     .digest("hex");
+
+const isSameProgressChannel = (
+  left: RalphProgressChannelIdentity,
+  right: RalphProgressChannelIdentity,
+): boolean => {
+  if (left.kind !== right.kind) {
+    return false;
+  }
+  if (left.kind === "utility" && right.kind === "utility") {
+    return left.utilityType === right.utilityType;
+  }
+  if (left.kind === "work-item" && right.kind === "work-item") {
+    if (left.target.kind !== right.target.kind) {
+      return false;
+    }
+    return left.target.kind === "path" && right.target.kind === "path"
+      ? left.target.path === right.target.path
+      : left.target.kind === "block" && right.target.kind === "block"
+        ? left.target.blockId === right.target.blockId
+        : false;
+  }
+  return true;
+};
+
+const findProgressChannelFingerprint = (
+  state: RalphProgressState,
+  channel: RalphProgressChannelIdentity,
+): RalphProgressChannelFingerprint | undefined =>
+  state.channelFingerprints.find((entry) =>
+    isSameProgressChannel(entry.channel, channel),
+  );
+
+export const setRalphRepositoryProgressFingerprint = (
+  state: RalphProgressState,
+  fingerprint: string,
+): void => {
+  const channel = { kind: "repository" } as const;
+  const existing = findProgressChannelFingerprint(state, channel);
+  if (existing) {
+    existing.fingerprint = fingerprint;
+  } else {
+    state.channelFingerprints.push({ channel, fingerprint });
+  }
+};
+
+export const hasRalphRepositoryProgressFingerprint = (
+  state: RalphProgressState,
+): boolean =>
+  findProgressChannelFingerprint(state, { kind: "repository" }) !== undefined;
 
 const getVerificationDisposition = (
   result: RalphBlockExecutionResult,
@@ -132,7 +205,8 @@ const getProgressChannel = (
   block: RalphFlowBlock,
   result: RalphBlockExecutionResult,
 ): {
-  channel: string;
+  channel: RalphProgressChannelIdentity;
+  channelLabel: string;
   fingerprint?: string;
   eligible: boolean;
   initialIsProgress?: boolean;
@@ -142,7 +216,8 @@ const getProgressChannel = (
     getExecutionFileChangeFingerprint(result);
   if (executionFileChangeFingerprint) {
     return {
-      channel: "repository-execution",
+      channel: { kind: "repository-execution" },
+      channelLabel: "repository-execution",
       fingerprint: executionFileChangeFingerprint,
       eligible: true,
       initialIsProgress: true,
@@ -152,7 +227,8 @@ const getProgressChannel = (
 
   if (block.type !== "UTILITY") {
     return {
-      channel: "control",
+      channel: { kind: "control" },
+      channelLabel: "control",
       eligible: false,
       reason: "Model and routing output is not objective repository evidence.",
     };
@@ -164,15 +240,20 @@ const getProgressChannel = (
   ) {
     const fingerprint = getGitFingerprint(result);
     return {
-      channel: "repository",
+      channel: { kind: "repository" },
+      channelLabel: "repository",
       ...(fingerprint ? { fingerprint } : {}),
       eligible: true,
       reason: "Repository content changed since the previous observation.",
     };
   }
   if (block.utility.type === "MARK_JSON_TASK") {
+    const target = block.utility.path
+      ? ({ kind: "path", path: block.utility.path } as const)
+      : ({ kind: "block", blockId: block.id } as const);
     return {
-      channel: `work-item:${block.utility.path ?? block.id}`,
+      channel: { kind: "work-item", target },
+      channelLabel: `work-item:${block.utility.path ?? block.id}`,
       fingerprint: hash(result.data),
       eligible: result.output === "SUCCESS",
       initialIsProgress: true,
@@ -181,7 +262,8 @@ const getProgressChannel = (
   }
   if (block.utility.type === "CHANGE_SCOPE_GUARD") {
     return {
-      channel: "scope-verification",
+      channel: { kind: "scope-verification" },
+      channelLabel: "scope-verification",
       fingerprint: result.output,
       eligible: result.output === "IN_SCOPE",
       initialIsProgress: true,
@@ -191,7 +273,8 @@ const getProgressChannel = (
   if (block.utility.type === "RUN_CHECK") {
     const disposition = getVerificationDisposition(result);
     return {
-      channel: "verification",
+      channel: { kind: "verification" },
+      channelLabel: "verification",
       ...(disposition ? { fingerprint: disposition } : {}),
       eligible:
         disposition === "PASSED" ||
@@ -202,7 +285,8 @@ const getProgressChannel = (
   }
 
   return {
-    channel: `utility:${block.utility.type}`,
+    channel: { kind: "utility", utilityType: block.utility.type },
+    channelLabel: `utility:${block.utility.type}`,
     eligible: false,
     reason: "The result is operational evidence, not objective task progress.",
   };
@@ -254,7 +338,12 @@ export const createRalphProgressState = (
   ...(typeof restored?.lastProgressTransition === "number"
     ? { lastProgressTransition: restored.lastProgressTransition }
     : {}),
-  channelFingerprints: { ...(restored?.channelFingerprints ?? {}) },
+  channelFingerprints: Array.isArray(restored?.channelFingerprints)
+    ? restored.channelFingerprints.map((entry) => ({
+        channel: structuredClone(entry.channel),
+        fingerprint: entry.fingerprint,
+      }))
+    : [],
   recent: Array.isArray(restored?.recent)
     ? restored.recent.slice(-32).map((entry) => ({ ...entry }))
     : [],
@@ -270,7 +359,8 @@ export const assessRalphProgress = (
   now = new Date().toISOString(),
 ): RalphProgressAssessment => {
   const channel = getProgressChannel(block, result);
-  const previousFingerprint = state.channelFingerprints[channel.channel];
+  const priorChannel = findProgressChannelFingerprint(state, channel.channel);
+  const previousFingerprint = priorChannel?.fingerprint;
   const meaningful = Boolean(
     channel.eligible &&
     channel.fingerprint &&
@@ -288,19 +378,28 @@ export const assessRalphProgress = (
     transition,
     blockId: block.id,
     output: result.output,
-    channel: channel.channel,
+    channel: channel.channelLabel,
+    channelIdentity: channel.channel,
     signature,
     meaningful,
     reason: meaningful
       ? channel.reason
       : previousFingerprint === undefined && channel.fingerprint
-        ? `Established the ${channel.channel} baseline.`
+        ? `Established the ${channel.channelLabel} baseline.`
         : channel.reason,
     at: now,
   };
   const next = createRalphProgressState(state);
   if (channel.fingerprint) {
-    next.channelFingerprints[channel.channel] = channel.fingerprint;
+    const nextChannel = findProgressChannelFingerprint(next, channel.channel);
+    if (nextChannel) {
+      nextChannel.fingerprint = channel.fingerprint;
+    } else {
+      next.channelFingerprints.push({
+        channel: channel.channel,
+        fingerprint: channel.fingerprint,
+      });
+    }
   }
   next.recent = [...next.recent, evidence].slice(-32);
   if (meaningful) {

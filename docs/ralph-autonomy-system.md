@@ -36,21 +36,22 @@ reconciliation, final reports, and the desktop UI use the semantic outcome.
 The design uses techniques that survived comparison with Machdoch's actual
 failure evidence:
 
-| Source                                                                                                                                            | Useful result                                                                                           | Machdoch decision                                                                                                             |
-| ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| [Original Ralph loop](https://github.com/ghuntley/how-to-ralph-wiggum)                                                                            | Fresh contexts and durable files can sustain work longer than one conversation                          | Keep bounded work units and durable handoffs, but do not treat iteration count or a completion phrase as proof                |
-| [Anthropic Ralph Wiggum plugin](https://github.com/anthropics/claude-code/blob/main/plugins/ralph-wiggum/README.md)                               | Stop hooks can feed the same task back until a condition is met                                         | Preserve graph loops while putting an engine-owned evaluator and circuit breaker outside the prompt                           |
-| [Anthropic CWC long-running agents](https://github.com/anthropics/cwc-long-running-agents)                                                        | Default-fail evaluators, explicit handoffs, and independent verification reduce false completion        | Candidate checks default to inconclusive unless they are comparable with a frozen baseline; reports cannot promote themselves |
-| [Anthropic harness design](https://www.anthropic.com/engineering/harness-design-long-running-apps)                                                | Small feature increments, clean state, and explicit progress artifacts improve long-horizon reliability | Persist objective progress and operation state at bounded block boundaries                                                    |
-| [Building effective agents](https://www.anthropic.com/engineering/building-effective-agents)                                                      | Simple composable workflows are more reliable than unnecessary agent complexity                         | Retain one coherent runner and utility contract instead of adding an orchestration hierarchy                                  |
-| [Demystifying agent evals](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents)                                                | Outcomes need task-level graders and inspectable evidence                                               | Outcome derivation is deterministic and stores evidence fingerprints                                                          |
-| [OpenHands conversation persistence](https://docs.openhands.dev/sdk/guides/convo-persistence)                                                     | Event streams and resumable state are separate concerns                                                 | Use an append-only journal plus immutable checkpoint generations                                                              |
-| [OpenHands stuck detector](https://docs.openhands.dev/sdk/guides/agent-stuck-detector)                                                            | Repeated action/observation patterns are detectable without another model call                          | Detect semantic cycles of length one through four and consecutive no-progress                                                 |
-| [OpenHands context condenser](https://docs.openhands.dev/sdk/guides/context-condenser)                                                            | Long histories need bounded active context with durable backing                                         | Bound checkpoints and keep full execution history in append-only logs                                                         |
-| [SWE-agent](https://papers.nips.cc/paper_files/paper/2024/hash/5a7c947568c1b1328ccc5230172e1e7c-Abstract-Conference.html)                         | A constrained, repository-aware action interface materially improves coding-agent behavior              | Keep repository, command, and scope operations explicit and machine-observable                                                |
-| [Agentless](https://arxiv.org/abs/2407.01489)                                                                                                     | Staged localization, repair, and validation can outperform unconstrained looping                        | Starter flows freeze selection and verification before implementation                                                         |
-| [Reflexion](https://arxiv.org/abs/2303.11366)                                                                                                     | Compact feedback retained across attempts can improve later decisions                                   | Store failure fingerprints, recovery attempts, and next actions rather than replaying raw analysis                            |
-| [AutoCodeRover](https://arxiv.org/abs/2404.05427), [SWE-Search](https://arxiv.org/abs/2410.20285), and [TDFlow](https://arxiv.org/abs/2510.23761) | Search should be structured, budgeted, and evaluated rather than endless                                | Use explicit transition/recovery budgets and stop polishing when evidence is sufficient                                       |
+| Source                                                                                                                                                                              | Useful result                                                                                                      | Machdoch decision                                                                                                             |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| [Original Ralph loop](https://github.com/ghuntley/how-to-ralph-wiggum)                                                                                                              | Fresh contexts and durable files can sustain work longer than one conversation                                     | Keep bounded work units and durable handoffs, but do not treat iteration count or a completion phrase as proof                |
+| [Anthropic Ralph Wiggum plugin](https://github.com/anthropics/claude-code/blob/main/plugins/ralph-wiggum/README.md)                                                                 | Stop hooks can feed the same task back until a condition is met                                                    | Preserve graph loops while putting an engine-owned evaluator and circuit breaker outside the prompt                           |
+| [Anthropic CWC long-running agents](https://github.com/anthropics/cwc-long-running-agents)                                                                                          | Default-fail evaluators, explicit handoffs, and independent verification reduce false completion                   | Candidate checks default to inconclusive unless they are comparable with a frozen baseline; reports cannot promote themselves |
+| [Anthropic harness design](https://www.anthropic.com/engineering/harness-design-long-running-apps)                                                                                  | Small feature increments, clean state, and explicit progress artifacts improve long-horizon reliability            | Persist objective progress and operation state at bounded block boundaries                                                    |
+| [Building effective agents](https://www.anthropic.com/engineering/building-effective-agents)                                                                                        | Simple composable workflows are more reliable than unnecessary agent complexity                                    | Retain one coherent runner and utility contract instead of adding an orchestration hierarchy                                  |
+| [Demystifying agent evals](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents)                                                                                  | Outcomes need task-level graders and inspectable evidence                                                          | Outcome derivation is deterministic and stores evidence fingerprints                                                          |
+| [OpenHands conversation persistence](https://docs.openhands.dev/sdk/guides/convo-persistence)                                                                                       | Event streams and resumable state are separate concerns                                                            | Use an append-only journal plus immutable checkpoint generations                                                              |
+| [LangGraph fault tolerance](https://docs.langchain.com/oss/javascript/langgraph/fault-tolerance) and [persistence](https://docs.langchain.com/oss/javascript/langgraph/persistence) | Checkpointed tasks can resume without repeating completed work, while retries stay scoped to the failing operation | Classify every block by replay semantics and persist intent only where reconciliation or at-most-once execution requires it   |
+| [OpenHands stuck detector](https://github.com/OpenHands/software-agent-sdk/blob/main/openhands-sdk/openhands/sdk/conversation/stuck_detector.py)                                    | Content-based repeated action, observation, and error patterns are detectable without another model call           | Detect semantic cycles of length one through four and consecutive no-progress while ignoring volatile metadata                |
+| [OpenHands context condenser](https://docs.openhands.dev/sdk/guides/context-condenser)                                                                                              | Long histories need bounded active context with durable backing                                                    | Bound checkpoints and keep full execution history in append-only logs                                                         |
+| [SWE-agent](https://github.com/SWE-agent/SWE-agent/blob/main/sweagent/agent/agents.py)                                                                                              | Per-attempt trajectories and bounded review-driven retries keep recovery inspectable                               | Persist attempt evidence and route concrete verifier feedback into bounded repair cycles                                      |
+| [Agentless](https://arxiv.org/abs/2407.01489)                                                                                                                                       | Staged localization, repair, and validation can outperform unconstrained looping                                   | Starter flows freeze selection and verification before implementation                                                         |
+| [Reflexion](https://arxiv.org/abs/2303.11366)                                                                                                                                       | Compact feedback retained across attempts can improve later decisions                                              | Store failure fingerprints, recovery attempts, and next actions rather than replaying raw analysis                            |
+| [AutoCodeRover](https://arxiv.org/abs/2404.05427), [SWE-Search](https://arxiv.org/abs/2410.20285), and [TDFlow](https://arxiv.org/abs/2510.23761)                                   | Search should be structured, budgeted, and evaluated rather than endless                                           | Use explicit transition/recovery budgets and stop polishing when evidence is sufficient                                       |
 
 No source was copied wholesale. In particular, an infinite prompt replay loop
 does not meet Machdoch's persistence, Windows filesystem, nested-repository, or
@@ -145,8 +146,24 @@ The progress detector tracks independent channels:
 - scope-gate state; and
 - semantic verification disposition.
 
+Channel identity is stored as a discriminated structure, including separate
+work-item path and block identities. Fingerprint lookup never depends on a
+delimiter-built string key.
+
 Model prose, routing, notifications, and repeated analysis are not objective
 progress. Complete, machine-observed file-change sets from agent execution are.
+A repeated repair counts as progress only when its content fingerprints change;
+editing the same filenames again is neither automatically productive nor
+automatically stagnant.
+Starter work-yield gates use the same deterministic repository transform. It
+compares content signatures across the union of baseline and current paths,
+scopes repetition to the selected task identity, excludes lifecycle state
+files, and keeps verification reachable when the final observation fails.
+Starter routing uses structured condition trees for enum validation, task-list
+requirements, identity equality, and all/any composition. Invalid declared
+states fail closed instead of being inferred from JavaScript expression text.
+Verification selection, code-plan identity, repository yield, and visual
+runtime capability resolution are deterministic engine transforms.
 A run stops as `stalled` when it repeats a semantic cycle (length one through
 four) for the configured count or exceeds the no-progress threshold. Before
 declaring a stall in a Git-backed run, the engine performs one lightweight
@@ -172,6 +189,14 @@ and strategy rules as `SELECT_JSON_TASK`. It reports structural versus
 temporarily retryable blockage and the earliest known retry time. Task,
 candidate, blocker, dependency, and cycle details are capped at 100 items while
 full-plan counts and the routing decision still use every task.
+
+Lease refresh folds task selections and lifecycle mutations in chronological
+order. Completed and deferred tasks leave the active claim set immediately,
+and archiving a lifecycle file retires every remaining claim for that file.
+Claim identity keeps file path, JSON path, and task ids as separate fields.
+Durability checkpoints therefore refresh only work that can still be resumed.
+Scope registries accept only schema version 2 and its explicit outcome enum;
+arbitrary labels are never interpreted as lifecycle outcomes.
 
 The Autonomous Feature Generation and Feature Implementation Checklist
 starters now assess before every task claim and after every completed or
@@ -244,11 +269,23 @@ simple.jsonl / simple.md / trace.jsonl
 ```
 
 Heartbeats validate and update only the small lease; they neither parse nor
-rewrite `run.json`. Replay-safe operations checkpoint once after routing.
-Potentially non-idempotent agent or external operations force an intent
-projection and a completion projection. The newest valid immutable checkpoint
-is authoritative when `run.json` lags or its newest checkpoint is damaged. A
-truncated journal tail and a corrupt newest checkpoint fall back safely.
+rewrite `run.json`. Blocks declare one of three effect policies: replay-safe,
+reconcilable, or at-most-once. Replay-safe operations checkpoint once after
+routing. Reconcilable and at-most-once operations force an intent projection
+and a completion projection. `APPEND_JSONL` reconciles through its operation
+ledger. The ledger has a versioned, discriminated schema; malformed operation
+state fails before the JSONL target is mutated. Default `ARCHIVE_FILE`
+destinations derive from the durable operation
+identity, so a resume can recognize an already completed rename without
+overwriting another archive.
+Task-lease refresh treats an active typed mutation lock as transient contention
+and retries on a later heartbeat or block boundary without degrading the run.
+
+The newest valid immutable checkpoint is authoritative when `run.json` lags or
+its newest checkpoint is damaged. Journal appends are flushed before they are
+acknowledged. Initialization removes a crash-truncated final append or restores
+its missing newline before assigning the next sequence; corruption in a
+terminated entry and non-transient I/O errors fail closed.
 
 The operation ledger prevents blind replay after an indeterminate side effect.
 Waiting input blocks replay from their durable request. Final blocked, stopped,
@@ -291,8 +328,12 @@ Focused and integration coverage includes:
   comparisons;
 - corrupt newest checkpoint fallback, truncated journal recovery, independent
   lease heartbeat, checkpoint retention, and stale `run.json` recovery;
+- journal tail repair before a recovery append and fail-closed terminated-entry
+  corruption;
 - waiting-input resume, operation reconciliation, competing owners, lease
   theft, interruption, and final-report recovery;
+- completed task-claim retirement before lifecycle archive, deterministic
+  archive reconciliation, and content-sensitive same-file repair progress;
 - concurrent autonomous writers blocked before baseline and abandoned
   workspace-writer lease recovery;
 - structural validation of the evidence contract across all six starters; and
@@ -315,9 +356,9 @@ contents, candidate disposition, changed-file fingerprint, scope decision,
 final report, run record, journal, and `autonomy-evidence.json`. These are
 test-level measurements, not a general performance guarantee.
 
-The final broad validation contains 894 passing RALPH tests across 85 files plus
-58 scheduler/CLI consumer tests. The complete 92-test engine file, targeted
-production-source lint and formatting checks, and core/UI/test TypeScript builds
+The current broad validation contains 1,033 passing RALPH tests across 96 files.
+The complete 115-test engine file, repository-wide checks, full workspace
+typechecking, formatting checks, and the client production TypeScript build
 also pass.
 
 ## Residual risks

@@ -8,6 +8,7 @@ import type {
   RalphBaseBlock,
   RalphBlockSettings,
   RalphBlockType,
+  RalphEndBlock,
   RalphFlowBlock,
   RalphGroupExecutionBoundary,
   RalphInputField,
@@ -59,6 +60,37 @@ const RALPH_INPUT_FIELD_TYPES = [
   "images",
 ] as const satisfies readonly RalphInputFieldType[];
 
+const RALPH_END_STATUSES = [
+  "success",
+  "failed",
+  "cancelled",
+  "review",
+] as const satisfies readonly NonNullable<RalphEndBlock["status"]>[];
+
+const RALPH_END_OUTCOMES = [
+  "succeeded",
+  "no-op",
+  "deferred",
+  "blocked",
+  "failed",
+  "cancelled",
+] as const satisfies readonly NonNullable<RalphEndBlock["outcome"]>[];
+
+export class InvalidRalphBlockDiscriminatorError extends TypeError {
+  readonly discriminator: "type" | "status" | "outcome";
+  readonly value: unknown;
+
+  constructor(
+    discriminator: InvalidRalphBlockDiscriminatorError["discriminator"],
+    value: unknown,
+  ) {
+    super(`Ralph block requires a supported ${discriminator}.`);
+    this.name = "InvalidRalphBlockDiscriminatorError";
+    this.discriminator = discriminator;
+    this.value = value;
+  }
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
@@ -78,6 +110,16 @@ const isRalphInputFieldType = (
     RALPH_INPUT_FIELD_TYPES.includes(value as RalphInputFieldType)
   );
 };
+
+const isRalphEndStatus = (
+  value: unknown,
+): value is NonNullable<RalphEndBlock["status"]> =>
+  RALPH_END_STATUSES.includes(value as NonNullable<RalphEndBlock["status"]>);
+
+const isRalphEndOutcome = (
+  value: unknown,
+): value is NonNullable<RalphEndBlock["outcome"]> =>
+  RALPH_END_OUTCOMES.includes(value as NonNullable<RalphEndBlock["outcome"]>);
 
 const coerceStringArray = (value: unknown): string[] => {
   return Array.isArray(value)
@@ -444,7 +486,11 @@ const coerceValidationScope = (
 export const coerceRalphFlowBlockRecord = (
   record: Record<string, unknown>,
 ): RalphFlowBlock => {
-  const type = isRalphFlowBlockType(record.type) ? record.type : "PROMPT";
+  if (!isRalphFlowBlockType(record.type)) {
+    throw new InvalidRalphBlockDiscriminatorError("type", record.type);
+  }
+
+  const type = record.type;
   const base: Omit<RalphBaseBlock, "type"> = {
     id: typeof record.id === "string" ? record.id : "",
     title: typeof record.title === "string" ? record.title : "",
@@ -660,23 +706,20 @@ export const coerceRalphFlowBlockRecord = (
       };
     }
     case "END":
+      if (record.status !== undefined && !isRalphEndStatus(record.status)) {
+        throw new InvalidRalphBlockDiscriminatorError("status", record.status);
+      }
+      if (record.outcome !== undefined && !isRalphEndOutcome(record.outcome)) {
+        throw new InvalidRalphBlockDiscriminatorError(
+          "outcome",
+          record.outcome,
+        );
+      }
       return {
         ...base,
         type,
-        ...(record.status === "success" ||
-        record.status === "failed" ||
-        record.status === "cancelled" ||
-        record.status === "review"
-          ? { status: record.status }
-          : {}),
-        ...(record.outcome === "succeeded" ||
-        record.outcome === "no-op" ||
-        record.outcome === "deferred" ||
-        record.outcome === "blocked" ||
-        record.outcome === "failed" ||
-        record.outcome === "cancelled"
-          ? { outcome: record.outcome }
-          : {}),
+        ...(record.status ? { status: record.status } : {}),
+        ...(record.outcome ? { outcome: record.outcome } : {}),
       };
   }
 };

@@ -10,6 +10,39 @@ describe("parseRalphFlowRecord", () => {
     },
   );
 
+  it.each([
+    [{ id: "unknown", type: "UNKNOWN", title: "Unknown" }, "supported type"],
+    [
+      {
+        id: "utility",
+        type: "UTILITY",
+        title: "Utility",
+        utility: { type: "UNKNOWN" },
+      },
+      "invalid type",
+    ],
+    [
+      {
+        id: "end",
+        type: "END",
+        title: "End",
+        outcome: "DONE_AFTER_REVIEW",
+      },
+      "supported outcome",
+    ],
+  ])("rejects unsupported executable discriminators", (block, message) => {
+    expect(() =>
+      parseRalphFlowRecord({
+        schemaVersion: 1,
+        id: "invalid-flow",
+        name: "Invalid flow",
+        variables: [],
+        blocks: [block],
+        edges: [],
+      }),
+    ).toThrow(message);
+  });
+
   it("normalizes a representative flow record", () => {
     const flow = parseRalphFlowRecord({
       schemaVersion: 1,
@@ -101,7 +134,12 @@ describe("parseRalphFlowRecord", () => {
         },
       ],
       edges: [
-        { id: "start-to-decide", from: "start", fromOutput: "SUCCESS", to: "decide" },
+        {
+          id: "start-to-decide",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "decide",
+        },
         "ignored",
       ],
     });
@@ -145,7 +183,12 @@ describe("parseRalphFlowRecord", () => {
         { name: "fallback", type: "string", required: false },
       ],
       edges: [
-        { id: "start-to-decide", from: "start", fromOutput: "SUCCESS", to: "decide" },
+        {
+          id: "start-to-decide",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "decide",
+        },
       ],
     });
     expect(flow.blocks).toHaveLength(5);
@@ -207,7 +250,7 @@ describe("parseRalphFlowRecord", () => {
         null,
         {
           id: 123,
-          type: "UNKNOWN",
+          type: "PROMPT",
           title: false,
           prompt: 7,
         },
@@ -215,7 +258,6 @@ describe("parseRalphFlowRecord", () => {
           id: "end",
           type: "END",
           title: "End",
-          status: "unsupported",
         },
       ],
       edges: [null, { id: 1, from: 2, fromOutput: 3, to: 4 }],

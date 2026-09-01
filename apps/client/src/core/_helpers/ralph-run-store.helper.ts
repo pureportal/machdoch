@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
-  appendFile,
   mkdir,
   open,
   readdir,
@@ -15,7 +14,15 @@ import { writeJsonAtomically } from "./write-file-atomically.helper.js";
 const CHECKPOINT_SCHEMA_VERSION = 1;
 const LEASE_SCHEMA_VERSION = 1;
 const MAX_STORED_CHECKPOINTS = 8;
-const TRANSIENT_FILE_ERROR_CODES = new Set(["EACCES", "EBUSY", "EPERM"]);
+const TRANSIENT_FILE_ERROR_CODES = new Set([
+  "EACCES",
+  "EAGAIN",
+  "EBUSY",
+  "EMFILE",
+  "ENFILE",
+  "EPERM",
+]);
+const DEFAULT_TRANSIENT_RETRY_WINDOW_MS = 5_000;
 
 interface RalphCheckpointEnvelope {
   schemaVersion: typeof CHECKPOINT_SCHEMA_VERSION;
@@ -78,6 +85,71 @@ const delay = (durationMs: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, durationMs));
 
 export class RalphRunStoreOwnershipError extends Error {}
+export class RalphRunStoreCorruptionError extends Error {}
+
+const retryTransientFileOperation = async <T>(
+  operation: () => Promise<T>,
+  retryWindowMs = DEFAULT_TRANSIENT_RETRY_WINDOW_MS,
+): Promise<T> => {
+  const deadline = Date.now() + Math.max(0, retryWindowMs);
+  let retryDelayMs = 20;
+
+  for (;;) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!isTransientFileError(error) || Date.now() >= deadline) {
+        throw error;
+      }
+      await delay(Math.min(retryDelayMs, Math.max(0, deadline - Date.now())));
+      retryDelayMs = Math.min(250, retryDelayMs * 2);
+    }
+  }
+};
+
+interface RalphJournalReadState {
+  entries: RalphStoredJournalEntry[];
+  validBytes: number;
+  repair: "none" | "truncate" | "append-newline";
+}
+
+const RALPH_JOURNAL_ENTRY_KINDS = new Set<RalphRunJournalEntry["kind"]>([
+  "checkpoint",
+  "heartbeat",
+  "route",
+  "outcome",
+  "recovery",
+]);
+
+const parseStoredJournalEntry = (
+  line: string,
+  expectedSequence: number,
+): RalphStoredJournalEntry | undefined => {
+  let value: unknown;
+  try {
+    value = JSON.parse(line) as unknown;
+  } catch {
+    return undefined;
+  }
+  if (
+    !isRecord(value) ||
+    value.sequence !== expectedSequence ||
+    typeof value.at !== "string" ||
+    typeof value.kind !== "string" ||
+    !RALPH_JOURNAL_ENTRY_KINDS.has(
+      value.kind as RalphRunJournalEntry["kind"],
+    ) ||
+    typeof value.summary !== "string" ||
+    typeof value.checksum !== "string"
+  ) {
+    return undefined;
+  }
+  const { checksum, ...payload } = value;
+  if (checksum !== hash(JSON.stringify(payload))) {
+    return undefined;
+  }
+  return value as unknown as RalphStoredJournalEntry;
+};
 
 export class RalphRunStore {
   public readonly directory: string;
@@ -106,15 +178,22 @@ export class RalphRunStore {
         ? Math.max(maximum, generation)
         : maximum;
     }, 0);
-    this.journalSequence = (await this.readJournal()).at(-1)?.sequence ?? 0;
+    const journal = await this.readJournalState();
+    await this.repairJournal(journal);
+    this.journalSequence = journal.entries.at(-1)?.sequence ?? 0;
   }
 
   private async listCheckpointFiles(): Promise<string[]> {
     let entries: string[];
     try {
-      entries = await readdir(this.checkpointDirectory);
-    } catch {
-      return [];
+      entries = await retryTransientFileOperation(() =>
+        readdir(this.checkpointDirectory),
+      );
+    } catch (error) {
+      if (isMissingFileError(error)) {
+        return [];
+      }
+      throw error;
     }
     return entries
       .filter((entry) => /^\d{10}-[a-f\d-]+\.json$/iu.test(entry))
@@ -163,7 +242,9 @@ export class RalphRunStore {
     const files = (await this.listCheckpointFiles()).reverse();
     for (const path of files) {
       try {
-        const value = JSON.parse(await readFile(path, "utf8")) as unknown;
+        const value = JSON.parse(
+          await retryTransientFileOperation(() => readFile(path, "utf8")),
+        ) as unknown;
         if (
           !isRecord(value) ||
           value.schemaVersion !== CHECKPOINT_SCHEMA_VERSION ||
@@ -180,9 +261,11 @@ export class RalphRunStore {
           continue;
         }
         return { generation: value.generation, path, checkpoint };
-      } catch {
-        // A crash may leave the newest generation unreadable. Older immutable
-        // generations remain valid recovery points.
+      } catch (error) {
+        if (error instanceof SyntaxError || isMissingFileError(error)) {
+          continue;
+        }
+        throw error;
       }
     }
     return undefined;
@@ -244,20 +327,10 @@ export class RalphRunStore {
   public async readLease(
     retryWindowMs = 1_000,
   ): Promise<RalphRunStoreLeaseState | undefined> {
-    const deadline = Date.now() + Math.max(0, retryWindowMs);
-    let retryDelayMs = 20;
-
-    for (;;) {
-      try {
-        return await this.readLeaseOnce();
-      } catch (error) {
-        if (!isTransientFileError(error) || Date.now() >= deadline) {
-          throw error;
-        }
-        await delay(Math.min(retryDelayMs, Math.max(0, deadline - Date.now())));
-        retryDelayMs = Math.min(250, retryDelayMs * 2);
-      }
-    }
+    return retryTransientFileOperation(
+      () => this.readLeaseOnce(),
+      retryWindowMs,
+    );
   }
 
   public async heartbeat(
@@ -267,51 +340,36 @@ export class RalphRunStore {
     >,
     retryWindowMs: number,
   ): Promise<void> {
-    const deadline = Date.now() + Math.max(0, retryWindowMs);
-    let retryDelayMs = 20;
-
-    for (;;) {
-      try {
-        const remainingMs = Math.max(0, deadline - Date.now());
-        const current = await this.readLease(Math.min(1_000, remainingMs));
-        if (
-          !current ||
-          current.lease.runId !== expected.runId ||
-          current.lease.flowId !== expected.flowId ||
-          current.lease.ownerId !== expected.ownerId ||
-          current.lease.generation !== expected.generation ||
-          current.lease.releasedAt
-        ) {
-          throw new RalphRunStoreOwnershipError(
-            "RALPH durable lease ownership changed.",
-          );
-        }
-        const now = new Date();
-        await utimes(this.leasePath, now, now);
-        const refreshed = await this.readLease(
-          Math.min(1_000, Math.max(0, deadline - Date.now())),
+    await retryTransientFileOperation(async () => {
+      const current = await this.readLease(0);
+      if (
+        !current ||
+        current.lease.runId !== expected.runId ||
+        current.lease.flowId !== expected.flowId ||
+        current.lease.ownerId !== expected.ownerId ||
+        current.lease.generation !== expected.generation ||
+        current.lease.releasedAt
+      ) {
+        throw new RalphRunStoreOwnershipError(
+          "RALPH durable lease ownership changed.",
         );
-        if (
-          !refreshed ||
-          refreshed.lease.runId !== expected.runId ||
-          refreshed.lease.flowId !== expected.flowId ||
-          refreshed.lease.ownerId !== expected.ownerId ||
-          refreshed.lease.generation !== expected.generation ||
-          refreshed.lease.releasedAt
-        ) {
-          throw new RalphRunStoreOwnershipError(
-            "RALPH durable lease ownership changed during heartbeat.",
-          );
-        }
-        return;
-      } catch (error) {
-        if (!isTransientFileError(error) || Date.now() >= deadline) {
-          throw error;
-        }
-        await delay(Math.min(retryDelayMs, Math.max(0, deadline - Date.now())));
-        retryDelayMs = Math.min(250, retryDelayMs * 2);
       }
-    }
+      const now = new Date();
+      await utimes(this.leasePath, now, now);
+      const refreshed = await this.readLease(0);
+      if (
+        !refreshed ||
+        refreshed.lease.runId !== expected.runId ||
+        refreshed.lease.flowId !== expected.flowId ||
+        refreshed.lease.ownerId !== expected.ownerId ||
+        refreshed.lease.generation !== expected.generation ||
+        refreshed.lease.releasedAt
+      ) {
+        throw new RalphRunStoreOwnershipError(
+          "RALPH durable lease ownership changed during heartbeat.",
+        );
+      }
+    }, retryWindowMs);
   }
 
   public async releaseLease(
@@ -352,44 +410,80 @@ export class RalphRunStore {
     };
     const stored = { ...payload, checksum: hash(JSON.stringify(payload)) };
     await mkdir(this.directory, { recursive: true });
-    await appendFile(this.journalPath, `${JSON.stringify(stored)}\n`, "utf8");
+    const journal = await retryTransientFileOperation(() =>
+      open(this.journalPath, "a"),
+    );
+    try {
+      await journal.writeFile(`${JSON.stringify(stored)}\n`, "utf8");
+      await journal.sync();
+    } finally {
+      await journal.close();
+    }
     this.journalSequence = payload.sequence;
     return stored;
   }
 
-  public async readJournal(): Promise<RalphStoredJournalEntry[]> {
-    let raw: string;
+  private async readJournalState(): Promise<RalphJournalReadState> {
+    let raw: Buffer;
     try {
-      raw = await readFile(this.journalPath, "utf8");
-    } catch {
-      return [];
+      raw = await retryTransientFileOperation(() => readFile(this.journalPath));
+    } catch (error) {
+      if (isMissingFileError(error)) {
+        return { entries: [], validBytes: 0, repair: "none" };
+      }
+      throw error;
     }
     const entries: RalphStoredJournalEntry[] = [];
-    for (const line of raw.split("\n")) {
-      if (!line.trim()) {
-        continue;
-      }
-      try {
-        const value = JSON.parse(line) as unknown;
-        if (
-          !isRecord(value) ||
-          typeof value.sequence !== "number" ||
-          typeof value.at !== "string" ||
-          typeof value.kind !== "string" ||
-          typeof value.summary !== "string" ||
-          typeof value.checksum !== "string"
-        ) {
-          continue;
+    let offset = 0;
+    let validBytes = 0;
+
+    while (offset < raw.length) {
+      const newline = raw.indexOf(0x0a, offset);
+      const terminated = newline >= 0;
+      const end = terminated ? newline : raw.length;
+      const line = raw.subarray(offset, end).toString("utf8");
+      const entry = parseStoredJournalEntry(line, entries.length + 1);
+
+      if (!entry) {
+        if (!terminated && end === raw.length) {
+          return { entries, validBytes, repair: "truncate" };
         }
-        const { checksum, ...payload } = value;
-        if (checksum !== hash(JSON.stringify(payload))) {
-          continue;
-        }
-        entries.push(value as unknown as RalphStoredJournalEntry);
-      } catch {
-        // Ignore a truncated final append after a process crash.
+        throw new RalphRunStoreCorruptionError(
+          `RALPH journal is corrupt after sequence ${entries.at(-1)?.sequence ?? 0}.`,
+        );
       }
+      entries.push(entry);
+      validBytes = terminated ? end + 1 : end;
+      offset = terminated ? end + 1 : end;
     }
-    return entries;
+
+    return {
+      entries,
+      validBytes,
+      repair: raw.length > 0 && raw.at(-1) !== 0x0a ? "append-newline" : "none",
+    };
+  }
+
+  private async repairJournal(state: RalphJournalReadState): Promise<void> {
+    if (state.repair === "none") {
+      return;
+    }
+    await retryTransientFileOperation(async () => {
+      const journal = await open(this.journalPath, "r+");
+      try {
+        if (state.repair === "truncate") {
+          await journal.truncate(state.validBytes);
+        } else {
+          await journal.write(Buffer.from("\n"), 0, 1, state.validBytes);
+        }
+        await journal.sync();
+      } finally {
+        await journal.close();
+      }
+    });
+  }
+
+  public async readJournal(): Promise<RalphStoredJournalEntry[]> {
+    return (await this.readJournalState()).entries;
   }
 }

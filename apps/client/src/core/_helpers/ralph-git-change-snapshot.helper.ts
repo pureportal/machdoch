@@ -198,15 +198,21 @@ const readIndexOids = async (
   return indexOids;
 };
 
-const createFileSignature = (
-  file: Omit<RalphGitChangedFileSnapshot, "signature">,
-): string => {
-  return [
-    `status=${file.status}`,
-    `index=${file.indexOid ?? "missing"}`,
-    `worktree=${file.worktreeHash ?? "missing"}`,
-  ].join(";");
-};
+export const createRalphGitChangedFileSignature = (
+  file: Pick<
+    RalphGitChangedFileSnapshot,
+    "status" | "indexOid" | "worktreeHash"
+  >,
+): string =>
+  createHash("sha256")
+    .update(
+      JSON.stringify({
+        status: file.status,
+        indexOid: file.indexOid ?? null,
+        worktreeHash: file.worktreeHash ?? null,
+      }),
+    )
+    .digest("hex");
 
 const createChangedFileSnapshot = async (
   entry: ReturnType<typeof parsePorcelainV1ZStatus>[number],
@@ -236,7 +242,7 @@ const createChangedFileSnapshot = async (
 
   return {
     ...file,
-    signature: createFileSignature(file),
+    signature: createRalphGitChangedFileSignature(file),
   };
 };
 

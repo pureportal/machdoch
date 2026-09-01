@@ -1,6 +1,10 @@
 import { hasRalphPlaceholders } from "./ralph-placeholders.helper.js";
 import { isRalphScopeOutcome } from "./ralph-scope-registry.helper.js";
-import type { RalphUtilityBlock, RalphValidationIssue } from "../ralph.js";
+import type {
+  RalphUtilityBlock,
+  RalphUtilityCondition,
+  RalphValidationIssue,
+} from "../ralph.js";
 
 const MIN_RALPH_UI_VIEWPORT_SIZE = 320;
 const MAX_RALPH_UI_VIEWPORT_SIZE = 3840;
@@ -25,26 +29,62 @@ const validateUtilityCondition = (
     return;
   }
 
-  if (condition.style === "javascript" || condition.style === "simple") {
-    if (!condition.expression?.trim()) {
+  const validateCondition = (
+    candidate: RalphUtilityCondition,
+    label: string,
+  ): void => {
+    if (candidate.style === "javascript" || candidate.style === "simple") {
+      if (!candidate.expression?.trim()) {
+        addUtilityIssue(
+          errors,
+          "utility-condition-expression-required",
+          `${label} ${candidate.style} condition requires expression.`,
+          { blockId: block.id },
+        );
+      }
+    } else if (!candidate.path?.trim()) {
       addUtilityIssue(
         errors,
-        "utility-condition-expression-required",
-        `${blockLabel} ${condition.style} condition requires expression.`,
+        "utility-condition-path-required",
+        `${label} json-path condition requires path.`,
         { blockId: block.id },
       );
     }
-    return;
-  }
 
-  if (!condition.path?.trim()) {
-    addUtilityIssue(
-      errors,
-      "utility-condition-path-required",
-      `${blockLabel} json-path condition requires path.`,
-      { blockId: block.id },
-    );
-  }
+    if (candidate.operator === "is-one-of" && !candidate.matchValues?.length) {
+      addUtilityIssue(
+        errors,
+        "utility-condition-match-values-required",
+        `${label} is-one-of condition requires matchValues.`,
+        { blockId: block.id },
+      );
+    }
+    if (candidate.operator === "equals-path" && !candidate.valuePath?.trim()) {
+      addUtilityIssue(
+        errors,
+        "utility-condition-value-path-required",
+        `${label} equals-path condition requires valuePath.`,
+        { blockId: block.id },
+      );
+    }
+    if (candidate.operator === "array-every" && !candidate.itemCondition) {
+      addUtilityIssue(
+        errors,
+        "utility-condition-item-required",
+        `${label} array-every condition requires itemCondition.`,
+        { blockId: block.id },
+      );
+    }
+
+    if (candidate.itemCondition) {
+      validateCondition(candidate.itemCondition, `${label} item`);
+    }
+    for (const [index, nested] of (candidate.conditions ?? []).entries()) {
+      validateCondition(nested, `${label} condition ${index + 1}`);
+    }
+  };
+
+  validateCondition(condition, blockLabel);
 };
 
 const isHttpLikeUrl = (value: string | undefined): boolean => {
@@ -445,11 +485,11 @@ export const validateRalphUtilityBlock = (
       }
       break;
     case "TRANSFORM_JSON":
-      if (!utility.expression?.trim()) {
+      if (!utility.expression?.trim() && !utility.deterministicTransform) {
         addUtilityIssue(
           errors,
           "utility-expression-required",
-          `${blockLabel} requires expression.`,
+          `${blockLabel} requires expression or deterministicTransform.`,
           { blockId: block.id },
         );
       }

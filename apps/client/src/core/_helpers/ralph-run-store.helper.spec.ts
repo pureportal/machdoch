@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RalphRunCheckpoint } from "../ralph.js";
 import {
   RalphRunStore,
+  RalphRunStoreCorruptionError,
   RalphRunStoreOwnershipError,
 } from "./ralph-run-store.helper.js";
 
@@ -132,6 +133,49 @@ describe("RALPH run store", () => {
     );
 
     expect(await store.readJournal()).toHaveLength(1);
+  });
+
+  it("repairs a truncated journal tail before appending new recovery state", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ralph-store-"));
+    directories.push(directory);
+    const first = new RalphRunStore(directory);
+    await first.initialize();
+    await first.appendJournal({ kind: "route", summary: "first" });
+    await writeFile(
+      first.journalPath,
+      `${await readFile(first.journalPath, "utf8")}{"sequence":2`,
+      "utf8",
+    );
+
+    const resumed = new RalphRunStore(directory);
+    await resumed.initialize();
+    await resumed.appendJournal({ kind: "recovery", summary: "second" });
+
+    expect((await resumed.readJournal()).map((entry) => entry.summary)).toEqual(
+      ["first", "second"],
+    );
+    for (const line of (await readFile(resumed.journalPath, "utf8"))
+      .split("\n")
+      .filter(Boolean)) {
+      expect(() => JSON.parse(line)).not.toThrow();
+    }
+  });
+
+  it("fails closed on a corrupt terminated journal entry", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ralph-store-"));
+    directories.push(directory);
+    const store = new RalphRunStore(directory);
+    await store.initialize();
+    await store.appendJournal({ kind: "route", summary: "valid" });
+    await writeFile(
+      store.journalPath,
+      `${await readFile(store.journalPath, "utf8")}{"sequence":2}\n`,
+      "utf8",
+    );
+
+    await expect(store.readJournal()).rejects.toBeInstanceOf(
+      RalphRunStoreCorruptionError,
+    );
   });
 
   it("bounds immutable checkpoint storage while retaining recovery generations", async () => {

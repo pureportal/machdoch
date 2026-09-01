@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vi } from "vitest";
 import {
+  createRalphManagedServerCommandFingerprint,
   startRalphManagedServer,
   stopRalphManagedServer,
   readRalphManagedServerOwnership,
@@ -24,6 +25,12 @@ const createChild = (pid = 42): ChildProcess => {
 };
 
 describe("Ralph managed server lifecycle", () => {
+  it("fingerprints command and working directory as separate fields", () => {
+    expect(createRalphManagedServerCommandFingerprint("c", "a\0b")).not.toBe(
+      createRalphManagedServerCommandFingerprint("b\0c", "a"),
+    );
+  });
+
   it("starts a configured command through the platform shell", async () => {
     const child = createChild();
     const spawnMock = vi.fn(() => {
@@ -46,7 +53,10 @@ describe("Ralph managed server lifecycle", () => {
     expect(handle.pid).toBe(42);
     expect(spawnMock).toHaveBeenCalledWith(
       "powershell.exe",
-      expect.arrayContaining(["-Command", expect.stringContaining("pnpm preview")]),
+      expect.arrayContaining([
+        "-Command",
+        expect.stringContaining("pnpm preview"),
+      ]),
       expect.objectContaining({
         cwd: "C:/workspace",
         detached: false,
@@ -82,9 +92,10 @@ describe("Ralph managed server lifecycle", () => {
     const handle: RalphManagedServerHandle = {
       child,
       pid: 74,
-      exited: new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
-        () => undefined,
-      ),
+      exited: new Promise<{
+        code: number | null;
+        signal: NodeJS.Signals | null;
+      }>(() => undefined),
       hasExited: () => false,
     };
 
@@ -121,11 +132,10 @@ describe("Ralph managed server lifecycle", () => {
       killProcessGroup: vi.fn(),
     });
 
-    expect(spawnMock).toHaveBeenCalledWith(
-      "taskkill",
-      ["/PID", "91", "/T"],
-      { stdio: "ignore", windowsHide: true },
-    );
+    expect(spawnMock).toHaveBeenCalledWith("taskkill", ["/PID", "91", "/T"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
   });
 
   it("persists command ownership so only the expected managed build is reused", async () => {
@@ -152,13 +162,14 @@ describe("Ralph managed server lifecycle", () => {
         },
       );
 
-      await expect(readRalphManagedServerOwnership(registryPath)).resolves
-        .toMatchObject({
-          ownerId: "run-1",
-          pid: 101,
-          command: "pnpm preview",
-          cwd: directory,
-        });
+      await expect(
+        readRalphManagedServerOwnership(registryPath),
+      ).resolves.toMatchObject({
+        ownerId: "run-1",
+        pid: 101,
+        command: "pnpm preview",
+        cwd: directory,
+      });
       expect(handle.registryPath).toBe(registryPath);
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -175,9 +186,11 @@ describe("Ralph managed server lifecycle", () => {
       startedAt: new Date().toISOString(),
     };
     expect(isRalphManagedServerOwnershipAlive(ownership, vi.fn())).toBe(true);
-    expect(isRalphManagedServerOwnershipAlive(ownership, () => {
-      throw new Error("ESRCH");
-    })).toBe(false);
+    expect(
+      isRalphManagedServerOwnershipAlive(ownership, () => {
+        throw new Error("ESRCH");
+      }),
+    ).toBe(false);
 
     const directory = await mkdtemp(join(tmpdir(), "ralph-adopted-server-"));
     try {

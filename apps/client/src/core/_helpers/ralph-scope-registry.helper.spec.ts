@@ -238,6 +238,12 @@ describe("Ralph scope registry helpers", () => {
     ).toThrow("Expected a supported Ralph scope registry schema.");
     expect(() =>
       parseRalphScopeRegistry(
+        { ...registry, schemaVersion: 1 },
+        { flowAlias: "test-flow", strategy: "risk-first" },
+      ),
+    ).toThrow("Expected a supported Ralph scope registry schema.");
+    expect(() =>
+      parseRalphScopeRegistry(
         {
           ...registry,
           scopes: [
@@ -259,93 +265,6 @@ describe("Ralph scope registry helpers", () => {
         { flowAlias: "test-flow", strategy: "risk-first" },
       ),
     ).toThrow("Expected a valid persisted Ralph scope outcome.");
-  });
-
-  it("migrates version 1 registries without losing selection or outcome state", () => {
-    const registry = updateRalphScopeRegistryFromEvidence(
-      parseRalphScopeRegistry(undefined, {
-        flowAlias: "test-flow",
-        strategy: "round-robin",
-        now: "2026-06-25T10:00:00.000Z",
-      }),
-      createEvidence(),
-      {
-        flowAlias: "test-flow",
-        strategy: "round-robin",
-        now: "2026-06-25T10:01:00.000Z",
-      },
-    ).registry;
-    const legacyRegistry = {
-      ...registry,
-      schemaVersion: 1,
-      selection: {
-        ...registry.selection,
-        cursor: 1,
-        cycle: 4,
-        currentScopeId: "alpha",
-        completedScopeIds: ["beta"],
-      },
-      scopes: registry.scopes.map((scope) => ({
-        ...scope,
-        lastOutcome:
-          scope.id === "alpha" ? "DONE" : "DEFERRED_AFTER_BOUNDED_REPAIR",
-      })),
-      history: [
-        {
-          at: "2026-06-25T09:00:00.000Z",
-          type: "scope-marked",
-          scopeId: "alpha",
-          outcome: "STOP_NO_MEANINGFUL_WORK",
-        },
-        {
-          at: "2026-06-25T09:10:00.000Z",
-          type: "scope-marked",
-          scopeId: "alpha",
-          outcome: "INVALID_OUTPUT",
-        },
-        {
-          at: "2026-06-25T09:20:00.000Z",
-          type: "scope-marked",
-          scopeId: "alpha",
-          outcome: "WAITING_FOR_EXTERNAL_STATE",
-        },
-        {
-          at: "2026-06-25T09:30:00.000Z",
-          type: "scope-marked",
-          scopeId: "alpha",
-          outcome: "CUSTOM_FAILURE",
-        },
-      ],
-    };
-
-    const migrated = parseRalphScopeRegistry(legacyRegistry, {
-      flowAlias: "test-flow",
-      strategy: "priority",
-      now: "2026-06-25T11:00:00.000Z",
-    });
-
-    expect(migrated).toMatchObject({
-      schema: "machdoch.ralph.scopeRegistry",
-      schemaVersion: 2,
-      selection: {
-        strategy: "round-robin",
-        cursor: 1,
-        cycle: 4,
-        currentScopeId: "alpha",
-        completedScopeIds: ["beta"],
-      },
-    });
-    expect(
-      Object.fromEntries(
-        migrated.scopes.map((scope) => [scope.id, scope.lastOutcome]),
-      ),
-    ).toEqual({ alpha: "completed", beta: "deferred" });
-    expect(migrated.history.map((entry) => entry.outcome)).toEqual([
-      "no-meaningful-work",
-      "invalid",
-      "external-state",
-      "failed",
-    ]);
   });
 
   it("updates, selects, and marks scopes without repeating active scopes before the cycle completes", () => {

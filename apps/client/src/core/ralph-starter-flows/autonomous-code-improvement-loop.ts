@@ -509,9 +509,18 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            'variables.enableOnlineResearch === "true" && lastData?.output?.researchDecision?.needsResearch === true',
+          style: "json-path",
+          path: "variables.enableOnlineResearch",
+          operator: "equals",
+          value: "true",
+          conditions: [
+            {
+              style: "json-path",
+              path: "lastData.output.researchDecision.needsResearch",
+              operator: "equals",
+              value: "true",
+            },
+          ],
         },
       },
       7,
@@ -547,8 +556,13 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "TRANSFORM_JSON",
         input: "{}",
-        expression:
-          "(() => { const draft = context.resultsByBlock?.get?.('choose-improvement')?.data?.output; const selection = context.resultsByBlock?.get?.('select-scope')?.data ?? {}; const scope = selection.scope; if (!draft || !scope || typeof scope.id !== 'string') throw new Error('Improvement plan requires a valid draft and selected scope.'); const tasks = Array.isArray(draft.tasks) ? draft.tasks : []; const cluster = selection.scopeCluster ?? { rootScopeId: scope.id, scopeIds: [scope.id], paths: Array.isArray(scope.paths) ? scope.paths : [], risk: scope.risk, rationale: ['Selected scope'] }; const ids = tasks.map((task) => String(task?.id ?? '')).filter(Boolean).join(','); return { planId: String(scope.id) + ':' + (ids || String(draft.decision).toLowerCase()), decision: draft.decision, rationale: draft.rationale, stopReason: draft.stopReason, scope, scopeCluster: cluster, constitution: context.resultsByBlock?.get?.('propose-improvements')?.data?.output?.constitution ?? {}, research: context.resultsByBlock?.get?.('improvement-research')?.summary ?? '', tasks }; })()",
+        deterministicTransform: {
+          type: "code-improvement-plan",
+          draftBlockId: "choose-improvement",
+          selectionBlockId: "select-scope",
+          constitutionBlockId: "propose-improvements",
+          researchBlockId: "improvement-research",
+        },
       },
       9,
     ),
@@ -558,9 +572,43 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "(() => { const plan = context.resultsByBlock?.['build-improvement-plan']?.data?.output; if (!['IMPLEMENT', 'STOP', 'DEFER'].includes(plan?.decision)) throw new Error('Code improvement plan decision is missing or invalid.'); if (plan.decision !== 'IMPLEMENT') return false; if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) throw new Error('IMPLEMENT requires persisted tasks.'); return plan.tasks.every((task) => task?.status === 'planned' && typeof task.id === 'string' && task.id.length > 0); })()",
+          style: "json-path",
+          path: "resultsByBlock.build-improvement-plan.data.output.decision",
+          operator: "equals",
+          value: "IMPLEMENT",
+          allowedValues: ["IMPLEMENT", "STOP", "DEFER"],
+          invalidMessage:
+            "Code improvement plan decision is missing or invalid.",
+          conditions: [
+            {
+              style: "json-path",
+              path: "resultsByBlock.build-improvement-plan.data.output.tasks",
+              operator: "non-empty-array",
+              assertMatch: true,
+              invalidMessage: "IMPLEMENT requires persisted tasks.",
+            },
+            {
+              style: "json-path",
+              path: "resultsByBlock.build-improvement-plan.data.output.tasks",
+              operator: "array-every",
+              assertMatch: true,
+              invalidMessage:
+                "IMPLEMENT requires planned tasks with stable identities.",
+              itemCondition: {
+                style: "json-path",
+                path: "item.status",
+                operator: "equals",
+                value: "planned",
+                conditions: [
+                  {
+                    style: "json-path",
+                    path: "item.id",
+                    operator: "non-empty-string",
+                  },
+                ],
+              },
+            },
+          ],
         },
       },
       10,
@@ -571,9 +619,13 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "(() => { const decision = context.resultsByBlock?.['build-improvement-plan']?.data?.output?.decision; if (!['IMPLEMENT', 'STOP', 'DEFER'].includes(decision)) throw new Error('Code improvement plan decision is missing or invalid.'); return decision === 'DEFER'; })()",
+          style: "json-path",
+          path: "resultsByBlock.build-improvement-plan.data.output.decision",
+          operator: "equals",
+          value: "DEFER",
+          allowedValues: ["IMPLEMENT", "STOP", "DEFER"],
+          invalidMessage:
+            "Code improvement plan decision is missing or invalid.",
         },
       },
       10,
@@ -651,8 +703,13 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "TRANSFORM_JSON",
         input: "{}",
-        expression:
-          "(() => { const task = context.resultsByBlock?.get?.('select-improvement-task')?.data?.tasks?.[0] ?? {}; const commands = context.resultsByBlock?.get?.('detect-project-commands')?.data ?? {}; const tierValid = ['focused', 'standard', 'broad'].includes(task.verificationTier); const tier = tierValid ? task.verificationTier : 'broad'; const reviewValid = ['validator-only', 'strict'].includes(task.reviewTier); const reviewTier = tier === 'broad' || !reviewValid ? 'strict' : task.reviewTier; const detected = tier === 'broad' ? commands.broadVerificationCommand : tier === 'standard' ? commands.standardVerificationCommand : commands.focusedVerificationCommand; return { tier, reviewTier, protocolValid: tierValid && reviewValid, command: (variables.verificationCommand ?? '').trim() || detected || commands.verificationCommand || '' }; })()",
+        deterministicTransform: {
+          type: "verification-command",
+          selectionBlockId: "select-improvement-task",
+          selectionPath: "tasks.0",
+          commandsBlockId: "detect-project-commands",
+          configuredCommandVariable: "verificationCommand",
+        },
       },
       17,
       -1,
@@ -710,9 +767,9 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "Boolean(context.resultsByBlock?.['select-verification-command']?.data?.output?.command?.trim())",
+          style: "json-path",
+          path: "resultsByBlock.select-verification-command.data.output.command",
+          operator: "truthy",
         },
       },
       21,
@@ -773,9 +830,25 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            'variables.enableVisualReview === "true" && (Boolean(variables.targetUrl?.trim()) || Boolean(variables.screenshotPath?.trim()))',
+          style: "json-path",
+          path: "variables.enableVisualReview",
+          operator: "equals",
+          value: "true",
+          conditions: [
+            {
+              style: "json-path",
+              path: "variables.targetUrl",
+              operator: "non-empty-string",
+              combinator: "any",
+              conditions: [
+                {
+                  style: "json-path",
+                  path: "variables.screenshotPath",
+                  operator: "non-empty-string",
+                },
+              ],
+            },
+          ],
         },
       },
       23,
@@ -840,8 +913,17 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "TRANSFORM_JSON",
         input: "{}",
-        expression:
-          "(() => { const diff = context.resultsByBlock?.get?.('git-diff-summary')?.data ?? {}; const prior = context.resultsByBlock?.get?.('work-yield-analysis')?.data?.output ?? {}; const taskId = String(context.resultsByBlock?.get?.('select-improvement-task')?.data?.tasks?.[0]?.id ?? ''); const files = Array.isArray(diff.files) ? diff.files.map((file) => String(file?.path ?? '')).filter(Boolean).sort() : []; const signature = files.join('|'); return { taskId, changedFiles: files, madeProgress: files.length > 0 && (prior.taskId !== taskId || prior.signature !== signature), signature, scopeGuard: context.resultsByBlock?.get?.('scope-change-guard')?.output ?? '' }; })()",
+        deterministicTransform: {
+          type: "repository-work-yield",
+          baselineBlockId: "git-snapshot-before",
+          currentBlockId: "git-diff-summary",
+          scopeGuardBlockId: "scope-change-guard",
+          workItemBlockId: "select-improvement-task",
+          excludedPaths: [
+            "{{activeImprovementPlanFile:path=.machdoch/ralph/code-improvements/active-improvement-plan.json}}",
+          ],
+          trackPrevious: true,
+        },
       },
       27,
       -1,
@@ -852,9 +934,10 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "lastData?.output?.madeProgress === true && lastData?.output?.scopeGuard === 'IN_SCOPE'",
+          style: "json-path",
+          path: "lastData.output.usefulWorkProduced",
+          operator: "equals",
+          value: "true",
         },
       },
       28,
@@ -866,9 +949,10 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            'context.resultsByBlock?.["select-verification-command"]?.data?.output?.reviewTier === "strict"',
+          style: "json-path",
+          path: "resultsByBlock.select-verification-command.data.output.reviewTier",
+          operator: "equals",
+          value: "strict",
         },
       },
       29,
@@ -918,9 +1002,13 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "(() => { const decision = context.resultsByBlock?.['independent-review']?.data?.output?.decision; if (!['PASS', 'FIX', 'DEFER'].includes(decision)) throw new Error('Code improvement review decision is missing or invalid.'); return decision === 'DEFER'; })()",
+          style: "json-path",
+          path: "resultsByBlock.independent-review.data.output.decision",
+          operator: "equals",
+          value: "DEFER",
+          allowedValues: ["PASS", "FIX", "DEFER"],
+          invalidMessage:
+            "Code improvement review decision is missing or invalid.",
         },
       },
       31,
@@ -932,9 +1020,13 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "(() => { const decision = context.resultsByBlock?.['independent-review']?.data?.output?.decision; if (!['PASS', 'FIX', 'DEFER'].includes(decision)) throw new Error('Code improvement review decision is missing or invalid.'); return decision === 'FIX'; })()",
+          style: "json-path",
+          path: "resultsByBlock.independent-review.data.output.decision",
+          operator: "equals",
+          value: "FIX",
+          allowedValues: ["PASS", "FIX", "DEFER"],
+          invalidMessage:
+            "Code improvement review decision is missing or invalid.",
         },
       },
       32,
@@ -2448,7 +2540,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
 
 export const autonomousCodeImprovementLoopStarterFlow = {
   id: "autonomous-code-improvement-loop",
-  version: 22,
+  version: 24,
   defaultAlias: "autonomous-code-improvement-loop",
   category: "Code Quality",
   tags: ["autonomous", "improvement", "portfolio", "validation"],

@@ -47,7 +47,7 @@ describe("createRalphRunResultFromDetail", () => {
     const progress = {
       consecutiveNoProgress: 1,
       meaningfulTransitions: 2,
-      channelFingerprints: {},
+      channelFingerprints: [],
       recent: [],
     };
     const record: RalphRunRecord = {

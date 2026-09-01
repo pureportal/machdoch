@@ -1,13 +1,16 @@
 import {
   coerceRalphUtilityConfig,
+  InvalidRalphUtilityConfigurationError,
   RALPH_UTILITY_TYPES,
 } from "./coerce-ralph-utility-config.helper.ts";
 
 describe("coerceRalphUtilityConfig", () => {
   it.each([undefined, null, "", 42, false, [], {}])(
-    "defaults empty or invalid input %# to a WAIT utility",
+    "rejects missing or unsupported utility type input %#",
     (value) => {
-      expect(coerceRalphUtilityConfig(value)).toEqual({ type: "WAIT" });
+      expect(() => coerceRalphUtilityConfig(value)).toThrow(
+        InvalidRalphUtilityConfigurationError,
+      );
     },
   );
 
@@ -55,6 +58,170 @@ describe("coerceRalphUtilityConfig", () => {
         "FINAL_REPORT",
         "NOTIFY",
       ],
+    );
+  });
+
+  it("coerces structured condition constraints and deterministic transforms", () => {
+    expect(
+      coerceRalphUtilityConfig({
+        type: "TRANSFORM_JSON",
+        deterministicTransform: {
+          type: "repository-work-yield",
+          baselineBlockId: "before",
+          currentBlockId: "after",
+          scopeGuardBlockId: "scope",
+          workItemBlockId: "tasks",
+          excludedPaths: ["state.json"],
+          trackPrevious: true,
+          verifyOnObservationError: false,
+        },
+        condition: {
+          style: "json-path",
+          path: "result.decision",
+          operator: "equals",
+          value: "DONE",
+          valuePath: "result.expectedDecision",
+          matchValues: ["DONE"],
+          allowedValues: ["DONE", "DEFER"],
+          invalidMessage: "Decision is invalid.",
+          assertMatch: true,
+          combinator: "all",
+          conditions: [
+            {
+              style: "json-path",
+              path: "result.tasks",
+              operator: "non-empty-array",
+            },
+          ],
+          itemCondition: {
+            style: "json-path",
+            path: "item.id",
+            operator: "non-empty-string",
+          },
+        },
+      }),
+    ).toMatchObject({
+      deterministicTransform: {
+        type: "repository-work-yield",
+        baselineBlockId: "before",
+        currentBlockId: "after",
+        scopeGuardBlockId: "scope",
+        workItemBlockId: "tasks",
+        excludedPaths: ["state.json"],
+        trackPrevious: true,
+        verifyOnObservationError: false,
+      },
+      condition: {
+        style: "json-path",
+        valuePath: "result.expectedDecision",
+        matchValues: ["DONE"],
+        allowedValues: ["DONE", "DEFER"],
+        invalidMessage: "Decision is invalid.",
+        assertMatch: true,
+        combinator: "all",
+        conditions: [
+          {
+            style: "json-path",
+            path: "result.tasks",
+            operator: "non-empty-array",
+          },
+        ],
+        itemCondition: {
+          style: "json-path",
+          path: "item.id",
+          operator: "non-empty-string",
+        },
+      },
+    });
+
+    expect(
+      coerceRalphUtilityConfig({
+        type: "TRANSFORM_JSON",
+        deterministicTransform: {
+          type: "code-improvement-plan",
+          draftBlockId: "draft",
+          selectionBlockId: "selection",
+          constitutionBlockId: "constitution",
+          researchBlockId: "research",
+        },
+      }).deterministicTransform,
+    ).toMatchObject({ type: "code-improvement-plan", draftBlockId: "draft" });
+    expect(
+      coerceRalphUtilityConfig({
+        type: "TRANSFORM_JSON",
+        deterministicTransform: {
+          type: "visual-runtime",
+          commandsBlockId: "commands",
+          targetUrlVariable: "targetUrl",
+          healthUrlVariable: "healthUrl",
+          serverCommandVariable: "serverCommand",
+          serverCwdVariable: "serverCwd",
+          screenshotPathVariable: "screenshotPath",
+        },
+      }).deterministicTransform,
+    ).toMatchObject({ type: "visual-runtime", commandsBlockId: "commands" });
+  });
+
+  it.each([
+    {
+      field: "condition",
+      value: {
+        type: "CONDITION",
+        condition: {
+          style: "json-path",
+          path: "result.state",
+          operator: "unsupported",
+        },
+      },
+    },
+    {
+      field: "condition",
+      value: {
+        type: "CONDITION",
+        condition: {
+          style: "json-path",
+          path: "result.state",
+          conditions: [null],
+        },
+      },
+    },
+    {
+      field: "condition",
+      value: {
+        type: "CONDITION",
+        condition: {
+          style: "json-path",
+          path: "result.state",
+          allowedValues: ["ready", 1],
+        },
+      },
+    },
+    {
+      field: "deterministicTransform",
+      value: {
+        type: "TRANSFORM_JSON",
+        expression: "({ fallback: true })",
+        deterministicTransform: { type: "unsupported" },
+      },
+    },
+    {
+      field: "deterministicTransform",
+      value: {
+        type: "TRANSFORM_JSON",
+        deterministicTransform: {
+          type: "repository-work-yield",
+          baselineBlockId: "before",
+          currentBlockId: "after",
+          excludedPaths: ["state.json", 1],
+        },
+      },
+    },
+  ])("rejects an invalid $field instead of dropping it", ({ field, value }) => {
+    expect(() => coerceRalphUtilityConfig(value)).toThrow(
+      expect.objectContaining({
+        name: "InvalidRalphUtilityConfigurationError",
+        field,
+      }),
     );
   });
 
@@ -154,10 +321,10 @@ describe("coerceRalphUtilityConfig", () => {
     });
   });
 
-  it("filters invalid enum values and non-string record entries", () => {
+  it("filters invalid optional enum values and non-string record entries", () => {
     expect(
       coerceRalphUtilityConfig({
-        type: "UNKNOWN",
+        type: "WAIT",
         mode: "sometimes",
         encoding: "utf16",
         headers: { accept: "application/json", retry: 3, empty: "" },
@@ -174,14 +341,12 @@ describe("coerceRalphUtilityConfig", () => {
     });
   });
 
-  it("coerces conditions with default style and valid operators only", () => {
+  it("defaults an omitted condition style without accepting an invalid style", () => {
     expect(
       coerceRalphUtilityConfig({
         type: "POLL",
         condition: {
-          style: "invalid",
           expression: "lastData.ready",
-          path: "$.ready",
           operator: "equals",
           value: "true",
         },
@@ -191,21 +356,17 @@ describe("coerceRalphUtilityConfig", () => {
       condition: {
         style: "simple",
         expression: "lastData.ready",
-        path: "$.ready",
         operator: "equals",
         value: "true",
       },
     });
 
-    expect(
+    expect(() =>
       coerceRalphUtilityConfig({
         type: "POLL",
-        condition: { style: "json-path", operator: "invalid" },
+        condition: { style: "invalid", expression: "lastData.ready" },
       }),
-    ).toEqual({
-      type: "POLL",
-      condition: { style: "json-path" },
-    });
+    ).toThrow(InvalidRalphUtilityConfigurationError);
   });
 
   it("normalizes filesystem aliases, encodings, and integer exit codes", () => {
@@ -236,7 +397,13 @@ describe("coerceRalphUtilityConfig", () => {
     });
 
     expect(
-      Object.hasOwn(coerceRalphUtilityConfig({ schema: undefined }), "schema"),
+      Object.hasOwn(
+        coerceRalphUtilityConfig({
+          type: "VALIDATE_JSON",
+          schema: undefined,
+        }),
+        "schema",
+      ),
     ).toBe(true);
   });
 });

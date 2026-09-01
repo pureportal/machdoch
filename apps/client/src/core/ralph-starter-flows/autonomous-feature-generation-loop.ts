@@ -407,9 +407,18 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            'variables.enableOnlineResearch === "true" && context.resultsByBlock?.["draft-feature-goal"]?.data?.output?.researchDecision?.needsResearch === true',
+          style: "json-path",
+          path: "variables.enableOnlineResearch",
+          operator: "equals",
+          value: "true",
+          conditions: [
+            {
+              style: "json-path",
+              path: "resultsByBlock.draft-feature-goal.data.output.researchDecision.needsResearch",
+              operator: "equals",
+              value: "true",
+            },
+          ],
         },
       },
     },
@@ -649,9 +658,27 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "(() => { const output = lastData?.output; const status = output?.status; if (!['planned', 'implementing', 'completed', 'deferred', 'no_action'].includes(status)) throw new Error('Feature goal status is missing or invalid.'); return Array.isArray(output.tasks) && output.tasks.length > 0 && (status === 'planned' || status === 'implementing'); })()",
+          style: "json-path",
+          path: "lastData.output.status",
+          operator: "is-one-of",
+          matchValues: ["planned", "implementing"],
+          allowedValues: [
+            "planned",
+            "implementing",
+            "completed",
+            "deferred",
+            "no_action",
+          ],
+          invalidMessage: "Feature goal status is missing or invalid.",
+          conditions: [
+            {
+              style: "json-path",
+              path: "lastData.output.tasks",
+              operator: "non-empty-array",
+              assertMatch: true,
+              invalidMessage: "An actionable feature goal requires tasks.",
+            },
+          ],
         },
       },
     },
@@ -664,9 +691,18 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "(() => { const status = context.resultsByBlock?.['improve-feature-goal']?.data?.output?.status; if (!['planned', 'implementing', 'completed', 'deferred', 'no_action'].includes(status)) throw new Error('Feature goal status is missing or invalid.'); return status === 'deferred'; })()",
+          style: "json-path",
+          path: "resultsByBlock.improve-feature-goal.data.output.status",
+          operator: "equals",
+          value: "deferred",
+          allowedValues: [
+            "planned",
+            "implementing",
+            "completed",
+            "deferred",
+            "no_action",
+          ],
+          invalidMessage: "Feature goal status is missing or invalid.",
         },
       },
     },
@@ -789,8 +825,16 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       utility: {
         type: "TRANSFORM_JSON",
         input: "{}",
-        expression:
-          "(() => { const diffResult = context.resultsByBlock?.get?.('git-diff-summary'); const baselineResult = context.resultsByBlock?.get?.('git-snapshot-before'); const currentFiles = Array.isArray(diffResult?.data?.files) ? diffResult.data.files : []; const baselineFiles = Array.isArray(baselineResult?.data?.files) ? baselineResult.data.files : []; const normalize = (value) => String(value ?? '').replace(/\\\\/gu, '/').replace(/^\\.\\/+/, ''); const baseline = new Map(baselineFiles.filter((file) => file && typeof file.path === 'string').map((file) => [normalize(file.path), file.signature])); const changedSinceBaselineFiles = currentFiles.filter((file) => file && typeof file.path === 'string' && baseline.get(normalize(file.path)) !== file.signature).map((file) => normalize(file.path)); const stateFile = normalize(variables.goalFilePath || '.machdoch/autonomous-features/active-goal.json'); const implementationFiles = changedSinceBaselineFiles.filter((path) => path !== stateFile); const selectedTasks = context.resultsByBlock?.get?.('select-next-task')?.data?.tasks; const selectedTaskCount = Array.isArray(selectedTasks) ? selectedTasks.length : 1; const diffErrored = diffResult?.output === 'ERROR'; const onlyStateFileChanged = changedSinceBaselineFiles.length > 0 && implementationFiles.length === 0; const shouldVerify = diffErrored || implementationFiles.length > 0; return { shouldVerify, diffOutput: diffResult?.output ?? '', selectedTaskCount, stateFile, changedSinceBaselineCount: changedSinceBaselineFiles.length, changedSinceBaselineFiles, implementationFileCount: implementationFiles.length, implementationFiles, onlyStateFileChanged, baselineFileCount: baselineFiles.length, currentFileCount: currentFiles.length, reason: shouldVerify ? (diffErrored ? 'Git diff summary failed; keep verification path available.' : 'Implementation changed files beyond the flow state file since the pre-pass snapshot.') : (onlyStateFileChanged ? 'Only the active goal JSON changed; skip expensive verification and let validation request real implementation work.' : 'Implementation produced no file changes beyond the pre-pass snapshot; skip expensive verification and let validation request another implementation pass.') }; })()",
+        deterministicTransform: {
+          type: "repository-work-yield",
+          baselineBlockId: "git-snapshot-before",
+          currentBlockId: "git-diff-summary",
+          workItemBlockId: "select-next-task",
+          excludedPaths: [
+            "{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}",
+          ],
+          verifyOnObservationError: true,
+        },
       },
     },
     {
@@ -802,8 +846,10 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression: "lastData?.shouldVerify === true",
+          style: "json-path",
+          path: "lastData.output.shouldVerify",
+          operator: "equals",
+          value: "true",
         },
       },
     },
@@ -844,9 +890,17 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "Boolean(variables.verificationCommand?.trim() || context.resultsByBlock?.['detect-project-commands']?.data?.verificationCommand?.trim())",
+          style: "json-path",
+          path: "variables.verificationCommand",
+          operator: "non-empty-string",
+          combinator: "any",
+          conditions: [
+            {
+              style: "json-path",
+              path: "resultsByBlock.detect-project-commands.data.verificationCommand",
+              operator: "non-empty-string",
+            },
+          ],
         },
       },
     },
@@ -873,9 +927,25 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            'variables.enableVisualReview === "true" && (Boolean(variables.targetUrl?.trim()) || Boolean(variables.screenshotPath?.trim()))',
+          style: "json-path",
+          path: "variables.enableVisualReview",
+          operator: "equals",
+          value: "true",
+          conditions: [
+            {
+              style: "json-path",
+              path: "variables.targetUrl",
+              operator: "non-empty-string",
+              combinator: "any",
+              conditions: [
+                {
+                  style: "json-path",
+                  path: "variables.screenshotPath",
+                  operator: "non-empty-string",
+                },
+              ],
+            },
+          ],
         },
       },
     },
@@ -2146,7 +2216,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
 
 export const autonomousFeatureGenerationLoopStarterFlow = {
   id: "autonomous-feature-generation-loop",
-  version: 18,
+  version: 19,
   defaultAlias: "autonomous-feature-generation-loop",
   category: "Implementation",
   tags: ["autonomous", "feature", "loop"],

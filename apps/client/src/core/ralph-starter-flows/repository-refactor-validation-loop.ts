@@ -372,9 +372,18 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            'variables.enableOnlineResearch === "true" && lastData?.output?.researchDecision?.needsResearch === true',
+          style: "json-path",
+          path: "variables.enableOnlineResearch",
+          operator: "equals",
+          value: "true",
+          conditions: [
+            {
+              style: "json-path",
+              path: "lastData.output.researchDecision.needsResearch",
+              operator: "equals",
+              value: "true",
+            },
+          ],
         },
       },
     },
@@ -523,9 +532,21 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "context.resultsByBlock?.['audit-against-policy']?.data?.output?.outcome === 'IMPLEMENT' && Array.isArray(context.resultsByBlock?.['audit-against-policy']?.data?.output?.passes) && context.resultsByBlock['audit-against-policy'].data.output.passes.length > 0",
+          style: "json-path",
+          path: "resultsByBlock.audit-against-policy.data.output.outcome",
+          operator: "equals",
+          value: "IMPLEMENT",
+          allowedValues: ["IMPLEMENT", "STOP", "DEFER"],
+          invalidMessage: "Refactor selection outcome is missing or invalid.",
+          conditions: [
+            {
+              style: "json-path",
+              path: "resultsByBlock.audit-against-policy.data.output.passes",
+              operator: "non-empty-array",
+              assertMatch: true,
+              invalidMessage: "IMPLEMENT requires refactor passes.",
+            },
+          ],
         },
       },
     },
@@ -538,9 +559,12 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "context.resultsByBlock?.['audit-against-policy']?.data?.output?.outcome === 'DEFER'",
+          style: "json-path",
+          path: "resultsByBlock.audit-against-policy.data.output.outcome",
+          operator: "equals",
+          value: "DEFER",
+          allowedValues: ["IMPLEMENT", "STOP", "DEFER"],
+          invalidMessage: "Refactor selection outcome is missing or invalid.",
         },
       },
     },
@@ -595,9 +619,9 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "Boolean(context.resultsByBlock?.['select-validation-command']?.data?.output?.command?.trim())",
+          style: "json-path",
+          path: "resultsByBlock.select-validation-command.data.output.command",
+          operator: "truthy",
         },
       },
     },
@@ -625,8 +649,13 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: {
         type: "TRANSFORM_JSON",
         input: "{}",
-        expression:
-          "(() => { const plan = context.resultsByBlock?.get?.('audit-against-policy')?.data?.output ?? {}; const commands = context.resultsByBlock?.get?.('detect-project-commands')?.data ?? {}; const declaredTier = plan.verificationTier; const tierValid = declaredTier === 'focused' || declaredTier === 'standard' || declaredTier === 'broad'; const tier = tierValid ? declaredTier : 'broad'; const declaredReviewTier = plan.reviewTier; const reviewTierValid = declaredReviewTier === 'validator-only' || declaredReviewTier === 'strict'; const reviewTier = tier === 'broad' || !reviewTierValid ? 'strict' : declaredReviewTier; const detectedCommand = tier === 'broad' ? commands.broadVerificationCommand : tier === 'standard' ? commands.standardVerificationCommand : commands.focusedVerificationCommand; const command = (variables.validationCommand ?? '').trim() || detectedCommand || commands.verificationCommand || ''; return { tier, command, reviewTier, protocolValid: tierValid && reviewTierValid, source: (variables.validationCommand ?? '').trim() ? 'variable' : 'detected', focusedCommand: commands.focusedVerificationCommand || '', standardCommand: commands.standardVerificationCommand || '', broadCommand: commands.broadVerificationCommand || '' }; })()",
+        deterministicTransform: {
+          type: "verification-command",
+          selectionBlockId: "audit-against-policy",
+          selectionPath: "output",
+          commandsBlockId: "detect-project-commands",
+          configuredCommandVariable: "validationCommand",
+        },
       },
     },
     {
@@ -774,8 +803,13 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: {
         type: "TRANSFORM_JSON",
         input: "{}",
-        expression:
-          "(() => { const diff = context.resultsByBlock?.get?.('git-diff-summary'); const baseline = context.resultsByBlock?.get?.('git-snapshot-before'); const previous = context.resultsByBlock?.get?.('refactor-progress-analysis')?.data?.output ?? {}; const current = Array.isArray(diff?.data?.files) ? diff.data.files : []; const before = new Map((Array.isArray(baseline?.data?.files) ? baseline.data.files : []).map((file) => [String(file?.path ?? '').replace(/\\\\/gu, '/'), file?.signature])); const changed = current.filter((file) => before.get(String(file?.path ?? '').replace(/\\\\/gu, '/')) !== file?.signature).map((file) => ({ path: String(file?.path ?? '').replace(/\\\\/gu, '/'), signature: String(file?.signature ?? '') })).filter((file) => file.path).sort((left, right) => left.path.localeCompare(right.path)); const changedFiles = changed.map((file) => file.path); const diffSignature = JSON.stringify(changed); const producedWork = changedFiles.length > 0; const madeProgress = producedWork && diffSignature !== previous.diffSignature; return { changedFiles, changedFileCount: changedFiles.length, producedWork, madeProgress, stalled: producedWork && !madeProgress, diffSignature, previousDiffSignature: previous.diffSignature ?? '', diffOutput: diff?.output ?? '', scopeGuard: context.resultsByBlock?.get?.('scope-change-guard')?.output ?? '' }; })()",
+        deterministicTransform: {
+          type: "repository-work-yield",
+          baselineBlockId: "git-snapshot-before",
+          currentBlockId: "git-diff-summary",
+          scopeGuardBlockId: "scope-change-guard",
+          trackPrevious: true,
+        },
       },
     },
     {
@@ -787,9 +821,10 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "lastData?.output?.madeProgress === true && lastData?.output?.scopeGuard === 'IN_SCOPE'",
+          style: "json-path",
+          path: "lastData.output.usefulWorkProduced",
+          operator: "equals",
+          value: "true",
         },
       },
     },
@@ -1672,7 +1707,7 @@ const autonomousRefactoringFlow: RalphFlow = {
 
 export const repositoryRefactorValidationLoopStarterFlow = {
   id: "autonomous-refactoring-flow",
-  version: 20,
+  version: 21,
   defaultAlias: "repository-refactor-validation-loop",
   category: "Code Quality",
   tags: ["refactor", "tests", "validation"],

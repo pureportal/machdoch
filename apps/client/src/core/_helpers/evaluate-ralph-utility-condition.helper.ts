@@ -71,14 +71,18 @@ const toComparableString = (value: unknown): string => {
 };
 
 const compareRalphUtilityConditionValues = (
+  condition: RalphUtilityCondition,
   actual: unknown,
-  operator: RalphUtilityConditionOperator | undefined,
-  expectedText: string | undefined,
+  scope: Record<string, unknown>,
 ): boolean => {
   const expected =
-    expectedText !== undefined ? parseRalphUtilityJsonValue(expectedText) : true;
+    condition.valuePath !== undefined
+      ? readRalphUtilityValuePath(scope, condition.valuePath)
+      : condition.value !== undefined
+        ? parseRalphUtilityJsonValue(condition.value)
+        : true;
 
-  switch (operator ?? "truthy") {
+  switch (condition.operator ?? "truthy") {
     case "exists":
       return actual !== undefined && actual !== null;
     case "not-exists":
@@ -103,6 +107,48 @@ const compareRalphUtilityConditionValues = (
       return Number(actual) < Number(expected);
     case "lte":
       return Number(actual) <= Number(expected);
+    case "is-one-of":
+      return (
+        typeof actual === "string" &&
+        condition.matchValues?.includes(actual) === true
+      );
+    case "non-empty-string":
+      return typeof actual === "string" && actual.trim().length > 0;
+    case "non-empty-array":
+      return Array.isArray(actual) && actual.length > 0;
+    case "non-empty-record":
+      return isRecord(actual) && Object.keys(actual).length > 0;
+    case "equals-path":
+      return condition.valuePath !== undefined && actual === expected;
+    case "array-every": {
+      const itemCondition = condition.itemCondition;
+      return (
+        Array.isArray(actual) &&
+        itemCondition !== undefined &&
+        actual.every((item) =>
+          evaluateRalphUtilityConditionInScope(itemCondition, {
+            ...scope,
+            result: item,
+            item,
+          }),
+        )
+      );
+    }
+  }
+};
+
+const assertRalphUtilityConditionValue = (
+  condition: RalphUtilityCondition,
+  actual: unknown,
+): void => {
+  if (
+    condition.allowedValues &&
+    (typeof actual !== "string" || !condition.allowedValues.includes(actual))
+  ) {
+    throw new Error(
+      condition.invalidMessage ??
+        `Condition path ${condition.path ?? "value"} is missing or invalid.`,
+    );
   }
 };
 
@@ -131,11 +177,16 @@ const evaluateSimpleRalphUtilityCondition = (
     includes: "contains",
     matches: "matches",
   };
+  const operator = operatorMap[operatorToken] ?? "truthy";
 
   return compareRalphUtilityConditionValues(
+    {
+      style: "simple",
+      operator,
+      value: value.replace(/^(['"])([\s\S]*)\1$/u, "$2"),
+    },
     readRalphUtilityValuePath(scope, path),
-    operatorMap[operatorToken],
-    value.replace(/^(['"])([\s\S]*)\1$/u, "$2"),
+    isRecord(scope) ? scope : { result: scope },
   );
 };
 
@@ -153,7 +204,8 @@ const createRalphUtilityConditionScope = (
     lastData: context.lastResult?.data,
     runLog: context.runLog,
     ...(resultsByBlock ? { resultsByBlock } : {}),
-    ...(isRecord(result) ? result : { result }),
+    result,
+    ...(isRecord(result) ? result : {}),
   };
 };
 
@@ -164,15 +216,27 @@ export const evaluateRalphUtilityCondition = (
 ): boolean => {
   const scope = createRalphUtilityConditionScope(context, result);
 
+  return evaluateRalphUtilityConditionInScope(condition, scope);
+};
+
+function evaluateRalphUtilityConditionInScope(
+  condition: RalphUtilityCondition,
+  scope: Record<string, unknown>,
+): boolean {
+  let matched: boolean;
   switch (condition.style) {
     case "simple":
-      return evaluateSimpleRalphUtilityCondition(condition.expression ?? "", scope);
-    case "json-path":
-      return compareRalphUtilityConditionValues(
-        readRalphUtilityValuePath(scope, condition.path),
-        condition.operator,
-        condition.value,
+      matched = evaluateSimpleRalphUtilityCondition(
+        condition.expression ?? "",
+        scope,
       );
+      break;
+    case "json-path": {
+      const actual = readRalphUtilityValuePath(scope, condition.path);
+      assertRalphUtilityConditionValue(condition, actual);
+      matched = compareRalphUtilityConditionValues(condition, actual, scope);
+      break;
+    }
     case "javascript": {
       const evaluator = new Function(
         "context",
@@ -189,13 +253,41 @@ export const evaluateRalphUtilityCondition = (
         lastData: unknown,
       ) => boolean;
 
-      return evaluator(
+      matched = evaluator(
         scope,
-        result,
-        context.variables,
-        context.lastResult,
-        context.lastResult?.data,
+        scope.result,
+        (scope.variables as Record<string, string> | undefined) ?? {},
+        scope.lastResult as RalphBlockExecutionResult | undefined,
+        (scope.lastResult as RalphBlockExecutionResult | undefined)?.data,
       );
+      break;
     }
   }
-};
+
+  if (!matched && condition.assertMatch) {
+    throw new Error(
+      condition.invalidMessage ??
+        `Condition path ${condition.path ?? "value"} is missing or invalid.`,
+    );
+  }
+
+  const conditions = condition.conditions ?? [];
+  if (conditions.length === 0) {
+    return matched;
+  }
+
+  if (condition.combinator === "any") {
+    return (
+      matched ||
+      conditions.some((nested) =>
+        evaluateRalphUtilityConditionInScope(nested, scope),
+      )
+    );
+  }
+  return (
+    matched &&
+    conditions.every((nested) =>
+      evaluateRalphUtilityConditionInScope(nested, scope),
+    )
+  );
+}

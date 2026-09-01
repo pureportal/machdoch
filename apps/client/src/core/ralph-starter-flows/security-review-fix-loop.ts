@@ -209,8 +209,10 @@ const securityFixLoopFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression: 'variables.enableOnlineResearch === "true"',
+          style: "json-path",
+          path: "variables.enableOnlineResearch",
+          operator: "equals",
+          value: "true",
         },
       },
     },
@@ -411,9 +413,9 @@ const securityFixLoopFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "Array.isArray(lastData?.output?.findings) && lastData.output.findings.length > 0",
+          style: "json-path",
+          path: "lastData.output.findings",
+          operator: "non-empty-array",
         },
       },
     },
@@ -470,9 +472,17 @@ const securityFixLoopFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "Boolean(variables.verificationCommand?.trim() || context.resultsByBlock?.['detect-project-commands']?.data?.verificationCommand?.trim())",
+          style: "json-path",
+          path: "variables.verificationCommand",
+          operator: "non-empty-string",
+          combinator: "any",
+          conditions: [
+            {
+              style: "json-path",
+              path: "resultsByBlock.detect-project-commands.data.verificationCommand",
+              operator: "non-empty-string",
+            },
+          ],
         },
       },
     },
@@ -1322,7 +1332,7 @@ const securityFixLoopFlow: RalphFlow = {
 
 export const securityReviewFixLoopStarterFlow = {
   id: "security-fix-loop",
-  version: 16,
+  version: 17,
   defaultAlias: "security-review-fix-loop",
   category: "Security",
   tags: ["optional", "review", "fix", "tests"],
