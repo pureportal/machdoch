@@ -525,6 +525,29 @@ export class FleetCliProductRuntime {
           session.updatedAt = timestamp;
           return { record: { sessionId: session.id } };
         });
+      case "forget-session-memory":
+        return await this.commitCommand(command, (state) => {
+          const session = this.getSession(state, command.sessionId);
+          const entries = this.sessionMemory.get(session.id) ?? [];
+          if (!entries.some((entry) => entry.id === command.memoryId)) {
+            throw new FleetProductError(
+              "invalidRequest",
+              "The selected session memory is no longer available.",
+            );
+          }
+          return {
+            record: {
+              sessionId: session.id,
+              targetPreview: `memory:${command.memoryId}`,
+            },
+            afterCommit: () => {
+              this.sessionMemory.set(
+                session.id,
+                entries.filter((entry) => entry.id !== command.memoryId),
+              );
+            },
+          };
+        });
       case "archive-session":
       case "pin-session":
       case "duplicate-session":
@@ -735,6 +758,7 @@ export class FleetCliProductRuntime {
       {
         runId: taskId,
         conversationContext: {
+          sessionId: session.id,
           workspace: { selection: "selected", root: session.workspace },
           history,
           sessionMemoryEnabled: session.sessionMemoryEnabled,
@@ -1167,6 +1191,29 @@ export class FleetCliProductRuntime {
               : {}),
           isExecuting: running,
           sessionMemoryEnabled: activeSession.sessionMemoryEnabled,
+          sessionMemory: (this.sessionMemory.get(activeSession.id) ?? []).map(
+            (entry) => {
+              const sourceSession = entry.sourceSessionId
+                ? state.sessions.find(
+                    (session) => session.id === entry.sourceSessionId,
+                  )
+                : undefined;
+
+              return {
+                id: entry.id,
+                content: entry.content,
+                createdAt: entry.createdAt,
+                ...(sourceSession
+                  ? {
+                      sourceSession: {
+                        id: sourceSession.id,
+                        title: sourceSession.title,
+                      },
+                    }
+                  : {}),
+              };
+            },
+          ),
           globalMemoryAvailable: false,
           globalMemoryEnabled: activeSession.globalMemoryEnabled,
           uiControlAvailable: false,

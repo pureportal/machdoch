@@ -1,4 +1,5 @@
 import {
+  ChevronDown,
   CornerDownRight,
   ListOrdered,
   SendHorizonal,
@@ -7,6 +8,7 @@ import {
 } from "lucide-react";
 import type { ClipboardEvent, JSX, KeyboardEvent, ReactNode, Ref } from "react";
 import {
+  Fragment,
   startTransition,
   useCallback,
   useEffect,
@@ -53,6 +55,8 @@ export interface AgentComposerToggle {
   pressed: boolean;
   disabled?: boolean;
   onPressedChange: (pressed: boolean) => void;
+  onManage?: () => void;
+  manageLabel?: string;
   activeClassName?: string;
   unavailableClassName?: string;
 }
@@ -311,9 +315,8 @@ const renderToggle = (
   variant: AgentComposerVariant,
   iconButtonClassName: string,
 ): JSX.Element => {
-  return (
+  const button = (
     <ToolToggleButton
-      key={toggle.id}
       label={toggle.label}
       title={toggle.title}
       icon={toggle.icon}
@@ -325,9 +328,40 @@ const renderToggle = (
       activeClassName={toggle.activeClassName}
       disabledClassName={toggle.unavailableClassName}
       className={
-        variant === "session" ? "app-composer-toggle-button" : undefined
+        variant === "session"
+          ? cn(
+              "app-composer-toggle-button",
+              toggle.onManage && "rounded-r-none",
+            )
+          : undefined
       }
     />
+  );
+
+  if (!toggle.onManage) {
+    return <Fragment key={toggle.id}>{button}</Fragment>;
+  }
+
+  return (
+    <div
+      key={toggle.id}
+      role="group"
+      aria-label={`${toggle.label} controls`}
+      className="flex items-center"
+    >
+      {button}
+      <Button
+        type="button"
+        variant="outline"
+        size="icon-sm"
+        aria-label={toggle.manageLabel ?? `Manage ${toggle.label}`}
+        tooltip={toggle.manageLabel ?? `Manage ${toggle.label}`}
+        onClick={toggle.onManage}
+        className="app-composer-toggle-manage-button h-8 w-5 rounded-l-none rounded-r-full border-l-0 border-slate-800 bg-slate-950/70 px-0 text-slate-500 shadow-none hover:bg-slate-900 hover:text-slate-100"
+      >
+        <ChevronDown className="h-3 w-3" />
+      </Button>
+    </div>
   );
 };
 

@@ -35,6 +35,7 @@ export interface WorkspaceTarget {
 }
 
 export interface ConversationMemoryRuntime {
+  sourceSessionId?: string;
   sessionEnabled: boolean;
   sessionEntries: ConversationMemoryEntry[];
   workspaceEnabled?: boolean;

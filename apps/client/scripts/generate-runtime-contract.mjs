@@ -432,6 +432,7 @@ export interface UserSpeechToTextConfigFile {
 export interface RuntimeMemoryEntry {
   id: string;
   scope: RuntimeMemoryScope;
+  sourceSessionId?: string;
   key: string;
   kind: RuntimeMemoryKind;
   content: string;

@@ -1,5 +1,9 @@
+// @vitest-environment jsdom
+
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { afterEach, vi } from "vitest";
 import { createSession } from "../../chat-session.model";
 import { RUN_MODE_META } from "../_helpers/session-shell";
 import { SessionComposer, type SessionComposerProps } from "./session-composer";
@@ -7,6 +11,8 @@ import { SessionComposer, type SessionComposerProps } from "./session-composer";
 const EDIT_DRAFT = "Original edited request";
 const noop = (): void => {};
 const noopAsync = async (): Promise<void> => {};
+
+afterEach(() => cleanup());
 
 const createProps = (
   overrides: Partial<SessionComposerProps> = {},
@@ -43,6 +49,7 @@ const createProps = (
   promptEnhancementWebSearchAvailable: true,
   promptEnhancementWebSearchUnavailableReason: "",
   contextAttachments: [],
+  memorySourceSessions: [],
   contextPacks: [],
   matchedContextPackIds: [],
   imageInputSupported: true,
@@ -68,6 +75,7 @@ const createProps = (
   onSessionModeSelection: noop,
   onSessionReasoningSelection: noop,
   onSessionMemoryEnabledChange: noop,
+  onForgetSessionMemory: noop,
   onUseGlobalMemoryChange: noop,
   onUiControlEnabledChange: noop,
   onInterviewEnabledChange: noop,
@@ -124,6 +132,55 @@ describe("SessionComposer enhancement", () => {
     expect(markup).toContain('aria-label="Queue message"');
     expect(markup).not.toContain("Enhancing prompt");
     expect(markup).not.toContain("Running");
+  });
+
+  it("opens and manages memory for the active session", () => {
+    const onForgetSessionMemory = vi.fn();
+    const activeSession = createSession({
+      id: "session-1",
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+    activeSession.sessionMemory = [
+      {
+        id: "memory-1",
+        scope: "session",
+        sourceSessionId: "session-1",
+        key: "package-manager",
+        kind: "fact",
+        content: "Package manager: pnpm",
+        searchTerms: ["package manager"],
+        importance: 3,
+        confidence: 1,
+        createdAt: Date.UTC(2026, 7, 31, 14, 30),
+        updatedAt: Date.UTC(2026, 7, 31, 14, 30),
+      },
+    ];
+
+    render(
+      createElement(
+        SessionComposer,
+        createProps({
+          activeSession,
+          editingMessageId: null,
+          memorySourceSessions: [
+            { id: "session-1", title: "Architecture review" },
+          ],
+          onForgetSessionMemory,
+        }),
+      ),
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Manage session memory" }),
+    );
+
+    expect(screen.getByRole("dialog", { name: "Session memory" })).toBeTruthy();
+    expect(screen.getByText("Package manager: pnpm")).toBeTruthy();
+    expect(screen.getByText("Architecture review")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Forget" }));
+    expect(onForgetSessionMemory).toHaveBeenCalledWith("memory-1");
   });
 
   it("keeps the normal composer available outside edit enhancement", () => {

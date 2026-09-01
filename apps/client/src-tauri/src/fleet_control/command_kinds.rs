@@ -22,6 +22,7 @@ const SESSION_ID_COMMANDS: &[&str] = &[
     "set-prompt-enhancement-mode",
     "set-interview",
     "set-session-memory",
+    "forget-session-memory",
     "set-global-memory",
     "set-ui-control",
     "remove-attachment",
@@ -46,6 +47,7 @@ const ENABLED_COMMANDS: &[&str] = &[
 ];
 
 const CONTEXT_PACK_ID_COMMANDS: &[&str] = &["apply-context-pack", "delete-context-pack"];
+const MEMORY_ID_COMMANDS: &[&str] = &["forget-session-memory"];
 const MESSAGE_ID_COMMANDS: &[&str] = &["save-message-context-pack", "speak-message"];
 
 const JOB_ID_COMMANDS: &[&str] = &[
@@ -83,6 +85,7 @@ pub(super) struct CommandRequirements {
     pub(super) task_id: bool,
     pub(super) session_id: bool,
     pub(super) enabled: bool,
+    pub(super) memory_id: bool,
     pub(super) context_pack_id: bool,
     pub(super) message_id: bool,
     pub(super) job_id: bool,
@@ -101,6 +104,7 @@ pub(super) fn command_requirements(kind: &str) -> CommandRequirements {
         task_id: requires_task_id(kind),
         session_id: requires_session_id(kind),
         enabled: requires_enabled(kind),
+        memory_id: requires_memory_id(kind),
         context_pack_id: requires_context_pack_id(kind),
         message_id: requires_message_id(kind),
         job_id: requires_job_id(kind),
@@ -133,6 +137,10 @@ fn requires_context_pack_id(kind: &str) -> bool {
     includes_command(CONTEXT_PACK_ID_COMMANDS, kind)
 }
 
+fn requires_memory_id(kind: &str) -> bool {
+    includes_command(MEMORY_ID_COMMANDS, kind)
+}
+
 fn requires_message_id(kind: &str) -> bool {
     includes_command(MESSAGE_ID_COMMANDS, kind)
 }
@@ -158,9 +166,10 @@ mod tests {
     use super::{
         command_requirements, is_supported_command, is_supported_reasoning,
         requires_context_pack_id, requires_enabled, requires_flow_id, requires_job_id,
-        requires_message_id, requires_run_id, requires_session_id, requires_task_id,
-        supported_reasoning_modes_label, CommandRequirements, CONTEXT_PACK_ID_COMMANDS,
-        JOB_ID_COMMANDS, MESSAGE_ID_COMMANDS, RUN_ID_COMMANDS,
+        requires_memory_id, requires_message_id, requires_run_id, requires_session_id,
+        requires_task_id, supported_reasoning_modes_label, CommandRequirements,
+        CONTEXT_PACK_ID_COMMANDS, JOB_ID_COMMANDS, MEMORY_ID_COMMANDS, MESSAGE_ID_COMMANDS,
+        RUN_ID_COMMANDS,
     };
 
     #[test]
@@ -182,6 +191,7 @@ mod tests {
         assert!(requires_session_id("rename-session"));
         assert!(requires_session_id("set-session-reasoning"));
         assert!(requires_context_pack_id("delete-context-pack"));
+        assert!(requires_memory_id("forget-session-memory"));
         assert!(requires_message_id("speak-message"));
         assert!(requires_job_id("scheduler-pause"));
         assert!(requires_run_id("scheduler-retry-run"));
@@ -202,6 +212,7 @@ mod tests {
                 task_id: false,
                 session_id: true,
                 enabled: false,
+                memory_id: false,
                 context_pack_id: false,
                 message_id: true,
                 job_id: false,
@@ -215,6 +226,7 @@ mod tests {
     fn commands_with_required_secondary_targets_are_supported() {
         for kind in CONTEXT_PACK_ID_COMMANDS
             .iter()
+            .chain(MEMORY_ID_COMMANDS)
             .chain(MESSAGE_ID_COMMANDS)
             .chain(JOB_ID_COMMANDS)
             .chain(RUN_ID_COMMANDS)

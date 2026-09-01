@@ -89,6 +89,7 @@ mod tests {
                 interview_enabled: None,
                 workspace: None,
                 enabled: None,
+                memory_id: None,
                 attachment_id: None,
                 context_pack_id: None,
                 message_id: None,

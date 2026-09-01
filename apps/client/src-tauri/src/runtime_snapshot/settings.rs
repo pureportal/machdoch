@@ -438,6 +438,10 @@ pub(super) fn normalize_user_memory_entries(
             id: normalize_optional_string(Some(entry.id.as_str()))
                 .unwrap_or_else(|| format!("{}-memory-{}-{}", scope, updated_at, index)),
             scope: scope.to_string(),
+            source_session_id: entry
+                .source_session_id
+                .as_deref()
+                .and_then(|value| normalize_optional_string(Some(value))),
             key: normalize_memory_key(&entry.key, &content),
             kind,
             content: content.clone(),
@@ -476,6 +480,7 @@ mod tests {
         UserMemoryEntry {
             id: id.to_string(),
             scope: "global".to_string(),
+            source_session_id: None,
             key: key.to_string(),
             kind: "preference".to_string(),
             content: content.to_string(),

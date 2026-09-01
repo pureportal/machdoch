@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { productSnapshotSchema } from "@machdoch/fleet-protocol";
+import { loadRuntimeConfig } from "../../core/config.js";
 import { FleetCliProductRuntime } from "./cli-fleet-product.ts";
 import { getFleetCliStatePath } from "./cli-fleet-state.ts";
 
@@ -60,6 +61,127 @@ describe.sequential("Fleet CLI product runtime", () => {
     await expect(
       readFile(getFleetCliStatePath(workspace), "utf8"),
     ).resolves.toContain("command-create-session");
+    await runtime.shutdown();
+  });
+
+  it("publishes and forgets session memory through Fleet commands", async () => {
+    const root = await mkdtemp(join(tmpdir(), "machdoch-fleet-memory-"));
+    roots.push(root);
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", join(root, "config"));
+    const workspace = join(root, "workspace");
+    const runtime = await FleetCliProductRuntime.create(workspace, {
+      loadRuntimeConfig: async (...arguments_) => ({
+        ...(await loadRuntimeConfig(...arguments_)),
+        provider: "openai",
+        model: "gpt-5.4",
+        offline: false,
+        providerAvailability: [{ provider: "openai", configured: true }],
+      }),
+      createTaskExecutionController: (
+        task,
+        config,
+        _customizations,
+        options,
+      ) => {
+        const sourceSessionId = options?.conversationContext?.sessionId;
+        const abortController = new AbortController();
+        return {
+          signal: abortController.signal,
+          cancel: (reason?: string) => abortController.abort(reason),
+          execute: async () => ({
+            task,
+            mode: config.mode,
+            status: "executed" as const,
+            summary: "Done",
+            executedTools: [],
+            outputSections: [],
+            memoryUpdates: [
+              {
+                scope: "session" as const,
+                entry: {
+                  id: "memory-1",
+                  scope: "session" as const,
+                  ...(sourceSessionId ? { sourceSessionId } : {}),
+                  key: "package-manager",
+                  kind: "fact" as const,
+                  content: "Package manager: pnpm",
+                  searchTerms: ["package manager"],
+                  importance: 3,
+                  confidence: 1,
+                  createdAt: 100,
+                  updatedAt: 100,
+                },
+              },
+            ],
+          }),
+        };
+      },
+    });
+    const initial = await runtime.handleRequest({ type: "getProductSnapshot" });
+    expect(initial.type).toBe("productSnapshot");
+    if (initial.type !== "productSnapshot") return;
+    const sessionId = initial.snapshot.shell?.activeSessionId;
+    expect(sessionId).toBeTruthy();
+    if (!sessionId) return;
+
+    await runtime.handleRequest({
+      type: "executeProductCommand",
+      command: {
+        kind: "submit-message",
+        commandId: "command-remember",
+        sessionId,
+        prompt: "Remember package manager",
+        promptEnhancementMode: "off",
+        interviewEnabled: false,
+      },
+    });
+
+    let sessionMemory = initial.snapshot.shell?.composer?.sessionMemory ?? [];
+    for (
+      let attempt = 0;
+      attempt < 10 && sessionMemory.length === 0;
+      attempt += 1
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const response = await runtime.handleRequest({
+        type: "getProductSnapshot",
+      });
+      if (response.type === "productSnapshot") {
+        sessionMemory = response.snapshot.shell?.composer?.sessionMemory ?? [];
+      }
+    }
+
+    expect(sessionMemory).toEqual([
+      expect.objectContaining({
+        id: "memory-1",
+        content: "Package manager: pnpm",
+        sourceSession: {
+          id: sessionId,
+          title: "Remember package manager",
+        },
+      }),
+    ]);
+
+    const forgotten = await runtime.handleRequest({
+      type: "executeProductCommand",
+      command: {
+        kind: "forget-session-memory",
+        commandId: "command-forget-memory",
+        sessionId,
+        memoryId: "memory-1",
+      },
+    });
+    expect(forgotten).toEqual({
+      type: "commandAccepted",
+      receipt: { commandId: "command-forget-memory", duplicate: false },
+    });
+
+    const final = await runtime.handleRequest({ type: "getProductSnapshot" });
+    expect(
+      final.type === "productSnapshot"
+        ? final.snapshot.shell?.composer?.sessionMemory
+        : undefined,
+    ).toEqual([]);
     await runtime.shutdown();
   });
 });

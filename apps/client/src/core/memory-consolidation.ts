@@ -586,6 +586,12 @@ export const consolidateTaskExecutionMemory = async (
   for (const candidate of extraction.candidates) {
     try {
       let entry;
+      const metadata = {
+        ...candidate,
+        ...(conversationContext?.sessionId
+          ? { sourceSessionId: conversationContext.sessionId }
+          : {}),
+      };
 
       if (candidate.scope === "session") {
         const remembered = rememberConversationMemoryEntry(
@@ -594,7 +600,7 @@ export const consolidateTaskExecutionMemory = async (
           candidate.content,
           MAX_SESSION_MEMORY_ENTRIES,
           Date.now(),
-          candidate,
+          metadata,
         );
         sessionEntries = remembered.entries;
         entry = remembered.entry;
@@ -602,10 +608,10 @@ export const consolidateTaskExecutionMemory = async (
         entry = await rememberWorkspaceMemory(
           workspaceRoot,
           candidate.content,
-          candidate,
+          metadata,
         );
       } else {
-        entry = await rememberUserGlobalMemory(candidate.content, candidate);
+        entry = await rememberUserGlobalMemory(candidate.content, metadata);
       }
 
       memoryUpdates = upsertMemoryUpdate(memoryUpdates, {

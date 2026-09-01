@@ -44,6 +44,8 @@ pub struct FleetControlCommandEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) memory_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) attachment_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) context_pack_id: Option<String>,
@@ -106,6 +108,7 @@ struct NormalizedCommandFields {
     prompt_enhancement_mode: Option<String>,
     workspace: Option<String>,
     enabled: Option<bool>,
+    memory_id: Option<String>,
     attachment_id: Option<String>,
     context_pack_id: Option<String>,
     message_id: Option<String>,
@@ -157,6 +160,7 @@ pub(super) fn normalize_command(
         prompt_enhancement_mode: fields.prompt_enhancement_mode,
         workspace: fields.workspace,
         enabled: fields.enabled,
+        memory_id: fields.memory_id,
         attachment_id: fields.attachment_id,
         context_pack_id: fields.context_pack_id,
         message_id: fields.message_id,
@@ -278,6 +282,13 @@ fn normalize_command_fields(
         "This Fleet Manager command requires an enabled value.",
     )?;
 
+    let memory_id = optional_trimmed_string(request.memory_id.as_deref());
+    require_value(
+        requirements.memory_id,
+        &memory_id,
+        "This Fleet Manager command requires a memoryId.",
+    )?;
+
     let attachment_id = optional_trimmed_string(request.attachment_id.as_deref());
     if kind == "remove-attachment" && attachment_id.is_none() {
         return Err("Removing an attachment requires an attachmentId.".to_string());
@@ -380,6 +391,7 @@ fn normalize_command_fields(
         prompt_enhancement_mode,
         workspace,
         enabled,
+        memory_id,
         attachment_id,
         context_pack_id,
         message_id,
@@ -432,6 +444,7 @@ pub(super) fn command_payloads_match(
         && left.prompt_enhancement_mode == right.prompt_enhancement_mode
         && left.workspace == right.workspace
         && left.enabled == right.enabled
+        && left.memory_id == right.memory_id
         && left.attachment_id == right.attachment_id
         && left.context_pack_id == right.context_pack_id
         && left.message_id == right.message_id
@@ -464,6 +477,7 @@ pub(super) fn command_payload_hash(event: &FleetControlCommandEvent) -> String {
         "promptEnhancementMode": event.prompt_enhancement_mode,
         "workspace": event.workspace,
         "enabled": event.enabled,
+        "memoryId": event.memory_id,
         "attachmentId": event.attachment_id,
         "contextPackId": event.context_pack_id,
         "messageId": event.message_id,
@@ -552,6 +566,10 @@ fn normalize_parameters(
 
 fn create_command_target_preview(event: &FleetControlCommandEvent) -> Option<String> {
     [
+        event
+            .memory_id
+            .as_deref()
+            .map(|value| format!("memory:{value}")),
         event
             .session_id
             .as_deref()

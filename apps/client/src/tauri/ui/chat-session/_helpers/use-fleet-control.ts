@@ -637,6 +637,7 @@ export const useFleetControl = (options: {
     interviewEnabled: boolean;
   }) => boolean;
   onSetSessionMemory: (sessionId: string, enabled: boolean) => void;
+  onForgetSessionMemory: (sessionId: string, memoryId: string) => void;
   onSetGlobalMemory: (sessionId: string, enabled: boolean) => void;
   onSetUiControl: (sessionId: string, enabled: boolean) => void;
   onRemoveContextAttachment: (sessionId: string, attachmentId: string) => void;
@@ -1058,6 +1059,27 @@ export const useFleetControl = (options: {
         isExecuting:
           getSessionOverviewStatus(options.activeSession) === "running",
         sessionMemoryEnabled: options.activeSession.sessionMemoryEnabled,
+        sessionMemory: options.activeSession.sessionMemory.map((entry) => {
+          const sourceSession = entry.sourceSessionId
+            ? options.shellState.sessions.find(
+                (session) => session.id === entry.sourceSessionId,
+              )
+            : undefined;
+
+          return {
+            id: entry.id,
+            content: entry.content,
+            createdAt: entry.createdAt,
+            ...(sourceSession
+              ? {
+                  sourceSession: {
+                    id: sourceSession.id,
+                    title: getSessionTitle(sourceSession),
+                  },
+                }
+              : {}),
+          };
+        }),
         globalMemoryAvailable: options.isGlobalMemoryAvailable,
         globalMemoryEnabled: options.isGlobalMemoryActive,
         uiControlAvailable: options.isUiControlAvailable,
@@ -1612,6 +1634,21 @@ export const useFleetControl = (options: {
           if (command.sessionId && typeof command.enabled === "boolean") {
             options.onSetSessionMemory(command.sessionId, command.enabled);
           }
+          break;
+        }
+
+        case "forget-session-memory": {
+          const memoryId = command.memoryId;
+          if (
+            !command.sessionId ||
+            !memoryId ||
+            !sourceSession.sessionMemory.some((entry) => entry.id === memoryId)
+          ) {
+            throw new NonRetryableFleetCommandError(
+              "The selected session memory is no longer available.",
+            );
+          }
+          options.onForgetSessionMemory(command.sessionId, memoryId);
           break;
         }
 

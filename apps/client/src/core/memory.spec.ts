@@ -160,12 +160,14 @@ describe("rememberConversationMemoryEntry", () => {
       "  New memory  ",
       5,
       10,
+      { sourceSessionId: "session-1" },
     );
 
     expect(result.added).toBe(true);
     expect(result.entry).toMatchObject({
       scope: "global",
       content: "New memory",
+      sourceSessionId: "session-1",
       createdAt: 10,
       updatedAt: 10,
     });
@@ -174,16 +176,22 @@ describe("rememberConversationMemoryEntry", () => {
 
   it("refreshes existing duplicate content instead of adding another entry", () => {
     const existing = createEntry("existing", "same memory", 1);
+    existing.sourceSessionId = "session-original";
     const result = rememberConversationMemoryEntry(
       [existing],
       "session",
       " SAME   MEMORY ",
       MAX_SESSION_MEMORY_ENTRIES,
       50,
+      { sourceSessionId: "session-later" },
     );
 
     expect(result.added).toBe(false);
-    expect(result.entry).toMatchObject({ id: "existing", updatedAt: 50 });
+    expect(result.entry).toMatchObject({
+      id: "existing",
+      sourceSessionId: "session-original",
+      updatedAt: 50,
+    });
     expect(result.entries).toHaveLength(1);
   });
 

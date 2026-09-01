@@ -728,6 +728,7 @@ export interface FleetControlCommandEvent {
   promptEnhancementMode?: string;
   workspace?: string;
   enabled?: boolean;
+  memoryId?: string;
   attachmentId?: string;
   contextPackId?: string;
   messageId?: string;
@@ -1416,6 +1417,7 @@ const FLEET_CONTROL_COMMAND_KINDS = [
   "set-interview",
   "cancel-prompt-enhancement",
   "set-session-memory",
+  "forget-session-memory",
   "set-global-memory",
   "set-ui-control",
   "remove-attachment",
@@ -1854,6 +1856,7 @@ const isFleetControlCommandEvent = (
       isRuntimeReasoningMode(value.reasoning)) &&
     (value.workspace === undefined || typeof value.workspace === "string") &&
     (value.enabled === undefined || typeof value.enabled === "boolean") &&
+    (value.memoryId === undefined || typeof value.memoryId === "string") &&
     (value.attachmentId === undefined ||
       typeof value.attachmentId === "string") &&
     (value.contextPackId === undefined ||

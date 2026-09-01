@@ -87,10 +87,12 @@ import { normalizeReasoningModeForProvider } from "../../reasoning-options";
 import {
   acknowledgeRecentDesktopTaskResults,
   cancelDesktopTask,
+  forgetWorkspaceMemoryEntry,
   listInstructions,
   loadActiveDesktopTaskIds,
   loadActiveDesktopTasks,
   loadRecentDesktopTaskResults,
+  loadWorkspaceMemoryEntries,
   openAttachedPath,
   openExternalUrl,
   openWorkspacePath,
@@ -1031,6 +1033,14 @@ export const useChatSessionController = (
     userMemorySettings: runtime.userMemorySettings,
   });
   const currentSessionTitle = getSessionTitle(state.activeSession);
+  const memorySourceSessions = useMemo(
+    () =>
+      state.shellState.sessions.map((session) => ({
+        id: session.id,
+        title: getSessionTitle(session),
+      })),
+    [state.shellState.sessions],
+  );
   const activeChatOperationIds = useMemo(() => {
     return state.shellState.sessions.flatMap((session) =>
       getActiveChatOperationIds(session),
@@ -1426,6 +1436,42 @@ export const useChatSessionController = (
       settingsActions.setSessionMemoryEnabled(enabled);
     },
     [settingsActions, updateMessageEditSession],
+  );
+  const forgetSessionMemory = useCallback(
+    (sessionId: string, memoryId: string): void => {
+      const updatedAt = Date.now();
+      state.updateSessionById(sessionId, (session) => ({
+        ...session,
+        sessionMemory: session.sessionMemory.filter(
+          (entry) => entry.id !== memoryId,
+        ),
+        updatedAt,
+      }));
+
+      if (activeMessageEditRef.current?.sourceSessionId === sessionId) {
+        updateMessageEditSession((session) => ({
+          ...session,
+          sessionMemory: session.sessionMemory.filter(
+            (entry) => entry.id !== memoryId,
+          ),
+          updatedAt,
+        }));
+      }
+    },
+    [state.updateSessionById, updateMessageEditSession],
+  );
+  const forgetManagedWorkspaceMemory = useCallback(
+    async (
+      workspaceRoot: string,
+      memoryId: string,
+    ): Promise<Awaited<ReturnType<typeof forgetWorkspaceMemoryEntry>>> => {
+      const entries = await forgetWorkspaceMemoryEntry(workspaceRoot, memoryId);
+      if (workspaceRoot === state.activeSession.workspace) {
+        await runtime.refreshWorkspaceMemoryEntries();
+      }
+      return entries;
+    },
+    [runtime.refreshWorkspaceMemoryEntries, state.activeSession.workspace],
   );
   const handleUseGlobalMemoryChange = useCallback(
     (enabled: boolean): void => {
@@ -6977,6 +7023,7 @@ export const useChatSessionController = (
       remoteSessionMessageSubmitRef.current(input),
     onSetSessionMemory: (sessionId: string, enabled: boolean) =>
       handleRemoteSetSessionFlag(sessionId, "sessionMemoryEnabled", enabled),
+    onForgetSessionMemory: forgetSessionMemory,
     onSetGlobalMemory: (sessionId: string, enabled: boolean) =>
       handleRemoteSetSessionFlag(sessionId, "useGlobalMemory", enabled),
     onSetUiControl: (sessionId: string, enabled: boolean) =>
@@ -8457,6 +8504,9 @@ export const useChatSessionController = (
       onSessionModeSelection: handleSessionModeSelection,
       onSessionReasoningSelection: handleSessionReasoningSelection,
       onSessionMemoryEnabledChange: handleSessionMemoryEnabledChange,
+      onForgetSessionMemory: (memoryId: string) =>
+        forgetSessionMemory(activeComposerSession.id, memoryId),
+      memorySourceSessions,
       onUseGlobalMemoryChange: handleUseGlobalMemoryChange,
       onUiControlEnabledChange: handleUiControlEnabledChange,
       onInterviewEnabledChange: handleInterviewEnabledChange,
@@ -8571,10 +8621,13 @@ export const useChatSessionController = (
     },
     workspaceManagement: {
       workspaceRoots: state.shellState.recentWorkspaces,
+      memorySourceSessions,
       loading: !state.hasHydrated,
       onAdd: addWorkspaceToHistory,
       onRemove: removeWorkspaceFromHistory,
       onRelink: relinkWorkspaceInHistory,
+      onLoadMemory: loadWorkspaceMemoryEntries,
+      onForgetMemory: forgetManagedWorkspaceMemory,
     },
     settingsDialog: {
       settingsSection: state.settingsSection,
@@ -8656,13 +8709,11 @@ export const useChatSessionController = (
       },
       memorySetup: {
         settings: runtime.userMemorySettings,
-        workspaceRoot: state.activeSession.workspace,
-        workspaceEntries: runtime.workspaceMemoryEntries,
+        sourceSessions: memorySourceSessions,
         saving: runtime.memorySetupSaving,
         message: runtime.memorySetupMessage,
         onGlobalEnabledChange: runtime.handleGlobalMemoryEnabledSave,
         onForgetGlobal: runtime.handleGlobalMemoryForget,
-        onForgetWorkspace: runtime.handleWorkspaceMemoryForget,
       },
       desktopSetup: {
         settings: runtime.userDesktopSettings,
