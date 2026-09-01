@@ -9,6 +9,7 @@ use std::{
 };
 
 use serde_json::Value;
+use tauri::Manager as _;
 
 use crate::{
     child_process::{SupervisedChild, SupervisedChildSpawnError},
@@ -220,6 +221,19 @@ pub(super) fn execute_ralph_command(
     cli_command
         .command
         .env(RALPH_CANCEL_PATH_ENV, &cancellation_path);
+    if let Some(credentials) = app_handle
+        .state::<crate::workspace_run::WorkspaceRunState>()
+        .control_credentials()
+    {
+        cli_command
+            .command
+            .env("MACHDOCH_RUN_CONTROL_ADDRESS", credentials.address)
+            .env("MACHDOCH_RUN_CONTROL_TOKEN", credentials.token)
+            .env(
+                "MACHDOCH_WORKSPACE_PRESENCE_TOKEN",
+                credentials.presence_token,
+            );
+    }
 
     cli_command
         .command

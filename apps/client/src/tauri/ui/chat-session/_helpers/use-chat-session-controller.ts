@@ -1,4 +1,4 @@
-import { isTauri } from "@tauri-apps/api/core";
+﻿import { isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MediaAssetReference } from "../../../../core/media/contracts.js";
@@ -30,6 +30,7 @@ import {
   createTaskOutcomeFromExecution,
   createVisibleConversationMessages,
   getActiveChatOperationIds,
+  getActivePromptEnhancementEditMessageId,
   getLatestRunningTaskId,
   getSessionTaskOutcome,
   getSessionOverviewStatus,
@@ -234,7 +235,7 @@ import {
   type DesktopTaskProgressRoute,
 } from "./use-desktop-task-progress";
 import { useFleetManagedSettings } from "./use-fleet-managed-settings";
-import { useRemoteMissionControl } from "./use-remote-mission-control";
+import { useFleetControl } from "./use-fleet-control";
 import { useSessionComposerState } from "./use-session-composer-state";
 import { useSessionFileDrops } from "./use-session-file-drops";
 import { useSessionLifecycle } from "./use-session-lifecycle";
@@ -303,6 +304,7 @@ interface PromptEnhancementPendingState {
   ownerLaunchId: string;
   ownerWindowId: string;
   ownerInstanceId: string;
+  targetMessageId?: string;
   composerClearGuard?: ComposerClearGuard;
 }
 
@@ -371,6 +373,9 @@ const createPromptEnhancementSessionMessages = (
       ownerWindowId: pending.ownerWindowId,
       ownerInstanceId: pending.ownerInstanceId,
       placement: pending.placement,
+      ...(pending.targetMessageId
+        ? { targetMessageId: pending.targetMessageId }
+        : {}),
     },
     source: {
       kind: "thinking",
@@ -5205,6 +5210,14 @@ export const useChatSessionController = (
         .toString(36)
         .slice(2, 8)}`;
       const sessionSnapshot = submission.sessionSnapshot;
+      const targetMessageId = submission.conversationCutoffMessageId?.trim();
+
+      if (placement === "edit-composer" && !targetMessageId) {
+        throw new Error(
+          "Edited-message enhancement requires a target message.",
+        );
+      }
+
       const pending: PromptEnhancementPendingState = {
         taskId,
         sessionId: sessionSnapshot.id,
@@ -5219,6 +5232,7 @@ export const useChatSessionController = (
           shellStateRef.current.lastRecoveredLaunchId ?? "pending-launch",
         ownerWindowId: chatOperationWindowId,
         ownerInstanceId: chatOperationInstanceId,
+        ...(targetMessageId ? { targetMessageId } : {}),
       };
       const imagePaths = getImageAttachmentPaths(submission.contextAttachments);
 
@@ -6861,7 +6875,7 @@ export const useChatSessionController = (
     refreshInstructions: refreshInstructionRegistry,
   });
 
-  const remoteMissionControl = useRemoteMissionControl({
+  useFleetControl({
     hasHydrated: state.hasHydrated,
     shellState: state.shellState,
     activeSession: state.activeSession,
@@ -6917,16 +6931,16 @@ export const useChatSessionController = (
     speechInputStatus: speechInput.statusText,
     activeDesktopTasksRef,
     flushPersistence: state.flushPersistence,
-    onMarkRemoteCommandHandled: (commandId: string) => {
+    onMarkFleetCommandHandled: (commandId: string) => {
       state.applyShellState((prev) => {
-        if (prev.handledRemoteCommandIds.includes(commandId)) {
+        if (prev.handledFleetCommandIds.includes(commandId)) {
           return prev;
         }
 
         return {
           ...prev,
-          handledRemoteCommandIds: [
-            ...prev.handledRemoteCommandIds,
+          handledFleetCommandIds: [
+            ...prev.handledFleetCommandIds,
             commandId,
           ].slice(-512),
         };
@@ -8141,10 +8155,15 @@ export const useChatSessionController = (
           contextAttachments: promptEnhancementPreview.contextAttachments,
         }
       : null;
-  const editingPromptEnhancement =
-    messageEdit && activePromptEnhancementPending?.placement === "edit-composer"
-      ? { messageId: messageEdit.messageId }
-      : null;
+  const activePromptEnhancementEditMessageId =
+    getActivePromptEnhancementEditMessageId(state.activeSession);
+  const activeEditingMessageId =
+    messageEdit?.sourceSessionId === state.activeSession.id
+      ? messageEdit.messageId
+      : activePromptEnhancementEditMessageId;
+  const editingPromptEnhancement = activePromptEnhancementEditMessageId
+    ? { messageId: activePromptEnhancementEditMessageId }
+    : null;
   const activeSessionExecuting =
     getSessionOverviewStatus(state.activeSession) === "running" &&
     !activeSessionPromptEnhancementBusy;
@@ -8200,7 +8219,6 @@ export const useChatSessionController = (
       onToggleMaximizeWindow: windowControls.onToggleMaximizeWindow,
       onCloseWindow: windowControls.onCloseWindow,
     },
-    missionControl: remoteMissionControl,
     attachMediaAssetToChat,
     openProviderSettings: () => settingsActions.openSettings("providers"),
     sidebar: {
@@ -8289,7 +8307,7 @@ export const useChatSessionController = (
       onRetryMessage: taskSubmission.handleRetryMessage,
       onEditMessage: taskSubmission.handleEditMessage,
       onStartEditMessage: handleStartMessageEdit,
-      activeEditingMessageId: messageEdit?.messageId ?? null,
+      activeEditingMessageId,
       editingPromptEnhancement,
       onCancelPromptEnhancement: activeSessionPromptEnhancementBusy
         ? handleCancel

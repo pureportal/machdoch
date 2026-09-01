@@ -361,6 +361,11 @@
   backdrop-filter: blur(24px);
 }
 
+.m-composer-model-popover[data-placement="bottom"] {
+  top: calc(100% + 0.5rem);
+  bottom: auto;
+}
+
 .m-composer-model-heading {
   display: grid;
   gap: 0.25rem;

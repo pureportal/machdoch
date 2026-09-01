@@ -23,6 +23,7 @@ import { ContextPacksEditor } from "./context-packs-editor";
 import { HistoryEditor } from "./history-editor";
 import { InstructionsEditor } from "./instructions-editor";
 import { ProfileGeneral } from "./profile-general";
+import { PromptsEditor } from "./prompts-editor";
 import { SecretsEditor } from "./secrets-editor";
 import type {
   ManagedSettingsDocument,
@@ -33,10 +34,13 @@ import type {
   SettingsTab,
 } from "./types";
 
+const ASSIGNMENTS_REFRESH_MS = 10_000;
+
 const tabs: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "instructions", label: "Instructions" },
   { id: "packs", label: "Context packs" },
+  { id: "prompts", label: "Prompts" },
   { id: "secrets", label: "Secrets" },
   { id: "instances", label: "Instances" },
   { id: "history", label: "History" },
@@ -88,6 +92,23 @@ export function SettingsManager(): React.ReactElement {
       .catch((reason: unknown) => setError(errorMessage(reason)))
       .finally(() => setLoading(false));
   }, [loadAssignments, loadProfiles, selectProfile]);
+
+  useEffect(() => {
+    if (tab !== "instances") return;
+    let refreshInFlight = false;
+    const refresh = (): void => {
+      if (refreshInFlight) return;
+      refreshInFlight = true;
+      void loadAssignments()
+        .catch((reason: unknown) => setError(errorMessage(reason)))
+        .finally(() => {
+          refreshInFlight = false;
+        });
+    };
+    refresh();
+    const interval = window.setInterval(refresh, ASSIGNMENTS_REFRESH_MS);
+    return () => window.clearInterval(interval);
+  }, [loadAssignments, tab]);
 
   const acceptProfile = useCallback(
     async (nextProfile: SettingsProfile) => {
@@ -239,6 +260,9 @@ export function SettingsManager(): React.ReactElement {
               ) : null}
               {tab === "packs" ? (
                 <ContextPacksEditor profile={profile} onSave={saveProfile} />
+              ) : null}
+              {tab === "prompts" ? (
+                <PromptsEditor profile={profile} onSave={saveProfile} />
               ) : null}
               {tab === "secrets" ? (
                 <SecretsEditor

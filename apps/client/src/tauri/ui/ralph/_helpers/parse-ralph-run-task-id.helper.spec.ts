@@ -49,7 +49,7 @@ describe("Ralph run task id helpers", () => {
       "c:/repo/machdoch",
     );
     expect(normalizeWorkspaceForTaskComparison("/Users/Me//Machdoch")).toBe(
-      "/users/me/machdoch",
+      "/Users/Me/Machdoch",
     );
     expect(normalizeWorkspaceForTaskComparison(null)).toBe("");
     expect(normalizeWorkspaceForTaskComparison(undefined)).toBe("");
@@ -78,6 +78,12 @@ describe("Ralph run task id helpers", () => {
       normalizeWorkspaceForTaskComparison(
         "\\\\?\\UNC\\server\\share\\Machdoch",
       ),
+    );
+  });
+
+  it("keeps case-sensitive workspace roots distinct", () => {
+    expect(normalizeWorkspaceForTaskComparison("/repo/Machdoch")).not.toBe(
+      normalizeWorkspaceForTaskComparison("/repo/machdoch"),
     );
   });
 

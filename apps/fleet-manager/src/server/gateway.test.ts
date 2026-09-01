@@ -1,11 +1,12 @@
 import { createServer } from "node:http";
+import { createConnection } from "node:net";
 import {
   gatewayProtocolVersion,
   productCapability,
   type ManagerMessage,
 } from "@machdoch/fleet-protocol";
 import { WebSocket } from "ws";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FleetManagerConfig } from "./config";
 import { createSecret } from "./crypto";
 import { FleetDatabase, nowSeconds } from "./database";
@@ -27,6 +28,7 @@ describe("outbound gateway relay", () => {
     const config = testConfig();
     database = new FleetDatabase(":memory:");
     const store = new FleetStore(database);
+    const updatePresence = vi.spyOn(store, "updateInstancePresence");
     hub = new GatewayHub(config, store);
     const enrollmentKey = createSecret("mch_enroll");
     const instanceSecret = createSecret("mch_instance");
@@ -59,6 +61,16 @@ describe("outbound gateway relay", () => {
     const address = server.address();
     if (!address || typeof address === "string")
       throw new Error("Test server address is invalid.");
+    await expect(
+      rawUpgrade(address.port, "/api/gateway/connect/%"),
+    ).resolves.toMatch(/^HTTP\/1\.1 400 Bad Request/mu);
+    await expect(
+      rawUpgrade(
+        address.port,
+        `/api/gateway/connect/${instance.instanceId}`,
+        `Authorization: Bearer ${instanceSecret}\r\nSec-WebSocket-Key: invalid\r\nSec-WebSocket-Version: 13\r\n`,
+      ),
+    ).resolves.toMatch(/^HTTP\/1\.1 400 Bad Request/mu);
     const socket = new WebSocket(
       `ws://127.0.0.1:${address.port}/api/gateway/connect/${instance.instanceId}`,
       { headers: { Authorization: `Bearer ${instanceSecret}` } },
@@ -112,10 +124,40 @@ describe("outbound gateway relay", () => {
       type: "productSnapshot",
       snapshot: { enabled: true, eventId: 1 },
     });
-    socket.close();
+    for (let index = 0; index < 260; index += 1) {
+      socket.send(JSON.stringify({ type: "heartbeat", sentAt: nowSeconds() }));
+    }
+    const closeCode = await new Promise<number>((resolve) => {
+      socket.once("close", resolve);
+    });
+    expect(closeCode).toBe(1008);
+    expect(updatePresence).toHaveBeenCalledTimes(1);
+    await waitUntil(() => hub?.isOnline(instance.instanceId) === false);
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 });
+
+async function rawUpgrade(
+  port: number,
+  path: string,
+  extraHeaders = "",
+): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const socket = createConnection(port, "127.0.0.1");
+    let response = "";
+    socket.setEncoding("utf8");
+    socket.once("connect", () => {
+      socket.write(
+        `GET ${path} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n${extraHeaders}\r\n`,
+      );
+    });
+    socket.on("data", (chunk) => {
+      response += chunk;
+    });
+    socket.once("end", () => resolve(response));
+    socket.once("error", reject);
+  });
+}
 
 async function waitUntil(condition: () => boolean): Promise<void> {
   const deadline = Date.now() + 1000;
@@ -145,6 +187,7 @@ function testConfig(): FleetManagerConfig {
         maximumProfiles: 64,
         maximumInstructionsPerProfile: 128,
         maximumPacksPerProfile: 128,
+        maximumPromptsPerProfile: 128,
         maximumRevisionsPerProfile: 100,
         maximumDocumentBytes: 1024 * 1024,
         maximumSecretBytes: 8192,

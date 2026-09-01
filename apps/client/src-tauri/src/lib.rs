@@ -7,9 +7,9 @@ mod desktop_task;
 #[path = "../embedded_runtime_inputs.rs"]
 mod embedded_runtime_inputs;
 mod fleet;
+mod fleet_control;
 mod launcher;
 mod media;
-mod remote_control;
 mod runtime_contract_generated;
 mod runtime_snapshot;
 mod settings_transfer;
@@ -155,8 +155,8 @@ pub fn run() {
         ))
         .manage(desktop_shell::QuickVoiceShortcutState::default())
         .manage(fleet::FleetConnectionState::default())
+        .manage(fleet_control::FleetControlState::default())
         .manage(media::MediaRuntimeState::default())
-        .manage(remote_control::RemoteControlState::default())
         .manage(shell_state::ShellStateStoreLock::default())
         .manage(sleep_inhibition::SystemSleepInhibitor::default())
         .manage(settings_transfer::SettingsFileTransferState::default())
@@ -180,8 +180,8 @@ pub fn run() {
                 eprintln!("Failed to initialize the Quick Voice shortcut: {error}");
             }
 
-            if let Err(error) = remote_control::sync_remote_control_startup(app.handle()) {
-                eprintln!("Failed to initialize Mission Control: {error}");
+            if let Err(error) = fleet_control::initialize(app.handle()) {
+                eprintln!("Failed to initialize Fleet Manager control state: {error}");
             }
 
             if let Err(error) = fleet::initialize(app.handle()) {
@@ -335,16 +335,13 @@ pub fn run() {
             fleet::enroll_fleet_manager,
             fleet::get_fleet_connection_status,
             fleet::get_fleet_managed_settings,
+            fleet::report_fleet_managed_settings_applied,
+            fleet::report_fleet_managed_settings_failure,
             fleet::reset_fleet_manager_connection,
-            remote_control::disable_remote_control_server,
-            remote_control::enable_remote_control_server,
-            remote_control::forget_remote_control_pairings,
-            remote_control::get_remote_control_status,
-            remote_control::get_pending_remote_control_commands,
-            remote_control::acknowledge_remote_control_command,
-            remote_control::open_remote_control_url,
-            remote_control::set_remote_control_port,
-            remote_control::update_remote_control_shell_snapshot,
+            fleet::synchronize_fleet_managed_prompts,
+            fleet_control::get_pending_fleet_control_commands,
+            fleet_control::acknowledge_fleet_control_command,
+            fleet_control::update_fleet_control_shell_snapshot,
             shell_state::compare_and_swap_shell_state,
             shell_state::compare_and_swap_shell_state_patch,
             shell_state::load_shell_state_revision,

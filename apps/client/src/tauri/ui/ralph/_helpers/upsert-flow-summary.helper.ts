@@ -10,9 +10,7 @@ import {
   RALPH_FLOW_SCOPES,
 } from "./normalize-ralph-flow-scope.helper";
 
-export const getFlowSummaryScope = (
-  flow: RalphFlowSummary,
-): RalphFlowScope => {
+export const getFlowSummaryScope = (flow: RalphFlowSummary): RalphFlowScope => {
   return flow.scope ?? DEFAULT_RALPH_FLOW_SCOPE;
 };
 
@@ -21,9 +19,7 @@ export const getFlowSelectionKey = (
   scope: RalphFlowScope,
 ): string => `${scope}:${flowId}`;
 
-export const getFlowSummarySelectionKey = (
-  flow: RalphFlowSummary,
-): string => {
+export const getFlowSummarySelectionKey = (flow: RalphFlowSummary): string => {
   return getFlowSelectionKey(flow.id, getFlowSummaryScope(flow));
 };
 
@@ -65,6 +61,8 @@ export const flowToSummary = (
   path = "",
   scope: RalphFlowScope = DEFAULT_RALPH_FLOW_SCOPE,
 ): RalphFlowSummary => {
+  const variables = discoverRalphFlowVariables(flow);
+
   return {
     id: flow.id,
     name: flow.name,
@@ -77,7 +75,11 @@ export const flowToSummary = (
     ...(flow.source !== undefined ? { source: flow.source } : {}),
     blockCount: flow.blocks.length,
     edgeCount: flow.edges.length,
-    variableCount: discoverRalphFlowVariables(flow).length,
+    variableCount: variables.length,
+    variables,
+    ...(flow.settings?.maxTransitions
+      ? { maxTransitions: flow.settings.maxTransitions }
+      : {}),
   };
 };
 

@@ -45,6 +45,7 @@ export interface SettingsProfileSummary {
   revision: number;
   instructionCount: number;
   contextPackCount: number;
+  promptCount: number;
   secretCount: number;
   assignmentCount: number;
   createdAt: number;
@@ -67,8 +68,12 @@ export interface SettingsAssignment {
   profileName: string | null;
   profileRevision: number | null;
   assignedAt: number | null;
-  lastFetchedRevision: number | null;
-  lastFetchedAt: number | null;
+  lastAppliedRevision: number | null;
+  lastAppliedAt: number | null;
+  syncStatus: "unassigned" | "pending" | "applied" | "failed";
+  lastSyncRevision: number | null;
+  lastSyncAttemptAt: number | null;
+  syncError: string | null;
 }
 
 export interface SettingsDelivery {
@@ -77,6 +82,11 @@ export interface SettingsDelivery {
   revision: number;
   document: ManagedSettingsDocument;
   secrets: Record<string, string>;
+}
+
+export interface SettingsDeliveryIdentity {
+  profileId: string;
+  revision: number;
 }
 
 export class SettingsStore {
@@ -100,6 +110,7 @@ export class SettingsStore {
           revision: requiredNumber(row, "revision"),
           instructionCount: document.instructions.length,
           contextPackCount: document.contextPacks.length,
+          promptCount: document.prompts.length,
           secretCount: requiredNumber(row, "secret_count"),
           assignmentCount: requiredNumber(row, "assignment_count"),
           createdAt: requiredNumber(row, "created_at"),
@@ -415,23 +426,43 @@ export class SettingsStore {
       .all(
         `SELECT i.instance_id, i.display_name, i.revoked_at,
                 a.profile_id, p.name AS profile_name, p.revision AS profile_revision,
-                a.assigned_at, a.last_fetched_revision, a.last_fetched_at
+                a.assigned_at, a.last_applied_revision, a.last_applied_at,
+                a.last_sync_revision, a.last_sync_attempt_at, a.last_sync_error
          FROM instances i
          LEFT JOIN settings_assignments a ON a.instance_id = i.instance_id
          LEFT JOIN settings_profiles p ON p.profile_id = a.profile_id
          ORDER BY i.display_name COLLATE NOCASE, i.enrolled_at`,
       )
-      .map((row) => ({
-        instanceId: requiredString(row, "instance_id"),
-        displayName: requiredString(row, "display_name"),
-        instanceStatus: row.revoked_at === null ? "offline" : "revoked",
-        profileId: optionalString(row, "profile_id"),
-        profileName: optionalString(row, "profile_name"),
-        profileRevision: optionalNumber(row, "profile_revision"),
-        assignedAt: optionalNumber(row, "assigned_at"),
-        lastFetchedRevision: optionalNumber(row, "last_fetched_revision"),
-        lastFetchedAt: optionalNumber(row, "last_fetched_at"),
-      }));
+      .map((row) => {
+        const profileRevision = optionalNumber(row, "profile_revision");
+        const lastAppliedRevision = optionalNumber(
+          row,
+          "last_applied_revision",
+        );
+        const lastSyncRevision = optionalNumber(row, "last_sync_revision");
+        const lastSyncError = optionalString(row, "last_sync_error");
+        const syncStatus = assignmentSyncStatus(
+          profileRevision,
+          lastAppliedRevision,
+          lastSyncRevision,
+          lastSyncError,
+        );
+        return {
+          instanceId: requiredString(row, "instance_id"),
+          displayName: requiredString(row, "display_name"),
+          instanceStatus: row.revoked_at === null ? "offline" : "revoked",
+          profileId: optionalString(row, "profile_id"),
+          profileName: optionalString(row, "profile_name"),
+          profileRevision,
+          assignedAt: optionalNumber(row, "assigned_at"),
+          lastAppliedRevision,
+          lastAppliedAt: optionalNumber(row, "last_applied_at"),
+          syncStatus,
+          lastSyncRevision,
+          lastSyncAttemptAt: optionalNumber(row, "last_sync_attempt_at"),
+          syncError: syncStatus === "failed" ? lastSyncError : null,
+        };
+      });
   }
 
   setAssignment(
@@ -464,13 +495,17 @@ export class SettingsStore {
         }
         this.database.run(
           `INSERT INTO settings_assignments
-           (instance_id, profile_id, assigned_at, last_fetched_revision, last_fetched_at)
-           VALUES (?, ?, ?, NULL, NULL)
+           (instance_id, profile_id, assigned_at, last_applied_revision, last_applied_at,
+            last_sync_revision, last_sync_attempt_at, last_sync_error)
+           VALUES (?, ?, ?, NULL, NULL, NULL, NULL, NULL)
            ON CONFLICT (instance_id) DO UPDATE SET
              profile_id = excluded.profile_id,
              assigned_at = excluded.assigned_at,
-             last_fetched_revision = NULL,
-             last_fetched_at = NULL`,
+             last_applied_revision = NULL,
+             last_applied_at = NULL,
+             last_sync_revision = NULL,
+             last_sync_attempt_at = NULL,
+             last_sync_error = NULL`,
           instanceId,
           profileId,
           now,
@@ -520,13 +555,113 @@ export class SettingsStore {
     };
   }
 
-  recordFetch(instanceId: string, revision: number, now: number): void {
-    this.database.run(
-      `UPDATE settings_assignments
-       SET last_fetched_revision = ?, last_fetched_at = ? WHERE instance_id = ?`,
-      revision,
-      now,
+  getDeliveryIdentity(instanceId: string): SettingsDeliveryIdentity | null {
+    const row = this.database.get(
+      `SELECT p.profile_id, p.revision
+       FROM settings_assignments a
+       JOIN settings_profiles p ON p.profile_id = a.profile_id
+       WHERE a.instance_id = ?`,
       instanceId,
+    );
+    return row
+      ? {
+          profileId: requiredString(row, "profile_id"),
+          revision: requiredNumber(row, "revision"),
+        }
+      : null;
+  }
+
+  recordApplied(
+    instanceId: string,
+    profileId: string | null,
+    revision: number | null,
+    now: number,
+  ): boolean {
+    if (profileId === null || revision === null) {
+      return Boolean(
+        this.database.get(
+          `SELECT i.instance_id
+           FROM instances i
+           LEFT JOIN settings_assignments a ON a.instance_id = i.instance_id
+           WHERE i.instance_id = ? AND i.revoked_at IS NULL
+             AND a.instance_id IS NULL`,
+          instanceId,
+        ),
+      );
+    }
+    return (
+      this.database.run(
+        `UPDATE settings_assignments
+         SET last_applied_revision = ?,
+             last_applied_at = ?,
+             last_sync_revision = ?,
+             last_sync_attempt_at = ?,
+             last_sync_error = NULL
+         WHERE instance_id = ? AND profile_id = ?
+           AND EXISTS (
+             SELECT 1 FROM settings_profiles
+             WHERE profile_id = ? AND revision = ?
+           )
+           AND EXISTS (
+             SELECT 1 FROM instances
+             WHERE instance_id = ? AND revoked_at IS NULL
+           )`,
+        revision,
+        now,
+        revision,
+        now,
+        instanceId,
+        profileId,
+        profileId,
+        revision,
+        instanceId,
+      ) === 1
+    );
+  }
+
+  recordFailure(
+    instanceId: string,
+    profileId: string | null,
+    revision: number | null,
+    error: string,
+    now: number,
+  ): boolean {
+    if (profileId === null || revision === null) {
+      return Boolean(
+        this.database.get(
+          `SELECT i.instance_id
+           FROM instances i
+           LEFT JOIN settings_assignments a ON a.instance_id = i.instance_id
+           WHERE i.instance_id = ? AND i.revoked_at IS NULL
+             AND a.instance_id IS NULL`,
+          instanceId,
+        ),
+      );
+    }
+    return (
+      this.database.run(
+        `UPDATE settings_assignments
+         SET last_sync_revision = ?,
+             last_sync_attempt_at = ?,
+             last_sync_error = ?
+         WHERE instance_id = ? AND profile_id = ?
+           AND EXISTS (
+             SELECT 1 FROM settings_profiles
+             WHERE profile_id = ? AND revision = ?
+           )
+           AND EXISTS (
+             SELECT 1 FROM instances
+             WHERE instance_id = ? AND revoked_at IS NULL
+           )`,
+        revision,
+        now,
+        error,
+        instanceId,
+        profileId,
+        profileId,
+        revision,
+        instanceId,
+      ) === 1
     );
   }
 
@@ -625,6 +760,18 @@ export class SettingsStore {
 
 function parseDocument(serialized: string): ManagedSettingsDocument {
   return JSON.parse(serialized) as ManagedSettingsDocument;
+}
+
+function assignmentSyncStatus(
+  profileRevision: number | null,
+  lastAppliedRevision: number | null,
+  lastSyncRevision: number | null,
+  lastSyncError: string | null,
+): SettingsAssignment["syncStatus"] {
+  if (profileRevision === null) return "unassigned";
+  if (lastSyncRevision === profileRevision && lastSyncError) return "failed";
+  if (lastAppliedRevision === profileRevision) return "applied";
+  return "pending";
 }
 
 function secretAad(profileId: string, secretId: string): Buffer {

@@ -117,6 +117,53 @@ describe.sequential("Fleet connection configuration", () => {
     expect(persisted).toContain(config.instanceSecret);
   });
 
+  it("bounds enrollment responses before parsing them", async () => {
+    await createConfigDirectory();
+
+    await expect(
+      enrollFleetConnection({
+        managerUrl: "https://fleet.example.test",
+        enrollmentKey: `mch_enroll_${encoded(32, 4)}`,
+        displayName: "Headless host",
+        productVersion: "6.3.0",
+        protocolVersion: 4,
+        fetch: async () => new Response("x".repeat(64 * 1024 + 1)),
+      }),
+    ).rejects.toThrow("response was too large");
+  });
+
+  it("does not surface control characters from manager errors", async () => {
+    await createConfigDirectory();
+
+    await expect(
+      enrollFleetConnection({
+        managerUrl: "https://fleet.example.test",
+        enrollmentKey: `mch_enroll_${encoded(32, 4)}`,
+        displayName: "Headless host",
+        productVersion: "6.3.0",
+        protocolVersion: 4,
+        fetch: async () =>
+          Response.json({ error: "\u001b[31mspoofed" }, { status: 401 }),
+      }),
+    ).rejects.toThrow("Fleet Manager rejected enrollment (401).");
+  });
+
+  it("does not surface directional controls from manager errors", async () => {
+    await createConfigDirectory();
+
+    await expect(
+      enrollFleetConnection({
+        managerUrl: "https://fleet.example.test",
+        enrollmentKey: `mch_enroll_${encoded(32, 4)}`,
+        displayName: "Headless host",
+        productVersion: "6.3.0",
+        protocolVersion: 4,
+        fetch: async () =>
+          Response.json({ error: "safe\u202etxt" }, { status: 401 }),
+      }),
+    ).rejects.toThrow("Fleet Manager rejected enrollment (401).");
+  });
+
   it("accepts HTTPS origins and rejects insecure or path-bearing manager URLs", () => {
     expect(validateFleetManagerUrl("https://fleet.example.test").origin).toBe(
       "https://fleet.example.test",
@@ -127,5 +174,13 @@ describe.sequential("Fleet connection configuration", () => {
     expect(() =>
       validateFleetManagerUrl("https://fleet.example.test/path"),
     ).toThrow("must be an origin");
+  });
+
+  it("does not allow an environment variable to weaken release transport", () => {
+    vi.stubEnv("MACHDOCH_FLEET_ALLOW_LOOPBACK_HTTP", "1");
+
+    expect(() => validateFleetManagerUrl("http://127.0.0.1:43188")).toThrow(
+      "must use HTTPS",
+    );
   });
 });

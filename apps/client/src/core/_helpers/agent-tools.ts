@@ -28,6 +28,7 @@ import { createUtilityToolDefinitions } from "./utility-tool-definitions.js";
 import { compactTraceText, stringifyUnknown } from "./runtime-text.js";
 import { createDesktopUiToolDefinitions } from "./desktop-ui-tool-definitions.js";
 import { createShellNetworkToolDefinitions } from "./shell-network-tool-definitions.js";
+import { createWorkspaceAgentPresenceToolDefinition } from "./workspace-agent-presence-tool.js";
 
 const READ_ONLY_EFFECTS: ReadonlySet<ToolCallEffect> = new Set([
   "read",
@@ -90,6 +91,7 @@ export const createToolDefinitions = (
     ...createGitToolDefinitions(),
     ...createPackageToolDefinitions(),
     ...createRunToolDefinitions(),
+    createWorkspaceAgentPresenceToolDefinition(),
     ...createUtilityToolDefinitions(),
     ...createMacroRecorderToolDefinitions(),
     ...createBrowserToolDefinitions(),

@@ -9,12 +9,17 @@ import next from "next";
 import { handleApiRequest } from "./server/api";
 import { loadConfig } from "./server/config";
 import { nowSeconds } from "./server/database";
+import {
+  createWebRequest,
+  IncomingRequestError,
+  incomingRequestUrl,
+} from "./server/http-request";
 import { initializeSettingsKeyFile } from "./server/settings-crypto";
 import { closeRuntime, getRuntime } from "./server/runtime";
+import { requestClientAddress } from "./server/network";
+import { maximumRequestBodyBytes } from "./server/request-limits";
 
 type Command = "dev" | "serve" | "seed" | "password" | "settings-key";
-
-class RequestBodyTooLargeError extends Error {}
 
 async function main(): Promise<void> {
   const command = parseCommand(process.argv[2]);
@@ -71,24 +76,45 @@ async function runServer(
   const server = createServer((request, response) => {
     void dispatchHttpRequest(request, response, requestHandler).catch(
       (error: unknown) => {
-        const bodyTooLarge = error instanceof RequestBodyTooLargeError;
-        if (!bodyTooLarge) console.error(error);
-        if (!response.headersSent) {
-          response.writeHead(bodyTooLarge ? 413 : 500, {
-            "Content-Type": "application/json; charset=utf-8",
-          });
+        const expected = error instanceof IncomingRequestError;
+        if (!expected) console.error(error);
+        if (response.headersSent) {
+          response.destroy();
+          return;
         }
-        response.end(
-          bodyTooLarge
-            ? '{"error":"Request body is too large."}'
-            : '{"error":"Fleet Manager is unavailable."}',
-        );
+        const status = expected ? error.status : 500;
+        const message = expected
+          ? error.message
+          : "Fleet Manager is unavailable.";
+        response.writeHead(status, {
+          "Cache-Control": "no-store",
+          Connection: "close",
+          "Content-Security-Policy": "default-src 'none'",
+          "Content-Type": "application/json; charset=utf-8",
+          "Referrer-Policy": "no-referrer",
+          "Strict-Transport-Security": "max-age=31536000",
+          "X-Content-Type-Options": "nosniff",
+          "X-Frame-Options": "DENY",
+        });
+        response.end(JSON.stringify({ error: message }));
       },
     );
   });
+  server.headersTimeout = 15_000;
+  server.requestTimeout = 30_000;
+  server.keepAliveTimeout = 5_000;
+  server.maxHeadersCount = 100;
   server.on("upgrade", (request, socket, head) => {
-    if (!getRuntime().gateways.handleUpgrade(request, socket, head)) {
-      void upgradeHandler(request, socket, head);
+    try {
+      if (!getRuntime().gateways.handleUpgrade(request, socket, head)) {
+        void upgradeHandler(request, socket, head).catch((error: unknown) => {
+          console.error(error);
+          socket.destroy();
+        });
+      }
+    } catch (error) {
+      console.error(error);
+      socket.destroy();
     }
   });
   let shuttingDown = false;
@@ -123,8 +149,7 @@ async function dispatchHttpRequest(
     response: ServerResponse,
   ) => Promise<void>,
 ): Promise<void> {
-  const pathname = new URL(request.url ?? "/", "http://fleet-manager.invalid")
-    .pathname;
+  const pathname = incomingRequestUrl(request.url).pathname;
   if (pathname === "/healthz") {
     response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
     response.end("ok");
@@ -135,61 +160,36 @@ async function dispatchHttpRequest(
     response.end();
     return;
   }
-  if (pathname.startsWith("/api/")) {
+  if (pathname === "/api" || pathname.startsWith("/api/")) {
+    const runtime = getRuntime();
     await writeWebResponse(
       response,
-      await handleApiRequest(await webRequest(request)),
+      await handleApiRequest(
+        await createWebRequest(
+          request,
+          runtime.config.externalBaseUrl,
+          maximumRequestBodyBytes(pathname, runtime.config),
+        ),
+        { clientAddress: requestClientAddress(request) },
+      ),
     );
     return;
   }
   await nextHandler(request, response);
 }
 
-async function webRequest(request: IncomingMessage): Promise<Request> {
-  const headers = new Headers();
-  for (let index = 0; index < request.rawHeaders.length; index += 2) {
-    const name = request.rawHeaders[index];
-    const value = request.rawHeaders[index + 1];
-    if (name && value) headers.append(name, value);
-  }
-  const host = request.headers.host ?? "127.0.0.1";
-  const body = ["GET", "HEAD"].includes(request.method ?? "GET")
-    ? undefined
-    : new Uint8Array(await requestBody(request));
-  return new Request(`http://${host}${request.url ?? "/"}`, {
-    method: request.method ?? "GET",
-    headers,
-    body,
-  });
-}
-
-async function requestBody(request: IncomingMessage): Promise<Buffer> {
-  const maximumBodyBytes = Math.max(
-    1024 * 1024,
-    getRuntime().config.settingsManager.limits.maximumDocumentBytes + 64 * 1024,
-  );
-  const chunks: Buffer[] = [];
-  let bytes = 0;
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    bytes += buffer.length;
-    if (bytes > maximumBodyBytes) throw new RequestBodyTooLargeError();
-    chunks.push(buffer);
-  }
-  return Buffer.concat(chunks);
-}
-
 async function writeWebResponse(
   outgoing: ServerResponse,
   incoming: Response,
 ): Promise<void> {
+  const body = Buffer.from(await incoming.arrayBuffer());
   for (const [name, value] of incoming.headers) {
     if (name !== "set-cookie") outgoing.setHeader(name, value);
   }
   const cookies = incoming.headers.getSetCookie();
   if (cookies.length) outgoing.setHeader("Set-Cookie", cookies);
   outgoing.writeHead(incoming.status);
-  outgoing.end(Buffer.from(await incoming.arrayBuffer()));
+  outgoing.end(body);
 }
 
 function parseCommand(value: string | undefined): Command {
@@ -209,7 +209,7 @@ function optionValue(arguments_: string[], name: string): string | undefined {
 }
 
 function requiredEnvironment(name: string): string {
-  const value = process.env[name]?.trim();
+  const value = process.env[name];
   if (!value) throw new Error(`${name} is required.`);
   return value;
 }

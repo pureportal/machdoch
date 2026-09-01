@@ -27,7 +27,6 @@ const providers = [
   "anthropic",
   "google",
   "langdock",
-  "quiver",
   "codex-cli",
   "claude-cli",
   "copilot-cli",
@@ -150,6 +149,7 @@ function ContextPackDialog({
 }): React.ReactElement {
   const [pending, setPending] = useState(false);
   const pack = editing === "new" ? null : editing;
+  const [provider, setProvider] = useState(pack?.provider ?? "");
   return (
     <Dialog open={editing !== null} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl">
@@ -171,9 +171,19 @@ function ContextPackDialog({
               model: optionalValue(String(form.get("model"))),
               mode: optionalValue(String(form.get("mode"))),
               reasoning: optionalValue(String(form.get("reasoning"))),
-              variables: splitList(String(form.get("variables"))),
+              variables: parseVariables(String(form.get("variables"))),
               triggerPhrases: splitList(String(form.get("triggerPhrases"))),
               pathPatterns: splitList(String(form.get("pathPatterns"))),
+              promptEnhancementMode: optionalValue(
+                String(form.get("promptEnhancementMode")),
+              ) as ManagedContextPack["promptEnhancementMode"],
+              interviewEnabled: optionalBoolean(form, "interviewEnabled"),
+              sessionMemoryEnabled: optionalBoolean(
+                form,
+                "sessionMemoryEnabled",
+              ),
+              useGlobalMemory: optionalBoolean(form, "useGlobalMemory"),
+              uiControlEnabled: optionalBoolean(form, "uiControlEnabled"),
             })
               .catch(() => undefined)
               .finally(() => setPending(false));
@@ -207,17 +217,28 @@ function ContextPackDialog({
             </Field>
           </div>
           <div className="grid gap-5 md:grid-cols-2">
-            <OptionField
-              label="Provider"
-              name="provider"
-              value={pack?.provider ?? null}
-              options={providers}
-            />
+            <Field label="Provider" htmlFor="pack-provider">
+              <Select
+                id="pack-provider"
+                name="provider"
+                value={provider}
+                onChange={(event) => setProvider(event.target.value)}
+              >
+                <option value="">Not set</option>
+                {providers.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Select>
+            </Field>
             <Field label="Model" htmlFor="pack-model">
               <Input
                 id="pack-model"
                 name="model"
                 defaultValue={pack?.model ?? ""}
+                disabled={!provider}
+                required={Boolean(provider)}
               />
             </Field>
             <OptionField
@@ -234,11 +255,17 @@ function ContextPackDialog({
             />
           </div>
           <div className="grid gap-5 md:grid-cols-3">
-            <ListField
+            <Field
               label="Variables"
-              name="variables"
-              value={pack?.variables ?? []}
-            />
+              htmlFor="pack-variables"
+              hint="One per line: NAME or NAME=default."
+            >
+              <Textarea
+                id="pack-variables"
+                name="variables"
+                defaultValue={formatVariables(pack?.variables ?? [])}
+              />
+            </Field>
             <ListField
               label="Trigger phrases"
               name="triggerPhrases"
@@ -248,6 +275,34 @@ function ContextPackDialog({
               label="Path patterns"
               name="pathPatterns"
               value={pack?.pathPatterns ?? []}
+            />
+          </div>
+          <div className="grid gap-5 md:grid-cols-3">
+            <OptionField
+              label="Prompt enhancement"
+              name="promptEnhancementMode"
+              value={pack?.promptEnhancementMode ?? null}
+              options={["off", "simple", "web-search"]}
+            />
+            <BooleanOptionField
+              label="Interview"
+              name="interviewEnabled"
+              value={pack?.interviewEnabled ?? null}
+            />
+            <BooleanOptionField
+              label="Session memory"
+              name="sessionMemoryEnabled"
+              value={pack?.sessionMemoryEnabled ?? null}
+            />
+            <BooleanOptionField
+              label="Global memory"
+              name="useGlobalMemory"
+              value={pack?.useGlobalMemory ?? null}
+            />
+            <BooleanOptionField
+              label="UI control"
+              name="uiControlEnabled"
+              value={pack?.uiControlEnabled ?? null}
             />
           </div>
           <DialogFooter>
@@ -309,4 +364,59 @@ function ListField({
       <Input id={`pack-${name}`} name={name} defaultValue={value.join(", ")} />
     </Field>
   );
+}
+
+function BooleanOptionField({
+  label,
+  name,
+  value,
+}: {
+  label: string;
+  name: string;
+  value: boolean | null;
+}): React.ReactElement {
+  return (
+    <Field label={label} htmlFor={`pack-${name}`}>
+      <Select
+        id={`pack-${name}`}
+        name={name}
+        defaultValue={value === null ? "" : String(value)}
+      >
+        <option value="">Not set</option>
+        <option value="true">On</option>
+        <option value="false">Off</option>
+      </Select>
+    </Field>
+  );
+}
+
+function optionalBoolean(form: FormData, name: string): boolean | null {
+  const value = form.get(name);
+  return value === "" ? null : value === "true";
+}
+
+function parseVariables(value: string): ManagedContextPack["variables"] {
+  return value
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const separator = entry.indexOf("=");
+      return separator === -1
+        ? { name: entry, defaultValue: null }
+        : {
+            name: entry.slice(0, separator).trim(),
+            defaultValue: entry.slice(separator + 1),
+          };
+    });
+}
+
+function formatVariables(variables: ManagedContextPack["variables"]): string {
+  return variables
+    .map((variable) =>
+      variable.defaultValue === null
+        ? variable.name
+        : `${variable.name}=${variable.defaultValue}`,
+    )
+    .join("\n");
 }

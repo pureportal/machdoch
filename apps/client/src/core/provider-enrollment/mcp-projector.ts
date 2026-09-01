@@ -25,6 +25,11 @@ export interface McpProjectionOptions {
   persistent?: boolean;
   scope?: "user" | "workspace";
   machdochCliLaunch?: MachdochCliLaunch;
+  workspacePresence?: {
+    address: string;
+    token: string;
+    agentId: string;
+  };
 }
 
 const ENVIRONMENT_TEMPLATE_PATTERN = /\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}/gu;
@@ -297,6 +302,50 @@ const createProxyConfig = (
   };
 };
 
+const createWorkspacePresenceProjection = (
+  provider: AgentCliProvider,
+  workspaceRoot: string,
+  launch: MachdochCliLaunch,
+  presence: NonNullable<McpProjectionOptions["workspacePresence"]>,
+): McpProjectedServer => {
+  const canonicalId = "machdoch-workspace-presence";
+  const server: McpEffectiveServerConfig = {
+    id: canonicalId,
+    enabled: true,
+    transport: {
+      type: "stdio",
+      command: launch.command,
+      args: [...launch.args, "mcp", "presence", "--cwd", workspaceRoot],
+      cwd: launch.cwd,
+      env: {
+        ...launch.environment,
+        MACHDOCH_RUN_CONTROL_ADDRESS: presence.address,
+        MACHDOCH_WORKSPACE_PRESENCE_TOKEN: presence.token,
+        MACHDOCH_WORKSPACE_AGENT_ID: presence.agentId,
+      },
+    },
+    securityProfile: "weak",
+    timeoutMs: 5_000,
+    maxTotalTimeoutMs: 5_000,
+    idleShutdownMs: 900_000,
+    maxResponseChars: 60_000,
+    cache: { enabled: false, ttlMs: 0, forceRefresh: false },
+    roots: "workspace",
+    sampling: "disabled",
+    tasks: "disabled",
+    sources: ["override"],
+  };
+  return {
+    id: createProjectedServerId(provider, canonicalId, false),
+    canonicalId,
+    digest: digestJson({ canonicalId, workspaceRoot }),
+    route: "cli-native-mcp",
+    providerConfig: mapNativeServer(provider, server),
+    capabilities: ["tools"],
+    warnings: [],
+  };
+};
+
 const collectEnvironmentTemplateKeys = (
   value: unknown,
   keys: Set<string>,
@@ -529,12 +578,27 @@ export const projectMcpForProvider = async (
     });
   }
 
+  if (options.workspacePresence) {
+    machdochCliLaunch ??= options.machdochCliLaunch
+      ? assertMachdochCliLaunch(options.machdochCliLaunch)
+      : resolveMachdochCliLaunch();
+    projectedServers.push(
+      createWorkspacePresenceProjection(
+        provider,
+        workspaceRoot,
+        machdochCliLaunch,
+        options.workspacePresence,
+      ),
+    );
+  }
+
   const config = createProviderConfig(projectedServers);
   return {
     provider,
     effectiveConfigDigest: digestJson({
       defaults: effectiveConfig.defaults,
       servers: enabledServers,
+      workspacePresence: options.workspacePresence !== undefined,
     }),
     catalogDigest: digestJson(
       projectedServers.map((server) => ({

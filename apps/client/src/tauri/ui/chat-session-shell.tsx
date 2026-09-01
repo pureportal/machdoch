@@ -23,7 +23,7 @@ import { ChatInterviewDialog } from "./chat-session/components/chat-interview-di
 import { ChatInputNeededDialog } from "./chat-session/components/chat-input-needed-dialog";
 import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
 import { FilePreviewDialogFallback } from "./chat-session/components/file-preview-dialog-fallback";
-import { MissionControlPanel } from "./chat-session/components/mission-control-panel";
+import { FleetManagerPanel } from "./chat-session/components/fleet-manager-panel";
 import { ProviderEmptyState } from "./chat-session/components/provider-empty-state";
 import { SchedulerPanel } from "./chat-session/components/scheduler-panel";
 import { ScrollToNewestButton } from "./chat-session/components/scroll-to-newest-button";
@@ -165,6 +165,7 @@ export const ChatSession = (): JSX.Element => {
   const [appShellLoadAttempt, setAppShellLoadAttempt] = useState(0);
   const [chatCompletedSinceView, setChatCompletedSinceView] = useState(false);
   const [schedulerOpen, setSchedulerOpen] = useState(false);
+  const [fleetManagerOpen, setFleetManagerOpen] = useState(false);
   const [pendingMediaRunId, setPendingMediaRunId] = useState<string | null>(
     null,
   );
@@ -468,15 +469,15 @@ export const ChatSession = (): JSX.Element => {
         execute: () => setSchedulerOpen(true),
       },
       {
-        id: "app.mission-control.open",
-        title: "Open Mission Control",
+        id: "app.fleet-manager.open",
+        title: "Open Fleet Manager",
         group: "Navigation",
-        keywords: ["remote control"],
+        keywords: ["fleet", "enrollment", "managed host"],
         scope: { kind: "global", ownerId: "app" },
         palette: "visible",
         order: 21,
         overlayPolicy: "replace-non-modal",
-        execute: () => state().controller.missionControl.setOpen(true),
+        execute: () => setFleetManagerOpen(true),
       },
       {
         id: "chat.session.new",
@@ -970,9 +971,7 @@ export const ChatSession = (): JSX.Element => {
               schedulerActivity={schedulerActivity}
               onSelectApp={selectApp}
               onOpenScheduler={() => setSchedulerOpen(true)}
-              onOpenMissionControl={() =>
-                controller.missionControl.setOpen(true)
-              }
+              onOpenFleetManager={() => setFleetManagerOpen(true)}
               onOpenSettings={controller.openProviderSettings}
             />
 
@@ -1140,21 +1139,12 @@ export const ChatSession = (): JSX.Element => {
       </Dialog>
 
       <Dialog
-        open={controller.missionControl.open}
-        onOpenChange={controller.missionControl.setOpen}
-        commandOverlayId="mission-control"
+        open={fleetManagerOpen}
+        onOpenChange={setFleetManagerOpen}
+        commandOverlayId="fleet-manager"
         commandOverlayAllowGlobalCommands={["app.palette.toggle"]}
       >
-        <MissionControlPanel
-          status={controller.missionControl.status}
-          loading={controller.missionControl.loading}
-          message={controller.missionControl.message}
-          onEnable={controller.missionControl.onEnable}
-          onDisable={controller.missionControl.onDisable}
-          onOpenUrl={controller.missionControl.onOpenUrl}
-          onSavePort={controller.missionControl.onSavePort}
-          onForgetPairings={controller.missionControl.onForgetPairings}
-        />
+        <FleetManagerPanel />
       </Dialog>
 
       {schedulerOpen ? (

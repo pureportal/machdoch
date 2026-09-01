@@ -73,7 +73,7 @@ const validateDisplayName = (value: string): string => {
   if (
     normalized.length === 0 ||
     [...normalized].length > 80 ||
-    /\p{Cc}/u.test(normalized)
+    /[\p{Cc}\p{Cf}]/u.test(normalized)
   ) {
     throw new Error("Instance name must contain between 1 and 80 characters.");
   }
@@ -90,7 +90,6 @@ const isLoopbackHost = (url: URL): boolean => {
 };
 
 const sourceCliAllowsLoopbackHttp = (): boolean => {
-  if (process.env.MACHDOCH_FLEET_ALLOW_LOOPBACK_HTTP === "1") return true;
   return /\.[cm]?ts$/iu.test(process.argv[1] ?? "");
 };
 
@@ -339,10 +338,27 @@ const parseEnrollmentResponse = (
 };
 
 const parseResponseBody = async (response: Response): Promise<unknown> => {
-  const body = await response.text();
-  if (Buffer.byteLength(body) > 64 * 1024) {
+  const maximumBytes = 64 * 1024;
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > maximumBytes) {
     throw new Error("Fleet Manager enrollment response was too large.");
   }
+  const reader = response.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  if (reader) {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) break;
+      bytes += result.value.byteLength;
+      if (bytes > maximumBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error("Fleet Manager enrollment response was too large.");
+      }
+      chunks.push(result.value);
+    }
+  }
+  const body = Buffer.concat(chunks).toString("utf8");
   try {
     return JSON.parse(body) as unknown;
   } catch (error) {
@@ -403,10 +419,13 @@ export const enrollFleetConnection = async (options: {
   });
   const responseBody = await parseResponseBody(response);
   if (!response.ok) {
-    const message =
+    const managerMessage =
       isRecord(responseBody) && typeof responseBody.error === "string"
-        ? responseBody.error
-        : `Fleet Manager rejected enrollment (${response.status}).`;
+        ? normalizedManagerError(responseBody.error)
+        : null;
+    const message =
+      managerMessage ??
+      `Fleet Manager rejected enrollment (${response.status}).`;
     throw new Error(message);
   }
   const enrollment = parseEnrollmentResponse(
@@ -425,4 +444,16 @@ export const enrollFleetConnection = async (options: {
   };
   await writeFleetConnectionConfig(config, { allowLoopbackHttp });
   return config;
+};
+
+const normalizedManagerError = (value: string): string | null => {
+  const normalized = value.trim();
+  if (
+    normalized.length === 0 ||
+    [...normalized].length > 500 ||
+    /[\p{Cc}\p{Cf}]/u.test(normalized)
+  ) {
+    return null;
+  }
+  return normalized;
 };

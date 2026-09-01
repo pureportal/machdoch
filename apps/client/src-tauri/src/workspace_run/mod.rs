@@ -3,6 +3,7 @@ mod health;
 mod manager;
 pub mod model;
 mod persistence;
+mod presence;
 mod process;
 
 use std::sync::{Arc, Mutex};

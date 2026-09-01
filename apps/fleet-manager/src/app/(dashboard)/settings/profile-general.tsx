@@ -5,16 +5,13 @@ import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import type { ManagedSettingsDocument, SettingsProfile } from "./types";
 
-const agentOptions = ["codex-cli", "claude-cli", "copilot-cli"];
 const providerOptions = [
   "openai",
   "anthropic",
   "google",
   "langdock",
-  "quiver",
   "codex-cli",
   "claude-cli",
   "copilot-cli",
@@ -43,36 +40,17 @@ export function ProfileGeneral({
   ) => Promise<void>;
 }): React.ReactElement {
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
   const defaults = profile.document.defaults;
+  const [provider, setProvider] = useState(defaults.provider ?? "");
   const limits = profile.document.agentLimits;
   return (
     <form
       className="grid gap-8"
       onSubmit={(event) => {
         event.preventDefault();
-        setError("");
         const form = new FormData(event.currentTarget);
-        let customValues: Record<string, unknown>;
-        try {
-          const parsed = JSON.parse(
-            String(form.get("customValues") || "{}"),
-          ) as unknown;
-          if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
-            throw new Error("Custom values must be a JSON object.");
-          }
-          customValues = parsed as Record<string, unknown>;
-        } catch (reason) {
-          setError(
-            reason instanceof Error
-              ? reason.message
-              : "Custom values are invalid.",
-          );
-          return;
-        }
         const document = structuredClone(profile.document);
         document.defaults = {
-          preferredToolingAgent: optional(form, "preferredToolingAgent"),
           provider: optional(form, "provider"),
           model: optional(form, "model"),
           mode: optional(form, "mode"),
@@ -93,7 +71,6 @@ export function ProfileGeneral({
             "autopilotExecutorIterations",
           ),
         };
-        document.customValues = customValues;
         setPending(true);
         void onSave(document, "Updated profile", {
           name: String(form.get("name")),
@@ -126,23 +103,27 @@ export function ProfileGeneral({
       <div className="grid gap-5">
         <h3 className="font-medium">Defaults</h3>
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          <SelectField
-            label="Tooling agent"
-            name="preferredToolingAgent"
-            value={defaults.preferredToolingAgent}
-            options={agentOptions}
-          />
-          <SelectField
-            label="Provider"
-            name="provider"
-            value={defaults.provider}
-            options={providerOptions}
-          />
+          <Field label="Provider" htmlFor="provider">
+            <Select
+              id="provider"
+              name="provider"
+              value={provider}
+              onChange={(event) => setProvider(event.target.value)}
+            >
+              <option value="">Not set</option>
+              {providerOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </Select>
+          </Field>
           <Field label="Model" htmlFor="model">
             <Input
               id="model"
               name="model"
               defaultValue={defaults.model ?? ""}
+              disabled={!provider}
             />
           </Field>
           <SelectField
@@ -205,23 +186,6 @@ export function ProfileGeneral({
           />
         </div>
       </div>
-      <Field
-        label="Custom values"
-        htmlFor="custom-values"
-        hint="Enter a JSON object."
-      >
-        <Textarea
-          id="custom-values"
-          name="customValues"
-          className="min-h-36 font-mono text-xs"
-          defaultValue={JSON.stringify(profile.document.customValues, null, 2)}
-        />
-      </Field>
-      {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
       <Button type="submit" className="w-fit" disabled={pending}>
         {pending ? "Saving…" : "Save profile"}
       </Button>

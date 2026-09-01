@@ -1,0 +1,609 @@
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use machdoch_fleet_protocol::ProductCommand;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
+
+use super::{
+    command_kinds::{
+        command_requirements, is_supported_command, is_supported_reasoning,
+        supported_reasoning_modes_label,
+    },
+    now_millis, MAX_COMMAND_TEXT_CHARS, MAX_FLEET_SHORT_TEXT_CHARS, MAX_FLEET_TEXT_CHARS,
+};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FleetControlCommandEvent {
+    pub(super) command_id: String,
+    pub(super) kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) task_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) prompt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) model_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) reasoning: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) prompt_enhancement_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) workspace: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) attachment_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) context_pack_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) message_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) job_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) run_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) flow_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) scope: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) parameters: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) max_transitions: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) target: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) aspect_ratio: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) output_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) output_format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) transparent_background: Option<bool>,
+    pub(super) created_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct FleetCommandRecord {
+    pub(super) command_id: String,
+    pub(super) kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) task_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) prompt_preview: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) target_preview: Option<String>,
+    pub(super) created_at: u64,
+}
+
+struct NormalizedCommandFields {
+    task_id: Option<String>,
+    session_id: Option<String>,
+    prompt: Option<String>,
+    title: Option<String>,
+    tags: Option<Vec<String>>,
+    provider: Option<String>,
+    model: Option<String>,
+    model_id: Option<String>,
+    mode: Option<String>,
+    reasoning: Option<String>,
+    prompt_enhancement_mode: Option<String>,
+    workspace: Option<String>,
+    enabled: Option<bool>,
+    attachment_id: Option<String>,
+    context_pack_id: Option<String>,
+    message_id: Option<String>,
+    job_id: Option<String>,
+    run_id: Option<String>,
+    flow_id: Option<String>,
+    scope: Option<String>,
+    parameters: Option<BTreeMap<String, String>>,
+    max_transitions: Option<u32>,
+    target: Option<String>,
+    aspect_ratio: Option<String>,
+    output_count: Option<u32>,
+    output_format: Option<String>,
+    transparent_background: Option<bool>,
+}
+
+pub(super) fn normalize_command(
+    request: ProductCommand,
+) -> Result<FleetControlCommandEvent, String> {
+    let kind = request.kind.as_str().to_string();
+    let command_id = optional_trimmed_string(request.command_id.as_deref());
+
+    if command_id
+        .as_ref()
+        .is_some_and(|command_id| command_id.chars().count() > 128)
+    {
+        return Err("Fleet Manager command ids cannot exceed 128 characters.".to_string());
+    }
+
+    if !is_supported_command(&kind) {
+        return Err("Unsupported Fleet Manager command.".to_string());
+    }
+
+    let fields = normalize_command_fields(&kind, request)?;
+
+    Ok(FleetControlCommandEvent {
+        command_id: command_id.unwrap_or_else(create_command_id),
+        kind,
+        task_id: fields.task_id,
+        session_id: fields.session_id,
+        prompt: fields.prompt,
+        title: fields.title,
+        tags: fields.tags,
+        provider: fields.provider,
+        model: fields.model,
+        model_id: fields.model_id,
+        mode: fields.mode,
+        reasoning: fields.reasoning,
+        prompt_enhancement_mode: fields.prompt_enhancement_mode,
+        workspace: fields.workspace,
+        enabled: fields.enabled,
+        attachment_id: fields.attachment_id,
+        context_pack_id: fields.context_pack_id,
+        message_id: fields.message_id,
+        job_id: fields.job_id,
+        run_id: fields.run_id,
+        flow_id: fields.flow_id,
+        scope: fields.scope,
+        parameters: fields.parameters,
+        max_transitions: fields.max_transitions,
+        target: fields.target,
+        aspect_ratio: fields.aspect_ratio,
+        output_count: fields.output_count,
+        output_format: fields.output_format,
+        transparent_background: fields.transparent_background,
+        created_at: now_millis(),
+    })
+}
+
+fn normalize_command_fields(
+    kind: &str,
+    request: ProductCommand,
+) -> Result<NormalizedCommandFields, String> {
+    let requirements = command_requirements(kind);
+    let task_id = optional_trimmed_string(request.task_id.as_deref());
+    let session_id = optional_trimmed_string(request.session_id.as_deref());
+
+    require_value(
+        requirements.task_id,
+        &task_id,
+        "This Fleet Manager command requires a taskId.",
+    )?;
+
+    require_value(
+        requirements.session_id,
+        &session_id,
+        "This Fleet Manager command requires a sessionId.",
+    )?;
+
+    let prompt = optional_truncated_text(request.prompt.as_deref(), MAX_COMMAND_TEXT_CHARS);
+    if matches!(kind, "submit-message" | "generate-media") && prompt.is_none() {
+        return Err(if kind == "generate-media" {
+            "Media generation requires a prompt.".to_string()
+        } else {
+            "Submitting a message requires a prompt.".to_string()
+        });
+    }
+
+    let title = optional_truncated_text(request.title.as_deref(), MAX_FLEET_SHORT_TEXT_CHARS);
+    if kind == "rename-session" && title.is_none() {
+        return Err("Renaming a session requires a title.".to_string());
+    }
+
+    let tags = normalized_tags(request.tags);
+    if kind == "tag-session" && tags.is_none() {
+        return Err("Tagging a session requires tags.".to_string());
+    }
+
+    let provider = optional_truncated_text(request.provider.as_deref(), MAX_FLEET_SHORT_TEXT_CHARS);
+    let model = optional_truncated_text(request.model.as_deref(), MAX_FLEET_SHORT_TEXT_CHARS);
+    if matches!(kind, "set-session-model" | "ralph-run" | "ralph-resume-run")
+        && (provider.is_none() || model.is_none())
+    {
+        return Err("Model selection requires provider and model.".to_string());
+    }
+    let model_id = optional_truncated_text(request.model_id.as_deref(), MAX_FLEET_SHORT_TEXT_CHARS);
+    if kind == "generate-media" && model_id.is_none() {
+        return Err("Media generation requires a modelId.".to_string());
+    }
+
+    let mode = optional_truncated_text(request.mode.as_deref(), MAX_FLEET_SHORT_TEXT_CHARS);
+    if kind == "set-session-mode" && !matches!(mode.as_deref(), Some("ask" | "machdoch")) {
+        return Err("Session mode must be ask or machdoch.".to_string());
+    }
+
+    let reasoning =
+        optional_truncated_text(request.reasoning.as_deref(), MAX_FLEET_SHORT_TEXT_CHARS);
+    if matches!(
+        kind,
+        "set-session-reasoning" | "ralph-run" | "ralph-resume-run"
+    ) && !is_supported_reasoning(reasoning.as_deref())
+    {
+        return Err(format!(
+            "Session reasoning must be one of {}.",
+            supported_reasoning_modes_label()
+        ));
+    }
+
+    let prompt_enhancement_mode = optional_truncated_text(
+        request.prompt_enhancement_mode.as_deref(),
+        MAX_FLEET_SHORT_TEXT_CHARS,
+    );
+    if matches!(kind, "submit-message" | "set-prompt-enhancement-mode")
+        && !matches!(
+            prompt_enhancement_mode.as_deref(),
+            Some("off" | "simple" | "web-search")
+        )
+    {
+        return Err("Prompt enhancement mode must be off, simple, or web-search.".to_string());
+    }
+
+    let workspace = optional_truncated_text(request.workspace.as_deref(), MAX_FLEET_TEXT_CHARS);
+    if kind == "set-session-workspace" && workspace.is_none() {
+        return Err("Workspace selection requires a workspace.".to_string());
+    }
+    if matches!(kind, "ralph-run" | "ralph-resume-run") && workspace.is_none() {
+        return Err("RALPH commands require a workspace.".to_string());
+    }
+    let enabled = if kind == "submit-message" {
+        request.interview_enabled
+    } else {
+        request.enabled
+    };
+    if kind == "submit-message" && enabled.is_none() {
+        return Err("Submitting a message requires an interviewEnabled value.".to_string());
+    }
+    require_value(
+        requirements.enabled,
+        &enabled,
+        "This Fleet Manager command requires an enabled value.",
+    )?;
+
+    let attachment_id = optional_trimmed_string(request.attachment_id.as_deref());
+    if kind == "remove-attachment" && attachment_id.is_none() {
+        return Err("Removing an attachment requires an attachmentId.".to_string());
+    }
+
+    let context_pack_id = optional_trimmed_string(request.context_pack_id.as_deref());
+    require_value(
+        requirements.context_pack_id,
+        &context_pack_id,
+        "This Fleet Manager command requires a contextPackId.",
+    )?;
+
+    let message_id = optional_trimmed_string(request.message_id.as_deref());
+    require_value(
+        requirements.message_id,
+        &message_id,
+        "This Fleet Manager command requires a messageId.",
+    )?;
+
+    let job_id = optional_trimmed_string(request.job_id.as_deref());
+    require_value(
+        requirements.job_id,
+        &job_id,
+        "This Fleet Manager command requires a jobId.",
+    )?;
+
+    let run_id = optional_trimmed_string(request.run_id.as_deref());
+    require_value(
+        requirements.run_id,
+        &run_id,
+        "This Fleet Manager command requires a runId.",
+    )?;
+
+    let flow_id = optional_trimmed_string(request.flow_id.as_deref());
+    require_value(
+        requirements.flow_id,
+        &flow_id,
+        "This Fleet Manager command requires a flowId.",
+    )?;
+
+    let scope = optional_trimmed_string(request.scope.as_deref());
+    if matches!(kind, "ralph-run" | "ralph-resume-run")
+        && !matches!(scope.as_deref(), Some("workspace" | "user"))
+    {
+        return Err("RALPH scope must be workspace or user.".to_string());
+    }
+    let parameters = normalize_parameters(request.parameters)?;
+    if kind == "ralph-run" && parameters.is_none() {
+        return Err("RALPH runs require parameters.".to_string());
+    }
+    let max_transitions = request.max_transitions;
+    if max_transitions.is_some_and(|value| !(1..=1_000_000).contains(&value)) {
+        return Err("RALPH max transitions must be between 1 and 1000000.".to_string());
+    }
+
+    let target = optional_truncated_text(request.target.as_deref(), MAX_FLEET_SHORT_TEXT_CHARS);
+    let aspect_ratio =
+        optional_truncated_text(request.aspect_ratio.as_deref(), MAX_FLEET_SHORT_TEXT_CHARS);
+    let output_format =
+        optional_truncated_text(request.output_format.as_deref(), MAX_FLEET_SHORT_TEXT_CHARS);
+    let output_count = request.output_count;
+    let transparent_background = request.transparent_background;
+    if kind == "generate-media" {
+        if !matches!(target.as_deref(), Some("image" | "svg")) {
+            return Err("Media target must be image or svg.".to_string());
+        }
+        if !matches!(
+            aspect_ratio.as_deref(),
+            Some("1:1" | "4:5" | "16:9" | "9:16")
+        ) {
+            return Err("Media aspect ratio is unsupported.".to_string());
+        }
+        if !matches!(output_count, Some(1..=8)) {
+            return Err("Media output count must be between 1 and 8.".to_string());
+        }
+        let output_matches_target = match target.as_deref() {
+            Some("svg") => matches!(output_format.as_deref(), Some("svg")),
+            Some("image") => matches!(output_format.as_deref(), Some("png" | "jpeg" | "webp")),
+            _ => false,
+        };
+        if !output_matches_target {
+            return Err("Media output format does not match the selected target.".to_string());
+        }
+        if transparent_background.is_none() {
+            return Err("Media generation requires transparentBackground.".to_string());
+        }
+    }
+
+    Ok(NormalizedCommandFields {
+        task_id,
+        session_id,
+        prompt,
+        title,
+        tags,
+        provider,
+        model,
+        model_id,
+        mode,
+        reasoning,
+        prompt_enhancement_mode,
+        workspace,
+        enabled,
+        attachment_id,
+        context_pack_id,
+        message_id,
+        job_id,
+        run_id,
+        flow_id,
+        scope,
+        parameters,
+        max_transitions,
+        target,
+        aspect_ratio,
+        output_count,
+        output_format,
+        transparent_background,
+    })
+}
+
+pub(super) fn create_command_record(event: &FleetControlCommandEvent) -> FleetCommandRecord {
+    FleetCommandRecord {
+        command_id: event.command_id.clone(),
+        kind: event.kind.clone(),
+        task_id: event.task_id.clone(),
+        session_id: event.session_id.clone(),
+        prompt_preview: event
+            .prompt
+            .as_deref()
+            .map(|value| truncate_chars(value, 240)),
+        title: event.title.clone(),
+        target_preview: create_command_target_preview(event),
+        created_at: event.created_at,
+    }
+}
+
+pub(super) fn command_payloads_match(
+    left: &FleetControlCommandEvent,
+    right: &FleetControlCommandEvent,
+) -> bool {
+    left.command_id == right.command_id
+        && left.kind == right.kind
+        && left.task_id == right.task_id
+        && left.session_id == right.session_id
+        && left.prompt == right.prompt
+        && left.title == right.title
+        && left.tags == right.tags
+        && left.provider == right.provider
+        && left.model == right.model
+        && left.model_id == right.model_id
+        && left.mode == right.mode
+        && left.reasoning == right.reasoning
+        && left.prompt_enhancement_mode == right.prompt_enhancement_mode
+        && left.workspace == right.workspace
+        && left.enabled == right.enabled
+        && left.attachment_id == right.attachment_id
+        && left.context_pack_id == right.context_pack_id
+        && left.message_id == right.message_id
+        && left.job_id == right.job_id
+        && left.run_id == right.run_id
+        && left.flow_id == right.flow_id
+        && left.scope == right.scope
+        && left.parameters == right.parameters
+        && left.max_transitions == right.max_transitions
+        && left.target == right.target
+        && left.aspect_ratio == right.aspect_ratio
+        && left.output_count == right.output_count
+        && left.output_format == right.output_format
+        && left.transparent_background == right.transparent_background
+}
+
+pub(super) fn command_payload_hash(event: &FleetControlCommandEvent) -> String {
+    let canonical = serde_json::json!({
+        "kind": event.kind,
+        "taskId": event.task_id,
+        "sessionId": event.session_id,
+        "prompt": event.prompt,
+        "title": event.title,
+        "tags": event.tags,
+        "provider": event.provider,
+        "model": event.model,
+        "modelId": event.model_id,
+        "mode": event.mode,
+        "reasoning": event.reasoning,
+        "promptEnhancementMode": event.prompt_enhancement_mode,
+        "workspace": event.workspace,
+        "enabled": event.enabled,
+        "attachmentId": event.attachment_id,
+        "contextPackId": event.context_pack_id,
+        "messageId": event.message_id,
+        "jobId": event.job_id,
+        "runId": event.run_id,
+        "flowId": event.flow_id,
+        "scope": event.scope,
+        "parameters": event.parameters,
+        "maxTransitions": event.max_transitions,
+        "target": event.target,
+        "aspectRatio": event.aspect_ratio,
+        "outputCount": event.output_count,
+        "outputFormat": event.output_format,
+        "transparentBackground": event.transparent_background,
+    });
+    let bytes = serde_json::to_vec(&canonical)
+        .expect("serializing a Fleet command payload should not fail");
+    URL_SAFE_NO_PAD.encode(Sha256::digest(bytes))
+}
+
+pub(super) fn truncate_chars(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+
+    value.chars().take(max_chars).collect::<String>()
+}
+
+fn require_value<T>(required: bool, value: &Option<T>, message: &str) -> Result<(), String> {
+    if required && value.is_none() {
+        return Err(message.to_string());
+    }
+
+    Ok(())
+}
+
+fn optional_trimmed_string(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn optional_truncated_text(value: Option<&str>, max_chars: usize) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| truncate_chars(value, max_chars))
+}
+
+fn normalized_tags(tags: Option<Vec<String>>) -> Option<Vec<String>> {
+    tags.map(|tags| {
+        tags.into_iter()
+            .map(|tag| truncate_chars(tag.trim(), 64))
+            .filter(|tag| !tag.is_empty())
+            .take(24)
+            .collect::<Vec<_>>()
+    })
+}
+
+fn normalize_parameters(
+    parameters: Option<BTreeMap<String, String>>,
+) -> Result<Option<BTreeMap<String, String>>, String> {
+    let Some(parameters) = parameters else {
+        return Ok(None);
+    };
+    if parameters.len() > 64 {
+        return Err("RALPH runs support at most 64 parameters.".to_string());
+    }
+
+    let mut normalized = BTreeMap::new();
+    for (name, value) in parameters {
+        let name = name.trim();
+        if name.is_empty() || name.chars().count() > MAX_FLEET_SHORT_TEXT_CHARS {
+            return Err("A RALPH parameter name is invalid.".to_string());
+        }
+        if value.chars().count() > MAX_COMMAND_TEXT_CHARS {
+            return Err("A RALPH parameter value is too long.".to_string());
+        }
+        if normalized.insert(name.to_string(), value).is_some() {
+            return Err("RALPH parameter names must be unique after trimming.".to_string());
+        }
+    }
+    Ok(Some(normalized))
+}
+
+fn create_command_target_preview(event: &FleetControlCommandEvent) -> Option<String> {
+    [
+        event
+            .session_id
+            .as_deref()
+            .map(|value| format!("session:{value}")),
+        event
+            .task_id
+            .as_deref()
+            .map(|value| format!("task:{value}")),
+        event.job_id.as_deref().map(|value| format!("job:{value}")),
+        event.run_id.as_deref().map(|value| format!("run:{value}")),
+        event
+            .flow_id
+            .as_deref()
+            .map(|value| format!("flow:{value}")),
+        event
+            .message_id
+            .as_deref()
+            .map(|value| format!("message:{value}")),
+        event
+            .context_pack_id
+            .as_deref()
+            .map(|value| format!("context-pack:{value}")),
+        event
+            .attachment_id
+            .as_deref()
+            .map(|value| format!("attachment:{value}")),
+    ]
+    .into_iter()
+    .flatten()
+    .next()
+    .map(|value| truncate_chars(&value, MAX_FLEET_SHORT_TEXT_CHARS))
+}
+
+fn create_command_id() -> String {
+    let mut bytes = [0_u8; 12];
+
+    if getrandom::fill(&mut bytes).is_ok() {
+        return URL_SAFE_NO_PAD.encode(bytes);
+    }
+
+    format!("cmd-{}", now_millis())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::truncate_chars;
+
+    #[test]
+    fn truncate_chars_preserves_character_boundaries() {
+        assert_eq!(
+            truncate_chars("\u{00e5}\u{00df}\u{00e7}d\u{00e9}", 3),
+            "\u{00e5}\u{00df}\u{00e7}"
+        );
+    }
+}

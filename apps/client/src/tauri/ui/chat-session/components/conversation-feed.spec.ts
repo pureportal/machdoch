@@ -74,4 +74,30 @@ describe("ConversationFeed message states", () => {
     expect(markup).toContain("Turn this into a release checklist.");
     expect(markup).toContain("Enhancing prompt");
   });
+
+  it("renders the completed edited request without enhancement state", () => {
+    const markup = renderFeed([
+      {
+        id: "enhanced-message",
+        taskId: "enhanced-task",
+        role: "user",
+        content: "Create a concise release checklist.",
+        promptEnhancement: {
+          originalContent: "Create a release checklist.",
+        },
+      },
+      {
+        id: "enhanced-response",
+        taskId: "enhanced-task",
+        role: "agent",
+        content: "Release checklist complete.",
+        outcome: { status: "succeeded" },
+      },
+    ]);
+
+    expect(markup).toContain("Create a concise release checklist.");
+    expect(markup).toContain("Release checklist complete.");
+    expect(markup).not.toContain("Enhancing prompt");
+    expect(markup).not.toContain('aria-label="Cancel enhancement"');
+  });
 });

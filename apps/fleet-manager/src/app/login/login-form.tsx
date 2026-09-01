@@ -49,6 +49,7 @@ export function LoginForm(): React.ReactElement {
               id="username"
               name="username"
               autoComplete="username"
+              maxLength={64}
               required
               autoFocus
             />
@@ -59,6 +60,7 @@ export function LoginForm(): React.ReactElement {
               name="password"
               type="password"
               autoComplete="current-password"
+              maxLength={1024}
               required
             />
           </Field>

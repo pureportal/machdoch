@@ -337,6 +337,9 @@ export const createRalphRunSummaryFromRecord = (
     flowId: record.flowId,
     flowName: record.flowName,
     status: record.status,
+    recoverable:
+      Boolean(record.checkpoint) &&
+      (record.status === "blocked" || record.status === "crashed"),
     ...(record.outcome ? { outcome: record.outcome } : {}),
     summary: record.summary,
     ...(record.logPaths?.simpleMarkdownPath

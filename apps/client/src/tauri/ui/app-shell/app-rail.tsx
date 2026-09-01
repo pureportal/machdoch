@@ -5,7 +5,7 @@ import {
   FileSliders,
   FolderGit2,
   MessageSquareText,
-  RadioTower,
+  Server,
   Store,
   TerminalSquare,
   Workflow,
@@ -39,7 +39,7 @@ interface AppRailProps {
   schedulerActivity: AppActivityState;
   onSelectApp: (app: MainAppId) => void;
   onOpenScheduler: () => void;
-  onOpenMissionControl: () => void;
+  onOpenFleetManager: () => void;
   onOpenSettings: () => void;
 }
 
@@ -156,12 +156,12 @@ export const AppRail = ({
   schedulerActivity,
   onSelectApp,
   onOpenScheduler,
-  onOpenMissionControl,
+  onOpenFleetManager,
   onOpenSettings,
 }: AppRailProps): JSX.Element => {
   return (
-    <aside className="app-shell-rail z-10 flex w-20 shrink-0 flex-col items-center justify-between border-r border-slate-900 bg-slate-950 py-6">
-      <div className="app-shell-rail-group flex flex-col items-center gap-4">
+    <aside className="app-shell-rail z-10 flex min-h-0 w-20 shrink-0 flex-col items-center justify-between overflow-y-auto border-r border-slate-900 bg-slate-950 py-6">
+      <div className="app-shell-rail-group flex shrink-0 flex-col items-center gap-4">
         <div className="app-shell-logo flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-800 bg-slate-900 shadow-lg shadow-sky-500/10">
           <TerminalSquare className="h-6 w-6 text-sky-400" />
         </div>
@@ -218,7 +218,7 @@ export const AppRail = ({
         </div>
       </div>
 
-      <div className="app-shell-rail-group flex flex-col items-center gap-3">
+      <div className="app-shell-rail-group flex shrink-0 flex-col items-center gap-3">
         <AppRailButton
           label="Smart Scheduler"
           icon={CalendarClock}
@@ -226,9 +226,9 @@ export const AppRail = ({
           onClick={onOpenScheduler}
         />
         <AppRailButton
-          label="Mission Control"
-          icon={RadioTower}
-          onClick={onOpenMissionControl}
+          label="Fleet Manager"
+          icon={Server}
+          onClick={onOpenFleetManager}
         />
         <AppRailButton
           label="Settings"

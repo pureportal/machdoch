@@ -6,6 +6,7 @@ import {
   createInitialShellState,
   createSession,
   getActiveChatOperationIds,
+  getActivePromptEnhancementEditMessageId,
   getLatestRunningTaskId,
   getSessionOverviewStatus,
   isPromptEnhancementPlaceholderMessage,
@@ -67,6 +68,72 @@ describe("isPromptEnhancementPlaceholderMessage", () => {
     } as unknown as ChatSessionMessage;
 
     expect(isPromptEnhancementPlaceholderMessage(malformed)).toBe(false);
+  });
+});
+
+describe("getActivePromptEnhancementEditMessageId", () => {
+  it("restores the edited-message enhancement state until the task completes", () => {
+    const editedMessage: ChatSessionMessage = {
+      id: "edited-message",
+      taskId: "original-task",
+      role: "user",
+      content: "Original request",
+    };
+    const enhancementMarker: ChatSessionMessage = {
+      id: "prompt-enhancement-1-thinking",
+      taskId: "prompt-enhancement-1",
+      role: "agent",
+      content: "",
+      lifecycle: {
+        kind: "transient",
+        owner: "prompt-enhancement",
+        operationId: "prompt-enhancement-1",
+        slot: "marker",
+        ownerLaunchId: "launch-1",
+        ownerWindowId: "window-1",
+        ownerInstanceId: "instance-1",
+        placement: "edit-composer",
+        targetMessageId: editedMessage.id,
+      },
+    };
+    const session = createSession({
+      id: "enhancing-session",
+      messages: [editedMessage, enhancementMarker],
+    });
+    const restoredSession = normalizeShellState({
+      ...createInitialShellState(),
+      activeSessionId: session.id,
+      sessions: [session],
+    }).sessions[0];
+
+    expect(getActivePromptEnhancementEditMessageId(restoredSession)).toBe(
+      editedMessage.id,
+    );
+    expect(getSessionOverviewStatus(restoredSession)).toBe("running");
+
+    const completedSession = createSession({
+      id: session.id,
+      messages: [
+        {
+          id: "enhanced-message",
+          taskId: "enhanced-task",
+          role: "user",
+          content: "Enhanced request",
+        },
+        {
+          id: "enhanced-response",
+          taskId: "enhanced-task",
+          role: "agent",
+          content: "Completed response",
+          outcome: { status: "succeeded" },
+        },
+      ],
+    });
+
+    expect(
+      getActivePromptEnhancementEditMessageId(completedSession),
+    ).toBeNull();
+    expect(getSessionOverviewStatus(completedSession)).toBe("done");
   });
 });
 
@@ -1207,6 +1274,7 @@ describe("getLatestRunningTaskId", () => {
             ownerWindowId: "window-1",
             ownerInstanceId: "instance-1",
             placement: "edit-composer",
+            targetMessageId: "chat-user",
           },
         },
       ],

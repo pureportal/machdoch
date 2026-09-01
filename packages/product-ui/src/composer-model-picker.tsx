@@ -22,6 +22,8 @@ export interface ComposerModelProvider {
 }
 
 export interface ComposerModelPickerProps {
+  label?: string;
+  placement?: "top" | "bottom";
   providers: readonly ComposerModelProvider[];
   activeProvider: string;
   activeProviderLabel: string;
@@ -77,6 +79,8 @@ const scoreSearchCandidate = (
 };
 
 export function ComposerModelPicker({
+  label = "Session model",
+  placement = "top",
   providers,
   activeProvider,
   activeProviderLabel,
@@ -124,7 +128,9 @@ export function ComposerModelPicker({
     providers.find((provider) => provider.id === activeProvider) ??
     providers[0];
   const visibleModels = useMemo(() => {
-    const models = selectedProvider?.models ?? [];
+    const models = selectedProvider?.available
+      ? (selectedProvider.models ?? [])
+      : [];
     const normalizedQuery = normalizeSearchText(search);
     if (!normalizedQuery) return models;
 
@@ -183,7 +189,7 @@ export function ComposerModelPicker({
       <button
         type="button"
         className="m-composer-model-trigger app-model-picker-button"
-        aria-label={`Session model: ${activeProviderLabel} ${activeModelLabel}`}
+        aria-label={`${label}: ${activeProviderLabel} ${activeModelLabel}`}
         aria-expanded={open}
         aria-controls={open ? popoverId : undefined}
         aria-haspopup="dialog"
@@ -200,11 +206,12 @@ export function ComposerModelPicker({
         <div
           id={popoverId}
           className="m-composer-model-popover"
+          data-placement={placement}
           role="dialog"
-          aria-label="Session model"
+          aria-label={label}
         >
           <div className="m-composer-model-heading">
-            <span>Session model</span>
+            <span>{label}</span>
             <strong>
               {activeProviderLabel} / {activeModelLabel}
             </strong>

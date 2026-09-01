@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
-import { isIP } from "node:net";
 import { dirname, isAbsolute, parse, resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 import { z } from "zod";
+import { isLoopbackAddress } from "./network";
 
 const positiveInteger = z.number().int().positive();
 
@@ -37,14 +37,16 @@ const settingsLimitsSchema = z
     maximumProfiles: positiveInteger.max(10_000),
     maximumInstructionsPerProfile: positiveInteger.max(10_000),
     maximumPacksPerProfile: positiveInteger.max(10_000),
+    maximumPromptsPerProfile: positiveInteger.max(10_000),
     maximumRevisionsPerProfile: positiveInteger.max(10_000),
     maximumDocumentBytes: positiveInteger.max(16 * 1024 * 1024),
-    maximumSecretBytes: positiveInteger.max(1024 * 1024),
+    maximumSecretBytes: positiveInteger.max(8 * 1024),
   })
   .default({
     maximumProfiles: 64,
     maximumInstructionsPerProfile: 128,
     maximumPacksPerProfile: 128,
+    maximumPromptsPerProfile: 128,
     maximumRevisionsPerProfile: 100,
     maximumDocumentBytes: 1024 * 1024,
     maximumSecretBytes: 8 * 1024,
@@ -150,7 +152,7 @@ function validateExternalUrl(
   const isDevelopmentLoopbackUrl =
     runtimeMode === "development" &&
     url.protocol === "http:" &&
-    ["127.0.0.1", "[::1]", "localhost"].includes(url.hostname);
+    (url.hostname === "localhost" || isLoopbackAddress(url.hostname));
   if (
     (url.protocol !== "https:" && !isDevelopmentLoopbackUrl) ||
     url.pathname !== "/" ||
@@ -168,7 +170,7 @@ function validateExternalUrl(
 }
 
 function validateListener(address: string): void {
-  if (isIP(address) === 0 || !["127.0.0.1", "::1"].includes(address)) {
+  if (!isLoopbackAddress(address)) {
     throw new Error("Fleet Manager must listen on a loopback IP address.");
   }
 }

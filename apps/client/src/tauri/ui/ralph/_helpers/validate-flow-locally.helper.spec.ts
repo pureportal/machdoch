@@ -11,7 +11,9 @@ import {
 } from "./get-block-outputs.helper";
 import { validateFlowLocally } from "./validate-flow-locally.helper";
 
-const createConnectedFlow = (overrides: Partial<RalphFlow> = {}): RalphFlow => ({
+const createConnectedFlow = (
+  overrides: Partial<RalphFlow> = {},
+): RalphFlow => ({
   schemaVersion: 1,
   id: "review-flow",
   alias: "review-flow",
@@ -41,6 +43,7 @@ const createSummary = (
   blockCount: 2,
   edgeCount: 1,
   variableCount: 0,
+  variables: [],
   ...summary,
 });
 
@@ -48,9 +51,10 @@ const issueMessages = (
   flow: RalphFlow,
   summaries: RalphFlowSummary[] = [],
   catalog: ProviderModelCatalogSnapshot | null = null,
-): string[] => validateFlowLocally(flow, catalog, summaries, "workspace").map(
-  (issue) => issue.message,
-);
+): string[] =>
+  validateFlowLocally(flow, catalog, summaries, "workspace").map(
+    (issue) => issue.message,
+  );
 
 describe("Ralph flow editor local validation helpers", () => {
   it("normalizes flow aliases for empty, punctuation-heavy, and long input", () => {
@@ -90,7 +94,9 @@ describe("Ralph flow editor local validation helpers", () => {
   });
 
   it("accepts a connected minimal flow with an empty catalog and undefined optional fields", () => {
-    expect(issueMessages(createConnectedFlow({ variables: undefined }))).toEqual([]);
+    expect(
+      issueMessages(createConnectedFlow({ variables: undefined })),
+    ).toEqual([]);
   });
 
   it("validates pinned Media Studio identity and typed bindings before save", () => {
@@ -157,7 +163,11 @@ describe("Ralph flow editor local validation helpers", () => {
 
     expect(
       issueMessages(flow, [
-        createSummary({ id: "global-review", alias: "review-flow", scope: "user" }),
+        createSummary({
+          id: "global-review",
+          alias: "review-flow",
+          scope: "user",
+        }),
         createSummary({ id: "review-flow", alias: "review-flow" }),
       ]),
     ).toEqual([]);
@@ -195,7 +205,9 @@ describe("Ralph flow editor local validation helpers", () => {
 
     expect(messages).toContain("Flow must contain exactly one START block.");
     expect(messages).toContain("Block id end is duplicated.");
-    expect(messages).toContain("Edge missing-to-end references missing source missing.");
+    expect(messages).toContain(
+      "Edge missing-to-end references missing source missing.",
+    );
     expect(messages).toContain(
       "Edge prompt-to-missing references missing target missing-target.",
     );
@@ -235,7 +247,9 @@ describe("Ralph flow editor local validation helpers", () => {
     );
 
     expect(messages).toContain("Prompt has an empty prompt.");
-    expect(messages).toContain("Validator validates selected blocks but none are selected.");
+    expect(messages).toContain(
+      "Validator validates selected blocks but none are selected.",
+    );
     expect(messages).toContain("Decision needs at least one decision label.");
     expect(messages).toContain("Prompt does not route SUCCESS.");
     expect(messages).toContain("Prompt does not route ERROR.");
@@ -279,12 +293,14 @@ describe("Ralph flow editor local validation helpers", () => {
     expect(issueMessages(cyclicFlow)).toContain(
       "Flow contains a cycle but does not define settings.maxTransitions; runs can continue until manually stopped.",
     );
-    expect(issueMessages({ ...cyclicFlow, settings: { maxTransitions: 1 } })).not.toContain(
+    expect(
+      issueMessages({ ...cyclicFlow, settings: { maxTransitions: 1 } }),
+    ).not.toContain(
       "Flow contains a cycle but does not define settings.maxTransitions; runs can continue until manually stopped.",
     );
-    expect(issueMessages({ ...cyclicFlow, settings: { maxTransitions: 0 } })).toContain(
-      "Flow settings.maxTransitions must be an integer >= 1.",
-    );
+    expect(
+      issueMessages({ ...cyclicFlow, settings: { maxTransitions: 0 } }),
+    ).toContain("Flow settings.maxTransitions must be an integer >= 1.");
   });
 
   it("warns about unavailable block providers and models when catalog data is present", () => {
@@ -332,7 +348,11 @@ describe("Ralph flow editor local validation helpers", () => {
       catalog,
     );
 
-    expect(messages).toContain("OpenAI Prompt uses unavailable provider openai.");
-    expect(messages).toContain("Anthropic Prompt uses unavailable model missing-model.");
+    expect(messages).toContain(
+      "OpenAI Prompt uses unavailable provider openai.",
+    );
+    expect(messages).toContain(
+      "Anthropic Prompt uses unavailable model missing-model.",
+    );
   });
 });

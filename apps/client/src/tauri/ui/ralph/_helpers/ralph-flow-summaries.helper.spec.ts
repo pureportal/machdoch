@@ -1,7 +1,4 @@
-import type {
-  RalphFlow,
-  RalphFlowSummary,
-} from "../../../../core/ralph.js";
+import type { RalphFlow, RalphFlowSummary } from "../../../../core/ralph.js";
 import { createBlankFlow } from "./create-blank-ralph-flow.helper";
 import {
   DEFAULT_RALPH_FLOW_SCOPE,
@@ -25,6 +22,7 @@ const createSummary = (
   blockCount: 2,
   edgeCount: 1,
   variableCount: 0,
+  variables: [],
   ...overrides,
 });
 
@@ -81,7 +79,6 @@ describe("Ralph flow scope helpers", () => {
   ] as const)("normalizes scope value %s to %s", (value, expected) => {
     expect(normalizeRalphFlowScope(value)).toBe(expected);
   });
-
 });
 
 describe("Ralph flow summary helpers", () => {
@@ -97,7 +94,9 @@ describe("Ralph flow summary helpers", () => {
     expect(withFlowSummaryScope(createSummary(), "user")).toMatchObject({
       scope: "user",
     });
-    expect(withFlowSummaryScope(createSummary({ scope: "workspace" }), "user")).toMatchObject({
+    expect(
+      withFlowSummaryScope(createSummary({ scope: "workspace" }), "user"),
+    ).toMatchObject({
       scope: "workspace",
     });
   });
@@ -119,6 +118,7 @@ describe("Ralph flow summary helpers", () => {
       blockCount: 2,
       edgeCount: 1,
       variableCount: 1,
+      variables: [{ name: "topic", type: "string", required: false }],
     });
 
     const flowWithoutOptionalFields: RalphFlow = {
@@ -135,30 +135,51 @@ describe("Ralph flow summary helpers", () => {
       blockCount: 0,
       edgeCount: 0,
       variableCount: 0,
+      variables: [],
     });
   });
 
   it("checks alias use within scope, normalized aliases, ids, and current-flow exclusions", () => {
     const flows = [
-      createSummary({ id: "daily-review", alias: "Daily Review", scope: "workspace" }),
-      createSummary({ id: "global-review", alias: "Daily Review", scope: "user" }),
+      createSummary({
+        id: "daily-review",
+        alias: "Daily Review",
+        scope: "workspace",
+      }),
+      createSummary({
+        id: "global-review",
+        alias: "Daily Review",
+        scope: "user",
+      }),
       createSummary({ id: "id-only-flow", scope: "workspace" }),
     ];
 
     expect(isFlowAliasUsed(flows, "daily review", "workspace")).toBe(true);
     expect(isFlowAliasUsed(flows, "global-review", "workspace")).toBe(false);
     expect(isFlowAliasUsed(flows, "id only flow", "workspace")).toBe(true);
-    expect(isFlowAliasUsed(flows, "daily review", "workspace", "daily-review")).toBe(
-      false,
-    );
+    expect(
+      isFlowAliasUsed(flows, "daily review", "workspace", "daily-review"),
+    ).toBe(false);
     expect(isFlowAliasUsed(flows, "", "workspace")).toBe(false);
   });
 
   it("creates unique normalized aliases by scope and increments collisions", () => {
     const flows = [
-      createSummary({ id: "daily-review", alias: "daily-review", scope: "workspace" }),
-      createSummary({ id: "daily-review-2", alias: "daily-review-2", scope: "workspace" }),
-      createSummary({ id: "daily-review", alias: "daily-review", scope: "user" }),
+      createSummary({
+        id: "daily-review",
+        alias: "daily-review",
+        scope: "workspace",
+      }),
+      createSummary({
+        id: "daily-review-2",
+        alias: "daily-review-2",
+        scope: "workspace",
+      }),
+      createSummary({
+        id: "daily-review",
+        alias: "daily-review",
+        scope: "user",
+      }),
     ];
 
     expect(createUniqueFlowAlias(" Daily Review ", flows, "workspace")).toBe(
@@ -205,5 +226,4 @@ describe("blank Ralph flow helper", () => {
     expect(flow.alias).toBeUndefined();
     expect(flow.name).toBe("Ralph Flow");
   });
-
 });

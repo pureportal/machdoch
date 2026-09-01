@@ -129,6 +129,7 @@ describe("createToolDefinitions", () => {
     expect(askToolNames).toContain("list_scheduled_jobs");
     expect(askToolNames).toContain("list_scheduled_runs");
     expect(askToolNames).toContain("list_scheduler_events");
+    expect(askToolNames).toContain("get_active_workspace_agents");
     expect(askToolNames).not.toContain("create_scheduled_job");
     expect(askToolNames).not.toContain("update_scheduled_job");
     expect(askToolNames).not.toContain("emit_scheduler_event");

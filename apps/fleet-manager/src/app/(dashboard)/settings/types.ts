@@ -1,5 +1,4 @@
 export interface ManagedDefaults {
-  preferredToolingAgent: string | null;
   provider: string | null;
   model: string | null;
   mode: string | null;
@@ -34,9 +33,23 @@ export interface ManagedContextPack {
   model: string | null;
   mode: string | null;
   reasoning: string | null;
-  variables: string[];
+  variables: Array<{
+    name: string;
+    defaultValue: string | null;
+  }>;
   triggerPhrases: string[];
   pathPatterns: string[];
+  promptEnhancementMode: "off" | "simple" | "web-search" | null;
+  interviewEnabled: boolean | null;
+  sessionMemoryEnabled: boolean | null;
+  useGlobalMemory: boolean | null;
+  uiControlEnabled: boolean | null;
+}
+
+export interface ManagedPrompt {
+  id: string;
+  relativePath: string;
+  content: string;
 }
 
 export interface ManagedSettingsDocument {
@@ -44,7 +57,7 @@ export interface ManagedSettingsDocument {
   agentLimits: ManagedAgentLimits;
   instructions: ManagedInstruction[];
   contextPacks: ManagedContextPack[];
-  customValues: Record<string, unknown>;
+  prompts: ManagedPrompt[];
 }
 
 export interface SettingsSecretSummary {
@@ -71,6 +84,7 @@ export interface SettingsProfileSummary {
   revision: number;
   instructionCount: number;
   contextPackCount: number;
+  promptCount: number;
   secretCount: number;
   assignmentCount: number;
   createdAt: number;
@@ -89,6 +103,7 @@ export interface SettingsCatalog {
     maximumProfiles: number;
     maximumInstructionsPerProfile: number;
     maximumPacksPerProfile: number;
+    maximumPromptsPerProfile: number;
     maximumDocumentBytes: number;
     maximumSecretBytes: number;
   };
@@ -102,8 +117,12 @@ export interface SettingsAssignment {
   profileName: string | null;
   profileRevision: number | null;
   assignedAt: number | null;
-  lastFetchedRevision: number | null;
-  lastFetchedAt: number | null;
+  lastAppliedRevision: number | null;
+  lastAppliedAt: number | null;
+  syncStatus: "unassigned" | "pending" | "applied" | "failed";
+  lastSyncRevision: number | null;
+  lastSyncAttemptAt: number | null;
+  syncError: string | null;
 }
 
 export interface SettingsProfileVersion {
@@ -118,6 +137,7 @@ export type SettingsTab =
   | "general"
   | "instructions"
   | "packs"
+  | "prompts"
   | "secrets"
   | "instances"
   | "history";

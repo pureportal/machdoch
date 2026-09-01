@@ -1,4 +1,5 @@
 import { access } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
 import path from "node:path";
 import process from "node:process";
 import puppeteer from "puppeteer-core";
@@ -8,6 +9,8 @@ const username = process.env.MACHDOCH_FLEET_UI_USERNAME;
 const password = process.env.MACHDOCH_FLEET_UI_PASSWORD;
 const screenshot = process.env.MACHDOCH_FLEET_UI_SCREENSHOT;
 const useFixture = process.env.MACHDOCH_FLEET_UI_FIXTURE === "true";
+const allowInsecureTls =
+  process.env.MACHDOCH_FLEET_UI_ALLOW_INSECURE_TLS === "true";
 const explicitPath = process.env.MACHDOCH_FLEET_UI_PATH;
 const sessionToken = process.env.MACHDOCH_FLEET_UI_SESSION_TOKEN;
 const chromeCandidates = [
@@ -34,9 +37,15 @@ for (const candidate of chromeCandidates) {
 }
 if (!executablePath) throw new Error("Chrome or Edge was not found.");
 
-const browser = await puppeteer.launch({ executablePath, headless: true });
+const browser = await puppeteer.launch({
+  executablePath,
+  headless: true,
+  args: allowInsecureTls ? ["--ignore-certificate-errors"] : [],
+});
+let page;
+let createdFixtureInstanceId;
 try {
-  const page = await browser.newPage();
+  page = await browser.newPage();
   await page.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
   if (sessionToken) {
     await page.setExtraHTTPHeaders({
@@ -46,6 +55,7 @@ try {
   const consoleErrors = [];
   const pageErrors = [];
   const failedRequests = [];
+  const productCommands = [];
   page.on("console", (message) => {
     if (message.type() === "error") consoleErrors.push(message.text());
   });
@@ -103,6 +113,53 @@ try {
     if (instanceId)
       instancePath = `/instances/${encodeURIComponent(instanceId)}`;
   }
+  if (!instancePath && useFixture) {
+    const instanceSecret = `mch_instance_${randomBytes(32).toString("base64url")}`;
+    const createdFixture = await page.evaluate(async (secret) => {
+      const csrfToken = document.cookie
+        .split(";")
+        .map((part) => part.trim().split("="))
+        .find(([name]) => name === "__Host-machdoch_fleet_csrf")
+        ?.slice(1)
+        .join("=");
+      if (!csrfToken) throw new Error("Fleet CSRF token was not available.");
+
+      const keyResponse = await fetch("/api/enrollment-keys", {
+        method: "POST",
+        headers: { "X-Machdoch-Fleet-CSRF": csrfToken },
+      });
+      const keyBody = await keyResponse.json();
+      if (!keyResponse.ok) {
+        throw new Error(keyBody.error ?? "Could not create an enrollment key.");
+      }
+
+      const enrollmentResponse = await fetch("/api/enroll", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${keyBody.enrollmentKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          displayName: "RALPH UI fixture",
+          instanceSecret: secret,
+          productVersion: "7.0.6",
+          protocolVersion: 4,
+        }),
+      });
+      const enrollmentBody = await enrollmentResponse.json();
+      if (!enrollmentResponse.ok) {
+        throw new Error(
+          enrollmentBody.error ?? "Could not enroll an instance.",
+        );
+      }
+      return {
+        instanceId: enrollmentBody.instanceId,
+        path: `/instances/${encodeURIComponent(enrollmentBody.instanceId)}`,
+      };
+    }, instanceSecret);
+    createdFixtureInstanceId = createdFixture.instanceId;
+    instancePath = createdFixture.path;
+  }
   if (!instancePath) throw new Error("No online Fleet instance was available.");
 
   if (useFixture) {
@@ -117,6 +174,8 @@ try {
         return;
       }
       if (request.url().endsWith("/product/commands")) {
+        const command = JSON.parse(request.postData() ?? "{}");
+        productCommands.push(command);
         void request.respond({
           status: 202,
           contentType: "application/json",
@@ -343,6 +402,121 @@ try {
   if (schedulerRuns.length !== 2) {
     throw new Error(`Scheduler runs are incomplete: ${schedulerRuns.length}`);
   }
+  await page.click('.m-product-rail-button[aria-label="RALPH"]');
+  await page.waitForSelector(".m-ralph");
+  const desktopRalph = await inspectFeatureViewport(page, "ralph");
+  assertFeatureViewport("Desktop RALPH", desktopRalph);
+  const ralphFlows = await page.$$(".m-ralph-card");
+  if (ralphFlows.length !== 2) {
+    throw new Error(`RALPH flows are incomplete: ${ralphFlows.length}`);
+  }
+  const activeFlowRunDisabled = await page.$eval(
+    'button[aria-label="Run Dependency review"]',
+    (button) => button.disabled,
+  );
+  if (!activeFlowRunDisabled) {
+    throw new Error("RALPH allows an already active flow to start again.");
+  }
+  await page.click('button[aria-label^="RALPH run model:"]');
+  await page.waitForSelector(
+    '.m-composer-model-popover[aria-label="RALPH run model"]',
+  );
+  const modelPickerBounds = await page.$eval(
+    '.m-composer-model-popover[aria-label="RALPH run model"]',
+    (element) => {
+      const bounds = element.getBoundingClientRect();
+      return {
+        top: bounds.top,
+        right: bounds.right,
+        bottom: bounds.bottom,
+        left: bounds.left,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      };
+    },
+  );
+  if (
+    modelPickerBounds.top < 0 ||
+    modelPickerBounds.left < 0 ||
+    modelPickerBounds.right > modelPickerBounds.viewportWidth ||
+    modelPickerBounds.bottom > modelPickerBounds.viewportHeight
+  ) {
+    throw new Error(
+      `RALPH model picker is outside the viewport: ${JSON.stringify(modelPickerBounds)}`,
+    );
+  }
+  await page.keyboard.press("Escape");
+  if (useFixture) {
+    await page.click('button[aria-label="Run Release flow"]');
+    await page.waitForSelector(".m-ralph-modal");
+    await page.click(".m-ralph-modal .m-product-primary-button");
+    await page.waitForSelector(".m-ralph-validation");
+    await page.type('.m-ralph-parameters input[type="text"]', "production");
+    await page.click(".m-ralph-modal .m-product-primary-button");
+    await page.waitForFunction(
+      () => document.querySelector(".m-ralph-run") !== null,
+    );
+    await page.click(".m-ralph-run button");
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll(".m-ralph-run button")].some(
+        (button) => button.textContent?.trim() === "Resume" && !button.disabled,
+      ),
+    );
+    await page.$$eval(".m-ralph-run button", (buttons) => {
+      const resume = buttons.find(
+        (button) => button.textContent?.trim() === "Resume",
+      );
+      if (!(resume instanceof HTMLElement)) {
+        throw new Error("RALPH resume action is missing.");
+      }
+      resume.click();
+    });
+    const commandDeadline = Date.now() + 5_000;
+    while (
+      Date.now() < commandDeadline &&
+      !["ralph-run", "cancel", "ralph-resume-run"].every((kind) =>
+        productCommands.some((command) => command.kind === kind),
+      )
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const runCommand = productCommands.find(
+      (command) => command.kind === "ralph-run",
+    );
+    const cancelCommand = productCommands.find(
+      (command) => command.kind === "cancel",
+    );
+    const resumeCommand = productCommands.find(
+      (command) => command.kind === "ralph-resume-run",
+    );
+    if (
+      runCommand?.workspace !== "C:\\Development\\machdoch" ||
+      runCommand.scope !== "workspace" ||
+      runCommand.flowId !== "release-flow" ||
+      runCommand.parameters?.environment !== "production" ||
+      runCommand.provider !== "openai" ||
+      runCommand.model !== "gpt-5.6" ||
+      runCommand.reasoning !== "high" ||
+      runCommand.maxTransitions !== 48 ||
+      cancelCommand?.taskId !== "ralph_task_dependency_review" ||
+      resumeCommand?.runId !== "ralph_run_crashed" ||
+      resumeCommand.scope !== "workspace" ||
+      resumeCommand.workspace !== "C:\\Development\\machdoch" ||
+      resumeCommand.provider !== "openai" ||
+      resumeCommand.model !== "gpt-5.6" ||
+      resumeCommand.reasoning !== "high"
+    ) {
+      throw new Error(
+        `RALPH commands are invalid: ${JSON.stringify(productCommands)}`,
+      );
+    }
+  }
+  if (screenshot) {
+    await page.screenshot({
+      path: featureScreenshotPath(screenshot, "ralph"),
+      fullPage: true,
+    });
+  }
   await page.click('.m-product-rail-button[aria-label="Chat"]');
   await page.waitForSelector(".m-product-composer");
   if (screenshot) await page.screenshot({ path: screenshot, fullPage: true });
@@ -375,6 +549,16 @@ try {
   if (screenshot) {
     await page.screenshot({
       path: featureScreenshotPath(screenshot, "mobile-scheduler"),
+      fullPage: true,
+    });
+  }
+  await page.click('.m-product-mobile-nav button[aria-label="RALPH"]');
+  await page.waitForSelector(".m-ralph");
+  const mobileRalph = await inspectFeatureViewport(page, "ralph");
+  assertFeatureViewport("Mobile RALPH", mobileRalph, true);
+  if (screenshot) {
+    await page.screenshot({
+      path: featureScreenshotPath(screenshot, "mobile-ralph"),
       fullPage: true,
     });
   }
@@ -459,10 +643,40 @@ try {
     );
   }
   process.stdout.write(
-    `${JSON.stringify({ desktop, desktopMedia, desktopScheduler, compact, mobile, mobileMedia, mobileScheduler, narrow, narrowMedia, short, beforePolling, afterPolling, fixture: useFixture }, null, 2)}\n`,
+    `${JSON.stringify({ desktop, desktopMedia, desktopScheduler, desktopRalph, compact, mobile, mobileMedia, mobileScheduler, mobileRalph, narrow, narrowMedia, short, beforePolling, afterPolling, productCommands, fixture: useFixture }, null, 2)}\n`,
   );
 } finally {
+  if (page && createdFixtureInstanceId) {
+    await deleteFixtureInstance(page, createdFixtureInstanceId).catch(
+      (error) => {
+        process.stderr.write(
+          `Failed to remove Fleet UI fixture: ${error instanceof Error ? error.message : String(error)}\n`,
+        );
+      },
+    );
+  }
   await browser.close();
+}
+
+async function deleteFixtureInstance(page, instanceId) {
+  await page.evaluate(async (id) => {
+    const csrfToken = document.cookie
+      .split(";")
+      .map((part) => part.trim().split("="))
+      .find(([name]) => name === "__Host-machdoch_fleet_csrf")
+      ?.slice(1)
+      .join("=");
+    if (!csrfToken) throw new Error("Fleet CSRF token was not available.");
+
+    const response = await fetch(`/api/instances/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: { "X-Machdoch-Fleet-CSRF": csrfToken },
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.error ?? "Could not remove the fixture instance.");
+    }
+  }, instanceId);
 }
 
 async function inspectChatViewport(page) {
@@ -520,7 +734,11 @@ async function inspectFeatureViewport(page, feature) {
       ?.getBoundingClientRect();
     const surface = document
       .querySelector(
-        activeFeature === "media" ? ".m-media-surface" : ".m-scheduler",
+        activeFeature === "media"
+          ? ".m-media-surface"
+          : activeFeature === "ralph"
+            ? ".m-ralph"
+            : ".m-scheduler",
       )
       ?.getBoundingClientRect();
     const mediaNavigation = document
@@ -596,7 +814,7 @@ function productFixture() {
     sessions: [],
     commands: [],
     shell: {
-      version: 3,
+      version: 4,
       capturedAt: now,
       activeSessionId: "session_ui_check",
       sessions: [
@@ -730,8 +948,16 @@ function productFixture() {
             label: "OpenAI",
             available: true,
             models: [
-              { id: "gpt-5.6", label: "GPT-5.6" },
-              { id: "gpt-5.5", label: "GPT-5.5" },
+              {
+                id: "gpt-5.6",
+                label: "GPT-5.6",
+                reasoningOptions: ["default", "low", "medium", "high"],
+              },
+              {
+                id: "gpt-5.5",
+                label: "GPT-5.5",
+                reasoningOptions: ["default", "low", "medium", "high"],
+              },
             ],
           },
         ],
@@ -810,6 +1036,68 @@ function productFixture() {
             maxAttempts: 3,
             finishedAt: now - 7_100_000,
             error: "The repository was unavailable.",
+          },
+        ],
+        updatedAt: now,
+      },
+      ralph: {
+        workspaceRoot: "C:\\Development\\machdoch",
+        loading: false,
+        flows: [
+          {
+            id: "release-flow",
+            alias: "release",
+            name: "Release flow",
+            scope: "workspace",
+            description: "Verify and prepare a release.",
+            blockCount: 6,
+            edgeCount: 7,
+            variables: [
+              {
+                name: "environment",
+                type: "string",
+                required: true,
+              },
+            ],
+            maxTransitions: 48,
+          },
+          {
+            id: "dependency-review",
+            name: "Dependency review",
+            scope: "user",
+            blockCount: 4,
+            edgeCount: 3,
+            variables: [],
+          },
+        ],
+        runs: [
+          {
+            id: "ralph_run_active",
+            flowId: "dependency-review",
+            flowName: "Dependency review",
+            scope: "user",
+            status: "running",
+            summary: "Reviewing dependencies.",
+            createdAt: now - 30_000,
+            blockCount: 3,
+            eventCount: 12,
+            taskId: "ralph_task_dependency_review",
+            cancellable: true,
+            recoverable: false,
+          },
+          {
+            id: "ralph_run_crashed",
+            flowId: "release-flow",
+            flowName: "Release flow",
+            scope: "workspace",
+            status: "crashed",
+            summary: "Verification stopped.",
+            createdAt: now - 86_400_000,
+            finishedAt: now - 86_390_000,
+            blockCount: 2,
+            eventCount: 8,
+            cancellable: false,
+            recoverable: true,
           },
         ],
         updatedAt: now,

@@ -1,13 +1,16 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CommandProvider } from "../commands/command-context";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { AppRail, type AppActivityState } from "./app-rail";
 
-const renderRail = (mediaActivity: AppActivityState): void => {
+const renderRail = (
+  mediaActivity: AppActivityState,
+  onOpenFleetManager = (): void => undefined,
+): void => {
   const rail = createElement(AppRail, {
     activeApp: "chat",
     chatActivity: "idle",
@@ -16,7 +19,7 @@ const renderRail = (mediaActivity: AppActivityState): void => {
     schedulerActivity: "idle",
     onSelectApp: () => undefined,
     onOpenScheduler: () => undefined,
-    onOpenMissionControl: () => undefined,
+    onOpenFleetManager,
     onOpenSettings: () => undefined,
   });
 
@@ -51,5 +54,20 @@ describe("AppRail Media Studio activity", () => {
     expect(
       mediaStudio.querySelector(":scope > span[aria-hidden='true']"),
     ).not.toBeNull();
+  });
+});
+
+describe("AppRail Fleet Manager navigation", () => {
+  it("opens Fleet Manager without exposing legacy remote access", () => {
+    const onOpenFleetManager = vi.fn();
+    renderRail("idle", onOpenFleetManager);
+
+    fireEvent.click(screen.getByRole("button", { name: "Fleet Manager" }));
+
+    expect(onOpenFleetManager).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "Remote Access" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Mission Control" }),
+    ).toBeNull();
   });
 });

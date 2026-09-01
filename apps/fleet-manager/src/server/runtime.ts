@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { AuthStore } from "./auth-store";
+import { AuthenticationRateLimiter } from "./authentication-rate-limiter";
 import {
   loadConfig,
   type FleetManagerConfig,
@@ -8,7 +9,6 @@ import {
 import { FleetDatabase } from "./database";
 import { FleetStore } from "./fleet-store";
 import { GatewayHub } from "./gateway";
-import { LoginThrottle } from "./login-throttle";
 import {
   loadSettingsCipher,
   type SettingsCipher,
@@ -24,7 +24,7 @@ export interface FleetRuntime {
   settingsStore: SettingsStore;
   settingsCipher: SettingsCipher | null;
   gateways: GatewayHub;
-  loginThrottle: LoginThrottle;
+  authenticationRateLimiter: AuthenticationRateLimiter;
 }
 
 const runtimeSymbol = Symbol.for("machdoch.fleet-manager.runtime");
@@ -55,7 +55,7 @@ export function getRuntime(
     settingsStore: new SettingsStore(database),
     settingsCipher,
     gateways: new GatewayHub(config, fleetStore),
-    loginThrottle: new LoginThrottle(),
+    authenticationRateLimiter: new AuthenticationRateLimiter(),
   };
   globalRuntime[runtimeSymbol] = runtime;
   return runtime;

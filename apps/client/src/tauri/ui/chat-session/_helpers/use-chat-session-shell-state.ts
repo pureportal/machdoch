@@ -1,4 +1,4 @@
-import {
+﻿import {
   useCallback,
   useEffect,
   useMemo,
@@ -2147,10 +2147,10 @@ export const mergeShellStateForPersistence = (
       sessionIds,
     ).filter((message) => !(message.id in queuedMessageTombstones)),
     queuedMessageTombstones,
-    handledRemoteCommandIds: [
+    handledFleetCommandIds: [
       ...new Set([
-        ...latestState.handledRemoteCommandIds,
-        ...localState.handledRemoteCommandIds,
+        ...latestState.handledFleetCommandIds,
+        ...localState.handledFleetCommandIds,
       ]),
     ].slice(-512),
     contextPacks: mergeContextPacksForPersistence(

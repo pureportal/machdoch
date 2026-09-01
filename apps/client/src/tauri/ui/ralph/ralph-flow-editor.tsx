@@ -9,6 +9,11 @@ import {
 import { isTauri } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
+  createDefaultRalphVariableValues,
+  getRalphVariableValue,
+  validateRalphFlowVariableValues,
+} from "@machdoch/product-ui";
+import {
   Activity,
   AlertTriangle,
   ArrowLeft,
@@ -333,11 +338,6 @@ import {
   getDefaultRalphInputValue,
   validateRalphInputFieldValues,
 } from "./_helpers/validate-ralph-input-field-values.helper";
-import {
-  createDefaultRalphVariableValues,
-  getRalphVariableValue,
-  validateRalphFlowVariableValues,
-} from "./_helpers/validate-ralph-flow-variable-values.helper";
 import {
   getOutputChipClassName,
   getRunStatusPresentation,
@@ -1471,6 +1471,7 @@ export const RalphFlowEditor = ({
         blockCount: 0,
         edgeCount: 0,
         variableCount: 0,
+        variables: [],
       });
     }
 
@@ -12979,1394 +12980,972 @@ export const RalphFlowEditor = ({
             {editorMode === "run" ? (
               <SubmitShortcut asChild>
                 <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-                <div className="flex min-w-0 items-center justify-between gap-4 border-b border-slate-800 bg-slate-950/95 px-5 py-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-lime-400/20 bg-lime-500/10 text-lime-200">
-                      <Activity className="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold text-white">
-                        Run workspace
+                  <div className="flex min-w-0 items-center justify-between gap-4 border-b border-slate-800 bg-slate-950/95 px-5 py-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-lime-400/20 bg-lime-500/10 text-lime-200">
+                        <Activity className="h-4 w-4" />
                       </span>
-                      <span className="block truncate text-xs text-slate-400">
-                        {draftFlow?.name ??
-                          selectedSummary?.name ??
-                          "Select a flow to configure and run"}
-                      </span>
-                    </span>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {activeRunCount > 0 ? (
-                      <span className="inline-flex h-7 items-center gap-1 rounded-full border border-sky-400/30 bg-sky-500/10 px-2 text-[0.68rem] font-semibold text-sky-100">
-                        <LoaderCircle className="h-3 w-3 animate-spin" />
-                        {activeRunCount} live
-                      </span>
-                    ) : null}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={!canRunAction}
-                      aria-label="Run Ralph flow"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void runFlow();
-                      }}
-                      {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                      className="h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs text-slate-100 hover:bg-slate-800 hover:text-white"
-                    >
-                      {loading ? (
-                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                      ) : selectedFlowPrimaryActiveRun ? (
-                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Play className="h-3.5 w-3.5" />
-                      )}
-                      {runButtonLabel}
-                    </Button>
-                  </div>
-                </div>
-                <ScrollArea className="min-h-0" type="always">
-                  <div className="grid gap-4 p-4 xl:p-5">
-                    <nav
-                      aria-label="Ralph run workspace"
-                      className="grid min-w-0 max-w-2xl grid-cols-3 gap-1 rounded-xl border border-slate-800 bg-slate-900/60 p-1.5"
-                    >
-                      {(
-                        [
-                          ["setup", "Setup", SlidersHorizontal],
-                          ["live", "Live", Activity],
-                          ["history", "History", History],
-                        ] as const
-                      ).map(([tab, label, Icon]) => {
-                        const isActive =
-                          runPanelTab === tab ||
-                          (runPanelTab === "details" &&
-                            ((tab === "live" && Boolean(selectedActiveRun)) ||
-                              (tab === "history" && !selectedActiveRun)));
-
-                        return (
-                          <button
-                            key={tab}
-                            type="button"
-                            aria-pressed={isActive}
-                            onClick={() => setRunPanelTab(tab)}
-                            className={cn(
-                              "flex h-10 min-w-0 items-center justify-center gap-2 rounded-lg px-3 text-xs font-semibold transition",
-                              isActive
-                                ? "bg-lime-500/15 text-lime-50 shadow-sm ring-1 ring-lime-400/25"
-                                : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
-                            )}
-                          >
-                            <Icon className="h-3.5 w-3.5 shrink-0" />
-                            <span className="truncate">{label}</span>
-                            {tab === "live" && activeRuns.length > 0 ? (
-                              <span className="min-w-5 rounded-full bg-sky-500/20 px-1.5 text-center text-[0.62rem] leading-5 text-sky-100">
-                                {activeRuns.length}
-                              </span>
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                    </nav>
-
-                    {pendingInputContinuationInProgress ? (
-                      <div
-                        role="status"
-                        className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-sky-400/30 bg-sky-500/10 p-3 text-sm text-sky-100"
-                      >
-                        <span className="flex min-w-0 items-center gap-2">
-                          <LoaderCircle className="h-4 w-4 shrink-0 animate-spin" />
-                          <span className="min-w-0 truncate">
-                            Input response submitted. Continuation is running.
-                          </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold text-white">
+                          Run workspace
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => setRunPanelTab("live")}
-                          className="shrink-0 text-xs font-semibold text-sky-100 hover:text-white"
-                        >
-                          View live
-                        </button>
-                      </div>
-                    ) : null}
+                        <span className="block truncate text-xs text-slate-400">
+                          {draftFlow?.name ??
+                            selectedSummary?.name ??
+                            "Select a flow to configure and run"}
+                        </span>
+                      </span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {activeRunCount > 0 ? (
+                        <span className="inline-flex h-7 items-center gap-1 rounded-full border border-sky-400/30 bg-sky-500/10 px-2 text-[0.68rem] font-semibold text-sky-100">
+                          <LoaderCircle className="h-3 w-3 animate-spin" />
+                          {activeRunCount} live
+                        </span>
+                      ) : null}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={!canRunAction}
+                        aria-label="Run Ralph flow"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void runFlow();
+                        }}
+                        {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                        className="h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs text-slate-100 hover:bg-slate-800 hover:text-white"
+                      >
+                        {loading ? (
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                        ) : selectedFlowPrimaryActiveRun ? (
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Play className="h-3.5 w-3.5" />
+                        )}
+                        {runButtonLabel}
+                      </Button>
+                    </div>
+                  </div>
+                  <ScrollArea className="min-h-0" type="always">
+                    <div className="grid gap-4 p-4 xl:p-5">
+                      <nav
+                        aria-label="Ralph run workspace"
+                        className="grid min-w-0 max-w-2xl grid-cols-3 gap-1 rounded-xl border border-slate-800 bg-slate-900/60 p-1.5"
+                      >
+                        {(
+                          [
+                            ["setup", "Setup", SlidersHorizontal],
+                            ["live", "Live", Activity],
+                            ["history", "History", History],
+                          ] as const
+                        ).map(([tab, label, Icon]) => {
+                          const isActive =
+                            runPanelTab === tab ||
+                            (runPanelTab === "details" &&
+                              ((tab === "live" && Boolean(selectedActiveRun)) ||
+                                (tab === "history" && !selectedActiveRun)));
 
-                    {visiblePendingInput ? (
-                      <SubmitShortcut asChild>
-                        <div className="grid gap-3 rounded-lg border border-teal-400/30 bg-teal-950/20 p-3">
-                          <div className="flex min-w-0 items-start justify-between gap-3">
-                            <div className="grid min-w-0 gap-1">
-                              <div className="text-sm font-semibold text-teal-50">
-                                {visiblePendingInput.title}
-                              </div>
-                              {visiblePendingInput.prompt ? (
-                                <div className="text-xs leading-5 text-teal-100/80">
-                                  {visiblePendingInput.prompt}
-                                </div>
-                              ) : null}
-                              {visiblePendingInput.interview ? (
-                                <div className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-teal-200/75">
-                                  Interview turn{" "}
-                                  {visiblePendingInput.interview.turn} /{" "}
-                                  {visiblePendingInput.interview.maxTurns}
-                                </div>
-                              ) : null}
-                            </div>
-                            <span className="shrink-0 rounded-full border border-teal-300/30 bg-teal-400/10 px-2 py-1 text-[0.68rem] font-semibold text-teal-100">
-                              Waiting
-                            </span>
-                          </div>
-                          {visiblePendingMediaReview ? (
+                          return (
                             <button
+                              key={tab}
                               type="button"
-                              onClick={() =>
-                                onOpenMediaRun?.(
-                                  visiblePendingMediaReview.runId,
-                                )
-                              }
-                              disabled={!onOpenMediaRun}
-                              className="flex w-fit items-center gap-2 rounded-lg border border-orange-300/30 bg-orange-400/10 px-3 py-2 text-xs font-semibold text-orange-100 transition hover:border-orange-300/50 hover:bg-orange-400/15 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <Images className="h-3.5 w-3.5" />
-                              Open run in Media Studio
-                            </button>
-                          ) : null}
-                          <div className="grid gap-3">
-                            {visiblePendingInput.fields.map((field) => (
-                              <label
-                                key={field.id}
-                                className="grid gap-1.5 text-sm text-slate-100"
-                              >
-                                <span className="flex min-w-0 items-center justify-between gap-3">
-                                  <span className="min-w-0 truncate font-medium">
-                                    {field.label}
-                                  </span>
-                                  <span className="shrink-0 text-[0.68rem] text-slate-400">
-                                    {field.type}
-                                    {field.required ? " required" : ""}
-                                    {field.skippable ? " skippable" : ""}
-                                  </span>
-                                </span>
-                                {renderPendingInputControl(field)}
-                                <span className="flex min-w-0 items-center justify-between gap-3">
-                                  <span className="min-w-0 text-xs text-slate-400">
-                                    {field.help ?? ""}
-                                  </span>
-                                  {field.skippable ? (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        updatePendingInputValue(field.id, null)
-                                      }
-                                      className="shrink-0 text-xs font-medium text-teal-200 hover:text-teal-100"
-                                    >
-                                      Skip
-                                    </button>
-                                  ) : null}
-                                </span>
-                              </label>
-                            ))}
-                          </div>
-                          <div className="flex flex-wrap justify-end gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              disabled={inputSubmitting}
-                              onClick={() => void submitPendingInput("cancel")}
-                              className="h-8 rounded-lg border-slate-700 bg-slate-950 px-3 text-xs text-slate-200 hover:bg-slate-900 hover:text-white"
-                            >
-                              {visiblePendingInput.cancelLabel ?? "Cancel"}
-                            </Button>
-                            <Button
-                              type="button"
-                              disabled={inputSubmitting}
-                              onClick={() => void submitPendingInput("submit")}
-                              {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                              className="h-8 rounded-lg bg-teal-600 px-3 text-xs text-white hover:bg-teal-500"
-                            >
-                              {inputSubmitting ? (
-                                <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Check className="h-3.5 w-3.5" />
+                              aria-pressed={isActive}
+                              onClick={() => setRunPanelTab(tab)}
+                              className={cn(
+                                "flex h-10 min-w-0 items-center justify-center gap-2 rounded-lg px-3 text-xs font-semibold transition",
+                                isActive
+                                  ? "bg-lime-500/15 text-lime-50 shadow-sm ring-1 ring-lime-400/25"
+                                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
                               )}
-                              {visiblePendingInput.submitLabel ?? "Continue"}
-                            </Button>
-                          </div>
-                        </div>
-                      </SubmitShortcut>
-                    ) : null}
-
-                    {runPanelTab === "setup" ? (
-                      <div className="grid items-start gap-4 xl:grid-cols-[20rem_minmax(0,1fr)]">
-                        <aside className="grid gap-4 rounded-xl border border-slate-800 bg-slate-900/35 p-4 xl:sticky xl:top-0">
-                          <div className="grid gap-1">
-                            <div className="text-sm font-semibold text-white">
-                              Run readiness
-                            </div>
-                            <div className="text-xs leading-5 text-slate-400">
-                              Confirm the target, runtime, and required inputs
-                              before starting.
-                            </div>
-                          </div>
-                          <div
-                            className={cn(
-                              "rounded-lg border px-3 py-2.5 text-sm",
-                              selectedFlowPrimaryActiveRun
-                                ? "border-sky-400/25 bg-sky-500/10 text-sky-100"
-                                : runBlockedReason
-                                  ? "border-amber-400/25 bg-amber-500/10 text-amber-100"
-                                  : "border-lime-400/25 bg-lime-500/10 text-lime-100",
-                            )}
-                          >
-                            <div className="grid min-w-0 gap-2">
-                              <span className="min-w-0 break-words">
-                                {runActionMessage}
-                              </span>
-                              {runBlockedReason ===
-                                "Save flow before running." && canSaveFlow ? (
-                                <Button
-                                  type="button"
-                                  onClick={() => void saveFlow()}
-                                  className="h-8 justify-self-start rounded-lg bg-emerald-600 px-3 text-xs text-white hover:bg-emerald-500"
-                                >
-                                  <Save className="h-3.5 w-3.5" />
-                                  Save
-                                </Button>
+                            >
+                              <Icon className="h-3.5 w-3.5 shrink-0" />
+                              <span className="truncate">{label}</span>
+                              {tab === "live" && activeRuns.length > 0 ? (
+                                <span className="min-w-5 rounded-full bg-sky-500/20 px-1.5 text-center text-[0.62rem] leading-5 text-sky-100">
+                                  {activeRuns.length}
+                                </span>
                               ) : null}
-                            </div>
-                          </div>
+                            </button>
+                          );
+                        })}
+                      </nav>
 
-                          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-                            <div className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
-                              <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                                Scope
-                              </span>
-                              <span className="truncate text-xs text-slate-200">
-                                {selectedScopeLabel}
-                              </span>
-                            </div>
-                            <div className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
-                              <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                                Runtime
-                              </span>
-                              <span className="truncate text-xs text-slate-200">
-                                {runProvider} / {runModel}
-                              </span>
-                            </div>
-                            <div className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
-                              <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                                Variables
-                              </span>
-                              <span className="truncate text-xs text-slate-200">
-                                {setupVariables.length} total
-                                {requiredMissingVariables.length > 0
-                                  ? `, ${requiredMissingVariables.length} missing`
-                                  : ""}
-                              </span>
-                            </div>
-                            <div className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
-                              <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                                Selected flow
-                              </span>
-                              <span className="truncate text-xs text-slate-200">
-                                {selectedFlowActiveRunCount > 0
-                                  ? `${selectedFlowActiveRunCount} active run${selectedFlowActiveRunCount === 1 ? "" : "s"}`
-                                  : warningCount > 0
-                                    ? `${warningCount} warning${warningCount === 1 ? "" : "s"}`
-                                    : "Ready"}
-                              </span>
-                            </div>
-                          </div>
-                        </aside>
+                      {pendingInputContinuationInProgress ? (
+                        <div
+                          role="status"
+                          className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-sky-400/30 bg-sky-500/10 p-3 text-sm text-sky-100"
+                        >
+                          <span className="flex min-w-0 items-center gap-2">
+                            <LoaderCircle className="h-4 w-4 shrink-0 animate-spin" />
+                            <span className="min-w-0 truncate">
+                              Input response submitted. Continuation is running.
+                            </span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setRunPanelTab("live")}
+                            className="shrink-0 text-xs font-semibold text-sky-100 hover:text-white"
+                          >
+                            View live
+                          </button>
+                        </div>
+                      ) : null}
 
-                        <section className="grid min-w-0 gap-4 rounded-xl border border-slate-800 bg-slate-950/55 p-4">
-                          <div className="flex min-w-0 items-start justify-between gap-3 border-b border-slate-800 pb-3">
-                            <div className="min-w-0">
-                              <div className="text-sm font-semibold text-white">
-                                Run inputs
+                      {visiblePendingInput ? (
+                        <SubmitShortcut asChild>
+                          <div className="grid gap-3 rounded-lg border border-teal-400/30 bg-teal-950/20 p-3">
+                            <div className="flex min-w-0 items-start justify-between gap-3">
+                              <div className="grid min-w-0 gap-1">
+                                <div className="text-sm font-semibold text-teal-50">
+                                  {visiblePendingInput.title}
+                                </div>
+                                {visiblePendingInput.prompt ? (
+                                  <div className="text-xs leading-5 text-teal-100/80">
+                                    {visiblePendingInput.prompt}
+                                  </div>
+                                ) : null}
+                                {visiblePendingInput.interview ? (
+                                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-teal-200/75">
+                                    Interview turn{" "}
+                                    {visiblePendingInput.interview.turn} /{" "}
+                                    {visiblePendingInput.interview.maxTurns}
+                                  </div>
+                                ) : null}
                               </div>
-                              <div className="mt-1 text-xs text-slate-400">
-                                {setupVariables.length > 0
-                                  ? `${setupVariables.length} variable${setupVariables.length === 1 ? "" : "s"} discovered from this flow.`
-                                  : "This flow can start without additional inputs."}
-                              </div>
-                            </div>
-                            {requiredMissingVariables.length > 0 ? (
-                              <span className="shrink-0 rounded-full border border-amber-400/25 bg-amber-500/10 px-2 py-1 text-[0.68rem] font-semibold text-amber-100">
-                                {requiredMissingVariables.length} required
+                              <span className="shrink-0 rounded-full border border-teal-300/30 bg-teal-400/10 px-2 py-1 text-[0.68rem] font-semibold text-teal-100">
+                                Waiting
                               </span>
+                            </div>
+                            {visiblePendingMediaReview ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onOpenMediaRun?.(
+                                    visiblePendingMediaReview.runId,
+                                  )
+                                }
+                                disabled={!onOpenMediaRun}
+                                className="flex w-fit items-center gap-2 rounded-lg border border-orange-300/30 bg-orange-400/10 px-3 py-2 text-xs font-semibold text-orange-100 transition hover:border-orange-300/50 hover:bg-orange-400/15 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <Images className="h-3.5 w-3.5" />
+                                Open run in Media Studio
+                              </button>
                             ) : null}
-                          </div>
-
-                          {draftFlow && setupVariables.length > 0 ? (
-                            <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-                              {setupVariables.map((variable) => {
-                                const variableError =
-                                  setupVariableErrors[variable.name];
-                                const variableErrorId = variableError
-                                  ? createSetupVariableErrorId(variable.name)
-                                  : undefined;
-
-                                return (
-                                  <label
-                                    key={variable.name}
-                                    className="grid content-start gap-2 rounded-lg border border-slate-800 bg-slate-900/35 p-3 text-sm text-slate-200"
-                                  >
-                                    <span className="flex min-w-0 items-center justify-between gap-3">
-                                      <span className="flex min-w-0 items-center gap-2">
-                                        <span className="truncate font-medium">
-                                          {variable.name}
-                                        </span>
-                                        {variable.required ? (
-                                          <span className="rounded border border-amber-400/30 bg-amber-500/10 px-1.5 py-0.5 text-[0.62rem] font-semibold text-amber-100">
-                                            required
-                                          </span>
-                                        ) : null}
-                                        {variable.default !== undefined ? (
-                                          <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.62rem] text-slate-400">
-                                            default
-                                          </span>
-                                        ) : null}
-                                      </span>
-                                      <ControlTooltip content="Defined by the flow">
-                                        <span className="h-7 shrink-0 rounded border border-slate-800 bg-slate-950 px-2 py-1 text-[0.7rem] text-slate-400">
-                                          {variable.type}
-                                        </span>
-                                      </ControlTooltip>
+                            <div className="grid gap-3">
+                              {visiblePendingInput.fields.map((field) => (
+                                <label
+                                  key={field.id}
+                                  className="grid gap-1.5 text-sm text-slate-100"
+                                >
+                                  <span className="flex min-w-0 items-center justify-between gap-3">
+                                    <span className="min-w-0 truncate font-medium">
+                                      {field.label}
                                     </span>
-                                    <RalphSetupVariableControl
-                                      variable={variable}
-                                      value={getRalphVariableValue(
-                                        variable,
-                                        variableValues,
-                                      )}
-                                      error={variableError}
-                                      errorId={variableErrorId}
-                                      onChange={updateSetupVariableValue}
-                                    />
-                                    {variableError ? (
-                                      <span
-                                        id={variableErrorId}
-                                        role="alert"
-                                        className="text-xs font-medium text-rose-200"
-                                      >
-                                        {variableError}
-                                      </span>
-                                    ) : null}
-                                    {variable.default !== undefined ? (
+                                    <span className="shrink-0 text-[0.68rem] text-slate-400">
+                                      {field.type}
+                                      {field.required ? " required" : ""}
+                                      {field.skippable ? " skippable" : ""}
+                                    </span>
+                                  </span>
+                                  {renderPendingInputControl(field)}
+                                  <span className="flex min-w-0 items-center justify-between gap-3">
+                                    <span className="min-w-0 text-xs text-slate-400">
+                                      {field.help ?? ""}
+                                    </span>
+                                    {field.skippable ? (
                                       <button
                                         type="button"
                                         onClick={() =>
-                                          updateSetupVariableValue(
-                                            variable.name,
-                                            variable.default ?? "",
+                                          updatePendingInputValue(
+                                            field.id,
+                                            null,
                                           )
                                         }
-                                        className="justify-self-start text-[0.68rem] font-medium text-slate-500 hover:text-slate-200"
+                                        className="shrink-0 text-xs font-medium text-teal-200 hover:text-teal-100"
                                       >
-                                        Reset to default
+                                        Skip
                                       </button>
                                     ) : null}
-                                  </label>
-                                );
-                              })}
+                                  </span>
+                                </label>
+                              ))}
                             </div>
-                          ) : (
-                            <div className="grid min-h-40 place-items-center rounded-lg border border-dashed border-slate-800 bg-slate-900/20 p-6 text-center">
-                              <div className="grid max-w-sm gap-1">
-                                <CheckCircle2 className="mx-auto h-5 w-5 text-lime-300" />
-                                <div className="text-sm font-medium text-slate-200">
-                                  No variables required
-                                </div>
-                                <div className="text-xs leading-5 text-slate-500">
-                                  Start the run when the readiness panel shows
-                                  no blockers.
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </section>
-                      </div>
-                    ) : null}
-
-                    {runPanelTab === "live" ? (
-                      <div className="grid gap-4">
-                        {activeRuns.length > 0 ? (
-                          <div className="grid items-start gap-4 xl:grid-cols-[22rem_minmax(0,1fr)]">
-                            <div className="grid gap-3 rounded-xl border border-slate-800 bg-slate-900/30 p-3">
-                              <div className="flex min-w-0 items-center justify-between gap-3 text-xs text-slate-500">
-                                <span className="font-medium text-slate-400">
-                                  Active runs
-                                </span>
-                                <span>{activeRuns.length}</span>
-                              </div>
-                              <div className="grid max-h-[calc(100vh-17rem)] content-start gap-2 overflow-y-auto pr-1">
-                                {activeRuns.map((activeRun) => {
-                                  const status = getRunStatusPresentation(
-                                    activeRun.status,
-                                  );
-                                  const StatusIcon = status.icon;
-                                  const isSelected =
-                                    liveRunForPanel?.id === activeRun.id;
-
-                                  return (
-                                    <button
-                                      key={activeRun.id}
-                                      type="button"
-                                      onClick={() => focusActiveRun(activeRun)}
-                                      className={cn(
-                                        "grid min-w-0 gap-2 rounded-lg border p-3 text-left transition-colors",
-                                        isSelected
-                                          ? "border-sky-400/40 bg-sky-500/10"
-                                          : "border-slate-800 bg-slate-950/70 hover:border-slate-700 hover:bg-slate-900/60",
-                                      )}
-                                    >
-                                      <span className="flex min-w-0 items-center justify-between gap-2">
-                                        <span className="flex min-w-0 items-center gap-2">
-                                          <span
-                                            className={cn(
-                                              "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border",
-                                              status.chipClassName,
-                                            )}
-                                          >
-                                            <StatusIcon
-                                              className={cn(
-                                                "h-3.5 w-3.5",
-                                                status.spin && "animate-spin",
-                                              )}
-                                            />
-                                          </span>
-                                          <span className="min-w-0">
-                                            <span className="block truncate text-sm font-semibold text-slate-100">
-                                              {activeRun.flowName}
-                                            </span>
-                                            <span className="block truncate text-[0.68rem] text-slate-500">
-                                              {
-                                                RALPH_FLOW_SCOPE_LABELS[
-                                                  activeRun.scope
-                                                ]
-                                              }{" "}
-                                              /{" "}
-                                              {formatDurationMs(
-                                                Date.now() -
-                                                  activeRun.startedAt,
-                                              )}
-                                            </span>
-                                          </span>
-                                        </span>
-                                        {activeRun.lastOutput ? (
-                                          <span
-                                            className={cn(
-                                              "shrink-0 rounded border px-1.5 py-0.5 text-[0.62rem] font-semibold",
-                                              getOutputChipClassName(
-                                                activeRun.lastOutput,
-                                              ),
-                                            )}
-                                          >
-                                            {activeRun.lastOutput}
-                                          </span>
-                                        ) : null}
-                                      </span>
-                                      <span className="truncate text-xs text-slate-400">
-                                        {activeRun.status === "stopping"
-                                          ? "Stopping run."
-                                          : activeRun.currentBlockTitle
-                                            ? `Active: ${activeRun.currentBlockTitle}`
-                                            : (activeRun.lastMessage ??
-                                              "Waiting for first progress event.")}
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-
-                            {liveRunForPanel ? (
-                              <div className="grid gap-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
-                                <div className="flex min-w-0 items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <div className="truncate text-sm font-semibold text-slate-100">
-                                      {liveRunForPanel.flowName}
-                                    </div>
-                                    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
-                                      {(() => {
-                                        const status = getRunStatusPresentation(
-                                          liveRunForPanel.status,
-                                        );
-                                        const StatusIcon = status.icon;
-
-                                        return (
-                                          <span
-                                            className={cn(
-                                              "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[0.68rem] font-semibold",
-                                              status.chipClassName,
-                                            )}
-                                          >
-                                            <StatusIcon
-                                              className={cn(
-                                                "h-3 w-3",
-                                                status.spin && "animate-spin",
-                                              )}
-                                            />
-                                            {status.label}
-                                          </span>
-                                        );
-                                      })()}
-                                      <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.68rem] text-slate-400">
-                                        {liveRunForPanel.provider} /{" "}
-                                        {liveRunForPanel.model}
-                                      </span>
-                                      <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.68rem] text-slate-400">
-                                        started{" "}
-                                        {formatRevisionDate(
-                                          new Date(
-                                            liveRunForPanel.startedAt,
-                                          ).toISOString(),
-                                        )}
-                                      </span>
-                                    </div>
-                                  </div>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    disabled={
-                                      liveRunForPanel.status === "stopping"
-                                    }
-                                    aria-label={`Stop Ralph run ${liveRunForPanel.flowName}`}
-                                    onClick={() =>
-                                      void stopRalphRun(liveRunForPanel.id)
-                                    }
-                                    className="h-8 shrink-0 rounded-lg border-rose-400/30 bg-rose-500/10 px-2 text-xs text-rose-100 hover:bg-rose-500/15 hover:text-white disabled:opacity-60"
-                                  >
-                                    {liveRunForPanel.status === "stopping" ? (
-                                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                                    ) : (
-                                      <Octagon className="h-3.5 w-3.5" />
-                                    )}
-                                    Stop
-                                  </Button>
-                                </div>
-
-                                <div className="grid gap-2 md:grid-cols-2">
-                                  <div className="rounded border border-slate-800 bg-slate-950 p-2">
-                                    <div className="mb-1 flex items-center gap-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                                      <Workflow className="h-3 w-3" />
-                                      Current block
-                                    </div>
-                                    <div className="truncate text-sm text-slate-200">
-                                      {liveRunForPanel.currentBlockTitle ??
-                                        liveRunForPanel.currentBlockId ??
-                                        "Waiting for block start"}
-                                    </div>
-                                  </div>
-                                  <div className="rounded border border-slate-800 bg-slate-950 p-2">
-                                    <div className="mb-1 flex items-center gap-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                                      <Variable className="h-3 w-3" />
-                                      Variables
-                                    </div>
-                                    <div className="truncate text-sm text-slate-200">
-                                      {Object.keys(
-                                        liveRunForPanel.variableValues,
-                                      ).length > 0
-                                        ? `${Object.keys(liveRunForPanel.variableValues).length} captured`
-                                        : "No supplied variables"}
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {(() => {
-                                  const variableEntries = Object.entries(
-                                    liveRunForPanel.variableValues,
-                                  );
-
-                                  if (variableEntries.length === 0) {
-                                    return null;
-                                  }
-
-                                  const visibleVariableEntries =
-                                    variableEntries.slice(
-                                      0,
-                                      LIVE_VARIABLE_PREVIEW_LIMIT,
-                                    );
-                                  const hiddenVariableCount =
-                                    variableEntries.length -
-                                    visibleVariableEntries.length;
-
-                                  return (
-                                    <div className="grid gap-1">
-                                      {visibleVariableEntries.map(
-                                        ([name, value]) => (
-                                          <div
-                                            key={name}
-                                            className="grid grid-cols-[10rem_minmax(0,1fr)_auto] items-center gap-2 rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs"
-                                          >
-                                            <span className="truncate font-medium text-slate-300">
-                                              {name}
-                                            </span>
-                                            <ControlTooltip content={value}>
-                                              <span className="truncate text-slate-500">
-                                                {value || "(empty)"}
-                                              </span>
-                                            </ControlTooltip>
-                                            <RalphCopyButton
-                                              value={value}
-                                              label={`${name} variable`}
-                                            />
-                                          </div>
-                                        ),
-                                      )}
-                                      {hiddenVariableCount > 0 ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setSelectedRunId(
-                                              liveRunForPanel.id,
-                                            );
-                                            setRunPanelTab("details");
-                                          }}
-                                          className="justify-self-start text-xs font-medium text-sky-200 hover:text-white"
-                                        >
-                                          Inspect {hiddenVariableCount} more
-                                          variable
-                                          {hiddenVariableCount === 1 ? "" : "s"}
-                                        </button>
-                                      ) : null}
-                                    </div>
-                                  );
-                                })()}
-
-                                <div className="grid gap-2">
-                                  <div className="flex items-center justify-between gap-2 text-xs font-medium text-slate-400">
-                                    <span>Live timeline</span>
-                                    <span>{liveRunForPanel.events.length}</span>
-                                  </div>
-                                  {liveRunForPanel.events.length > 0 ? (
-                                    <div className="grid gap-1.5">
-                                      {liveRunForPanel.events
-                                        .slice(-8)
-                                        .map((event) => (
-                                          <div
-                                            key={event.id}
-                                            className="grid grid-cols-[4.25rem_minmax(0,1fr)] gap-2 text-xs"
-                                          >
-                                            <span className="font-mono text-slate-600">
-                                              +
-                                              {formatDurationMs(
-                                                event.timestamp -
-                                                  liveRunForPanel.startedAt,
-                                              )}
-                                            </span>
-                                            <span className="min-w-0">
-                                              <span
-                                                className={cn(
-                                                  "mr-1 inline-flex rounded border px-1 py-0.5 text-[0.62rem] font-semibold",
-                                                  getRunEventToneClassName(
-                                                    event.tone,
-                                                  ),
-                                                )}
-                                              >
-                                                {event.eventType}
-                                              </span>
-                                              <span className="text-slate-300">
-                                                {event.label}
-                                              </span>
-                                            </span>
-                                          </div>
-                                        ))}
-                                    </div>
-                                  ) : (
-                                    <div className="text-xs text-slate-500">
-                                      Waiting for progress events.
-                                    </div>
-                                  )}
-                                </div>
-
-                                {(() => {
-                                  const blockDetails =
-                                    getSortedActiveBlockDetails(
-                                      liveRunForPanel,
-                                    );
-                                  const visibleBlockDetails =
-                                    blockDetails.slice(
-                                      0,
-                                      LIVE_EXPANDED_NODE_PREVIEW_LIMIT,
-                                    );
-                                  const hiddenBlockCount =
-                                    blockDetails.length -
-                                    visibleBlockDetails.length;
-
-                                  return (
-                                    <div className="grid gap-2">
-                                      <div className="flex items-center justify-between gap-2 text-xs font-medium text-slate-400">
-                                        <span>Expanded nodes</span>
-                                        <span>{blockDetails.length}</span>
-                                      </div>
-                                      {blockDetails.length > 0 ? (
-                                        <div className="grid gap-2">
-                                          {visibleBlockDetails.map((detail) => (
-                                            <ActiveRalphBlockDetailCard
-                                              key={detail.blockId}
-                                              detail={detail}
-                                            />
-                                          ))}
-                                          {hiddenBlockCount > 0 ? (
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                setSelectedRunId(
-                                                  liveRunForPanel.id,
-                                                );
-                                                setRunPanelTab("details");
-                                              }}
-                                              className="justify-self-start text-xs font-medium text-sky-200 hover:text-white"
-                                            >
-                                              Inspect {hiddenBlockCount} more
-                                              node
-                                              {hiddenBlockCount === 1
-                                                ? ""
-                                                : "s"}
-                                            </button>
-                                          ) : null}
-                                        </div>
-                                      ) : (
-                                        <div className="text-xs text-slate-500">
-                                          No node internals captured yet.
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })()}
-                              </div>
-                            ) : null}
-                          </div>
-                        ) : (
-                          <div className="grid min-h-64 place-items-center rounded-xl border border-dashed border-slate-800 bg-slate-900/20 p-8 text-center">
-                            <div className="grid max-w-sm gap-3">
-                              <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-sky-400/20 bg-sky-500/10 text-sky-200">
-                                <Activity className="h-5 w-5" />
-                              </span>
-                              <div>
-                                <div className="text-sm font-semibold text-slate-200">
-                                  No active runs
-                                </div>
-                                <div className="mt-1 text-xs leading-5 text-slate-500">
-                                  Running flows appear here together, with their
-                                  current node, elapsed time, and live output.
-                                </div>
-                              </div>
+                            <div className="flex flex-wrap justify-end gap-2">
                               <Button
                                 type="button"
                                 variant="outline"
-                                onClick={() => setRunPanelTab("setup")}
-                                className="mx-auto h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs text-slate-200 hover:bg-slate-800 hover:text-white"
+                                disabled={inputSubmitting}
+                                onClick={() =>
+                                  void submitPendingInput("cancel")
+                                }
+                                className="h-8 rounded-lg border-slate-700 bg-slate-950 px-3 text-xs text-slate-200 hover:bg-slate-900 hover:text-white"
                               >
-                                <SlidersHorizontal className="h-3.5 w-3.5" />
-                                Configure a run
+                                {visiblePendingInput.cancelLabel ?? "Cancel"}
+                              </Button>
+                              <Button
+                                type="button"
+                                disabled={inputSubmitting}
+                                onClick={() =>
+                                  void submitPendingInput("submit")
+                                }
+                                {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                                className="h-8 rounded-lg bg-teal-600 px-3 text-xs text-white hover:bg-teal-500"
+                              >
+                                {inputSubmitting ? (
+                                  <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Check className="h-3.5 w-3.5" />
+                                )}
+                                {visiblePendingInput.submitLabel ?? "Continue"}
                               </Button>
                             </div>
                           </div>
-                        )}
+                        </SubmitShortcut>
+                      ) : null}
 
-                        {visibleLastRun ? (
-                          <div className="grid gap-2 border-t border-slate-800 pt-3">
-                            <div className="flex min-w-0 items-center justify-between gap-3">
-                              <div className="min-w-0 text-sm font-medium text-slate-100">
-                                Last result: {visibleLastRun.status}
+                      {runPanelTab === "setup" ? (
+                        <div className="grid items-start gap-4 xl:grid-cols-[20rem_minmax(0,1fr)]">
+                          <aside className="grid gap-4 rounded-xl border border-slate-800 bg-slate-900/35 p-4 xl:sticky xl:top-0">
+                            <div className="grid gap-1">
+                              <div className="text-sm font-semibold text-white">
+                                Run readiness
                               </div>
-                              {canRetryRecoverableRun ? (
+                              <div className="text-xs leading-5 text-slate-400">
+                                Confirm the target, runtime, and required inputs
+                                before starting.
+                              </div>
+                            </div>
+                            <div
+                              className={cn(
+                                "rounded-lg border px-3 py-2.5 text-sm",
+                                selectedFlowPrimaryActiveRun
+                                  ? "border-sky-400/25 bg-sky-500/10 text-sky-100"
+                                  : runBlockedReason
+                                    ? "border-amber-400/25 bg-amber-500/10 text-amber-100"
+                                    : "border-lime-400/25 bg-lime-500/10 text-lime-100",
+                              )}
+                            >
+                              <div className="grid min-w-0 gap-2">
+                                <span className="min-w-0 break-words">
+                                  {runActionMessage}
+                                </span>
+                                {runBlockedReason ===
+                                  "Save flow before running." && canSaveFlow ? (
+                                  <Button
+                                    type="button"
+                                    onClick={() => void saveFlow()}
+                                    className="h-8 justify-self-start rounded-lg bg-emerald-600 px-3 text-xs text-white hover:bg-emerald-500"
+                                  >
+                                    <Save className="h-3.5 w-3.5" />
+                                    Save
+                                  </Button>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                              <div className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+                                <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                  Scope
+                                </span>
+                                <span className="truncate text-xs text-slate-200">
+                                  {selectedScopeLabel}
+                                </span>
+                              </div>
+                              <div className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+                                <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                  Runtime
+                                </span>
+                                <span className="truncate text-xs text-slate-200">
+                                  {runProvider} / {runModel}
+                                </span>
+                              </div>
+                              <div className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+                                <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                  Variables
+                                </span>
+                                <span className="truncate text-xs text-slate-200">
+                                  {setupVariables.length} total
+                                  {requiredMissingVariables.length > 0
+                                    ? `, ${requiredMissingVariables.length} missing`
+                                    : ""}
+                                </span>
+                              </div>
+                              <div className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+                                <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                  Selected flow
+                                </span>
+                                <span className="truncate text-xs text-slate-200">
+                                  {selectedFlowActiveRunCount > 0
+                                    ? `${selectedFlowActiveRunCount} active run${selectedFlowActiveRunCount === 1 ? "" : "s"}`
+                                    : warningCount > 0
+                                      ? `${warningCount} warning${warningCount === 1 ? "" : "s"}`
+                                      : "Ready"}
+                                </span>
+                              </div>
+                            </div>
+                          </aside>
+
+                          <section className="grid min-w-0 gap-4 rounded-xl border border-slate-800 bg-slate-950/55 p-4">
+                            <div className="flex min-w-0 items-start justify-between gap-3 border-b border-slate-800 pb-3">
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold text-white">
+                                  Run inputs
+                                </div>
+                                <div className="mt-1 text-xs text-slate-400">
+                                  {setupVariables.length > 0
+                                    ? `${setupVariables.length} variable${setupVariables.length === 1 ? "" : "s"} discovered from this flow.`
+                                    : "This flow can start without additional inputs."}
+                                </div>
+                              </div>
+                              {requiredMissingVariables.length > 0 ? (
+                                <span className="shrink-0 rounded-full border border-amber-400/25 bg-amber-500/10 px-2 py-1 text-[0.68rem] font-semibold text-amber-100">
+                                  {requiredMissingVariables.length} required
+                                </span>
+                              ) : null}
+                            </div>
+
+                            {draftFlow && setupVariables.length > 0 ? (
+                              <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+                                {setupVariables.map((variable) => {
+                                  const variableError =
+                                    setupVariableErrors[variable.name];
+                                  const variableErrorId = variableError
+                                    ? createSetupVariableErrorId(variable.name)
+                                    : undefined;
+
+                                  return (
+                                    <label
+                                      key={variable.name}
+                                      className="grid content-start gap-2 rounded-lg border border-slate-800 bg-slate-900/35 p-3 text-sm text-slate-200"
+                                    >
+                                      <span className="flex min-w-0 items-center justify-between gap-3">
+                                        <span className="flex min-w-0 items-center gap-2">
+                                          <span className="truncate font-medium">
+                                            {variable.name}
+                                          </span>
+                                          {variable.required ? (
+                                            <span className="rounded border border-amber-400/30 bg-amber-500/10 px-1.5 py-0.5 text-[0.62rem] font-semibold text-amber-100">
+                                              required
+                                            </span>
+                                          ) : null}
+                                          {variable.default !== undefined ? (
+                                            <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.62rem] text-slate-400">
+                                              default
+                                            </span>
+                                          ) : null}
+                                        </span>
+                                        <ControlTooltip content="Defined by the flow">
+                                          <span className="h-7 shrink-0 rounded border border-slate-800 bg-slate-950 px-2 py-1 text-[0.7rem] text-slate-400">
+                                            {variable.type}
+                                          </span>
+                                        </ControlTooltip>
+                                      </span>
+                                      <RalphSetupVariableControl
+                                        variable={variable}
+                                        value={getRalphVariableValue(
+                                          variable,
+                                          variableValues,
+                                        )}
+                                        error={variableError}
+                                        errorId={variableErrorId}
+                                        onChange={updateSetupVariableValue}
+                                      />
+                                      {variableError ? (
+                                        <span
+                                          id={variableErrorId}
+                                          role="alert"
+                                          className="text-xs font-medium text-rose-200"
+                                        >
+                                          {variableError}
+                                        </span>
+                                      ) : null}
+                                      {variable.default !== undefined ? (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            updateSetupVariableValue(
+                                              variable.name,
+                                              variable.default ?? "",
+                                            )
+                                          }
+                                          className="justify-self-start text-[0.68rem] font-medium text-slate-500 hover:text-slate-200"
+                                        >
+                                          Reset to default
+                                        </button>
+                                      ) : null}
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="grid min-h-40 place-items-center rounded-lg border border-dashed border-slate-800 bg-slate-900/20 p-6 text-center">
+                                <div className="grid max-w-sm gap-1">
+                                  <CheckCircle2 className="mx-auto h-5 w-5 text-lime-300" />
+                                  <div className="text-sm font-medium text-slate-200">
+                                    No variables required
+                                  </div>
+                                  <div className="text-xs leading-5 text-slate-500">
+                                    Start the run when the readiness panel shows
+                                    no blockers.
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </section>
+                        </div>
+                      ) : null}
+
+                      {runPanelTab === "live" ? (
+                        <div className="grid gap-4">
+                          {activeRuns.length > 0 ? (
+                            <div className="grid items-start gap-4 xl:grid-cols-[22rem_minmax(0,1fr)]">
+                              <div className="grid gap-3 rounded-xl border border-slate-800 bg-slate-900/30 p-3">
+                                <div className="flex min-w-0 items-center justify-between gap-3 text-xs text-slate-500">
+                                  <span className="font-medium text-slate-400">
+                                    Active runs
+                                  </span>
+                                  <span>{activeRuns.length}</span>
+                                </div>
+                                <div className="grid max-h-[calc(100vh-17rem)] content-start gap-2 overflow-y-auto pr-1">
+                                  {activeRuns.map((activeRun) => {
+                                    const status = getRunStatusPresentation(
+                                      activeRun.status,
+                                    );
+                                    const StatusIcon = status.icon;
+                                    const isSelected =
+                                      liveRunForPanel?.id === activeRun.id;
+
+                                    return (
+                                      <button
+                                        key={activeRun.id}
+                                        type="button"
+                                        onClick={() =>
+                                          focusActiveRun(activeRun)
+                                        }
+                                        className={cn(
+                                          "grid min-w-0 gap-2 rounded-lg border p-3 text-left transition-colors",
+                                          isSelected
+                                            ? "border-sky-400/40 bg-sky-500/10"
+                                            : "border-slate-800 bg-slate-950/70 hover:border-slate-700 hover:bg-slate-900/60",
+                                        )}
+                                      >
+                                        <span className="flex min-w-0 items-center justify-between gap-2">
+                                          <span className="flex min-w-0 items-center gap-2">
+                                            <span
+                                              className={cn(
+                                                "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border",
+                                                status.chipClassName,
+                                              )}
+                                            >
+                                              <StatusIcon
+                                                className={cn(
+                                                  "h-3.5 w-3.5",
+                                                  status.spin && "animate-spin",
+                                                )}
+                                              />
+                                            </span>
+                                            <span className="min-w-0">
+                                              <span className="block truncate text-sm font-semibold text-slate-100">
+                                                {activeRun.flowName}
+                                              </span>
+                                              <span className="block truncate text-[0.68rem] text-slate-500">
+                                                {
+                                                  RALPH_FLOW_SCOPE_LABELS[
+                                                    activeRun.scope
+                                                  ]
+                                                }{" "}
+                                                /{" "}
+                                                {formatDurationMs(
+                                                  Date.now() -
+                                                    activeRun.startedAt,
+                                                )}
+                                              </span>
+                                            </span>
+                                          </span>
+                                          {activeRun.lastOutput ? (
+                                            <span
+                                              className={cn(
+                                                "shrink-0 rounded border px-1.5 py-0.5 text-[0.62rem] font-semibold",
+                                                getOutputChipClassName(
+                                                  activeRun.lastOutput,
+                                                ),
+                                              )}
+                                            >
+                                              {activeRun.lastOutput}
+                                            </span>
+                                          ) : null}
+                                        </span>
+                                        <span className="truncate text-xs text-slate-400">
+                                          {activeRun.status === "stopping"
+                                            ? "Stopping run."
+                                            : activeRun.currentBlockTitle
+                                              ? `Active: ${activeRun.currentBlockTitle}`
+                                              : (activeRun.lastMessage ??
+                                                "Waiting for first progress event.")}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {liveRunForPanel ? (
+                                <div className="grid gap-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+                                  <div className="flex min-w-0 items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <div className="truncate text-sm font-semibold text-slate-100">
+                                        {liveRunForPanel.flowName}
+                                      </div>
+                                      <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
+                                        {(() => {
+                                          const status =
+                                            getRunStatusPresentation(
+                                              liveRunForPanel.status,
+                                            );
+                                          const StatusIcon = status.icon;
+
+                                          return (
+                                            <span
+                                              className={cn(
+                                                "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[0.68rem] font-semibold",
+                                                status.chipClassName,
+                                              )}
+                                            >
+                                              <StatusIcon
+                                                className={cn(
+                                                  "h-3 w-3",
+                                                  status.spin && "animate-spin",
+                                                )}
+                                              />
+                                              {status.label}
+                                            </span>
+                                          );
+                                        })()}
+                                        <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.68rem] text-slate-400">
+                                          {liveRunForPanel.provider} /{" "}
+                                          {liveRunForPanel.model}
+                                        </span>
+                                        <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.68rem] text-slate-400">
+                                          started{" "}
+                                          {formatRevisionDate(
+                                            new Date(
+                                              liveRunForPanel.startedAt,
+                                            ).toISOString(),
+                                          )}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      disabled={
+                                        liveRunForPanel.status === "stopping"
+                                      }
+                                      aria-label={`Stop Ralph run ${liveRunForPanel.flowName}`}
+                                      onClick={() =>
+                                        void stopRalphRun(liveRunForPanel.id)
+                                      }
+                                      className="h-8 shrink-0 rounded-lg border-rose-400/30 bg-rose-500/10 px-2 text-xs text-rose-100 hover:bg-rose-500/15 hover:text-white disabled:opacity-60"
+                                    >
+                                      {liveRunForPanel.status === "stopping" ? (
+                                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                                      ) : (
+                                        <Octagon className="h-3.5 w-3.5" />
+                                      )}
+                                      Stop
+                                    </Button>
+                                  </div>
+
+                                  <div className="grid gap-2 md:grid-cols-2">
+                                    <div className="rounded border border-slate-800 bg-slate-950 p-2">
+                                      <div className="mb-1 flex items-center gap-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                        <Workflow className="h-3 w-3" />
+                                        Current block
+                                      </div>
+                                      <div className="truncate text-sm text-slate-200">
+                                        {liveRunForPanel.currentBlockTitle ??
+                                          liveRunForPanel.currentBlockId ??
+                                          "Waiting for block start"}
+                                      </div>
+                                    </div>
+                                    <div className="rounded border border-slate-800 bg-slate-950 p-2">
+                                      <div className="mb-1 flex items-center gap-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                        <Variable className="h-3 w-3" />
+                                        Variables
+                                      </div>
+                                      <div className="truncate text-sm text-slate-200">
+                                        {Object.keys(
+                                          liveRunForPanel.variableValues,
+                                        ).length > 0
+                                          ? `${Object.keys(liveRunForPanel.variableValues).length} captured`
+                                          : "No supplied variables"}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {(() => {
+                                    const variableEntries = Object.entries(
+                                      liveRunForPanel.variableValues,
+                                    );
+
+                                    if (variableEntries.length === 0) {
+                                      return null;
+                                    }
+
+                                    const visibleVariableEntries =
+                                      variableEntries.slice(
+                                        0,
+                                        LIVE_VARIABLE_PREVIEW_LIMIT,
+                                      );
+                                    const hiddenVariableCount =
+                                      variableEntries.length -
+                                      visibleVariableEntries.length;
+
+                                    return (
+                                      <div className="grid gap-1">
+                                        {visibleVariableEntries.map(
+                                          ([name, value]) => (
+                                            <div
+                                              key={name}
+                                              className="grid grid-cols-[10rem_minmax(0,1fr)_auto] items-center gap-2 rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs"
+                                            >
+                                              <span className="truncate font-medium text-slate-300">
+                                                {name}
+                                              </span>
+                                              <ControlTooltip content={value}>
+                                                <span className="truncate text-slate-500">
+                                                  {value || "(empty)"}
+                                                </span>
+                                              </ControlTooltip>
+                                              <RalphCopyButton
+                                                value={value}
+                                                label={`${name} variable`}
+                                              />
+                                            </div>
+                                          ),
+                                        )}
+                                        {hiddenVariableCount > 0 ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setSelectedRunId(
+                                                liveRunForPanel.id,
+                                              );
+                                              setRunPanelTab("details");
+                                            }}
+                                            className="justify-self-start text-xs font-medium text-sky-200 hover:text-white"
+                                          >
+                                            Inspect {hiddenVariableCount} more
+                                            variable
+                                            {hiddenVariableCount === 1
+                                              ? ""
+                                              : "s"}
+                                          </button>
+                                        ) : null}
+                                      </div>
+                                    );
+                                  })()}
+
+                                  <div className="grid gap-2">
+                                    <div className="flex items-center justify-between gap-2 text-xs font-medium text-slate-400">
+                                      <span>Live timeline</span>
+                                      <span>
+                                        {liveRunForPanel.events.length}
+                                      </span>
+                                    </div>
+                                    {liveRunForPanel.events.length > 0 ? (
+                                      <div className="grid gap-1.5">
+                                        {liveRunForPanel.events
+                                          .slice(-8)
+                                          .map((event) => (
+                                            <div
+                                              key={event.id}
+                                              className="grid grid-cols-[4.25rem_minmax(0,1fr)] gap-2 text-xs"
+                                            >
+                                              <span className="font-mono text-slate-600">
+                                                +
+                                                {formatDurationMs(
+                                                  event.timestamp -
+                                                    liveRunForPanel.startedAt,
+                                                )}
+                                              </span>
+                                              <span className="min-w-0">
+                                                <span
+                                                  className={cn(
+                                                    "mr-1 inline-flex rounded border px-1 py-0.5 text-[0.62rem] font-semibold",
+                                                    getRunEventToneClassName(
+                                                      event.tone,
+                                                    ),
+                                                  )}
+                                                >
+                                                  {event.eventType}
+                                                </span>
+                                                <span className="text-slate-300">
+                                                  {event.label}
+                                                </span>
+                                              </span>
+                                            </div>
+                                          ))}
+                                      </div>
+                                    ) : (
+                                      <div className="text-xs text-slate-500">
+                                        Waiting for progress events.
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {(() => {
+                                    const blockDetails =
+                                      getSortedActiveBlockDetails(
+                                        liveRunForPanel,
+                                      );
+                                    const visibleBlockDetails =
+                                      blockDetails.slice(
+                                        0,
+                                        LIVE_EXPANDED_NODE_PREVIEW_LIMIT,
+                                      );
+                                    const hiddenBlockCount =
+                                      blockDetails.length -
+                                      visibleBlockDetails.length;
+
+                                    return (
+                                      <div className="grid gap-2">
+                                        <div className="flex items-center justify-between gap-2 text-xs font-medium text-slate-400">
+                                          <span>Expanded nodes</span>
+                                          <span>{blockDetails.length}</span>
+                                        </div>
+                                        {blockDetails.length > 0 ? (
+                                          <div className="grid gap-2">
+                                            {visibleBlockDetails.map(
+                                              (detail) => (
+                                                <ActiveRalphBlockDetailCard
+                                                  key={detail.blockId}
+                                                  detail={detail}
+                                                />
+                                              ),
+                                            )}
+                                            {hiddenBlockCount > 0 ? (
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setSelectedRunId(
+                                                    liveRunForPanel.id,
+                                                  );
+                                                  setRunPanelTab("details");
+                                                }}
+                                                className="justify-self-start text-xs font-medium text-sky-200 hover:text-white"
+                                              >
+                                                Inspect {hiddenBlockCount} more
+                                                node
+                                                {hiddenBlockCount === 1
+                                                  ? ""
+                                                  : "s"}
+                                              </button>
+                                            ) : null}
+                                          </div>
+                                        ) : (
+                                          <div className="text-xs text-slate-500">
+                                            No node internals captured yet.
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div className="grid min-h-64 place-items-center rounded-xl border border-dashed border-slate-800 bg-slate-900/20 p-8 text-center">
+                              <div className="grid max-w-sm gap-3">
+                                <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-sky-400/20 bg-sky-500/10 text-sky-200">
+                                  <Activity className="h-5 w-5" />
+                                </span>
+                                <div>
+                                  <div className="text-sm font-semibold text-slate-200">
+                                    No active runs
+                                  </div>
+                                  <div className="mt-1 text-xs leading-5 text-slate-500">
+                                    Running flows appear here together, with
+                                    their current node, elapsed time, and live
+                                    output.
+                                  </div>
+                                </div>
                                 <Button
                                   type="button"
                                   variant="outline"
-                                  disabled={inputSubmitting}
-                                  onClick={() => void retryRecoverableRun()}
-                                  className="h-8 shrink-0 rounded-lg border-amber-400/30 bg-amber-500/10 px-3 text-xs text-amber-100 hover:bg-amber-500/15 hover:text-white"
+                                  onClick={() => setRunPanelTab("setup")}
+                                  className="mx-auto h-8 rounded-lg border-slate-700 bg-slate-900 px-3 text-xs text-slate-200 hover:bg-slate-800 hover:text-white"
                                 >
-                                  {inputSubmitting ? (
-                                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                                  ) : (
-                                    <RotateCcw className="h-3.5 w-3.5" />
-                                  )}
-                                  Retry current block
+                                  <SlidersHorizontal className="h-3.5 w-3.5" />
+                                  Configure a run
                                 </Button>
-                              ) : null}
+                              </div>
                             </div>
-                            <p className="break-words text-sm text-slate-400">
-                              {visibleLastRun.summary}
-                            </p>
-                            <div className="grid gap-1 md:grid-cols-2">
-                              {visibleLastRun.events
-                                .slice(-10)
-                                .map((event, index) => (
-                                  <div
-                                    key={`${event.type}-${index}`}
-                                    className="truncate text-xs text-slate-500"
-                                  >
-                                    {event.type}
-                                    {"blockId" in event
-                                      ? ` ${event.blockId}`
-                                      : ""}
-                                    {"output" in event
-                                      ? ` ${event.output}`
-                                      : ""}
-                                  </div>
-                                ))}
-                            </div>
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
+                          )}
 
-                    {runPanelTab === "history" ? (
-                      <div className="grid gap-4">
-                        <div className="flex min-w-0 items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 text-sm font-semibold text-white">
-                              <History className="h-4 w-4 text-slate-400" />
-                              Run history
-                            </div>
-                            <div className="mt-1 text-xs text-slate-500">
-                              Search past executions, then inspect outputs and
-                              logs in one place.
-                            </div>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            disabled={runHistoryLoading || !selectedId}
-                            aria-label="Refresh Ralph run history"
-                            tooltip="Refresh Ralph run history"
-                            onClick={() =>
-                              void refreshRunHistory(selectedId, selectedScope)
-                            }
-                            className="h-7 w-7 rounded-lg text-slate-500 hover:bg-slate-900 hover:text-slate-100"
-                          >
-                            <RefreshCw
-                              className={cn(
-                                "h-3.5 w-3.5",
-                                runHistoryLoading && "animate-spin",
-                              )}
-                            />
-                          </Button>
-                        </div>
-
-                        <SearchField
-                          value={runHistoryQuery}
-                          aria-label="Search Ralph run history"
-                          placeholder="Search by status, summary, flow, or run ID"
-                          onChange={(event) =>
-                            setRunHistoryQuery(event.target.value)
-                          }
-                          containerClassName="max-w-xl"
-                          iconClassName="size-3.5"
-                          className="h-9 rounded-lg border-slate-700 bg-slate-950 text-xs text-slate-100 placeholder:text-slate-600"
-                        />
-
-                        {runHistoryLoading ? (
-                          <div className="flex items-center gap-2 text-xs text-slate-500">
-                            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                            Loading runs.
-                          </div>
-                        ) : runHistory.length === 0 ? (
-                          <EmptyState
-                            icon={History}
-                            title="No runs recorded"
-                            description="Completed, failed, and waiting runs will appear here."
-                          />
-                        ) : filteredRunHistory.length === 0 ? (
-                          <EmptyState
-                            icon={Search}
-                            title={`No runs match “${runHistoryQuery}”.`}
-                            size="compact"
-                            role="status"
-                          />
-                        ) : (
-                          <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">
-                            {filteredRunHistory.map((run) => {
-                              const status = getRunStatusPresentation(
-                                run.status,
-                                run.outcome?.status,
-                              );
-                              const StatusIcon = status.icon;
-                              const isSelected = selectedRunId === run.id;
-                              const isPartial = run.status === "partial";
-                              const duration =
-                                run.finishedAt &&
-                                getTimestampMs(run.createdAt) !== null
-                                  ? formatDurationMs(
-                                      (getTimestampMs(run.finishedAt) ?? 0) -
-                                        (getTimestampMs(run.createdAt) ?? 0),
-                                    )
-                                  : null;
-
-                              return (
-                                <div
-                                  key={run.id}
-                                  className={cn(
-                                    "grid min-w-0 gap-3 rounded-xl border p-3 transition",
-                                    isSelected
-                                      ? "border-sky-400/40 bg-sky-500/10"
-                                      : "border-slate-800 bg-slate-950/70 hover:border-slate-700",
-                                  )}
-                                >
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      void (isPartial
-                                        ? openRunLog(
-                                            run.id,
-                                            "simple",
-                                            selectedScope,
-                                          )
-                                        : openRunDetail(run.id, selectedScope))
-                                    }
-                                    className="min-w-0 text-left"
-                                  >
-                                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                                      <span
-                                        className={cn(
-                                          "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[0.68rem] font-semibold",
-                                          status.chipClassName,
-                                        )}
-                                      >
-                                        <StatusIcon className="h-3 w-3" />
-                                        {status.label}
-                                      </span>
-                                      <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.68rem] text-slate-400">
-                                        {formatRevisionDate(run.createdAt)}
-                                      </span>
-                                      {duration ? (
-                                        <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.68rem] text-slate-400">
-                                          {duration}
-                                        </span>
-                                      ) : null}
-                                      <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.68rem] text-slate-400">
-                                        {run.blockCount} blocks
-                                      </span>
-                                      <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.68rem] text-slate-400">
-                                        {run.eventCount} events
-                                      </span>
-                                    </div>
-                                    <div className="mt-2 line-clamp-2 text-sm font-medium leading-5 text-slate-200">
-                                      {run.summary}
-                                    </div>
-                                    <div className="mt-0.5 truncate text-[0.68rem] text-slate-600">
-                                      {run.id}
-                                    </div>
-                                  </button>
-                                  <div className="flex min-w-0 flex-wrap items-center gap-1 border-t border-slate-800/80 pt-2">
-                                    <RalphCopyButton
-                                      value={run.id}
-                                      label="run ID"
-                                    />
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      disabled={runDetailLoading || isPartial}
-                                      onClick={() =>
-                                        void openRunDetail(
-                                          run.id,
-                                          selectedScope,
-                                        )
-                                      }
-                                      className="h-7 rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-900 hover:text-white"
-                                    >
-                                      <FileJson className="h-3.5 w-3.5" />
-                                      Inspect
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      disabled={runLogLoading}
-                                      onClick={() =>
-                                        void openRunLog(
-                                          run.id,
-                                          "simple",
-                                          selectedScope,
-                                        )
-                                      }
-                                      className="h-7 rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-900 hover:text-white"
-                                    >
-                                      <FileText className="h-3.5 w-3.5" />
-                                      Log
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      disabled={runLogLoading}
-                                      onClick={() =>
-                                        void openRunLog(
-                                          run.id,
-                                          "trace",
-                                          selectedScope,
-                                        )
-                                      }
-                                      className="h-7 rounded-lg px-2 text-xs text-slate-400 hover:bg-slate-900 hover:text-white"
-                                    >
-                                      <Terminal className="h-3.5 w-3.5" />
-                                      Trace
-                                    </Button>
-                                  </div>
+                          {visibleLastRun ? (
+                            <div className="grid gap-2 border-t border-slate-800 pt-3">
+                              <div className="flex min-w-0 items-center justify-between gap-3">
+                                <div className="min-w-0 text-sm font-medium text-slate-100">
+                                  Last result: {visibleLastRun.status}
                                 </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    ) : null}
+                                {canRetryRecoverableRun ? (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={inputSubmitting}
+                                    onClick={() => void retryRecoverableRun()}
+                                    className="h-8 shrink-0 rounded-lg border-amber-400/30 bg-amber-500/10 px-3 text-xs text-amber-100 hover:bg-amber-500/15 hover:text-white"
+                                  >
+                                    {inputSubmitting ? (
+                                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <RotateCcw className="h-3.5 w-3.5" />
+                                    )}
+                                    Retry current block
+                                  </Button>
+                                ) : null}
+                              </div>
+                              <p className="break-words text-sm text-slate-400">
+                                {visibleLastRun.summary}
+                              </p>
+                              <div className="grid gap-1 md:grid-cols-2">
+                                {visibleLastRun.events
+                                  .slice(-10)
+                                  .map((event, index) => (
+                                    <div
+                                      key={`${event.type}-${index}`}
+                                      className="truncate text-xs text-slate-500"
+                                    >
+                                      {event.type}
+                                      {"blockId" in event
+                                        ? ` ${event.blockId}`
+                                        : ""}
+                                      {"output" in event
+                                        ? ` ${event.output}`
+                                        : ""}
+                                    </div>
+                                  ))}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
 
-                    {runPanelTab === "details" ? (
-                      <div className="grid gap-4">
-                        <div className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-800 pb-3">
-                          <div className="flex min-w-0 items-center gap-2">
+                      {runPanelTab === "history" ? (
+                        <div className="grid gap-4">
+                          <div className="flex min-w-0 items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                                <History className="h-4 w-4 text-slate-400" />
+                                Run history
+                              </div>
+                              <div className="mt-1 text-xs text-slate-500">
+                                Search past executions, then inspect outputs and
+                                logs in one place.
+                              </div>
+                            </div>
                             <Button
                               type="button"
                               variant="ghost"
                               size="icon"
-                              aria-label={
-                                selectedActiveRun
-                                  ? "Back to live runs"
-                                  : "Back to run history"
-                              }
-                              tooltip={
-                                selectedActiveRun
-                                  ? "Back to live runs"
-                                  : "Back to run history"
-                              }
+                              disabled={runHistoryLoading || !selectedId}
+                              aria-label="Refresh Ralph run history"
+                              tooltip="Refresh Ralph run history"
                               onClick={() =>
-                                setRunPanelTab(
-                                  selectedActiveRun ? "live" : "history",
+                                void refreshRunHistory(
+                                  selectedId,
+                                  selectedScope,
                                 )
                               }
-                              className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-white"
+                              className="h-7 w-7 rounded-lg text-slate-500 hover:bg-slate-900 hover:text-slate-100"
                             >
-                              <ArrowLeft className="h-4 w-4" />
+                              <RefreshCw
+                                className={cn(
+                                  "h-3.5 w-3.5",
+                                  runHistoryLoading && "animate-spin",
+                                )}
+                              />
                             </Button>
-                            <div className="min-w-0">
-                              <div className="text-sm font-semibold text-white">
-                                Run inspector
-                              </div>
-                              <div className="truncate text-xs text-slate-500">
-                                {selectedRunId ?? "Select a run"}
-                              </div>
-                            </div>
                           </div>
-                          {selectedRunId ? (
-                            <RalphCopyButton
-                              value={selectedRunId}
-                              label="run ID"
+
+                          <SearchField
+                            value={runHistoryQuery}
+                            aria-label="Search Ralph run history"
+                            placeholder="Search by status, summary, flow, or run ID"
+                            onChange={(event) =>
+                              setRunHistoryQuery(event.target.value)
+                            }
+                            containerClassName="max-w-xl"
+                            iconClassName="size-3.5"
+                            className="h-9 rounded-lg border-slate-700 bg-slate-950 text-xs text-slate-100 placeholder:text-slate-600"
+                          />
+
+                          {runHistoryLoading ? (
+                            <div className="flex items-center gap-2 text-xs text-slate-500">
+                              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                              Loading runs.
+                            </div>
+                          ) : runHistory.length === 0 ? (
+                            <EmptyState
+                              icon={History}
+                              title="No runs recorded"
+                              description="Completed, failed, and waiting runs will appear here."
                             />
-                          ) : null}
-                        </div>
+                          ) : filteredRunHistory.length === 0 ? (
+                            <EmptyState
+                              icon={Search}
+                              title={`No runs match “${runHistoryQuery}”.`}
+                              size="compact"
+                              role="status"
+                            />
+                          ) : (
+                            <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">
+                              {filteredRunHistory.map((run) => {
+                                const status = getRunStatusPresentation(
+                                  run.status,
+                                  run.outcome?.status,
+                                );
+                                const StatusIcon = status.icon;
+                                const isSelected = selectedRunId === run.id;
+                                const isPartial = run.status === "partial";
+                                const duration =
+                                  run.finishedAt &&
+                                  getTimestampMs(run.createdAt) !== null
+                                    ? formatDurationMs(
+                                        (getTimestampMs(run.finishedAt) ?? 0) -
+                                          (getTimestampMs(run.createdAt) ?? 0),
+                                      )
+                                    : null;
 
-                        {runLogLoading ? (
-                          <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/25 p-4 text-sm text-slate-400">
-                            <LoaderCircle className="h-4 w-4 animate-spin" />
-                            Loading run output…
-                          </div>
-                        ) : selectedRunLog ? (
-                          <section className="grid gap-3 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
-                            <div className="flex min-w-0 items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-                                  {selectedRunLog.kind === "trace" ? (
-                                    <Terminal className="h-4 w-4 text-violet-300" />
-                                  ) : (
-                                    <FileText className="h-4 w-4 text-sky-300" />
-                                  )}
-                                  {selectedRunLog.kind === "trace"
-                                    ? "Detailed trace"
-                                    : "Readable log"}
-                                </div>
-                                <ControlTooltip content={selectedRunLog.path}>
-                                  <div className="mt-1 truncate text-[0.68rem] text-slate-600">
-                                    {selectedRunLog.path}
-                                  </div>
-                                </ControlTooltip>
-                              </div>
-                              <div className="flex shrink-0 items-center gap-1">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  disabled={runLogLoading}
-                                  onClick={() =>
-                                    void openRunLog(
-                                      selectedRunLog.runId,
-                                      "simple",
-                                      selectedScope,
-                                    )
-                                  }
-                                  className={cn(
-                                    "h-7 rounded-lg px-2 text-xs hover:bg-slate-900 hover:text-white",
-                                    selectedRunLog.kind === "simple"
-                                      ? "bg-sky-500/10 text-sky-100"
-                                      : "text-slate-500",
-                                  )}
-                                >
-                                  Log
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  disabled={runLogLoading}
-                                  onClick={() =>
-                                    void openRunLog(
-                                      selectedRunLog.runId,
-                                      "trace",
-                                      selectedScope,
-                                    )
-                                  }
-                                  className={cn(
-                                    "h-7 rounded-lg px-2 text-xs hover:bg-slate-900 hover:text-white",
-                                    selectedRunLog.kind === "trace"
-                                      ? "bg-violet-500/10 text-violet-100"
-                                      : "text-slate-500",
-                                  )}
-                                >
-                                  Trace
-                                </Button>
-                                <RalphCopyButton
-                                  value={selectedRunLog.content}
-                                  label={
-                                    selectedRunLog.kind === "trace"
-                                      ? "trace"
-                                      : "log"
-                                  }
-                                />
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  aria-label="Close Ralph run log"
-                                  tooltip="Close Ralph run log"
-                                  onClick={() => setSelectedRunLog(null)}
-                                  className="h-7 w-7 rounded-lg text-slate-500 hover:bg-slate-900 hover:text-slate-100"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
-                            </div>
-                            <pre
-                              className={cn(
-                                "max-h-[28rem] overflow-auto rounded-lg border border-slate-800 bg-black/30 p-3 font-mono text-[0.72rem] leading-5 text-slate-300",
-                                selectedRunLog.kind === "trace"
-                                  ? "whitespace-pre"
-                                  : "whitespace-pre-wrap",
-                              )}
-                            >
-                              {selectedRunLog.content}
-                            </pre>
-                          </section>
-                        ) : null}
-
-                        {runDetailLoading && !selectedActiveRun ? (
-                          <div className="flex items-center gap-2 text-sm text-slate-500">
-                            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                            Loading run details.
-                          </div>
-                        ) : selectedActiveRun ? (
-                          <div className="grid gap-3 rounded border border-sky-400/30 bg-sky-500/10 p-3">
-                            <div className="flex min-w-0 items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="truncate text-sm font-semibold text-slate-100">
-                                  {selectedActiveRun.flowName}
-                                </div>
-                                <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
-                                  {(() => {
-                                    const status = getRunStatusPresentation(
-                                      selectedActiveRun.status,
-                                    );
-                                    const StatusIcon = status.icon;
-
-                                    return (
-                                      <span
-                                        className={cn(
-                                          "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[0.68rem] font-semibold",
-                                          status.chipClassName,
-                                        )}
-                                      >
-                                        <StatusIcon
-                                          className={cn(
-                                            "h-3 w-3",
-                                            status.spin && "animate-spin",
-                                          )}
-                                        />
-                                        {status.label}
-                                      </span>
-                                    );
-                                  })()}
-                                  <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.68rem] text-slate-400">
-                                    {selectedActiveRun.provider} /{" "}
-                                    {selectedActiveRun.model}
-                                  </span>
-                                  <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.68rem] text-slate-400">
-                                    {formatDurationMs(
-                                      Date.now() - selectedActiveRun.startedAt,
-                                    )}
-                                  </span>
-                                </div>
-                              </div>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                disabled={
-                                  selectedActiveRun.status === "stopping"
-                                }
-                                aria-label={`Stop Ralph run ${selectedActiveRun.flowName}`}
-                                onClick={() =>
-                                  void stopRalphRun(selectedActiveRun.id)
-                                }
-                                className="h-8 shrink-0 rounded-lg border-rose-400/30 bg-rose-500/10 px-2 text-xs text-rose-100 hover:bg-rose-500/15 hover:text-white disabled:opacity-60"
-                              >
-                                <Octagon className="h-3.5 w-3.5" />
-                                Stop
-                              </Button>
-                            </div>
-                            <div className="grid gap-2 md:grid-cols-2">
-                              <div className="rounded border border-slate-800 bg-slate-950/80 p-2">
-                                <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                                  Current block
-                                </div>
-                                <div className="mt-1 truncate text-sm text-slate-200">
-                                  {selectedActiveRun.currentBlockTitle ??
-                                    selectedActiveRun.currentBlockId ??
-                                    "Waiting for progress"}
-                                </div>
-                              </div>
-                              <div className="rounded border border-slate-800 bg-slate-950/80 p-2">
-                                <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                                  Last output
-                                </div>
-                                <div className="mt-1">
-                                  <span
+                                return (
+                                  <div
+                                    key={run.id}
                                     className={cn(
-                                      "rounded border px-1.5 py-0.5 text-xs font-semibold",
-                                      getOutputChipClassName(
-                                        selectedActiveRun.lastOutput,
-                                      ),
+                                      "grid min-w-0 gap-3 rounded-xl border p-3 transition",
+                                      isSelected
+                                        ? "border-sky-400/40 bg-sky-500/10"
+                                        : "border-slate-800 bg-slate-950/70 hover:border-slate-700",
                                     )}
                                   >
-                                    {selectedActiveRun.lastOutput ?? "Pending"}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="grid gap-2">
-                              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
-                                <Variable className="h-3.5 w-3.5 text-slate-500" />
-                                Run variables
-                              </div>
-                              {Object.keys(selectedActiveRun.variableValues)
-                                .length > 0 ? (
-                                <div className="grid gap-1 md:grid-cols-2">
-                                  {Object.entries(
-                                    selectedActiveRun.variableValues,
-                                  ).map(([name, value]) => (
-                                    <div
-                                      key={name}
-                                      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded border border-slate-800 bg-slate-950/80 p-2"
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void (isPartial
+                                          ? openRunLog(
+                                              run.id,
+                                              "simple",
+                                              selectedScope,
+                                            )
+                                          : openRunDetail(
+                                              run.id,
+                                              selectedScope,
+                                            ))
+                                      }
+                                      className="min-w-0 text-left"
                                     >
-                                      <span className="grid min-w-0 gap-1">
-                                        <span className="truncate text-xs font-medium text-slate-300">
-                                          {name}
-                                        </span>
-                                        <ControlTooltip content={value}>
-                                          <span className="truncate text-xs text-slate-500">
-                                            {value || "(empty)"}
-                                          </span>
-                                        </ControlTooltip>
-                                      </span>
-                                      <RalphCopyButton
-                                        value={value}
-                                        label={`${name} variable`}
-                                      />
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className="text-xs text-slate-500">
-                                  No variables were supplied for this run.
-                                </div>
-                              )}
-                            </div>
-                            <div className="grid gap-1.5">
-                              <div className="text-xs font-semibold text-slate-300">
-                                Live events
-                              </div>
-                              {selectedActiveRun.events.length > 0 ? (
-                                selectedActiveRun.events
-                                  .slice(-12)
-                                  .map((event) => (
-                                    <div
-                                      key={event.id}
-                                      className="grid grid-cols-[4.25rem_minmax(0,1fr)] gap-2 rounded border border-slate-800 bg-slate-950/70 px-2 py-1.5 text-xs"
-                                    >
-                                      <span className="font-mono text-slate-600">
-                                        +
-                                        {formatDurationMs(
-                                          event.timestamp -
-                                            selectedActiveRun.startedAt,
-                                        )}
-                                      </span>
-                                      <span className="min-w-0 truncate text-slate-300">
-                                        {event.label}
-                                      </span>
-                                    </div>
-                                  ))
-                              ) : (
-                                <div className="text-xs text-slate-500">
-                                  No progress events yet.
-                                </div>
-                              )}
-                            </div>
-                            <div className="grid gap-1.5">
-                              <div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-300">
-                                <span>Expanded nodes</span>
-                                <span className="text-slate-500">
-                                  {
-                                    getSortedActiveBlockDetails(
-                                      selectedActiveRun,
-                                    ).length
-                                  }
-                                </span>
-                              </div>
-                              {getSortedActiveBlockDetails(selectedActiveRun)
-                                .length > 0 ? (
-                                <div className="grid gap-2">
-                                  {getSortedActiveBlockDetails(
-                                    selectedActiveRun,
-                                  ).map((detail) => (
-                                    <ActiveRalphBlockDetailCard
-                                      key={detail.blockId}
-                                      detail={detail}
-                                    />
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className="text-xs text-slate-500">
-                                  No node internals captured yet.
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        ) : selectedRunRecord ? (
-                          (() => {
-                            const status = getRunStatusPresentation(
-                              selectedRunRecord.status,
-                              selectedRunRecord.outcome?.status,
-                            );
-                            const StatusIcon = status.icon;
-                            const duration =
-                              formatRunRecordDuration(selectedRunRecord);
-
-                            return (
-                              <div className="grid gap-3">
-                                <div className="grid gap-3 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
-                                  <div className="flex min-w-0 items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <div className="truncate text-sm font-semibold text-slate-100">
-                                        {selectedRunRecord.flowName}
-                                      </div>
-                                      <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
+                                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                         <span
                                           className={cn(
                                             "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[0.68rem] font-semibold",
@@ -14377,9 +13956,7 @@ export const RalphFlowEditor = ({
                                           {status.label}
                                         </span>
                                         <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.68rem] text-slate-400">
-                                          {formatRevisionDate(
-                                            selectedRunRecord.createdAt,
-                                          )}
+                                          {formatRevisionDate(run.createdAt)}
                                         </span>
                                         {duration ? (
                                           <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.68rem] text-slate-400">
@@ -14387,26 +13964,46 @@ export const RalphFlowEditor = ({
                                           </span>
                                         ) : null}
                                         <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.68rem] text-slate-400">
-                                          {selectedRunRecord.id}
+                                          {run.blockCount} blocks
+                                        </span>
+                                        <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.68rem] text-slate-400">
+                                          {run.eventCount} events
                                         </span>
                                       </div>
-                                    </div>
-                                    <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                                      <div className="mt-2 line-clamp-2 text-sm font-medium leading-5 text-slate-200">
+                                        {run.summary}
+                                      </div>
+                                      <div className="mt-0.5 truncate text-[0.68rem] text-slate-600">
+                                        {run.id}
+                                      </div>
+                                    </button>
+                                    <div className="flex min-w-0 flex-wrap items-center gap-1 border-t border-slate-800/80 pt-2">
                                       <RalphCopyButton
-                                        value={JSON.stringify(
-                                          selectedRunRecord,
-                                          null,
-                                          2,
-                                        )}
-                                        label="run details"
+                                        value={run.id}
+                                        label="run ID"
                                       />
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        disabled={runDetailLoading || isPartial}
+                                        onClick={() =>
+                                          void openRunDetail(
+                                            run.id,
+                                            selectedScope,
+                                          )
+                                        }
+                                        className="h-7 rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-900 hover:text-white"
+                                      >
+                                        <FileJson className="h-3.5 w-3.5" />
+                                        Inspect
+                                      </Button>
                                       <Button
                                         type="button"
                                         variant="ghost"
                                         disabled={runLogLoading}
                                         onClick={() =>
                                           void openRunLog(
-                                            selectedRunRecord.id,
+                                            run.id,
                                             "simple",
                                             selectedScope,
                                           )
@@ -14422,7 +14019,7 @@ export const RalphFlowEditor = ({
                                         disabled={runLogLoading}
                                         onClick={() =>
                                           void openRunLog(
-                                            selectedRunRecord.id,
+                                            run.id,
                                             "trace",
                                             selectedScope,
                                           )
@@ -14434,268 +14031,709 @@ export const RalphFlowEditor = ({
                                       </Button>
                                     </div>
                                   </div>
-                                  <div className="flex min-w-0 items-start justify-between gap-2 rounded-lg border border-slate-800/80 bg-slate-900/25 p-3">
-                                    <p className="min-w-0 break-words text-sm leading-5 text-slate-300">
-                                      {selectedRunRecord.summary}
-                                    </p>
-                                    <RalphCopyButton
-                                      value={selectedRunRecord.summary}
-                                      label="run summary"
-                                    />
-                                  </div>
-                                  {selectedRunRecord.outcome ? (
-                                    <div className="grid gap-2 rounded-lg border border-slate-800/80 bg-slate-900/25 p-3 text-xs">
-                                      <div className="flex flex-wrap items-center gap-2 text-slate-400">
-                                        <span>
-                                          {selectedRunRecord.outcome.verified
-                                            ? "Evidence verified"
-                                            : "Evidence incomplete"}
-                                        </span>
-                                        <span>/</span>
-                                        <span>
-                                          {selectedRunRecord.outcome.retryable
-                                            ? "Resumable"
-                                            : "Terminal"}
-                                        </span>
-                                      </div>
-                                      <p className="break-words leading-5 text-slate-300">
-                                        {selectedRunRecord.outcome.reason}
-                                      </p>
-                                      {selectedRunRecord.outcome.nextAction ? (
-                                        <p className="break-words leading-5 text-amber-200">
-                                          Next:{" "}
-                                          {selectedRunRecord.outcome.nextAction}
-                                        </p>
-                                      ) : null}
-                                      {selectedRunRecord.outcome.evidence
-                                        .length > 0 ? (
-                                        <div className="grid gap-1 border-t border-slate-800 pt-2">
-                                          {selectedRunRecord.outcome.evidence.map(
-                                            (entry, index) => (
-                                              <div
-                                                key={`${entry.kind}-${entry.blockId ?? index}`}
-                                                className="break-words text-slate-400"
-                                              >
-                                                {entry.kind}: {entry.summary}
-                                              </div>
-                                            ),
-                                          )}
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                  ) : null}
-                                  <div className="grid gap-2 md:grid-cols-4">
-                                    <div className="rounded border border-slate-800 bg-slate-950 p-2">
-                                      <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                                        Variables
-                                      </div>
-                                      <div className="mt-1 text-sm text-slate-200">
-                                        {
-                                          Object.keys(
-                                            selectedRunRecord.variableValues,
-                                          ).length
-                                        }
-                                      </div>
-                                    </div>
-                                    <div className="rounded border border-slate-800 bg-slate-950 p-2">
-                                      <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                                        Blocks
-                                      </div>
-                                      <div className="mt-1 text-sm text-slate-200">
-                                        {selectedRunRecord.blockResults.length}
-                                      </div>
-                                    </div>
-                                    <div className="rounded border border-slate-800 bg-slate-950 p-2">
-                                      <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                                        Events
-                                      </div>
-                                      <div className="mt-1 text-sm text-slate-200">
-                                        {selectedRunRecord.events.length}
-                                      </div>
-                                    </div>
-                                    <div className="rounded border border-slate-800 bg-slate-950 p-2">
-                                      <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                                        Validation
-                                      </div>
-                                      <div className="mt-1 text-sm text-slate-200">
-                                        {selectedRunRecord.validation.valid
-                                          ? "Valid"
-                                          : `${selectedRunRecord.validation.errors.length} errors`}
-                                      </div>
-                                    </div>
-                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {runPanelTab === "details" ? (
+                        <div className="grid gap-4">
+                          <div className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                aria-label={
+                                  selectedActiveRun
+                                    ? "Back to live runs"
+                                    : "Back to run history"
+                                }
+                                tooltip={
+                                  selectedActiveRun
+                                    ? "Back to live runs"
+                                    : "Back to run history"
+                                }
+                                onClick={() =>
+                                  setRunPanelTab(
+                                    selectedActiveRun ? "live" : "history",
+                                  )
+                                }
+                                className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-white"
+                              >
+                                <ArrowLeft className="h-4 w-4" />
+                              </Button>
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold text-white">
+                                  Run inspector
                                 </div>
-
-                                <div className="grid gap-2 md:grid-cols-2">
-                                  <div className="grid gap-2 rounded border border-slate-800 bg-slate-950/70 p-3">
-                                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
-                                      <Variable className="h-3.5 w-3.5 text-slate-500" />
-                                      Resolved variables
-                                    </div>
-                                    {Object.keys(
-                                      selectedRunRecord.variableValues,
-                                    ).length > 0 ? (
-                                      <div className="grid gap-1">
-                                        {Object.entries(
-                                          selectedRunRecord.variableValues,
-                                        ).map(([name, value]) => (
-                                          <div
-                                            key={name}
-                                            className="grid grid-cols-[9rem_minmax(0,1fr)_auto] items-center gap-2 rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs"
-                                          >
-                                            <span className="truncate font-medium text-slate-300">
-                                              {name}
-                                            </span>
-                                            <ControlTooltip content={value}>
-                                              <span className="truncate text-slate-500">
-                                                {value || "(empty)"}
-                                              </span>
-                                            </ControlTooltip>
-                                            <RalphCopyButton
-                                              value={value}
-                                              label={`${name} variable`}
-                                            />
-                                          </div>
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <div className="text-xs text-slate-500">
-                                        No variables were supplied.
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  <div className="grid gap-2 rounded border border-slate-800 bg-slate-950/70 p-3">
-                                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
-                                      <Route className="h-3.5 w-3.5 text-slate-500" />
-                                      Run events
-                                    </div>
-                                    {selectedRunRecord.events.length > 0 ? (
-                                      <div className="grid gap-1">
-                                        {selectedRunRecord.events
-                                          .slice(-12)
-                                          .map((event, index) => (
-                                            <div
-                                              key={`${event.type}-${index}`}
-                                              className="rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-slate-300"
-                                            >
-                                              {getRalphRecordEventLabel(event)}
-                                            </div>
-                                          ))}
-                                      </div>
-                                    ) : (
-                                      <div className="text-xs text-slate-500">
-                                        No events were recorded.
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-
-                                <div className="grid gap-2 rounded border border-slate-800 bg-slate-950/70 p-3">
-                                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
-                                    <Workflow className="h-3.5 w-3.5 text-slate-500" />
-                                    Block results
-                                  </div>
-                                  {selectedRunRecord.blockResults.length > 0 ? (
-                                    <div className="grid gap-2">
-                                      {selectedRunRecord.blockResults.map(
-                                        (block) => (
-                                          <RalphRunRecordBlockCard
-                                            key={`${block.blockId}-${block.attempt}`}
-                                            block={block}
-                                          />
-                                        ),
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <div className="text-xs text-slate-500">
-                                      No block results were recorded.
-                                    </div>
-                                  )}
+                                <div className="truncate text-xs text-slate-500">
+                                  {selectedRunId ?? "Select a run"}
                                 </div>
                               </div>
-                            );
-                          })()
-                        ) : runDetailError ? (
-                          <div className="rounded border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-100">
-                            {runDetailError}
-                          </div>
-                        ) : selectedRunSummary ? (
-                          <div className="grid gap-2 rounded border border-slate-800 bg-slate-950/70 p-3">
-                            <div className="text-sm font-semibold text-slate-100">
-                              {selectedRunSummary.summary}
                             </div>
-                            <div className="text-xs text-slate-500">
-                              Details have not been loaded for{" "}
-                              {selectedRunSummary.id}.
-                            </div>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() =>
-                                void openRunDetail(
-                                  selectedRunSummary.id,
-                                  selectedScope,
-                                )
-                              }
-                              className="h-8 justify-self-start rounded-lg border-slate-700 bg-slate-900 px-3 text-xs text-slate-100 hover:bg-slate-800 hover:text-white"
-                            >
-                              <FileJson className="h-3.5 w-3.5" />
-                              Load details
-                            </Button>
+                            {selectedRunId ? (
+                              <RalphCopyButton
+                                value={selectedRunId}
+                                label="run ID"
+                              />
+                            ) : null}
                           </div>
-                        ) : (
-                          <div className="text-sm text-slate-500">
-                            Select a live run or history entry to inspect
-                            variables, block results, events, and logs.
-                          </div>
-                        )}
-                      </div>
-                    ) : null}
 
-                    {message ? (
-                      <div
-                        className={cn(
-                          "break-words border-t border-slate-800 pt-2 text-sm",
-                          staleRunMessage ? "text-amber-100" : "text-slate-300",
-                        )}
-                      >
-                        {staleRunMessage ? (
-                          <div className="flex min-w-0 flex-wrap items-center gap-2">
-                            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-300" />
-                            <span className="min-w-0 flex-1">
-                              This run references a flow file that no longer
-                              exists. Refresh the flow list, then select or save
-                              the flow again.
-                            </span>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => {
-                                setMessage(null);
-                                void refreshFlows();
-                              }}
-                              className="h-7 rounded-lg border-amber-400/30 bg-amber-500/10 px-2 text-xs text-amber-100 hover:bg-amber-500/15 hover:text-white"
-                            >
-                              <RefreshCw className="h-3.5 w-3.5" />
-                              Refresh
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              onClick={() => setMessage(null)}
-                              className="h-7 rounded-lg px-2 text-xs text-slate-400 hover:bg-slate-900 hover:text-white"
-                            >
-                              Dismiss
-                            </Button>
-                          </div>
-                        ) : (
-                          message
-                        )}
-                      </div>
-                    ) : null}
-                  </div>
-                </ScrollArea>
+                          {runLogLoading ? (
+                            <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/25 p-4 text-sm text-slate-400">
+                              <LoaderCircle className="h-4 w-4 animate-spin" />
+                              Loading run output…
+                            </div>
+                          ) : selectedRunLog ? (
+                            <section className="grid gap-3 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+                              <div className="flex min-w-0 items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                                    {selectedRunLog.kind === "trace" ? (
+                                      <Terminal className="h-4 w-4 text-violet-300" />
+                                    ) : (
+                                      <FileText className="h-4 w-4 text-sky-300" />
+                                    )}
+                                    {selectedRunLog.kind === "trace"
+                                      ? "Detailed trace"
+                                      : "Readable log"}
+                                  </div>
+                                  <ControlTooltip content={selectedRunLog.path}>
+                                    <div className="mt-1 truncate text-[0.68rem] text-slate-600">
+                                      {selectedRunLog.path}
+                                    </div>
+                                  </ControlTooltip>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-1">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    disabled={runLogLoading}
+                                    onClick={() =>
+                                      void openRunLog(
+                                        selectedRunLog.runId,
+                                        "simple",
+                                        selectedScope,
+                                      )
+                                    }
+                                    className={cn(
+                                      "h-7 rounded-lg px-2 text-xs hover:bg-slate-900 hover:text-white",
+                                      selectedRunLog.kind === "simple"
+                                        ? "bg-sky-500/10 text-sky-100"
+                                        : "text-slate-500",
+                                    )}
+                                  >
+                                    Log
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    disabled={runLogLoading}
+                                    onClick={() =>
+                                      void openRunLog(
+                                        selectedRunLog.runId,
+                                        "trace",
+                                        selectedScope,
+                                      )
+                                    }
+                                    className={cn(
+                                      "h-7 rounded-lg px-2 text-xs hover:bg-slate-900 hover:text-white",
+                                      selectedRunLog.kind === "trace"
+                                        ? "bg-violet-500/10 text-violet-100"
+                                        : "text-slate-500",
+                                    )}
+                                  >
+                                    Trace
+                                  </Button>
+                                  <RalphCopyButton
+                                    value={selectedRunLog.content}
+                                    label={
+                                      selectedRunLog.kind === "trace"
+                                        ? "trace"
+                                        : "log"
+                                    }
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    aria-label="Close Ralph run log"
+                                    tooltip="Close Ralph run log"
+                                    onClick={() => setSelectedRunLog(null)}
+                                    className="h-7 w-7 rounded-lg text-slate-500 hover:bg-slate-900 hover:text-slate-100"
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              </div>
+                              <pre
+                                className={cn(
+                                  "max-h-[28rem] overflow-auto rounded-lg border border-slate-800 bg-black/30 p-3 font-mono text-[0.72rem] leading-5 text-slate-300",
+                                  selectedRunLog.kind === "trace"
+                                    ? "whitespace-pre"
+                                    : "whitespace-pre-wrap",
+                                )}
+                              >
+                                {selectedRunLog.content}
+                              </pre>
+                            </section>
+                          ) : null}
+
+                          {runDetailLoading && !selectedActiveRun ? (
+                            <div className="flex items-center gap-2 text-sm text-slate-500">
+                              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                              Loading run details.
+                            </div>
+                          ) : selectedActiveRun ? (
+                            <div className="grid gap-3 rounded border border-sky-400/30 bg-sky-500/10 p-3">
+                              <div className="flex min-w-0 items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="truncate text-sm font-semibold text-slate-100">
+                                    {selectedActiveRun.flowName}
+                                  </div>
+                                  <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
+                                    {(() => {
+                                      const status = getRunStatusPresentation(
+                                        selectedActiveRun.status,
+                                      );
+                                      const StatusIcon = status.icon;
+
+                                      return (
+                                        <span
+                                          className={cn(
+                                            "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[0.68rem] font-semibold",
+                                            status.chipClassName,
+                                          )}
+                                        >
+                                          <StatusIcon
+                                            className={cn(
+                                              "h-3 w-3",
+                                              status.spin && "animate-spin",
+                                            )}
+                                          />
+                                          {status.label}
+                                        </span>
+                                      );
+                                    })()}
+                                    <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.68rem] text-slate-400">
+                                      {selectedActiveRun.provider} /{" "}
+                                      {selectedActiveRun.model}
+                                    </span>
+                                    <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.68rem] text-slate-400">
+                                      {formatDurationMs(
+                                        Date.now() -
+                                          selectedActiveRun.startedAt,
+                                      )}
+                                    </span>
+                                  </div>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  disabled={
+                                    selectedActiveRun.status === "stopping"
+                                  }
+                                  aria-label={`Stop Ralph run ${selectedActiveRun.flowName}`}
+                                  onClick={() =>
+                                    void stopRalphRun(selectedActiveRun.id)
+                                  }
+                                  className="h-8 shrink-0 rounded-lg border-rose-400/30 bg-rose-500/10 px-2 text-xs text-rose-100 hover:bg-rose-500/15 hover:text-white disabled:opacity-60"
+                                >
+                                  <Octagon className="h-3.5 w-3.5" />
+                                  Stop
+                                </Button>
+                              </div>
+                              <div className="grid gap-2 md:grid-cols-2">
+                                <div className="rounded border border-slate-800 bg-slate-950/80 p-2">
+                                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                    Current block
+                                  </div>
+                                  <div className="mt-1 truncate text-sm text-slate-200">
+                                    {selectedActiveRun.currentBlockTitle ??
+                                      selectedActiveRun.currentBlockId ??
+                                      "Waiting for progress"}
+                                  </div>
+                                </div>
+                                <div className="rounded border border-slate-800 bg-slate-950/80 p-2">
+                                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                    Last output
+                                  </div>
+                                  <div className="mt-1">
+                                    <span
+                                      className={cn(
+                                        "rounded border px-1.5 py-0.5 text-xs font-semibold",
+                                        getOutputChipClassName(
+                                          selectedActiveRun.lastOutput,
+                                        ),
+                                      )}
+                                    >
+                                      {selectedActiveRun.lastOutput ??
+                                        "Pending"}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="grid gap-2">
+                                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+                                  <Variable className="h-3.5 w-3.5 text-slate-500" />
+                                  Run variables
+                                </div>
+                                {Object.keys(selectedActiveRun.variableValues)
+                                  .length > 0 ? (
+                                  <div className="grid gap-1 md:grid-cols-2">
+                                    {Object.entries(
+                                      selectedActiveRun.variableValues,
+                                    ).map(([name, value]) => (
+                                      <div
+                                        key={name}
+                                        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded border border-slate-800 bg-slate-950/80 p-2"
+                                      >
+                                        <span className="grid min-w-0 gap-1">
+                                          <span className="truncate text-xs font-medium text-slate-300">
+                                            {name}
+                                          </span>
+                                          <ControlTooltip content={value}>
+                                            <span className="truncate text-xs text-slate-500">
+                                              {value || "(empty)"}
+                                            </span>
+                                          </ControlTooltip>
+                                        </span>
+                                        <RalphCopyButton
+                                          value={value}
+                                          label={`${name} variable`}
+                                        />
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="text-xs text-slate-500">
+                                    No variables were supplied for this run.
+                                  </div>
+                                )}
+                              </div>
+                              <div className="grid gap-1.5">
+                                <div className="text-xs font-semibold text-slate-300">
+                                  Live events
+                                </div>
+                                {selectedActiveRun.events.length > 0 ? (
+                                  selectedActiveRun.events
+                                    .slice(-12)
+                                    .map((event) => (
+                                      <div
+                                        key={event.id}
+                                        className="grid grid-cols-[4.25rem_minmax(0,1fr)] gap-2 rounded border border-slate-800 bg-slate-950/70 px-2 py-1.5 text-xs"
+                                      >
+                                        <span className="font-mono text-slate-600">
+                                          +
+                                          {formatDurationMs(
+                                            event.timestamp -
+                                              selectedActiveRun.startedAt,
+                                          )}
+                                        </span>
+                                        <span className="min-w-0 truncate text-slate-300">
+                                          {event.label}
+                                        </span>
+                                      </div>
+                                    ))
+                                ) : (
+                                  <div className="text-xs text-slate-500">
+                                    No progress events yet.
+                                  </div>
+                                )}
+                              </div>
+                              <div className="grid gap-1.5">
+                                <div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-300">
+                                  <span>Expanded nodes</span>
+                                  <span className="text-slate-500">
+                                    {
+                                      getSortedActiveBlockDetails(
+                                        selectedActiveRun,
+                                      ).length
+                                    }
+                                  </span>
+                                </div>
+                                {getSortedActiveBlockDetails(selectedActiveRun)
+                                  .length > 0 ? (
+                                  <div className="grid gap-2">
+                                    {getSortedActiveBlockDetails(
+                                      selectedActiveRun,
+                                    ).map((detail) => (
+                                      <ActiveRalphBlockDetailCard
+                                        key={detail.blockId}
+                                        detail={detail}
+                                      />
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="text-xs text-slate-500">
+                                    No node internals captured yet.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ) : selectedRunRecord ? (
+                            (() => {
+                              const status = getRunStatusPresentation(
+                                selectedRunRecord.status,
+                                selectedRunRecord.outcome?.status,
+                              );
+                              const StatusIcon = status.icon;
+                              const duration =
+                                formatRunRecordDuration(selectedRunRecord);
+
+                              return (
+                                <div className="grid gap-3">
+                                  <div className="grid gap-3 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+                                    <div className="flex min-w-0 items-start justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <div className="truncate text-sm font-semibold text-slate-100">
+                                          {selectedRunRecord.flowName}
+                                        </div>
+                                        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
+                                          <span
+                                            className={cn(
+                                              "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[0.68rem] font-semibold",
+                                              status.chipClassName,
+                                            )}
+                                          >
+                                            <StatusIcon className="h-3 w-3" />
+                                            {status.label}
+                                          </span>
+                                          <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.68rem] text-slate-400">
+                                            {formatRevisionDate(
+                                              selectedRunRecord.createdAt,
+                                            )}
+                                          </span>
+                                          {duration ? (
+                                            <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.68rem] text-slate-400">
+                                              {duration}
+                                            </span>
+                                          ) : null}
+                                          <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.68rem] text-slate-400">
+                                            {selectedRunRecord.id}
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                                        <RalphCopyButton
+                                          value={JSON.stringify(
+                                            selectedRunRecord,
+                                            null,
+                                            2,
+                                          )}
+                                          label="run details"
+                                        />
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          disabled={runLogLoading}
+                                          onClick={() =>
+                                            void openRunLog(
+                                              selectedRunRecord.id,
+                                              "simple",
+                                              selectedScope,
+                                            )
+                                          }
+                                          className="h-7 rounded-lg px-2 text-xs text-slate-300 hover:bg-slate-900 hover:text-white"
+                                        >
+                                          <FileText className="h-3.5 w-3.5" />
+                                          Log
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          disabled={runLogLoading}
+                                          onClick={() =>
+                                            void openRunLog(
+                                              selectedRunRecord.id,
+                                              "trace",
+                                              selectedScope,
+                                            )
+                                          }
+                                          className="h-7 rounded-lg px-2 text-xs text-slate-400 hover:bg-slate-900 hover:text-white"
+                                        >
+                                          <Terminal className="h-3.5 w-3.5" />
+                                          Trace
+                                        </Button>
+                                      </div>
+                                    </div>
+                                    <div className="flex min-w-0 items-start justify-between gap-2 rounded-lg border border-slate-800/80 bg-slate-900/25 p-3">
+                                      <p className="min-w-0 break-words text-sm leading-5 text-slate-300">
+                                        {selectedRunRecord.summary}
+                                      </p>
+                                      <RalphCopyButton
+                                        value={selectedRunRecord.summary}
+                                        label="run summary"
+                                      />
+                                    </div>
+                                    {selectedRunRecord.outcome ? (
+                                      <div className="grid gap-2 rounded-lg border border-slate-800/80 bg-slate-900/25 p-3 text-xs">
+                                        <div className="flex flex-wrap items-center gap-2 text-slate-400">
+                                          <span>
+                                            {selectedRunRecord.outcome.verified
+                                              ? "Evidence verified"
+                                              : "Evidence incomplete"}
+                                          </span>
+                                          <span>/</span>
+                                          <span>
+                                            {selectedRunRecord.outcome.retryable
+                                              ? "Resumable"
+                                              : "Terminal"}
+                                          </span>
+                                        </div>
+                                        <p className="break-words leading-5 text-slate-300">
+                                          {selectedRunRecord.outcome.reason}
+                                        </p>
+                                        {selectedRunRecord.outcome
+                                          .nextAction ? (
+                                          <p className="break-words leading-5 text-amber-200">
+                                            Next:{" "}
+                                            {
+                                              selectedRunRecord.outcome
+                                                .nextAction
+                                            }
+                                          </p>
+                                        ) : null}
+                                        {selectedRunRecord.outcome.evidence
+                                          .length > 0 ? (
+                                          <div className="grid gap-1 border-t border-slate-800 pt-2">
+                                            {selectedRunRecord.outcome.evidence.map(
+                                              (entry, index) => (
+                                                <div
+                                                  key={`${entry.kind}-${entry.blockId ?? index}`}
+                                                  className="break-words text-slate-400"
+                                                >
+                                                  {entry.kind}: {entry.summary}
+                                                </div>
+                                              ),
+                                            )}
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    ) : null}
+                                    <div className="grid gap-2 md:grid-cols-4">
+                                      <div className="rounded border border-slate-800 bg-slate-950 p-2">
+                                        <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                          Variables
+                                        </div>
+                                        <div className="mt-1 text-sm text-slate-200">
+                                          {
+                                            Object.keys(
+                                              selectedRunRecord.variableValues,
+                                            ).length
+                                          }
+                                        </div>
+                                      </div>
+                                      <div className="rounded border border-slate-800 bg-slate-950 p-2">
+                                        <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                          Blocks
+                                        </div>
+                                        <div className="mt-1 text-sm text-slate-200">
+                                          {
+                                            selectedRunRecord.blockResults
+                                              .length
+                                          }
+                                        </div>
+                                      </div>
+                                      <div className="rounded border border-slate-800 bg-slate-950 p-2">
+                                        <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                          Events
+                                        </div>
+                                        <div className="mt-1 text-sm text-slate-200">
+                                          {selectedRunRecord.events.length}
+                                        </div>
+                                      </div>
+                                      <div className="rounded border border-slate-800 bg-slate-950 p-2">
+                                        <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                          Validation
+                                        </div>
+                                        <div className="mt-1 text-sm text-slate-200">
+                                          {selectedRunRecord.validation.valid
+                                            ? "Valid"
+                                            : `${selectedRunRecord.validation.errors.length} errors`}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid gap-2 md:grid-cols-2">
+                                    <div className="grid gap-2 rounded border border-slate-800 bg-slate-950/70 p-3">
+                                      <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+                                        <Variable className="h-3.5 w-3.5 text-slate-500" />
+                                        Resolved variables
+                                      </div>
+                                      {Object.keys(
+                                        selectedRunRecord.variableValues,
+                                      ).length > 0 ? (
+                                        <div className="grid gap-1">
+                                          {Object.entries(
+                                            selectedRunRecord.variableValues,
+                                          ).map(([name, value]) => (
+                                            <div
+                                              key={name}
+                                              className="grid grid-cols-[9rem_minmax(0,1fr)_auto] items-center gap-2 rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs"
+                                            >
+                                              <span className="truncate font-medium text-slate-300">
+                                                {name}
+                                              </span>
+                                              <ControlTooltip content={value}>
+                                                <span className="truncate text-slate-500">
+                                                  {value || "(empty)"}
+                                                </span>
+                                              </ControlTooltip>
+                                              <RalphCopyButton
+                                                value={value}
+                                                label={`${name} variable`}
+                                              />
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <div className="text-xs text-slate-500">
+                                          No variables were supplied.
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className="grid gap-2 rounded border border-slate-800 bg-slate-950/70 p-3">
+                                      <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+                                        <Route className="h-3.5 w-3.5 text-slate-500" />
+                                        Run events
+                                      </div>
+                                      {selectedRunRecord.events.length > 0 ? (
+                                        <div className="grid gap-1">
+                                          {selectedRunRecord.events
+                                            .slice(-12)
+                                            .map((event, index) => (
+                                              <div
+                                                key={`${event.type}-${index}`}
+                                                className="rounded border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-slate-300"
+                                              >
+                                                {getRalphRecordEventLabel(
+                                                  event,
+                                                )}
+                                              </div>
+                                            ))}
+                                        </div>
+                                      ) : (
+                                        <div className="text-xs text-slate-500">
+                                          No events were recorded.
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="grid gap-2 rounded border border-slate-800 bg-slate-950/70 p-3">
+                                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+                                      <Workflow className="h-3.5 w-3.5 text-slate-500" />
+                                      Block results
+                                    </div>
+                                    {selectedRunRecord.blockResults.length >
+                                    0 ? (
+                                      <div className="grid gap-2">
+                                        {selectedRunRecord.blockResults.map(
+                                          (block) => (
+                                            <RalphRunRecordBlockCard
+                                              key={`${block.blockId}-${block.attempt}`}
+                                              block={block}
+                                            />
+                                          ),
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <div className="text-xs text-slate-500">
+                                        No block results were recorded.
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })()
+                          ) : runDetailError ? (
+                            <div className="rounded border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                              {runDetailError}
+                            </div>
+                          ) : selectedRunSummary ? (
+                            <div className="grid gap-2 rounded border border-slate-800 bg-slate-950/70 p-3">
+                              <div className="text-sm font-semibold text-slate-100">
+                                {selectedRunSummary.summary}
+                              </div>
+                              <div className="text-xs text-slate-500">
+                                Details have not been loaded for{" "}
+                                {selectedRunSummary.id}.
+                              </div>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() =>
+                                  void openRunDetail(
+                                    selectedRunSummary.id,
+                                    selectedScope,
+                                  )
+                                }
+                                className="h-8 justify-self-start rounded-lg border-slate-700 bg-slate-900 px-3 text-xs text-slate-100 hover:bg-slate-800 hover:text-white"
+                              >
+                                <FileJson className="h-3.5 w-3.5" />
+                                Load details
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="text-sm text-slate-500">
+                              Select a live run or history entry to inspect
+                              variables, block results, events, and logs.
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {message ? (
+                        <div
+                          className={cn(
+                            "break-words border-t border-slate-800 pt-2 text-sm",
+                            staleRunMessage
+                              ? "text-amber-100"
+                              : "text-slate-300",
+                          )}
+                        >
+                          {staleRunMessage ? (
+                            <div className="flex min-w-0 flex-wrap items-center gap-2">
+                              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-300" />
+                              <span className="min-w-0 flex-1">
+                                This run references a flow file that no longer
+                                exists. Refresh the flow list, then select or
+                                save the flow again.
+                              </span>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => {
+                                  setMessage(null);
+                                  void refreshFlows();
+                                }}
+                                className="h-7 rounded-lg border-amber-400/30 bg-amber-500/10 px-2 text-xs text-amber-100 hover:bg-amber-500/15 hover:text-white"
+                              >
+                                <RefreshCw className="h-3.5 w-3.5" />
+                                Refresh
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={() => setMessage(null)}
+                                className="h-7 rounded-lg px-2 text-xs text-slate-400 hover:bg-slate-900 hover:text-white"
+                              >
+                                Dismiss
+                              </Button>
+                            </div>
+                          ) : (
+                            message
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  </ScrollArea>
                 </div>
               </SubmitShortcut>
             ) : null}

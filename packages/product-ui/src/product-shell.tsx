@@ -10,6 +10,7 @@ import {
   TerminalSquare,
   MessageSquareText,
   WifiOff,
+  Workflow,
 } from "lucide-react";
 import { useState } from "react";
 import { Composer } from "./composer";
@@ -18,6 +19,7 @@ import { Inspector } from "./inspector";
 import { MediaStudio } from "./media-studio";
 import type { ProductCommandHandler } from "./product-runtime";
 import { ProductRail, type ProductView } from "./product-rail";
+import { Ralph } from "./ralph";
 import { Scheduler } from "./scheduler";
 import { SessionHeader } from "./session-header";
 import { SessionSidebar } from "./session-sidebar";
@@ -65,7 +67,9 @@ export function ProductShell({
       ? "chat"
       : requestedView === "scheduler" && !shell?.scheduler
         ? "chat"
-        : requestedView;
+        : requestedView === "ralph" && !shell?.ralph
+          ? "chat"
+          : requestedView;
 
   return (
     <div className="machdoch-product">
@@ -112,6 +116,16 @@ export function ProductShell({
                 onClick={() => setRequestedView("scheduler")}
               >
                 <CalendarClock aria-hidden="true" />
+              </button>
+            ) : null}
+            {shell.ralph ? (
+              <button
+                type="button"
+                data-active={activeView === "ralph"}
+                aria-label="RALPH"
+                onClick={() => setRequestedView("ralph")}
+              >
+                <Workflow aria-hidden="true" />
               </button>
             ) : null}
           </div>
@@ -175,6 +189,7 @@ export function ProductShell({
             activeView={activeView}
             mediaAvailable={shell.media !== undefined}
             schedulerAvailable={shell.scheduler !== undefined}
+            ralphAvailable={shell.ralph !== undefined}
             onSelectView={(view) => {
               setRequestedView(view);
               setSessionsOpen(false);
@@ -245,6 +260,16 @@ export function ProductShell({
             <main className="m-product-feature-main">
               <Scheduler
                 scheduler={shell.scheduler}
+                pending={pendingCommands > 0}
+                onCommand={onCommand}
+              />
+            </main>
+          ) : null}
+          {activeView === "ralph" && shell.ralph ? (
+            <main className="m-product-feature-main">
+              <Ralph
+                ralph={shell.ralph}
+                {...(shell.composer ? { composer: shell.composer } : {})}
                 pending={pendingCommands > 0}
                 onCommand={onCommand}
               />

@@ -1,16 +1,26 @@
 import {
+  createFleetManagedSettingsEtag,
   gatewayProtocolVersion,
   managedSettingsSchemaVersion,
+  maximumManagedSettingsDeliveryBytes,
   productCommandSchema,
   type FleetManagedSettingsDelivery,
+  type FleetManagedSettingsSyncReport,
   type HostRequest,
   type HostResponse,
 } from "@machdoch/fleet-protocol";
 import { z } from "zod";
-import { createSecret, validateId, validateSecret } from "./crypto";
+import type { AuthenticationOperation } from "./authentication-rate-limiter";
+import {
+  CredentialValidationError,
+  createSecret,
+  validateId,
+  validateSecret,
+} from "./crypto";
 import { nowSeconds } from "./database";
 import { errorResponse, HttpError } from "./errors";
 import { GatewayError } from "./gateway";
+import { FleetStoreError } from "./fleet-store";
 import {
   bearerToken,
   clearCsrfCookie,
@@ -36,14 +46,23 @@ import {
 } from "./settings";
 import { SettingsStoreError } from "./settings-store";
 
+const maximumAuthenticationBodyBytes = 16 * 1024;
+const maximumSettingsSyncReportBodyBytes = 16 * 1024;
+const passwordValueSchema = z
+  .string()
+  .max(1024)
+  .refine((value) => Buffer.byteLength(value) <= 1024);
+const usernameValueSchema = z
+  .string()
+  .refine((value) => [...value].length <= 64);
 const loginSchema = z.strictObject({
-  username: z.string().max(64),
-  password: z.string().max(1024),
+  username: usernameValueSchema,
+  password: passwordValueSchema,
 });
 const passwordSchema = z.strictObject({
-  username: z.string(),
-  currentPassword: z.string().max(1024),
-  newPassword: z.string().max(1024),
+  username: usernameValueSchema,
+  currentPassword: passwordValueSchema,
+  newPassword: passwordValueSchema,
 });
 const enrollmentSchema = z.strictObject({
   displayName: z.string(),
@@ -67,37 +86,77 @@ const expectedRevisionSchema = z.strictObject({
 });
 const secretSchema = expectedRevisionSchema.extend({ value: z.unknown() });
 const assignmentSchema = z.strictObject({ profileId: z.string().nullable() });
+const managerIdValueSchema = z
+  .string()
+  .refine((value) => validateId(value, "manager"));
+const profileIdValueSchema = z
+  .string()
+  .refine((value) => validateId(value, "profile"));
+const appliedSettingsSyncReportSchema = z
+  .strictObject({
+    managerId: managerIdValueSchema,
+    status: z.literal("applied"),
+    profileId: profileIdValueSchema.nullable(),
+    revision: z.number().int().positive().nullable(),
+  })
+  .refine(
+    (value) => (value.profileId === null) === (value.revision === null),
+    "Applied settings identity is invalid.",
+  );
+const failedSettingsSyncReportSchema = z
+  .strictObject({
+    managerId: managerIdValueSchema,
+    status: z.literal("failed"),
+    profileId: profileIdValueSchema.nullable(),
+    revision: z.number().int().positive().nullable(),
+    error: z
+      .string()
+      .trim()
+      .min(1)
+      .refine((value) => [...value].length <= 1_000)
+      .refine((value) => !/[\p{Cc}\p{Cf}]/u.test(value)),
+  })
+  .refine(
+    (value) => (value.profileId === null) === (value.revision === null),
+    "Failed settings identity is invalid.",
+  );
+const settingsSyncReportSchema = z.union([
+  appliedSettingsSyncReportSchema,
+  failedSettingsSyncReportSchema,
+]);
 
-export async function handleApiRequest(request: Request): Promise<Response> {
+export interface ApiRequestContext {
+  clientAddress: string;
+}
+
+export async function handleApiRequest(
+  request: Request,
+  context: ApiRequestContext,
+): Promise<Response> {
+  let response: Response;
   try {
     const runtime = getRuntime();
     const url = new URL(request.url);
-    const path = url.pathname
-      .split("/")
-      .filter(Boolean)
-      .slice(1)
-      .map(decodeURIComponent);
-    const response = await routeApi(runtime, request, path);
-    response.headers.set(
-      "Cache-Control",
-      "no-cache, no-store, must-revalidate",
-    );
-    return response;
+    const path = apiPath(url.pathname);
+    response = await routeApi(runtime, request, path, context);
   } catch (error) {
-    return errorResponse(error);
+    response = errorResponse(error);
   }
+  applyApiResponseHeaders(response);
+  return response;
 }
 
 async function routeApi(
   runtime: FleetRuntime,
   request: Request,
   path: string[],
+  context: ApiRequestContext,
 ): Promise<Response> {
   const method = request.method;
   if (method === "GET" && matches(path, "auth", "session"))
     return authSession(runtime, request);
   if (method === "POST" && matches(path, "auth", "login"))
-    return login(runtime, request);
+    return login(runtime, request, context.clientAddress);
   if (method === "POST" && matches(path, "auth", "logout"))
     return logout(runtime, request);
   if (method === "GET" && matches(path, "auth", "account"))
@@ -147,6 +206,16 @@ async function routeApi(
   ) {
     return deliverSettings(runtime, request, path[2] ?? "");
   }
+  if (
+    method === "PUT" &&
+    path[0] === "client" &&
+    path[1] === "settings" &&
+    path[2] &&
+    path[3] === "sync-status" &&
+    path.length === 4
+  ) {
+    return reportSettingsSync(runtime, request, path[2]);
+  }
   if (path[0] === "gateway" && path[1] === "connect") {
     throw new HttpError(426, "WebSocket upgrade is required.");
   }
@@ -166,33 +235,40 @@ function authSession(runtime: FleetRuntime, request: Request): Response {
 async function login(
   runtime: FleetRuntime,
   request: Request,
+  clientAddress: string,
 ): Promise<Response> {
   if (!hasSameOrigin(runtime, request))
     throw new HttpError(403, "Login request was rejected.");
+  const now = nowSeconds();
+  requireAuthenticationAttempt(
+    runtime.authenticationRateLimiter.loginAttempt(clientAddress, now),
+  );
   const input = await parseJson(
     request,
     loginSchema,
     401,
     "Username or password is incorrect.",
+    maximumAuthenticationBodyBytes,
   );
-  const now = nowSeconds();
-  if (!runtime.loginThrottle.allows(now)) {
-    throw new HttpError(429, "Too many login attempts. Try again shortly.");
-  }
-  if (!runtime.authStore.verifyOwner(input.username, input.password, now)) {
-    runtime.loginThrottle.failure(now);
-    throw new HttpError(401, "Username or password is incorrect.");
-  }
-  runtime.loginThrottle.success();
   const credentials = createBrowserCredentials();
-  runtime.authStore.createOwnerSession(
-    input.username,
-    credentials.sessionToken,
-    credentials.csrfToken,
-    clientLabel(request),
-    now,
-    runtime.config.sessionPolicy,
-  );
+  const operation = requirePasswordOperation(runtime);
+  let authenticated: boolean;
+  try {
+    authenticated = await runtime.authStore.createOwnerSessionForCredentials(
+      input.username,
+      input.password,
+      credentials.sessionToken,
+      credentials.csrfToken,
+      clientLabel(request),
+      now,
+      runtime.config.sessionPolicy,
+    );
+  } finally {
+    operation.release();
+  }
+  if (!authenticated)
+    throw new HttpError(401, "Username or password is incorrect.");
+  runtime.authenticationRateLimiter.loginSucceeded(clientAddress);
   const response = Response.json({ ok: true });
   appendSessionCookies(
     response,
@@ -221,27 +297,48 @@ async function updateOwner(
   request: Request,
 ): Promise<Response> {
   const session = requireMutation(runtime, request);
-  const input = await parseJson(request, passwordSchema);
-  if (
-    !runtime.authStore.verifyOwner(
-      session.username,
-      input.currentPassword,
-      nowSeconds(),
-    )
-  ) {
-    throw new HttpError(401, "Current password is incorrect.");
-  }
+  const now = nowSeconds();
+  requireAuthenticationAttempt(
+    runtime.authenticationRateLimiter.passwordConfirmationAttempt(
+      session.sessionId,
+      now,
+    ),
+  );
+  const input = await parseJson(
+    request,
+    passwordSchema,
+    400,
+    "Request payload is invalid.",
+    maximumAuthenticationBodyBytes,
+  );
+  const operation = requirePasswordOperation(runtime);
+  let result;
   try {
-    runtime.authStore.changeOwnerPassword(
+    result = await runtime.authStore.changeOwnerAccountForSession(
+      session,
+      input.currentPassword,
       input.username,
       input.newPassword,
-      nowSeconds(),
+      now,
     );
   } catch (error) {
-    throw new HttpError(
-      400,
-      error instanceof Error ? error.message : "Account update failed.",
+    if (error instanceof CredentialValidationError) {
+      throw new HttpError(400, error.message);
+    }
+    throw error;
+  } finally {
+    operation.release();
+  }
+  if (result === "incorrect-password") {
+    throw new HttpError(403, "Current password is incorrect.");
+  }
+  if (result === "stale") {
+    const response = Response.json(
+      { error: "Account or browser session changed. Sign in and try again." },
+      { status: 409 },
     );
+    clearBrowserCookies(response);
+    return response;
   }
   const response = Response.json({ ok: true });
   clearBrowserCookies(response);
@@ -291,11 +388,11 @@ function createEnrollmentKey(
       runtime.config.enrollmentPolicy,
     );
   } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.includes("outstanding enrollment")
-    ) {
-      throw new HttpError(409, error.message);
+    if (error instanceof FleetStoreError && error.code === "enrollment-limit") {
+      throw new HttpError(
+        409,
+        "The outstanding enrollment key limit has been reached.",
+      );
     }
     throw error;
   }
@@ -324,7 +421,7 @@ async function enroll(
   if (
     !displayName ||
     [...displayName].length > 80 ||
-    /\p{Cc}/u.test(displayName)
+    /[\p{Cc}\p{Cf}]/u.test(displayName)
   ) {
     throw new HttpError(400, "Display name is invalid.");
   }
@@ -332,7 +429,7 @@ async function enroll(
   if (
     !productVersion ||
     productVersion.length > 40 ||
-    /\p{Cc}/u.test(productVersion)
+    /[\p{Cc}\p{Cf}]/u.test(productVersion)
   ) {
     throw new HttpError(400, "Product version is invalid.");
   }
@@ -351,11 +448,17 @@ async function enroll(
       },
       nowSeconds(),
     ).instanceId;
-  } catch {
-    throw new HttpError(
-      401,
-      "Enrollment key is invalid, expired, or already used.",
-    );
+  } catch (error) {
+    if (
+      error instanceof FleetStoreError &&
+      error.code === "invalid-enrollment-grant"
+    ) {
+      throw new HttpError(
+        401,
+        "Enrollment key is invalid, expired, or already used.",
+      );
+    }
+    throw error;
   }
   return Response.json({
     managerId: runtime.database.managerId(),
@@ -445,6 +548,7 @@ async function settingsApi(
           maximumProfiles: limits.maximumProfiles,
           maximumInstructionsPerProfile: limits.maximumInstructionsPerProfile,
           maximumPacksPerProfile: limits.maximumPacksPerProfile,
+          maximumPromptsPerProfile: limits.maximumPromptsPerProfile,
           maximumDocumentBytes: limits.maximumDocumentBytes,
           maximumSecretBytes: limits.maximumSecretBytes,
         },
@@ -618,38 +722,115 @@ function deliverSettings(
   request: Request,
   instanceId: string,
 ): Response {
-  requireSettings(runtime);
-  const secret = bearerToken(request);
-  if (
-    !validateId(instanceId, "instance") ||
-    !secret ||
-    !runtime.fleetStore.authenticateInstance(instanceId, secret)
-  ) {
-    throw new HttpError(401, "Instance credentials are invalid.");
+  authenticateSettingsInstance(runtime, request, instanceId);
+  const managerId = runtime.database.managerId();
+  const identity = runtime.settingsStore.getDeliveryIdentity(instanceId);
+  const candidateEtag = createFleetManagedSettingsEtag({
+    managerId,
+    profile: identity,
+  });
+  if (etagMatches(request.headers.get("If-None-Match"), candidateEtag)) {
+    return new Response(null, {
+      status: 304,
+      headers: { ETag: candidateEtag },
+    });
   }
   const delivery = runtime.settingsStore.getDelivery(
     runtime.settingsCipher!,
     instanceId,
   );
-  if (!delivery) {
-    const response: FleetManagedSettingsDelivery = {
-      schemaVersion: managedSettingsSchemaVersion,
-      assigned: false,
-    };
-    return Response.json(response);
-  }
-  runtime.settingsStore.recordFetch(
-    instanceId,
-    delivery.revision,
-    nowSeconds(),
-  );
   const response: FleetManagedSettingsDelivery = {
     schemaVersion: managedSettingsSchemaVersion,
-    assigned: true,
-    managerId: runtime.database.managerId(),
+    managerId,
     profile: delivery,
   };
-  return Response.json(response);
+  const etag = createFleetManagedSettingsEtag(response);
+  const body = JSON.stringify(response);
+  if (Buffer.byteLength(body) > maximumManagedSettingsDeliveryBytes) {
+    throw new Error("Managed settings delivery exceeds the protocol limit.");
+  }
+  return new Response(body, {
+    headers: { "Content-Type": "application/json", ETag: etag },
+  });
+}
+
+async function reportSettingsSync(
+  runtime: FleetRuntime,
+  request: Request,
+  instanceId: string,
+): Promise<Response> {
+  authenticateSettingsInstance(runtime, request, instanceId);
+  const input: FleetManagedSettingsSyncReport = await parseJson(
+    request,
+    settingsSyncReportSchema,
+    400,
+    "Request payload is invalid.",
+    maximumSettingsSyncReportBodyBytes,
+  );
+  if (input.managerId !== runtime.database.managerId()) {
+    throw new HttpError(
+      409,
+      "Settings assignment changed during synchronization.",
+    );
+  }
+  const now = nowSeconds();
+  if (input.status === "failed") {
+    if (
+      !runtime.settingsStore.recordFailure(
+        instanceId,
+        input.profileId,
+        input.revision,
+        input.error,
+        now,
+      )
+    ) {
+      throw new HttpError(
+        409,
+        "Settings assignment changed during synchronization.",
+      );
+    }
+  } else {
+    if (
+      !runtime.settingsStore.recordApplied(
+        instanceId,
+        input.profileId,
+        input.revision,
+        now,
+      )
+    ) {
+      throw new HttpError(
+        409,
+        "Settings assignment changed during synchronization.",
+      );
+    }
+  }
+  return new Response(null, { status: 204 });
+}
+
+function authenticateSettingsInstance(
+  runtime: FleetRuntime,
+  request: Request,
+  instanceId: string,
+): void {
+  requireSettings(runtime);
+  const secret = bearerToken(request);
+  if (
+    !validateId(instanceId, "instance") ||
+    !secret ||
+    !validateSecret(secret, "mch_instance") ||
+    !runtime.fleetStore.authenticateInstance(instanceId, secret)
+  ) {
+    throw new HttpError(401, "Instance credentials are invalid.");
+  }
+}
+
+function etagMatches(value: string | null, etag: string): boolean {
+  return value
+    ? value.split(",").some((candidate) => {
+        const normalized = candidate.trim().replace(/^W\//u, "");
+        return normalized === "*" || normalized === etag;
+      })
+    : false;
 }
 
 async function relay(
@@ -727,16 +908,93 @@ async function parseJson<T extends z.ZodType>(
   schema: T,
   status = 400,
   message = "Request payload is invalid.",
+  maximumBodyBytes?: number,
 ): Promise<z.output<T>> {
+  const mediaType = request.headers
+    .get("content-type")
+    ?.split(";", 1)[0]
+    ?.trim()
+    .toLowerCase();
+  if (mediaType !== "application/json") {
+    throw new HttpError(415, "Content-Type must be application/json.");
+  }
   let input: unknown;
-  try {
-    input = await request.json();
-  } catch {
-    throw new HttpError(status, message);
+  if (maximumBodyBytes !== undefined) {
+    const contentLength = Number(request.headers.get("content-length"));
+    if (Number.isFinite(contentLength) && contentLength > maximumBodyBytes) {
+      throw new HttpError(413, "Request body is too large.");
+    }
+    let body: string;
+    try {
+      body = await request.text();
+    } catch {
+      throw new HttpError(status, message);
+    }
+    if (Buffer.byteLength(body) > maximumBodyBytes) {
+      throw new HttpError(413, "Request body is too large.");
+    }
+    try {
+      input = JSON.parse(body) as unknown;
+    } catch {
+      throw new HttpError(status, message);
+    }
+  } else {
+    try {
+      input = await request.json();
+    } catch {
+      throw new HttpError(status, message);
+    }
   }
   const result = schema.safeParse(input);
   if (!result.success) throw new HttpError(status, message);
   return result.data;
+}
+
+function apiPath(pathname: string): string[] {
+  const encoded = pathname.split("/").filter(Boolean);
+  let path: string[];
+  try {
+    path = encoded.map(decodeURIComponent);
+  } catch {
+    throw new HttpError(400, "Request path is invalid.");
+  }
+  if (path.shift() !== "api") throw new HttpError(404, "Route was not found.");
+  return path;
+}
+
+function requireAuthenticationAttempt(result: {
+  allowed: boolean;
+  retryAfterSeconds: number;
+}): void {
+  if (result.allowed) return;
+  throw new HttpError(
+    429,
+    "Too many authentication attempts. Try again later.",
+    { "Retry-After": String(result.retryAfterSeconds) },
+  );
+}
+
+function requirePasswordOperation(
+  runtime: FleetRuntime,
+): AuthenticationOperation {
+  const operation = runtime.authenticationRateLimiter.beginPasswordOperation();
+  if (!operation) {
+    throw new HttpError(
+      429,
+      "Too many authentication attempts. Try again later.",
+      { "Retry-After": "1" },
+    );
+  }
+  return operation;
+}
+
+function applyApiResponseHeaders(response: Response): void {
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Content-Security-Policy", "default-src 'none'");
+  response.headers.set("Referrer-Policy", "no-referrer");
+  response.headers.set("Strict-Transport-Security", "max-age=31536000");
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("X-Frame-Options", "DENY");
 }
 
 function matches(path: string[], ...expected: string[]): boolean {
@@ -748,7 +1006,7 @@ function matches(path: string[], ...expected: string[]): boolean {
 
 function clientLabel(request: Request): string {
   const userAgent = request.headers.get("user-agent")?.trim();
-  if (!userAgent || /\p{Cc}/u.test(userAgent)) return "Browser";
+  if (!userAgent || /[\p{Cc}\p{Cf}]/u.test(userAgent)) return "Browser";
   return [...userAgent].slice(0, 160).join("");
 }
 

@@ -1,4 +1,5 @@
 import type { JSX } from "react";
+import { normalizeRalphBooleanVariableValue } from "@machdoch/product-ui";
 
 import type {
   RalphFlowVariable,
@@ -8,7 +9,6 @@ import type {
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
-import { normalizeRalphBooleanVariableValue } from "../_helpers/validate-ralph-flow-variable-values.helper";
 
 interface RalphInputControlProps {
   field: RalphInputField;
@@ -54,7 +54,13 @@ export const RalphInputControl = ({
     return (
       <Input
         type="number"
-        value={typeof value === "number" ? value : typeof value === "string" ? value : ""}
+        value={
+          typeof value === "number"
+            ? value
+            : typeof value === "string"
+              ? value
+              : ""
+        }
         aria-label={field.label}
         placeholder={field.placeholder}
         onChange={(event) =>
@@ -216,7 +222,11 @@ export const RalphSetupVariableControl = ({
 
   return (
     <Input
-      type={variable.type === "number" || variable.type === "url" ? variable.type : "text"}
+      type={
+        variable.type === "number" || variable.type === "url"
+          ? variable.type
+          : "text"
+      }
       inputMode={variable.type === "number" ? "decimal" : undefined}
       value={value}
       aria-label={`Ralph variable ${variable.name}`}

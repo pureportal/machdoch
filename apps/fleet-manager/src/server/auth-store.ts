@@ -1,14 +1,18 @@
 import type { FleetManagerConfig } from "./config";
 import {
+  CredentialValidationError,
   createId,
   hashOwnerPassword,
+  hashOwnerPasswordAsync,
   hashSecret,
+  validateOwnerPassword,
   verifyOwnerPassword,
   verifySecret,
 } from "./crypto";
 import {
   type DatabaseRow,
   type FleetDatabase,
+  nowSeconds,
   requiredNumber,
   requiredString,
 } from "./database";
@@ -34,6 +38,11 @@ export interface OwnerAccount {
   updatedAt: number;
 }
 
+export type OwnerAccountChangeResult =
+  | "changed"
+  | "incorrect-password"
+  | "stale";
+
 export class AuthStore {
   constructor(private readonly database: FleetDatabase) {}
 
@@ -54,7 +63,7 @@ export class AuthStore {
 
   seedOwner(username: string, password: string, now: number): void {
     const normalizedUsername = normalizeUsername(username);
-    const passwordHash = hashOwnerPassword(password, 8);
+    const passwordHash = hashOwnerPassword(password);
     this.database.transaction(() => {
       this.database.run(
         `INSERT INTO owner (id, username, password_hash, created_at, updated_at)
@@ -95,37 +104,48 @@ export class AuthStore {
     });
   }
 
-  verifyOwner(username: string, password: string, now: number): boolean {
-    const normalizedUsername = username.trim();
-    const row = this.database.get(
-      "SELECT username, password_hash FROM owner WHERE id = 1",
-    );
-    const authenticated =
-      typeof row?.username === "string" &&
-      typeof row.password_hash === "string" &&
-      row.username === normalizedUsername &&
-      verifyOwnerPassword(password, row.password_hash);
-    this.database.audit(
-      now,
-      authenticated ? "owner.login" : "owner.login_failed",
-      normalizedUsername.slice(0, 64),
-      authenticated ? "success" : "denied",
-    );
-    return authenticated;
-  }
-
-  createOwnerSession(
+  async createOwnerSessionForCredentials(
     username: string,
+    password: string,
     sessionToken: string,
     csrfToken: string,
     clientLabel: string,
     now: number,
     policy: FleetManagerConfig["sessionPolicy"],
-  ): string {
+  ): Promise<boolean> {
+    const normalizedUsername = username.trim();
+    const row = this.database.get(
+      "SELECT username, password_hash FROM owner WHERE id = 1",
+    );
+    const storedUsername =
+      typeof row?.username === "string" ? row.username : null;
+    const expectedPasswordHash =
+      typeof row?.password_hash === "string" ? row.password_hash : null;
+    const authenticated = Boolean(
+      storedUsername &&
+      expectedPasswordHash &&
+      (await verifyOwnerPassword(password, expectedPasswordHash)) &&
+      verifySecret(normalizedUsername, hashSecret(storedUsername)),
+    );
+    if (!authenticated || !storedUsername || !expectedPasswordHash) {
+      this.auditLogin(now, normalizedUsername, false);
+      return false;
+    }
     const sessionId = createId("session");
     const idleExpiresAt = now + policy.idleSeconds;
     const absoluteExpiresAt = now + policy.absoluteSeconds;
-    this.database.transaction(() => {
+    return this.database.transaction(() => {
+      const ownerIsCurrent = Boolean(
+        this.database.get(
+          "SELECT id FROM owner WHERE id = 1 AND username = ? AND password_hash = ?",
+          storedUsername,
+          expectedPasswordHash,
+        ),
+      );
+      if (!ownerIsCurrent) {
+        this.auditLogin(now, normalizedUsername, false);
+        return false;
+      }
       this.pruneSessions(now);
       const count = requiredNumber(
         this.database.get("SELECT COUNT(*) AS count FROM owner_sessions"),
@@ -151,15 +171,87 @@ export class AuthStore {
         sessionId,
         hashSecret(sessionToken),
         hashSecret(csrfToken),
-        username.trim(),
+        storedUsername,
         clientLabel,
         now,
         now,
         idleExpiresAt,
         absoluteExpiresAt,
       );
+      this.auditLogin(now, storedUsername, true);
+      return true;
     });
-    return sessionId;
+  }
+
+  async changeOwnerAccountForSession(
+    session: AuthenticatedSession,
+    currentPassword: string,
+    username: string,
+    newPassword: string,
+    now: number,
+  ): Promise<OwnerAccountChangeResult> {
+    const normalizedUsername = normalizeUsername(username);
+    validateOwnerPassword(newPassword);
+    const row = this.database.get(
+      "SELECT username, password_hash FROM owner WHERE id = 1",
+    );
+    const storedUsername =
+      typeof row?.username === "string" ? row.username : null;
+    const expectedPasswordHash =
+      typeof row?.password_hash === "string" ? row.password_hash : null;
+    const authenticated = Boolean(
+      storedUsername &&
+      expectedPasswordHash &&
+      verifySecret(session.username, hashSecret(storedUsername)) &&
+      (await verifyOwnerPassword(currentPassword, expectedPasswordHash)),
+    );
+    if (!authenticated || !expectedPasswordHash) {
+      this.database.audit(
+        now,
+        "owner.password_confirmation_failed",
+        session.sessionId,
+        "denied",
+      );
+      return "incorrect-password";
+    }
+    const passwordHash = await hashOwnerPasswordAsync(newPassword);
+    const changedAt = nowSeconds();
+    return this.database.transaction(() => {
+      const updated = this.database.run(
+        `UPDATE owner SET username = ?, password_hash = ?, updated_at = ?
+         WHERE id = 1 AND password_hash = ?
+           AND EXISTS (
+             SELECT 1 FROM owner_sessions
+             WHERE session_hash = ?
+               AND idle_expires_at > ?
+               AND absolute_expires_at > ?
+           )`,
+        normalizedUsername,
+        passwordHash,
+        changedAt,
+        expectedPasswordHash,
+        session.sessionHash,
+        changedAt,
+        changedAt,
+      );
+      if (updated !== 1) {
+        this.database.audit(
+          changedAt,
+          "owner.password_change",
+          session.sessionId,
+          "conflict",
+        );
+        return "stale";
+      }
+      this.database.run("DELETE FROM owner_sessions");
+      this.database.audit(
+        changedAt,
+        "owner.password_changed",
+        normalizedUsername,
+        "success",
+      );
+      return "changed";
+    });
   }
 
   authenticateSession(
@@ -259,15 +351,32 @@ export class AuthStore {
       now,
     );
   }
+
+  private auditLogin(
+    now: number,
+    username: string,
+    authenticated: boolean,
+  ): void {
+    this.database.audit(
+      now,
+      authenticated ? "owner.login" : "owner.login_failed",
+      [...username].slice(0, 64).join(""),
+      authenticated ? "success" : "denied",
+    );
+  }
 }
 
 function normalizeUsername(username: string): string {
   const normalized = username.trim();
   if (!normalized || [...normalized].length > 64) {
-    throw new Error("Username must contain between 1 and 64 characters.");
+    throw new CredentialValidationError(
+      "Username must contain between 1 and 64 characters.",
+    );
   }
-  if (/\p{Cc}/u.test(normalized))
-    throw new Error("Username contains unsupported characters.");
+  if (/[\p{Cc}\p{Cf}]/u.test(normalized))
+    throw new CredentialValidationError(
+      "Username contains unsupported characters.",
+    );
   return normalized;
 }
 

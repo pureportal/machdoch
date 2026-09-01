@@ -57,7 +57,9 @@ export const normalizeWorkspaceForTaskComparison = (
     normalized = normalized.replace(/\/+$/u, "");
   }
 
-  return normalized.toLowerCase();
+  return /^[a-z]:\//iu.test(normalized) || normalized.startsWith("//")
+    ? normalized.toLowerCase()
+    : normalized;
 };
 
 export const getRalphArgumentValue = (
