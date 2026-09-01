@@ -1,3 +1,5 @@
+import type { MediaLocalModelArchitecture } from "./contracts.js";
+
 export type MediaAssetImportType =
   | "model"
   | "lora"
@@ -55,6 +57,112 @@ const IMPORT_TYPES_BY_EXTENSION: Readonly<
   svg: ["svg"],
 };
 
+export interface MediaAssetImportFilenamePrefill {
+  displayName: string;
+  importType: MediaAssetImportType | null;
+  architecture: MediaLocalModelArchitecture | null;
+}
+
+const ARCHITECTURE_FILENAME_RULES: ReadonlyArray<{
+  pattern: RegExp;
+  architecture: MediaLocalModelArchitecture;
+}> = [
+  { pattern: /\bkrea\s*2\b/iu, architecture: "krea-2" },
+  { pattern: /\bflux\s*2\b/iu, architecture: "flux-2" },
+  {
+    pattern: /\bflux\s*(?:1|dev|schnell)\b/iu,
+    architecture: "flux-1",
+  },
+  {
+    pattern: /\b(?:sdxl|stable\s+diffusion\s+xl)\b/iu,
+    architecture: "stable-diffusion-xl",
+  },
+  {
+    pattern: /\b(?:sd\s*3(?:\.5)?|stable\s+diffusion\s+3)\b/iu,
+    architecture: "stable-diffusion-3",
+  },
+  {
+    pattern: /\b(?:sd\s*2(?:\.1)?|stable\s+diffusion\s+2)\b/iu,
+    architecture: "stable-diffusion-2",
+  },
+  {
+    pattern: /\b(?:sd\s*1(?:\.5)?|stable\s+diffusion\s+1)\b/iu,
+    architecture: "stable-diffusion-1",
+  },
+];
+
+const DISPLAY_TOKEN_NAMES: Readonly<Record<string, string>> = {
+  bf16: "BF16",
+  fp8: "FP8",
+  fp16: "FP16",
+  krea: "Krea",
+  lora: "LoRA",
+  sd: "SD",
+  sdxl: "SDXL",
+};
+
+const filenameWords = (stem: string): string =>
+  stem
+    .replace(/[_-]+/gu, " ")
+    .replace(/([a-z])([A-Z])/gu, "$1 $2")
+    .replace(/\b(krea|flux|sd)(?=\d)/giu, "$1 ")
+    .replace(/(\d)([A-Za-z])/gu, "$1 $2")
+    .replace(/\.(?=\D|$)/gu, " ")
+    .replaceAll(/\s+/gu, " ")
+    .trim();
+
+const importTypeFromFilename = (
+  stem: string,
+  extension: string,
+): MediaAssetImportType | null => {
+  if (extension !== "safetensors") return null;
+  if (/(?:^|[._ -])(?:lora|lycoris|locon|dora)(?:[._ -]|$)/iu.test(stem)) {
+    return "lora";
+  }
+  if (
+    /(?:^|[._ -])(?:embedding|embeddings|textual[._ -]?inversion)(?:[._ -]|$)/iu.test(
+      stem,
+    )
+  ) {
+    return "embedding";
+  }
+  return "model";
+};
+
+const displayNameFromFilename = (stem: string): string =>
+  filenameWords(stem)
+    .split(" ")
+    .map((token) => {
+      const normalized = token.toLocaleLowerCase();
+      if (DISPLAY_TOKEN_NAMES[normalized])
+        return DISPLAY_TOKEN_NAMES[normalized];
+      if (/^v\d+(?:\.\d+)*$/iu.test(token)) return normalized;
+      return `${token.charAt(0).toLocaleUpperCase()}${token.slice(1)}`;
+    })
+    .join(" ");
+
+export const parseMediaAssetImportFilename = (
+  path: string,
+): MediaAssetImportFilenamePrefill => {
+  const name = path.split(/[\\/]/u).at(-1) ?? path;
+  const extensionSeparator = name.lastIndexOf(".");
+  const extension =
+    extensionSeparator < 0
+      ? ""
+      : name.slice(extensionSeparator + 1).toLocaleLowerCase();
+  const stem =
+    extensionSeparator < 0 ? name : name.slice(0, extensionSeparator);
+  const searchableStem = filenameWords(stem);
+  return {
+    displayName: displayNameFromFilename(stem) || "Imported asset",
+    importType: importTypeFromFilename(stem, extension),
+    architecture:
+      ARCHITECTURE_FILENAME_RULES.find(({ pattern }) =>
+        pattern.test(searchableStem),
+      )?.architecture ?? null,
+  };
+};
+
 export const getMediaAssetImportExtension = (path: string): string => {
   const fileName = path.split(/[\\/]/u).at(-1) ?? "";
   const separatorIndex = fileName.lastIndexOf(".");
@@ -92,5 +200,5 @@ export const inferMediaAssetImportType = (
       return inferredType;
     }
   }
-  return null;
+  return parseMediaAssetImportFilename(path).importType;
 };

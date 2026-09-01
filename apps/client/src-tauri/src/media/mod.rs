@@ -419,9 +419,8 @@ pub(crate) struct ImportMediaLocalModelRequest {
     architecture: String,
     source_url: Option<String>,
     content_digest: String,
-    license_name: String,
-    commercial_use: String,
-    confirm_rights: bool,
+    license_name: Option<String>,
+    commercial_use: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -479,9 +478,8 @@ pub(crate) struct ImportMediaModelAddonRequest {
     token: Option<String>,
     source_url: Option<String>,
     content_digest: String,
-    license_name: String,
-    commercial_use: String,
-    confirm_rights: bool,
+    license_name: Option<String>,
+    commercial_use: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -4989,6 +4987,20 @@ pub(crate) async fn media_import_image(
     }
     .await;
     command_result("media_import_image", result)
+}
+
+#[tauri::command]
+pub(crate) async fn media_import_image_url(
+    app: AppHandle,
+    url: String,
+) -> MediaCommandResult<MediaImageImportResult> {
+    let result: MediaResult<_> = async {
+        let paths = MediaRuntimePaths::resolve(&app)?;
+        database::ensure_initialized(&paths)?;
+        ingest::import_image_url(paths, &url).await
+    }
+    .await;
+    command_result("media_import_image_url", result)
 }
 
 #[tauri::command]

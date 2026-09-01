@@ -160,7 +160,7 @@ export interface MediaModelLicense {
   name: string;
   spdxId: string | null;
   sourceUrl: string;
-  commercialUse: "allowed" | "provider-terms" | "review-required";
+  commercialUse: "allowed" | "provider-terms" | "review-required" | "unknown";
   requiresAcceptance: boolean;
 }
 
@@ -710,9 +710,8 @@ export interface ImportMediaLocalModelRequest {
   architecture: MediaLocalModelArchitecture;
   sourceUrl: string | null;
   contentDigest: string;
-  licenseName: string;
-  commercialUse: "allowed" | "review-required";
-  confirmRights: boolean;
+  licenseName: string | null;
+  commercialUse: "allowed" | "review-required" | null;
 }
 
 export interface MediaLocalModelImportResult {
@@ -770,9 +769,8 @@ export interface ImportMediaModelAddonRequest {
   token: string | null;
   sourceUrl: string | null;
   contentDigest: string;
-  licenseName: string;
-  commercialUse: "allowed" | "review-required";
-  confirmRights: boolean;
+  licenseName: string | null;
+  commercialUse: "allowed" | "review-required" | null;
 }
 
 export interface MediaModelAddonImportResult {

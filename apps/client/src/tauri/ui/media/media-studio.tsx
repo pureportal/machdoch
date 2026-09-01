@@ -160,6 +160,7 @@ import {
   inspectMediaModelAddon,
   inspectMediaCivitaiModelAddon,
   importMediaAsset,
+  importMediaAssetFromUrl,
   importMediaFlow,
   importMediaLocalModel,
   importMediaModelAddon,
@@ -659,6 +660,8 @@ export const MediaStudio = ({
   const [state, setState] = useState<MediaStudioState>(() =>
     normalizeMediaStudioState(DEFAULT_MEDIA_STUDIO_STATE),
   );
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -671,6 +674,9 @@ export const MediaStudio = ({
     null,
   );
   const [importedAssetId, setImportedAssetId] = useState<string | null>(null);
+  const [importedResourceId, setImportedResourceId] = useState<string | null>(
+    null,
+  );
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [selectedRun, setSelectedRun] = useState<MediaRunDetail | null>(null);
   const [selectedRunRecipe, setSelectedRunRecipe] =
@@ -901,29 +907,31 @@ export const MediaStudio = ({
       }),
     [configuredProviderIds],
   );
-  const refreshModelCatalog = useCallback((): void => {
-    const requestSequence = ++modelCatalogRequestSequence.current;
-    void getMediaModelCatalog(configuredProviderIds)
-      .then((snapshot) => {
+  const refreshModelCatalog =
+    useCallback(async (): Promise<MediaModelCatalogSnapshot | null> => {
+      const requestSequence = ++modelCatalogRequestSequence.current;
+      try {
+        const snapshot = await getMediaModelCatalog(configuredProviderIds);
         if (requestSequence === modelCatalogRequestSequence.current) {
           setModelCatalog(snapshot);
+          return snapshot;
         }
-      })
-      .catch((error: unknown) => {
+      } catch (error: unknown) {
         if (requestSequence === modelCatalogRequestSequence.current) {
           setRuntimeError(
             normalizeMediaError(error, "get_media_model_catalog"),
           );
         }
-      });
-  }, [configuredProviderIds]);
+      }
+      return null;
+    }, [configuredProviderIds]);
 
   const refreshLocalRuntime = useCallback(async (): Promise<void> => {
     setLocalRuntimeRefreshing(true);
     try {
       await refreshMediaLocalDiffusersRuntime();
       setRuntimeStatus(await initializeMediaRuntime());
-      refreshModelCatalog();
+      await refreshModelCatalog();
       setRuntimeError(null);
     } catch (error: unknown) {
       setRuntimeError(normalizeMediaError(error, "refresh_local_runtime"));
@@ -938,7 +946,7 @@ export const MediaStudio = ({
       try {
         await probeMediaLocalModel(model.id);
         setRuntimeStatus(await initializeMediaRuntime());
-        refreshModelCatalog();
+        await refreshModelCatalog();
         setRuntimeError(null);
       } catch (error: unknown) {
         setRuntimeError(normalizeMediaError(error, "probe_local_model"));
@@ -970,6 +978,49 @@ export const MediaStudio = ({
         }
       });
   }, [workspaceRoot]);
+
+  const persistImportedResourceMetadata = useCallback(
+    async (
+      resourceId: string,
+      metadata: MediaGenerationAssetMetadata,
+    ): Promise<void> => {
+      const nextState = {
+        ...stateRef.current,
+        assetMetadata: {
+          ...stateRef.current.assetMetadata,
+          [resourceId]: metadata,
+        },
+      };
+      const saveSequence = ++latestSaveSequence.current;
+      try {
+        await saveMediaStudioState(nextState);
+        if (latestSaveSequence.current === saveSequence) setSaveError(null);
+      } catch {
+        if (latestSaveSequence.current === saveSequence) {
+          setSaveError("Imported metadata could not be saved.");
+        }
+      }
+      stateRef.current = nextState;
+      setState(nextState);
+    },
+    [],
+  );
+
+  const retryMediaStudioStateSave = useCallback(async (): Promise<void> => {
+    const saveSequence = ++latestSaveSequence.current;
+    try {
+      await saveMediaStudioState(stateRef.current);
+      if (latestSaveSequence.current === saveSequence) setSaveError(null);
+    } catch (error: unknown) {
+      if (latestSaveSequence.current === saveSequence) {
+        setSaveError(
+          error instanceof Error
+            ? error.message
+            : "Media Studio settings could not be saved.",
+        );
+      }
+    }
+  }, []);
 
   const inspectModelImportPath = useCallback(
     (path: string): void => {
@@ -1009,14 +1060,13 @@ export const MediaStudio = ({
       setModelImportError(null);
       try {
         const result = await importMediaLocalModel(request);
-        setState((current) => ({
-          ...current,
-          assetMetadata: {
-            ...current.assetMetadata,
-            [result.modelId]: metadata,
-          },
-        }));
-        refreshModelCatalog();
+        await persistImportedResourceMetadata(result.modelId, metadata);
+        const snapshot = await refreshModelCatalog();
+        setImportedAssetId(null);
+        setImportedResourceId(result.modelId);
+        if (!snapshot?.models.some((model) => model.id === result.modelId)) {
+          void refreshModelCatalog();
+        }
         return true;
       } catch (error: unknown) {
         setModelImportError(
@@ -1030,7 +1080,7 @@ export const MediaStudio = ({
         setModelImportLoading(false);
       }
     },
-    [refreshModelCatalog],
+    [persistImportedResourceMetadata, refreshModelCatalog],
   );
 
   const dismissModelImport = useCallback((): void => {
@@ -1106,14 +1156,13 @@ export const MediaStudio = ({
       setAddonImportError(null);
       try {
         const result = await importMediaModelAddon(request);
-        setState((current) => ({
-          ...current,
-          assetMetadata: {
-            ...current.assetMetadata,
-            [result.addonId]: metadata,
-          },
-        }));
-        refreshModelCatalog();
+        await persistImportedResourceMetadata(result.addonId, metadata);
+        const snapshot = await refreshModelCatalog();
+        setImportedAssetId(null);
+        setImportedResourceId(result.addonId);
+        if (!snapshot?.addons.some((addon) => addon.id === result.addonId)) {
+          void refreshModelCatalog();
+        }
         return true;
       } catch (error: unknown) {
         setAddonImportError(
@@ -1127,7 +1176,7 @@ export const MediaStudio = ({
         setAddonImportLoading(false);
       }
     },
-    [refreshModelCatalog],
+    [persistImportedResourceMetadata, refreshModelCatalog],
   );
 
   const dismissAddonImport = useCallback((): void => {
@@ -1196,7 +1245,7 @@ export const MediaStudio = ({
   }, [refreshRuntime]);
 
   useEffect(() => {
-    refreshModelCatalog();
+    void refreshModelCatalog();
   }, [refreshModelCatalog]);
 
   useEffect(() => {
@@ -1209,7 +1258,7 @@ export const MediaStudio = ({
 
     void subscribeToUserSettingsChanged((kind) => {
       if (kind === "provider-keys") {
-        refreshModelCatalog();
+        void refreshModelCatalog();
       }
     }).then((dispose) => {
       if (disposed) {
@@ -4152,6 +4201,33 @@ export const MediaStudio = ({
     },
     [importLoading, refreshRuntime],
   );
+  const importSampleImageUrl = useCallback(
+    async (
+      url: string,
+    ): Promise<Awaited<ReturnType<typeof importMediaAsset>> | null> => {
+      if (importLoading || !supportsNativeMediaImport()) return null;
+      setImportLoading(true);
+      setAssetImportError(null);
+      setRuntimeError(null);
+      try {
+        const result = await importMediaAssetFromUrl(url);
+        setRuntimeAssets((current) => [
+          result.asset,
+          ...current.filter((asset) => asset.id !== result.asset.id),
+        ]);
+        await refreshRuntime();
+        return result;
+      } catch (error: unknown) {
+        const failure = normalizeMediaError(error, "import_sample_image_url");
+        setAssetImportError(readAssetImportError(failure));
+        setRuntimeError(failure);
+        return null;
+      } finally {
+        setImportLoading(false);
+      }
+    },
+    [importLoading, refreshRuntime],
+  );
   const importReferenceImages = useCallback(() => {
     if (importLoading || !supportsNativeMediaImport()) {
       return;
@@ -4420,7 +4496,7 @@ export const MediaStudio = ({
         case "open-models":
         case "free-space":
           setState((current) => ({ ...current, activeSection: "library" }));
-          refreshModelCatalog();
+          void refreshModelCatalog();
           break;
         case "open-provider-settings":
           onOpenProviderSettings();
@@ -4612,18 +4688,23 @@ export const MediaStudio = ({
                 addonImportError ??
                 civitaiAddonError
               }
+              persistenceError={saveError}
               tagLoadingAssetId={tagLoadingAssetId}
               openAssetId={openAssetId ?? importedAssetId}
               onOpenAssetHandled={() => {
                 if (openAssetId) onOpenAssetHandled?.();
                 if (importedAssetId) setImportedAssetId(null);
               }}
+              openResourceId={importedResourceId}
+              onOpenResourceHandled={() => setImportedResourceId(null)}
               onInspectModel={inspectModelImportPath}
               onInspectAddon={inspectAddonImportPath}
               onInspectCivitai={inspectCivitaiAddon}
               onImportMedia={importAssetPath}
               onImportModel={importLocalModel}
               onImportAddon={importAddon}
+              onImportSampleUrl={importSampleImageUrl}
+              onRetryPersistence={() => void retryMediaStudioStateSave()}
               onDismissImport={dismissAssetImport}
               onUseModel={useModelInCreate}
               onRefreshLocalRuntime={() => void refreshLocalRuntime()}

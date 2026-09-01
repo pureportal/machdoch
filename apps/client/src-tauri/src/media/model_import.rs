@@ -605,6 +605,18 @@ pub(super) fn validated_text(
     Ok(value.to_string())
 }
 
+pub(super) fn validated_optional_text(
+    field: &str,
+    value: Option<&str>,
+    maximum_chars: usize,
+) -> MediaResult<String> {
+    let value = value.map(str::trim).unwrap_or_default();
+    if value.chars().count() > maximum_chars {
+        return Err(format!("{field} exceeds {maximum_chars} characters"));
+    }
+    Ok(value.to_string())
+}
+
 pub(super) fn validated_source_url(value: Option<&str>) -> MediaResult<Option<String>> {
     let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
         return Ok(None);
@@ -709,7 +721,9 @@ fn persist_import(
     let profile = architecture_profile(&request.architecture)
         .ok_or_else(|| "architecture is not a supported local image family".to_string())?;
     let source_url = validated_source_url(request.source_url.as_deref())?;
-    let license_name = validated_text("licenseName", &request.license_name, 256)?;
+    let license_name =
+        validated_optional_text("licenseName", request.license_name.as_deref(), 256)?;
+    let commercial_use = request.commercial_use.as_deref().unwrap_or("unknown");
     let display_name = validated_text("displayName", &request.display_name, 120)?;
     let model_id = format!("{USER_MODEL_ID_PREFIX}{digest}");
     let capabilities = serde_json::to_string(capabilities_for_architecture(&request.architecture))
@@ -764,7 +778,7 @@ fn persist_import(
                 addon_capabilities,
                 license_name,
                 source_url.as_deref().unwrap_or(""),
-                request.commercial_use,
+                commercial_use,
                 profile.speed_score,
                 profile.quality_score,
                 profile.min_vram_gb,
@@ -808,22 +822,18 @@ pub(crate) fn import_reviewed(
     paths: &MediaRuntimePaths,
     request: &ImportMediaLocalModelRequest,
 ) -> MediaResult<MediaLocalModelImportResult> {
-    if !request.confirm_rights {
-        return Err(
-            "confirmRights is required after reviewing the model source and license".to_string(),
-        );
-    }
     if !SUPPORTED_ARCHITECTURES.contains(&request.architecture.as_str()) {
         return Err("architecture is not a supported local image family".to_string());
     }
-    if !matches!(
-        request.commercial_use.as_str(),
-        "allowed" | "review-required"
-    ) {
-        return Err("commercialUse must be allowed or review-required".to_string());
+    if request
+        .commercial_use
+        .as_deref()
+        .is_some_and(|value| !matches!(value, "allowed" | "review-required"))
+    {
+        return Err("commercialUse must be allowed, review-required, or omitted".to_string());
     }
     validated_text("displayName", &request.display_name, 120)?;
-    validated_text("licenseName", &request.license_name, 256)?;
+    validated_optional_text("licenseName", request.license_name.as_deref(), 256)?;
     validated_source_url(request.source_url.as_deref())?;
     if request.content_digest.len() != 64
         || !request
@@ -1150,9 +1160,8 @@ mod tests {
                 architecture: "stable-diffusion-xl".to_string(),
                 source_url: Some("https://civitai.com/models/123".to_string()),
                 content_digest: inspection.content_digest.clone(),
-                license_name: "Publisher terms".to_string(),
-                commercial_use: "review-required".to_string(),
-                confirm_rights: true,
+                license_name: None,
+                commercial_use: None,
             },
         )
         .expect("model should import");
@@ -1196,6 +1205,8 @@ mod tests {
         assert!(imported.user_imported);
         assert!(imported.installed);
         assert_eq!(imported.package_type, "safetensors");
+        assert_eq!(imported.license.name, "");
+        assert_eq!(imported.license.commercial_use, "unknown");
         assert_eq!(
             imported.capabilities,
             ["text-to-image", "image-to-image", "masked-image-edit"]

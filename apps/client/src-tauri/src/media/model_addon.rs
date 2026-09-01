@@ -1225,6 +1225,7 @@ fn normalize_trigger_words(values: &[String]) -> MediaResult<Vec<String>> {
 struct ValidatedAddonRequest {
     display_name: String,
     license_name: String,
+    commercial_use: String,
     trigger_words: Vec<String>,
     token: Option<String>,
     source_url: Option<String>,
@@ -1234,11 +1235,6 @@ fn validate_request(
     request: &ImportMediaModelAddonRequest,
     inspection: &MediaModelAddonImportInspection,
 ) -> MediaResult<ValidatedAddonRequest> {
-    if !request.confirm_rights {
-        return Err(
-            "confirmRights is required after reviewing the add-on source and license".to_string(),
-        );
-    }
     if !matches!(request.kind.as_str(), "lora" | "textual-inversion") {
         return Err("kind must be lora or textual-inversion".to_string());
     }
@@ -1278,14 +1274,20 @@ fn validate_request(
                 .to_string(),
         );
     }
-    if !matches!(
-        request.commercial_use.as_str(),
-        "allowed" | "review-required"
-    ) {
-        return Err("commercialUse must be allowed or review-required".to_string());
+    if request
+        .commercial_use
+        .as_deref()
+        .is_some_and(|value| !matches!(value, "allowed" | "review-required"))
+    {
+        return Err("commercialUse must be allowed, review-required, or omitted".to_string());
     }
     let display_name = model_import::validated_text("displayName", &request.display_name, 120)?;
-    let license_name = model_import::validated_text("licenseName", &request.license_name, 256)?;
+    let license_name =
+        model_import::validated_optional_text("licenseName", request.license_name.as_deref(), 256)?;
+    let commercial_use = request
+        .commercial_use
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
     let source_url = model_import::validated_source_url(request.source_url.as_deref())?;
     if request.content_digest.len() != 64
         || !request
@@ -1306,6 +1308,7 @@ fn validate_request(
     Ok(ValidatedAddonRequest {
         display_name,
         license_name,
+        commercial_use,
         trigger_words,
         token,
         source_url,
@@ -1754,6 +1757,7 @@ pub(crate) fn import_reviewed_with_source(
     let ValidatedAddonRequest {
         display_name,
         license_name,
+        commercial_use,
         trigger_words,
         token,
         source_url,
@@ -1906,7 +1910,7 @@ pub(crate) fn import_reviewed_with_source(
                 source_metadata_json,
                 license_name,
                 source_url.as_deref().unwrap_or(""),
-                request.commercial_use,
+                commercial_use,
                 imported_at,
             ],
         )
@@ -2293,9 +2297,8 @@ mod tests {
                 token: Some("<gallery-light>".to_string()),
                 source_url: None,
                 content_digest: inspection.content_digest.clone(),
-                license_name: "Publisher terms".to_string(),
-                commercial_use: "review-required".to_string(),
-                confirm_rights: true,
+                license_name: Some("Publisher terms".to_string()),
+                commercial_use: Some("review-required".to_string()),
             },
             &inspection,
         )
@@ -2378,9 +2381,8 @@ mod tests {
                 token: Some("<gallery-light>".to_string()),
                 source_url: None,
                 content_digest: inspection.content_digest.clone(),
-                license_name: "Publisher terms".to_string(),
-                commercial_use: "review-required".to_string(),
-                confirm_rights: true,
+                license_name: None,
+                commercial_use: None,
             },
             None,
         )
@@ -2395,6 +2397,8 @@ mod tests {
             .find(|addon| addon.id == result.addon_id)
             .expect("embedding should be cataloged");
         assert_eq!(addon.embedding_vectors, expected_profiles);
+        assert_eq!(addon.license.name, "");
+        assert_eq!(addon.license.commercial_use, "unknown");
         let _ = fs::remove_file(source);
         let _ = fs::remove_dir_all(root);
     }
@@ -2440,9 +2444,8 @@ mod tests {
                 token: None,
                 source_url: Some("https://civitai.com/models/123".to_string()),
                 content_digest: inspection.content_digest.clone(),
-                license_name: "Publisher terms".to_string(),
-                commercial_use: "review-required".to_string(),
-                confirm_rights: true,
+                license_name: Some("Publisher terms".to_string()),
+                commercial_use: Some("review-required".to_string()),
             },
             Some(&source_metadata),
         )
@@ -2530,9 +2533,8 @@ mod tests {
                 token: None,
                 source_url: None,
                 content_digest: inspection.content_digest,
-                license_name: "Publisher terms".to_string(),
-                commercial_use: "review-required".to_string(),
-                confirm_rights: true,
+                license_name: Some("Publisher terms".to_string()),
+                commercial_use: Some("review-required".to_string()),
             },
             None,
         )
