@@ -1,4 +1,4 @@
-# Machdoch Remote Control and Fleet Manager Solution Specification
+# Fleet Manager Product Architecture
 
 Status: Proposed end-state
 Date: 2026-08-28
@@ -43,7 +43,7 @@ The target design is a refactor around working local capabilities, not a new exe
 | [preview/app.tsx](../apps/client/src/tauri/ui/preview/app.tsx) loads the real `ChatSession` tree.                                                                                                                                                                                                                                                | The React product surface is browser-renderable and should be shared. A second reduced remote UI is unnecessary.                                                                                                                                                                                        |
 | [runtime.ts](../apps/client/src/tauri/ui/runtime.ts) imports preview fixtures, invokes Tauri directly, and returns mock or empty results outside Tauri. Twenty-nine non-test UI files currently import `@tauri-apps` directly.                                                                                                                   | Browser rendering is not remote operation. Product components must depend on injected host and platform contracts; production Fleet Manager builds must not contain preview behavior.                                                                                                                   |
 | [lib.rs](../apps/client/src-tauri/src/lib.rs) registers 179 Tauri command handlers and owns managers for tasks, settings, files, Git, PTYs, Workspace Run, media, UI control, and native shell behavior.                                                                                                                                         | The command list is not a network API. Tauri commands and remote handlers need common host-service entry points with explicit remote eligibility. A generic `invoke(command, payload)` tunnel is prohibited.                                                                                            |
-| The existing [remote_control](../apps/client/src-tauri/src/remote_control.rs) module runs an Axum server on IPv4 wildcard port 43187 and exposes only HTML, pairing, status, SSE snapshots, and command submission. Commands are delivered back to the React WebView for handling.                                                               | Mission Control is a useful lifecycle and bounded-state reference, but its plaintext HTTP server, embedded UI, reduced state model, and WebView command dispatcher cannot provide the target architecture. It is replaced, not retained as a fallback.                                                  |
+| [fleet_control](../apps/client/src-tauri/src/fleet_control.rs) owns bounded product snapshots and durable Fleet command delivery. [fleet/gateway.rs](../apps/client/src-tauri/src/fleet/gateway.rs) maintains the outbound manager connection.                                                                                                   | Fleet Manager is the only remote-management transport. Managed hosts do not expose an inbound command listener.                                                                                                                                                                                         |
 | [shell_state.rs](../apps/client/src-tauri/src/shell_state.rs) provides atomic revisioned compare-and-swap persistence with tombstones. [chat-session.model.ts](../apps/client/src/tauri/ui/chat-session.model.ts) stores sessions, messages, queued prompts, drafts, and active selection in one shell document.                                 | Revision and conflict concepts are reusable, but shared session authority currently remains substantially in React. Durable domain state, active execution coordination, and final result persistence must move behind a host service. Client navigation and unsent drafts must not be shared globally. |
 | Desktop task execution is supervised in Rust, while [use-chat-session-controller.ts](../apps/client/src/tauri/ui/chat-session/_helpers/use-chat-session-controller.ts) reconstructs, routes, finalizes, and persists substantial chat lifecycle state.                                                                                           | A remote task must remain correct with no WebView open and after a browser disconnect. The host, not whichever UI submitted the task, must coordinate the session and persist its outcome.                                                                                                              |
 | [workspace_tools/files.rs](../apps/client/src-tauri/src/workspace_tools/files.rs) already validates relative paths, contains canonical paths, blocks symlink escape, bounds reads, and uses revision-aware atomic writes. [workspace_tools/terminal.rs](../apps/client/src-tauri/src/workspace_tools/terminal.rs) bounds PTY sessions and input. | Remote operations must call these implementations, but may not accept client-supplied absolute workspace roots. The remote boundary uses host-issued workspace and object identifiers.                                                                                                                  |
@@ -158,7 +158,7 @@ The browser does not fabricate production data when a host operation is unavaila
 
 The desktop client continues to render the same product components through a local Tauri adapter. It does not route local operations through Fleet Manager when the local host is available. Local operation must remain available when Fleet Manager is disabled or unreachable.
 
-The landing page remains a static public application and contains no Fleet Manager runtime, installation lookup, or remote-control entry.
+The landing page remains a static public application and contains no Fleet Manager runtime, installation lookup, or remote-management entry.
 
 ## 5. Repository and module structure
 
@@ -238,7 +238,7 @@ The owner can list and revoke browser sessions. Revocation closes that session's
 
 ### 6.3 Machdoch instance configuration
 
-Fleet connectivity is disabled until explicitly configured. Its canonical persisted state belongs in `fleet-connection.json` under the same user configuration root used by the current `remote-control.json`. The target document replaces Mission Control trust state; it is not copied through Settings Transfer.
+Fleet connectivity is disabled until explicitly configured. Its canonical persisted state belongs in `fleet-connection.json`, with durable control delivery in `fleet-control.json`. Neither file is copied through Settings Transfer.
 
 The persisted instance contract contains:
 
@@ -349,7 +349,7 @@ The browser uses HTTPS for documents and RPC bootstrap and WSS for live routes. 
 
 This topology requires an inbound HTTPS/WSS listener only on Fleet Manager. A host behind a normal private router or host firewall can connect without exposing its own port, provided it has an IP route to Fleet Manager. A directly routed LAN connection and a VPN-carried connection use the same protocol.
 
-The host uses heartbeat, bounded exponential reconnect with jitter, network-change detection, and clean generation replacement. Reconnect never falls back to the old Mission Control listener or a public Machdoch relay.
+The host uses heartbeat, bounded exponential reconnect with jitter, network-change detection, and clean generation replacement. Reconnect never selects another manager or a public Machdoch relay.
 
 ### 8.2 Route establishment
 
@@ -624,7 +624,7 @@ A Tauri project's frontend development server can be exposed as a website, but t
 
 - If Fleet connectivity is enabled, the gateway starts with the desktop backend before any WebView interaction and connects even when the main window starts hidden or in the tray.
 - Local desktop operation does not wait for Fleet Manager.
-- If Fleet Manager is unavailable, the host reports local connection state and retries with bounded jitter. It does not start Mission Control or select another manager.
+- If Fleet Manager is unavailable, the host reports local connection state and retries with bounded jitter. It does not start an inbound listener or select another manager.
 - Network changes and system resume trigger immediate reconnect subject to rate limits.
 - Disabling Fleet connectivity closes routes and the gateway but does not stop local tasks solely because they were remotely created.
 - Quitting Machdoch makes the instance offline. Existing Workspace Run shutdown semantics and task-process cleanup continue to apply.
@@ -701,7 +701,7 @@ The end state is not complete unless validation demonstrates:
 3. **Desktop chat authority is split.** The CLI service owns and persists its headless sessions, but desktop task coordination remains divided between Rust and a large React controller. Desktop and CLI sessions are not one shared host store.
 4. **Shell persistence is a whole-document JSON CAS.** It has useful revisions and tombstones, but the target needs host-side transactional domain mutations and server-issued sequences. SQLite is already established elsewhere in the client, but no chat/session schema exists.
 5. **Current workspace RPC accepts root strings.** Existing containment is strong after root resolution, but the remote boundary still needs a host workspace catalog and opaque IDs.
-6. **Mission Control is not a reusable remote API.** It is plaintext LAN HTTP, reduced, snapshot-oriented, paired with year-long cookies, and sends commands to the React WebView. The end state removes this implementation rather than preserving compatibility.
+6. **Fleet Manager is the sole remote-management path.** Hosts initiate the gateway connection and do not expose an inbound browser-control API.
 7. **No browser cryptographic channel exists.** Settings Transfer's Noise implementation is Rust-to-Rust and session-specific. A browser-host authenticated channel needs protocol selection, generated vectors, review, and cross-language tests.
 8. **Service mode is a foreground user process.** It can be supervised without a UI, but it is not a native privileged daemon and does not provide Tauri-only host managers.
 

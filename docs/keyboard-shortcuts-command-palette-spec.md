@@ -65,7 +65,7 @@ The implementation follows these resolved defaults:
 11. Explicit number selection is allowed only on small, stable selector pages. Numbers never mean the current visual row index.
 12. Move Media Flow's current Command/Ctrl+K “Add node” behavior into the shared system. Application Command+K owns the root palette; “Add node” becomes a Media-context child page shared by the root palette and its visible button.
 13. Preserve the existing native Quick Voice shortcut as a separate operating-system-global facility, include it in conflict diagnostics, and reject a configured native chord that collides with a shipped application chord.
-14. Expose the already-existing Settings, Mission Control, and Smart Scheduler actions in the root palette. Do not add new shell actions or visible launcher copy.
+14. Expose the already-existing Settings, Fleet Manager, and Smart Scheduler actions in the root palette. Do not add new shell actions or visible launcher copy.
 
 ## 3. Codebase findings
 
@@ -110,7 +110,7 @@ The same order is visible in <code>apps/client/src/tauri/ui/app-shell/app-rail.t
 
 The existing <code>selectApp</code> path contains unsaved-change guards for Instructions and Workspaces. Global navigation commands MUST invoke that path and MUST NOT mutate <code>activeApp</code> directly. During implementation, adapt <code>selectApp</code> to report completed versus cancelled so palette closing can follow the actual result.
 
-Settings, Mission Control, and Smart Scheduler already have shell-level opening actions. Global commands should call those existing actions.
+Settings, Fleet Manager, and Smart Scheduler already have shell-level opening actions. Global commands should call those existing actions.
 
 ### 3.3 View and overlay boundaries
 
@@ -118,7 +118,7 @@ Settings, Mission Control, and Smart Scheduler already have shell-level opening 
 
 The application contains both Radix-managed overlays and manual overlays:
 
-- Settings, Mission Control, Smart Scheduler, attachment image preview, file preview, and chat workflow dialogs use or wrap Dialog.
+- Settings, Fleet Manager, Smart Scheduler, attachment image preview, file preview, and chat workflow dialogs use or wrap Dialog.
 - Menus and property-like controls use Popover or Dropdown Menu in many places.
 - Onboarding, voice input, some context menus, and some temporary panels use custom positioning and document listeners.
 - Settings has custom Escape and unsaved-navigation behavior, makes inactive content inert, and restores focus.
@@ -132,19 +132,19 @@ Radix Dialog is already the correct focus-trap and restoration foundation. The m
 
 The following inventory is implementation input, not a request to remove component-native keyboard behavior indiscriminately.
 
-| Location | Current behavior | Conflict or migration requirement |
-| --- | --- | --- |
-| <code>components/ui/sidebar-provider.tsx</code> | Generated window-level Mod+B toggles a shadcn sidebar | The provider is not mounted anywhere in the inspected application. This listener is dead code and is not an application shortcut to migrate. Remove it from the unused primitive so it cannot become an unreviewed second dispatcher if the primitive is mounted later. |
-| <code>ralph/ralph-flow-editor.tsx</code> | Escape closes local menus; Mod+S saves; Mod+Z and Mod+Shift+Z or Mod+Y undo/redo; Mod+D duplicates; Mod+L lays out; Mod+Enter runs; Delete or Backspace removes a selected edge/block | This is the most complete existing view shortcut set. Register semantic actions and retain local canvas navigation. The current Mod+S check occurs before its editable-target gate; preserve or deliberately change that behavior through an explicit focus policy. |
-| <code>media/components/media-flow-view.tsx</code> | Mod+K opens a Media “Node palette”; Escape closes Media panels; undo, redo, copy, and paste use window-level listeners | Mod+K directly conflicts with the application palette. Migrate “Add node” into the shared palette and shared command-page surface. Remove the old listener and hard-coded Ctrl+K button title when migration lands. |
-| File preview dialog | Mod+F focuses its own search | This is a valid top-overlay command. It must outrank application and view commands while that dialog is topmost. |
-| Agent composer and prompt history | Enter submits, Shift+Enter inserts a line, Escape can cancel, Arrow Up/Down navigates history; IME checks include <code>isComposing</code> and keyCode 229 | These are focused-component interactions and should stay local. Mark the component as a keyboard owner; do not turn submit or history into global commands. |
-| Settings navigation, workspace tree, media library, tab lists | Arrow, Home, End, Space, or Enter implement composite-widget navigation | Keep local and standards-aligned. The central listener must honor preventDefault and focus ownership. |
-| CodeMirror | Editor keymap owns editing chords | Treat the editor as an editable command boundary. |
-| xterm | Terminal handles keys and explicitly customizes Ctrl+Shift+C/V; screen-reader mode is enabled | Treat the terminal as a strong keyboard boundary. In particular, Ctrl+K can be terminal input on Windows/Linux and must not be stolen. |
-| Sessions and conversation context menus | Local Escape and pointer-outside behavior; menu roles are present | Preserve local dismissal until the menu is registered in the overlay stack. Add robust Radix/roving navigation when touched. |
-| Media library preview | Arrow Left/Right and Space control the open gallery preview | This is focused overlay/component navigation, not an application command. Keep it local and register the preview as an overlay if it becomes modal. |
-| Tray menu | Escape hides the separate tray window | It is outside the main-window provider and remains local. |
+| Location                                                      | Current behavior                                                                                                                                                                      | Conflict or migration requirement                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <code>components/ui/sidebar-provider.tsx</code>               | Generated window-level Mod+B toggles a shadcn sidebar                                                                                                                                 | The provider is not mounted anywhere in the inspected application. This listener is dead code and is not an application shortcut to migrate. Remove it from the unused primitive so it cannot become an unreviewed second dispatcher if the primitive is mounted later. |
+| <code>ralph/ralph-flow-editor.tsx</code>                      | Escape closes local menus; Mod+S saves; Mod+Z and Mod+Shift+Z or Mod+Y undo/redo; Mod+D duplicates; Mod+L lays out; Mod+Enter runs; Delete or Backspace removes a selected edge/block | This is the most complete existing view shortcut set. Register semantic actions and retain local canvas navigation. The current Mod+S check occurs before its editable-target gate; preserve or deliberately change that behavior through an explicit focus policy.     |
+| <code>media/components/media-flow-view.tsx</code>             | Mod+K opens a Media “Node palette”; Escape closes Media panels; undo, redo, copy, and paste use window-level listeners                                                                | Mod+K directly conflicts with the application palette. Migrate “Add node” into the shared palette and shared command-page surface. Remove the old listener and hard-coded Ctrl+K button title when migration lands.                                                     |
+| File preview dialog                                           | Mod+F focuses its own search                                                                                                                                                          | This is a valid top-overlay command. It must outrank application and view commands while that dialog is topmost.                                                                                                                                                        |
+| Agent composer and prompt history                             | Enter submits, Shift+Enter inserts a line, Escape can cancel, Arrow Up/Down navigates history; IME checks include <code>isComposing</code> and keyCode 229                            | These are focused-component interactions and should stay local. Mark the component as a keyboard owner; do not turn submit or history into global commands.                                                                                                             |
+| Settings navigation, workspace tree, media library, tab lists | Arrow, Home, End, Space, or Enter implement composite-widget navigation                                                                                                               | Keep local and standards-aligned. The central listener must honor preventDefault and focus ownership.                                                                                                                                                                   |
+| CodeMirror                                                    | Editor keymap owns editing chords                                                                                                                                                     | Treat the editor as an editable command boundary.                                                                                                                                                                                                                       |
+| xterm                                                         | Terminal handles keys and explicitly customizes Ctrl+Shift+C/V; screen-reader mode is enabled                                                                                         | Treat the terminal as a strong keyboard boundary. In particular, Ctrl+K can be terminal input on Windows/Linux and must not be stolen.                                                                                                                                  |
+| Sessions and conversation context menus                       | Local Escape and pointer-outside behavior; menu roles are present                                                                                                                     | Preserve local dismissal until the menu is registered in the overlay stack. Add robust Radix/roving navigation when touched.                                                                                                                                            |
+| Media library preview                                         | Arrow Left/Right and Space control the open gallery preview                                                                                                                           | This is focused overlay/component navigation, not an application command. Keep it local and register the preview as an overlay if it becomes modal.                                                                                                                     |
+| Tray menu                                                     | Escape hides the separate tray window                                                                                                                                                 | It is outside the main-window provider and remains local.                                                                                                                                                                                                               |
 
 There is also an operating-system-global Quick Voice/Quick Chat shortcut implemented through <code>tauri-plugin-global-shortcut</code> in <code>apps/client/src-tauri/src/desktop_shell/shortcut.rs</code>. Its current default is <code>CommandOrControl+Alt+V</code>, and Settings accepts a configurable native shortcut string. The installed native parser accepts <code>CommandOrControl</code>, <code>CommandOrCtrl</code>, <code>CmdOrControl</code>, and <code>CmdOrCtrl</code> as platform Mod aliases, <code>Command</code>/<code>Cmd</code>/<code>Super</code> as the system modifier, and physical <code>Key…</code>/<code>Digit…</code> primary-key spellings. This facility fires outside the application and is not a DOM shortcut. It MUST remain separate, but its configured chord should appear in shortcut diagnostics so the application does not advertise a conflicting in-window command.
 
@@ -398,11 +398,11 @@ Asynchronous pages:
 
 The same page model has two shells:
 
-| Presentation | Use | Behavior |
-| --- | --- | --- |
-| Compact Popover | Invoked from a visible property/control and the list fits an anchored surface | Approximately 18–22rem wide, collision-aware positioning, trigger-based focus restoration |
-| Palette Dialog | Invoked from Command+K, from a direct key with no suitable anchor, or for a larger/nested flow | Centered near the upper viewport, wider result area, focus trapped |
-| Mobile Dialog | Narrow or touch viewport where a popover would be cramped | Near-full-width dialog with safe viewport height and visible back control |
+| Presentation    | Use                                                                                            | Behavior                                                                                  |
+| --------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Compact Popover | Invoked from a visible property/control and the list fits an anchored surface                  | Approximately 18–22rem wide, collision-aware positioning, trigger-based focus restoration |
+| Palette Dialog  | Invoked from Command+K, from a direct key with no suitable anchor, or for a larger/nested flow | Centered near the upper viewport, wider result area, focus trapped                        |
+| Mobile Dialog   | Narrow or touch viewport where a popover would be cramped                                      | Near-full-width dialog with safe viewport height and visible back control                 |
 
 Do not maintain separate option arrays or keyboard handlers for compact and dialog presentations. A property button, a direct P-like command, and a root palette result all request the same command page with a different presentation hint.
 
@@ -498,24 +498,24 @@ Closing a palette aborts option loading and explicitly cancelable work. It does 
 
 Install one <code>keydown</code> listener on <code>document</code> in the bubble phase. Do not use capture for the application dispatcher. The high-level pipeline is:
 
-~~~ts
+```ts
 function onKeyDown(event: KeyboardEvent) {
-  if (event.defaultPrevented) return
-  if (isCompositionOrDeadKey(event)) return
-  if (isModifierOnlyOrAltGraph(event)) return
+  if (event.defaultPrevented) return;
+  if (isCompositionOrDeadKey(event)) return;
+  if (isModifierOnlyOrAltGraph(event)) return;
 
-  const context = snapshotContext(event)
-  const chord = normalizeEvent(event, context.platform)
-  const candidates = registry.lookup(chord)
-  const resolution = resolve(candidates, context)
+  const context = snapshotContext(event);
+  const chord = normalizeEvent(event, context.platform);
+  const candidates = registry.lookup(chord);
+  const resolution = resolve(candidates, context);
 
-  if (resolution.kind !== "winner") return
-  if (event.repeat && !resolution.command.allowRepeat) return
+  if (resolution.kind !== "winner") return;
+  if (event.repeat && !resolution.command.allowRepeat) return;
 
-  event.preventDefault()
-  execute(resolution.command.id, freshContext())
+  event.preventDefault();
+  execute(resolution.command.id, freshContext());
 }
-~~~
+```
 
 Calling preventDefault only after one enabled winner is found is mandatory. A disabled, ambiguous, stale, or ineligible binding must not swallow browser or component behavior.
 
@@ -525,14 +525,14 @@ Build focus classification from <code>event.composedPath()</code>, not only <cod
 
 The provider classifies focus as:
 
-| Focus kind | Examples | Plain characters | Modified application commands |
-| --- | --- | --- | --- |
-| document | body, passive canvas background | Allowed when enabled and no overlay blocks | Allowed |
-| text-entry | text/search/email/url/tel/password/number inputs, textarea, select | Blocked | Allowed only when command metadata permits; Mod+K normally permits |
-| editor | contenteditable, CodeMirror content | Blocked | Component keymap wins first; otherwise only commands explicitly allowed in editors |
-| terminal | xterm root/helper textarea | Blocked | Terminal owns input by default; application command needs an explicit terminal-safe exception |
-| interactive-control | button, link, slider, checkbox, focused menu item | Blocked unless the component registers/owns it | Global modified commands may run only if the control did not handle them |
-| command-surface | cmdk input and results | Owned by the top command page | Only palette-defined global handling, such as Mod+K toggle |
+| Focus kind          | Examples                                                           | Plain characters                               | Modified application commands                                                                 |
+| ------------------- | ------------------------------------------------------------------ | ---------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| document            | body, passive canvas background                                    | Allowed when enabled and no overlay blocks     | Allowed                                                                                       |
+| text-entry          | text/search/email/url/tel/password/number inputs, textarea, select | Blocked                                        | Allowed only when command metadata permits; Mod+K normally permits                            |
+| editor              | contenteditable, CodeMirror content                                | Blocked                                        | Component keymap wins first; otherwise only commands explicitly allowed in editors            |
+| terminal            | xterm root/helper textarea                                         | Blocked                                        | Terminal owns input by default; application command needs an explicit terminal-safe exception |
+| interactive-control | button, link, slider, checkbox, focused menu item                  | Blocked unless the component registers/owns it | Global modified commands may run only if the control did not handle them                      |
+| command-surface     | cmdk input and results                                             | Owned by the top command page                  | Only palette-defined global handling, such as Mod+K toggle                                    |
 
 Provide explicit DOM markers:
 
@@ -607,13 +607,13 @@ The existing OS-global Quick Voice shortcut is registered before DOM events and 
 
 ### 7.1 Scope types
 
-| Scope | Meaning | Activation |
-| --- | --- | --- |
-| overlay | Commands owned by the top open dialog, popover, menu, or palette page | Overlay is registered and topmost |
-| component | Commands owned by the focused component or deepest registered command boundary | Owner appears in the composed focus path |
-| entity | Commands for the current selected or active entity/selection | Entity context exists and owner view is active |
-| view | Commands contributed by the active main application | <code>activeApp</code> matches |
-| global | Main-shell navigation and application actions | Main window provider is mounted |
+| Scope     | Meaning                                                                        | Activation                                     |
+| --------- | ------------------------------------------------------------------------------ | ---------------------------------------------- |
+| overlay   | Commands owned by the top open dialog, popover, menu, or palette page          | Overlay is registered and topmost              |
+| component | Commands owned by the focused component or deepest registered command boundary | Owner appears in the composed focus path       |
+| entity    | Commands for the current selected or active entity/selection                   | Entity context exists and owner view is active |
+| view      | Commands contributed by the active main application                            | <code>activeApp</code> matches                 |
+| global    | Main-shell navigation and application actions                                  | Main window provider is mounted                |
 
 Conditional availability is orthogonal. For example, RALPH “Duplicate selection” has view scope plus a selection-dependent availability predicate.
 
@@ -698,7 +698,7 @@ If the palette itself invokes a view switch, keep it open until the existing uns
 
 Add a focused command subsystem rather than a general state framework:
 
-~~~text
+```text
 apps/client/src/tauri/ui/commands/
   command-types.ts
   command-defaults.ts
@@ -714,7 +714,7 @@ apps/client/src/tauri/ui/commands/
 
 apps/client/src/tauri/ui/components/ui/
   command.tsx
-~~~
+```
 
 Registry, shortcut, focus, search, and resolution logic remain independent from React and cmdk so they run in focused Vitest suites. React owns registration lifecycle and presentation; cmdk owns only the combobox/list interaction.
 
@@ -722,81 +722,83 @@ Registry, shortcut, focus, search, and resolution logic remain independent from 
 
 The following conceptual shape is normative; exact TypeScript names may vary:
 
-~~~ts
+```ts
 type CommandScope =
   | { kind: "global"; ownerId: "app" }
   | { kind: "view"; ownerId: MainAppId }
   | { kind: "entity"; ownerId: string; viewId?: MainAppId }
   | { kind: "component"; ownerId: string; viewId?: MainAppId }
-  | { kind: "overlay"; ownerId: string; viewId?: MainAppId }
+  | { kind: "overlay"; ownerId: string; viewId?: MainAppId };
 
 type ShortcutSpec = {
-  chord: string                 // for example "Mod+K", "Shift+P", "Delete"
-  platforms?: Platform[]
-  runtimes?: ("tauri" | "browser")[]
-  match?: "key" | "code"        // default "key"
-  allowRepeat?: boolean         // default false
-  allowIn?: FocusKind[]
-}
+  chord: string; // for example "Mod+K", "Shift+P", "Delete"
+  platforms?: Platform[];
+  runtimes?: ("tauri" | "browser")[];
+  match?: "key" | "code"; // default "key"
+  allowRepeat?: boolean; // default false
+  allowIn?: FocusKind[];
+};
 
 type CommandAvailability =
   | { state: "enabled" }
   | { state: "disabled"; reason: string }
-  | { state: "hidden" }
+  | { state: "hidden" };
 
 type CommandResult =
   | { type: "close" }
   | { type: "stay-open" }
   | { type: "push-page"; page: CommandPage }
-  | { type: "cancelled" }
+  | { type: "cancelled" };
 
 type CommandDefinition = {
-  id: string
-  title: string
-  group: string
-  keywords?: string[]
-  scope: CommandScope
-  shortcuts?: ShortcutSpec[]
-  palette?: "visible" | "hidden"
-  order?: number
-  when?: (context: CommandContextSnapshot) => boolean
-  current?: (context: CommandContextSnapshot) => boolean
-  availability?: (context: CommandContextSnapshot) => CommandAvailability
-  overlayPolicy?: "blocked" | "replace-non-modal"
-  overrideOf?: string
-  children?: (context: CommandContextSnapshot, signal: AbortSignal) =>
-    CommandPage | Promise<CommandPage>
+  id: string;
+  title: string;
+  group: string;
+  keywords?: string[];
+  scope: CommandScope;
+  shortcuts?: ShortcutSpec[];
+  palette?: "visible" | "hidden";
+  order?: number;
+  when?: (context: CommandContextSnapshot) => boolean;
+  current?: (context: CommandContextSnapshot) => boolean;
+  availability?: (context: CommandContextSnapshot) => CommandAvailability;
+  overlayPolicy?: "blocked" | "replace-non-modal";
+  overrideOf?: string;
+  children?: (
+    context: CommandContextSnapshot,
+    signal: AbortSignal,
+  ) => CommandPage | Promise<CommandPage>;
   execute?: (
     context: CommandExecutionContext,
-    signal: AbortSignal
-  ) => CommandResult | void | Promise<CommandResult | void>
-}
+    signal: AbortSignal,
+  ) => CommandResult | void | Promise<CommandResult | void>;
+};
 
 type CommandPage = {
-  id: string
-  title: string
-  searchPlaceholder: string
-  contextLabel?: string
-  groups: readonly CommandPageGroup[]
-  numericSelection?: boolean
-}
+  id: string;
+  title: string;
+  searchPlaceholder: string;
+  contextLabel?: string;
+  groups: readonly CommandPageGroup[];
+  numericSelection?: boolean;
+};
 
 type CommandPageGroup = {
-  id: string
-  label?: string
-  items: readonly CommandPageItem[]
-}
+  id: string;
+  label?: string;
+  items: readonly CommandPageItem[];
+};
 
 type CommandPageItem = {
-  id: string
-  title: string
-  keywords?: readonly string[]
-  current?: boolean
-  numericKey?: "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
-  availability?: CommandAvailability
-  execute: NonNullable<CommandDefinition["execute"]>
-}
-~~~
+  id: string;
+  title: string;
+  keywords?: readonly string[];
+  current?: boolean;
+  numericKey?: "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
+  availability?: CommandAvailability;
+  execute: NonNullable<CommandDefinition["execute"]>;
+};
+```
 
 Do not add descriptions, badges, or helper strings to the base type. A disabled reason and an execution error are point-of-need recovery content, not decorative metadata.
 
@@ -806,21 +808,21 @@ A definition must provide an executable action or a child-page factory. A child 
 
 The provider builds an immutable context for each resolve/render revision:
 
-~~~ts
+```ts
 type CommandContextSnapshot = {
-  windowKind: "main" | "assistant" | "quick-voice" | "tray"
-  platform: "macos" | "windows" | "linux"
-  runtime: "tauri" | "browser"
-  activeView: MainAppId | null
+  windowKind: "main" | "assistant" | "quick-voice" | "tray";
+  platform: "macos" | "windows" | "linux";
+  runtime: "tauri" | "browser";
+  activeView: MainAppId | null;
   focus: {
-    kind: FocusKind
-    ownerPath: readonly string[]
-  }
-  overlays: readonly OverlaySnapshot[]
-  singleKeyShortcutsEnabled: boolean
-  busyCommands: ReadonlySet<string>
-}
-~~~
+    kind: FocusKind;
+    ownerPath: readonly string[];
+  };
+  overlays: readonly OverlaySnapshot[];
+  singleKeyShortcutsEnabled: boolean;
+  busyCommands: ReadonlySet<string>;
+};
+```
 
 Avoid a monolithic union containing every RALPH and Chat field. Views register strongly typed closures around their existing controller actions and publish only generic focus ownership required for arbitration. Opening the palette captures the invoking focus kind and owner path before cmdk moves DOM focus; palette filtering and command revalidation retain that ownership while refreshing the active view, overlays, availability closures, and busy state. Page-item actions receive the current command-surface focus and capture their material entity through the page factory.
 
@@ -849,16 +851,16 @@ Static validation runs when a definition registers and invalid definitions are o
 
 Version one supports a single chord only. Parse canonical strings into:
 
-~~~ts
+```ts
 type NormalizedChord = {
-  key: string
-  mod: boolean
-  control: boolean
-  alt: boolean
-  shift: boolean
-  match: "key" | "code"
-}
-~~~
+  key: string;
+  mod: boolean;
+  control: boolean;
+  alt: boolean;
+  shift: boolean;
+  match: "key" | "code";
+};
+```
 
 Parser rules:
 
@@ -894,7 +896,7 @@ Register global definitions adjacent to shell actions, not inside the visual pal
 
 - view-switch commands call <code>selectApp</code>;
 - Settings calls the existing Settings opener;
-- Mission Control and Scheduler may be registered only if product chooses to expose those existing actions;
+- Fleet Manager and Scheduler may be registered only if product chooses to expose those existing actions;
 - Command+K is a palette-control binding and is not listed as a result inside itself.
 
 Only mount the provider in the main window in phase one. Shared modules may remain window-agnostic so another root can opt in later.
@@ -905,12 +907,12 @@ Do not persist or render <code>singleKeyShortcutsEnabled</code> in this release 
 
 A view uses a hook such as:
 
-~~~ts
+```ts
 useRegisterCommands({
   owner: { kind: "view", id: "ralph", active: activeApp === "ralph" },
-  commands: ralphCommands
-})
-~~~
+  commands: ralphCommands,
+});
+```
 
 The hook does not import the palette. Commands call existing controller actions and selectors. A view may also register an entity scope while a selection exists.
 
@@ -920,15 +922,15 @@ Keep focused ARIA navigation local. For example, RALPH canvas arrow behavior or 
 
 Create one lightweight overlay registry. Each open surface registers:
 
-~~~ts
+```ts
 type OverlaySnapshot = {
-  id: string
-  kind: "modal" | "non-modal"
-  openedAt: number
-  dismiss?: () => void | Promise<void>
-  allowGlobalCommands?: readonly string[]
-}
-~~~
+  id: string;
+  kind: "modal" | "non-modal";
+  openedAt: number;
+  dismiss?: () => void | Promise<void>;
+  allowGlobalCommands?: readonly string[];
+};
+```
 
 Integrate the controlled/uncontrolled open state in the shared Radix Dialog, Popover, and Dropdown Menu root wrappers. This is more accurate than registering from content components, which may remain mounted while a controlled primitive is closed. The command palette uses those same roots. Onboarding, voice input, the transient file-preview fallback, RALPH shortcut help, and manual context menus register explicitly. An overlay unregisters on close/unmount. The stack determines:
 
@@ -975,13 +977,13 @@ It is not responsible for command registration, shortcut resolution, or domain m
 
 ## 9. Library decision
 
-| Option | Strengths | Costs for this repository | Decision |
-| --- | --- | --- | --- |
-| shadcn Command + cmdk | Fits existing shadcn/Radix stack; accessible combobox composition; Dialog and Popover integration; nested page pattern; unstyled | Still requires the registry, shortcut resolver, context, diagnostics, and app-specific ranking | **Use** |
-| kbar | Includes provider/actions, search UI, nested actions, shortcuts, and result utilities | Introduces a second provider/portal model and overlaps with the exact registry/arbitration behavior Machdoch needs to control; less aligned with existing shadcn primitives | Do not add initially |
-| react-hotkeys-hook | Convenient per-component hooks and scopes | Per-hook dispatch does not by itself provide one deterministic cross-view winner, overlay stack, command search model, or conflict report; risks recreating distributed listeners | Do not add initially |
-| Fully custom combobox/dialog | Total control | Reimplements mature focus, listbox, dialog, and screen-reader behavior | Do not use |
-| Small custom registry/resolver plus cmdk UI | Exact context/precedence model while reusing accessible UI primitives | A modest amount of pure application code to own and test | **Recommended architecture** |
+| Option                                      | Strengths                                                                                                                        | Costs for this repository                                                                                                                                                         | Decision                     |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| shadcn Command + cmdk                       | Fits existing shadcn/Radix stack; accessible combobox composition; Dialog and Popover integration; nested page pattern; unstyled | Still requires the registry, shortcut resolver, context, diagnostics, and app-specific ranking                                                                                    | **Use**                      |
+| kbar                                        | Includes provider/actions, search UI, nested actions, shortcuts, and result utilities                                            | Introduces a second provider/portal model and overlaps with the exact registry/arbitration behavior Machdoch needs to control; less aligned with existing shadcn primitives       | Do not add initially         |
+| react-hotkeys-hook                          | Convenient per-component hooks and scopes                                                                                        | Per-hook dispatch does not by itself provide one deterministic cross-view winner, overlay stack, command search model, or conflict report; risks recreating distributed listeners | Do not add initially         |
+| Fully custom combobox/dialog                | Total control                                                                                                                    | Reimplements mature focus, listbox, dialog, and screen-reader behavior                                                                                                            | Do not use                   |
+| Small custom registry/resolver plus cmdk UI | Exact context/precedence model while reusing accessible UI primitives                                                            | A modest amount of pure application code to own and test                                                                                                                          | **Recommended architecture** |
 
 Official references:
 
@@ -998,33 +1000,33 @@ This matrix uses only actions already present in the inspected application. The 
 
 ### 10.1 Global and shell commands
 
-| Command ID | Existing action | Scope | Proposed default | Palette | Availability and notes |
-| --- | --- | --- | --- | --- | --- |
-| <code>app.palette.toggle</code> | Open/close shared palette | global control | Mod+K | hidden from itself | Main window; blocked by modal/terminal ownership; replaces non-modal overlay |
-| <code>app.settings.open</code> | Open Settings | global | Mod+, | visible | Disabled while a blocking modal owns focus; call existing opener |
-| <code>app.view.chat</code> | Select Chat Sessions | global | Mod+1 | visible | Tauri desktop only; call guarded <code>selectApp("chat")</code> |
-| <code>app.view.ralph</code> | Select RALPH | global | Mod+2 | visible | Tauri desktop only |
-| <code>app.view.media</code> | Select Media Studio | global | Mod+3 | visible | Tauri desktop only |
-| <code>app.view.marketplace</code> | Select Marketplace | global | Mod+4 | visible | Tauri desktop only |
-| <code>app.view.instructions</code> | Select Instructions | global | Mod+5 | visible | Preserve unsaved-change guard |
-| <code>app.view.workspaces</code> | Select Workspace Management | global | Mod+6 | visible | Preserve unsaved-change guard |
-| <code>app.scheduler.open</code> | Open Smart Scheduler | global | none | visible | Call the existing shell action |
-| <code>app.mission-control.open</code> | Open Mission Control | global | none | visible | Call the existing shell action |
-| <code>system.quickVoice</code> | Open Quick Voice/Chat from the OS | systemGlobal diagnostic | CommandOrControl+Alt+V by default | not an application result | Existing configurable native shortcut; validate for conflicts separately |
+| Command ID                          | Existing action                   | Scope                   | Proposed default                  | Palette                   | Availability and notes                                                       |
+| ----------------------------------- | --------------------------------- | ----------------------- | --------------------------------- | ------------------------- | ---------------------------------------------------------------------------- |
+| <code>app.palette.toggle</code>     | Open/close shared palette         | global control          | Mod+K                             | hidden from itself        | Main window; blocked by modal/terminal ownership; replaces non-modal overlay |
+| <code>app.settings.open</code>      | Open Settings                     | global                  | Mod+,                             | visible                   | Disabled while a blocking modal owns focus; call existing opener             |
+| <code>app.view.chat</code>          | Select Chat Sessions              | global                  | Mod+1                             | visible                   | Tauri desktop only; call guarded <code>selectApp("chat")</code>              |
+| <code>app.view.ralph</code>         | Select RALPH                      | global                  | Mod+2                             | visible                   | Tauri desktop only                                                           |
+| <code>app.view.media</code>         | Select Media Studio               | global                  | Mod+3                             | visible                   | Tauri desktop only                                                           |
+| <code>app.view.marketplace</code>   | Select Marketplace                | global                  | Mod+4                             | visible                   | Tauri desktop only                                                           |
+| <code>app.view.instructions</code>  | Select Instructions               | global                  | Mod+5                             | visible                   | Preserve unsaved-change guard                                                |
+| <code>app.view.workspaces</code>    | Select Workspace Management       | global                  | Mod+6                             | visible                   | Preserve unsaved-change guard                                                |
+| <code>app.scheduler.open</code>     | Open Smart Scheduler              | global                  | none                              | visible                   | Call the existing shell action                                               |
+| <code>app.fleet-manager.open</code> | Open Fleet Manager                | global                  | none                              | visible                   | Call the existing shell action                                               |
+| <code>system.quickVoice</code>      | Open Quick Voice/Chat from the OS | systemGlobal diagnostic | CommandOrControl+Alt+V by default | not an application result | Existing configurable native shortcut; validate for conflicts separately     |
 
 Mod+1 through Mod+6 conflict with browser tab selection in a normal browser. Enable these defaults only in the Tauri main shell. Browser preview mode should leave them unbound or require an explicit test flag.
 
 ### 10.2 RALPH
 
-| Command ID | Existing action | Scope | Current/default shortcut | Availability |
-| --- | --- | --- | --- | --- |
-| <code>ralph.flow.save</code> | Save flow | view | Mod+S | Active RALPH flow; disabled when nothing can be saved |
-| <code>ralph.flow.undo</code> | Undo | view | Mod+Z | Active RALPH flow and undo available; editor/component ownership wins |
-| <code>ralph.flow.redo</code> | Redo | view | Mod+Shift+Z and Mod+Y | Active RALPH flow and redo available |
-| <code>ralph.selection.duplicate</code> | Duplicate selected block | view/active selection | Mod+D | Exactly the supported RALPH selection context; fresh availability closure |
-| <code>ralph.flow.cleanLayout</code> | Clean layout | view | Mod+L | Tauri-only reviewed exception; disabled in browser preview |
-| <code>ralph.flow.run</code> | Run flow | view | Mod+Enter | Flow is runnable and not blocked by current execution |
-| <code>ralph.selection.delete</code> | Delete selected edge/block | view/active selection | Delete and Backspace | Canvas/document focus only; never while editing text; fresh availability closure; preserve any confirmation policy |
+| Command ID                             | Existing action            | Scope                 | Current/default shortcut | Availability                                                                                                       |
+| -------------------------------------- | -------------------------- | --------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| <code>ralph.flow.save</code>           | Save flow                  | view                  | Mod+S                    | Active RALPH flow; disabled when nothing can be saved                                                              |
+| <code>ralph.flow.undo</code>           | Undo                       | view                  | Mod+Z                    | Active RALPH flow and undo available; editor/component ownership wins                                              |
+| <code>ralph.flow.redo</code>           | Redo                       | view                  | Mod+Shift+Z and Mod+Y    | Active RALPH flow and redo available                                                                               |
+| <code>ralph.selection.duplicate</code> | Duplicate selected block   | view/active selection | Mod+D                    | Exactly the supported RALPH selection context; fresh availability closure                                          |
+| <code>ralph.flow.cleanLayout</code>    | Clean layout               | view                  | Mod+L                    | Tauri-only reviewed exception; disabled in browser preview                                                         |
+| <code>ralph.flow.run</code>            | Run flow                   | view                  | Mod+Enter                | Flow is runnable and not blocked by current execution                                                              |
+| <code>ralph.selection.delete</code>    | Delete selected edge/block | view/active selection | Delete and Backspace     | Canvas/document focus only; never while editing text; fresh availability closure; preserve any confirmation policy |
 
 Local Escape for RALPH menus remains with the top local overlay. Copy no shortcut text from the old listener into multiple UI components; all displayed hints come from the registered definition.
 
@@ -1032,15 +1034,15 @@ Local Escape for RALPH menus remains with the top local overlay. Copy no shortcu
 
 The inspected Chat Sessions UI already exposes these actions. The first palette release should register them without inventing direct shortcuts.
 
-| Command ID | Existing action | Scope | Default shortcut | Availability |
-| --- | --- | --- | --- | --- |
-| <code>chat.session.new</code> | Create a session | view | none | Chat active and session creation allowed |
-| <code>chat.sessions.search</code> | Focus/open the existing session search affordance | view/component | none | Chat active; if implemented, invoke the existing search UI rather than duplicate it |
-| <code>chat.session.pin</code> / <code>chat.session.unpin</code> | Pin or unpin active session | view/active session | none | Active session supports pinning |
-| <code>chat.session.duplicate</code> | Duplicate session | view/active session | none | Active session supports duplicate |
-| <code>chat.session.archive</code> | Archive session | view/active session | none | Active session supports archive |
-| <code>chat.session.rename</code> | Invoke existing rename flow | view/active session | none | Active session supports rename |
-| <code>chat.session.delete</code> | Invoke existing delete flow | view/active session | none | Active session supports deletion; command confirms before calling the controller action |
+| Command ID                                                      | Existing action                                   | Scope               | Default shortcut | Availability                                                                            |
+| --------------------------------------------------------------- | ------------------------------------------------- | ------------------- | ---------------- | --------------------------------------------------------------------------------------- |
+| <code>chat.session.new</code>                                   | Create a session                                  | view                | none             | Chat active and session creation allowed                                                |
+| <code>chat.sessions.search</code>                               | Focus/open the existing session search affordance | view/component      | none             | Chat active; if implemented, invoke the existing search UI rather than duplicate it     |
+| <code>chat.session.pin</code> / <code>chat.session.unpin</code> | Pin or unpin active session                       | view/active session | none             | Active session supports pinning                                                         |
+| <code>chat.session.duplicate</code>                             | Duplicate session                                 | view/active session | none             | Active session supports duplicate                                                       |
+| <code>chat.session.archive</code>                               | Archive session                                   | view/active session | none             | Active session supports archive                                                         |
+| <code>chat.session.rename</code>                                | Invoke existing rename flow                       | view/active session | none             | Active session supports rename                                                          |
+| <code>chat.session.delete</code>                                | Invoke existing delete flow                       | view/active session | none             | Active session supports deletion; command confirms before calling the controller action |
 
 The first implementation targets the active conversation. The sidebar has context-menu targeting but no persistent focused-row selection model, and opening the palette moves focus away from the row. The active-session commands therefore use view scope plus fresh availability checks rather than pretending that transient DOM focus is an entity selection. The inspected delete controller action does not contain a confirmation, so only the palette command adds a point-of-action confirmation before calling it. A future focused-row feature may publish an explicit session selection into command context and then adopt row-first targeting.
 
@@ -1059,10 +1061,10 @@ Media is not part of the requested example matrix, but it is the blocking Comman
 
 Do not add priority or project concepts to Machdoch solely to match the screenshots. The registry supports this future pattern:
 
-| Pattern command | Scope | Shortcut | Result |
-| --- | --- | --- | --- |
-| <code>&lt;view&gt;.&lt;entity&gt;.priority.open</code> | entity | P | Open the shared priority page |
-| <code>&lt;view&gt;.&lt;entity&gt;.project.open</code> | entity | Shift+P | Open the shared project page |
+| Pattern command                                        | Scope  | Shortcut | Result                        |
+| ------------------------------------------------------ | ------ | -------- | ----------------------------- |
+| <code>&lt;view&gt;.&lt;entity&gt;.priority.open</code> | entity | P        | Open the shared priority page |
+| <code>&lt;view&gt;.&lt;entity&gt;.project.open</code>  | entity | Shift+P  | Open the shared project page  |
 
 Only a real view capability may register those definitions.
 
@@ -1126,40 +1128,40 @@ Every visible row:
 
 The implementation is incomplete until these cases have an explicit result:
 
-| Case | Required result |
-| --- | --- |
-| User types P in input, textarea, search, contenteditable, or CodeMirror | Text is entered; no application P command |
-| User presses P on a focused button/select/menu item | Component behavior wins; no unrelated application command |
-| User presses Ctrl+K in xterm | Terminal owns it unless an explicit terminal-safe policy is accepted |
-| User presses Mod+K in a normal text field | Palette opens if no top modal or component claim |
-| User presses Mod+K with a non-modal popover open | Popover dismisses, then palette opens |
-| User presses Mod+K with Settings or another modal open | Nothing opens; modal retains focus |
-| User presses Escape in nested page with query | Return to parent immediately; Escape does not merely clear query |
-| User presses Backspace in nested page with query | Delete query text |
-| User presses Backspace in empty nested page | Return to parent |
-| IME composition emits Enter/Escape/Backspace/229 | Application dispatcher does nothing |
-| Dead key or AltGraph is used | No application command |
-| Key is held | Direct command executes once; list arrows may repeat |
-| French layout produces “1” using Shift | Explicit numeric option 1 may activate because semantic key is 1 |
-| US layout produces “!” using Shift+1 | Numeric option 1 does not activate |
-| Dvorak user presses the key producing P | Semantic P command activates outside an editable context |
-| Active result becomes disabled while palette is open | It cannot execute; UI updates with concise reason if still relevant |
-| Selected entity is deleted remotely/elsewhere | Entity commands disappear or disable; Enter revalidates |
-| Async option request A resolves after request B | A is ignored by revision |
-| Async command is triggered twice | Second invocation is dropped |
-| Async command fails | Surface remains/reopens at same state with retryable error |
-| View registration unmounts during open palette | Palette closes; stale callbacks do not execute |
-| View switch unsaved guard is cancelled | Current view and palette remain |
-| Strict Mode mounts effects twice | No duplicate live registration after cleanup |
-| Two same-scope commands claim the same chord | Neither runs; development diagnostic identifies both |
-| View and global command share a chord | Eligible view command wins; no conflict needed |
-| Native Quick Voice is rebound to an app chord | Settings reports a conflict before accepting or asks for a different chord |
-| Browser preview receives Mod+1 | Browser retains tab shortcut; Tauri-only view binding is inactive |
-| Palette opens from an element removed while open | Close focuses active-view fallback |
-| Current option is filtered out | It remains selected in domain state but not rendered; first enabled match is highlighted |
-| No result is enabled | No row executes; Enter does nothing |
-| Screen reader virtual cursor or speech input sends a character | Single-key setting can turn application character shortcuts off |
-| 200% zoom or small viewport | Dialog/popover remains fully operable and scrolls internally |
+| Case                                                                    | Required result                                                                          |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| User types P in input, textarea, search, contenteditable, or CodeMirror | Text is entered; no application P command                                                |
+| User presses P on a focused button/select/menu item                     | Component behavior wins; no unrelated application command                                |
+| User presses Ctrl+K in xterm                                            | Terminal owns it unless an explicit terminal-safe policy is accepted                     |
+| User presses Mod+K in a normal text field                               | Palette opens if no top modal or component claim                                         |
+| User presses Mod+K with a non-modal popover open                        | Popover dismisses, then palette opens                                                    |
+| User presses Mod+K with Settings or another modal open                  | Nothing opens; modal retains focus                                                       |
+| User presses Escape in nested page with query                           | Return to parent immediately; Escape does not merely clear query                         |
+| User presses Backspace in nested page with query                        | Delete query text                                                                        |
+| User presses Backspace in empty nested page                             | Return to parent                                                                         |
+| IME composition emits Enter/Escape/Backspace/229                        | Application dispatcher does nothing                                                      |
+| Dead key or AltGraph is used                                            | No application command                                                                   |
+| Key is held                                                             | Direct command executes once; list arrows may repeat                                     |
+| French layout produces “1” using Shift                                  | Explicit numeric option 1 may activate because semantic key is 1                         |
+| US layout produces “!” using Shift+1                                    | Numeric option 1 does not activate                                                       |
+| Dvorak user presses the key producing P                                 | Semantic P command activates outside an editable context                                 |
+| Active result becomes disabled while palette is open                    | It cannot execute; UI updates with concise reason if still relevant                      |
+| Selected entity is deleted remotely/elsewhere                           | Entity commands disappear or disable; Enter revalidates                                  |
+| Async option request A resolves after request B                         | A is ignored by revision                                                                 |
+| Async command is triggered twice                                        | Second invocation is dropped                                                             |
+| Async command fails                                                     | Surface remains/reopens at same state with retryable error                               |
+| View registration unmounts during open palette                          | Palette closes; stale callbacks do not execute                                           |
+| View switch unsaved guard is cancelled                                  | Current view and palette remain                                                          |
+| Strict Mode mounts effects twice                                        | No duplicate live registration after cleanup                                             |
+| Two same-scope commands claim the same chord                            | Neither runs; development diagnostic identifies both                                     |
+| View and global command share a chord                                   | Eligible view command wins; no conflict needed                                           |
+| Native Quick Voice is rebound to an app chord                           | Settings reports a conflict before accepting or asks for a different chord               |
+| Browser preview receives Mod+1                                          | Browser retains tab shortcut; Tauri-only view binding is inactive                        |
+| Palette opens from an element removed while open                        | Close focuses active-view fallback                                                       |
+| Current option is filtered out                                          | It remains selected in domain state but not rendered; first enabled match is highlighted |
+| No result is enabled                                                    | No row executes; Enter does nothing                                                      |
+| Screen reader virtual cursor or speech input sends a character          | Single-key setting can turn application character shortcuts off                          |
+| 200% zoom or small viewport                                             | Dialog/popover remains fully operable and scrolls internally                             |
 
 ## 13. Verification strategy
 
@@ -1337,23 +1339,23 @@ Local keyboard interaction that exists only to operate a focused composite widge
 
 ## 16. Risks and recommended mitigations
 
-| Risk | Mitigation |
-| --- | --- |
-| cmdk is mistaken for a full command architecture | Keep registry, resolver, context, and diagnostics independent; cmdk is a rendering primitive |
-| React effects leave stale or duplicate view commands | Tokenized idempotent cleanup, active-view gating, Strict Mode tests |
-| Global shortcuts steal editor or terminal input | Bubble listener, preventDefault ownership, composed-path focus classifier, strong terminal boundary |
-| Same chord behaves according to mount order | Fixed scope precedence; ambiguous same-tier bindings execute none |
-| Browser preview conflicts with desktop view keys | Tauri-only Mod+number and Mod+L defaults |
-| Non-US layouts break letters or numeric selection | Semantic <code>event.key</code>, AltGraph rejection, layout-required digit Shift rule, manual layout matrix |
-| Single-key shortcuts fail WCAG or speech input | Ship Settings toggle in the same phase; focused selector ownership only |
-| Overlay focus leaks or stacked dialogs | Overlay registry, Radix Dialog/Popover, one palette dialog with internal pages |
-| Command acts on stale selection | Live context revision and immediate pre-execution revalidation |
-| Async results reorder or mutate the wrong view | Abort signals, request revisions, owner/view revision checks |
-| A destructive controller action has no confirmation | The command confirms at the point of action, then calls the existing controller mutation |
-| Too many root results degrade search | Register actions, not arbitrary entities; load entity options in child pages |
-| Shortcut copy drifts | One formatter and metadata source for UI and aria-keyshortcuts |
-| Native Quick Voice captures a conflicting chord | Cross-check configured native chord in Settings and diagnostics |
-| Accessibility differs across WebViews | Automated semantics plus real AT/platform smoke testing |
+| Risk                                                 | Mitigation                                                                                                  |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| cmdk is mistaken for a full command architecture     | Keep registry, resolver, context, and diagnostics independent; cmdk is a rendering primitive                |
+| React effects leave stale or duplicate view commands | Tokenized idempotent cleanup, active-view gating, Strict Mode tests                                         |
+| Global shortcuts steal editor or terminal input      | Bubble listener, preventDefault ownership, composed-path focus classifier, strong terminal boundary         |
+| Same chord behaves according to mount order          | Fixed scope precedence; ambiguous same-tier bindings execute none                                           |
+| Browser preview conflicts with desktop view keys     | Tauri-only Mod+number and Mod+L defaults                                                                    |
+| Non-US layouts break letters or numeric selection    | Semantic <code>event.key</code>, AltGraph rejection, layout-required digit Shift rule, manual layout matrix |
+| Single-key shortcuts fail WCAG or speech input       | Ship Settings toggle in the same phase; focused selector ownership only                                     |
+| Overlay focus leaks or stacked dialogs               | Overlay registry, Radix Dialog/Popover, one palette dialog with internal pages                              |
+| Command acts on stale selection                      | Live context revision and immediate pre-execution revalidation                                              |
+| Async results reorder or mutate the wrong view       | Abort signals, request revisions, owner/view revision checks                                                |
+| A destructive controller action has no confirmation  | The command confirms at the point of action, then calls the existing controller mutation                    |
+| Too many root results degrade search                 | Register actions, not arbitrary entities; load entity options in child pages                                |
+| Shortcut copy drifts                                 | One formatter and metadata source for UI and aria-keyshortcuts                                              |
+| Native Quick Voice captures a conflicting chord      | Cross-check configured native chord in Settings and diagnostics                                             |
+| Accessibility differs across WebViews                | Automated semantics plus real AT/platform smoke testing                                                     |
 
 ## 17. Resolved decisions and remaining assumptions
 
@@ -1367,7 +1369,7 @@ Implementation proceeds with these resolved decisions:
 6. **Media Add node:** no second direct shortcut. The root command and visible button open one shared node page in dialog and compact presentations respectively.
 7. **Custom remapping and sequences:** defer. Stable IDs, canonical chords, and diagnostics preserve a migration path.
 8. **Shortcut help:** do not ship a permanent help surface or launcher.
-9. **Mission Control and Scheduler:** include both existing shell actions as searchable root commands without direct shortcuts.
+9. **Fleet Manager and Scheduler:** include the existing shell actions as searchable root commands without direct shortcuts.
 10. **Chat target:** active conversation only. Focused-row targeting remains unresolved until the sidebar has an explicit, persistent row-selection contract.
 11. **Native Quick Voice conflicts:** block saving a native shortcut that exactly matches a shipped application chord; native syntax validation remains authoritative in Rust.
 
@@ -1384,7 +1386,7 @@ Remaining verification assumptions:
 
 - Added a main-window command provider, atomic registration lifecycle, strict shortcut parser and formatter, composed-path focus classifier, invocation-focus capture preserved through nested page actions, overlay stack, Unicode-aware deterministic search, scope resolver, invalid/duplicate/collision fail-closed behavior, async command locks, cancellation handling, abort handling, and stale-surface revision checks.
 - Added a cmdk-backed Radix dialog palette and compact anchored Popover presentation with nested pages, per-page query/highlight/scroll restoration, query filtering, current and disabled states, explicit numeric selection, error announcements, and invoker/fallback focus restoration.
-- Integrated global Settings and guarded App Rail navigation, Mission Control, Smart Scheduler, active Chat session actions, RALPH editing actions, and Media undo/redo/copy/paste.
+- Integrated global Settings and guarded App Rail navigation, Fleet Manager, Smart Scheduler, active Chat session actions, RALPH editing actions, and Media undo/redo/copy/paste.
 - Replaced Media Flow's competing Mod+K behavior with <code>media.flow.node.add</code>. The root palette and visible Add node button use one node-page definition; the old side panel remains only for isolated rendering without a provider.
 - Removed the unused generated SidebarProvider Mod+B listener. Remaining document/window listeners are component-native Escape, gallery, file-search, or separate-window behavior documented in section 3.4.
 - Registered shared Dialog, Sheet, Popover, and Dropdown Menu roots in the overlay stack and registered onboarding, voice input, the transient file-preview fallback, session/conversation menus, and RALPH manual surfaces explicitly.

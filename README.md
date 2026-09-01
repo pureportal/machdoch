@@ -47,8 +47,7 @@ Machdoch connects an AI model to practical tools on your computer. Give it a **w
 | Media Studio         | Generate, edit, organize, inspect, and export images, SVGs, and locally supported video work.         |
 | Marketplace and MCP  | Add third-party tools, resources, and prompts through Model Context Protocol servers.                 |
 | Quick Chat and voice | Open a small assistant from a global shortcut, dictate requests, and hear replies.                    |
-| Mission Control      | Monitor and control sessions from a browser on another device on the same local network.              |
-| Fleet                | Connect enrolled hosts to a self-hosted dashboard for remote access and managed settings.             |
+| Fleet Manager        | Connect enrolled hosts to a self-hosted dashboard for remote access and managed settings.             |
 
 ### Choose how much control to give it
 
@@ -212,11 +211,11 @@ Chat history supports pinning, tags, renaming, archiving, deleting, and branchin
 | Repeat a multi-step review with decision points              | A saved **RALPH** flow                                              |
 | Run a report every Monday or after a supported event         | **Smart Scheduler**                                                 |
 | Generate and review image, SVG, or local video assets        | **Media Studio**                                                    |
-| Monitor a long task from a phone or another computer         | **Mission Control** on a trusted local network                      |
+| Monitor a long task from a phone or another computer         | **Fleet Manager**                                                   |
 
 ## Explore the main features
 
-The desktop navigation contains **Chat**, **RALPH**, **Media Studio**, **Marketplace**, **Smart Scheduler**, **Mission Control**, and **Settings**.
+The desktop navigation contains **Chat**, **RALPH**, **Media Studio**, **Marketplace**, **Smart Scheduler**, **Fleet Manager**, and **Settings**.
 
 ### Chat, files, browser, and computer tools
 
@@ -321,23 +320,11 @@ Configure Perplexity, Tavily, or Serper under **Settings > Web search** to add s
 
 Under **Settings > Voice**, choose OpenAI or Google for supported AI voice and speech-to-text features, select an input device, and configure spoken replies. Replies can also use an installed system voice. Grant microphone access only when needed. Audio sent for cloud speech recognition or AI voice is handled by the selected provider.
 
-### Mission Control
-
-Mission Control serves a browser view directly from your computer so another device on the same local network can monitor task streams and send supported session or scheduler commands.
-
-1. Open **Mission Control** and select **Start**.
-2. Scan the QR code or open the displayed LAN link on the other device.
-3. Keep the link and token private. A successfully paired browser remains authorized until its pairing expires or you revoke it.
-4. Select **Stop** when finished, and use **Forget** to revoke paired devices.
-
-> [!CAUTION]
-> Mission Control currently uses plain local HTTP rather than encrypted HTTPS (TLS) and listens on the selected local-network port (default `43187`). Use it only on a trusted network. Anyone who obtains the active link/token or an authorized browser session may gain substantial control over Machdoch. A firewall, guest Wi-Fi isolation, or VPN can also prevent the devices from connecting.
-
 ### Fleet Manager
 
 Fleet connects desktop or CLI hosts to a self-hosted Fleet Manager. Its browser dashboard can enroll and revoke instances, show connection state, and open supported remote controls. Desktop hosts can also apply managed settings.
 
-Deploy Fleet Manager behind HTTPS, initialize its owner account, and create an enrollment key. In the desktop app, enter the manager URL, enrollment key, and instance name under **Mission Control > Fleet Manager**. Each host can belong to only one manager. See [Run Fleet without the desktop UI](#run-fleet-without-the-desktop-ui) for a terminal-only host and the [Fleet Manager deployment guide](apps/fleet-manager/README.md) for Docker, configuration, proxy, and backup instructions.
+Deploy Fleet Manager behind HTTPS, initialize its owner account, and create an enrollment key. In the desktop app, open **Fleet Manager** and enter the manager URL, enrollment key, and instance name. Each host can belong to only one manager. See [Run Fleet without the desktop UI](#run-fleet-without-the-desktop-ui) for a terminal-only host and the [Fleet Manager deployment guide](apps/fleet-manager/README.md) for Docker, configuration, proxy, and backup instructions.
 
 ### Transfer settings to another computer
 
@@ -415,7 +402,7 @@ The workspace `offline` setting is for model-free inspection and diagnostics, no
 
 ## Use the terminal
 
-The terminal interface is optional. It is useful for a quick task, keyboard-driven chat, configuration, or repeatable scripts. Visual features such as Media Studio, session-history management, Quick Chat capture, system-voice selection, desktop UI control, Mission Control, appearance, and launch-on-sign-in remain in the desktop app.
+The terminal interface is optional. It is useful for a quick task, keyboard-driven chat, configuration, or repeatable scripts. Visual features such as Media Studio, session-history management, Quick Chat capture, system-voice selection, desktop UI control, appearance, and launch-on-sign-in remain in the desktop app.
 
 Run commands in a terminal where the packaged `machdoch` executable is available. The AppImage accepts the same arguments when invoked as `./machdoch.AppImage`.
 
@@ -525,7 +512,6 @@ Prefer `machdoch config edit` for API keys. A secret passed directly in a comman
 | Browser and web search                                           | Websites and search providers receive normal request, account, network, and browser data.                                                                                                 |
 | Voice                                                            | Cloud speech or AI voice sends audio or text to OpenAI or Google. A system voice uses the operating system's speech service, whose behavior depends on the OS and installed voice.        |
 | Nearby settings transfer                                         | Selected settings are sent directly over an encrypted local connection after both computers confirm the comparison code. Nothing is uploaded by this feature.                             |
-| Mission Control                                                  | Served directly over the local network. The current connection uses plain HTTP rather than encrypted HTTPS, so use a trusted network and protect the token.                               |
 
 ### Credentials are not encrypted at rest
 
@@ -542,7 +528,6 @@ Chat history, memory, flows, schedules, and Media Studio data are also ordinary 
 - Keep global memory free of passwords, personal secrets, and confidential client data. Review all entries in **Settings > Memory** or with `machdoch memory list`.
 - Treat prompts, attachments, web pages, MCP content, imported instructions, context packs, and RALPH flows as untrusted input when they come from someone else.
 - Do not enable **Always run as administrator** on Windows unless a specific task requires it. Elevation broadens what commands and UI actions can affect and causes normal UAC prompts.
-- Stop Mission Control after use, revoke pairings you no longer recognize, and never post its link or token.
 - Review unattended scheduler and RALPH permissions. Set finite turn and transition limits unless you have a clear reason not to.
 - Confirm provider cost and data policies before enabling higher reasoning, voice, web search, remote media, or large repeated jobs.
 - Keep independent copies of important media. A library entry, run log, or generated preview is not a backup strategy.
@@ -560,7 +545,6 @@ Chat history, memory, flows, schedules, and Media Studio data are also ordinary 
 - Image attachments require a model that supports image input. Provider-specific formats, limits, and model availability apply.
 - Local media support varies by hardware, operating system, runtime, model, and available disk space. Passing a readiness check is not a guarantee that every workload will succeed.
 - Scheduled tasks do not run while the computer or scheduler service is unavailable, and event-based jobs require a matching event source.
-- Mission Control is intended for the same trusted local network; it is not a cloud remote-access service.
 - Fleet requires a separately operated Fleet Manager with HTTPS. Remote access is unavailable while the manager or enrolled host is offline.
 - Settings transfer moves selected global settings, not a complete backup of sessions, workspaces, or Media Studio.
 
@@ -581,7 +565,6 @@ Chat history, memory, flows, schedules, and Media Studio data are also ordinary 
 | An MCP server fails                                       | Check that it is enabled in the correct scope, OAuth or credentials are current, local commands/runtimes exist, and the server's paths and URLs are valid. Disable an unfamiliar server.                                            |
 | Local media generation is unavailable                     | Open **Media Studio > Models** and review hardware, runtime, storage, model, FFmpeg, and FFprobe diagnostics. Follow the displayed preflight remedy.                                                                                |
 | A nearby settings transfer cannot find the other computer | Put both on the same trusted network, select the correct interfaces, check firewall/multicast restrictions, and use the QR/manual connection path. Both installations may need to be updated.                                       |
-| Mission Control cannot connect                            | Start sharing, use the LAN rather than loopback link on the other device, keep both devices on the same network, and allow the selected port through the firewall.                                                                  |
 | Older chat context seems missing                          | The session can still display older messages while the AI context cap includes only the most recent messages. Adjust it under **Settings > Desktop & startup > Sessions**.                                                          |
 | Old sessions disappeared                                  | Check the inactive-archive and archived-deletion periods in **Settings > Desktop & startup**. Archived sessions are permanently deleted after the configured retention period.                                                      |
 | `machdoch` is not recognized in a terminal                | Restart the terminal after installation. If it still is not on `PATH`, use the desktop app or invoke the installed executable/AppImage by its full path.                                                                            |

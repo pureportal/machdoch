@@ -34,7 +34,7 @@ docker run --detach \
   "$FLEET_IMAGE"
 ```
 
-The image uses host networking because Fleet Manager accepts loopback listeners only; ordinary Docker port publishing cannot reach it. The published image is therefore intended for Docker Engine on Linux with a same-host HTTPS reverse proxy. The proxy must forward `Authorization`, `Host`, `Origin`, `X-Forwarded-Host`, and `X-Forwarded-Proto`, and preserve WebSocket upgrades for `/api/gateway/connect/*`.
+The image uses host networking because Fleet Manager accepts loopback listeners only; ordinary Docker port publishing cannot reach it. The published image is therefore intended for Docker Engine on Linux with a same-host HTTPS reverse proxy. The proxy must forward `Authorization`, `Host`, `Origin`, `X-Forwarded-Host`, and `X-Forwarded-Proto`, overwrite `X-Forwarded-For` with the connecting client's address, and preserve WebSocket upgrades for `/api/gateway/connect/*`.
 
 Back up the `machdoch-fleet-data` volume. It contains the manager identity, owner accounts, enrolled instances, and managed settings.
 
@@ -53,7 +53,7 @@ pnpm build:fleet-manager
 pnpm --filter @machdoch/fleet-manager start
 ```
 
-The proxy must forward `Authorization`, `Host`, `Origin`, `X-Forwarded-Host`, and `X-Forwarded-Proto`, and preserve WebSocket upgrades for `/api/gateway/connect/*`. The application listens only on loopback.
+The proxy must forward `Authorization`, `Host`, `Origin`, `X-Forwarded-Host`, and `X-Forwarded-Proto`, overwrite `X-Forwarded-For` with the connecting client's address, and preserve WebSocket upgrades for `/api/gateway/connect/*`. The application listens only on loopback.
 
 ## Settings Manager
 
