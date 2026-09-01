@@ -135,6 +135,28 @@ import {
   parseRalphWorkItemState,
   transitionRalphWorkItemState,
 } from "./_helpers/transition-ralph-work-item-state.helper.js";
+import { collectActiveRalphJsonTaskClaims } from "./_helpers/ralph-json-task-claims.helper.js";
+import {
+  createRalphAppendJsonlLedger,
+  parseRalphAppendJsonlLedger,
+  type RalphAppendJsonlOperation,
+} from "./_helpers/ralph-append-jsonl-ledger.helper.js";
+import {
+  areRalphInstructionEnvironmentDigestsEqual,
+  findRalphInstructionBoundary,
+  type RalphInstructionBoundaryRegistryEntry,
+  type RalphInstructionEnvironmentDigest,
+} from "./_helpers/ralph-instruction-boundary-registry.helper.js";
+import {
+  assessRalphRepositoryWorkYield,
+  isRalphRepositoryWorkYield,
+  parseRalphRepositoryObservation,
+  parseRalphWorkSelectionIdentity,
+  resolveRalphCodeImprovementPlan,
+  resolveRalphVerificationCommand,
+  resolveRalphVisualRuntime,
+  type RalphDeterministicJsonTransform,
+} from "./_helpers/ralph-repository-work-yield.helper.js";
 import {
   createRalphManagedServerCommandFingerprint,
   isRalphManagedServerOwnershipAlive,
@@ -203,6 +225,7 @@ import {
 } from "./_helpers/process-execution.js";
 import {
   collectRalphGitChangeSnapshot,
+  createRalphGitChangedFileSignature,
   type RalphGitChangeSnapshot,
   type RalphGitChangedFileSnapshot,
 } from "./_helpers/ralph-git-change-snapshot.helper.js";
@@ -215,6 +238,8 @@ import {
   assessRalphProgress,
   createRalphProgressState,
   createRalphRepositoryProgressFingerprint,
+  hasRalphRepositoryProgressFingerprint,
+  setRalphRepositoryProgressFingerprint,
   type RalphProgressState,
 } from "./_helpers/ralph-progress.helper.js";
 import {
@@ -514,7 +539,14 @@ export type RalphUtilityConditionOperator =
   | "gt"
   | "gte"
   | "lt"
-  | "lte";
+  | "lte"
+  | "is-one-of"
+  | "non-empty-string"
+  | "non-empty-array"
+  | "non-empty-record"
+  | "equals-path"
+  | "array-every";
+export type RalphUtilityConditionCombinator = "all" | "any";
 
 export interface RalphPosition {
   x: number;
@@ -694,6 +726,14 @@ export interface RalphUtilityCondition {
   path?: string;
   operator?: RalphUtilityConditionOperator;
   value?: string;
+  valuePath?: string;
+  matchValues?: string[];
+  allowedValues?: string[];
+  invalidMessage?: string;
+  assertMatch?: boolean;
+  combinator?: RalphUtilityConditionCombinator;
+  conditions?: RalphUtilityCondition[];
+  itemCondition?: RalphUtilityCondition;
 }
 
 export interface RalphUiAnalyzeViewport {
@@ -790,6 +830,7 @@ export interface RalphUtilityConfig {
   input?: string;
   baseline?: string;
   expression?: string;
+  deterministicTransform?: RalphDeterministicJsonTransform;
   prompt?: string;
   schema?: unknown;
   structuredOutput?: boolean;
@@ -1285,7 +1326,7 @@ export interface RalphRunOptions {
     | "require-match"
     | "original-boundary"
     | "new-boundary";
-  instructionBoundaries?: Record<string, RalphInstructionBoundary>;
+  instructionBoundaries?: RalphInstructionBoundaryRegistryEntry<RalphInstructionBoundary>[];
 }
 
 export interface RalphExecutionOptionsSource {
@@ -1296,7 +1337,7 @@ export interface RalphExecutionOptionsSource {
   resolvedInstructions?: FrozenInstructionSet;
   instructionDeliveryPlan?: InstructionDeliveryPlan;
   instructionDeliveryReceipts?: InstructionDeliveryReceipt[];
-  instructionBoundaries?: Record<string, RalphInstructionBoundary>;
+  instructionBoundaries?: RalphInstructionBoundaryRegistryEntry<RalphInstructionBoundary>[];
 }
 
 export interface RalphInstructionBoundary {
@@ -1443,7 +1484,7 @@ export interface RalphRunCheckpoint {
   flowId?: string;
   flowFingerprint?: string;
   instructionCanonicalDigest?: string;
-  instructionEnvironmentDigests?: Record<string, string>;
+  instructionEnvironmentDigests?: RalphInstructionEnvironmentDigest[];
   lease?: RalphRunLease;
   nextRetryAt?: string;
   segment?: number;
@@ -3922,16 +3963,14 @@ const getRalphBlockMaxDurationMs = (
     : undefined;
 };
 
-const createRalphInstructionBoundaryKey = (
-  providerId: ConfiguredModelProvider,
-  model: string,
-  reasoning: ReasoningMode,
-): string => `${providerId}\u0000${model}\u0000${reasoning}`;
-
 const getConfiguredInstructionProvider = (
   config: RuntimeConfig,
 ): ConfiguredModelProvider =>
   config.provider === "unconfigured" ? "openai" : config.provider;
+
+const MODEL_BACKED_RALPH_UTILITY_TYPES: ReadonlySet<RalphUtilityType> = new Set(
+  ["PROMPT_JSON", "VALIDATOR_JSON"],
+);
 
 const isModelBackedRalphBlock = (block: RalphFlowBlock): boolean =>
   block.type === "PROMPT" ||
@@ -3939,18 +3978,20 @@ const isModelBackedRalphBlock = (block: RalphFlowBlock): boolean =>
   block.type === "DECISION" ||
   block.type === "INTERVIEW" ||
   (block.type === "UTILITY" &&
-    ["PROMPT_JSON", "VALIDATOR_JSON"].includes(block.utility.type));
+    MODEL_BACKED_RALPH_UTILITY_TYPES.has(block.utility.type));
 
 const preflightRalphInstructionBoundaries = async (
   flow: RalphFlow,
   config: RuntimeConfig,
   options: RalphRunOptions,
-): Promise<Record<string, RalphInstructionBoundary>> => {
+): Promise<
+  RalphInstructionBoundaryRegistryEntry<RalphInstructionBoundary>[]
+> => {
   const executionConfigs = flow.blocks
     .filter(isModelBackedRalphBlock)
     .map((block) => createBlockConfig(config, block));
   if (executionConfigs.length === 0) {
-    return {};
+    return [];
   }
   const seedConfig = executionConfigs[0] as RuntimeConfig;
   const baseProvider = getConfiguredInstructionProvider(seedConfig);
@@ -3971,15 +4012,16 @@ const preflightRalphInstructionBoundaries = async (
     blockConfig,
     resolveReviewModelRuntimeConfig(blockConfig),
   ]);
-  const boundaries: Record<string, RalphInstructionBoundary> = {};
+  const boundaries: RalphInstructionBoundaryRegistryEntry<RalphInstructionBoundary>[] =
+    [];
   for (const blockConfig of configs) {
     const providerId = getConfiguredInstructionProvider(blockConfig);
-    const key = createRalphInstructionBoundaryKey(
+    const identity = {
       providerId,
-      blockConfig.model,
-      blockConfig.reasoning,
-    );
-    if (boundaries[key]) continue;
+      model: blockConfig.model,
+      reasoning: blockConfig.reasoning,
+    };
+    if (findRalphInstructionBoundary(boundaries, identity)) continue;
     const surface = isAgentCliProvider(providerId) ? "cli" : "api";
     const resolution =
       providerId === baseResolution.providerId &&
@@ -4001,14 +4043,17 @@ const preflightRalphInstructionBoundaries = async (
             workspaceRoot: config.workspaceRoot,
             reasoning: blockConfig.reasoning,
           });
-    boundaries[key] = {
-      resolution,
-      plan,
-      receipts:
-        providerId === baseProvider && blockConfig.model === seedConfig.model
-          ? (options.instructionDeliveryReceipts ?? [])
-          : [],
-    };
+    boundaries.push({
+      identity,
+      boundary: {
+        resolution,
+        plan,
+        receipts:
+          providerId === baseProvider && blockConfig.model === seedConfig.model
+            ? (options.instructionDeliveryReceipts ?? [])
+            : [],
+      },
+    });
   }
   return boundaries;
 };
@@ -4123,14 +4168,14 @@ const createExecutionOptions = async (
       : undefined;
   const maxDurationMs = getRalphBlockMaxDurationMs(block);
   const providerId = getConfiguredInstructionProvider(config);
-  const instructionBoundary =
-    options.instructionBoundaries?.[
-      createRalphInstructionBoundaryKey(
-        providerId,
-        config.model,
-        config.reasoning,
-      )
-    ];
+  const instructionBoundary = findRalphInstructionBoundary(
+    options.instructionBoundaries ?? [],
+    {
+      providerId,
+      model: config.model,
+      reasoning: config.reasoning,
+    },
+  );
 
   return {
     ...(options.signal ? { signal: options.signal } : {}),
@@ -5268,6 +5313,25 @@ interface RalphHttpUtilityResponseData {
   outputPath?: string;
 }
 
+class RalphHttpUtilityAbortError extends Error {
+  readonly reason: "timeout" | "run-cancelled";
+
+  constructor(
+    reason: "timeout" | "run-cancelled",
+    timeoutMs: number,
+    cause: unknown,
+  ) {
+    super(
+      reason === "timeout"
+        ? `HTTP utility timed out after ${timeoutMs}ms.`
+        : "HTTP utility was cancelled with its Ralph run.",
+      cause instanceof Error ? { cause } : undefined,
+    );
+    this.name = "RalphHttpUtilityAbortError";
+    this.reason = reason;
+  }
+}
+
 const executeUtilityHttpRequest = async (
   utility: RalphUtilityConfig,
   context: RalphResultContext,
@@ -5287,17 +5351,24 @@ const executeUtilityHttpRequest = async (
 
   const abortController = new AbortController();
   const timeoutMs = getUtilityTimeoutMs(utility, 30_000);
+  let abortReason: RalphHttpUtilityAbortError["reason"] | undefined;
   const timeoutHandle =
     timeoutMs > 0
       ? setTimeout(() => {
+          abortReason ??= "timeout";
           abortController.abort();
         }, timeoutMs)
       : undefined;
   const abortFromRun = (): void => {
+    abortReason ??= "run-cancelled";
     abortController.abort();
   };
 
-  signal?.addEventListener("abort", abortFromRun, { once: true });
+  if (signal?.aborted) {
+    abortFromRun();
+  } else {
+    signal?.addEventListener("abort", abortFromRun, { once: true });
+  }
 
   try {
     const response = await fetch(parsedUrl, {
@@ -5329,6 +5400,11 @@ const executeUtilityHttpRequest = async (
       bodyText,
       ...(outputPath ? { outputPath } : {}),
     };
+  } catch (error) {
+    if (abortReason) {
+      throw new RalphHttpUtilityAbortError(abortReason, timeoutMs, error);
+    }
+    throw error;
   } finally {
     if (timeoutHandle) {
       clearTimeout(timeoutHandle);
@@ -5434,9 +5510,7 @@ const executeFetchUtilityBlock = async (
     );
   } catch (error) {
     const output =
-      error instanceof Error && error.name === "AbortError"
-        ? "TIMEOUT"
-        : "ERROR";
+      error instanceof RalphHttpUtilityAbortError ? "TIMEOUT" : "ERROR";
     const summary = error instanceof Error ? error.message : String(error);
 
     return createUtilityResult(block, output, summary);
@@ -6159,7 +6233,7 @@ const executeAppendJsonlUtilityBlock = async (
     const lineSha256 = createHash("sha256").update(lineBytes).digest("hex");
     const operationId = context.currentOperationId;
     const ledgerPath = `${path}.ralph-operations.json`;
-    let operations: Record<string, Record<string, unknown>> = {};
+    let operations: Record<string, RalphAppendJsonlOperation> = {};
     if (operationId) {
       let storedLedger: unknown;
       try {
@@ -6173,21 +6247,13 @@ const executeAppendJsonlUtilityBlock = async (
         }
       }
       if (storedLedger !== undefined) {
-        if (!isRecord(storedLedger) || !isRecord(storedLedger.operations)) {
+        const ledger = parseRalphAppendJsonlLedger(storedLedger);
+        if (!ledger) {
           throw new Error(
             `Invalid APPEND_JSONL operation ledger at ${ledgerPath}.`,
           );
         }
-        const operationEntries = Object.entries(storedLedger.operations);
-        if (operationEntries.some(([, entry]) => !isRecord(entry))) {
-          throw new Error(
-            `Invalid APPEND_JSONL operation entry at ${ledgerPath}.`,
-          );
-        }
-        operations = Object.fromEntries(operationEntries) as Record<
-          string,
-          Record<string, unknown>
-        >;
+        operations = ledger.operations;
       }
       const prior = operations[operationId];
       if (prior?.state === "completed") {
@@ -6207,34 +6273,11 @@ const executeAppendJsonlUtilityBlock = async (
           },
         );
       }
-      if (prior && prior.state !== "started" && prior.state !== "completed") {
-        return createUtilityResult(
-          block,
-          "ERROR",
-          `${block.title} found an indeterminate operation-ledger state for ${operationId}.`,
-          {
-            path,
-            operationId,
-            reconciliation: "indeterminate",
-            ledgerState: prior.state,
-          },
-        );
-      }
       if (prior?.state === "started") {
         const start = prior.priorSize;
-        if (!Number.isSafeInteger(start) || (start as number) < 0) {
-          return createUtilityResult(
-            block,
-            "ERROR",
-            `${block.title} found an invalid prior byte offset for ${operationId}.`,
-            { path, operationId, reconciliation: "indeterminate" },
-          );
-        }
         if (
-          (typeof prior.lineLength === "number" &&
-            prior.lineLength !== lineBytes.length) ||
-          (typeof prior.lineSha256 === "string" &&
-            prior.lineSha256 !== lineSha256)
+          prior.lineLength !== lineBytes.length ||
+          prior.lineSha256 !== lineSha256
         ) {
           return createUtilityResult(
             block,
@@ -6257,7 +6300,7 @@ const executeAppendJsonlUtilityBlock = async (
           content = Buffer.alloc(0);
           pathExists = false;
         }
-        if (content.length < (start as number)) {
+        if (content.length < start) {
           return createUtilityResult(
             block,
             "ERROR",
@@ -6265,18 +6308,17 @@ const executeAppendJsonlUtilityBlock = async (
             { path, operationId, reconciliation: "indeterminate" },
           );
         }
-        const tail = content.subarray(start as number);
+        const tail = content.subarray(start);
         if (tail.length === lineBytes.length && tail.equals(lineBytes)) {
           operations[operationId] = {
             ...prior,
             state: "completed",
             completedAt: createLogTimestamp(),
           };
-          await writeJsonAtomically(ledgerPath, {
-            operations: Object.fromEntries(
-              Object.entries(operations).slice(-2_000),
-            ),
-          });
+          await writeJsonAtomically(
+            ledgerPath,
+            createRalphAppendJsonlLedger(operations),
+          );
           return createUtilityResult(
             block,
             "SUCCESS",
@@ -6311,7 +6353,7 @@ const executeAppendJsonlUtilityBlock = async (
           );
         }
         if (pathExists) {
-          await truncate(path, start as number);
+          await truncate(path, start);
         }
       }
       if (!prior) {
@@ -6330,26 +6372,30 @@ const executeAppendJsonlUtilityBlock = async (
           lineSha256,
           startedAt: createLogTimestamp(),
         };
-        await writeJsonAtomically(ledgerPath, {
-          operations: Object.fromEntries(
-            Object.entries(operations).slice(-2_000),
-          ),
-        });
+        await writeJsonAtomically(
+          ledgerPath,
+          createRalphAppendJsonlLedger(operations),
+        );
       }
     }
 
     await appendFileDurably(path, line);
     if (operationId) {
+      const startedOperation = operations[operationId];
+      if (!startedOperation || startedOperation.state !== "started") {
+        throw new Error(
+          `APPEND_JSONL operation ${operationId} has no started ledger entry.`,
+        );
+      }
       operations[operationId] = {
-        ...operations[operationId],
+        ...startedOperation,
         state: "completed",
         completedAt: createLogTimestamp(),
       };
-      await writeJsonAtomically(ledgerPath, {
-        operations: Object.fromEntries(
-          Object.entries(operations).slice(-2_000),
-        ),
-      });
+      await writeJsonAtomically(
+        ledgerPath,
+        createRalphAppendJsonlLedger(operations),
+      );
     }
 
     return createUtilityResult(
@@ -6854,12 +6900,13 @@ const selectJsonTaskCandidate = (
 
   if (strategy === "random-seeded") {
     return [...candidates].sort((left, right) => {
-      const score = (candidate: JsonTaskCandidate): string =>
-        createHash("sha256")
-          .update(
-            `${seed}\0${getJsonTaskId(candidate.task) ?? candidate.index}`,
-          )
-          .digest("hex");
+      const score = (candidate: JsonTaskCandidate): string => {
+        const taskId = getJsonTaskId(candidate.task);
+        return canonicalDigest({
+          seed,
+          task: taskId === undefined ? { index: candidate.index } : { taskId },
+        });
+      };
       return score(left).localeCompare(score(right));
     })[0];
   }
@@ -7027,12 +7074,32 @@ const getJsonTaskCandidatesForRun = (
     : selectJsonTaskCandidates(tasks, strategy, maxTasks, runId, now);
 };
 
+type JsonTaskBlockerReason =
+  | "missing-dependency"
+  | "incomplete-dependency"
+  | "deferred-dependency"
+  | "deferred"
+  | "invalid-next-eligible-at"
+  | "foreign-lease"
+  | "dependency-cycle";
+
+interface JsonTaskSelectionBlocker {
+  taskId: string;
+  status: ReturnType<typeof getJsonTaskStatus>;
+  reasons: JsonTaskBlockerReason[];
+  missingDependencyIds?: string[];
+  incompleteDependencyIds?: string[];
+  deferredDependencyIds?: string[];
+  nextEligibleAt?: string;
+  lease?: RalphJsonTaskLease;
+}
+
 const createJsonTaskSelectionBlockers = (
   tasks: readonly Record<string, unknown>[],
   runId: string,
   now = Date.now(),
 ): {
-  blockers: Array<Record<string, unknown>>;
+  blockers: JsonTaskSelectionBlocker[];
   dependencyCycles: string[][];
 } => {
   const tasksById = new Map(
@@ -7049,8 +7116,13 @@ const createJsonTaskSelectionBlockers = (
     const cycleIndex = visiting.indexOf(id);
     if (cycleIndex >= 0) {
       const cycle = [...visiting.slice(cycleIndex), id];
-      const signature = cycle.join("->");
-      if (!dependencyCycles.some((entry) => entry.join("->") === signature)) {
+      if (
+        !dependencyCycles.some(
+          (entry) =>
+            entry.length === cycle.length &&
+            entry.every((taskId, index) => taskId === cycle[index]),
+        )
+      ) {
         dependencyCycles.push(cycle);
       }
       return;
@@ -7102,22 +7174,31 @@ const createJsonTaskSelectionBlockers = (
       getJsonTaskStatus(task) === "deferred" &&
       nextEligibleAt !== undefined &&
       !Number.isFinite(nextEligibleTimestamp);
-    const reasons = [
-      ...(missingDependencyIds.length > 0 ? ["missing-dependency"] : []),
-      ...(incompleteDependencyIds.length > 0 ? ["incomplete-dependency"] : []),
-      ...(deferredDependencyIds.length > 0 ? ["deferred-dependency"] : []),
-      ...(getJsonTaskStatus(task) === "deferred" &&
+    const reasons: JsonTaskBlockerReason[] = [];
+    if (missingDependencyIds.length > 0) {
+      reasons.push("missing-dependency");
+    }
+    if (incompleteDependencyIds.length > 0) {
+      reasons.push("incomplete-dependency");
+    }
+    if (deferredDependencyIds.length > 0) {
+      reasons.push("deferred-dependency");
+    }
+    if (
+      getJsonTaskStatus(task) === "deferred" &&
       (!Number.isFinite(nextEligibleTimestamp) || nextEligibleTimestamp > now)
-        ? ["deferred"]
-        : []),
-      ...(hasInvalidNextEligibleAt ? ["invalid-next-eligible-at"] : []),
-      ...(isJsonTaskLeaseActive(lease, now) && lease?.ownerId !== runId
-        ? ["foreign-lease"]
-        : []),
-      ...(dependencyCycles.some((cycle) => cycle.includes(id))
-        ? ["dependency-cycle"]
-        : []),
-    ];
+    ) {
+      reasons.push("deferred");
+    }
+    if (hasInvalidNextEligibleAt) {
+      reasons.push("invalid-next-eligible-at");
+    }
+    if (isJsonTaskLeaseActive(lease, now) && lease?.ownerId !== runId) {
+      reasons.push("foreign-lease");
+    }
+    if (dependencyCycles.some((cycle) => cycle.includes(id))) {
+      reasons.push("dependency-cycle");
+    }
     return {
       taskId: id,
       status: getJsonTaskStatus(task),
@@ -7141,7 +7222,7 @@ interface JsonTaskSelectionAssessment {
   status: JsonTaskSelectionStatus;
   candidates: JsonTaskCandidate[];
   blockerState: ReturnType<typeof createJsonTaskSelectionBlockers>;
-  blockers: Array<Record<string, unknown>>;
+  blockers: JsonTaskSelectionBlocker[];
   structurallyBlocked: boolean;
   nextRetryTimestamp?: number;
 }
@@ -7162,7 +7243,7 @@ const assessJsonTaskSelection = (
   );
   const blockerState = createJsonTaskSelectionBlockers(tasks, runId, now);
   const blockers = blockerState.blockers.filter(
-    (entry) => Array.isArray(entry.reasons) && entry.reasons.length > 0,
+    (entry) => entry.reasons.length > 0,
   );
   const retryTimes = tasks.flatMap((task) => {
     if (!isSelectableJsonTask(task)) {
@@ -7183,15 +7264,22 @@ const assessJsonTaskSelection = (
     }
     return retryAt;
   });
-  const structurallyBlocked = blockers.some((entry) => {
-    const reasons = Array.isArray(entry.reasons) ? entry.reasons : [];
-    return (
-      reasons.includes("missing-dependency") ||
-      reasons.includes("dependency-cycle") ||
-      reasons.includes("invalid-next-eligible-at") ||
-      (reasons.includes("deferred") && typeof entry.nextEligibleAt !== "string")
-    );
-  });
+  const structurallyBlocked = blockers.some((entry) =>
+    entry.reasons.some((reason) => {
+      switch (reason) {
+        case "missing-dependency":
+        case "dependency-cycle":
+        case "invalid-next-eligible-at":
+          return true;
+        case "deferred":
+          return entry.nextEligibleAt === undefined;
+        case "incomplete-dependency":
+        case "deferred-dependency":
+        case "foreign-lease":
+          return false;
+      }
+    }),
+  );
   const nextRetryTimestamp =
     retryTimes.length > 0 ? Math.min(...retryTimes) : undefined;
   const unfinishedCount = tasks.filter(isSelectableJsonTask).length;
@@ -7805,7 +7893,7 @@ const executeMarkJsonTaskUtilityBlock = async (
       requestedTaskIds.length > 0
         ? requestedTaskIds.flatMap((taskId) => {
             const task = taskArray.tasks.find(
-              (candidate) => candidate.id === taskId,
+              (candidate) => getJsonTaskId(candidate) === taskId,
             );
             return task ? [task] : [];
           })
@@ -7831,7 +7919,9 @@ const executeMarkJsonTaskUtilityBlock = async (
           taskIds: requestedTaskIds,
           missingTaskIds: requestedTaskIds.filter(
             (taskId) =>
-              !candidates.some((candidate) => candidate.id === taskId),
+              !candidates.some(
+                (candidate) => getJsonTaskId(candidate) === taskId,
+              ),
           ),
         },
         "completed",
@@ -7839,12 +7929,12 @@ const executeMarkJsonTaskUtilityBlock = async (
     }
 
     const now = new Date().toISOString();
-    const status = utility.status?.trim();
-    if (!status) {
+    const requestedStatus = parseRalphWorkItemState(utility.status);
+    if (!requestedStatus) {
       return createUtilityResult(
         block,
         "ERROR",
-        "Mark JSON task utility requires status.",
+        "Mark JSON task utility requires a valid status.",
       );
     }
 
@@ -7859,7 +7949,7 @@ const executeMarkJsonTaskUtilityBlock = async (
         `${block.title} cannot mutate a task leased by another run.`,
         {
           path,
-          taskId: activeForeignLease.id,
+          taskId: getJsonTaskId(activeForeignLease),
           lease: activeForeignLease.lease,
         },
       );
@@ -7868,7 +7958,7 @@ const executeMarkJsonTaskUtilityBlock = async (
     let transitions: ReturnType<typeof transitionRalphWorkItemState>[];
     try {
       transitions = candidates.map((candidate) =>
-        transitionRalphWorkItemState(candidate.status, status),
+        transitionRalphWorkItemState(candidate.status, requestedStatus),
       );
     } catch (error) {
       return createUtilityResult(
@@ -7878,8 +7968,8 @@ const executeMarkJsonTaskUtilityBlock = async (
         {
           path,
           jsonPath: taskArray.normalizedPath,
-          taskIds: candidates.map((candidate) => candidate.id),
-          requestedStatus: status,
+          taskIds: candidates.map((candidate) => getJsonTaskId(candidate)!),
+          requestedStatus,
         },
       );
     }
@@ -7942,14 +8032,14 @@ const executeMarkJsonTaskUtilityBlock = async (
 
     await writeUtilityJsonOutput(path, json);
     const primary = candidates[0]!;
-    const finalStatus = String(primary.status ?? status);
-    const taskIds = candidates.map((candidate) => String(candidate.id));
+    const finalStatus = transitions[0]!.to;
+    const taskIds = candidates.map((candidate) => getJsonTaskId(candidate)!);
 
     return createUtilityResult(
       block,
       "SUCCESS",
       candidates.length === 1
-        ? `${block.title} marked ${String(primary.id ?? "task")} as ${finalStatus}.`
+        ? `${block.title} marked ${getJsonTaskId(primary)!} as ${finalStatus}.`
         : `${block.title} marked ${candidates.length} tasks as ${finalStatus}.`,
       {
         path,
@@ -7986,76 +8076,39 @@ const executeMarkJsonTaskUtilityBlock = async (
   }
 };
 
-interface RalphJsonTaskClaim {
-  path: string;
-  jsonPath?: string;
-  taskIds: Set<string>;
-}
-
-const collectRalphJsonTaskClaims = (
-  flow: RalphFlow,
-  context: RalphResultContext,
-): RalphJsonTaskClaim[] => {
-  const blockMap = getRalphBlockById(flow);
-  const claims = new Map<string, RalphJsonTaskClaim>();
-  const results = [
-    ...(context.executionHistory ?? []),
-    ...context.resultsByBlock.values(),
-  ];
-
-  for (const result of results) {
-    const block = blockMap.get(result.blockId);
-    if (
-      block?.type !== "UTILITY" ||
-      block.utility.type !== "SELECT_JSON_TASK" ||
-      result.output !== "SELECTED" ||
-      !isRecord(result.data) ||
-      typeof result.data.path !== "string"
-    ) {
-      continue;
-    }
-    const jsonPath =
-      typeof result.data.jsonPath === "string"
-        ? result.data.jsonPath
-        : undefined;
-    const key = `${result.data.path}\0${jsonPath ?? ""}`;
-    const claim = claims.get(key) ?? {
-      path: result.data.path,
-      ...(jsonPath ? { jsonPath } : {}),
-      taskIds: new Set<string>(),
-    };
-    const addId = (value: unknown): void => {
-      if (typeof value === "string" && value) {
-        claim.taskIds.add(value);
-      }
-    };
-    for (const id of Array.isArray(result.data.taskIds)
-      ? result.data.taskIds
-      : []) {
-      addId(id);
-    }
-    claims.set(key, claim);
-  }
-
-  return [...claims.values()].filter((claim) => claim.taskIds.size > 0);
-};
-
 const refreshRalphJsonTaskLeases = async (
   flow: RalphFlow,
   context: RalphResultContext,
   workspaceRoot: string,
-): Promise<number> => {
+): Promise<{
+  refreshedLeaseCount: number;
+  contendedClaimCount: number;
+}> => {
   let refreshed = 0;
+  let contended = 0;
 
-  for (const claim of collectRalphJsonTaskClaims(flow, context)) {
+  const claims = collectActiveRalphJsonTaskClaims(
+    flow.blocks,
+    context.executionHistory ?? [...context.resultsByBlock.values()],
+  );
+  for (const claim of claims) {
     const claimPath = await resolveWorkspaceContainedMutationPath(
       claim.path,
       workspaceRoot,
     );
-    const mutationLock = await acquireRalphFileMutationLock(
-      claimPath,
-      context.runId,
-    );
+    let mutationLock: RalphFileMutationLock;
+    try {
+      mutationLock = await acquireRalphFileMutationLock(
+        claimPath,
+        context.runId,
+      );
+    } catch (error) {
+      if (error instanceof RalphMutationLeaseActiveError) {
+        contended += 1;
+        continue;
+      }
+      throw error;
+    }
     try {
       const json = await readJsonFile(claimPath);
       const taskArray = getJsonTaskArray(json, claim.jsonPath);
@@ -8097,7 +8150,10 @@ const refreshRalphJsonTaskLeases = async (
     }
   }
 
-  return refreshed;
+  return {
+    refreshedLeaseCount: refreshed,
+    contendedClaimCount: contended,
+  };
 };
 
 const executeFileExistsUtilityBlock = async (
@@ -8281,6 +8337,7 @@ const createArchiveFilePath = async (
   sourcePath: string,
   utility: RalphUtilityConfig,
   workspaceRoot: string,
+  context: RalphResultContext,
 ): Promise<string> => {
   const rawOutputPath = utility.outputPath?.trim();
 
@@ -8298,15 +8355,28 @@ const createArchiveFilePath = async (
   const parsedName = basename(sourcePath);
   const extension = extname(parsedName);
   const stem = extension ? parsedName.slice(0, -extension.length) : parsedName;
-  const timestamp = new Date().toISOString().replace(/[:.]/gu, "-");
+  const operationId = context.currentOperationId;
+  const operation = operationId
+    ? context.operationLedger?.get(operationId)
+    : undefined;
+  if (!operationId || !operation?.startedAt) {
+    throw new Error(
+      "Archive file utility requires a durable operation identity.",
+    );
+  }
+  const timestamp = operation.startedAt.replace(/[:.]/gu, "-");
 
-  return join(archiveRoot, `${stem}-${timestamp}${extension}`);
+  return join(
+    archiveRoot,
+    `${stem}-${timestamp}-${operationId.slice(0, 12)}${extension}`,
+  );
 };
 
 const executeArchiveFileUtilityBlock = async (
   block: RalphUtilityBlock,
   utility: RalphUtilityConfig,
   config: RuntimeConfig,
+  context: RalphResultContext,
 ): Promise<RalphBlockExecutionResult> => {
   const rawPath = utility.path?.trim();
 
@@ -8323,10 +8393,37 @@ const executeArchiveFileUtilityBlock = async (
     config.workspaceRoot,
     { preserveRequestedPath: true },
   );
-  const to = await createArchiveFilePath(from, utility, config.workspaceRoot);
+  const to = await createArchiveFilePath(
+    from,
+    utility,
+    config.workspaceRoot,
+    context,
+  );
 
   try {
-    const fileStat = await lstat(from);
+    let fileStat: Awaited<ReturnType<typeof lstat>>;
+    try {
+      fileStat = await lstat(from);
+    } catch (error) {
+      if (!isFileNotFoundError(error) || utility.outputPath?.trim()) {
+        throw error;
+      }
+      const archivedFile = await lstat(to).catch((archiveError: unknown) => {
+        if (isFileNotFoundError(archiveError)) {
+          return undefined;
+        }
+        throw archiveError;
+      });
+      if (!archivedFile || archivedFile.isDirectory()) {
+        throw error;
+      }
+      return createUtilityResult(
+        block,
+        "SUCCESS",
+        `${block.title} reconciled the archived file at ${to}.`,
+        { from, to, reconciled: true },
+      );
+    }
 
     if (fileStat.isDirectory()) {
       return createUtilityResult(
@@ -8337,6 +8434,20 @@ const executeArchiveFileUtilityBlock = async (
     }
 
     await mkdir(dirname(to), { recursive: true });
+    const existingDestination = await lstat(to).catch((error: unknown) => {
+      if (isFileNotFoundError(error)) {
+        return undefined;
+      }
+      throw error;
+    });
+    if (existingDestination) {
+      return createUtilityResult(
+        block,
+        "ERROR",
+        `${block.title} will not replace existing archive destination ${to}.`,
+        { from, to },
+      );
+    }
     await rename(from, to);
 
     return createUtilityResult(
@@ -10739,11 +10850,11 @@ const extractGitSummaryFiles = (
       const signature =
         typeof entry.signature === "string"
           ? entry.signature
-          : [
-              `status=${status}`,
-              `index=${indexOid ?? "missing"}`,
-              `worktree=${worktreeHash ?? "missing"}`,
-            ].join(";");
+          : createRalphGitChangedFileSignature({
+              status,
+              ...(indexOid ? { indexOid } : {}),
+              ...(worktreeHash ? { worktreeHash } : {}),
+            });
 
       return [
         {
@@ -12270,6 +12381,122 @@ const getUtilityJsonInput = (
   return context.lastResult?.data ?? {};
 };
 
+const executeDeterministicJsonTransform = (
+  transform: RalphDeterministicJsonTransform,
+  block: RalphUtilityBlock,
+  context: RalphResultContext,
+): unknown => {
+  if (transform.type === "verification-command") {
+    const selectionResult = context.resultsByBlock.get(
+      transform.selectionBlockId,
+    );
+    const commandsResult = context.resultsByBlock.get(
+      transform.commandsBlockId,
+    );
+
+    return resolveRalphVerificationCommand({
+      selection: readRalphUtilityValuePath(
+        selectionResult?.data,
+        transform.selectionPath,
+      ),
+      commands: commandsResult?.data,
+      ...(context.variables[transform.configuredCommandVariable] === undefined
+        ? {}
+        : {
+            configuredCommand:
+              context.variables[transform.configuredCommandVariable],
+          }),
+    });
+  }
+
+  if (transform.type === "code-improvement-plan") {
+    return resolveRalphCodeImprovementPlan({
+      draft: readRalphUtilityValuePath(
+        context.resultsByBlock.get(transform.draftBlockId)?.data,
+        "output",
+      ),
+      selection: context.resultsByBlock.get(transform.selectionBlockId)?.data,
+      constitution: readRalphUtilityValuePath(
+        context.resultsByBlock.get(transform.constitutionBlockId)?.data,
+        "output.constitution",
+      ),
+      research: context.resultsByBlock.get(transform.researchBlockId)?.summary,
+      stableDigest: canonicalDigest,
+    });
+  }
+
+  if (transform.type === "visual-runtime") {
+    return resolveRalphVisualRuntime({
+      commands: context.resultsByBlock.get(transform.commandsBlockId)?.data,
+      variables: context.variables,
+      transform,
+    });
+  }
+
+  const baselineResult = context.resultsByBlock.get(transform.baselineBlockId);
+  const currentResult = context.resultsByBlock.get(transform.currentBlockId);
+  const baseline = parseRalphRepositoryObservation(baselineResult?.data);
+  if (!baseline) {
+    throw new Error(
+      `${block.title} requires repository observation ${transform.baselineBlockId}.`,
+    );
+  }
+
+  const observedCurrent = parseRalphRepositoryObservation(currentResult?.data);
+  const observationFailed = currentResult?.status === "error";
+  if (!observedCurrent && !observationFailed) {
+    throw new Error(
+      `${block.title} requires repository observation ${transform.currentBlockId}.`,
+    );
+  }
+  if (observationFailed && !transform.verifyOnObservationError) {
+    throw new Error(
+      `${block.title} could not observe repository state from ${transform.currentBlockId}.`,
+    );
+  }
+
+  const workItemResult = transform.workItemBlockId
+    ? context.resultsByBlock.get(transform.workItemBlockId)
+    : undefined;
+  const workSelection = transform.workItemBlockId
+    ? parseRalphWorkSelectionIdentity(workItemResult?.data)
+    : undefined;
+  if (transform.workItemBlockId && !workSelection) {
+    throw new Error(
+      `${block.title} requires selected work from ${transform.workItemBlockId}.`,
+    );
+  }
+
+  const previousOutput = readRalphUtilityValuePath(
+    context.resultsByBlock.get(block.id)?.data,
+    "output",
+  );
+  const scopeAccepted = transform.scopeGuardBlockId
+    ? context.resultsByBlock.get(transform.scopeGuardBlockId)?.output ===
+      "IN_SCOPE"
+    : true;
+
+  return assessRalphRepositoryWorkYield({
+    baseline,
+    current: observedCurrent ?? baseline,
+    ...(workSelection ? { workSelection } : {}),
+    ...(isRalphRepositoryWorkYield(previousOutput)
+      ? { previous: previousOutput }
+      : {}),
+    ...(transform.excludedPaths
+      ? { excludedPaths: transform.excludedPaths }
+      : {}),
+    ...(transform.trackPrevious === undefined
+      ? {}
+      : { trackPrevious: transform.trackPrevious }),
+    scopeAccepted,
+    observationFailed,
+    ...(transform.verifyOnObservationError === undefined
+      ? {}
+      : { verifyOnObservationError: transform.verifyOnObservationError }),
+  });
+};
+
 const executeTransformJsonUtilityBlock = (
   block: RalphUtilityBlock,
   utility: RalphUtilityConfig,
@@ -12277,6 +12504,21 @@ const executeTransformJsonUtilityBlock = (
 ): RalphBlockExecutionResult => {
   try {
     const input = getUtilityJsonInput(utility, context);
+    const output = utility.deterministicTransform
+      ? executeDeterministicJsonTransform(
+          utility.deterministicTransform,
+          block,
+          context,
+        )
+      : undefined;
+    if (utility.deterministicTransform) {
+      return createUtilityResult(
+        block,
+        "SUCCESS",
+        `${block.title} transformed JSON.`,
+        { input, output },
+      );
+    }
     const evaluator = new Function(
       "input",
       "variables",
@@ -12289,7 +12531,7 @@ const executeTransformJsonUtilityBlock = (
       lastResult: RalphBlockExecutionResult | undefined,
       context: RalphResultContext,
     ) => unknown;
-    const output = evaluator(
+    const evaluatedOutput = evaluator(
       input,
       context.variables,
       context.lastResult,
@@ -12302,7 +12544,7 @@ const executeTransformJsonUtilityBlock = (
       `${block.title} transformed JSON.`,
       {
         input,
-        output,
+        output: evaluatedOutput,
       },
     );
   } catch (error) {
@@ -12945,7 +13187,12 @@ const executeUtilityBlock = async (
     case "MOVE_FILE":
       return executeMoveFileUtilityBlock(block, utility, blockConfig);
     case "ARCHIVE_FILE":
-      return executeArchiveFileUtilityBlock(block, utility, blockConfig);
+      return executeArchiveFileUtilityBlock(
+        block,
+        utility,
+        blockConfig,
+        context,
+      );
     case "LOOP_COUNTER":
       return executeLoopCounterUtilityBlock(
         block,
@@ -13384,6 +13631,10 @@ interface RalphMediaBridgeRunDetail {
   humanReviews: RalphMediaBridgeHumanReview[];
 }
 
+const ACTIVE_RALPH_MEDIA_RUN_STATUSES: ReadonlySet<
+  RalphMediaBridgeRunDetail["status"]
+> = new Set(["queued", "running", "canceling"]);
+
 interface RalphMediaBridgeResponse {
   schemaVersion: 1;
   requestId: string;
@@ -13621,14 +13872,15 @@ const executeMediaFlowBlock = async (
   context: RalphResultContext,
   options: RalphRunOptions,
 ): Promise<RalphExecutionStepResult> => {
-  const operationKey =
-    context.currentOperationId ?? `${context.runId}:${block.id}`;
-  const generatedRunId = `ralph-media-${createHash("sha256")
-    .update(
-      `${context.runId}\0${block.id}\0${block.revisionId}\0${operationKey}`,
-    )
-    .digest("hex")
-    .slice(0, 48)}`;
+  const generatedRunId = `ralph-media-${canonicalDigest({
+    runId: context.runId,
+    blockId: block.id,
+    revisionId: block.revisionId,
+    operation:
+      context.currentOperationId === undefined
+        ? { runId: context.runId, blockId: block.id }
+        : { durableOperationId: context.currentOperationId },
+  }).slice(0, 48)}`;
   const checkpoint = context.mediaRuns?.get(block.id);
   if (
     checkpoint &&
@@ -13720,7 +13972,7 @@ const executeMediaFlowBlock = async (
     };
   }
 
-  while (["queued", "running", "canceling"].includes(detail.status)) {
+  while (ACTIVE_RALPH_MEDIA_RUN_STATUSES.has(detail.status)) {
     await waitForRalphMediaBridgePoll(options.signal);
     detail = await requestRalphMediaBridge(
       { action: "inspect-run", runId },
@@ -13982,8 +14234,10 @@ const updateResultContext = (
   ) {
     context.repositoryBaseline = repositoryBaseline;
     if (context.progress) {
-      context.progress.channelFingerprints.repository =
-        createRalphRepositoryProgressFingerprint(repositoryBaseline);
+      setRalphRepositoryProgressFingerprint(
+        context.progress,
+        createRalphRepositoryProgressFingerprint(repositoryBaseline),
+      );
     }
   }
   context.lastResult = result;
@@ -14254,7 +14508,36 @@ const getRalphMcpTimeoutMs = (block: RalphFlowBlock): number => {
     : DEFAULT_RALPH_MCP_TIMEOUT_MS;
 };
 
-const isRalphBlockReplaySafe = (block: RalphFlowBlock): boolean => {
+type RalphBlockEffectPolicy = "replay-safe" | "reconcile" | "at-most-once";
+
+const REPLAY_SAFE_RALPH_UTILITY_TYPES: ReadonlySet<RalphUtilityType> = new Set([
+  "WAIT",
+  "CONDITION",
+  "READ_FILE",
+  "READ_JSON",
+  "READ_JSONL",
+  "QUERY_JSONL",
+  "ASSESS_JSON_TASKS",
+  "FILE_EXISTS",
+  "SCAN_SCOPE_EVIDENCE",
+  "SEARCH_FILES",
+  "GIT_STATUS",
+  "GIT_SNAPSHOT",
+  "GIT_DIFF_SUMMARY",
+  "DETECT_PROJECT_COMMANDS",
+  "WRITE_JSON",
+  "SELECT_JSON_TASK",
+  "MARK_JSON_TASK",
+  "SET_VARIABLE",
+  "TRANSFORM_JSON",
+  "VALIDATE_JSON",
+  "FINAL_REPORT",
+  "NOTIFY",
+]);
+
+const getRalphBlockEffectPolicy = (
+  block: RalphFlowBlock,
+): RalphBlockEffectPolicy => {
   if (
     block.type === "START" ||
     block.type === "END" ||
@@ -14264,50 +14547,39 @@ const isRalphBlockReplaySafe = (block: RalphFlowBlock): boolean => {
     block.type === "ASK_USER" ||
     block.type === "INTERVIEW"
   ) {
-    return true;
+    return "replay-safe";
   }
   if (block.type === "MCP_RESOURCE" || block.type === "MCP_PROMPT") {
-    return true;
+    return "replay-safe";
   }
   if (block.type === "MEDIA_FLOW") {
-    return true;
+    return "replay-safe";
   }
   if (block.type !== "UTILITY") {
-    return false;
+    return "at-most-once";
   }
 
   if (block.utility.type === "WRITE_FILE") {
-    return block.utility.append !== true;
+    return block.utility.append === true ? "at-most-once" : "replay-safe";
   }
   if (block.utility.type === "HTTP_FETCH" || block.utility.type === "POLL") {
-    return block.utility.replayPolicy === "safe";
+    return block.utility.replayPolicy === "safe"
+      ? "replay-safe"
+      : "at-most-once";
+  }
+  if (block.utility.type === "APPEND_JSONL") {
+    return "reconcile";
+  }
+  if (
+    block.utility.type === "ARCHIVE_FILE" &&
+    !block.utility.outputPath?.trim()
+  ) {
+    return "reconcile";
   }
 
-  return [
-    "WAIT",
-    "CONDITION",
-    "READ_FILE",
-    "READ_JSON",
-    "READ_JSONL",
-    "QUERY_JSONL",
-    "ASSESS_JSON_TASKS",
-    "APPEND_JSONL",
-    "FILE_EXISTS",
-    "SCAN_SCOPE_EVIDENCE",
-    "SEARCH_FILES",
-    "GIT_STATUS",
-    "GIT_SNAPSHOT",
-    "GIT_DIFF_SUMMARY",
-    "DETECT_PROJECT_COMMANDS",
-    "WRITE_JSON",
-    "SELECT_JSON_TASK",
-    "MARK_JSON_TASK",
-    "SET_VARIABLE",
-    "TRANSFORM_JSON",
-    "VALIDATE_JSON",
-    "FINAL_REPORT",
-    "NOTIFY",
-  ].includes(block.utility.type);
+  return REPLAY_SAFE_RALPH_UTILITY_TYPES.has(block.utility.type)
+    ? "replay-safe"
+    : "at-most-once";
 };
 
 const cloneRalphRunAutonomyMetadata = (
@@ -14607,31 +14879,26 @@ const runRalphFlowImpl = async (
   } catch (error) {
     instructionBoundaryError = error;
   }
-  const instructionBoundaries = Object.entries(
-    options.instructionBoundaries ?? {},
-  );
+  const instructionBoundaries = options.instructionBoundaries ?? [];
   const activeInstructionCanonicalDigest =
-    instructionBoundaries[0]?.[1].resolution.canonicalDigest;
-  const activeInstructionEnvironmentDigests = Object.fromEntries(
-    instructionBoundaries.map(([key, boundary]) => [
-      key,
-      canonicalDigest({
+    instructionBoundaries[0]?.boundary.resolution.canonicalDigest;
+  const activeInstructionEnvironmentDigests: RalphInstructionEnvironmentDigest[] =
+    instructionBoundaries.map(({ identity, boundary }) => ({
+      ...identity,
+      digest: canonicalDigest({
         environmentDigest: boundary.resolution.environmentDigest,
         deliveryPlanId: boundary.plan.planId,
       }),
-    ]),
-  );
+    }));
   const instructionCanonicalChanged =
     checkpoint !== undefined &&
     checkpoint.instructionCanonicalDigest !== activeInstructionCanonicalDigest;
   const instructionEnvironmentChanged =
     checkpoint !== undefined &&
-    JSON.stringify(
-      canonicalizeRalphValue(checkpoint.instructionEnvironmentDigests ?? {}),
-    ) !==
-      JSON.stringify(
-        canonicalizeRalphValue(activeInstructionEnvironmentDigests),
-      );
+    !areRalphInstructionEnvironmentDigestsEqual(
+      checkpoint.instructionEnvironmentDigests ?? [],
+      activeInstructionEnvironmentDigests,
+    );
   const instructionBoundaryChanged =
     instructionCanonicalChanged || instructionEnvironmentChanged;
   const autonomyPolicy = resolveRalphAutonomyPolicy(
@@ -15585,12 +15852,14 @@ const runRalphFlowImpl = async (
   if (
     resultContext.progress &&
     resultContext.repositoryBaseline &&
-    !resultContext.progress.channelFingerprints.repository
+    !hasRalphRepositoryProgressFingerprint(resultContext.progress)
   ) {
-    resultContext.progress.channelFingerprints.repository =
+    setRalphRepositoryProgressFingerprint(
+      resultContext.progress,
       createRalphRepositoryProgressFingerprint(
         resultContext.repositoryBaseline,
-      );
+      ),
+    );
   }
   if (autonomyMetadata) {
     try {
@@ -15642,10 +15911,12 @@ const runRalphFlowImpl = async (
         includeDiffs: false,
       });
       if (resultContext.progress) {
-        resultContext.progress.channelFingerprints.repository =
+        setRalphRepositoryProgressFingerprint(
+          resultContext.progress,
           createRalphRepositoryProgressFingerprint(
             resultContext.repositoryBaseline,
-          );
+          ),
+        );
       }
     } catch {
       // Non-repository autonomy flows can still provide explicit graph evidence.
@@ -16153,13 +16424,16 @@ const runRalphFlowImpl = async (
       resumableOperation?.attempt ?? (attemptCounts.get(block.id) ?? 0) + 1;
     const operationId =
       resumableOperation?.id ??
-      createHash("sha256")
-        .update(
-          `${runId}\0${block.id}\0${attempt}\0${syncTotalTransitions()}\0${segment}`,
-        )
-        .digest("hex");
+      canonicalDigest({
+        runId,
+        blockId: block.id,
+        attempt,
+        totalTransitions: syncTotalTransitions(),
+        segment,
+      });
     const operationWasPending = pendingOperation?.state === "started";
-    const replaySafe = isRalphBlockReplaySafe(block);
+    const effectPolicy = getRalphBlockEffectPolicy(block);
+    const replaySafe = effectPolicy === "replay-safe";
     if (!resumableOperation) {
       attemptCounts.set(block.id, attempt);
       resultContext.operationLedger?.set(operationId, {
@@ -16253,7 +16527,7 @@ const runRalphFlowImpl = async (
     try {
       stepResult =
         reconciledResult ??
-        (operationWasPending && !isRalphBlockReplaySafe(block)
+        (operationWasPending && effectPolicy === "at-most-once"
           ? createUtilityResult(
               {
                 id: block.id,

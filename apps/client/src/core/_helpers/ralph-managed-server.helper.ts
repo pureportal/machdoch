@@ -127,7 +127,8 @@ export const startRalphManagedServer = async (
 export const createRalphManagedServerCommandFingerprint = (
   command: string,
   cwd: string,
-): string => createHash("sha256").update(`${cwd}\0${command}`).digest("hex");
+): string =>
+  createHash("sha256").update(JSON.stringify({ command, cwd })).digest("hex");
 
 export const readRalphManagedServerOwnership = async (
   registryPath: string,
@@ -135,10 +136,12 @@ export const readRalphManagedServerOwnership = async (
   try {
     const value = JSON.parse(await readFile(registryPath, "utf8")) as unknown;
     if (
-      typeof value === "object" && value !== null &&
+      typeof value === "object" &&
+      value !== null &&
       typeof (value as RalphManagedServerOwnership).ownerId === "string" &&
       typeof (value as RalphManagedServerOwnership).pid === "number" &&
-      typeof (value as RalphManagedServerOwnership).commandFingerprint === "string"
+      typeof (value as RalphManagedServerOwnership).commandFingerprint ===
+        "string"
     ) {
       return value as RalphManagedServerOwnership;
     }
@@ -163,8 +166,10 @@ export const isRalphManagedServerOwnershipAlive = (
 export const stopRalphManagedServerOwnership = async (
   ownership: RalphManagedServerOwnership,
   registryPath: string,
-  dependencies: Pick<RalphManagedServerDependencies, "platform" | "spawn" | "killProcessGroup"> =
-    DEFAULT_DEPENDENCIES,
+  dependencies: Pick<
+    RalphManagedServerDependencies,
+    "platform" | "spawn" | "killProcessGroup"
+  > = DEFAULT_DEPENDENCIES,
 ): Promise<void> => {
   try {
     if (dependencies.platform === "win32") {
@@ -232,28 +237,29 @@ export const stopRalphManagedServer = async (
   };
 
   if (dependencies.platform === "win32") {
-    const taskkill = async (force: boolean): Promise<void> => new Promise((resolve) => {
-      const killer = dependencies.spawn(
-        "taskkill",
-        ["/PID", String(pid), "/T", ...(force ? ["/F"] : [])],
-        { stdio: "ignore", windowsHide: true },
-      );
-      let settled = false;
-      const settle = (): void => {
-        if (settled) {
-          return;
-        }
+    const taskkill = async (force: boolean): Promise<void> =>
+      new Promise((resolve) => {
+        const killer = dependencies.spawn(
+          "taskkill",
+          ["/PID", String(pid), "/T", ...(force ? ["/F"] : [])],
+          { stdio: "ignore", windowsHide: true },
+        );
+        let settled = false;
+        const settle = (): void => {
+          if (settled) {
+            return;
+          }
 
-        settled = true;
-        resolve();
-      };
+          settled = true;
+          resolve();
+        };
 
-      killer.once("error", () => {
-        handle.child.kill();
-        settle();
+        killer.once("error", () => {
+          handle.child.kill();
+          settle();
+        });
+        killer.once("exit", settle);
       });
-      killer.once("exit", settle);
-    });
 
     await taskkill(false);
     if (!(await waitForExit())) {

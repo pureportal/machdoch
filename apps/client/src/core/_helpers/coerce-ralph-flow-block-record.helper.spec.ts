@@ -1,4 +1,7 @@
-import { coerceRalphFlowBlockRecord } from "./coerce-ralph-flow-block-record.helper.ts";
+import {
+  coerceRalphFlowBlockRecord,
+  InvalidRalphBlockDiscriminatorError,
+} from "./coerce-ralph-flow-block-record.helper.ts";
 
 describe("coerceRalphFlowBlockRecord", () => {
   it("normalizes common block base fields and settings", () => {
@@ -114,35 +117,49 @@ describe("coerceRalphFlowBlockRecord", () => {
     });
   });
 
-  it("uses safe defaults for malformed executable block variants", () => {
-    expect(
-      coerceRalphFlowBlockRecord({
+  it.each([
+    {
+      discriminator: "type",
+      record: {
         id: 123,
         type: "UNKNOWN",
         title: false,
         prompt: 7,
         settings: null,
-      }),
-    ).toEqual({
-      id: "",
-      title: "",
-      type: "PROMPT",
-      prompt: "",
-    });
-
-    expect(
-      coerceRalphFlowBlockRecord({
+      },
+    },
+    {
+      discriminator: "status",
+      record: {
         id: "end",
         type: "END",
         title: "End",
         status: "unsupported",
-      }),
-    ).toEqual({
-      id: "end",
-      title: "End",
-      type: "END",
-    });
-  });
+      },
+    },
+    {
+      discriminator: "outcome",
+      record: {
+        id: "end",
+        type: "END",
+        title: "End",
+        outcome: "DONE_AFTER_REVIEW",
+      },
+    },
+  ])(
+    "rejects an unsupported $discriminator discriminator",
+    ({ discriminator, record }) => {
+      expect(() => coerceRalphFlowBlockRecord(record)).toThrow(
+        expect.objectContaining({
+          name: "InvalidRalphBlockDiscriminatorError",
+          discriminator,
+        }),
+      );
+      expect(() => coerceRalphFlowBlockRecord(record)).toThrow(
+        InvalidRalphBlockDiscriminatorError,
+      );
+    },
+  );
 
   it("preserves a deferred END outcome without fabricating success", () => {
     expect(

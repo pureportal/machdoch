@@ -9,11 +9,6 @@ export const RALPH_SCOPE_EVIDENCE_SCHEMA =
 export const RALPH_SCOPE_REGISTRY_SCHEMA =
   "machdoch.ralph.scopeRegistry" as const;
 export const RALPH_SCOPE_REGISTRY_SCHEMA_VERSION = 2 as const;
-const RALPH_SCOPE_REGISTRY_LEGACY_SCHEMA_VERSION = 1 as const;
-
-type RalphPersistedScopeRegistrySchemaVersion =
-  | typeof RALPH_SCOPE_REGISTRY_LEGACY_SCHEMA_VERSION
-  | typeof RALPH_SCOPE_REGISTRY_SCHEMA_VERSION;
 
 export const RALPH_SCOPE_SELECTION_STRATEGIES = [
   "start-to-end",
@@ -446,6 +441,13 @@ const hashStableValue = (value: unknown): string => {
     .slice(0, 16);
 };
 
+const areStringArraysEqual = (
+  left: readonly string[],
+  right: readonly string[],
+): boolean =>
+  left.length === right.length &&
+  left.every((value, index) => value === right[index]);
+
 const DISCOVERED_SCOPE_RISK_BY_KIND: Record<
   RalphScopeRegistryKind,
   RalphScopeRegistryRisk
@@ -875,58 +877,11 @@ const parseScopeStatus = (
   throw new Error("Expected Ralph scope status to be active or removed.");
 };
 
-const migrateLegacyScopeOutcome = (
-  value: unknown,
-): RalphScopeOutcome | null => {
-  if (typeof value !== "string" || !value.trim()) {
-    return null;
-  }
-
-  const normalized = value
-    .trim()
-    .toUpperCase()
-    .replace(/[\s-]+/gu, "_");
-  if (
-    normalized === "COMPLETED" ||
-    normalized === "DONE" ||
-    normalized === "SUCCESS" ||
-    normalized === "VALIDATED" ||
-    normalized.startsWith("DONE_") ||
-    normalized.startsWith("COMPLETED_")
-  ) {
-    return "completed";
-  }
-  if (
-    normalized.includes("NO_MEANINGFUL_WORK") ||
-    normalized.startsWith("STOP")
-  ) {
-    return "no-meaningful-work";
-  }
-  if (normalized.includes("EXTERNAL_STATE")) {
-    return "external-state";
-  }
-  if (normalized.startsWith("DEFER")) {
-    return "deferred";
-  }
-  if (normalized.startsWith("INVALID")) {
-    return "invalid";
-  }
-
-  // Version 1 accepted arbitrary failure labels and applied the generic
-  // failure cooldown to them. Preserve that behavior without carrying
-  // unstructured verdict strings into the version 2 protocol.
-  return "failed";
-};
-
 const parsePersistedScopeOutcome = (
   value: unknown,
-  schemaVersion: RalphPersistedScopeRegistrySchemaVersion,
 ): RalphScopeOutcome | null => {
   if (value === undefined || value === null) {
     return null;
-  }
-  if (schemaVersion === RALPH_SCOPE_REGISTRY_LEGACY_SCHEMA_VERSION) {
-    return migrateLegacyScopeOutcome(value);
   }
   if (isRalphScopeOutcome(value)) {
     return value;
@@ -940,7 +895,6 @@ const normalizeRegistryScope = (
   now: string,
   options: {
     requireStatus: boolean;
-    schemaVersion: RalphPersistedScopeRegistrySchemaVersion;
   },
 ): RalphScopeRegistryScope => {
   if (!isRecord(value)) {
@@ -961,10 +915,7 @@ const normalizeRegistryScope = (
   const globs = normalizePathList(coerceStringArray(value.globs));
   const kind = parseScopeKind(value.kind);
   const risk = parseScopeRisk(value.risk);
-  const lastOutcome = parsePersistedScopeOutcome(
-    value.lastOutcome,
-    options.schemaVersion,
-  );
+  const lastOutcome = parsePersistedScopeOutcome(value.lastOutcome);
 
   return {
     id,
@@ -1030,12 +981,10 @@ export const parseRalphScopeRegistry = (
   }
   if (
     value.schema !== RALPH_SCOPE_REGISTRY_SCHEMA ||
-    (value.schemaVersion !== RALPH_SCOPE_REGISTRY_LEGACY_SCHEMA_VERSION &&
-      value.schemaVersion !== RALPH_SCOPE_REGISTRY_SCHEMA_VERSION)
+    value.schemaVersion !== RALPH_SCOPE_REGISTRY_SCHEMA_VERSION
   ) {
     throw new Error("Expected a supported Ralph scope registry schema.");
   }
-  const schemaVersion = value.schemaVersion;
   if (!isRecord(value.selection)) {
     throw new Error("Expected Ralph scope registry selection state.");
   }
@@ -1053,7 +1002,6 @@ export const parseRalphScopeRegistry = (
   const scopes = value.scopes.map((scope) =>
     normalizeRegistryScope(scope, now, {
       requireStatus: true,
-      schemaVersion,
     }),
   );
   const activeIds = new Set(
@@ -1113,10 +1061,7 @@ export const parseRalphScopeRegistry = (
             ) {
               throw new Error("Expected a valid Ralph scope history type.");
             }
-            const outcome = parsePersistedScopeOutcome(
-              entry.outcome,
-              schemaVersion,
-            );
+            const outcome = parsePersistedScopeOutcome(entry.outcome);
 
             return {
               at: typeof entry.at === "string" ? entry.at : now,
@@ -1169,7 +1114,6 @@ export const parseRalphScopeEvidence = (
   const scopes = value.scopes.flatMap((scope): RalphScopeEvidenceScope[] => {
     const normalized = normalizeRegistryScope(scope, now, {
       requireStatus: false,
-      schemaVersion: RALPH_SCOPE_REGISTRY_SCHEMA_VERSION,
     });
 
     return [
@@ -1264,8 +1208,8 @@ export const updateRalphScopeRegistryFromEvidence = (
     const changed =
       existing.fingerprint !== scope.fingerprint ||
       existing.status !== "active" ||
-      JSON.stringify(existing.paths) !== JSON.stringify(scope.paths) ||
-      JSON.stringify(existing.globs) !== JSON.stringify(scope.globs);
+      !areStringArraysEqual(existing.paths, scope.paths) ||
+      !areStringArraysEqual(existing.globs, scope.globs);
 
     if (changed) {
       updated.push(scope.id);
@@ -1675,10 +1619,11 @@ const seededIndex = (
   seed: string,
   cycle: number,
 ): number => {
-  const hash = createHash("sha256")
-    .update(`${seed}:${cycle}:${scopes.map((scope) => scope.id).join("|")}`)
-    .digest("hex")
-    .slice(0, 8);
+  const hash = hashStableValue({
+    seed,
+    cycle,
+    scopeIds: scopes.map((scope) => scope.id),
+  }).slice(0, 8);
 
   return Number.parseInt(hash, 16) % Math.max(1, scopes.length);
 };

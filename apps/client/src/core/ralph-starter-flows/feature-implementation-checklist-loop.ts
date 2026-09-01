@@ -259,9 +259,30 @@ const fullFeatureImplementationFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "(() => { const storedFeatureId = lastData?.json?.featureId; const expectedFeatureId = context.resultsByBlock?.['resolve-checklist-path']?.data?.output?.featureId; if (typeof storedFeatureId !== 'string' || storedFeatureId.length === 0 || typeof expectedFeatureId !== 'string' || expectedFeatureId.length === 0) throw new Error('Checklist feature identity is missing or invalid.'); return storedFeatureId === expectedFeatureId; })()",
+          style: "json-path",
+          path: "lastData.json.featureId",
+          operator: "non-empty-string",
+          assertMatch: true,
+          invalidMessage: "Checklist feature identity is missing or invalid.",
+          conditions: [
+            {
+              style: "json-path",
+              path: "resultsByBlock.resolve-checklist-path.data.output.featureId",
+              operator: "non-empty-string",
+              assertMatch: true,
+              invalidMessage:
+                "Checklist feature identity is missing or invalid.",
+              conditions: [
+                {
+                  style: "json-path",
+                  path: "lastData.json.featureId",
+                  operator: "equals-path",
+                  valuePath:
+                    "resultsByBlock.resolve-checklist-path.data.output.featureId",
+                },
+              ],
+            },
+          ],
         },
       },
     },
@@ -304,8 +325,10 @@ const fullFeatureImplementationFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression: 'variables.enableOnlineResearch === "true"',
+          style: "json-path",
+          path: "variables.enableOnlineResearch",
+          operator: "equals",
+          value: "true",
         },
       },
     },
@@ -465,8 +488,14 @@ const fullFeatureImplementationFlow: RalphFlow = {
       utility: {
         type: "TRANSFORM_JSON",
         input: "{}",
-        expression:
-          "(() => { const diffResult = context.resultsByBlock?.get?.('git-diff-summary'); const baselineResult = context.resultsByBlock?.get?.('git-snapshot-before'); const currentFiles = Array.isArray(diffResult?.data?.files) ? diffResult.data.files : []; const baselineFiles = Array.isArray(baselineResult?.data?.files) ? baselineResult.data.files : []; const normalize = (value) => String(value ?? '').replace(/\\\\/gu, '/').replace(/^\\.\\/+/, ''); const baseline = new Map(baselineFiles.filter((file) => file && typeof file.path === 'string').map((file) => [normalize(file.path), file.signature])); const changedSinceBaselineFiles = currentFiles.filter((file) => file && typeof file.path === 'string' && baseline.get(normalize(file.path)) !== file.signature).map((file) => normalize(file.path)); const stateFile = normalize(context.resultsByBlock?.get?.('resolve-checklist-path')?.data?.output?.path || ''); const implementationFiles = changedSinceBaselineFiles.filter((path) => path !== stateFile); const selectedTasks = context.resultsByBlock?.get?.('select-next-task')?.data?.tasks; const selectedTaskCount = Array.isArray(selectedTasks) ? selectedTasks.length : 1; const diffErrored = diffResult?.output === 'ERROR'; const onlyStateFileChanged = changedSinceBaselineFiles.length > 0 && implementationFiles.length === 0; const shouldVerify = diffErrored || implementationFiles.length > 0; return { shouldVerify, diffOutput: diffResult?.output ?? '', selectedTaskCount, stateFile, changedSinceBaselineCount: changedSinceBaselineFiles.length, changedSinceBaselineFiles, implementationFileCount: implementationFiles.length, implementationFiles, onlyStateFileChanged, baselineFileCount: baselineFiles.length, currentFileCount: currentFiles.length, reason: shouldVerify ? (diffErrored ? 'Git diff summary failed; keep verification path available.' : 'Implementation changed files beyond the checklist state file since the pre-pass snapshot.') : (onlyStateFileChanged ? 'Only the checklist JSON changed; refuse DONE and request real implementation work.' : 'Implementation produced no file changes beyond the pre-pass snapshot; refuse DONE and request another implementation pass.') }; })()",
+        deterministicTransform: {
+          type: "repository-work-yield",
+          baselineBlockId: "git-snapshot-before",
+          currentBlockId: "git-diff-summary",
+          workItemBlockId: "select-next-task",
+          excludedPaths: ["{{data:resolve-checklist-path:output.path}}"],
+          verifyOnObservationError: true,
+        },
       },
     },
     {
@@ -478,8 +507,10 @@ const fullFeatureImplementationFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression: "lastData?.shouldVerify === true",
+          style: "json-path",
+          path: "lastData.output.shouldVerify",
+          operator: "equals",
+          value: "true",
         },
       },
     },
@@ -520,9 +551,17 @@ const fullFeatureImplementationFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "Boolean(variables.verificationCommand?.trim() || context.resultsByBlock?.['detect-project-commands']?.data?.verificationCommand?.trim())",
+          style: "json-path",
+          path: "variables.verificationCommand",
+          operator: "non-empty-string",
+          combinator: "any",
+          conditions: [
+            {
+              style: "json-path",
+              path: "resultsByBlock.detect-project-commands.data.verificationCommand",
+              operator: "non-empty-string",
+            },
+          ],
         },
       },
     },
@@ -549,9 +588,25 @@ const fullFeatureImplementationFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            'variables.enableVisualReview === "true" && (Boolean(variables.targetUrl?.trim()) || Boolean(variables.screenshotPath?.trim()))',
+          style: "json-path",
+          path: "variables.enableVisualReview",
+          operator: "equals",
+          value: "true",
+          conditions: [
+            {
+              style: "json-path",
+              path: "variables.targetUrl",
+              operator: "non-empty-string",
+              combinator: "any",
+              conditions: [
+                {
+                  style: "json-path",
+                  path: "variables.screenshotPath",
+                  operator: "non-empty-string",
+                },
+              ],
+            },
+          ],
         },
       },
     },
@@ -778,9 +833,27 @@ const fullFeatureImplementationFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "context.resultsByBlock?.['resolve-checklist-path']?.output === 'SUCCESS' && ['record-done-outcome', 'record-invalid-outcome'].some((id) => context.resultsByBlock?.[id]?.output === 'SUCCESS')",
+          style: "json-path",
+          path: "resultsByBlock.resolve-checklist-path.output",
+          operator: "equals",
+          value: "SUCCESS",
+          conditions: [
+            {
+              style: "json-path",
+              path: "resultsByBlock.record-done-outcome.output",
+              operator: "equals",
+              value: "SUCCESS",
+              combinator: "any",
+              conditions: [
+                {
+                  style: "json-path",
+                  path: "resultsByBlock.record-invalid-outcome.output",
+                  operator: "equals",
+                  value: "SUCCESS",
+                },
+              ],
+            },
+          ],
         },
       },
     },
@@ -793,9 +866,10 @@ const fullFeatureImplementationFlow: RalphFlow = {
       utility: {
         type: "CONDITION",
         condition: {
-          style: "javascript",
-          expression:
-            "context.resultsByBlock?.['record-done-outcome']?.output === 'SUCCESS'",
+          style: "json-path",
+          path: "resultsByBlock.record-done-outcome.output",
+          operator: "equals",
+          value: "SUCCESS",
         },
       },
     },
@@ -1548,7 +1622,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
 
 export const featureImplementationChecklistLoopStarterFlow = {
   id: "full-feature-implementation",
-  version: 18,
+  version: 19,
   defaultAlias: "feature-implementation-checklist-loop",
   category: "Implementation",
   tags: ["feature", "research", "visual-check"],

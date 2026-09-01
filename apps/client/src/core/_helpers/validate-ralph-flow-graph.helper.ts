@@ -10,16 +10,16 @@ export const DEFAULT_RALPH_GROUP_MAX_DEPTH = 3;
 export interface RalphFlowGraphIndex {
   blocksById: Map<string, RalphFlowBlock>;
   incomingBlockIdsByBlock: Map<string, string[]>;
-  outgoingEdgeByBlockAndOutput: Map<string, RalphFlowEdge>;
+  outgoingEdgeByBlockAndOutput: Map<
+    string,
+    Map<RalphExecutionOutput, RalphFlowEdge>
+  >;
   outgoingEdgesByBlock: Map<string, RalphFlowEdge[]>;
 }
 
-const createOutgoingEdgeKey = (
-  blockId: string,
-  output: RalphExecutionOutput,
-): string => `${blockId}\0${output}`;
-
-export const getRalphBlockById = (flow: RalphFlow): Map<string, RalphFlowBlock> => {
+export const getRalphBlockById = (
+  flow: RalphFlow,
+): Map<string, RalphFlowBlock> => {
   return new Map(flow.blocks.map((block) => [block.id, block]));
 };
 
@@ -27,7 +27,10 @@ export const createRalphFlowGraphIndex = (
   flow: RalphFlow,
 ): RalphFlowGraphIndex => {
   const incomingBlockIdsByBlock = new Map<string, string[]>();
-  const outgoingEdgeByBlockAndOutput = new Map<string, RalphFlowEdge>();
+  const outgoingEdgeByBlockAndOutput = new Map<
+    string,
+    Map<RalphExecutionOutput, RalphFlowEdge>
+  >();
   const outgoingEdgesByBlock = new Map<string, RalphFlowEdge[]>();
 
   for (const edge of flow.edges) {
@@ -35,9 +38,11 @@ export const createRalphFlowGraphIndex = (
     outgoingEdges.push(edge);
     outgoingEdgesByBlock.set(edge.from, outgoingEdges);
 
-    const outgoingEdgeKey = createOutgoingEdgeKey(edge.from, edge.fromOutput);
-    if (!outgoingEdgeByBlockAndOutput.has(outgoingEdgeKey)) {
-      outgoingEdgeByBlockAndOutput.set(outgoingEdgeKey, edge);
+    const outgoingByOutput =
+      outgoingEdgeByBlockAndOutput.get(edge.from) ?? new Map();
+    if (!outgoingByOutput.has(edge.fromOutput)) {
+      outgoingByOutput.set(edge.fromOutput, edge);
+      outgoingEdgeByBlockAndOutput.set(edge.from, outgoingByOutput);
     }
 
     const incomingBlockIds = incomingBlockIdsByBlock.get(edge.to) ?? [];
@@ -60,9 +65,7 @@ export const hasOutgoingRalphEdge = (
   index?: RalphFlowGraphIndex,
 ): boolean => {
   return index
-    ? index.outgoingEdgeByBlockAndOutput.has(
-        createOutgoingEdgeKey(blockId, output),
-      )
+    ? index.outgoingEdgeByBlockAndOutput.get(blockId)?.has(output) === true
     : flow.edges.some(
         (edge) => edge.from === blockId && edge.fromOutput === output,
       );
@@ -75,9 +78,7 @@ export const findOutgoingRalphEdge = (
   index?: RalphFlowGraphIndex,
 ): RalphFlowEdge | undefined => {
   return index
-    ? index.outgoingEdgeByBlockAndOutput.get(
-        createOutgoingEdgeKey(blockId, output),
-      )
+    ? index.outgoingEdgeByBlockAndOutput.get(blockId)?.get(output)
     : flow.edges.find(
         (edge) => edge.from === blockId && edge.fromOutput === output,
       );
@@ -125,7 +126,8 @@ export const getRalphBlockIdsWithPathToEnd = (
       continue;
     }
 
-    for (const sourceBlockId of index.incomingBlockIdsByBlock.get(current) ?? []) {
+    for (const sourceBlockId of index.incomingBlockIdsByBlock.get(current) ??
+      []) {
       if (!blockIdsWithPathToEnd.has(sourceBlockId)) {
         blockIdsWithPathToEnd.add(sourceBlockId);
         pending.push(sourceBlockId);

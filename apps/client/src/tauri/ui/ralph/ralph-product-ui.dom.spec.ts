@@ -57,6 +57,7 @@ const composer = (
   canSend: true,
   isExecuting: false,
   sessionMemoryEnabled: false,
+  sessionMemory: [],
   globalMemoryAvailable: false,
   globalMemoryEnabled: false,
   uiControlAvailable: false,

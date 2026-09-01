@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   mkdir,
   mkdtemp,
@@ -17,6 +18,7 @@ import { executeTask } from "../execution.js";
 import { mcpClientManager } from "../mcp/client.js";
 import { RalphRunStore } from "../_helpers/ralph-run-store.helper.js";
 import {
+  acquireRalphFileMutationLock,
   compareRalphRepositorySnapshots,
   createRalphRunLogger,
   readRalphExecutionHistoryResults,
@@ -5738,7 +5740,7 @@ describe("runRalphFlow", () => {
     GIT_SCOPE_GUARD_TEST_TIMEOUT_MS,
   );
 
-  it("migrates, updates, selects, and marks version 1 scope registries", async () => {
+  it("rejects version 1 scope registries without inferring outcome labels", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-registry-"));
     const registryPath =
       ".machdoch/ralph/scope-registry/test-flow.scope-registry.json";
@@ -5889,22 +5891,10 @@ describe("runRalphFlow", () => {
       );
       const registry = JSON.parse(
         await readFile(persistedRegistryPath, "utf8"),
-      ) as {
-        schemaVersion: number;
-        scopes: Array<{
-          id: string;
-          status: string;
-          validatedCount: number;
-          lastOutcome?: string | null;
-        }>;
-        selection: {
-          currentScopeId: string | null;
-          completedScopeIds: string[];
-        };
-      };
+      ) as { schemaVersion: number };
 
-      expect(result.status).toBe("completed");
-      expect(registry.schemaVersion).toBe(2);
+      expect(result.status).toBe("crashed");
+      expect(registry.schemaVersion).toBe(1);
       expect(result.blockResults).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -5913,28 +5903,12 @@ describe("runRalphFlow", () => {
           }),
           expect.objectContaining({
             blockId: "update-registry",
-            output: "SUCCESS",
+            output: "ERROR",
+            error: expect.stringContaining(
+              "Expected a supported Ralph scope registry schema.",
+            ),
           }),
-          expect.objectContaining({
-            blockId: "select-scope",
-            output: "SELECTED",
-          }),
-          expect.objectContaining({ blockId: "mark-scope", output: "SUCCESS" }),
         ]),
-      );
-      expect(
-        registry.scopes.filter((scope) => scope.status === "active").length,
-      ).toBeGreaterThan(1);
-      expect(registry.selection.currentScopeId).toBeNull();
-      expect(registry.selection.completedScopeIds).toHaveLength(1);
-      expect(registry.scopes.some((scope) => scope.validatedCount === 1)).toBe(
-        true,
-      );
-      expect(registry.scopes.find((scope) => scope.id === "src")).toMatchObject(
-        {
-          lastOutcome: "completed",
-          validatedCount: 1,
-        },
       );
       expect(executeTask).not.toHaveBeenCalled();
     } finally {
@@ -5943,8 +5917,6 @@ describe("runRalphFlow", () => {
   });
 
   it("routes HTTP_FETCH SUCCESS, HTTP_ERROR, and TIMEOUT outputs", async () => {
-    const timeoutError = new Error("aborted");
-    timeoutError.name = "AbortError";
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -5954,7 +5926,21 @@ describe("runRalphFlow", () => {
         }),
       )
       .mockResolvedValueOnce(new Response("nope", { status: 500 }))
-      .mockRejectedValueOnce(timeoutError);
+      .mockImplementationOnce(
+        (_input: string | URL | Request, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("aborted", "AbortError")),
+              { once: true },
+            );
+          }),
+      )
+      .mockRejectedValueOnce(
+        Object.assign(new Error("provider used an AbortError name"), {
+          name: "AbortError",
+        }),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await runRalphFlow(
@@ -5989,6 +5975,17 @@ describe("runRalphFlow", () => {
               type: "HTTP_FETCH",
               replayPolicy: "safe",
               url: "https://example.test/timeout",
+              timeoutSeconds: 0.001,
+            },
+          },
+          {
+            id: "fetch-provider-abort-error",
+            type: "UTILITY",
+            title: "Fetch Provider Abort Error",
+            utility: {
+              type: "HTTP_FETCH",
+              replayPolicy: "safe",
+              url: "https://example.test/provider-abort-error",
             },
           },
           { id: "success", type: "END", title: "Success" },
@@ -6013,9 +6010,15 @@ describe("runRalphFlow", () => {
             to: "fetch-timeout",
           },
           {
-            id: "timeout-to-success",
+            id: "timeout-to-provider-abort-error",
             from: "fetch-timeout",
             fromOutput: "TIMEOUT",
+            to: "fetch-provider-abort-error",
+          },
+          {
+            id: "provider-abort-error-to-success",
+            from: "fetch-provider-abort-error",
+            fromOutput: "ERROR",
             to: "success",
           },
         ],
@@ -6026,7 +6029,7 @@ describe("runRalphFlow", () => {
     );
 
     expect(result.status).toBe("completed");
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(result.blockResults).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -6047,6 +6050,11 @@ describe("runRalphFlow", () => {
         expect.objectContaining({
           blockId: "fetch-timeout",
           output: "TIMEOUT",
+          status: "error",
+        }),
+        expect.objectContaining({
+          blockId: "fetch-provider-abort-error",
+          output: "ERROR",
           status: "error",
         }),
       ]),
@@ -8991,11 +8999,13 @@ describe("runRalphFlow", () => {
       await writeFile(
         `${path}.ralph-operations.json`,
         JSON.stringify({
+          schemaVersion: 1,
           operations: {
             [operationId]: {
               state: "started",
               priorSize: Buffer.byteLength(initial),
               lineLength: Buffer.byteLength(intended),
+              lineSha256: createHash("sha256").update(intended).digest("hex"),
               startedAt: "2026-01-01T00:00:00.000Z",
             },
           },
@@ -9268,11 +9278,16 @@ describe("runRalphFlow", () => {
       await writeFile(
         `${path}.ralph-operations.json`,
         JSON.stringify({
+          schemaVersion: 1,
           operations: {
             [operationId]: {
               state: "started",
               priorSize: Buffer.byteLength(initial),
               lineLength: Buffer.byteLength('{"item":1}\n'),
+              lineSha256: createHash("sha256")
+                .update('{"item":1}\n')
+                .digest("hex"),
+              startedAt: "2026-01-01T00:00:00.000Z",
             },
           },
         }),
@@ -9294,6 +9309,215 @@ describe("runRalphFlow", () => {
       });
       await expect(readFile(path, "utf8")).resolves.toBe(
         `${initial}${mismatched}`,
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("retires completed JSON task claims before archiving their lifecycle file", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-archive-claim-"));
+    const activePath = join(workspace, "active-plan.json");
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "select",
+          type: "UTILITY",
+          title: "Select",
+          utility: { type: "SELECT_JSON_TASK", path: "active-plan.json" },
+        },
+        {
+          id: "mark-verifying",
+          type: "UTILITY",
+          title: "Mark verifying",
+          utility: {
+            type: "MARK_JSON_TASK",
+            path: "active-plan.json",
+            input: "{{data:select}}",
+            status: "verifying",
+          },
+        },
+        {
+          id: "mark-complete",
+          type: "UTILITY",
+          title: "Mark complete",
+          utility: {
+            type: "MARK_JSON_TASK",
+            path: "active-plan.json",
+            input: "{{data:select}}",
+            status: "completed",
+          },
+        },
+        {
+          id: "archive",
+          type: "UTILITY",
+          title: "Archive",
+          utility: {
+            type: "ARCHIVE_FILE",
+            path: "active-plan.json",
+            rootPath: "archive",
+          },
+        },
+        { id: "success", type: "END", title: "Success" },
+      ],
+      edges: [
+        {
+          id: "start-select",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "select",
+        },
+        {
+          id: "select-mark-verifying",
+          from: "select",
+          fromOutput: "SELECTED",
+          to: "mark-verifying",
+        },
+        {
+          id: "mark-verifying-complete",
+          from: "mark-verifying",
+          fromOutput: "SUCCESS",
+          to: "mark-complete",
+        },
+        {
+          id: "mark-complete-archive",
+          from: "mark-complete",
+          fromOutput: "SUCCESS",
+          to: "archive",
+        },
+        {
+          id: "archive-success",
+          from: "archive",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
+      ],
+    });
+
+    try {
+      await writeFile(
+        activePath,
+        JSON.stringify({ tasks: [{ id: "task-1", status: "planned" }] }),
+        "utf8",
+      );
+      const logger = await createRalphRunLogger(workspace, flow, {
+        runId: "archive-claim-run",
+      });
+      const runResult = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { logger, runId: logger.runId, maxTransitions: 10 },
+      );
+      const archiveResult = runResult.blockResults.find(
+        (entry) => entry.blockId === "archive",
+      );
+      const archivePath = (archiveResult?.data as { to?: string } | undefined)
+        ?.to;
+
+      expect(runResult.status, JSON.stringify(runResult, null, 2)).toBe(
+        "completed",
+      );
+      expect(runResult.durability).toMatchObject({ status: "healthy" });
+      expect(archivePath).toEqual(expect.any(String));
+      await expect(readFile(activePath, "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await expect(readFile(archivePath!, "utf8")).resolves.toContain(
+        '"status": "completed"',
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("reconciles a pending default archive operation without replaying the move", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-archive-resume-"));
+    const operationId = "pending-archive-operation";
+    const startedAt = "2026-01-01T00:00:00.000Z";
+    const archivePath = join(
+      workspace,
+      "archive",
+      `active-plan-2026-01-01T00-00-00-000Z-${operationId.slice(0, 12)}.json`,
+    );
+    const checkpoint: RalphRunCheckpoint = {
+      currentBlockId: "archive",
+      transitions: 1,
+      variables: {},
+      resultsByBlock: {},
+      runLog: [],
+      blockResults: [],
+      events: [],
+      errorCounts: {},
+      repeatedFailures: {},
+      attemptCounts: { archive: 1 },
+      operationLedger: {
+        [operationId]: {
+          id: operationId,
+          blockId: "archive",
+          attempt: 1,
+          state: "started",
+          startedAt,
+        },
+      },
+    };
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "archive",
+          type: "UTILITY",
+          title: "Archive",
+          utility: {
+            type: "ARCHIVE_FILE",
+            path: "active-plan.json",
+            rootPath: "archive",
+          },
+        },
+        { id: "success", type: "END", title: "Success" },
+      ],
+      edges: [
+        {
+          id: "start-archive",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "archive",
+        },
+        {
+          id: "archive-success",
+          from: "archive",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
+      ],
+    });
+
+    try {
+      await mkdir(join(workspace, "archive"), { recursive: true });
+      await writeFile(archivePath, '{"archived":true}', "utf8");
+
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { checkpoint, runId: "archive-resume-run", maxTransitions: 10 },
+      );
+
+      expect(result.status).toBe("completed");
+      expect(
+        result.blockResults.find((entry) => entry.blockId === "archive"),
+      ).toMatchObject({
+        operationId,
+        output: "SUCCESS",
+        data: {
+          from: join(workspace, "active-plan.json"),
+          to: archivePath,
+          reconciled: true,
+        },
+      });
+      await expect(readFile(archivePath, "utf8")).resolves.toBe(
+        '{"archived":true}',
       );
     } finally {
       await rm(workspace, { recursive: true, force: true });
@@ -9892,7 +10116,7 @@ describe("runRalphFlow", () => {
     }
   });
 
-  it("heartbeats claimed JSON task leases while a long block is running", async () => {
+  it("heartbeats claimed JSON task leases through transient mutation contention", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-task-heartbeat-"));
     const path = join(workspace, "tasks.json");
     const selectionBlocks = [
@@ -9988,6 +10212,15 @@ describe("runRalphFlow", () => {
           },
           { interval: 25, timeout: 2_000 },
         );
+        const competingLock = await acquireRalphFileMutationLock(
+          path,
+          "rival-probe",
+        );
+        try {
+          await new Promise((resolveDelay) => setTimeout(resolveDelay, 400));
+        } finally {
+          await competingLock.release();
+        }
         rivalResult = await runRalphFlow(
           rivalFlow,
           { ...runtimeConfig, workspaceRoot: workspace },
@@ -10007,7 +10240,10 @@ describe("runRalphFlow", () => {
         tasks: Array<{ lease: { ownerId: string; expiresAt: string } }>;
       };
 
-      expect(ownerResult.status).toBe("completed");
+      expect(ownerResult.status, JSON.stringify(ownerResult, null, 2)).toBe(
+        "completed",
+      );
+      expect(ownerResult.durability?.status).toBe("healthy");
       expect(
         rivalResult?.blockResults.find((entry) => entry.blockId === "select")
           ?.output,

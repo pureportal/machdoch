@@ -119,116 +119,34 @@ describe("validateRalphFlow", () => {
     );
   });
 
-  it("coerces malformed flow JSON into a stable editable shape", () => {
-    const parsed = parseRalphFlowJson(
-      JSON.stringify({
-        schemaVersion: 1,
-        id: "coerced-flow",
-        name: "Coerced Flow",
-        settings: {
-          maxTransitions: 2.9,
-        },
-        variables: [
-          {
-            name: "scope",
-            type: "directory",
-            default: 42,
-            required: "yes",
-          },
-        ],
-        blocks: [
-          {
-            id: "start",
-            type: "START",
-            title: "Start",
-          },
-          {
-            id: "unknown",
-            type: "UNKNOWN",
-            title: "Unknown",
-            prompt: 42,
-            settings: {
-              workspace: { mode: "custom", path: "C:/other" },
-              reasoning: "max",
-              retry: {
-                mode: "finite",
-                maxRetries: "bad",
-                delaySeconds: 1,
-              },
-              attachments: [
-                { source: "variable", value: "screenshot", kind: "image" },
-                { source: "path", value: "", kind: "file" },
-              ],
-            },
-          },
-          {
-            id: "utility",
-            type: "UTILITY",
-            title: "Utility",
-            utility: {
-              type: "UNKNOWN",
-              acceptedExitCodes: [0, "bad", 3],
-              encoding: "utf-8",
-            },
-          },
-          {
-            id: "end",
-            type: "END",
-            title: "End",
-            status: "weird",
-          },
-        ],
-        edges: [
-          { id: "start-to-unknown", from: "start", fromOutput: "SUCCESS", to: "unknown" },
-          { id: "unknown-to-utility", from: "unknown", fromOutput: "SUCCESS", to: "utility" },
-          { id: "utility-to-end", from: "utility", fromOutput: "SUCCESS", to: "end" },
-        ],
-      }),
-    );
-
-    expect(parsed.settings).toEqual({ maxTransitions: 2 });
-    expect(parsed.variables).toEqual([
+  it.each([
+    [{ id: "unknown", type: "UNKNOWN", title: "Unknown" }, "supported type"],
+    [
       {
-        name: "scope",
-        type: "string",
-        required: true,
-      },
-    ]);
-    expect(parsed.blocks).toEqual([
-      {
-        id: "start",
-        type: "START",
-        title: "Start",
-      },
-      expect.objectContaining({
-        id: "unknown",
-        type: "PROMPT",
-        title: "Unknown",
-        prompt: "",
-        settings: expect.objectContaining({
-          workspace: { mode: "custom", path: "C:/other" },
-          reasoning: "max",
-          retry: { mode: "finite", maxRetries: null, delaySeconds: 1 },
-          attachments: [
-            { source: "variable", value: "screenshot", kind: "image" },
-          ],
-        }),
-      }),
-      expect.objectContaining({
         id: "utility",
         type: "UTILITY",
-        utility: expect.objectContaining({
-          type: "WAIT",
-          acceptedExitCodes: [0, 3],
-          encoding: "utf8",
-        }),
-      }),
-      {
-        id: "end",
-        type: "END",
-        title: "End",
+        title: "Utility",
+        utility: { type: "UNKNOWN" },
       },
-    ]);
+      "invalid type",
+    ],
+    [
+      { id: "end", type: "END", title: "End", status: "weird" },
+      "supported status",
+    ],
+  ])("rejects malformed executable discriminators", (block, message) => {
+    expect(() =>
+      parseRalphFlowJson(
+        JSON.stringify({
+          schemaVersion: 1,
+          id: "invalid-flow",
+          name: "Invalid flow",
+          variables: [],
+          blocks: [block],
+          edges: [],
+        }),
+      ),
+    ).toThrow(message);
   });
 
   it("rejects non-object Ralph JSON at parse time", () => {
@@ -744,5 +662,3 @@ describe("validateRalphFlow", () => {
     expect(getRalphUtilityOutputs({ type: "WAIT" })).toEqual(["SUCCESS"]);
   });
 });
-
-

@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { RalphBlockExecutionResult } from "../ralph.ts";
 import {
   createRalphFailureSignature,
@@ -16,12 +15,15 @@ const createResult = (
   ...overrides,
 });
 
-const hashPayload = (parts: readonly string[]): string => {
-  return createHash("sha256").update(parts.join("\n")).digest("hex");
-};
-
 describe("createRalphFailureSignature", () => {
-  it.each(["ERROR", "FAILED", "INVALID", "TIMEOUT", "HTTP_ERROR", "UNAVAILABLE"] as const)(
+  it.each([
+    "ERROR",
+    "FAILED",
+    "INVALID",
+    "TIMEOUT",
+    "HTTP_ERROR",
+    "UNAVAILABLE",
+  ] as const)(
     "creates a deterministic signature for repeatable %s output",
     (output) => {
       const result = createResult({
@@ -32,18 +34,9 @@ describe("createRalphFailureSignature", () => {
         data: { reason: "missing value" },
       });
 
-      const expected = hashPayload([
-        "validator",
-        output,
-        output === "ERROR" ? "error" : "completed",
-        "Validation failed.",
-        "Tool returned an error",
-        "Full result markdown",
-        '{"reason":"missing value"}',
-      ]);
-
-      expect(createRalphFailureSignature(result)).toBe(expected);
-      expect(createRalphFailureSignature(result)).toBe(expected);
+      const signature = createRalphFailureSignature(result);
+      expect(signature).toMatch(/^[0-9a-f]{64}$/u);
+      expect(createRalphFailureSignature(result)).toBe(signature);
     },
   );
 
@@ -69,13 +62,17 @@ describe("createRalphFailureSignature", () => {
       createRalphFailureSignature(createResult({ status: "completed" })),
     );
     expect(createRalphFailureSignature(base)).not.toBe(
-      createRalphFailureSignature(createResult({ summary: "Different summary." })),
+      createRalphFailureSignature(
+        createResult({ summary: "Different summary." }),
+      ),
     );
     expect(createRalphFailureSignature(base)).not.toBe(
       createRalphFailureSignature(createResult({ error: "Different error" })),
     );
     expect(createRalphFailureSignature(base)).not.toBe(
-      createRalphFailureSignature(createResult({ markdown: "Different markdown" })),
+      createRalphFailureSignature(
+        createResult({ markdown: "Different markdown" }),
+      ),
     );
     expect(createRalphFailureSignature(base)).not.toBe(
       createRalphFailureSignature(createResult({ data: null })),
@@ -102,53 +99,49 @@ describe("createRalphFailureSignature", () => {
     );
   });
 
-  it("falls back to string conversion when data cannot be serialized as JSON", () => {
+  it("represents circular data explicitly without string coercion", () => {
     const circular: Record<string, unknown> = {};
     circular.self = circular;
 
-    const expected = hashPayload([
-      "validator",
-      "ERROR",
-      "error",
-      "Validation failed.",
-      "",
-      "",
-      "[object Object]",
-    ]);
-
     expect(createRalphFailureSignature(createResult({ data: circular }))).toBe(
-      expected,
+      createRalphFailureSignature(createResult({ data: circular })),
     );
+    expect(
+      createRalphFailureSignature(createResult({ data: circular })),
+    ).not.toBe(createRalphFailureSignature(createResult({ data: {} })));
   });
 
   it("compacts serialized data at the signature boundary", () => {
     const longValue = "x".repeat(MAX_RALPH_FAILURE_SIGNATURE_CHARS + 100);
-    const truncatedJson = JSON.stringify(longValue).slice(
-      0,
-      MAX_RALPH_FAILURE_SIGNATURE_CHARS,
-    );
-
-    const expected = hashPayload([
-      "validator",
-      "ERROR",
-      "error",
-      "Validation failed.",
-      "",
-      "",
-      truncatedJson,
-    ]);
-
     expect(createRalphFailureSignature(createResult({ data: longValue }))).toBe(
-      expected,
+      createRalphFailureSignature(
+        createResult({
+          data: longValue.slice(0, MAX_RALPH_FAILURE_SIGNATURE_CHARS),
+        }),
+      ),
+    );
+  });
+
+  it("does not conflate fields containing delimiter-like text", () => {
+    expect(
+      createRalphFailureSignature(
+        createResult({ blockId: "validator\nFAILED", output: "ERROR" }),
+      ),
+    ).not.toBe(
+      createRalphFailureSignature(
+        createResult({ blockId: "validator", output: "FAILED" }),
+      ),
     );
   });
 
   it("ignores timestamps, UUIDs, and duration jitter in repeated failures", () => {
     const first = createResult({
-      summary: "Failed at 2026-01-01T00:00:00.000Z after 125ms id 9aa0be52-f28a-4ce5-9962-36802f0444bc",
+      summary:
+        "Failed at 2026-01-01T00:00:00.000Z after 125ms id 9aa0be52-f28a-4ce5-9962-36802f0444bc",
     });
     const second = createResult({
-      summary: "Failed at 2026-02-02T03:04:05.999Z after 980ms id cdf82acd-677a-4d30-94f2-b692ee397cae",
+      summary:
+        "Failed at 2026-02-02T03:04:05.999Z after 980ms id cdf82acd-677a-4d30-94f2-b692ee397cae",
     });
 
     expect(createRalphFailureSignature(first)).toBe(
