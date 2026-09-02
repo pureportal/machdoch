@@ -7,19 +7,22 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[cfg(machdoch_embedded_runtime)]
-use std::{
-    fs,
-    path::Path,
-    time::{SystemTime, UNIX_EPOCH},
-};
+#[cfg(any(machdoch_embedded_runtime, test))]
+use std::{fs, fs::File, path::Path};
 
 use serde_json::Value;
+#[cfg(any(machdoch_embedded_runtime, test))]
+use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
 use crate::child_process::SupervisedChild;
+#[cfg(any(machdoch_embedded_runtime, test))]
+use crate::{
+    atomic_file::{write_file_atomic, AtomicWriteOptions},
+    cooperative_file_lock::with_cooperative_file_lock,
+};
 
-#[cfg(all(unix, machdoch_embedded_runtime))]
+#[cfg(all(unix, any(machdoch_embedded_runtime, test)))]
 use std::os::unix::fs::PermissionsExt;
 
 #[cfg(machdoch_embedded_runtime)]
@@ -27,8 +30,6 @@ const EMBEDDED_CLI_BUNDLE: &str = include_str!(concat!(env!("OUT_DIR"), "/machdo
 #[cfg(machdoch_embedded_runtime)]
 const EMBEDDED_NODE_BINARY: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/machdoch-node.bin"));
 const BUILD_NODE_REQUIREMENT: &str = "Node.js >= 20.10";
-#[cfg(machdoch_embedded_runtime)]
-const RETAINED_PREVIOUS_RUNTIME_FILES_PER_FAMILY: usize = 1;
 const MAX_SIDE_EFFECT_FREE_CLI_OUTPUT_BYTES: u64 = 8 * 1024 * 1024;
 
 pub(crate) struct SharedCliCommand {
@@ -240,109 +241,92 @@ fn materialize_cached_runtime_file(
     executable: bool,
 ) -> Result<PathBuf, String> {
     let runtime_directory = get_runtime_directory()?;
-    let runtime_path = runtime_directory.join(&file_name);
+    materialize_cached_runtime_file_in_directory(
+        &runtime_directory,
+        &file_name,
+        contents,
+        executable,
+    )
+}
 
-    if runtime_path.is_file() {
+#[cfg(any(machdoch_embedded_runtime, test))]
+fn materialize_cached_runtime_file_in_directory(
+    runtime_directory: &Path,
+    file_name: &str,
+    contents: &[u8],
+    executable: bool,
+) -> Result<PathBuf, String> {
+    let runtime_path = runtime_directory.join(file_name);
+    with_cooperative_file_lock(&runtime_path, || {
+        materialize_cached_runtime_file_contents(&runtime_path, contents, executable)?;
+        Ok::<(), String>(())
+    })?;
+
+    Ok(runtime_path)
+}
+
+#[cfg(any(machdoch_embedded_runtime, test))]
+fn materialize_cached_runtime_file_contents(
+    runtime_path: &Path,
+    contents: &[u8],
+    executable: bool,
+) -> Result<bool, String> {
+    if cached_runtime_file_matches(runtime_path, contents) {
         if executable {
-            make_executable(&runtime_path)?;
+            make_executable(runtime_path)?;
         }
-
-        cleanup_cached_runtime_files(&runtime_directory, &file_name);
-        return Ok(runtime_path);
+        return Ok(false);
     }
 
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or(0);
-    let temporary_path = runtime_directory.join(format!(
-        ".{file_name}.{}.{timestamp}.tmp",
-        std::process::id(),
-    ));
-
-    fs::write(&temporary_path, contents).map_err(|error| {
+    let options = if executable {
+        AtomicWriteOptions::with_unix_mode(0o700)
+    } else {
+        AtomicWriteOptions::default()
+    };
+    write_file_atomic(runtime_path, contents, options).map_err(|error| {
         format!(
             "Failed to materialize the bundled CLI runtime file at {}: {error}",
-            temporary_path.display()
+            runtime_path.display()
         )
     })?;
 
     if executable {
-        make_executable(&temporary_path)?;
+        make_executable(runtime_path)?;
     }
 
-    match fs::rename(&temporary_path, &runtime_path) {
-        Ok(()) => {}
-        Err(_) if runtime_path.is_file() => {
-            let _ = fs::remove_file(&temporary_path);
-
-            if executable {
-                make_executable(&runtime_path)?;
-            }
-        }
-        Err(error) => {
-            let _ = fs::remove_file(&temporary_path);
-
-            return Err(format!(
-                "Failed to move the bundled CLI runtime file from {} to {}: {error}",
-                temporary_path.display(),
-                runtime_path.display(),
-            ));
-        }
-    }
-
-    cleanup_cached_runtime_files(&runtime_directory, &file_name);
-    Ok(runtime_path)
-}
-
-#[cfg(machdoch_embedded_runtime)]
-fn cleanup_cached_runtime_files(runtime_directory: &Path, current_file_name: &str) {
-    let Some(family_prefix) = cached_runtime_file_family(current_file_name) else {
-        return;
-    };
-    let Ok(entries) = fs::read_dir(runtime_directory) else {
-        return;
-    };
-    let mut previous_files = entries
-        .filter_map(Result::ok)
-        .filter_map(|entry| {
-            let file_name = entry.file_name();
-            let file_name = file_name.to_str()?;
-
-            if file_name == current_file_name || !file_name.starts_with(family_prefix) {
-                return None;
-            }
-
-            let path = entry.path();
-            let modified = entry.metadata().ok()?.modified().ok()?;
-            Some((modified, path))
-        })
-        .collect::<Vec<_>>();
-
-    previous_files.sort_by_key(|entry| std::cmp::Reverse(entry.0));
-
-    for (_, stale_path) in previous_files
-        .into_iter()
-        .skip(RETAINED_PREVIOUS_RUNTIME_FILES_PER_FAMILY)
-    {
-        let _ = fs::remove_file(stale_path);
-    }
+    Ok(true)
 }
 
 #[cfg(any(machdoch_embedded_runtime, test))]
-fn cached_runtime_file_family(file_name: &str) -> Option<&'static str> {
-    if file_name.starts_with("machdoch-node-") {
-        return Some("machdoch-node-");
+fn cached_runtime_file_matches(runtime_path: &Path, contents: &[u8]) -> bool {
+    let Ok(metadata) = fs::symlink_metadata(runtime_path) else {
+        return false;
+    };
+    if !metadata.file_type().is_file() {
+        return false;
     }
 
-    if file_name.starts_with("machdoch-cli-") {
-        return Some("machdoch-cli-");
+    let Ok(mut file) = File::open(runtime_path) else {
+        return false;
+    };
+    let expected_hash = Sha256::digest(contents);
+    let mut actual_hash = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+
+    loop {
+        let Ok(read) = file.read(&mut buffer) else {
+            return false;
+        };
+        if read == 0 {
+            break;
+        }
+        actual_hash.update(&buffer[..read]);
     }
 
-    None
+    actual_hash.finalize().as_slice() == expected_hash.as_slice()
 }
 
-#[cfg(machdoch_embedded_runtime)]
+#[cfg(any(machdoch_embedded_runtime, test))]
 fn stable_content_hash(contents: &[u8]) -> u64 {
     contents.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
         (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
@@ -409,7 +393,7 @@ fn resolve_runtime_base_directory() -> PathBuf {
     env::temp_dir()
 }
 
-#[cfg(machdoch_embedded_runtime)]
+#[cfg(any(machdoch_embedded_runtime, test))]
 fn make_executable(path: &Path) -> Result<(), String> {
     #[cfg(unix)]
     {
@@ -438,14 +422,22 @@ pub(crate) fn cli_runtime_error_hint() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, io, process::Command, thread, time::Duration};
+    use std::{
+        env, fs, io,
+        path::{Path, PathBuf},
+        process::Command,
+        sync::{Arc, Barrier},
+        thread,
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    };
 
     use zeroize::Zeroizing;
 
     use super::{
-        cached_runtime_file_family, run_side_effect_free_json_command_with_command,
-        sanitize_node_options,
+        materialize_cached_runtime_file_contents, materialize_cached_runtime_file_in_directory,
+        run_side_effect_free_json_command_with_command, sanitize_node_options,
     };
+    use crate::cooperative_file_lock::with_cooperative_file_lock;
 
     const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_SHARED_CLI_TEST_CHILD_MODE";
 
@@ -457,6 +449,18 @@ mod tests {
             .arg("--nocapture")
             .env(TEST_CHILD_MODE_ENV, mode);
         command
+    }
+
+    fn temp_runtime_directory(name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after the Unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("machdoch-shared-cli-{name}-{unique}"))
+    }
+
+    fn cleanup(path: &Path) {
+        let _ = fs::remove_dir_all(path);
     }
 
     #[test]
@@ -507,15 +511,114 @@ mod tests {
     }
 
     #[test]
-    fn cached_runtime_files_are_grouped_without_matching_unrelated_files() {
+    fn valid_cached_runtime_file_is_reused_without_replacement() {
+        let directory = temp_runtime_directory("reuse");
+        let runtime_path = directory.join("machdoch-cli-test.cjs");
+        let contents = b"console.log('runtime');";
+        fs::create_dir_all(&directory).expect("test runtime directory should be created");
+        fs::write(&runtime_path, contents).expect("cached runtime should be written");
+
+        let replaced = materialize_cached_runtime_file_contents(&runtime_path, contents, false)
+            .expect("valid cached runtime should be reused");
+
+        assert!(!replaced);
         assert_eq!(
-            cached_runtime_file_family("machdoch-node-0.30.5-hash.exe"),
-            Some("machdoch-node-")
+            fs::read(&runtime_path).expect("cached runtime should remain readable"),
+            contents
+        );
+        cleanup(&directory);
+    }
+
+    #[test]
+    fn distinct_cached_runtime_artifacts_remain_available() {
+        let directory = temp_runtime_directory("coexisting-artifacts");
+        fs::create_dir_all(&directory).expect("test runtime directory should be created");
+
+        let first_path = materialize_cached_runtime_file_in_directory(
+            &directory,
+            "machdoch-cli-10.0.0-first.cjs",
+            b"console.log('first runtime');",
+            false,
+        )
+        .expect("first runtime should be materialized");
+        let second_path = materialize_cached_runtime_file_in_directory(
+            &directory,
+            "machdoch-cli-10.0.0-second.cjs",
+            b"console.log('second runtime');",
+            false,
+        )
+        .expect("second runtime should be materialized");
+
+        assert_eq!(
+            fs::read(first_path).expect("first runtime should remain readable"),
+            b"console.log('first runtime');"
         );
         assert_eq!(
-            cached_runtime_file_family("machdoch-cli-0.30.5-hash.cjs"),
-            Some("machdoch-cli-")
+            fs::read(second_path).expect("second runtime should remain readable"),
+            b"console.log('second runtime');"
         );
-        assert_eq!(cached_runtime_file_family("notes.txt"), None);
+        cleanup(&directory);
+    }
+
+    #[test]
+    fn mismatched_cached_runtime_file_is_replaced_atomically() {
+        let directory = temp_runtime_directory("repair");
+        let runtime_path = directory.join("machdoch-node-test.bin");
+        let contents = b"complete embedded runtime";
+        fs::create_dir_all(&directory).expect("test runtime directory should be created");
+        fs::write(&runtime_path, b"truncated").expect("invalid cached runtime should be written");
+
+        let replaced = materialize_cached_runtime_file_contents(&runtime_path, contents, false)
+            .expect("invalid cached runtime should be repaired");
+
+        assert!(replaced);
+        assert_eq!(
+            fs::read(&runtime_path).expect("repaired runtime should be readable"),
+            contents
+        );
+        cleanup(&directory);
+    }
+
+    #[test]
+    fn cooperative_lock_serializes_concurrent_runtime_materialization() {
+        let directory = temp_runtime_directory("concurrent");
+        let runtime_path = Arc::new(directory.join("machdoch-node-test.bin"));
+        let contents = Arc::new(b"complete embedded runtime".to_vec());
+        let contenders = 4;
+        let barrier = Arc::new(Barrier::new(contenders));
+        fs::create_dir_all(&directory).expect("test runtime directory should be created");
+        fs::write(&*runtime_path, b"truncated").expect("invalid cached runtime should be written");
+
+        let workers = (0..contenders)
+            .map(|_| {
+                let runtime_path = Arc::clone(&runtime_path);
+                let contents = Arc::clone(&contents);
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    barrier.wait();
+                    with_cooperative_file_lock(&runtime_path, || {
+                        materialize_cached_runtime_file_contents(&runtime_path, &contents, false)
+                    })
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let replacements = workers
+            .into_iter()
+            .map(|worker| {
+                worker
+                    .join()
+                    .expect("materialization worker should not panic")
+                    .expect("materialization worker should succeed")
+            })
+            .filter(|replaced| *replaced)
+            .count();
+
+        assert_eq!(replacements, 1);
+        assert_eq!(
+            fs::read(&*runtime_path).expect("final runtime should be readable"),
+            *contents
+        );
+        cleanup(&directory);
     }
 }
