@@ -13,6 +13,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_PROVIDER_ENROLLMENT_CONFIG } from "./config.js";
 import {
+  doctorProviderSync,
   getProviderSyncOwnershipPath,
   getProviderSyncStatusPath,
   getProviderSyncWorkspaceRegistryPath,
@@ -20,6 +21,7 @@ import {
   reconcileProviderSync,
   registerProviderSyncWorkspace,
 } from "./sync-coordinator.js";
+import { getProviderSyncDaemonDiagnosticPath } from "./sync-daemon.js";
 
 const roots: string[] = [];
 const execFileAsync = promisify(execFile);
@@ -42,6 +44,244 @@ describe("provider sync coordinator", () => {
     expect(DEFAULT_PROVIDER_ENROLLMENT_CONFIG.persistentSync.enabled).toBe(
       false,
     );
+  });
+
+  it("attributes daemon reconciliation failures to the affected workspace", async () => {
+    const root = await createRoot();
+    const workspaceRoot = join(root, "workspace");
+    const otherWorkspaceRoot = join(root, "other-workspace");
+    const userConfigRoot = join(root, "user-config");
+    await Promise.all([
+      mkdir(workspaceRoot, { recursive: true }),
+      mkdir(otherWorkspaceRoot, { recursive: true }),
+      mkdir(userConfigRoot, { recursive: true }),
+    ]);
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+    await writeFile(
+      join(userConfigRoot, "user-config.json"),
+      `${JSON.stringify({
+        providerEnrollment: {
+          schemaVersion: 1,
+          enabled: true,
+          persistentSync: {
+            enabled: true,
+            watch: false,
+            daemonAtLogin: false,
+          },
+          providers: {
+            "codex-cli": { enabled: false },
+            "claude-cli": { enabled: false },
+            "copilot-cli": { enabled: false },
+          },
+        },
+      })}\n`,
+      "utf8",
+    );
+    await reconcileProviderSync(workspaceRoot);
+    const runStartedAt = new Date().toISOString();
+    const createDiagnostic = (failedWorkspaceRoot: string) => ({
+      schemaVersion: 2,
+      pid: process.pid,
+      runStartedAt,
+      runCompletedAt: new Date().toISOString(),
+      outcome: "error",
+      workspaceResults: [
+        {
+          workspaceRoot: failedWorkspaceRoot,
+          outcome: "error",
+          error: "reconciliation failed",
+        },
+      ],
+    });
+
+    await writeFile(
+      getProviderSyncDaemonDiagnosticPath(),
+      `${JSON.stringify(createDiagnostic(otherWorkspaceRoot))}\n`,
+      "utf8",
+    );
+    await expect(doctorProviderSync(workspaceRoot)).resolves.toMatchObject({
+      healthy: true,
+    });
+
+    await writeFile(
+      getProviderSyncDaemonDiagnosticPath(),
+      `${JSON.stringify(createDiagnostic(workspaceRoot))}\n`,
+      "utf8",
+    );
+    await expect(doctorProviderSync(workspaceRoot)).resolves.toMatchObject({
+      healthy: false,
+    });
+  });
+
+  it("reconciles every supported CLI provider without changing unmanaged entries", async () => {
+    const root = await createRoot();
+    const workspaceRoot = join(root, "workspace");
+    const userConfigRoot = join(root, "user-config");
+    const providerHome = join(root, "home");
+    const codexHome = join(root, "codex-home");
+    const copilotHome = join(root, "copilot-home");
+    const codexUserPath = join(codexHome, "config.toml");
+    const codexWorkspacePath = join(workspaceRoot, ".codex", "config.toml");
+    const claudeUserPath = join(providerHome, ".claude.json");
+    const claudeWorkspacePath = join(workspaceRoot, ".mcp.json");
+    const copilotUserPath = join(copilotHome, "mcp-config.json");
+    const copilotWorkspacePath = join(workspaceRoot, ".github", "mcp.json");
+    await Promise.all([
+      mkdir(join(workspaceRoot, ".machdoch", "mcp"), { recursive: true }),
+      mkdir(join(workspaceRoot, ".codex"), { recursive: true }),
+      mkdir(join(workspaceRoot, ".github"), { recursive: true }),
+      mkdir(userConfigRoot, { recursive: true }),
+      mkdir(providerHome, { recursive: true }),
+      mkdir(codexHome, { recursive: true }),
+      mkdir(copilotHome, { recursive: true }),
+    ]);
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+    vi.stubEnv("HOME", providerHome);
+    vi.stubEnv("USERPROFILE", providerHome);
+    vi.stubEnv("CODEX_HOME", codexHome);
+    vi.stubEnv("COPILOT_HOME", copilotHome);
+    await Promise.all([
+      writeFile(
+        join(userConfigRoot, "user-config.json"),
+        `${JSON.stringify({
+          agentCliPaths: {
+            "codex-cli": process.execPath,
+            "claude-cli": process.execPath,
+            "copilot-cli": process.execPath,
+          },
+          providerEnrollment: {
+            schemaVersion: 1,
+            enabled: true,
+            persistentSync: {
+              enabled: true,
+              watch: false,
+              daemonAtLogin: false,
+            },
+            providers: {
+              "codex-cli": { enabled: true },
+              "claude-cli": { enabled: true },
+              "copilot-cli": { enabled: true },
+            },
+          },
+        })}\n`,
+        "utf8",
+      ),
+      writeFile(
+        join(userConfigRoot, "mcp.json"),
+        `${JSON.stringify({
+          schemaVersion: 1,
+          servers: [
+            {
+              id: "user-server",
+              enabled: true,
+              transport: {
+                type: "stdio",
+                command: process.execPath,
+              },
+            },
+          ],
+        })}\n`,
+        "utf8",
+      ),
+      writeFile(
+        join(workspaceRoot, ".machdoch", "mcp", "mcp.json"),
+        `${JSON.stringify({
+          schemaVersion: 1,
+          servers: [
+            {
+              id: "workspace-server",
+              enabled: true,
+              transport: {
+                type: "stdio",
+                command: process.execPath,
+              },
+            },
+          ],
+        })}\n`,
+        "utf8",
+      ),
+      writeFile(
+        codexUserPath,
+        'model = "gpt-5"\n\n[mcp_servers.custom]\ncommand = "custom"\n',
+        "utf8",
+      ),
+      writeFile(
+        codexWorkspacePath,
+        'approval_policy = "never"\n\n[mcp_servers.custom]\ncommand = "custom"\n',
+        "utf8",
+      ),
+      ...[
+        claudeUserPath,
+        claudeWorkspacePath,
+        copilotUserPath,
+        copilotWorkspacePath,
+      ].map((path) =>
+        writeFile(
+          path,
+          `${JSON.stringify({
+            note: "keep",
+            mcpServers: { custom: { command: "custom" } },
+          })}\n`,
+          "utf8",
+        ),
+      ),
+    ]);
+
+    const status = await reconcileProviderSync(workspaceRoot);
+
+    expect(status.targets).toHaveLength(6);
+    expect(status.targets).toEqual(
+      expect.arrayContaining(
+        ["codex-cli", "claude-cli", "copilot-cli"].flatMap((provider) =>
+          ["user", "workspace"].map((scope) =>
+            expect.objectContaining({
+              provider,
+              scope,
+              state: "awaiting-provider-refresh",
+            }),
+          ),
+        ),
+      ),
+    );
+    await expect(readFile(codexUserPath, "utf8")).resolves.toMatch(
+      /model = "gpt-5"[\s\S]*\[mcp_servers\.custom\][\s\S]*machdoch-managed:provider-enrollment:start/u,
+    );
+    await expect(readFile(codexWorkspacePath, "utf8")).resolves.toMatch(
+      /approval_policy = "never"[\s\S]*\[mcp_servers\.custom\][\s\S]*machdoch-managed:provider-enrollment:start/u,
+    );
+    for (const path of [
+      claudeUserPath,
+      claudeWorkspacePath,
+      copilotUserPath,
+      copilotWorkspacePath,
+    ]) {
+      const parsed = JSON.parse(await readFile(path, "utf8")) as {
+        note: string;
+        mcpServers: Record<string, { command: string }>;
+      };
+      expect(parsed.note).toBe("keep");
+      expect(parsed.mcpServers.custom).toEqual({ command: "custom" });
+      expect(
+        Object.keys(parsed.mcpServers).filter((key) =>
+          key.startsWith("machdoch-"),
+        ),
+      ).toHaveLength(1);
+    }
+    const ownership = JSON.parse(
+      await readFile(getProviderSyncOwnershipPath(), "utf8"),
+    ) as {
+      targets: Array<{
+        provider: string;
+        scope: string;
+        managedKeys?: string[];
+      }>;
+    };
+    expect(ownership.targets).toHaveLength(6);
+    expect(
+      ownership.targets
+        .flatMap((target) => target.managedKeys ?? [])
+        .every((key) => key.startsWith("machdoch-")),
+    ).toBe(true);
   });
 
   it.runIf(process.platform === "win32")(
@@ -191,8 +431,7 @@ describe("provider sync coordinator", () => {
         await readFile(getProviderSyncOwnershipPath(), "utf8"),
       ) as { schemaVersion: 1; targets: Array<Record<string, unknown>> };
       const userTarget = initialOwnership.targets.find(
-        (target) =>
-          target.provider === "codex-cli" && target.scope === "user",
+        (target) => target.provider === "codex-cli" && target.scope === "user",
       );
       expect(userTarget).toBeDefined();
       await writeFile(
@@ -329,7 +568,9 @@ describe("provider sync coordinator", () => {
     await reconcileProviderSync(workspaceRoot);
 
     const secondTargetPath = join(secondCodexHome, "config.toml");
-    await expect(stat(firstTargetPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(firstTargetPath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
     await expect(readFile(secondTargetPath, "utf8")).resolves.toContain(
       "[mcp_servers.",
     );
@@ -340,8 +581,7 @@ describe("provider sync coordinator", () => {
     };
     expect(
       ownership.targets.filter(
-        (target) =>
-          target.provider === "codex-cli" && target.scope === "user",
+        (target) => target.provider === "codex-cli" && target.scope === "user",
       ),
     ).toEqual([expect.objectContaining({ path: secondTargetPath })]);
   });
@@ -566,8 +806,7 @@ describe("provider sync coordinator", () => {
     ) as { targets: Array<{ provider: string; scope: string }> };
     expect(
       ownership.targets.some(
-        (target) =>
-          target.provider === "codex-cli" && target.scope === "user",
+        (target) => target.provider === "codex-cli" && target.scope === "user",
       ),
     ).toBe(false);
   });
@@ -686,5 +925,4 @@ describe("provider sync coordinator", () => {
       "/.codex/config.toml",
     );
   });
-
 });

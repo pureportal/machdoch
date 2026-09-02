@@ -242,6 +242,18 @@ const resolveProviderHome = (provider: AgentCliProvider): string => {
   }
 };
 
+export const getProviderSyncTargetDiscoveryIdentity = (): {
+  userHome: string;
+  codexHome: string;
+  claudeConfigDirectory: string;
+  copilotHome: string;
+} => ({
+  userHome: homedir(),
+  codexHome: resolveProviderHome("codex-cli"),
+  claudeConfigDirectory: resolveProviderHome("claude-cli"),
+  copilotHome: resolveProviderHome("copilot-cli"),
+});
+
 const getProviderTargetPaths = (
   provider: AgentCliProvider,
   scope: "user" | "workspace",
@@ -985,6 +997,12 @@ export const doctorProviderSync = async (
     (target) =>
       target.exists && (!target.syntaxValid || !target.managedCurrent),
   );
+  const workspaceRootIdentity = normalizeWorkspaceRootIdentity(workspaceRoot);
+  const daemonWorkspaceResult = daemonDiagnostic?.workspaceResults.find(
+    (result) =>
+      normalizeWorkspaceRootIdentity(result.workspaceRoot) ===
+      workspaceRootIdentity,
+  );
   return {
     healthy:
       status.targets.every((target) => target.state !== "degraded") &&
@@ -993,7 +1011,8 @@ export const doctorProviderSync = async (
       driftedTargets.length === 0 &&
       reconcileLock.state !== "orphaned" &&
       reconcileLock.state !== "stale" &&
-      daemonDiagnostic?.outcome !== "error",
+      daemonDiagnostic?.error === undefined &&
+      daemonWorkspaceResult?.outcome !== "error",
     status,
     probes,
     ownership: {
