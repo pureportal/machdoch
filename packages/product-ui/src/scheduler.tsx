@@ -8,7 +8,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { useDialogFocusLifecycle } from "./dialog-focus-lifecycle";
 import { formatTimestamp } from "./format";
 import type { ProductCommandHandler } from "./product-runtime";
 
@@ -25,9 +26,19 @@ export function Scheduler({
 }): React.ReactElement {
   const [view, setView] = useState<"jobs" | "runs">("jobs");
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
+  const deleteDialogCloseButtonRef = useRef<HTMLButtonElement>(null);
   const deletingJob =
     scheduler.jobs.find((job) => job.id === deletingJobId) ?? null;
   const workspaceRoot = scheduler.workspaceRoot;
+  const closeDeleteDialog = useCallback(
+    (): void => setDeletingJobId(null),
+    [],
+  );
+  useDialogFocusLifecycle(
+    Boolean(deletingJob && workspaceRoot),
+    closeDeleteDialog,
+    deleteDialogCloseButtonRef,
+  );
   return (
     <section className="m-scheduler">
       <header className="m-feature-header">
@@ -190,7 +201,8 @@ export function Scheduler({
               type="button"
               className="m-media-modal-close"
               aria-label="Close"
-              onClick={() => setDeletingJobId(null)}
+              ref={deleteDialogCloseButtonRef}
+              onClick={closeDeleteDialog}
             >
               <X aria-hidden="true" />
             </button>
@@ -200,7 +212,7 @@ export function Scheduler({
               <button
                 type="button"
                 className="m-product-secondary-button"
-                onClick={() => setDeletingJobId(null)}
+                onClick={closeDeleteDialog}
               >
                 Cancel
               </button>
@@ -214,7 +226,7 @@ export function Scheduler({
                     workspace: workspaceRoot,
                     jobId: deletingJob.id,
                   }).then((deleted) => {
-                    if (deleted) setDeletingJobId(null);
+                    if (deleted) closeDeleteDialog();
                   });
                 }}
               >
