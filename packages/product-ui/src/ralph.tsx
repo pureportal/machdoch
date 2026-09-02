@@ -1,7 +1,8 @@
 import type { ProductRalph, ProductShell } from "@machdoch/fleet-protocol";
 import { CirclePlay, RotateCcw, Square, Workflow, X } from "lucide-react";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ComposerModelPicker } from "./composer-model-picker";
+import { useDialogFocusLifecycle } from "./dialog-focus-lifecycle";
 import { formatTimestamp } from "./format";
 import type { ProductCommandHandler } from "./product-runtime";
 import {
@@ -54,6 +55,7 @@ export function Ralph({
   const [actionError, setActionError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const parameterErrorPrefix = useId();
+  const runDialogCloseButtonRef = useRef<HTMLButtonElement>(null);
   const selectedFlow =
     ralph.flows.find((flow) => getFlowKey(flow) === selectedFlowKey) ?? null;
   const selectedProvider = composer?.modelCatalog.find(
@@ -91,10 +93,15 @@ export function Ralph({
   );
   const flowIsActive = (flow: RalphFlow): boolean =>
     activeFlowKeys.has(getFlowKey(flow));
-  const closeRunDialog = (): void => {
+  const closeRunDialog = useCallback((): void => {
     setSelectedFlowKey(null);
     setValidationErrors({});
-  };
+  }, []);
+  useDialogFocusLifecycle(
+    selectedFlow !== null,
+    closeRunDialog,
+    runDialogCloseButtonRef,
+  );
   const updateParameter = (variable: RalphVariable, value: string): void => {
     setParameters((current) => ({ ...current, [variable.name]: value }));
     setValidationErrors((current) => {
@@ -361,6 +368,7 @@ export function Ralph({
               className="m-media-modal-close"
               aria-label="Close"
               disabled={submitting}
+              ref={runDialogCloseButtonRef}
               onClick={closeRunDialog}
             >
               <X aria-hidden="true" />

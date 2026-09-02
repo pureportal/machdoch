@@ -7,7 +7,8 @@ import {
   Square,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDialogFocusLifecycle } from "./dialog-focus-lifecycle";
 import { formatBytes, formatTimestamp } from "./format";
 import { MediaStudioNavigation } from "./media-studio-navigation";
 import type { ProductCommandHandler } from "./product-runtime";
@@ -47,6 +48,8 @@ export function MediaStudio({
   const lastGenerationKeyRef = useRef(generationKey);
   const [confirming, setConfirming] = useState(false);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const confirmationCloseButtonRef = useRef<HTMLButtonElement>(null);
+  const assetCloseButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (generationKey === lastGenerationKeyRef.current) return;
@@ -62,6 +65,24 @@ export function MediaStudio({
     models.find((model) => model.id === draft.modelId) ?? models[0] ?? null;
   const selectedAsset =
     media.assets.find((asset) => asset.id === selectedAssetId) ?? null;
+  const closeConfirmation = useCallback(
+    (): void => setConfirming(false),
+    [],
+  );
+  const closeAssetDialog = useCallback(
+    (): void => setSelectedAssetId(null),
+    [],
+  );
+  useDialogFocusLifecycle(
+    confirming && selectedModel !== null,
+    closeConfirmation,
+    confirmationCloseButtonRef,
+  );
+  useDialogFocusLifecycle(
+    selectedAsset !== null,
+    closeAssetDialog,
+    assetCloseButtonRef,
+  );
   const unavailableReason = models.length
     ? null
     : draft.target === media.generation.target
@@ -83,7 +104,7 @@ export function MediaStudio({
 
   const generate = async (): Promise<void> => {
     if (!canGenerate || !selectedModel) return;
-    setConfirming(false);
+    closeConfirmation();
     await onCommand({
       kind: "generate-media",
       prompt: draft.prompt,
@@ -381,7 +402,8 @@ export function MediaStudio({
               type="button"
               className="m-media-modal-close"
               aria-label="Close"
-              onClick={() => setConfirming(false)}
+              ref={confirmationCloseButtonRef}
+              onClick={closeConfirmation}
             >
               <X aria-hidden="true" />
             </button>
@@ -396,7 +418,7 @@ export function MediaStudio({
               <button
                 type="button"
                 className="m-product-secondary-button"
-                onClick={() => setConfirming(false)}
+                onClick={closeConfirmation}
               >
                 Cancel
               </button>
@@ -423,7 +445,8 @@ export function MediaStudio({
               type="button"
               className="m-media-modal-close"
               aria-label="Close"
-              onClick={() => setSelectedAssetId(null)}
+              ref={assetCloseButtonRef}
+              onClick={closeAssetDialog}
             >
               <X aria-hidden="true" />
             </button>
