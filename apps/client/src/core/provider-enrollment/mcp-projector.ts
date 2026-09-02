@@ -7,6 +7,8 @@ import {
   loadUserMcpConfig,
   loadUserMcpDiscoveryCacheSync,
 } from "../mcp/config.js";
+import { isMcpOAuthLoopbackRedirectUrl } from "../mcp/oauth-loopback.js";
+import { getMcpOAuthRecoveryCommands } from "../mcp/oauth-recovery.js";
 import type {
   McpEffectiveServerConfig,
   McpServerDiscovery,
@@ -481,6 +483,30 @@ const getProxyEnvironmentKeys = (
     .sort();
 };
 
+const getCopilotOAuthProxyWarning = (
+  provider: AgentCliProvider,
+  server: McpEffectiveServerConfig,
+  environment: Record<string, string>,
+): string | undefined => {
+  if (
+    provider !== "copilot-cli" ||
+    server.auth?.type !== "oauth" ||
+    !server.auth.redirectUrl ||
+    !isMcpOAuthLoopbackRedirectUrl(server.auth.redirectUrl)
+  ) {
+    return undefined;
+  }
+  const accessToken =
+    server.auth.accessToken ??
+    (server.auth.accessTokenEnv
+      ? getEnvironmentValue(environment, server.auth.accessTokenEnv)
+      : undefined);
+  if (accessToken?.trim()) return undefined;
+
+  const commands = getMcpOAuthRecoveryCommands(server.id);
+  return `OAuth authorization must be completed in Machdoch before Copilot CLI can initialize this managed MCP proxy. Run \`${commands.authorize}\`, then reconnect Copilot CLI.`;
+};
+
 const createProviderConfig = (
   servers: readonly McpProjectedServer[],
 ): Record<string, unknown> => ({
@@ -548,6 +574,12 @@ export const projectMcpForProvider = async (
       warnings.push(
         `${server.id}: ${proxyReason} Using the per-server stdio proxy.`,
       );
+      const oauthWarning = getCopilotOAuthProxyWarning(
+        provider,
+        server,
+        environment,
+      );
+      if (oauthWarning) warnings.push(`${server.id}: ${oauthWarning}`);
       projectedServers.push({
         id: projectedId,
         canonicalId: server.id,
@@ -562,7 +594,7 @@ export const projectMcpForProvider = async (
           getProxyEnvironmentKeys(server, environment),
         ),
         capabilities,
-        warnings: [proxyReason],
+        warnings: [proxyReason, ...(oauthWarning ? [oauthWarning] : [])],
       });
       continue;
     }

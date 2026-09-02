@@ -80,6 +80,10 @@ import {
   createMcpOAuthLoopbackCallbackServer,
   isMcpOAuthLoopbackRedirectUrl,
 } from "./oauth-loopback.js";
+import {
+  formatMcpOAuthAuthorizationFailureMessage,
+  formatMcpOAuthAuthorizationRequiredMessage,
+} from "./oauth-recovery.js";
 import { mcpRunCacheManager } from "./run-cache.js";
 import { validateMcpToolArguments } from "./tool-argument-validation.js";
 import type {
@@ -486,9 +490,7 @@ export class McpOAuthAuthorizationRequiredError extends Error {
     readonly authorizationUrl: string,
     readonly configPath: string,
   ) {
-    super(
-      `MCP OAuth authorization is required for server \`${serverId}\`. Open this URL in a browser, complete authorization, then finish the OAuth callback before reconnecting: ${authorizationUrl}`,
-    );
+    super(formatMcpOAuthAuthorizationRequiredMessage(serverId));
   }
 }
 
@@ -1944,28 +1946,65 @@ export class McpClientManager {
     const expectedState = getOAuthAuthorizationUrlState(
       result.authorizationUrl,
     );
-    const callbackServer = await createMcpOAuthLoopbackCallbackServer(
-      redirectUrl,
-      {
+    let callbackServer:
+      | Awaited<ReturnType<typeof createMcpOAuthLoopbackCallbackServer>>
+      | undefined;
+    let authorizationResult: McpOAuthFlowResult | undefined;
+    let authorizationFailure: unknown;
+    let authorizationFailed = false;
+    try {
+      callbackServer = await createMcpOAuthLoopbackCallbackServer(redirectUrl, {
         ...(expectedState ? { expectedState } : {}),
         ...(callbackTimeoutMs !== undefined
           ? { timeoutMs: callbackTimeoutMs }
           : {}),
-      },
-    );
-
-    try {
+      });
       await openAuthorizationUrl(result.authorizationUrl);
       const callbackUrl = await callbackServer.waitForCallback();
-      return await this.finishOAuth(
+      authorizationResult = await this.finishOAuth(
         workspaceRoot,
         serverId,
         callbackUrl,
         operationOptions,
       );
-    } finally {
-      await callbackServer.close();
+    } catch (error) {
+      authorizationFailed = true;
+      authorizationFailure = error;
     }
+
+    if (callbackServer) {
+      try {
+        await callbackServer.close();
+      } catch (error) {
+        if (!authorizationFailed) {
+          authorizationFailed = true;
+          authorizationFailure = error;
+        }
+      }
+    }
+
+    if (authorizationFailed) {
+      throw new Error(
+        formatMcpOAuthAuthorizationFailureMessage(
+          serverId,
+          authorizationFailure instanceof Error
+            ? authorizationFailure.message
+            : String(authorizationFailure),
+        ),
+        { cause: authorizationFailure },
+      );
+    }
+
+    if (!authorizationResult) {
+      throw new Error(
+        formatMcpOAuthAuthorizationFailureMessage(
+          serverId,
+          "The authorization flow ended without a result.",
+        ),
+      );
+    }
+
+    return authorizationResult;
   }
 
   async finishOAuth(
