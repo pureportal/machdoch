@@ -23,6 +23,7 @@ import {
   type WorkspaceRunSnapshot,
 } from "../../../shared/workspace-run.js";
 import { Button } from "../components/ui/button";
+import { AppNotification } from "../components/ui/notification";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
@@ -206,6 +207,8 @@ export const WorkspaceRunPanel = ({
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const [documentError, setDocumentError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [detectionCompletionRevision, setDetectionCompletionRevision] =
+    useState(0);
   const handleDocumentDirtyChange = useCallback(
     (dirty: boolean): void => {
       documentDirtyRef.current = dirty;
@@ -213,6 +216,12 @@ export const WorkspaceRunPanel = ({
     },
     [onDocumentDirtyChange],
   );
+  const handleDetectionComplete = useCallback((): void => {
+    setDetectionCompletionRevision((current) => current + 1);
+  }, []);
+  const dismissDetectionCompletion = useCallback((): void => {
+    setDetectionCompletionRevision(0);
+  }, []);
 
   const refreshSnapshot = useCallback(async (): Promise<void> => {
     if (!normalizedRoot || !rootKey) return;
@@ -291,6 +300,7 @@ export const WorkspaceRunPanel = ({
     setSnapshotError(null);
     setDocumentError(null);
     setActionError(null);
+    setDetectionCompletionRevision(0);
     setBusyAction(null);
     if (!normalizedRoot || !rootKey) {
       setLoading(false);
@@ -571,6 +581,17 @@ export const WorkspaceRunPanel = ({
           ) : null}
         </div>
       </SubmitShortcut>
+      {detectionCompletionRevision > 0 ? (
+        <div className="border-t border-slate-800 px-3 py-2">
+          <AppNotification
+            key={detectionCompletionRevision}
+            tone="success"
+            onDismiss={dismissDetectionCompletion}
+          >
+            Run configuration detected and saved.
+          </AppNotification>
+        </div>
+      ) : null}
       {error ? (
         <div
           role="alert"
@@ -628,6 +649,7 @@ export const WorkspaceRunPanel = ({
               workspaceRoot={normalizedRoot}
               document={document}
               onDirtyChange={handleDocumentDirtyChange}
+              onDetectionComplete={handleDetectionComplete}
               onSaved={(nextDocument, nextSnapshot) => {
                 setDocument(nextDocument);
                 setSnapshot(nextSnapshot);
@@ -653,6 +675,7 @@ export const WorkspaceRunPanel = ({
             workspaceRoot={normalizedRoot}
             document={document}
             onDirtyChange={handleDocumentDirtyChange}
+            onDetectionComplete={handleDetectionComplete}
             onSaved={(nextDocument, nextSnapshot) => {
               setDocument(nextDocument);
               setSnapshot(nextSnapshot);

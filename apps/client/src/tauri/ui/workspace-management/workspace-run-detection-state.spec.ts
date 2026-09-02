@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { WorkspaceRunConfigurationDocument } from "../../../shared/workspace-run.js";
+import type {
+  WorkspaceRunConfigurationDocument,
+  WorkspaceRunSnapshot,
+} from "../../../shared/workspace-run.js";
 
 const runtime = vi.hoisted(() => ({
   precheckWorkspaceRunConfigurationJson: vi.fn(),
+  saveWorkspaceRunConfigurationDocument: vi.fn(),
 }));
 const ai = vi.hoisted(() => ({
   generateWorkspaceRunDetection: vi.fn(),
@@ -22,10 +26,16 @@ const document: WorkspaceRunConfigurationDocument = {
   schemaVersion: 2,
   configurations: [],
 };
+const snapshot: WorkspaceRunSnapshot = {
+  workspaceRoot: "C:/workspace",
+  primaryConfigurationId: null,
+  configurations: [],
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
   runtime.precheckWorkspaceRunConfigurationJson.mockResolvedValue(document);
+  runtime.saveWorkspaceRunConfigurationDocument.mockResolvedValue(snapshot);
   ai.generateWorkspaceRunDetection.mockResolvedValue({
     documentJson: JSON.stringify(document),
     detections: [],
@@ -33,6 +43,29 @@ beforeEach(() => {
 });
 
 describe("workspace run detection lifecycle", () => {
+  it("saves a validated detection before publishing it as complete", async () => {
+    const workspaceRoot = "C:/workspace/direct-save";
+    const unsubscribe = subscribeWorkspaceRunDetection(workspaceRoot, vi.fn());
+
+    await startWorkspaceRunDetection(workspaceRoot);
+
+    expect(ai.validateWorkspaceRunDetections).toHaveBeenCalledWith(
+      document,
+      [],
+    );
+    expect(runtime.saveWorkspaceRunConfigurationDocument).toHaveBeenCalledWith(
+      workspaceRoot,
+      document,
+    );
+    expect(getWorkspaceRunDetectionState(workspaceRoot)).toEqual({
+      phase: "complete",
+      revision: 1,
+      result: { document, detections: [], snapshot },
+      error: null,
+    });
+    unsubscribe();
+  });
+
   it("releases completed results when the last workspace subscriber leaves", async () => {
     const workspaceRoot = "C:/workspace/completed";
     const unsubscribe = subscribeWorkspaceRunDetection(workspaceRoot, vi.fn());
