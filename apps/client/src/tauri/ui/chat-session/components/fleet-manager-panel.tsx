@@ -192,7 +192,7 @@ export const FleetManagerPanel = (): JSX.Element => {
           </div>
         ) : (
           <form
-            className="grid gap-3 rounded-lg border border-slate-800 bg-slate-900/50 p-4"
+            className="grid gap-3"
             onSubmit={(event) => {
               event.preventDefault();
               void enroll();
