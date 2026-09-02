@@ -4,6 +4,7 @@ import type {
   RalphFlowBlock,
   RalphUtilityType,
 } from "../ralph.js";
+import { isRepeatableRalphFailureResult } from "./create-ralph-failure-signature.helper.js";
 
 export type RalphProgressChannelIdentity =
   | { kind: "repository-execution" }
@@ -32,6 +33,7 @@ export interface RalphProgressEvidence {
   channelIdentity: RalphProgressChannelIdentity;
   signature: string;
   meaningful: boolean;
+  cycleEligible: boolean;
   reason: string;
   at: string;
 }
@@ -302,6 +304,9 @@ const getCycleLength = (
     if (signatures.length < required) {
       continue;
     }
+    if (recent.slice(-required).some((entry) => !entry.cycleEligible)) {
+      continue;
+    }
     const tail = signatures.slice(-cycleLength);
     let matches = true;
     for (let offset = 2; offset <= repetitions; offset += 1) {
@@ -345,7 +350,10 @@ export const createRalphProgressState = (
       }))
     : [],
   recent: Array.isArray(restored?.recent)
-    ? restored.recent.slice(-32).map((entry) => ({ ...entry }))
+    ? restored.recent.slice(-32).map((entry) => ({
+        ...entry,
+        cycleEligible: entry.cycleEligible !== false,
+      }))
     : [],
   ...(restored?.stalledReason ? { stalledReason: restored.stalledReason } : {}),
 });
@@ -368,6 +376,7 @@ export const assessRalphProgress = (
       ? channel.initialIsProgress
       : previousFingerprint !== channel.fingerprint),
   );
+  const cycleEligible = !isRepeatableRalphFailureResult(result);
   const signature = hash({
     blockId: block.id,
     output: result.output,
@@ -382,6 +391,7 @@ export const assessRalphProgress = (
     channelIdentity: channel.channel,
     signature,
     meaningful,
+    cycleEligible,
     reason: meaningful
       ? channel.reason
       : previousFingerprint === undefined && channel.fingerprint
@@ -390,6 +400,7 @@ export const assessRalphProgress = (
     at: now,
   };
   const next = createRalphProgressState(state);
+  delete next.stalledReason;
   if (channel.fingerprint) {
     const nextChannel = findProgressChannelFingerprint(next, channel.channel);
     if (nextChannel) {
@@ -407,7 +418,6 @@ export const assessRalphProgress = (
     next.meaningfulTransitions += 1;
     next.lastProgressAt = now;
     next.lastProgressTransition = transition;
-    delete next.stalledReason;
   } else {
     next.consecutiveNoProgress += 1;
   }

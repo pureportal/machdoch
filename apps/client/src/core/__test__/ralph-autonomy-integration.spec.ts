@@ -240,6 +240,234 @@ describe("RALPH autonomy integration", () => {
     );
   });
 
+  it("routes repeated execution failures through recovery instead of semantic-cycle handling", async () => {
+    const workspace = await createWorkspace();
+    const ledgerPath = join(workspace, "events.jsonl.ralph-operations.json");
+    await mkdir(ledgerPath);
+    const flow = createFlow({
+      id: "repeated-execution-failure",
+      settings: {
+        maxTransitions: 20,
+        autonomy: {
+          recoveryExhaustion: "defer",
+          deferToBlockId: "defer-work",
+          maxStagnantTransitions: 20,
+          maxRepeatedCycle: 3,
+        },
+      },
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "append",
+          type: "UTILITY",
+          title: "Append",
+          settings: {
+            retry: { mode: "finite", maxRetries: 3, delaySeconds: 0 },
+          },
+          utility: {
+            type: "APPEND_JSONL",
+            path: "events.jsonl",
+            input: '{"item":1}',
+          },
+        },
+        {
+          id: "defer-work",
+          type: "UTILITY",
+          title: "Defer work",
+          utility: { type: "NOTIFY", message: "Deferred." },
+        },
+        {
+          id: "deferred",
+          type: "END",
+          title: "Deferred",
+          outcome: "deferred",
+        },
+      ],
+      edges: [
+        {
+          id: "start-append",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "append",
+        },
+        {
+          id: "append-error",
+          from: "append",
+          fromOutput: "ERROR",
+          to: "defer-work",
+        },
+        {
+          id: "defer-end",
+          from: "defer-work",
+          fromOutput: "SUCCESS",
+          to: "deferred",
+        },
+      ],
+    });
+
+    const result = await runRalphFlow(
+      flow,
+      { ...runtimeConfig, workspaceRoot: workspace },
+      { ...customizations, workspaceRoot: workspace },
+    );
+
+    expect(result.status).toBe("blocked");
+    expect(
+      result.blockResults.filter((entry) => entry.blockId === "append"),
+    ).toHaveLength(3);
+    expect(result.progress?.stalledReason).toBeUndefined();
+    expect(result.progress?.recent.slice(-4, -1)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          blockId: "append",
+          cycleEligible: false,
+        }),
+      ]),
+    );
+    expect(result.autonomy?.exhaustion).toMatchObject({
+      kind: "repeated-failure",
+      blockId: "append",
+    });
+    expect(result.autonomy?.deferred).toEqual([
+      expect.objectContaining({
+        blockId: "append",
+        routedToBlockId: "defer-work",
+      }),
+    ]);
+  });
+
+  it("blocks a failing defer target instead of routing recovery back to itself", async () => {
+    const workspace = await createWorkspace();
+    const flow = createFlow({
+      id: "failing-defer-target",
+      settings: {
+        maxTransitions: 20,
+        autonomy: {
+          recoveryExhaustion: "defer",
+          deferToBlockId: "defer-work",
+          maxStagnantTransitions: 20,
+          maxRepeatedCycle: 3,
+        },
+      },
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "defer-work",
+          type: "UTILITY",
+          title: "Defer work",
+          utility: {
+            type: "VALIDATE_JSON",
+            input: "{}",
+            schema: { type: "object", required: ["ok"] },
+          },
+        },
+      ],
+      edges: [
+        {
+          id: "start-defer",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "defer-work",
+        },
+        {
+          id: "defer-retry",
+          from: "defer-work",
+          fromOutput: "INVALID",
+          to: "defer-work",
+        },
+      ],
+    });
+
+    const result = await runRalphFlow(
+      flow,
+      { ...runtimeConfig, workspaceRoot: workspace },
+      { ...customizations, workspaceRoot: workspace },
+    );
+
+    expect(result.status).toBe("blocked");
+    expect(result.summary).toContain("after 3 identical non-success result(s)");
+    expect(
+      result.blockResults.filter((entry) => entry.blockId === "defer-work"),
+    ).toHaveLength(3);
+    expect(result.progress?.stalledReason).toBeUndefined();
+    expect(result.autonomy).toMatchObject({
+      exhaustion: {
+        kind: "repeated-failure",
+        blockId: "defer-work",
+      },
+      deferred: [],
+    });
+  });
+
+  it("does not defer failed-end recovery to its current block", async () => {
+    const workspace = await createWorkspace();
+    const flow = createFlow({
+      id: "self-targeted-failed-end-recovery",
+      settings: {
+        maxTransitions: 20,
+        autonomy: {
+          recoverFailedEnd: true,
+          maxRecoveryAttempts: 1,
+          backoff: { initialDelaySeconds: 0, maxDelaySeconds: 0 },
+          recoveryExhaustion: "defer",
+          deferToBlockId: "validate",
+          maxStagnantTransitions: 20,
+          maxRepeatedCycle: 3,
+        },
+      },
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "validate",
+          type: "UTILITY",
+          title: "Validate",
+          utility: {
+            type: "VALIDATE_JSON",
+            input: "{}",
+            schema: { type: "object", required: ["ok"] },
+          },
+        },
+        { id: "failed", type: "END", title: "Failed", status: "failed" },
+      ],
+      edges: [
+        {
+          id: "start-validate",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "validate",
+        },
+        {
+          id: "validate-failed",
+          from: "validate",
+          fromOutput: "INVALID",
+          to: "failed",
+        },
+      ],
+    });
+
+    const result = await runRalphFlow(
+      flow,
+      { ...runtimeConfig, workspaceRoot: workspace },
+      { ...customizations, workspaceRoot: workspace },
+    );
+
+    expect(result.status).toBe("blocked");
+    expect(
+      result.blockResults.filter((entry) => entry.blockId === "validate"),
+    ).toHaveLength(2);
+    expect(result.progress?.stalledReason).toBeUndefined();
+    expect(result.autonomy).toMatchObject({
+      exhaustion: {
+        kind: "recovery",
+        blockId: "validate",
+      },
+      deferred: [],
+    });
+    expect(result.blockResults.at(-2)?.recovery).toMatchObject({
+      disposition: "exhausted",
+    });
+  });
+
   it("continues a repeated route when repository output proves progress", async () => {
     if (spawnSync("git", ["--version"]).status !== 0) {
       return;

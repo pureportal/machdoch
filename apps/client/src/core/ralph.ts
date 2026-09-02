@@ -6247,13 +6247,16 @@ const executeAppendJsonlUtilityBlock = async (
         }
       }
       if (storedLedger !== undefined) {
-        const ledger = parseRalphAppendJsonlLedger(storedLedger);
-        if (!ledger) {
+        const parsedLedger = parseRalphAppendJsonlLedger(storedLedger);
+        if (!parsedLedger) {
           throw new Error(
             `Invalid APPEND_JSONL operation ledger at ${ledgerPath}.`,
           );
         }
-        operations = ledger.operations;
+        if (parsedLedger.source === "unversioned") {
+          await writeJsonAtomically(ledgerPath, parsedLedger.ledger);
+        }
+        operations = parsedLedger.ledger.operations;
       }
       const prior = operations[operationId];
       if (prior?.state === "completed") {
@@ -16875,11 +16878,23 @@ const runRalphFlowImpl = async (
         !directFailedEnd
       ) {
         const summary = `Ralph flow stopped at \`${block.id}\` after ${nextFailureState.count} identical non-success result(s): ${result.summary}`;
+        const exhaustion: RalphAutonomyExhaustion = {
+          kind: "repeated-failure",
+          blockId: block.id,
+          recoverable: true,
+          limit: repeatedFailureLimit,
+          output: result.output,
+          reason: summary,
+        };
+        if (autonomyMetadata) {
+          autonomyMetadata.exhaustion = exhaustion;
+        }
 
         if (
           autonomyMetadata &&
           autonomyPolicy.recoveryExhaustion === "defer" &&
-          autonomyPolicy.deferToBlockId
+          autonomyPolicy.deferToBlockId &&
+          autonomyPolicy.deferToBlockId !== block.id
         ) {
           autonomyDeferToBlockId = autonomyPolicy.deferToBlockId;
           const deferred: RalphAutonomyDeferredWork = {
@@ -16890,20 +16905,18 @@ const runRalphFlowImpl = async (
             routedToBlockId: autonomyDeferToBlockId,
           };
           autonomyMetadata.deferred.push(deferred);
-          autonomyMetadata.exhaustion = {
-            kind: "repeated-failure",
-            blockId: block.id,
-            recoverable: true,
-            limit: repeatedFailureLimit,
-            output: result.output,
-            reason: summary,
-          };
           result.recovery = {
             disposition: "deferred",
             attempt: nextFailureState.count,
           };
           repeatedFailures.delete(block.id);
         } else {
+          if (autonomyMetadata) {
+            result.recovery = {
+              disposition: "exhausted",
+              attempt: nextFailureState.count,
+            };
+          }
           await emitRunEvent(
             events,
             {
@@ -17061,9 +17074,10 @@ const runRalphFlowImpl = async (
         reason,
       };
       autonomyMetadata.exhaustion = exhaustion;
+      const defersToCurrentBlock = autonomyPolicy.deferToBlockId === block.id;
       result.recovery = {
         disposition:
-          autonomyPolicy.recoveryExhaustion === "defer"
+          autonomyPolicy.recoveryExhaustion === "defer" && !defersToCurrentBlock
             ? "deferred"
             : "exhausted",
         attempt: recoveryAttempt,
@@ -17071,7 +17085,10 @@ const runRalphFlowImpl = async (
         failedEndBlockId: directFailedEnd.block.id,
       };
 
-      if (autonomyPolicy.recoveryExhaustion === "defer") {
+      if (
+        autonomyPolicy.recoveryExhaustion === "defer" &&
+        !defersToCurrentBlock
+      ) {
         autonomyDeferToBlockId = autonomyPolicy.deferToBlockId;
         const deferred: RalphAutonomyDeferredWork = {
           blockId: block.id,

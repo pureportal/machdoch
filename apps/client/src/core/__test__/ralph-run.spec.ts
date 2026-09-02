@@ -9032,6 +9032,109 @@ describe("runRalphFlow", () => {
     }
   });
 
+  it("upgrades an unversioned APPEND_JSONL ledger before reconciling a completed operation", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "ralph-append-ledger-upgrade-"),
+    );
+    const path = join(workspace, "events.jsonl");
+    const operationId = "completed-append-operation";
+    const intended = '{"item":1}\n';
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "append",
+          type: "UTILITY",
+          title: "Append",
+          utility: {
+            type: "APPEND_JSONL",
+            path: "events.jsonl",
+            input: '{"item":1}',
+          },
+        },
+        { id: "success", type: "END", title: "Success", status: "success" },
+      ],
+      edges: [
+        {
+          id: "start-append",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "append",
+        },
+        {
+          id: "append-success",
+          from: "append",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
+      ],
+    });
+    const checkpoint: RalphRunCheckpoint = {
+      currentBlockId: "append",
+      transitions: 1,
+      variables: {},
+      resultsByBlock: {},
+      runLog: [],
+      blockResults: [],
+      events: [],
+      errorCounts: {},
+      repeatedFailures: {},
+      attemptCounts: { append: 1 },
+      operationLedger: {
+        [operationId]: {
+          id: operationId,
+          blockId: "append",
+          attempt: 1,
+          state: "started",
+          startedAt: "2026-01-01T00:00:00.000Z",
+        },
+      },
+    };
+
+    try {
+      await writeFile(path, intended, "utf8");
+      await writeFile(
+        `${path}.ralph-operations.json`,
+        JSON.stringify({
+          operations: {
+            [operationId]: {
+              state: "completed",
+              priorSize: 0,
+              lineLength: Buffer.byteLength(intended),
+              lineSha256: createHash("sha256").update(intended).digest("hex"),
+              startedAt: "2026-01-01T00:00:00.000Z",
+              completedAt: "2026-01-01T00:00:01.000Z",
+            },
+          },
+        }),
+        "utf8",
+      );
+
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { checkpoint, runId: "append-ledger-upgrade" },
+      );
+      const ledger = JSON.parse(
+        await readFile(`${path}.ralph-operations.json`, "utf8"),
+      ) as { schemaVersion?: number };
+
+      expect(result.status).toBe("completed");
+      await expect(readFile(path, "utf8")).resolves.toBe(intended);
+      expect(ledger.schemaVersion).toBe(1);
+      expect(
+        result.blockResults.find((entry) => entry.blockId === "append"),
+      ).toMatchObject({
+        operationId,
+        output: "SUCCESS",
+        data: expect.objectContaining({ reconciled: true }),
+      });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("fails APPEND_JSONL closed on ledger I/O errors without mutating its target", async () => {
     const workspace = await mkdtemp(
       join(tmpdir(), "ralph-append-ledger-error-"),

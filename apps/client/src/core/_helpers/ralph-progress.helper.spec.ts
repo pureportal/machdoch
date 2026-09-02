@@ -52,6 +52,49 @@ describe("RALPH progress detector", () => {
     expect(state.stalledReason).toContain("semantic cycle");
   });
 
+  it("leaves repeated execution failures to retry and recovery handling", () => {
+    let state = createRalphProgressState();
+    for (let transition = 1; transition <= 3; transition += 1) {
+      state = assessRalphProgress(
+        state,
+        prompt,
+        {
+          ...result(prompt.id),
+          output: "ERROR",
+          status: "error",
+          attempt: transition,
+          summary: "Execution failed.",
+          error: "Execution failed.",
+        },
+        transition,
+        { maxStagnantTransitions: 20, maxRepeatedCycle: 3 },
+      ).state;
+    }
+
+    expect(state.recent).toHaveLength(3);
+    expect(state.recent.every((entry) => !entry.cycleEligible)).toBe(true);
+    expect(state.consecutiveNoProgress).toBe(3);
+    expect(state.stalledReason).toBeUndefined();
+  });
+
+  it("reassesses derived stall state when a run resumes", () => {
+    const assessment = assessRalphProgress(
+      createRalphProgressState({
+        consecutiveNoProgress: 3,
+        stalledReason:
+          "Detected a 1-step semantic cycle repeated 3 times without objective progress.",
+      }),
+      prompt,
+      result(prompt.id),
+      4,
+      { maxStagnantTransitions: 20, maxRepeatedCycle: 3 },
+    );
+
+    expect(assessment.stalled).toBe(false);
+    expect(assessment.state.stalledReason).toBeUndefined();
+    expect(assessment.state.consecutiveNoProgress).toBe(4);
+  });
+
   it("counts a changed repository fingerprint as meaningful progress", () => {
     let state = assessRalphProgress(
       createRalphProgressState(),

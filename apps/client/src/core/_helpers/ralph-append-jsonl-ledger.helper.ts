@@ -23,6 +23,11 @@ export interface RalphAppendJsonlLedger {
   operations: Record<string, RalphAppendJsonlOperation>;
 }
 
+export interface RalphAppendJsonlLedgerParseResult {
+  ledger: RalphAppendJsonlLedger;
+  source: "current" | "unversioned";
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -66,12 +71,19 @@ const parseOperation = (
 
 export const parseRalphAppendJsonlLedger = (
   value: unknown,
-): RalphAppendJsonlLedger | undefined => {
-  if (
-    !isRecord(value) ||
-    value.schemaVersion !== 1 ||
-    !isRecord(value.operations)
-  ) {
+): RalphAppendJsonlLedgerParseResult | undefined => {
+  if (!isRecord(value) || !isRecord(value.operations)) {
+    return undefined;
+  }
+  const source =
+    value.schemaVersion === 1
+      ? "current"
+      : value.schemaVersion === undefined &&
+          Object.keys(value).length === 1 &&
+          Object.hasOwn(value, "operations")
+        ? "unversioned"
+        : undefined;
+  if (!source) {
     return undefined;
   }
 
@@ -82,7 +94,13 @@ export const parseRalphAppendJsonlLedger = (
     },
   );
   return operations.length === Object.keys(value.operations).length
-    ? { schemaVersion: 1, operations: Object.fromEntries(operations) }
+    ? {
+        ledger: {
+          schemaVersion: 1,
+          operations: Object.fromEntries(operations),
+        },
+        source,
+      }
     : undefined;
 };
 
