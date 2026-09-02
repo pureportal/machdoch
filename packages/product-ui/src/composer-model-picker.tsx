@@ -94,7 +94,9 @@ export function ComposerModelPicker({
   const [visibleProviderId, setVisibleProviderId] = useState(activeProvider);
   const [search, setSearch] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const focusMovedIntoPickerRef = useRef(false);
   const popoverId = useId();
 
   useEffect(() => {
@@ -120,7 +122,17 @@ export function ComposerModelPicker({
 
   useEffect(() => {
     onOpenChange?.(open);
-    if (open) searchRef.current?.focus();
+    if (open) {
+      searchRef.current?.focus();
+      focusMovedIntoPickerRef.current =
+        document.activeElement === searchRef.current;
+      return;
+    }
+
+    if (focusMovedIntoPickerRef.current) {
+      triggerRef.current?.focus();
+      focusMovedIntoPickerRef.current = false;
+    }
   }, [onOpenChange, open]);
 
   const selectedProvider =
@@ -187,6 +199,7 @@ export function ComposerModelPicker({
   return (
     <div className="m-composer-model-picker" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="m-composer-model-trigger app-model-picker-button"
         aria-label={`${label}: ${activeProviderLabel} ${activeModelLabel}`}
