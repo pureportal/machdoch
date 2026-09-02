@@ -156,6 +156,10 @@ export interface SessionComposerProps {
     messageId: string,
     selectionKind: AttachmentSelectionKind,
   ) => Promise<void>;
+  onQueuedMessagePasteContextImages?: (
+    messageId: string,
+    files: File[],
+  ) => Promise<void>;
   onQueuedMessageRemoveContextAttachment: (
     messageId: string,
     attachmentId: string,
@@ -247,6 +251,7 @@ export const SessionComposer = ({
   onQueuedMessageRetry,
   onQueuedMessageSend,
   onQueuedMessageSelectContextAttachments,
+  onQueuedMessagePasteContextImages,
   onQueuedMessageRemoveContextAttachment,
   onQueuedMessageClearContextAttachments,
   onSend,
@@ -567,6 +572,7 @@ export const SessionComposer = ({
         onQueuedMessageSelectContextAttachments={
           onQueuedMessageSelectContextAttachments
         }
+        onQueuedMessagePasteContextImages={onQueuedMessagePasteContextImages}
         onQueuedMessageRemoveContextAttachment={
           onQueuedMessageRemoveContextAttachment
         }

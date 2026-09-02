@@ -219,14 +219,6 @@ export const USER_WEB_SEARCH_PROVIDER_ORDER: UserWebSearchApiKeyProvider[] = [
   ...USER_WEB_SEARCH_PROVIDERS,
 ];
 
-export const MCP_CONFIG_SCOPE_OPTIONS: ReadonlyArray<{
-  value: McpConfigScope;
-  label: string;
-}> = [
-  { value: "user", label: "Global" },
-  { value: "workspace", label: "Workspace" },
-];
-
 export const MCP_PRESET_SUMMARIES: readonly McpPresetSummary[] =
   MCP_PRESETS.map((preset) => ({
     id: preset.id,
@@ -3839,7 +3831,9 @@ export const saveWorkspaceMemoryOverride = async (
   }
 
   if (enabled !== null && typeof enabled !== "boolean") {
-    throw new Error("Expected workspace memory to be default, enabled, or disabled.");
+    throw new Error(
+      "Expected workspace memory to be default, enabled, or disabled.",
+    );
   }
 
   if (!canInvokeTauriCommands()) {

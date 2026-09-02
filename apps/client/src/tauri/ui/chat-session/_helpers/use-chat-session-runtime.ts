@@ -43,11 +43,6 @@ import {
   refreshMcpDiscoveryCache,
   saveUserVoiceActiveProvider,
   saveUserProviderApiKey,
-  saveWorkspaceDefaultMode,
-  saveWorkspaceMemoryOverride,
-  saveWorkspaceContextWindow,
-  saveWorkspaceReasoningExecutionMode,
-  saveWorkspaceReasoningMode,
   subscribeToDesktopSettingsChanged,
   subscribeToUserSettingsChanged,
   createFallbackMcpConfigDocument,
@@ -59,11 +54,9 @@ import {
   saveUserWebSearchApiKey,
   USER_WEB_SEARCH_PROVIDER_ORDER,
   type McpConfigDocument,
-  type McpConfigScope,
   type McpPresetSummary,
   type RuntimeProviderAvailability,
   type RuntimeSnapshot,
-  type ReasoningExecutionMode,
   type UserSpeechToTextSettings,
   type UserAgentLimitsSettings,
   type UserReviewModelSettings,
@@ -129,9 +122,6 @@ export interface ChatSessionRuntimeController {
   userReviewModelSettings: UserReviewModelSettings;
   agentLimitsSetupSaving: boolean;
   agentLimitsSetupMessage: SettingsStatusMessage | null;
-  workspaceSetupSaving: boolean;
-  workspaceSetupMessage: SettingsStatusMessage | null;
-  mcpConfigScope: McpConfigScope;
   mcpConfigDocument: McpConfigDocument;
   mcpConfigDraft: string;
   mcpConfigPresets: readonly McpPresetSummary[];
@@ -186,22 +176,6 @@ export interface ChatSessionRuntimeController {
   handleReviewModelSettingsSave: (
     settings: UserReviewModelSettings,
   ) => Promise<boolean>;
-  handleWorkspaceDefaultModeSave: (
-    mode: RuntimeSnapshot["mode"],
-  ) => Promise<void>;
-  handleWorkspaceMemoryOverrideSave: (
-    enabled: boolean | null,
-  ) => Promise<void>;
-  handleWorkspaceReasoningModeSave: (
-    reasoning: RuntimeSnapshot["reasoning"],
-  ) => Promise<void>;
-  handleWorkspaceReasoningExecutionModeSave: (
-    reasoningMode: ReasoningExecutionMode,
-  ) => Promise<void>;
-  handleWorkspaceContextWindowSave: (
-    contextWindow: NonNullable<RuntimeSnapshot["contextWindow"]>,
-  ) => Promise<void>;
-  handleMcpConfigScopeChange: (scope: McpConfigScope) => void;
   handleMcpConfigDraftChange: (value: string) => void;
   handleMcpConfigSave: () => Promise<void>;
   handleMcpPresetInsert: (presetId: string) => void;
@@ -217,9 +191,7 @@ export interface ChatSessionRuntimeController {
     authorizationResponse?: string,
   ) => Promise<void>;
   handleGlobalMemoryEnabledSave: (enabled: boolean) => Promise<void>;
-  handleWorkspaceMemoryDefaultEnabledSave: (
-    enabled: boolean,
-  ) => Promise<void>;
+  handleWorkspaceMemoryDefaultEnabledSave: (enabled: boolean) => Promise<void>;
   handleGlobalMemoryForget: (id: string) => Promise<void>;
   refreshWorkspaceMemoryEntries: () => Promise<void>;
   applyLoadedUserDesktopSettings: (settings: UserDesktopSettings) => void;
@@ -336,16 +308,6 @@ const getReviewModelSettingsSavedMessage = (
   return `Review model saved. Validator passes will use ${getProviderLabel(settings.provider)} / ${settings.model}.`;
 };
 
-const getRunModeLabel = (mode: RuntimeSnapshot["mode"]): string => {
-  return mode === "ask" ? "Ask mode" : "Machdoch";
-};
-
-const getReasoningModeLabel = (
-  reasoning: RuntimeSnapshot["reasoning"],
-): string => {
-  return reasoning === "default" ? "Provider default" : reasoning;
-};
-
 const createRuntimeSnapshotRequestKey = (
   workspaceRoot: string | null,
 ): string => {
@@ -354,38 +316,6 @@ const createRuntimeSnapshotRequestKey = (
     : "";
 
   return normalizedWorkspace;
-};
-
-interface McpWorkspaceEditorState {
-  document: McpConfigDocument;
-  draft: string;
-  draftRevision: number;
-}
-
-const MCP_WORKSPACE_EDITOR_CACHE_LIMIT = 8;
-
-const rememberMcpWorkspaceEditor = (
-  editors: Map<string, McpWorkspaceEditorState>,
-  workspaceKey: string,
-  state: McpWorkspaceEditorState,
-): void => {
-  if (state.draft === state.document.raw) {
-    editors.delete(workspaceKey);
-    return;
-  }
-
-  editors.delete(workspaceKey);
-  editors.set(workspaceKey, state);
-
-  while (editors.size > MCP_WORKSPACE_EDITOR_CACHE_LIMIT) {
-    const oldestWorkspaceKey = editors.keys().next().value;
-
-    if (typeof oldestWorkspaceKey !== "string") {
-      break;
-    }
-
-    editors.delete(oldestWorkspaceKey);
-  }
 };
 
 const getFirstMcpServerIdFromRawConfig = (raw: string): string | null => {
@@ -496,28 +426,12 @@ export const useChatSessionRuntime = (
   const [agentLimitsSetupSaving, setAgentLimitsSetupSaving] = useState(false);
   const [agentLimitsSetupMessage, setAgentLimitsSetupMessage] =
     useState<SettingsStatusMessage | null>(null);
-  const [workspaceSetupSaving, setWorkspaceSetupSaving] = useState(false);
-  const [workspaceSetupMessage, setWorkspaceSetupMessage] =
-    useState<SettingsStatusMessage | null>(null);
-  const [mcpConfigScope, setMcpConfigScope] = useState<McpConfigScope>("user");
-  const [mcpConfigDocuments, setMcpConfigDocuments] = useState<
-    Record<McpConfigScope, McpConfigDocument>
-  >({
-    user: createFallbackMcpConfigDocument("user"),
-    workspace: createFallbackMcpConfigDocument(
-      "workspace",
-      options.activeSessionWorkspace,
-    ),
-  });
-  const [mcpConfigDrafts, setMcpConfigDrafts] = useState<
-    Record<McpConfigScope, string>
-  >({
-    user: createFallbackMcpConfigDocument("user").raw,
-    workspace: createFallbackMcpConfigDocument(
-      "workspace",
-      options.activeSessionWorkspace,
-    ).raw,
-  });
+  const [mcpConfigDocument, setMcpConfigDocument] = useState<McpConfigDocument>(
+    () => createFallbackMcpConfigDocument("user"),
+  );
+  const [mcpConfigDraft, setMcpConfigDraft] = useState(
+    () => createFallbackMcpConfigDocument("user").raw,
+  );
   const [mcpConfigLoading, setMcpConfigLoading] = useState(false);
   const [mcpConfigSaving, setMcpConfigSaving] = useState(false);
   const [mcpDiscoveryServerId, setMcpDiscoveryServerId] = useState("");
@@ -543,15 +457,11 @@ export const useChatSessionRuntime = (
   >(null);
   const runtimeSnapshotRequestIdRef = useRef(0);
   const runtimeSnapshotRequestKeyRef = useRef<string | null>(null);
-  const workspaceSaveRequestIdRef = useRef(0);
   const mcpConfigLoadRequestIdRef = useRef(0);
   const mcpConfigSaveRequestIdRef = useRef(0);
   const mcpDiscoveryRequestIdRef = useRef(0);
   const mcpOAuthRequestIdRef = useRef(0);
-  const mcpConfigDraftRevisionRef = useRef<Record<McpConfigScope, number>>({
-    user: 0,
-    workspace: 0,
-  });
+  const mcpConfigDraftRevisionRef = useRef(0);
   const [userSpeechToTextSettingsLoaded, setUserSpeechToTextSettingsLoaded] =
     useState(false);
   const providerSetupOpenRef = useRef(false);
@@ -565,18 +475,12 @@ export const useChatSessionRuntime = (
   const webSearchSetupKeyRef = useRef(webSearchSetupKey);
   const webSearchSetupEditRevisionRef = useRef(0);
   const webSearchSetupSaveRequestIdRef = useRef(0);
-  const mcpConfigDocumentsRef = useRef(mcpConfigDocuments);
-  const mcpConfigDraftsRef = useRef(mcpConfigDrafts);
+  const mcpConfigDocumentRef = useRef(mcpConfigDocument);
+  const mcpConfigDraftRef = useRef(mcpConfigDraft);
   const activeWorkspaceKeyRef = useRef(activeWorkspaceKey);
-  const representedMcpWorkspaceKeyRef = useRef(activeWorkspaceKey);
-  const mcpWorkspaceEditorsRef = useRef(
-    new Map<string, McpWorkspaceEditorState>(),
-  );
   const voiceMutationRevisionRef = useRef(0);
   const speechMutationRevisionRef = useRef(0);
   const settingsEventSequenceRef = useRef(new Map<string, number>());
-  const mcpConfigDocument = mcpConfigDocuments[mcpConfigScope];
-  const mcpConfigDraft = mcpConfigDrafts[mcpConfigScope];
   const mcpConfigWorkspaceAvailable = Boolean(
     options.activeSessionWorkspace?.trim(),
   );
@@ -585,72 +489,9 @@ export const useChatSessionRuntime = (
   providerSetupKeyRef.current = providerSetupKey;
   webSearchSetupProviderRef.current = webSearchSetupProvider;
   webSearchSetupKeyRef.current = webSearchSetupKey;
-  mcpConfigDocumentsRef.current = mcpConfigDocuments;
-  mcpConfigDraftsRef.current = mcpConfigDrafts;
+  mcpConfigDocumentRef.current = mcpConfigDocument;
+  mcpConfigDraftRef.current = mcpConfigDraft;
   activeWorkspaceKeyRef.current = activeWorkspaceKey;
-
-  useEffect(() => {
-    const previousWorkspaceKey = representedMcpWorkspaceKeyRef.current;
-
-    if (previousWorkspaceKey === activeWorkspaceKey) {
-      return;
-    }
-
-    if (previousWorkspaceKey) {
-      rememberMcpWorkspaceEditor(
-        mcpWorkspaceEditorsRef.current,
-        previousWorkspaceKey,
-        {
-          document: mcpConfigDocumentsRef.current.workspace,
-          draft: mcpConfigDraftsRef.current.workspace,
-          draftRevision: mcpConfigDraftRevisionRef.current.workspace,
-        },
-      );
-    }
-
-    representedMcpWorkspaceKeyRef.current = activeWorkspaceKey;
-    mcpConfigLoadRequestIdRef.current += 1;
-    mcpConfigSaveRequestIdRef.current += 1;
-    mcpDiscoveryRequestIdRef.current += 1;
-    mcpOAuthRequestIdRef.current += 1;
-
-    const cached = activeWorkspaceKey
-      ? mcpWorkspaceEditorsRef.current.get(activeWorkspaceKey)
-      : undefined;
-
-    if (activeWorkspaceKey && cached) {
-      mcpWorkspaceEditorsRef.current.delete(activeWorkspaceKey);
-      mcpWorkspaceEditorsRef.current.set(activeWorkspaceKey, cached);
-    }
-    const document =
-      cached?.document ??
-      createFallbackMcpConfigDocument(
-        "workspace",
-        options.activeSessionWorkspace,
-      );
-    const draft = cached?.draft ?? document.raw;
-
-    mcpConfigDocumentsRef.current = {
-      ...mcpConfigDocumentsRef.current,
-      workspace: document,
-    };
-    mcpConfigDraftsRef.current = {
-      ...mcpConfigDraftsRef.current,
-      workspace: draft,
-    };
-    mcpConfigDraftRevisionRef.current.workspace = cached?.draftRevision ?? 0;
-    setMcpConfigDocuments((current) => ({ ...current, workspace: document }));
-    setMcpConfigDrafts((current) => ({ ...current, workspace: draft }));
-    setMcpDiscoveryServerId("");
-    setMcpDiscoveryOutput(null);
-    setMcpOAuthServerId("");
-    setMcpOAuthCallback("");
-    setMcpConfigMessage(null);
-
-    if (!activeWorkspaceKey) {
-      setMcpConfigScope("user");
-    }
-  }, [activeWorkspaceKey, options.activeSessionWorkspace]);
 
   const applyLoadedWebSearchSettings = useCallback(
     (settings: UserWebSearchSettings): void => {
@@ -793,78 +634,36 @@ export const useChatSessionRuntime = (
 
   const refreshMcpConfigDocuments = useCallback(async (): Promise<void> => {
     const requestId = mcpConfigLoadRequestIdRef.current + 1;
-    const workspaceRoot = options.activeSessionWorkspace;
-    const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
-    const draftRevisions = { ...mcpConfigDraftRevisionRef.current };
-    const cleanDrafts = {
-      user:
-        mcpConfigDraftsRef.current.user ===
-        mcpConfigDocumentsRef.current.user.raw,
-      workspace:
-        mcpConfigDraftsRef.current.workspace ===
-        mcpConfigDocumentsRef.current.workspace.raw,
-    };
+    const draftRevision = mcpConfigDraftRevisionRef.current;
+    const draftWasClean =
+      mcpConfigDraftRef.current === mcpConfigDocumentRef.current.raw;
     mcpConfigLoadRequestIdRef.current = requestId;
     setMcpConfigLoading(true);
     setMcpConfigMessage(null);
 
     try {
-      const [userDocument, workspaceDocument] = await Promise.all([
-        loadMcpConfigDocument("user"),
-        loadMcpConfigDocument("workspace", workspaceRoot),
-      ]);
+      const userDocument = await loadMcpConfigDocument("user");
 
-      if (
-        mcpConfigLoadRequestIdRef.current !== requestId ||
-        activeWorkspaceKeyRef.current !== workspaceKey ||
-        representedMcpWorkspaceKeyRef.current !== workspaceKey
-      ) {
+      if (mcpConfigLoadRequestIdRef.current !== requestId) {
         return;
       }
 
-      const canReplaceUser =
-        cleanDrafts.user &&
-        mcpConfigDraftRevisionRef.current.user === draftRevisions.user;
-      const canReplaceWorkspace =
-        cleanDrafts.workspace &&
-        mcpConfigDraftRevisionRef.current.workspace ===
-          draftRevisions.workspace;
-      const nextDocuments = {
-        user: canReplaceUser
-          ? userDocument
-          : mcpConfigDocumentsRef.current.user,
-        workspace: canReplaceWorkspace
-          ? workspaceDocument
-          : mcpConfigDocumentsRef.current.workspace,
-      };
-      const nextDrafts = {
-        user: canReplaceUser
-          ? userDocument.raw
-          : mcpConfigDraftsRef.current.user,
-        workspace: canReplaceWorkspace
-          ? workspaceDocument.raw
-          : mcpConfigDraftsRef.current.workspace,
-      };
-
-      mcpConfigDocumentsRef.current = nextDocuments;
-      mcpConfigDraftsRef.current = nextDrafts;
-      setMcpConfigDocuments(nextDocuments);
-      setMcpConfigDrafts(nextDrafts);
+      if (
+        draftWasClean &&
+        mcpConfigDraftRevisionRef.current === draftRevision
+      ) {
+        mcpConfigDocumentRef.current = userDocument;
+        mcpConfigDraftRef.current = userDocument.raw;
+        setMcpConfigDocument(userDocument);
+        setMcpConfigDraft(userDocument.raw);
+      }
       setMcpDiscoveryServerId((current) => {
         if (current.trim()) {
           return current;
         }
 
-        return (
-          getFirstMcpServerIdFromRawConfig(workspaceDocument.raw) ??
-          getFirstMcpServerIdFromRawConfig(userDocument.raw) ??
-          ""
-        );
+        return getFirstMcpServerIdFromRawConfig(userDocument.raw) ?? "";
       });
-
-      if (!workspaceRoot?.trim()) {
-        setMcpConfigScope("user");
-      }
     } catch (error) {
       if (mcpConfigLoadRequestIdRef.current !== requestId) {
         return;
@@ -883,7 +682,7 @@ export const useChatSessionRuntime = (
         setMcpConfigLoading(false);
       }
     }
-  }, [options.activeSessionWorkspace]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -2196,422 +1995,24 @@ export const useChatSessionRuntime = (
     ],
   );
 
-  const handleWorkspaceDefaultModeSave = useCallback(
-    async (mode: RuntimeSnapshot["mode"]): Promise<void> => {
-      const workspaceRoot = options.activeSessionWorkspace;
-      if (!workspaceRoot) {
-        setWorkspaceSetupMessage({
-          tone: "error",
-          text: "Select a workspace before changing its default mode.",
-        });
-        return;
-      }
-
-      const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
-      const requestId = workspaceSaveRequestIdRef.current + 1;
-      workspaceSaveRequestIdRef.current = requestId;
-
-      setWorkspaceSetupSaving(true);
-      setWorkspaceSetupMessage(null);
-
-      try {
-        await saveWorkspaceDefaultMode(workspaceRoot, mode);
-
-        if (
-          workspaceSaveRequestIdRef.current !== requestId ||
-          activeWorkspaceKeyRef.current !== workspaceKey
-        ) {
-          return;
-        }
-
-        if (!isTauri()) {
-          setRuntimeSnapshot((currentSnapshot) =>
-            currentSnapshot
-              ? {
-                  ...currentSnapshot,
-                  defaultMode: mode,
-                  mode,
-                }
-              : currentSnapshot,
-          );
-        }
-
-        await refreshWorkspaceRuntimeSnapshot(workspaceRoot);
-
-        if (activeWorkspaceKeyRef.current !== workspaceKey) {
-          return;
-        }
-
-        setWorkspaceSetupMessage({
-          tone: "success",
-          text: `Workspace default mode saved as ${getRunModeLabel(mode)}.`,
-        });
-      } catch (error) {
-        if (
-          workspaceSaveRequestIdRef.current === requestId &&
-          activeWorkspaceKeyRef.current === workspaceKey
-        ) {
-          setWorkspaceSetupMessage({
-            tone: "error",
-            text:
-              error instanceof Error
-                ? error.message
-                : "Workspace default mode could not be updated.",
-          });
-        }
-      } finally {
-        if (workspaceSaveRequestIdRef.current === requestId) {
-          setWorkspaceSetupSaving(false);
-        }
-      }
-    },
-    [options.activeSessionWorkspace, refreshWorkspaceRuntimeSnapshot],
-  );
-
-  const handleWorkspaceMemoryOverrideSave = useCallback(
-    async (enabled: boolean | null): Promise<void> => {
-      const workspaceRoot = options.activeSessionWorkspace;
-      if (!workspaceRoot) {
-        setWorkspaceSetupMessage({
-          tone: "error",
-          text: "Select a workspace before changing workspace memory.",
-        });
-        return;
-      }
-
-      const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
-      const requestId = workspaceSaveRequestIdRef.current + 1;
-      workspaceSaveRequestIdRef.current = requestId;
-
-      setWorkspaceSetupSaving(true);
-      setWorkspaceSetupMessage(null);
-
-      try {
-        await saveWorkspaceMemoryOverride(workspaceRoot, enabled);
-
-        if (
-          workspaceSaveRequestIdRef.current !== requestId ||
-          activeWorkspaceKeyRef.current !== workspaceKey
-        ) {
-          return;
-        }
-
-        if (!isTauri()) {
-          setRuntimeSnapshot((currentSnapshot) =>
-            currentSnapshot
-              ? {
-                  ...currentSnapshot,
-                  workspaceMemoryOverride: enabled,
-                  workspaceMemoryEnabled:
-                    enabled ??
-                    userMemorySettings.workspaceDefaultEnabled !==
-                      false,
-                }
-              : currentSnapshot,
-          );
-        }
-
-        await refreshWorkspaceRuntimeSnapshot(workspaceRoot);
-
-        if (activeWorkspaceKeyRef.current === workspaceKey) {
-          setWorkspaceSetupMessage({
-            tone: "success",
-            text: "Workspace memory setting saved.",
-          });
-        }
-      } catch (error) {
-        if (
-          workspaceSaveRequestIdRef.current === requestId &&
-          activeWorkspaceKeyRef.current === workspaceKey
-        ) {
-          setWorkspaceSetupMessage({
-            tone: "error",
-            text:
-              error instanceof Error
-                ? error.message
-                : "Workspace memory could not be updated.",
-          });
-        }
-      } finally {
-        if (workspaceSaveRequestIdRef.current === requestId) {
-          setWorkspaceSetupSaving(false);
-        }
-      }
-    },
-    [
-      options.activeSessionWorkspace,
-      refreshWorkspaceRuntimeSnapshot,
-      userMemorySettings.workspaceDefaultEnabled,
-    ],
-  );
-
-  const handleWorkspaceReasoningModeSave = useCallback(
-    async (reasoning: RuntimeSnapshot["reasoning"]): Promise<void> => {
-      const workspaceRoot = options.activeSessionWorkspace;
-      if (!workspaceRoot) {
-        setWorkspaceSetupMessage({
-          tone: "error",
-          text: "Select a workspace before changing its reasoning mode.",
-        });
-        return;
-      }
-
-      const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
-      const requestId = workspaceSaveRequestIdRef.current + 1;
-      workspaceSaveRequestIdRef.current = requestId;
-
-      setWorkspaceSetupSaving(true);
-      setWorkspaceSetupMessage(null);
-
-      try {
-        await saveWorkspaceReasoningMode(workspaceRoot, reasoning);
-
-        if (
-          workspaceSaveRequestIdRef.current !== requestId ||
-          activeWorkspaceKeyRef.current !== workspaceKey
-        ) {
-          return;
-        }
-
-        if (!isTauri()) {
-          setRuntimeSnapshot((currentSnapshot) =>
-            currentSnapshot
-              ? {
-                  ...currentSnapshot,
-                  reasoning,
-                }
-              : currentSnapshot,
-          );
-        }
-
-        await refreshWorkspaceRuntimeSnapshot(workspaceRoot);
-
-        if (activeWorkspaceKeyRef.current !== workspaceKey) {
-          return;
-        }
-
-        setWorkspaceSetupMessage({
-          tone: "success",
-          text: `Workspace reasoning saved as ${getReasoningModeLabel(reasoning)}.`,
-        });
-      } catch (error) {
-        if (
-          workspaceSaveRequestIdRef.current === requestId &&
-          activeWorkspaceKeyRef.current === workspaceKey
-        ) {
-          setWorkspaceSetupMessage({
-            tone: "error",
-            text:
-              error instanceof Error
-                ? error.message
-                : "Workspace reasoning mode could not be updated.",
-          });
-        }
-      } finally {
-        if (workspaceSaveRequestIdRef.current === requestId) {
-          setWorkspaceSetupSaving(false);
-        }
-      }
-    },
-    [options.activeSessionWorkspace, refreshWorkspaceRuntimeSnapshot],
-  );
-
-  const handleWorkspaceReasoningExecutionModeSave = useCallback(
-    async (reasoningMode: ReasoningExecutionMode): Promise<void> => {
-      const workspaceRoot = options.activeSessionWorkspace;
-      if (!workspaceRoot) {
-        setWorkspaceSetupMessage({
-          tone: "error",
-          text: "Select a workspace before changing its reasoning mode.",
-        });
-        return;
-      }
-
-      const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
-      const requestId = workspaceSaveRequestIdRef.current + 1;
-      workspaceSaveRequestIdRef.current = requestId;
-
-      setWorkspaceSetupSaving(true);
-      setWorkspaceSetupMessage(null);
-
-      try {
-        await saveWorkspaceReasoningExecutionMode(workspaceRoot, reasoningMode);
-
-        if (
-          workspaceSaveRequestIdRef.current !== requestId ||
-          activeWorkspaceKeyRef.current !== workspaceKey
-        ) {
-          return;
-        }
-
-        if (!isTauri()) {
-          setRuntimeSnapshot((currentSnapshot) =>
-            currentSnapshot
-              ? {
-                  ...currentSnapshot,
-                  defaultReasoningMode: reasoningMode,
-                  reasoningMode,
-                }
-              : currentSnapshot,
-          );
-        }
-
-        await refreshWorkspaceRuntimeSnapshot(workspaceRoot);
-
-        if (activeWorkspaceKeyRef.current === workspaceKey) {
-          setWorkspaceSetupMessage({
-            tone: "success",
-            text: "Workspace reasoning mode saved.",
-          });
-        }
-      } catch (error) {
-        if (
-          workspaceSaveRequestIdRef.current === requestId &&
-          activeWorkspaceKeyRef.current === workspaceKey
-        ) {
-          setWorkspaceSetupMessage({
-            tone: "error",
-            text:
-              error instanceof Error
-                ? error.message
-                : "Workspace reasoning mode could not be updated.",
-          });
-        }
-      } finally {
-        if (workspaceSaveRequestIdRef.current === requestId) {
-          setWorkspaceSetupSaving(false);
-        }
-      }
-    },
-    [options.activeSessionWorkspace, refreshWorkspaceRuntimeSnapshot],
-  );
-
-  const handleWorkspaceContextWindowSave = useCallback(
-    async (
-      contextWindow: NonNullable<RuntimeSnapshot["contextWindow"]>,
-    ): Promise<void> => {
-      const workspaceRoot = options.activeSessionWorkspace;
-      if (!workspaceRoot) {
-        setWorkspaceSetupMessage({
-          tone: "error",
-          text: "Select a workspace before changing its context window.",
-        });
-        return;
-      }
-
-      const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
-      const requestId = workspaceSaveRequestIdRef.current + 1;
-      workspaceSaveRequestIdRef.current = requestId;
-
-      setWorkspaceSetupSaving(true);
-      setWorkspaceSetupMessage(null);
-
-      try {
-        await saveWorkspaceContextWindow(workspaceRoot, contextWindow);
-
-        if (
-          workspaceSaveRequestIdRef.current !== requestId ||
-          activeWorkspaceKeyRef.current !== workspaceKey
-        ) {
-          return;
-        }
-
-        if (!isTauri()) {
-          setRuntimeSnapshot((currentSnapshot) =>
-            currentSnapshot
-              ? {
-                  ...currentSnapshot,
-                  defaultContextWindow: contextWindow,
-                  contextWindow,
-                }
-              : currentSnapshot,
-          );
-        }
-
-        await refreshWorkspaceRuntimeSnapshot(workspaceRoot);
-
-        if (activeWorkspaceKeyRef.current === workspaceKey) {
-          setWorkspaceSetupMessage({
-            tone: "success",
-            text: "Workspace context window saved.",
-          });
-        }
-      } catch (error) {
-        if (
-          workspaceSaveRequestIdRef.current === requestId &&
-          activeWorkspaceKeyRef.current === workspaceKey
-        ) {
-          setWorkspaceSetupMessage({
-            tone: "error",
-            text:
-              error instanceof Error
-                ? error.message
-                : "Workspace context window could not be updated.",
-          });
-        }
-      } finally {
-        if (workspaceSaveRequestIdRef.current === requestId) {
-          setWorkspaceSetupSaving(false);
-        }
-      }
-    },
-    [options.activeSessionWorkspace, refreshWorkspaceRuntimeSnapshot],
-  );
-
-  const handleMcpConfigScopeChange = useCallback(
-    (scope: McpConfigScope): void => {
-      if (scope === "workspace" && !options.activeSessionWorkspace?.trim()) {
-        setMcpConfigMessage({
-          tone: "error",
-          text: "Select a workspace before editing workspace MCP config.",
-        });
-        return;
-      }
-
-      setMcpConfigScope(scope);
-      setMcpConfigMessage(null);
-    },
-    [options.activeSessionWorkspace],
-  );
-
   const handleMcpConfigDraftChange = useCallback(
     (value: string): void => {
-      mcpConfigDraftRevisionRef.current[mcpConfigScope] += 1;
-      mcpConfigDraftsRef.current = {
-        ...mcpConfigDraftsRef.current,
-        [mcpConfigScope]: value,
-      };
-      setMcpConfigDrafts((prev) => ({
-        ...prev,
-        [mcpConfigScope]: value,
-      }));
+      mcpConfigDraftRevisionRef.current += 1;
+      mcpConfigDraftRef.current = value;
+      setMcpConfigDraft(value);
 
       if (mcpConfigMessage) {
         setMcpConfigMessage(null);
       }
     },
-    [mcpConfigMessage, mcpConfigScope],
+    [mcpConfigMessage],
   );
 
   const handleMcpConfigSave = useCallback(async (): Promise<void> => {
     const requestId = mcpConfigSaveRequestIdRef.current + 1;
-    const scope = mcpConfigScope;
     const submittedDraft = mcpConfigDraft;
-    const draftRevision = mcpConfigDraftRevisionRef.current[scope];
-    const workspaceRoot = options.activeSessionWorkspace;
-    const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
-    const expectedRaw = mcpConfigDocumentsRef.current[scope].raw;
-
-    if (
-      scope === "workspace" &&
-      (!workspaceKey || representedMcpWorkspaceKeyRef.current !== workspaceKey)
-    ) {
-      setMcpConfigMessage({
-        tone: "error",
-        text: "The workspace changed. Reload its MCP configuration before saving.",
-      });
-      return;
-    }
+    const draftRevision = mcpConfigDraftRevisionRef.current;
+    const expectedRaw = mcpConfigDocumentRef.current.raw;
 
     mcpConfigSaveRequestIdRef.current = requestId;
     mcpConfigLoadRequestIdRef.current += 1;
@@ -2621,57 +2022,28 @@ export const useChatSessionRuntime = (
 
     try {
       const document = await saveMcpConfigDocument(
-        scope,
+        "user",
         submittedDraft,
-        workspaceRoot,
+        undefined,
         expectedRaw,
       );
 
-      if (
-        mcpConfigSaveRequestIdRef.current !== requestId ||
-        (scope === "workspace" &&
-          (activeWorkspaceKeyRef.current !== workspaceKey ||
-            representedMcpWorkspaceKeyRef.current !== workspaceKey))
-      ) {
+      if (mcpConfigSaveRequestIdRef.current !== requestId) {
         return;
       }
 
-      setMcpConfigDocuments((prev) => ({
-        ...prev,
-        [scope]: document,
-      }));
-      mcpConfigDocumentsRef.current = {
-        ...mcpConfigDocumentsRef.current,
-        [scope]: document,
-      };
+      setMcpConfigDocument(document);
+      mcpConfigDocumentRef.current = document;
       const nextDraft =
-        mcpConfigDraftRevisionRef.current[scope] === draftRevision &&
-        mcpConfigDraftsRef.current[scope] === submittedDraft
+        mcpConfigDraftRevisionRef.current === draftRevision &&
+        mcpConfigDraftRef.current === submittedDraft
           ? document.raw
-          : mcpConfigDraftsRef.current[scope];
-      mcpConfigDraftsRef.current = {
-        ...mcpConfigDraftsRef.current,
-        [scope]: nextDraft,
-      };
-      setMcpConfigDrafts((prev) => ({ ...prev, [scope]: nextDraft }));
-
-      if (scope === "workspace" && workspaceKey) {
-        rememberMcpWorkspaceEditor(
-          mcpWorkspaceEditorsRef.current,
-          workspaceKey,
-          {
-            document,
-            draft: nextDraft,
-            draftRevision: mcpConfigDraftRevisionRef.current.workspace,
-          },
-        );
-      }
+          : mcpConfigDraftRef.current;
+      mcpConfigDraftRef.current = nextDraft;
+      setMcpConfigDraft(nextDraft);
       setMcpConfigMessage({
         tone: "success",
-        text:
-          scope === "workspace"
-            ? "Workspace MCP config saved."
-            : "Global MCP config saved.",
+        text: "Global MCP config saved.",
       });
     } catch (error) {
       if (mcpConfigSaveRequestIdRef.current !== requestId) {
@@ -2680,28 +2052,14 @@ export const useChatSessionRuntime = (
 
       if (isMcpConfigConflictError(error)) {
         try {
-          const latestDocument = await loadMcpConfigDocument(
-            scope,
-            workspaceRoot,
-          );
+          const latestDocument = await loadMcpConfigDocument("user");
 
-          if (
-            mcpConfigSaveRequestIdRef.current !== requestId ||
-            (scope === "workspace" &&
-              (activeWorkspaceKeyRef.current !== workspaceKey ||
-                representedMcpWorkspaceKeyRef.current !== workspaceKey))
-          ) {
+          if (mcpConfigSaveRequestIdRef.current !== requestId) {
             return;
           }
 
-          mcpConfigDocumentsRef.current = {
-            ...mcpConfigDocumentsRef.current,
-            [scope]: latestDocument,
-          };
-          setMcpConfigDocuments((prev) => ({
-            ...prev,
-            [scope]: latestDocument,
-          }));
+          mcpConfigDocumentRef.current = latestDocument;
+          setMcpConfigDocument(latestDocument);
           setMcpConfigMessage({
             tone: "error",
             text: "MCP configuration changed elsewhere. The latest version is now the comparison base and your draft was kept; review it before saving again.",
@@ -2724,7 +2082,7 @@ export const useChatSessionRuntime = (
         setMcpConfigSaving(false);
       }
     }
-  }, [mcpConfigDraft, mcpConfigScope, options.activeSessionWorkspace]);
+  }, [mcpConfigDraft]);
 
   const handleMcpPresetInsert = useCallback(
     (presetId: string): void => {
@@ -2737,15 +2095,9 @@ export const useChatSessionRuntime = (
           (candidate) => candidate.id === presetId,
         );
 
-        mcpConfigDraftRevisionRef.current[mcpConfigScope] += 1;
-        mcpConfigDraftsRef.current = {
-          ...mcpConfigDraftsRef.current,
-          [mcpConfigScope]: nextDraft,
-        };
-        setMcpConfigDrafts((prev) => ({
-          ...prev,
-          [mcpConfigScope]: nextDraft,
-        }));
+        mcpConfigDraftRevisionRef.current += 1;
+        mcpConfigDraftRef.current = nextDraft;
+        setMcpConfigDraft(nextDraft);
         setMcpConfigMessage({
           tone: "success",
           text: `${preset?.title ?? "MCP preset"} added to the draft. Save to write the config.`,
@@ -2760,7 +2112,7 @@ export const useChatSessionRuntime = (
         });
       }
     },
-    [mcpConfigDraft, mcpConfigScope],
+    [mcpConfigDraft],
   );
 
   const handleMcpDiscoveryServerIdChange = useCallback(
@@ -2869,18 +2221,14 @@ export const useChatSessionRuntime = (
 
   const refreshUserMcpConfigDocument = useCallback(async (): Promise<void> => {
     const requestId = mcpConfigLoadRequestIdRef.current + 1;
-    const draftRevision = mcpConfigDraftRevisionRef.current.user;
+    const draftRevision = mcpConfigDraftRevisionRef.current;
     const draftWasClean =
-      mcpConfigDraftsRef.current.user ===
-      mcpConfigDocumentsRef.current.user.raw;
+      mcpConfigDraftRef.current === mcpConfigDocumentRef.current.raw;
     mcpConfigLoadRequestIdRef.current = requestId;
     let document: McpConfigDocument;
 
     try {
-      document = await loadMcpConfigDocument(
-        "user",
-        options.activeSessionWorkspace,
-      );
+      document = await loadMcpConfigDocument("user");
     } finally {
       if (mcpConfigLoadRequestIdRef.current === requestId) {
         setMcpConfigLoading(false);
@@ -2892,7 +2240,7 @@ export const useChatSessionRuntime = (
     }
 
     const canReplaceDraft =
-      draftWasClean && mcpConfigDraftRevisionRef.current.user === draftRevision;
+      draftWasClean && mcpConfigDraftRevisionRef.current === draftRevision;
 
     if (!canReplaceDraft) {
       setMcpConfigMessage({
@@ -2902,23 +2250,11 @@ export const useChatSessionRuntime = (
       return;
     }
 
-    setMcpConfigDocuments((prev) => ({
-      ...prev,
-      user: document,
-    }));
-    mcpConfigDocumentsRef.current = {
-      ...mcpConfigDocumentsRef.current,
-      user: document,
-    };
-    setMcpConfigDrafts((prev) => ({
-      ...prev,
-      user: document.raw,
-    }));
-    mcpConfigDraftsRef.current = {
-      ...mcpConfigDraftsRef.current,
-      user: document.raw,
-    };
-  }, [options.activeSessionWorkspace]);
+    mcpConfigDocumentRef.current = document;
+    mcpConfigDraftRef.current = document.raw;
+    setMcpConfigDocument(document);
+    setMcpConfigDraft(document.raw);
+  }, []);
 
   const handleMcpOAuthServerIdChange = useCallback((serverId: string): void => {
     setMcpOAuthServerId(serverId);
@@ -3163,8 +2499,7 @@ export const useChatSessionRuntime = (
       setMemorySetupMessage(null);
 
       try {
-        const settings =
-          await saveUserWorkspaceMemoryDefaultEnabled(enabled);
+        const settings = await saveUserWorkspaceMemoryDefaultEnabled(enabled);
 
         applyLoadedUserMemorySettings(settings);
         await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
@@ -3260,9 +2595,6 @@ export const useChatSessionRuntime = (
     userReviewModelSettings,
     agentLimitsSetupSaving,
     agentLimitsSetupMessage,
-    workspaceSetupSaving,
-    workspaceSetupMessage,
-    mcpConfigScope,
     mcpConfigDocument,
     mcpConfigDraft,
     mcpConfigPresets: MCP_PRESET_SUMMARIES,
@@ -3297,12 +2629,6 @@ export const useChatSessionRuntime = (
     handleWorkspaceRunSettingsSave,
     handleAgentLimitsSettingsSave,
     handleReviewModelSettingsSave,
-    handleWorkspaceDefaultModeSave,
-    handleWorkspaceMemoryOverrideSave,
-    handleWorkspaceReasoningModeSave,
-    handleWorkspaceReasoningExecutionModeSave,
-    handleWorkspaceContextWindowSave,
-    handleMcpConfigScopeChange,
     handleMcpConfigDraftChange,
     handleMcpConfigSave,
     handleMcpPresetInsert,

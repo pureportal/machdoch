@@ -9,13 +9,17 @@ import {
   getActivePromptEnhancementEditMessageId,
   getLatestRunningTaskId,
   getSessionOverviewStatus,
+  getSessionTimestamp,
   isPromptEnhancementPlaceholderMessage,
   isSessionWorkspaceLocked,
+  moveSessionToTop,
   normalizeTaskExecutionFileChange,
   normalizeRecentWorkspaces,
   normalizeShellState,
   recoverInactiveRunningTasks,
   recoverInterruptedTasksForLaunch,
+  resetSessionTime,
+  sortSessionsByUpdatedAt,
   QUICK_VOICE_SESSION_KIND,
   type ChatSessionMessage,
 } from "./chat-session.model";
@@ -26,6 +30,71 @@ import {
 import { createInitialThinkingTrace } from "./task-thinking.model";
 
 const SESSION_DAY_MS = 24 * 60 * 60 * 1_000;
+
+describe("session time controls", () => {
+  const createTimedSession = (id: string, timestamp: number) =>
+    createSession({
+      id,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      messages: [
+        {
+          id: `${id}-request`,
+          taskId: `${id}-task`,
+          role: "user",
+          content: id,
+          createdAt: timestamp,
+        },
+      ],
+    });
+
+  it("resets the displayed time without rewriting message history", () => {
+    const session = createTimedSession("older", 100);
+    const reset = resetSessionTime(session, 300);
+
+    expect(getSessionTimestamp(reset)).toBe(300);
+    expect(reset.messages[0]?.createdAt).toBe(100);
+    expect(reset.updatedAt).toBe(300);
+    expect(
+      sortSessionsByUpdatedAt([createTimedSession("newer", 200), reset]).map(
+        (entry) => entry.id,
+      ),
+    ).toEqual(["older", "newer"]);
+  });
+
+  it("moves a session to the top without changing its displayed time", () => {
+    const session = createTimedSession("older", 100);
+    const moved = moveSessionToTop(session, 300);
+
+    expect(getSessionTimestamp(moved)).toBe(100);
+    expect(moved.messages[0]?.createdAt).toBe(100);
+    expect(moved.updatedAt).toBe(300);
+    expect(
+      sortSessionsByUpdatedAt([createTimedSession("newer", 200), moved]).map(
+        (entry) => entry.id,
+      ),
+    ).toEqual(["older", "newer"]);
+  });
+
+  it("persists reset and manual-order timestamps through normalization", () => {
+    const baseState = createInitialShellState();
+    const session = moveSessionToTop(
+      resetSessionTime(createTimedSession("session", 100), 200),
+      300,
+    );
+    const normalized = normalizeShellState({
+      ...baseState,
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+
+    expect(normalized.sessions[0]).toMatchObject({
+      timeResetAt: 200,
+      movedToTopAt: 300,
+      updatedAt: 300,
+    });
+  });
+});
 
 describe("isPromptEnhancementPlaceholderMessage", () => {
   it("requires explicit lifecycle ownership instead of an id prefix", () => {

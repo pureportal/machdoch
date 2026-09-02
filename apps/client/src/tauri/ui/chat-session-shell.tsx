@@ -907,6 +907,9 @@ export const ChatSession = (): JSX.Element => {
                 activeSession={controller.composer.activeSession}
                 chooserProviders={controller.composer.chooserProviders}
                 hasAnyProvider={controller.hasAnyProvider}
+                effectiveWorkspaceMode={
+                  controller.settingsDialog.effectiveWorkspaceMode
+                }
                 isUiControlAvailable={controller.composer.isUiControlAvailable}
                 uiControlDescription={controller.composer.uiControlDescription}
                 settingsSection={controller.settingsDialog.settingsSection}
@@ -914,7 +917,6 @@ export const ChatSession = (): JSX.Element => {
                   controller.settingsDialog.onSettingsSectionChange
                 }
                 providerSetup={controller.settingsDialog.providerSetup}
-                workspaceSetup={controller.settingsDialog.workspaceSetup}
                 webSearchSetup={controller.settingsDialog.webSearchSetup}
                 mcpSetup={controller.settingsDialog.mcpSetup}
                 agentLimitsSetup={controller.settingsDialog.agentLimitsSetup}
@@ -1124,7 +1126,6 @@ export const ChatSession = (): JSX.Element => {
               }
               onClose={() => controller.setCatalogOpen(false)}
               providerSetup={controller.settingsDialog.providerSetup}
-              workspaceSetup={controller.settingsDialog.workspaceSetup}
               webSearchSetup={controller.settingsDialog.webSearchSetup}
               mcpSetup={controller.settingsDialog.mcpSetup}
               agentLimitsSetup={controller.settingsDialog.agentLimitsSetup}

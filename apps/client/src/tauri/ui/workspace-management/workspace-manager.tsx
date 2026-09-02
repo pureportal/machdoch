@@ -95,6 +95,8 @@ import {
 } from "./workspace-operation-lock";
 import { WorkspaceTools } from "./workspace-tools";
 import { WorkspaceRunPanel } from "./workspace-run-panel";
+import { WorkspaceConfigurationSettings } from "./workspace-configuration-settings";
+import { WorkspaceMcpSettings } from "./workspace-mcp-settings";
 
 type GitSection = "status" | "branches" | "remotes" | "pull-requests";
 
@@ -173,6 +175,11 @@ export const WorkspaceManager = ({
   const [remoteUrl, setRemoteUrl] = useState("");
   const [workspaceToolsDirty, setWorkspaceToolsDirty] = useState(false);
   const [workspaceRunDirty, setWorkspaceRunDirty] = useState(false);
+  const [workspaceConfigurationBusy, setWorkspaceConfigurationBusy] =
+    useState(false);
+  const [workspaceMcpDirty, setWorkspaceMcpDirty] = useState(false);
+  const [workspaceSettingsResetToken, setWorkspaceSettingsResetToken] =
+    useState(0);
   const [workspaceToolsRefreshToken, setWorkspaceToolsRefreshToken] =
     useState(0);
   const [workspaceMemoryEntries, setWorkspaceMemoryEntries] = useState<
@@ -273,7 +280,10 @@ export const WorkspaceManager = ({
       !sameStrings(tags, savedTags)),
   );
   const workspaceDraftDirty =
-    workspaceSettingsDirty || workspaceToolsDirty || workspaceRunDirty;
+    workspaceSettingsDirty ||
+    workspaceToolsDirty ||
+    workspaceRunDirty ||
+    workspaceMcpDirty;
 
   useEffect(() => {
     onDirtyChange?.(workspaceDraftDirty);
@@ -744,27 +754,28 @@ export const WorkspaceManager = ({
     window.confirm(`Discard unsaved changes and ${action}?`);
 
   const selectWorkspace = (workspaceKey: string): void => {
-    if (
-      workspaceKey !== selectedWorkspaceKey &&
-      !confirmDiscardWorkspaceDraft("switch workspaces")
-    ) {
+    if (workspaceKey === selectedWorkspaceKey) return;
+    if (workspaceConfigurationBusy) return;
+    if (!confirmDiscardWorkspaceDraft("switch workspaces")) {
       return;
     }
     setWorkspaceToolsDirty(false);
     setWorkspaceRunDirty(false);
+    setWorkspaceConfigurationBusy(false);
+    setWorkspaceMcpDirty(false);
+    setWorkspaceSettingsResetToken((current) => current + 1);
     setTagDraftPending(false);
     setSelectedWorkspaceKey(workspaceKey);
   };
 
   const refreshWorkspaces = (): void => {
-    if (setup.saving) return;
-    if (
-      workspaceSettingsDirty &&
-      !window.confirm("Discard unsaved workspace settings and refresh?")
-    )
-      return;
+    if (setup.saving || workspaceConfigurationBusy) return;
+    if (!confirmDiscardWorkspaceDraft("refresh")) return;
     setDisplayName(savedDisplayName);
     setTags([...savedTags]);
+    setWorkspaceConfigurationBusy(false);
+    setWorkspaceMcpDirty(false);
+    setWorkspaceSettingsResetToken((current) => current + 1);
     setTagDraftPending(false);
     void setup.onRefresh();
   };
@@ -817,6 +828,7 @@ export const WorkspaceManager = ({
       !selectedWorkspace ||
       setup.saving ||
       workspaceSetup.loading ||
+      workspaceConfigurationBusy ||
       !instructionLibraryAvailable ||
       !confirmDiscardWorkspaceDraft("relink this workspace")
     )
@@ -836,6 +848,9 @@ export const WorkspaceManager = ({
     }
     setWorkspaceToolsDirty(false);
     setWorkspaceRunDirty(false);
+    setWorkspaceConfigurationBusy(false);
+    setWorkspaceMcpDirty(false);
+    setWorkspaceSettingsResetToken((current) => current + 1);
     setTagDraftPending(false);
   };
 
@@ -844,6 +859,7 @@ export const WorkspaceManager = ({
       !selectedWorkspace ||
       setup.saving ||
       workspaceSetup.loading ||
+      workspaceConfigurationBusy ||
       !instructionLibraryAvailable
     )
       return;
@@ -1555,7 +1571,9 @@ export const WorkspaceManager = ({
             type="button"
             size="icon"
             variant="ghost"
-            disabled={setup.loading || setup.saving}
+            disabled={
+              setup.loading || setup.saving || workspaceConfigurationBusy
+            }
             aria-label="Refresh workspaces"
             onClick={refreshWorkspaces}
           >
@@ -1630,12 +1648,19 @@ export const WorkspaceManager = ({
                       key={workspace.key}
                       type="button"
                       aria-pressed={selected}
+                      disabled={workspaceConfigurationBusy && !selected}
+                      title={
+                        workspaceConfigurationBusy && !selected
+                          ? "Workspace settings are saving."
+                          : undefined
+                      }
                       onClick={() => selectWorkspace(workspace.key)}
                       className={cn(
                         "w-full rounded-lg border px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60",
                         selected
                           ? "border-sky-800/70 bg-sky-950/25"
                           : "border-transparent hover:border-slate-800 hover:bg-slate-900/55",
+                        "disabled:cursor-not-allowed disabled:opacity-50",
                       )}
                     >
                       <div className="flex items-center gap-2">
@@ -1696,6 +1721,7 @@ export const WorkspaceManager = ({
                     disabled={
                       setup.saving ||
                       workspaceSetup.loading ||
+                      workspaceConfigurationBusy ||
                       !instructionLibraryAvailable
                     }
                     tooltip={
@@ -1714,6 +1740,7 @@ export const WorkspaceManager = ({
                     disabled={
                       setup.saving ||
                       workspaceSetup.loading ||
+                      workspaceConfigurationBusy ||
                       !instructionLibraryAvailable
                     }
                     tooltip={
@@ -1782,7 +1809,10 @@ export const WorkspaceManager = ({
                   />
                 ) : null}
 
-                {workspaceSection === "settings" ? (
+                <div
+                  hidden={workspaceSection !== "settings"}
+                  className="space-y-4"
+                >
                   <SubmitShortcut asChild>
                     <section className="grid gap-4 rounded-xl border border-slate-800 bg-slate-900/20 p-4 md:grid-cols-[minmax(12rem,0.65fr)_minmax(0,1.35fr)_auto] md:items-end">
                       <label className="grid gap-1.5 text-xs font-medium text-slate-400">
@@ -1856,7 +1886,24 @@ export const WorkspaceManager = ({
                       ) : null}
                     </section>
                   </SubmitShortcut>
-                ) : null}
+
+                  <WorkspaceConfigurationSettings
+                    key={`workspace-configuration-${selectedWorkspace.key}-${workspaceSettingsResetToken}`}
+                    workspaceRoot={selectedWorkspace.root}
+                    workspaceLabel={getManagedWorkspaceName(selectedWorkspace)}
+                    workspaceMemoryDefaultEnabled={
+                      workspaceSetup.workspaceMemoryDefaultEnabled
+                    }
+                    onBusyChange={setWorkspaceConfigurationBusy}
+                    onSaved={workspaceSetup.onConfigurationChanged}
+                  />
+
+                  <WorkspaceMcpSettings
+                    key={`workspace-mcp-${selectedWorkspace.key}-${workspaceSettingsResetToken}`}
+                    workspaceRoot={selectedWorkspace.root}
+                    onDirtyChange={setWorkspaceMcpDirty}
+                  />
+                </div>
 
                 {workspaceSection === "git" ? (
                   <section className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20">

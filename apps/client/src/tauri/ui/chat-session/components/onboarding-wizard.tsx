@@ -37,6 +37,7 @@ export interface OnboardingWizardProps extends SettingsControlsProps {
   activeSession: ChatSessionRecord;
   chooserProviders: RuntimeProvider[];
   hasAnyProvider: boolean;
+  effectiveWorkspaceMode: RunMode;
   isUiControlAvailable: boolean;
   uiControlDescription: string;
   onSelectFolder: () => Promise<void>;
@@ -49,7 +50,6 @@ export interface OnboardingWizardProps extends SettingsControlsProps {
 
 const getSettingsSavePending = ({
   providerSetup,
-  workspaceSetup,
   webSearchSetup,
   mcpSetup,
   agentLimitsSetup,
@@ -61,7 +61,6 @@ const getSettingsSavePending = ({
 }: SettingsControlsProps): boolean => {
   return (
     providerSetup.saving ||
-    workspaceSetup.saving ||
     webSearchSetup.saving ||
     mcpSetup.saving ||
     agentLimitsSetup.saving ||
@@ -81,6 +80,7 @@ export const OnboardingWizard = ({
   activeSession,
   chooserProviders,
   hasAnyProvider,
+  effectiveWorkspaceMode,
   isUiControlAvailable,
   uiControlDescription,
   onSelectFolder,
@@ -270,10 +270,7 @@ export const OnboardingWizard = ({
         label="Session mode"
         detail={
           activeSession.mode === null || activeSession.mode === undefined
-            ? `Workspace default: ${
-                RUN_MODE_META[settingsControls.workspaceSetup.effectiveMode]
-                  .label
-              }`
+            ? `Workspace default: ${RUN_MODE_META[effectiveWorkspaceMode].label}`
             : undefined
         }
       >

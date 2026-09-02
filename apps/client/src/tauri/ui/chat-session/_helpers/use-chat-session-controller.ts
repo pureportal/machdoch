@@ -118,6 +118,7 @@ import {
   appendThinkingProgress,
   createInitialThinkingTrace,
 } from "../../task-thinking.model";
+import { createWorkspaceRootKey } from "../../workspace-management/workspace-management-model";
 import type { FilePreviewMode } from "../components/file-preview-dialog";
 import type { SettingsStatusMessage } from "../components/settings-dialog-panels/types";
 import { clampAiContextMessageLimit } from "./ai-context-window";
@@ -692,6 +693,46 @@ const getClipboardImageMediaType = (
   return mediaType ?? getImageInputMediaTypeForPath(file.name) ?? null;
 };
 
+const saveSupportedClipboardImageFiles = async (
+  files: File[],
+  provider: RuntimeProvider,
+  model: string,
+): Promise<string[]> => {
+  if (!modelSupportsImageInput(provider, model)) {
+    console.error(createImageInputUnsupportedModelMessage(provider, model));
+    return [];
+  }
+
+  const supportedFiles = files.flatMap((file) => {
+    const mediaType = getClipboardImageMediaType(file);
+
+    if (
+      !mediaType ||
+      !providerSupportsImageInputMediaType(provider, mediaType, model)
+    ) {
+      console.error(
+        `Unsupported pasted image format \`${file.type || file.name || "unknown"}\`. Supported extensions for provider \`${provider}\`: ${getSupportedImageInputExtensions(
+          provider,
+          model,
+        ).join(", ")}.`,
+      );
+      return [];
+    }
+
+    return [{ file, mediaType }];
+  });
+
+  return Promise.all(
+    supportedFiles.map(({ file, mediaType }) =>
+      saveClipboardImageAttachment({
+        blob: file,
+        mediaType,
+        fileName: file.name,
+      }),
+    ),
+  );
+};
+
 export const useChatSessionController = (
   options: UseChatSessionControllerOptions = {},
 ) => {
@@ -1103,8 +1144,6 @@ export const useChatSessionController = (
   );
   const activeRunModeMeta = RUN_MODE_META[activeRunMode];
   const defaultRunMode = runtime.runtimeSnapshot?.mode ?? "machdoch";
-  const workspaceDefaultRunMode =
-    runtime.runtimeSnapshot?.defaultMode ?? defaultRunMode;
   const effectiveReasoning = runtime.runtimeSnapshot?.reasoning ?? "default";
   const workspaceReasoningProvider =
     runtime.runtimeSnapshot?.provider === "unconfigured"
@@ -1121,15 +1160,6 @@ export const useChatSessionController = (
     workspaceReasoningProvider ?? null,
     workspaceReasoningModel,
   );
-  const effectiveReasoningExecutionMode =
-    runtime.runtimeSnapshot?.reasoningMode ?? "standard";
-  const workspaceDefaultReasoningExecutionMode =
-    runtime.runtimeSnapshot?.defaultReasoningMode ??
-    effectiveReasoningExecutionMode;
-  const effectiveContextWindow =
-    runtime.runtimeSnapshot?.contextWindow ?? "default";
-  const workspaceDefaultContextWindow =
-    runtime.runtimeSnapshot?.defaultContextWindow ?? effectiveContextWindow;
   const activeSessionReasoningOverride = normalizeSessionReasoningOverride(
     activeComposerSession.reasoning,
     activeComposerSession.provider,
@@ -4224,49 +4254,15 @@ export const useChatSessionController = (
           ? quickTaskModel
           : (targetMessageEdit?.session.model ?? state.activeSession.model);
 
-      if (!modelSupportsImageInput(targetProvider, targetModel)) {
-        console.error(
-          createImageInputUnsupportedModelMessage(targetProvider, targetModel),
-        );
-        return;
-      }
-
-      const supportedFiles = files.flatMap((file) => {
-        const mediaType = getClipboardImageMediaType(file);
-
-        if (
-          !mediaType ||
-          !providerSupportsImageInputMediaType(
-            targetProvider,
-            mediaType,
-            targetModel,
-          )
-        ) {
-          console.error(
-            `Unsupported pasted image format \`${file.type || file.name || "unknown"}\`. Supported extensions for provider \`${targetProvider}\`: ${getSupportedImageInputExtensions(
-              targetProvider,
-              targetModel,
-            ).join(", ")}.`,
-          );
-          return [];
-        }
-
-        return [{ file, mediaType }];
-      });
-
-      if (supportedFiles.length === 0) {
-        return;
-      }
-
-      const paths = await Promise.all(
-        supportedFiles.map(({ file, mediaType }) =>
-          saveClipboardImageAttachment({
-            blob: file,
-            mediaType,
-            fileName: file.name,
-          }),
-        ),
+      const paths = await saveSupportedClipboardImageFiles(
+        files,
+        targetProvider,
+        targetModel,
       );
+
+      if (paths.length === 0) {
+        return;
+      }
 
       await handleAttachPaths(paths, target, {
         updateWorkspaceRoot: false,
@@ -6392,6 +6388,43 @@ export const useChatSessionController = (
     ],
   );
 
+  const handlePasteQueuedMessageImages = useCallback(
+    async (messageId: string, files: File[]): Promise<void> => {
+      const queuedMessage = queuedSessionMessages.find(
+        (message) => message.id === messageId,
+      );
+
+      if (!queuedMessage || isQueuedMessageInProgress(queuedMessage)) {
+        return;
+      }
+
+      const mutationKey = `queued:${messageId}`;
+      const mutationVersion =
+        attachmentMutationVersionsRef.current.get(mutationKey) ?? 0;
+      const targetSession =
+        state.shellState.sessions.find(
+          (session) => session.id === queuedMessage.sessionId,
+        ) ?? state.activeSession;
+      const paths = await saveSupportedClipboardImageFiles(
+        files,
+        targetSession.provider,
+        targetSession.model,
+      );
+
+      if (paths.length === 0) {
+        return;
+      }
+
+      await handleAttachQueuedMessagePaths(messageId, paths, mutationVersion);
+    },
+    [
+      handleAttachQueuedMessagePaths,
+      queuedSessionMessages,
+      state.activeSession,
+      state.shellState.sessions,
+    ],
+  );
+
   const handleQueuedMessageRemoveContextAttachment = useCallback(
     (messageId: string, attachmentId: string): void => {
       const mutationKey = `queued:${messageId}`;
@@ -6976,8 +7009,7 @@ export const useChatSessionController = (
     onRefreshInstructions: refreshInstructionRegistry,
     isGlobalMemoryAvailable: memorySummaryState.isGlobalMemoryAvailable,
     isGlobalMemoryActive: memorySummaryState.isGlobalMemoryActive,
-    isWorkspaceMemoryAvailable:
-      memorySummaryState.isWorkspaceMemoryAvailable,
+    isWorkspaceMemoryAvailable: memorySummaryState.isWorkspaceMemoryAvailable,
     isWorkspaceMemoryActive: memorySummaryState.isWorkspaceMemoryActive,
     isUiControlAvailable,
     uiControlDescription,
@@ -8327,6 +8359,8 @@ export const useChatSessionController = (
       onTogglePinnedSession: lifecycleActions.togglePinnedSession,
       onDuplicateSession: (sessionId: string) =>
         lifecycleActions.cloneSession(sessionId, "duplicate"),
+      onResetSessionTime: lifecycleActions.resetSessionTime,
+      onMoveSessionToTop: lifecycleActions.moveSessionToTop,
       onExportSessions: lifecycleActions.exportSessions,
       onImportSessions: lifecycleActions.importSessions,
     },
@@ -8457,14 +8491,12 @@ export const useChatSessionController = (
       recentWorkspaces: state.shellState.recentWorkspaces,
       composerWorkspaceLabel: memorySummaryState.composerWorkspaceLabel,
       sessionMemoryDescription: memorySummaryState.sessionMemoryDescription,
-      workspaceMemoryDescription:
-        memorySummaryState.workspaceMemoryDescription,
+      workspaceMemoryDescription: memorySummaryState.workspaceMemoryDescription,
       globalMemoryDescription: memorySummaryState.globalMemoryDescription,
       uiControlDescription,
       isGlobalMemoryAvailable: memorySummaryState.isGlobalMemoryAvailable,
       isGlobalMemoryActive: memorySummaryState.isGlobalMemoryActive,
-      isWorkspaceMemoryAvailable:
-        memorySummaryState.isWorkspaceMemoryAvailable,
+      isWorkspaceMemoryAvailable: memorySummaryState.isWorkspaceMemoryAvailable,
       isWorkspaceMemoryActive: memorySummaryState.isWorkspaceMemoryActive,
       isUiControlAvailable,
       interviewEnabled: activeChatInterviewEnabled,
@@ -8588,6 +8620,7 @@ export const useChatSessionController = (
       onQueuedMessageSend: handleQueuedMessageSend,
       onQueuedMessageSelectContextAttachments:
         handleSelectQueuedMessageAttachments,
+      onQueuedMessagePasteContextImages: handlePasteQueuedMessageImages,
       onQueuedMessageRemoveContextAttachment:
         handleQueuedMessageRemoveContextAttachment,
       onQueuedMessageClearContextAttachments:
@@ -8660,16 +8693,28 @@ export const useChatSessionController = (
     workspaceManagement: {
       workspaceRoots: state.shellState.recentWorkspaces,
       memorySourceSessions,
+      workspaceMemoryDefaultEnabled:
+        runtime.userMemorySettings.workspaceDefaultEnabled !== false,
       loading: !state.hasHydrated,
       onAdd: addWorkspaceToHistory,
       onRemove: removeWorkspaceFromHistory,
       onRelink: relinkWorkspaceInHistory,
       onLoadMemory: loadWorkspaceMemoryEntries,
       onForgetMemory: forgetManagedWorkspaceMemory,
+      onConfigurationChanged: async (workspaceRoot: string) => {
+        if (
+          state.activeSession.workspace &&
+          createWorkspaceRootKey(state.activeSession.workspace) ===
+            createWorkspaceRootKey(workspaceRoot)
+        ) {
+          await runtime.refreshWorkspaceRuntimeSnapshot(workspaceRoot);
+        }
+      },
     },
     settingsDialog: {
       settingsSection: state.settingsSection,
       onSettingsSectionChange: state.setSettingsSection,
+      effectiveWorkspaceMode: defaultRunMode,
       providerSetup: {
         provider: runtime.providerSetupProvider,
         providerAvailability: runtime.globalProviders ?? [],
@@ -8681,34 +8726,6 @@ export const useChatSessionController = (
         onOpenProviderPortal: runtime.handleProviderSetupPortalOpen,
         onKeyChange: runtime.handleProviderSetupKeyChange,
         onSave: runtime.handleProviderSetupSave,
-      },
-      workspaceSetup: {
-        workspaceRoot: state.activeSession.workspace,
-        workspaceLabel: memorySummaryState.composerWorkspaceLabel,
-        defaultMode: workspaceDefaultRunMode,
-        effectiveMode: defaultRunMode,
-        defaultReasoning: workspaceDefaultReasoning,
-        effectiveReasoning,
-        defaultReasoningExecutionMode: workspaceDefaultReasoningExecutionMode,
-        effectiveReasoningExecutionMode,
-        defaultContextWindow: workspaceDefaultContextWindow,
-        effectiveContextWindow,
-        workspaceMemoryDefaultEnabled:
-          runtime.userMemorySettings.workspaceDefaultEnabled !== false,
-        workspaceMemoryOverride:
-          runtime.runtimeSnapshot?.workspaceMemoryOverride ?? null,
-        workspaceMemoryEnabled,
-        reasoningProvider: workspaceReasoningProvider,
-        reasoningModel: workspaceReasoningModel,
-        saving: runtime.workspaceSetupSaving,
-        message: runtime.workspaceSetupMessage,
-        onDefaultModeChange: runtime.handleWorkspaceDefaultModeSave,
-        onWorkspaceMemoryOverrideChange:
-          runtime.handleWorkspaceMemoryOverrideSave,
-        onReasoningModeChange: runtime.handleWorkspaceReasoningModeSave,
-        onReasoningExecutionModeChange:
-          runtime.handleWorkspaceReasoningExecutionModeSave,
-        onContextWindowChange: runtime.handleWorkspaceContextWindowSave,
       },
       webSearchSetup: {
         activeProvider: runtime.webSearchActiveProvider,
@@ -8725,11 +8742,10 @@ export const useChatSessionController = (
       },
       mcpSetup: {
         workspaceRoot: state.activeSession.workspace,
-        scope: runtime.mcpConfigScope,
         document: runtime.mcpConfigDocument,
         draft: runtime.mcpConfigDraft,
         presets: runtime.mcpConfigPresets,
-        workspaceAvailable: runtime.mcpConfigWorkspaceAvailable,
+        commandsAvailable: runtime.mcpConfigWorkspaceAvailable,
         loading: runtime.mcpConfigLoading,
         saving: runtime.mcpConfigSaving,
         discoveryServerId: runtime.mcpDiscoveryServerId,
@@ -8739,7 +8755,6 @@ export const useChatSessionController = (
         oauthCallback: runtime.mcpOAuthCallback,
         oauthBusy: runtime.mcpOAuthBusy,
         message: runtime.mcpConfigMessage,
-        onScopeChange: runtime.handleMcpConfigScopeChange,
         onDraftChange: runtime.handleMcpConfigDraftChange,
         onSave: runtime.handleMcpConfigSave,
         onPresetInsert: runtime.handleMcpPresetInsert,

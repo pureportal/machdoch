@@ -8,7 +8,7 @@ import {
   SendHorizontal,
   X,
 } from "lucide-react";
-import { useState, type DragEvent, type JSX } from "react";
+import { useState, type ClipboardEvent, type DragEvent, type JSX } from "react";
 import type { ChatSessionContextAttachment } from "../../chat-session.model";
 import { Button } from "../../components/ui/button";
 import {
@@ -18,6 +18,7 @@ import {
 import { Textarea } from "../../components/ui/textarea";
 import { ControlTooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
+import { getClipboardImageFiles } from "../_helpers/clipboard-image-files";
 import type { AttachmentSelectionKind } from "../_helpers/session-context-attachments";
 import {
   ContextAttachmentMenuButton,
@@ -52,6 +53,7 @@ export interface QueuedMessagesPanelProps {
     messageId: string,
     selectionKind: AttachmentSelectionKind,
   ) => Promise<void>;
+  onMessagePasteImages?: (messageId: string, files: File[]) => Promise<void>;
   onMessageRemoveAttachment?: (messageId: string, attachmentId: string) => void;
   onMessageClearAttachments?: (messageId: string) => void;
 }
@@ -115,6 +117,7 @@ export const QueuedMessagesPanel = ({
   onMessageRetry,
   onMessageSend,
   onMessageSelectAttachments,
+  onMessagePasteImages,
   onMessageRemoveAttachment,
   onMessageClearAttachments,
 }: QueuedMessagesPanelProps): JSX.Element | null => {
@@ -126,6 +129,32 @@ export const QueuedMessagesPanel = ({
   if (messages.length === 0) {
     return null;
   }
+
+  const handleMessagePaste = (
+    event: ClipboardEvent<HTMLTextAreaElement>,
+    messageId: string,
+  ): void => {
+    if (!onMessagePasteImages) {
+      return;
+    }
+
+    const imageFiles = getClipboardImageFiles(event.clipboardData);
+
+    if (imageFiles.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (imageInputDisabled) {
+      console.error(imageInputDisabledReason ?? "Image input is unavailable.");
+      return;
+    }
+
+    void onMessagePasteImages(messageId, imageFiles).catch((error) => {
+      console.error("Failed to attach pasted image to queued message", error);
+    });
+  };
 
   const hasMessageInProgress = messages.some(
     (message) =>
@@ -223,6 +252,7 @@ export const QueuedMessagesPanel = ({
                     onChange={(event) =>
                       onMessageChange?.(message.id, event.target.value)
                     }
+                    onPaste={(event) => handleMessagePaste(event, message.id)}
                     className="max-h-20 min-h-9 resize-none border-slate-800 bg-slate-950/70 px-3 py-2 text-sm leading-5 text-slate-100 shadow-none placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-sky-500"
                   />
 

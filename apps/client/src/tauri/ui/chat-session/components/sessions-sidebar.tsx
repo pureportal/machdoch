@@ -1,5 +1,6 @@
 import {
   Archive,
+  ArrowUpToLine,
   ChevronDown,
   Copy,
   Download,
@@ -10,12 +11,14 @@ import {
   Tag,
   Trash2,
   Upload,
+  RotateCcw,
   type LucideIcon,
 } from "lucide-react";
 import {
   useCallback,
   useEffect,
   Fragment,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -32,9 +35,9 @@ import {
   canDeleteSession,
   canDuplicateSession,
   canPinSession,
-  getLatestSessionUserRequestAt,
   getSessionOverviewStatus,
   getSessionRetentionProgress,
+  getSessionTimestamp,
   getSessionTitle,
   hasUnreadCompletedSessionResponse,
   isQuickVoiceSession,
@@ -88,22 +91,32 @@ import {
   type WorkspaceSelectOption,
 } from "./workspace-select";
 
-const SESSION_CONTEXT_MENU_WIDTH = 192;
-const SESSION_CONTEXT_MENU_HEIGHT = 144;
 const SESSION_CONTEXT_MENU_MARGIN = 8;
 
 interface SessionActionItem {
-  id: "pin" | "duplicate" | "archive" | "delete";
+  id: "reset-time" | "move-to-top" | "pin" | "duplicate" | "archive" | "delete";
   label: string;
   icon: LucideIcon;
   iconClassName: string;
   onSelect: () => void;
 }
 
+type SessionContextMenuAnchor =
+  | {
+      kind: "pointer";
+      left: number;
+      top: number;
+    }
+  | {
+      kind: "dropdown";
+      right: number;
+      preferredTop: number;
+      fallbackBottom: number;
+    };
+
 interface SessionContextMenuState {
   sessionId: string;
-  left: number;
-  top: number;
+  anchor: SessionContextMenuAnchor;
 }
 
 const createSessionProjectOptionLabel = (
@@ -128,33 +141,19 @@ const clampMenuCoordinate = (
   );
 };
 
-const createSessionContextMenuPosition = (
+const createSessionContextMenuAnchor = (
   event: MouseEvent<HTMLElement>,
-): { left: number; top: number } => {
-  if (typeof window === "undefined") {
-    return {
-      left: event.clientX,
-      top: event.clientY,
-    };
-  }
-
+): SessionContextMenuAnchor => {
   return {
-    left: clampMenuCoordinate(
-      event.clientX,
-      SESSION_CONTEXT_MENU_WIDTH,
-      window.innerWidth,
-    ),
-    top: clampMenuCoordinate(
-      event.clientY,
-      SESSION_CONTEXT_MENU_HEIGHT,
-      window.innerHeight,
-    ),
+    kind: "pointer",
+    left: event.clientX,
+    top: event.clientY,
   };
 };
 
-const createSessionDropdownMenuPosition = (
+const createSessionDropdownMenuAnchor = (
   trigger: HTMLElement,
-): { left: number; top: number } => {
+): SessionContextMenuAnchor => {
   const triggerRect = trigger.getBoundingClientRect();
   const cardRect =
     trigger
@@ -164,29 +163,12 @@ const createSessionDropdownMenuPosition = (
     cardRect && (cardRect.width > 0 || cardRect.height > 0)
       ? cardRect
       : triggerRect;
-  const left = horizontalAnchor.right - SESSION_CONTEXT_MENU_WIDTH;
-  const preferredTop = triggerRect.bottom + 4;
-  const fallbackTop = triggerRect.top - SESSION_CONTEXT_MENU_HEIGHT - 4;
-
-  if (typeof window === "undefined") {
-    return { left, top: preferredTop };
-  }
-
-  const hasBottomRoom =
-    preferredTop + SESSION_CONTEXT_MENU_HEIGHT + SESSION_CONTEXT_MENU_MARGIN <=
-    window.innerHeight;
 
   return {
-    left: clampMenuCoordinate(
-      left,
-      SESSION_CONTEXT_MENU_WIDTH,
-      window.innerWidth,
-    ),
-    top: clampMenuCoordinate(
-      hasBottomRoom ? preferredTop : fallbackTop,
-      SESSION_CONTEXT_MENU_HEIGHT,
-      window.innerHeight,
-    ),
+    kind: "dropdown",
+    right: horizontalAnchor.right,
+    preferredTop: triggerRect.bottom + 4,
+    fallbackBottom: triggerRect.top - 4,
   };
 };
 
@@ -201,6 +183,8 @@ export const createSessionActionItems = ({
   onArchiveSession,
   onDeleteSession,
   onDuplicateSession,
+  onMoveSessionToTop,
+  onResetSessionTime,
   onTogglePinnedSession,
 }: {
   sessionId: string;
@@ -213,6 +197,8 @@ export const createSessionActionItems = ({
   onArchiveSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
   onDuplicateSession: (sessionId: string) => void;
+  onMoveSessionToTop?: (sessionId: string) => void;
+  onResetSessionTime?: (sessionId: string) => void;
   onTogglePinnedSession: (sessionId: string) => void;
 }): SessionActionItem[] => {
   if (isQuickSession) {
@@ -220,6 +206,26 @@ export const createSessionActionItems = ({
   }
 
   const items: SessionActionItem[] = [];
+
+  if (onResetSessionTime) {
+    items.push({
+      id: "reset-time",
+      label: "Reset Time",
+      icon: RotateCcw,
+      iconClassName: "text-slate-400",
+      onSelect: () => onResetSessionTime(sessionId),
+    });
+  }
+
+  if (onMoveSessionToTop) {
+    items.push({
+      id: "move-to-top",
+      label: "Move To Top",
+      icon: ArrowUpToLine,
+      iconClassName: "text-slate-400",
+      onSelect: () => onMoveSessionToTop(sessionId),
+    });
+  }
 
   if (canPin) {
     items.push({
@@ -266,23 +272,57 @@ export const createSessionActionItems = ({
 
 const SessionContextActionMenu = ({
   actions,
-  left,
+  anchor,
   onClose,
   title,
-  top,
 }: {
   actions: SessionActionItem[];
-  left: number;
+  anchor: SessionContextMenuAnchor;
   onClose: () => void;
   title: string;
-  top: number;
 }): JSX.Element | ReactPortal => {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+
+    if (!menu) {
+      return;
+    }
+
+    const menuRect = menu.getBoundingClientRect();
+    const preferredLeft =
+      anchor.kind === "pointer" ? anchor.left : anchor.right - menuRect.width;
+    const preferredTop =
+      anchor.kind === "pointer" ? anchor.top : anchor.preferredTop;
+    const hasBottomRoom =
+      preferredTop + menuRect.height + SESSION_CONTEXT_MENU_MARGIN <=
+      window.innerHeight;
+    const resolvedTop =
+      anchor.kind === "dropdown" && !hasBottomRoom
+        ? anchor.fallbackBottom - menuRect.height
+        : preferredTop;
+
+    menu.style.left = `${clampMenuCoordinate(
+      preferredLeft,
+      menuRect.width,
+      window.innerWidth,
+    )}px`;
+    menu.style.top = `${clampMenuCoordinate(
+      resolvedTop,
+      menuRect.height,
+      window.innerHeight,
+    )}px`;
+    menu.style.visibility = "visible";
+  }, [actions.length, anchor]);
+
   const menu = (
     <div
+      ref={menuRef}
       role="menu"
       aria-label={`Session actions for ${title}`}
       className="app-session-context-menu fixed z-[140] w-[192px] rounded-lg border border-slate-700 bg-slate-950 p-1.5 text-slate-100 shadow-2xl shadow-black/45"
-      style={{ left, top }}
+      style={{ visibility: "hidden" }}
       onPointerDown={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
@@ -347,6 +387,8 @@ export interface SessionsSidebarProps {
   onDeleteSession: (sessionId: string) => void;
   onTogglePinnedSession: (sessionId: string) => void;
   onDuplicateSession: (sessionId: string) => void;
+  onResetSessionTime?: (sessionId: string) => void;
+  onMoveSessionToTop?: (sessionId: string) => void;
   onExportSessions: () => void;
   onImportSessions: (file: File) => void;
   searchInputRef?: React.Ref<HTMLInputElement>;
@@ -376,6 +418,8 @@ export const SessionsSidebar = ({
   onDeleteSession,
   onTogglePinnedSession,
   onDuplicateSession,
+  onResetSessionTime,
+  onMoveSessionToTop,
   onExportSessions,
   onImportSessions,
   searchInputRef,
@@ -494,7 +538,7 @@ export const SessionsSidebar = ({
 
       setSessionContextMenu({
         sessionId: session.id,
-        ...createSessionContextMenuPosition(event),
+        anchor: createSessionContextMenuAnchor(event),
       });
     },
     [],
@@ -516,7 +560,7 @@ export const SessionsSidebar = ({
 
       setSessionContextMenu({
         sessionId: session.id,
-        ...createSessionDropdownMenuPosition(event.currentTarget),
+        anchor: createSessionDropdownMenuAnchor(event.currentTarget),
       });
     },
     [],
@@ -582,6 +626,8 @@ export const SessionsSidebar = ({
         onArchiveSession,
         onDeleteSession,
         onDuplicateSession,
+        onMoveSessionToTop,
+        onResetSessionTime,
         onTogglePinnedSession,
       })
     : [];
@@ -1079,6 +1125,8 @@ export const SessionsSidebar = ({
                   onArchiveSession,
                   onDeleteSession,
                   onDuplicateSession,
+                  onMoveSessionToTop,
+                  onResetSessionTime,
                   onTogglePinnedSession,
                 });
                 const hasSessionActionMenu = sessionActionItems.length > 0;
@@ -1198,7 +1246,7 @@ export const SessionsSidebar = ({
                           </span>
                           <span className="shrink-0">
                             {formatSessionTimestamp(
-                              getLatestSessionUserRequestAt(session),
+                              getSessionTimestamp(session),
                             )}
                           </span>
                         </div>
@@ -1290,10 +1338,9 @@ export const SessionsSidebar = ({
       contextMenuSessionActions.length > 0 ? (
         <SessionContextActionMenu
           actions={contextMenuSessionActions}
-          left={sessionContextMenu.left}
+          anchor={sessionContextMenu.anchor}
           onClose={closeSessionContextMenu}
           title={contextMenuSessionTitle}
-          top={sessionContextMenu.top}
         />
       ) : null}
     </aside>
