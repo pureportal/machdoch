@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
+import { formatTimestampDateTime } from "./format";
 
 export interface MemoryManagementEntry {
   id: string;
@@ -20,8 +21,10 @@ const memoryTimestampFormatter = new Intl.DateTimeFormat(undefined, {
   timeStyle: "short",
 });
 
-const formatMemoryTimestamp = (timestamp: number): string =>
-  memoryTimestampFormatter.format(new Date(timestamp));
+const formatMemoryTimestamp = (timestamp: number): string => {
+  const dateTime = formatTimestampDateTime(timestamp);
+  return dateTime ? memoryTimestampFormatter.format(new Date(dateTime)) : "—";
+};
 
 export function MemoryManagementTable({
   entries,
@@ -61,7 +64,7 @@ export function MemoryManagementTable({
                   </td>
                 ) : null}
                 <td className="m-memory-created">
-                  <time dateTime={new Date(entry.createdAt).toISOString()}>
+                  <time dateTime={formatTimestampDateTime(entry.createdAt)}>
                     {createdAt}
                   </time>
                 </td>
