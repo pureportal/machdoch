@@ -32,6 +32,7 @@ import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
 import type { RunningTaskMessageAction } from "../../lib/shell-store";
 import type { RuntimeProvider } from "../../model-catalog";
+import { getClipboardImageFiles } from "../_helpers/clipboard-image-files";
 import type { AttachmentSelectionKind } from "../_helpers/session-context-attachments";
 import {
   ContextAttachmentMenuButton,
@@ -124,6 +125,10 @@ export interface AgentComposerProps {
   onQueuedMessageSelectContextAttachments?: (
     messageId: string,
     selectionKind: AttachmentSelectionKind,
+  ) => Promise<void>;
+  onQueuedMessagePasteContextImages?: (
+    messageId: string,
+    files: File[],
   ) => Promise<void>;
   onQueuedMessageRemoveContextAttachment?: (
     messageId: string,
@@ -386,27 +391,6 @@ const renderAction = (
   );
 };
 
-const getClipboardImageFiles = (
-  event: ClipboardEvent<HTMLTextAreaElement>,
-): File[] => {
-  const clipboardData = event.clipboardData;
-  const itemFiles = Array.from(clipboardData.items)
-    .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
-    .flatMap((item) => {
-      const file = item.getAsFile();
-
-      return file ? [file] : [];
-    });
-
-  if (itemFiles.length > 0) {
-    return itemFiles;
-  }
-
-  return Array.from(clipboardData.files).filter((file) =>
-    file.type.startsWith("image/"),
-  );
-};
-
 export const AgentComposer = ({
   variant,
   draftIdentity,
@@ -453,6 +437,7 @@ export const AgentComposer = ({
   onQueuedMessageRetry,
   onQueuedMessageSend,
   onQueuedMessageSelectContextAttachments,
+  onQueuedMessagePasteContextImages,
   onQueuedMessageRemoveContextAttachment,
   onQueuedMessageClearContextAttachments,
   onSend,
@@ -540,7 +525,7 @@ export const AgentComposer = ({
   const handleTextareaPaste = (
     event: ClipboardEvent<HTMLTextAreaElement>,
   ): void => {
-    const imageFiles = getClipboardImageFiles(event);
+    const imageFiles = getClipboardImageFiles(event.clipboardData);
 
     if (imageFiles.length === 0) {
       return;
@@ -1163,6 +1148,7 @@ export const AgentComposer = ({
       onMessageRetry={onQueuedMessageRetry}
       onMessageSend={onQueuedMessageSend}
       onMessageSelectAttachments={onQueuedMessageSelectContextAttachments}
+      onMessagePasteImages={onQueuedMessagePasteContextImages}
       onMessageRemoveAttachment={onQueuedMessageRemoveContextAttachment}
       onMessageClearAttachments={onQueuedMessageClearContextAttachments}
     />

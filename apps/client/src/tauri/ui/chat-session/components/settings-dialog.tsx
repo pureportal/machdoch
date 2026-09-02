@@ -2,7 +2,6 @@ import {
   AlertTriangle,
   ArrowLeftRight,
   Brain,
-  Folder,
   Gauge,
   KeyRound,
   LoaderCircle,
@@ -47,20 +46,13 @@ import { cn } from "../../lib/utils";
 import { getProviderLabel } from "../../model-catalog";
 import {
   getUserApiKeyProviderLabel,
-  MCP_CONFIG_SCOPE_OPTIONS,
   USER_API_KEY_PROVIDER_ORDER,
   USER_SPEECH_TO_TEXT_PROVIDER_ORDER,
   USER_VOICE_AI_PROVIDER_ORDER,
   USER_WEB_SEARCH_PROVIDER_ORDER,
 } from "../../runtime";
 import {
-  getReasoningModesForProvider,
-  normalizeReasoningModeForProvider,
-  REASONING_LABELS,
-} from "../../reasoning-options";
-import {
   getWebSearchProviderLabel,
-  RUN_MODE_META,
   SETTINGS_SECTIONS,
   type SettingsSection,
   type SettingsSectionGroup,
@@ -86,16 +78,13 @@ import type {
   VoiceSettingsControls,
   WebSearchSetupControls,
   WorkspaceRunSettingsControls,
-  WorkspaceSettingsControls,
 } from "./settings-dialog-panels/types";
 import { VoiceSettingsPanel } from "./settings-dialog-panels/voice-settings-panel";
 import { WebSearchSettingsPanel } from "./settings-dialog-panels/web-search-settings-panel";
-import { WorkspaceSettingsPanel } from "./settings-dialog-panels/workspace-settings-panel";
 import { WorkspaceRunSettingsPanel } from "./settings-dialog-panels/workspace-run-settings-panel";
 
 const SETTINGS_SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
   providers: KeyRound,
-  workspace: Folder,
   "web-search": SearchIcon,
   mcp: Network,
   agent: Gauge,
@@ -138,7 +127,6 @@ type PendingNavigation =
 
 export interface SettingsControlsProps {
   providerSetup: ProviderSetupControls;
-  workspaceSetup: WorkspaceSettingsControls;
   webSearchSetup: WebSearchSetupControls;
   mcpSetup: McpSettingsControls;
   agentLimitsSetup: AgentLimitsSettingsControls;
@@ -181,7 +169,6 @@ export interface SettingsDialogProps extends SettingsControlsProps {
 const renderSettingsPanel = ({
   settingsSection,
   providerSetup,
-  workspaceSetup,
   webSearchSetup,
   mcpSetup,
   agentLimitsSetup,
@@ -195,14 +182,11 @@ const renderSettingsPanel = ({
     case "providers":
       return <ProviderSettingsPanel setup={providerSetup} />;
 
-    case "workspace":
-      return <WorkspaceSettingsPanel setup={workspaceSetup} />;
-
     case "web-search":
       return <WebSearchSettingsPanel setup={webSearchSetup} />;
 
     case "mcp":
-      return <McpSettingsPanel setup={mcpSetup} />;
+      return <McpSettingsPanel setup={mcpSetup} showProviderSync />;
 
     case "agent":
       return <AgentLimitsSettingsPanel setup={agentLimitsSetup} />;
@@ -766,90 +750,6 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
         },
       },
       {
-        id: "settings.workspace.mode.select",
-        title: "Choose default workspace mode",
-        group: "Settings: Workspace",
-        scope,
-        availability: () => {
-          const setup = state().props.workspaceSetup;
-          if (!active("workspace")) return { state: "hidden" };
-          return !setup.workspaceRoot || setup.saving
-            ? {
-                state: "disabled",
-                reason: "Select an available workspace first.",
-              }
-            : { state: "enabled" };
-        },
-        children: () => ({
-          id: "settings.workspace.mode.select.page",
-          title: "Choose default workspace mode",
-          searchPlaceholder: "Search modes",
-          numericSelection: true,
-          groups: [
-            {
-              id: "modes",
-              items: (["ask", "machdoch"] as const).map((mode, index) => ({
-                id: mode,
-                title: RUN_MODE_META[mode].label,
-                current: state().props.workspaceSetup.defaultMode === mode,
-                numericKey: numericKey(index),
-                execute: () =>
-                  void state().props.workspaceSetup.onDefaultModeChange(mode),
-              })),
-            },
-          ],
-        }),
-      },
-      {
-        id: "settings.workspace.reasoning.select",
-        title: "Choose default workspace reasoning",
-        group: "Settings: Workspace",
-        scope,
-        availability: () => {
-          const setup = state().props.workspaceSetup;
-          if (!active("workspace")) return { state: "hidden" };
-          return !setup.workspaceRoot || setup.saving
-            ? {
-                state: "disabled",
-                reason: "Select an available workspace first.",
-              }
-            : { state: "enabled" };
-        },
-        children: () => {
-          const setup = state().props.workspaceSetup;
-          const options = getReasoningModesForProvider(
-            setup.reasoningProvider ?? null,
-            setup.reasoningModel,
-          );
-          const current = normalizeReasoningModeForProvider(
-            setup.defaultReasoning,
-            setup.reasoningProvider ?? null,
-            setup.reasoningModel,
-          );
-          return {
-            id: "settings.workspace.reasoning.select.page",
-            title: "Choose default workspace reasoning",
-            searchPlaceholder: "Search reasoning modes",
-            numericSelection: true,
-            groups: [
-              {
-                id: "reasoning",
-                items: options.map((reasoning, index) => ({
-                  id: reasoning,
-                  title: REASONING_LABELS[reasoning],
-                  current: current === reasoning,
-                  numericKey: numericKey(index),
-                  execute: () =>
-                    void state().props.workspaceSetup.onReasoningModeChange(
-                      reasoning,
-                    ),
-                })),
-              },
-            ],
-          };
-        },
-      },
-      {
         id: "settings.web-search.active-provider.select",
         title: "Choose active web-search provider",
         group: "Settings: Web search",
@@ -945,45 +845,6 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
           void state().props.webSearchSetup.onSave(
             state().props.webSearchSetup.keyValue,
           ),
-      },
-      {
-        id: "settings.mcp.scope.select",
-        title: "Choose MCP configuration scope",
-        group: "Settings: MCP",
-        scope,
-        availability: () =>
-          active("mcp")
-            ? state().props.mcpSetup.loading || state().props.mcpSetup.saving
-              ? { state: "disabled", reason: "MCP settings are busy." }
-              : { state: "enabled" }
-            : { state: "hidden" },
-        children: () => ({
-          id: "settings.mcp.scope.select.page",
-          title: "Choose MCP configuration scope",
-          searchPlaceholder: "Search scopes",
-          numericSelection: true,
-          groups: [
-            {
-              id: "scopes",
-              items: MCP_CONFIG_SCOPE_OPTIONS.map((option, index) => ({
-                id: option.value,
-                title: option.label,
-                current: state().props.mcpSetup.scope === option.value,
-                numericKey: numericKey(index),
-                availability:
-                  option.value === "workspace" &&
-                  !state().props.mcpSetup.workspaceAvailable
-                    ? {
-                        state: "disabled",
-                        reason: "No workspace is available.",
-                      }
-                    : { state: "enabled" },
-                execute: () =>
-                  state().props.mcpSetup.onScopeChange(option.value),
-              })),
-            },
-          ],
-        }),
       },
       {
         id: "settings.mcp.preset.insert",

@@ -249,6 +249,8 @@ export interface ChatSessionRecord {
   lastReadAt?: number;
   archivedAt?: number;
   pinnedAt?: number;
+  timeResetAt?: number;
+  movedToTopAt?: number;
   specialSession?: ChatSessionSpecialKind;
   workspace: string | null;
   provider: RuntimeProvider;
@@ -1284,6 +1286,8 @@ export const createSession = (
     requestedUpdatedAt,
     draftUpdatedAt,
     draftAttachmentsUpdatedAt,
+    overrides.timeResetAt ?? 0,
+    overrides.movedToTopAt ?? 0,
     ...Object.values(draftAttachmentAddedAt),
     ...Object.values(draftAttachmentTombstones),
   );
@@ -1314,6 +1318,12 @@ export const createSession = (
       : {}),
     ...(typeof overrides.pinnedAt === "number"
       ? { pinnedAt: overrides.pinnedAt }
+      : {}),
+    ...(typeof overrides.timeResetAt === "number"
+      ? { timeResetAt: overrides.timeResetAt }
+      : {}),
+    ...(typeof overrides.movedToTopAt === "number"
+      ? { movedToTopAt: overrides.movedToTopAt }
       : {}),
     ...(specialSession ? { specialSession } : {}),
     workspace: overrides.workspace ?? null,
@@ -2722,6 +2732,12 @@ const normalizeSessionRecord = (
       typeof session.archivedAt === "number" ? session.archivedAt : undefined,
     pinnedAt:
       typeof session.pinnedAt === "number" ? session.pinnedAt : undefined,
+    timeResetAt:
+      typeof session.timeResetAt === "number" ? session.timeResetAt : undefined,
+    movedToTopAt:
+      typeof session.movedToTopAt === "number"
+        ? session.movedToTopAt
+        : undefined,
     tags: normalizeSessionTags(session.tags),
   });
 };
@@ -2748,6 +2764,8 @@ const getSessionNormalizationTimestamp = (
     session.lastReadAt ?? 0,
     session.archivedAt ?? 0,
     session.pinnedAt ?? 0,
+    session.timeResetAt ?? 0,
+    session.movedToTopAt ?? 0,
     ...Object.values(session.draftAttachmentAddedAt ?? {}),
     ...Object.values(session.draftAttachmentTombstones ?? {}),
   );
@@ -3420,6 +3438,39 @@ export const getLatestSessionUserRequestAt = (
   return latestRequestAt ?? session.createdAt;
 };
 
+export const getSessionTimestamp = (session: ChatSessionRecord): number => {
+  return Math.max(
+    getLatestSessionUserRequestAt(session),
+    session.timeResetAt ?? 0,
+  );
+};
+
+export const resetSessionTime = (
+  session: ChatSessionRecord,
+  timestamp = Date.now(),
+): ChatSessionRecord => {
+  return {
+    ...session,
+    updatedAt: Math.max(session.updatedAt, timestamp),
+    timeResetAt: timestamp,
+  };
+};
+
+export const moveSessionToTop = (
+  session: ChatSessionRecord,
+  timestamp = Date.now(),
+): ChatSessionRecord => {
+  return {
+    ...session,
+    updatedAt: Math.max(session.updatedAt, timestamp),
+    movedToTopAt: timestamp,
+  };
+};
+
+const getSessionSidebarOrderAt = (session: ChatSessionRecord): number => {
+  return Math.max(getSessionTimestamp(session), session.movedToTopAt ?? 0);
+};
+
 export const compareSessionsByAttention = (
   left: ChatSessionRecord,
   right: ChatSessionRecord,
@@ -3436,6 +3487,21 @@ export const compareSessionsByAttention = (
 
   if (leftIsPinned !== rightIsPinned) {
     return leftIsPinned ? -1 : 1;
+  }
+
+  const hasManualOrder =
+    typeof left.timeResetAt === "number" ||
+    typeof left.movedToTopAt === "number" ||
+    typeof right.timeResetAt === "number" ||
+    typeof right.movedToTopAt === "number";
+
+  if (hasManualOrder) {
+    const manualOrderDelta =
+      getSessionSidebarOrderAt(right) - getSessionSidebarOrderAt(left);
+
+    if (manualOrderDelta !== 0) {
+      return manualOrderDelta;
+    }
   }
 
   if (!leftIsPinned && !rightIsPinned) {
@@ -3455,7 +3521,7 @@ export const compareSessionsByAttention = (
   }
 
   const latestRequestDelta =
-    getLatestSessionUserRequestAt(right) - getLatestSessionUserRequestAt(left);
+    getSessionTimestamp(right) - getSessionTimestamp(left);
 
   if (latestRequestDelta !== 0) {
     return latestRequestDelta;

@@ -40,7 +40,6 @@ import {
 
 export type SettingsSection =
   | "providers"
-  | "workspace"
   | "web-search"
   | "mcp"
   | "agent"
@@ -100,13 +99,6 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
       "background",
       "model",
     ],
-  },
-  {
-    id: "workspace",
-    label: "Workspace",
-    group: "Setup",
-    description: "Mode and reasoning defaults.",
-    keywords: ["folder", "mode", "reasoning", "defaults"],
   },
   {
     id: "agent",

@@ -6,8 +6,10 @@ import {
   canPinSession,
   createSession,
   isQuickVoiceSession,
+  moveSessionToTop as moveSessionRecordToTop,
   normalizeSessionTags,
   rememberRecentWorkspace,
+  resetSessionTime as resetSessionRecordTime,
   sortSessionsByUpdatedAt,
   type ChatSessionRecord,
   type ShellPersistedState,
@@ -27,6 +29,8 @@ export interface SessionLifecycleActions {
   deleteSession: (sessionId: string) => void;
   archiveSession: (sessionId: string) => void;
   togglePinnedSession: (sessionId: string) => void;
+  resetSessionTime: (sessionId: string) => void;
+  moveSessionToTop: (sessionId: string) => void;
   cloneSession: (sessionId: string, mode: "duplicate" | "branch") => void;
   commitSessionTags: (tags: string[]) => void;
   toggleSessionTagFilter: (tag: string) => void;
@@ -257,6 +261,20 @@ export const useSessionLifecycle = (options: {
 
           return nextSession;
         });
+      },
+      resetSessionTime: (sessionId: string): void => {
+        state.updateSessionById(sessionId, (session) =>
+          isQuickVoiceSession(session)
+            ? session
+            : resetSessionRecordTime(session),
+        );
+      },
+      moveSessionToTop: (sessionId: string): void => {
+        state.updateSessionById(sessionId, (session) =>
+          isQuickVoiceSession(session)
+            ? session
+            : moveSessionRecordToTop(session),
+        );
       },
       cloneSession: (sessionId: string, mode: "duplicate" | "branch"): void => {
         let nextSessionId: string | null = null;

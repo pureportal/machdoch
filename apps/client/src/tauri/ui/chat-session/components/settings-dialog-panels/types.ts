@@ -1,6 +1,5 @@
 import type {
   McpConfigDocument,
-  McpConfigScope,
   McpPresetSummary,
   SpeechToTextProvider,
   SpeechToTextProviderAvailability,
@@ -65,9 +64,7 @@ export interface MemorySettingsControls {
   saving: boolean;
   message: SettingsStatusMessage | null;
   onGlobalEnabledChange: (enabled: boolean) => Promise<void> | void;
-  onWorkspaceDefaultEnabledChange?: (
-    enabled: boolean,
-  ) => Promise<void> | void;
+  onWorkspaceDefaultEnabledChange?: (enabled: boolean) => Promise<void> | void;
   onForgetGlobal: (id: string) => Promise<void> | void;
 }
 
@@ -102,11 +99,10 @@ export interface WorkspaceSettingsControls {
 
 export interface McpSettingsControls {
   workspaceRoot: string | null;
-  scope: McpConfigScope;
   document: McpConfigDocument;
   draft: string;
   presets: readonly McpPresetSummary[];
-  workspaceAvailable: boolean;
+  commandsAvailable: boolean;
   loading: boolean;
   saving: boolean;
   discoveryServerId: string;
@@ -116,7 +112,6 @@ export interface McpSettingsControls {
   oauthCallback: string;
   oauthBusy: boolean;
   message: SettingsStatusMessage | null;
-  onScopeChange: (scope: McpConfigScope) => void;
   onDraftChange: (value: string) => void;
   onSave: () => Promise<void> | void;
   onPresetInsert: (presetId: string) => void;

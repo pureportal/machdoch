@@ -27,18 +27,13 @@ import {
 } from "../../../components/ui/submit-shortcut";
 import { Textarea } from "../../../components/ui/textarea";
 import { cn } from "../../../lib/utils";
-import { MCP_CONFIG_SCOPE_OPTIONS } from "../../../runtime";
-import {
-  ChoiceButtons,
-  ProviderSyncControl,
-  SettingsCard,
-  SettingsStatus,
-} from "./shared";
+import { ProviderSyncControl, SettingsCard, SettingsStatus } from "./shared";
 import { useSettingsNavigationGuard } from "./navigation-guard";
 import type { McpSettingsControls } from "./types";
 
 export interface McpSettingsPanelProps {
   setup: McpSettingsControls;
+  showProviderSync?: boolean;
 }
 
 type ServerRecord = Record<string, unknown>;
@@ -659,6 +654,7 @@ const SummaryMetric = ({
 
 export const McpSettingsPanel = ({
   setup,
+  showProviderSync = false,
 }: McpSettingsPanelProps): JSX.Element => {
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<ServerTab>("setup");
@@ -683,12 +679,8 @@ export const McpSettingsPanel = ({
     setup.saving ||
     setup.discoveryBusy ||
     setup.oauthBusy ||
-    !setup.workspaceAvailable ||
+    !setup.commandsAvailable ||
     Boolean(parsed.error);
-  const scopeOptions = MCP_CONFIG_SCOPE_OPTIONS.map((option) => ({
-    ...option,
-    disabled: option.value === "workspace" && !setup.workspaceAvailable,
-  }));
   const selectedIndex = parsed.servers.findIndex(
     (server, index) => getServerId(server, index) === selectedServerId,
   );
@@ -881,114 +873,114 @@ export const McpSettingsPanel = ({
             aria-describedby={undefined}
             className="w-[min(36rem,calc(100vw-2rem))] max-w-none border-slate-800 bg-slate-950 text-slate-100 sm:max-w-none"
           >
-          <DialogHeader>
-            <DialogTitle>Add custom MCP server</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4">
-            <div className="grid gap-3 md:grid-cols-2">
-              <Field label="ID">
-                <Input
-                  value={customDraft.id}
-                  onChange={(event) =>
-                    setCustomDraft((current) => ({
-                      ...current,
-                      id: normalizeServerId(event.target.value),
-                    }))
-                  }
-                  className={INPUT_CLASS}
-                />
-              </Field>
-              <Field label="Title">
-                <Input
-                  value={customDraft.title}
-                  onChange={(event) =>
-                    setCustomDraft((current) => ({
-                      ...current,
-                      title: event.target.value,
-                    }))
-                  }
-                  className={INPUT_CLASS}
-                />
-              </Field>
-              <Field label="Transport">
-                <select
-                  value={customDraft.transportType}
-                  onChange={(event) =>
-                    setCustomDraft((current) => ({
-                      ...current,
-                      transportType: event.target.value as TransportType,
-                    }))
-                  }
-                  className={SELECT_CLASS}
-                >
-                  <option value="stdio">stdio</option>
-                  <option value="streamable-http">streamable-http</option>
-                  <option value="sse">sse</option>
-                </select>
-              </Field>
-              {customDraft.transportType === "stdio" ? (
-                <Field label="Command">
+            <DialogHeader>
+              <DialogTitle>Add custom MCP server</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label="ID">
                   <Input
-                    value={customDraft.command}
-                    placeholder="npx"
+                    value={customDraft.id}
                     onChange={(event) =>
                       setCustomDraft((current) => ({
                         ...current,
-                        command: event.target.value,
+                        id: normalizeServerId(event.target.value),
                       }))
                     }
                     className={INPUT_CLASS}
                   />
                 </Field>
-              ) : (
-                <Field label="URL">
+                <Field label="Title">
                   <Input
-                    value={customDraft.url}
-                    placeholder="https://example.com/mcp"
+                    value={customDraft.title}
                     onChange={(event) =>
                       setCustomDraft((current) => ({
                         ...current,
-                        url: event.target.value,
+                        title: event.target.value,
                       }))
                     }
                     className={INPUT_CLASS}
                   />
                 </Field>
-              )}
-            </div>
-            {customIdAlreadyExists ? (
-              <p className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
-                A server with this ID already exists.
-              </p>
-            ) : null}
-            {!customTransportReady ? (
-              <p className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
-                {customDraft.transportType === "stdio"
-                  ? "Enter a command before adding the server."
-                  : "Enter a valid HTTP or HTTPS URL before adding the server."}
-              </p>
-            ) : null}
-            <div className="flex justify-end gap-2">
-              <DialogClose asChild>
+                <Field label="Transport">
+                  <select
+                    value={customDraft.transportType}
+                    onChange={(event) =>
+                      setCustomDraft((current) => ({
+                        ...current,
+                        transportType: event.target.value as TransportType,
+                      }))
+                    }
+                    className={SELECT_CLASS}
+                  >
+                    <option value="stdio">stdio</option>
+                    <option value="streamable-http">streamable-http</option>
+                    <option value="sse">sse</option>
+                  </select>
+                </Field>
+                {customDraft.transportType === "stdio" ? (
+                  <Field label="Command">
+                    <Input
+                      value={customDraft.command}
+                      placeholder="npx"
+                      onChange={(event) =>
+                        setCustomDraft((current) => ({
+                          ...current,
+                          command: event.target.value,
+                        }))
+                      }
+                      className={INPUT_CLASS}
+                    />
+                  </Field>
+                ) : (
+                  <Field label="URL">
+                    <Input
+                      value={customDraft.url}
+                      placeholder="https://example.com/mcp"
+                      onChange={(event) =>
+                        setCustomDraft((current) => ({
+                          ...current,
+                          url: event.target.value,
+                        }))
+                      }
+                      className={INPUT_CLASS}
+                    />
+                  </Field>
+                )}
+              </div>
+              {customIdAlreadyExists ? (
+                <p className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+                  A server with this ID already exists.
+                </p>
+              ) : null}
+              {!customTransportReady ? (
+                <p className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+                  {customDraft.transportType === "stdio"
+                    ? "Enter a command before adding the server."
+                    : "Enter a valid HTTP or HTTPS URL before adding the server."}
+                </p>
+              ) : null}
+              <div className="flex justify-end gap-2">
+                <DialogClose asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 rounded-lg border-slate-800 bg-slate-950 px-3 text-sm text-slate-200 hover:bg-slate-900"
+                  >
+                    Cancel
+                  </Button>
+                </DialogClose>
                 <Button
                   type="button"
-                  variant="outline"
-                  className="h-9 rounded-lg border-slate-800 bg-slate-950 px-3 text-sm text-slate-200 hover:bg-slate-900"
+                  disabled={!customDraftReady}
+                  onClick={addCustomServer}
+                  {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                  className="h-9 rounded-lg bg-sky-500 px-3 text-sm font-medium text-slate-950 hover:bg-sky-400"
                 >
-                  Cancel
+                  Add server
                 </Button>
-              </DialogClose>
-              <Button
-                type="button"
-                disabled={!customDraftReady}
-                onClick={addCustomServer}
-                {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                className="h-9 rounded-lg bg-sky-500 px-3 text-sm font-medium text-slate-950 hover:bg-sky-400"
-              >
-                Add server
-              </Button>
+              </div>
             </div>
-          </div>
           </DialogContent>
         </SubmitShortcut>
       </Dialog>
@@ -2039,23 +2031,18 @@ export const McpSettingsPanel = ({
     >
       <SubmitShortcut asChild>
         <div className="grid gap-4 py-4">
-          <PanelBlock title="Automatic provider enrollment">
-            <ProviderSyncControl
-              workspaceRoot={setup.workspaceRoot}
-              showDiagnostics
-            />
-          </PanelBlock>
+          {showProviderSync ? (
+            <PanelBlock title="Automatic provider enrollment">
+              <ProviderSyncControl
+                workspaceRoot={setup.workspaceRoot}
+                showDiagnostics
+              />
+            </PanelBlock>
+          ) : null}
 
           <div className="sticky top-0 z-10 -mx-2 grid gap-3 border-b border-slate-800 bg-slate-950/95 px-2 py-3 shadow-sm shadow-black/20">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
-                <ChoiceButtons
-                  label="MCP configuration scope"
-                  value={setup.scope}
-                  options={scopeOptions}
-                  disabled={setup.loading || setup.saving || dirty}
-                  onChange={setup.onScopeChange}
-                />
                 <p className="text-xs text-slate-500">
                   {setup.saving
                     ? "Saving changes..."

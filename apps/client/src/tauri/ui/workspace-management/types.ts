@@ -4,6 +4,7 @@ import type { MemorySourceSession } from "../components/memory-management-entrie
 export interface WorkspaceManagementControls {
   workspaceRoots: string[];
   memorySourceSessions: MemorySourceSession[];
+  workspaceMemoryDefaultEnabled: boolean;
   loading: boolean;
   onAdd: (workspaceRoot: string) => void;
   onRemove: (workspaceRoot: string) => void | Promise<void>;
@@ -16,4 +17,5 @@ export interface WorkspaceManagementControls {
     workspaceRoot: string,
     id: string,
   ) => Promise<ConversationMemoryEntry[]>;
+  onConfigurationChanged: (workspaceRoot: string) => Promise<void> | void;
 }
