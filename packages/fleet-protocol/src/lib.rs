@@ -98,6 +98,14 @@ impl FleetManagedSettingsDelivery {
         if let Some(profile) = &self.profile {
             validate_managed_profile(profile)?;
         }
+        let payload = serde_json::to_vec(self).map_err(|_| {
+            managed_settings_error("Managed settings delivery could not be serialized.")
+        })?;
+        if payload.len() > MAX_MANAGED_SETTINGS_DELIVERY_BYTES {
+            return Err(managed_settings_error(
+                "Managed settings delivery exceeds the 18 MiB payload budget.",
+            ));
+        }
         Ok(())
     }
 }
@@ -719,6 +727,7 @@ pub enum ProductCommandKind {
     CancelPromptEnhancement,
     SetSessionMemory,
     ForgetSessionMemory,
+    SetWorkspaceMemory,
     SetGlobalMemory,
     SetUiControl,
     RemoveAttachment,
@@ -811,8 +820,15 @@ impl<'de> Deserialize<'de> for ProductCommand {
     where
         D: Deserializer<'de>,
     {
-        let raw = RawProductCommand::deserialize(deserializer)?;
-        let command = Self {
+        let payload = Value::deserialize(deserializer)?;
+        let field_names = payload
+            .as_object()
+            .ok_or_else(|| D::Error::custom("Product command must be an object."))?
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        let raw = RawProductCommand::deserialize(payload).map_err(D::Error::custom)?;
+        let mut command = Self {
             kind: raw.kind,
             command_id: raw.command_id,
             task_id: raw.task_id,
@@ -845,12 +861,78 @@ impl<'de> Deserialize<'de> for ProductCommand {
             output_format: raw.output_format,
             transparent_background: raw.transparent_background,
         };
+        command
+            .validate_allowed_fields(&field_names)
+            .map_err(D::Error::custom)?;
         command.validate().map_err(D::Error::custom)?;
+        command.normalize();
         Ok(command)
     }
 }
 
 impl ProductCommand {
+    fn validate_allowed_fields(&self, field_names: &[String]) -> Result<(), String> {
+        let extraneous_fields = field_names
+            .iter()
+            .filter(|field| !self.kind.allowed_fields().contains(&field.as_str()))
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+
+        if extraneous_fields.is_empty() {
+            Ok(())
+        } else {
+            Err(format!(
+                "{} command does not allow {}.",
+                self.kind.as_str(),
+                extraneous_fields.join(", ")
+            ))
+        }
+    }
+
+    fn normalize(&mut self) {
+        for value in [
+            &mut self.command_id,
+            &mut self.task_id,
+            &mut self.session_id,
+            &mut self.title,
+            &mut self.provider,
+            &mut self.model,
+            &mut self.model_id,
+            &mut self.workspace,
+            &mut self.memory_id,
+            &mut self.attachment_id,
+            &mut self.context_pack_id,
+            &mut self.message_id,
+            &mut self.job_id,
+            &mut self.run_id,
+            &mut self.flow_id,
+        ] {
+            normalize_trimmed_option(value);
+        }
+
+        if matches!(
+            self.kind,
+            ProductCommandKind::SubmitMessage | ProductCommandKind::GenerateMedia
+        ) {
+            normalize_trimmed_option(&mut self.prompt);
+        }
+
+        if let Some(tags) = &mut self.tags {
+            for tag in tags {
+                *tag = ecmascript_trim(tag).to_string();
+            }
+        }
+
+        if let Some(parameters) = self.parameters.take() {
+            self.parameters = Some(
+                parameters
+                    .into_iter()
+                    .map(|(name, value)| (ecmascript_trim(&name).to_string(), value))
+                    .collect(),
+            );
+        }
+    }
+
     fn validate(&self) -> Result<(), String> {
         let mut required = Vec::new();
 
@@ -922,6 +1004,7 @@ impl ProductCommand {
             ]),
             ProductCommandKind::SetInterview
             | ProductCommandKind::SetSessionMemory
+            | ProductCommandKind::SetWorkspaceMemory
             | ProductCommandKind::SetGlobalMemory
             | ProductCommandKind::SetUiControl => required.extend([
                 ("sessionId", self.session_id.is_some()),
@@ -1070,6 +1153,7 @@ impl ProductCommand {
             }
             ProductCommandKind::SetInterview
             | ProductCommandKind::SetSessionMemory
+            | ProductCommandKind::SetWorkspaceMemory
             | ProductCommandKind::SetGlobalMemory
             | ProductCommandKind::SetUiControl => valid_identifier(self.session_id.as_deref()),
             ProductCommandKind::ForgetSessionMemory => {
@@ -1156,9 +1240,41 @@ fn valid_text(value: Option<&str>, maximum_length: usize) -> bool {
     value.is_some_and(|value| value.encode_utf16().count() <= maximum_length)
 }
 
+fn normalize_trimmed_option(value: &mut Option<String>) {
+    if let Some(value) = value {
+        *value = ecmascript_trim(value).to_string();
+    }
+}
+
+fn ecmascript_trim(value: &str) -> &str {
+    value.trim_matches(is_ecmascript_whitespace)
+}
+
+fn is_ecmascript_whitespace(character: char) -> bool {
+    matches!(
+        character,
+        '\u{0009}'
+            | '\u{000A}'
+            | '\u{000B}'
+            | '\u{000C}'
+            | '\u{000D}'
+            | '\u{0020}'
+            | '\u{00A0}'
+            | '\u{1680}'
+            | '\u{2000}'
+            ..='\u{200A}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202F}'
+                | '\u{205F}'
+                | '\u{3000}'
+                | '\u{FEFF}'
+    )
+}
+
 fn valid_trimmed_text(value: Option<&str>, maximum_length: usize) -> bool {
     value.is_some_and(|value| {
-        let value = value.trim();
+        let value = ecmascript_trim(value);
         !value.is_empty() && value.encode_utf16().count() <= maximum_length
     })
 }
@@ -1213,13 +1329,106 @@ fn valid_ralph_parameters(parameters: &BTreeMap<String, String>) -> bool {
         })
         && parameters
             .keys()
-            .map(|name| name.trim())
+            .map(|name| ecmascript_trim(name))
             .collect::<BTreeSet<_>>()
             .len()
             == parameters.len()
 }
 
 impl ProductCommandKind {
+    fn allowed_fields(self) -> &'static [&'static str] {
+        match self {
+            Self::Cancel | Self::Retry | Self::Continue | Self::CancelPromptEnhancement => {
+                &["kind", "commandId", "taskId"]
+            }
+            Self::SubmitMessage => &[
+                "kind",
+                "commandId",
+                "sessionId",
+                "prompt",
+                "promptEnhancementMode",
+                "interviewEnabled",
+            ],
+            Self::CreateSession => &["kind", "commandId", "workspace"],
+            Self::ActivateSession
+            | Self::ArchiveSession
+            | Self::PinSession
+            | Self::DuplicateSession
+            | Self::BranchSession
+            | Self::DeleteSession
+            | Self::ClearSessionHistory
+            | Self::ClearSessionMode
+            | Self::ClearSessionReasoning
+            | Self::ClearAttachments
+            | Self::ClearSessionWorkspace => &["kind", "commandId", "sessionId"],
+            Self::RenameSession => &["kind", "commandId", "sessionId", "title"],
+            Self::TagSession => &["kind", "commandId", "sessionId", "tags"],
+            Self::UpdateDraft => &["kind", "commandId", "sessionId", "prompt"],
+            Self::SetSessionModel => &["kind", "commandId", "sessionId", "provider", "model"],
+            Self::SetSessionMode => &["kind", "commandId", "sessionId", "mode"],
+            Self::SetSessionReasoning => &["kind", "commandId", "sessionId", "reasoning"],
+            Self::SetSessionWorkspace => &["kind", "commandId", "sessionId", "workspace"],
+            Self::SetPromptEnhancementMode => {
+                &["kind", "commandId", "sessionId", "promptEnhancementMode"]
+            }
+            Self::SetInterview
+            | Self::SetSessionMemory
+            | Self::SetWorkspaceMemory
+            | Self::SetGlobalMemory
+            | Self::SetUiControl => &["kind", "commandId", "sessionId", "enabled"],
+            Self::ForgetSessionMemory => &["kind", "commandId", "sessionId", "memoryId"],
+            Self::RemoveAttachment => &["kind", "commandId", "sessionId", "attachmentId"],
+            Self::ApplyContextPack => &["kind", "commandId", "sessionId", "contextPackId"],
+            Self::DeleteContextPack => &["kind", "commandId", "contextPackId"],
+            Self::SaveMessageContextPack | Self::SpeakMessage => {
+                &["kind", "commandId", "sessionId", "messageId"]
+            }
+            Self::StopSpeaking => &["kind", "commandId"],
+            Self::SchedulerTrigger
+            | Self::SchedulerPause
+            | Self::SchedulerResume
+            | Self::SchedulerDelete => &["kind", "commandId", "workspace", "jobId"],
+            Self::SchedulerRetryRun | Self::SchedulerCancelRun => {
+                &["kind", "commandId", "workspace", "runId"]
+            }
+            Self::RalphRun => &[
+                "kind",
+                "commandId",
+                "workspace",
+                "scope",
+                "provider",
+                "model",
+                "reasoning",
+                "maxTransitions",
+                "flowId",
+                "parameters",
+            ],
+            Self::RalphResumeRun => &[
+                "kind",
+                "commandId",
+                "workspace",
+                "scope",
+                "provider",
+                "model",
+                "reasoning",
+                "maxTransitions",
+                "runId",
+            ],
+            Self::GenerateMedia => &[
+                "kind",
+                "commandId",
+                "prompt",
+                "target",
+                "modelId",
+                "aspectRatio",
+                "outputCount",
+                "outputFormat",
+                "transparentBackground",
+            ],
+            Self::CancelMediaRun => &["kind", "commandId", "runId"],
+        }
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Cancel => "cancel",
@@ -1249,6 +1458,7 @@ impl ProductCommandKind {
             Self::CancelPromptEnhancement => "cancel-prompt-enhancement",
             Self::SetSessionMemory => "set-session-memory",
             Self::ForgetSessionMemory => "forget-session-memory",
+            Self::SetWorkspaceMemory => "set-workspace-memory",
             Self::SetGlobalMemory => "set-global-memory",
             Self::SetUiControl => "set-ui-control",
             Self::RemoveAttachment => "remove-attachment",
@@ -1337,6 +1547,63 @@ mod tests {
         })
     }
 
+    fn managed_settings_delivery_with_payload_size(payload_size: usize) -> Value {
+        let mut delivery = managed_settings_delivery_json();
+        let context_pack = delivery["profile"]["document"]["contextPacks"][0].clone();
+        delivery["profile"]["document"]["instructions"] = serde_json::json!([]);
+        delivery["profile"]["document"]["prompts"] = serde_json::json!([]);
+        delivery["profile"]["document"]["contextPacks"] = Value::Array(
+            (0..MAX_MANAGED_SETTINGS_COLLECTION_ENTRIES)
+                .map(|index| {
+                    let mut pack = context_pack.clone();
+                    pack["id"] = Value::String(format!("123e4567-e89b-42d3-a456-{index:012}"));
+                    pack["name"] = Value::String(format!("Context pack {index}"));
+                    pack["instructions"] = Value::String(String::new());
+                    pack["prompt"] = Value::String("x".to_string());
+                    pack["provider"] = Value::Null;
+                    pack["model"] = Value::Null;
+                    pack["mode"] = Value::Null;
+                    pack["reasoning"] = Value::Null;
+                    pack["variables"] = serde_json::json!([]);
+                    pack["triggerPhrases"] = serde_json::json!([]);
+                    pack["pathPatterns"] = serde_json::json!([]);
+                    pack["promptEnhancementMode"] = Value::Null;
+                    pack["interviewEnabled"] = Value::Null;
+                    pack["sessionMemoryEnabled"] = Value::Null;
+                    pack["useGlobalMemory"] = Value::Null;
+                    pack["uiControlEnabled"] = Value::Null;
+                    pack
+                })
+                .collect(),
+        );
+
+        let mut remaining = payload_size
+            - serde_json::to_vec(&delivery)
+                .expect("base delivery should encode")
+                .len();
+        for pack in delivery["profile"]["document"]["contextPacks"]
+            .as_array_mut()
+            .expect("context packs should be an array")
+        {
+            let instruction_length = remaining.min(128 * 1024);
+            pack["instructions"] = Value::String("x".repeat(instruction_length));
+            remaining -= instruction_length;
+
+            let prompt_length = remaining.min(128 * 1024 - 1);
+            pack["prompt"] = Value::String("x".repeat(prompt_length + 1));
+            remaining -= prompt_length;
+        }
+
+        assert_eq!(remaining, 0);
+        assert_eq!(
+            serde_json::to_vec(&delivery)
+                .expect("sized delivery should encode")
+                .len(),
+            payload_size
+        );
+        delivery
+    }
+
     fn cancel_command() -> ProductCommand {
         ProductCommand {
             kind: ProductCommandKind::Cancel,
@@ -1374,6 +1641,17 @@ mod tests {
     }
 
     fn command_payload(kind: &str) -> Value {
+        let mut command = command_payload_with_all_fields(kind);
+        let command_kind = serde_json::from_value::<ProductCommandKind>(Value::String(kind.into()))
+            .expect("test command kind should deserialize");
+        command
+            .as_object_mut()
+            .expect("command should be an object")
+            .retain(|field, _| command_kind.allowed_fields().contains(&field.as_str()));
+        command
+    }
+
+    fn command_payload_with_all_fields(kind: &str) -> Value {
         serde_json::json!({
             "kind": kind,
             "commandId": "command-1",
@@ -1527,6 +1805,128 @@ mod tests {
     }
 
     #[test]
+    fn command_decoding_canonicalizes_trimmed_values() {
+        let ralph_run = serde_json::from_value::<ProductCommand>(serde_json::json!({
+            "kind": "ralph-run",
+            "commandId": " ralph-1 ",
+            "workspace": " C:\\workspace ",
+            "scope": "workspace",
+            "flowId": " release-flow ",
+            "parameters": { " environment ": "production" },
+            "provider": " openai ",
+            "model": " gpt-5.6 ",
+            "reasoning": "high"
+        }))
+        .expect("padded RALPH command should decode");
+
+        assert_eq!(
+            serde_json::to_value(ralph_run).expect("RALPH command should encode"),
+            serde_json::json!({
+                "kind": "ralph-run",
+                "commandId": "ralph-1",
+                "workspace": "C:\\workspace",
+                "scope": "workspace",
+                "flowId": "release-flow",
+                "parameters": { "environment": "production" },
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "reasoning": "high"
+            })
+        );
+
+        let submit_message = serde_json::from_value::<ProductCommand>(serde_json::json!({
+            "kind": "submit-message",
+            "sessionId": " session-1 ",
+            "prompt": " Draft a release note ",
+            "promptEnhancementMode": "off",
+            "interviewEnabled": false
+        }))
+        .expect("padded submit-message command should decode");
+
+        assert_eq!(submit_message.session_id.as_deref(), Some("session-1"));
+        assert_eq!(
+            submit_message.prompt.as_deref(),
+            Some("Draft a release note")
+        );
+
+        let tagged_session = serde_json::from_value::<ProductCommand>(serde_json::json!({
+            "kind": "tag-session",
+            "sessionId": " session-1 ",
+            "tags": [" priority ", " release "]
+        }))
+        .expect("padded tag-session command should decode");
+
+        assert_eq!(
+            tagged_session.tags,
+            Some(vec!["priority".to_string(), "release".to_string()])
+        );
+
+        let scheduler_run = serde_json::from_value::<ProductCommand>(serde_json::json!({
+            "kind": "scheduler-retry-run",
+            "workspace": " C:\\workspace ",
+            "runId": " run-1 "
+        }))
+        .expect("padded scheduler command should decode");
+
+        assert_eq!(scheduler_run.workspace.as_deref(), Some("C:\\workspace"));
+        assert_eq!(scheduler_run.run_id.as_deref(), Some("run-1"));
+
+        let media_run = serde_json::from_value::<ProductCommand>(serde_json::json!({
+            "kind": "generate-media",
+            "prompt": " Create a geometric owl ",
+            "modelId": " openai:gpt-image-2 ",
+            "target": "image",
+            "aspectRatio": "1:1",
+            "outputCount": 1,
+            "outputFormat": "png",
+            "transparentBackground": false
+        }))
+        .expect("padded media command should decode");
+
+        assert_eq!(media_run.prompt.as_deref(), Some("Create a geometric owl"));
+        assert_eq!(media_run.model_id.as_deref(), Some("openai:gpt-image-2"));
+    }
+
+    #[test]
+    fn command_decoding_uses_ecmascript_trim_boundaries() {
+        let ralph_run = serde_json::from_value::<ProductCommand>(serde_json::json!({
+            "kind": "ralph-run",
+            "commandId": "\u{FEFF}ralph-1\u{FEFF}",
+            "workspace": "\u{FEFF}C:\\workspace\u{FEFF}",
+            "scope": "workspace",
+            "flowId": "\u{FEFF}release-flow\u{FEFF}",
+            "parameters": { "\u{FEFF}environment\u{FEFF}": "production" },
+            "provider": "\u{FEFF}openai\u{FEFF}",
+            "model": "\u{FEFF}gpt-5.6\u{FEFF}",
+            "reasoning": "high"
+        }))
+        .expect("BOM-padded RALPH command should decode");
+
+        assert_eq!(
+            serde_json::to_value(ralph_run).expect("RALPH command should encode"),
+            serde_json::json!({
+                "kind": "ralph-run",
+                "commandId": "ralph-1",
+                "workspace": "C:\\workspace",
+                "scope": "workspace",
+                "flowId": "release-flow",
+                "parameters": { "environment": "production" },
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "reasoning": "high"
+            })
+        );
+
+        let cancel = serde_json::from_value::<ProductCommand>(serde_json::json!({
+            "kind": "cancel",
+            "taskId": "\u{0085}"
+        }))
+        .expect("U+0085 task ID should not be trimmed or rejected");
+
+        assert_eq!(cancel.task_id.as_deref(), Some("\u{0085}"));
+    }
+
+    #[test]
     fn command_decoding_requires_kind_specific_fields() {
         for (kind, required_fields) in [
             ("cancel", &["taskId"][..]),
@@ -1567,6 +1967,7 @@ mod tests {
             ("cancel-prompt-enhancement", &["taskId"][..]),
             ("set-session-memory", &["sessionId", "enabled"][..]),
             ("forget-session-memory", &["sessionId", "memoryId"][..]),
+            ("set-workspace-memory", &["sessionId", "enabled"][..]),
             ("set-global-memory", &["sessionId", "enabled"][..]),
             ("set-ui-control", &["sessionId", "enabled"][..]),
             ("remove-attachment", &["sessionId", "attachmentId"][..]),
@@ -1622,8 +2023,78 @@ mod tests {
     }
 
     #[test]
+    fn command_decoding_rejects_fields_from_other_variants() {
+        for kind in [
+            "cancel",
+            "retry",
+            "continue",
+            "submit-message",
+            "create-session",
+            "activate-session",
+            "archive-session",
+            "pin-session",
+            "duplicate-session",
+            "branch-session",
+            "delete-session",
+            "rename-session",
+            "tag-session",
+            "clear-session-history",
+            "clear-session-mode",
+            "clear-session-reasoning",
+            "update-draft",
+            "set-session-model",
+            "set-session-mode",
+            "set-session-reasoning",
+            "set-session-workspace",
+            "clear-session-workspace",
+            "set-prompt-enhancement-mode",
+            "set-interview",
+            "cancel-prompt-enhancement",
+            "set-session-memory",
+            "forget-session-memory",
+            "set-workspace-memory",
+            "set-global-memory",
+            "set-ui-control",
+            "remove-attachment",
+            "clear-attachments",
+            "apply-context-pack",
+            "delete-context-pack",
+            "save-message-context-pack",
+            "speak-message",
+            "stop-speaking",
+            "scheduler-trigger",
+            "scheduler-pause",
+            "scheduler-resume",
+            "scheduler-delete",
+            "scheduler-retry-run",
+            "scheduler-cancel-run",
+            "ralph-run",
+            "ralph-resume-run",
+            "generate-media",
+            "cancel-media-run",
+        ] {
+            assert!(
+                serde_json::from_value::<ProductCommand>(command_payload(kind)).is_ok(),
+                "{kind} command should accept its allowed fields"
+            );
+            assert!(
+                serde_json::from_value::<ProductCommand>(command_payload_with_all_fields(kind))
+                    .is_err(),
+                "{kind} command should reject fields from other variants"
+            );
+        }
+
+        let mut command = command_payload("cancel");
+        command["sessionId"] = Value::Null;
+        assert!(
+            serde_json::from_value::<ProductCommand>(command).is_err(),
+            "commands should reject disallowed fields even when they are null"
+        );
+    }
+
+    #[test]
     fn command_decoding_rejects_unknown_kinds() {
-        let command = command_payload("unknown-command");
+        let command = command_payload_with_all_fields("unknown-command");
 
         assert!(serde_json::from_value::<ProductCommand>(command).is_err());
     }
@@ -1631,6 +2102,11 @@ mod tests {
     #[test]
     fn command_decoding_rejects_invalid_kind_specific_values() {
         for (kind, field, value) in [
+            ("cancel", "commandId", serde_json::json!(" ")),
+            ("cancel", "taskId", serde_json::json!("\t")),
+            ("submit-message", "prompt", serde_json::json!(" ")),
+            ("rename-session", "title", serde_json::json!(" ")),
+            ("set-session-model", "provider", serde_json::json!(" ")),
             ("ralph-run", "scope", serde_json::json!("global")),
             (
                 "ralph-resume-run",
@@ -1711,6 +2187,28 @@ mod tests {
             delivery.profile.as_ref().map(|profile| profile.revision),
             Some(1)
         );
+    }
+
+    #[test]
+    fn managed_settings_delivery_enforces_payload_budget() {
+        for payload_size in [
+            MAX_MANAGED_SETTINGS_DELIVERY_BYTES - 1,
+            MAX_MANAGED_SETTINGS_DELIVERY_BYTES,
+        ] {
+            assert!(serde_json::from_value::<FleetManagedSettingsDelivery>(
+                managed_settings_delivery_with_payload_size(payload_size)
+            )
+            .is_ok());
+        }
+
+        let error = serde_json::from_value::<FleetManagedSettingsDelivery>(
+            managed_settings_delivery_with_payload_size(MAX_MANAGED_SETTINGS_DELIVERY_BYTES + 1),
+        )
+        .expect_err("oversized managed settings delivery should be rejected");
+
+        assert!(error
+            .to_string()
+            .contains("Managed settings delivery exceeds the 18 MiB payload budget."));
     }
 
     #[test]
