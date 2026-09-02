@@ -306,6 +306,15 @@ fn resolve_compatibility(config: &WorkspaceConfigFile) -> RuntimeCompatibilityCo
     }
 }
 
+fn resolve_workspace_memory_enabled(
+    workspace_default_enabled: Option<bool>,
+    workspace_override: Option<bool>,
+) -> bool {
+    workspace_override
+        .or(workspace_default_enabled)
+        .unwrap_or(true)
+}
+
 pub(super) fn collect_runtime_snapshot(workspace_root: &str) -> Result<RuntimeSnapshot, String> {
     let workspace_path = resolve_workspace_root_path(workspace_root)?;
     let resolved_workspace_root = workspace_path.display().to_string();
@@ -348,6 +357,11 @@ pub(super) fn collect_runtime_snapshot(workspace_root: &str) -> Result<RuntimeSn
         .reasoning_mode
         .clone()
         .unwrap_or(ReasoningExecutionMode::Standard);
+    let workspace_memory_override = config.workspace_memory_enabled;
+    let workspace_memory_enabled = resolve_workspace_memory_enabled(
+        user_config.memory.workspace_default_enabled,
+        workspace_memory_override,
+    );
     let mode = if is_valid_mode(env.get("MACHDOCH_MODE").map(String::as_str)) {
         env.get("MACHDOCH_MODE")
             .map(String::as_str)
@@ -412,6 +426,8 @@ pub(super) fn collect_runtime_snapshot(workspace_root: &str) -> Result<RuntimeSn
         default_reasoning,
         default_reasoning_mode,
         default_context_window,
+        workspace_memory_enabled,
+        workspace_memory_override,
         mode,
         provider,
         model,
@@ -433,6 +449,24 @@ pub(super) fn collect_runtime_snapshot(workspace_root: &str) -> Result<RuntimeSn
         },
         ui_control: crate::ui_control::detect_ui_control_availability(),
     })
+}
+
+#[cfg(test)]
+mod workspace_memory_tests {
+    use super::resolve_workspace_memory_enabled;
+
+    #[test]
+    fn workspace_override_takes_precedence_over_global_default() {
+        assert!(!resolve_workspace_memory_enabled(Some(true), Some(false)));
+        assert!(resolve_workspace_memory_enabled(Some(false), Some(true)));
+    }
+
+    #[test]
+    fn workspace_memory_uses_the_global_default_without_an_override() {
+        assert!(!resolve_workspace_memory_enabled(Some(false), None));
+        assert!(resolve_workspace_memory_enabled(Some(true), None));
+        assert!(resolve_workspace_memory_enabled(None, None));
+    }
 }
 
 #[cfg(all(test, unix))]

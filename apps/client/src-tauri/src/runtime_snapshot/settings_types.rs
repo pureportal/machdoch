@@ -31,6 +31,7 @@ pub struct UserSpeechToTextSettings {
 #[serde(rename_all = "camelCase")]
 pub struct UserMemorySettings {
     pub(super) global_enabled: bool,
+    pub(super) workspace_default_enabled: bool,
     pub(super) entries: Vec<UserMemoryEntry>,
 }
 
@@ -114,6 +115,7 @@ pub(super) struct WorkspaceConfigFile {
     pub(super) offline: Option<bool>,
     pub(super) agent_limits: Option<UserAgentLimitsConfigFile>,
     pub(super) compatibility: Option<WorkspaceCompatibilityConfig>,
+    pub(super) workspace_memory_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -214,6 +216,7 @@ pub(super) struct UserAgentLimitsConfigFile {
 #[serde(rename_all = "camelCase")]
 pub(super) struct UserMemoryConfigFile {
     pub(super) global_enabled: Option<bool>,
+    pub(super) workspace_default_enabled: Option<bool>,
     #[serde(default)]
     pub(super) entries: Vec<UserMemoryEntry>,
 }

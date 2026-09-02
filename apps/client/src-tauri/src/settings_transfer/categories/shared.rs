@@ -9,8 +9,8 @@ use unicode_normalization::UnicodeNormalization as _;
 use zeroize::{Zeroize as _, Zeroizing};
 
 use super::{
-    CategorySnapshot, CategorySnapshotData, FileSnapshotEntry, SettingsCategoryId,
-    SnapshotAvailability, CATEGORY_SCHEMA_VERSION,
+    category_schema_version, CategorySnapshot, CategorySnapshotData, FileSnapshotEntry,
+    SettingsCategoryId, SnapshotAvailability,
 };
 
 const MAX_RELATIVE_PATH_BYTES: usize = 512;
@@ -60,7 +60,7 @@ fn create_snapshot(
     );
     Ok(CategorySnapshot {
         id,
-        schema_version: CATEGORY_SCHEMA_VERSION,
+        schema_version: category_schema_version(id),
         replacement: if empty { "empty" } else { "value" }.to_string(),
         item_count,
         plaintext_bytes: bytes.len() as u64,

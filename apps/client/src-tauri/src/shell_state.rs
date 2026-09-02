@@ -15,13 +15,14 @@ const SNAPSHOT_FILE: &str = "machdoch-shell-state.snapshot.json";
 const SNAPSHOT_REVISION_FILE: &str = "machdoch-shell-state.snapshot.revision";
 const TOMBSTONES_KEY: &str = "__machdochTombstones";
 const MAX_TOMBSTONES_PER_KIND: usize = 50_000;
-const CHAT_VOICE_OWNED_SHELL_KEYS: [&str; 7] = [
+const CHAT_VOICE_OWNED_SHELL_KEYS: [&str; 8] = [
     "voice",
     "lastSelectedProvider",
     "lastSelectedModelByProvider",
     "lastSelectedMode",
     "lastSelectedReasoning",
     "lastSelectedSessionMemoryEnabled",
+    "lastSelectedUseWorkspaceMemory",
     "lastSelectedUseGlobalMemory",
 ];
 const CHAT_VOICE_UI_CONTROL_KEY: &str = "lastSelectedUiControlEnabled";
@@ -486,6 +487,7 @@ fn prepare_chat_voice_preference_replacement(
         ("provider", "lastSelectedProvider"),
         ("models", "lastSelectedModelByProvider"),
         ("sessionMemoryEnabled", "lastSelectedSessionMemoryEnabled"),
+        ("useWorkspaceMemory", "lastSelectedUseWorkspaceMemory"),
         ("useGlobalMemory", "lastSelectedUseGlobalMemory"),
         ("uiControlEnabled", "lastSelectedUiControlEnabled"),
     ] {
@@ -1240,6 +1242,7 @@ mod tests {
             "lastSelectedMode": "ask",
             "lastSelectedReasoning": "low",
             "lastSelectedSessionMemoryEnabled": true,
+            "lastSelectedUseWorkspaceMemory": true,
             "lastSelectedUseGlobalMemory": true,
             "lastSelectedUiControlEnabled": false
         });
@@ -1251,6 +1254,7 @@ mod tests {
                 "mode": null,
                 "reasoning": "high",
                 "sessionMemoryEnabled": false,
+                "useWorkspaceMemory": false,
                 "useGlobalMemory": false,
                 "uiControlEnabled": true
             },
@@ -1268,6 +1272,7 @@ mod tests {
         assert_eq!(replaced["lastSelectedProvider"], json!("anthropic"));
         assert!(replaced.get("lastSelectedMode").is_none());
         assert_eq!(replaced["lastSelectedReasoning"], json!("high"));
+        assert_eq!(replaced["lastSelectedUseWorkspaceMemory"], json!(false));
         assert_eq!(replaced["lastSelectedUiControlEnabled"], json!(true));
     }
 
@@ -1292,6 +1297,7 @@ mod tests {
             "lastSelectedMode": "machdoch",
             "lastSelectedReasoning": "high",
             "lastSelectedSessionMemoryEnabled": false,
+            "lastSelectedUseWorkspaceMemory": false,
             "lastSelectedUseGlobalMemory": false,
             "lastSelectedUiControlEnabled": true
         });
@@ -1307,6 +1313,7 @@ mod tests {
             "lastSelectedMode",
             "lastSelectedReasoning",
             "lastSelectedSessionMemoryEnabled",
+            "lastSelectedUseWorkspaceMemory",
             "lastSelectedUseGlobalMemory",
             "lastSelectedUiControlEnabled",
         ] {

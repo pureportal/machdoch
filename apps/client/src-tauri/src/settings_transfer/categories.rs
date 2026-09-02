@@ -44,8 +44,8 @@ use crate::{
 };
 
 use super::contract::{
-    CategoryAvailabilityState, CategorySnapshot, CategorySnapshotData, CategoryStatus,
-    FileSnapshotEntry, SettingsCategoryId, SnapshotAvailability, CATEGORY_SCHEMA_VERSION,
+    category_schema_version, CategoryAvailabilityState, CategorySnapshot, CategorySnapshotData,
+    CategoryStatus, FileSnapshotEntry, SettingsCategoryId, SnapshotAvailability,
 };
 
 mod api_keys;
@@ -90,7 +90,7 @@ const MCP_MARKETPLACE_STORAGE_KEY: &str = "machdoch.desktop.mcp-marketplace-stat
 const RUNNING_TASK_MESSAGE_ACTION_STORAGE_KEY: &str =
     "machdoch.desktop.running-task-message-action";
 const RALPH_SETTINGS_STORAGE_KEY: &str = "machdoch.desktop.ralph-settings";
-const CHAT_VOICE_PREFERENCE_ITEM_COUNT: u32 = 10;
+const CHAT_VOICE_PREFERENCE_ITEM_COUNT: u32 = 11;
 const RALPH_PREFERENCE_ITEM_COUNT: u32 = 8;
 const MIN_VOICE_RATE: f64 = 0.8;
 const MAX_VOICE_RATE: f64 = 1.4;
@@ -377,11 +377,14 @@ fn snapshot_global_memory() -> Result<CategorySnapshot, String> {
         .collect::<Vec<_>>();
     let value = json!({
         "globalEnabled": memory.get("globalEnabled").and_then(Value::as_bool).unwrap_or(false),
+        "workspaceDefaultEnabled": memory.get("workspaceDefaultEnabled").and_then(Value::as_bool).unwrap_or(true),
         "entries": entries,
     });
     validate_memory_value(&value)?;
     let count = value["entries"].as_array().map_or(0, Vec::len);
-    let empty = count == 0 && !value["globalEnabled"].as_bool().unwrap_or(false);
+    let empty = count == 0
+        && !value["globalEnabled"].as_bool().unwrap_or(false)
+        && value["workspaceDefaultEnabled"].as_bool().unwrap_or(true);
     create_json_snapshot(
         SettingsCategoryId::GlobalMemory,
         value,
@@ -445,6 +448,10 @@ pub(crate) fn chat_voice_preferences_from_sources<R: Runtime>(
             "reasoning": nullable_enum(root.get("lastSelectedReasoning"), &REASONING_MODES),
             "sessionMemoryEnabled": root
                 .get("lastSelectedSessionMemoryEnabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+            "useWorkspaceMemory": root
+                .get("lastSelectedUseWorkspaceMemory")
                 .and_then(Value::as_bool)
                 .unwrap_or(true),
             "useGlobalMemory": root
@@ -973,7 +980,7 @@ pub(crate) fn create_category_statuses(
 }
 
 pub(crate) fn validate_category_snapshot(snapshot: &CategorySnapshot) -> Result<(), String> {
-    if snapshot.schema_version != CATEGORY_SCHEMA_VERSION {
+    if snapshot.schema_version != category_schema_version(snapshot.id) {
         return Err("A category uses an unsupported schema version.".to_string());
     }
     if !matches!(snapshot.replacement.as_str(), "value" | "empty") {
@@ -1046,7 +1053,9 @@ fn snapshot_semantics(snapshot: &CategorySnapshot) -> Result<(u32, bool), String
         (SettingsCategoryId::GlobalMemory, CategorySnapshotData::Json(Value::Object(value))) => {
             let count = value["entries"].as_array().map_or(0, Vec::len);
             let enabled = value["globalEnabled"].as_bool().unwrap_or(false);
-            (count, count == 0 && !enabled)
+            let workspace_default_enabled =
+                value["workspaceDefaultEnabled"].as_bool().unwrap_or(true);
+            (count, count == 0 && !enabled && workspace_default_enabled)
         }
         (
             SettingsCategoryId::GlobalContextPacks,
@@ -1443,9 +1452,18 @@ fn validate_memory_value(value: &Value) -> Result<(), String> {
     let root = value
         .as_object()
         .ok_or_else(|| "Global memory settings are invalid.".to_string())?;
-    require_exact_keys(root, &["globalEnabled", "entries"])?;
+    require_exact_keys(
+        root,
+        &["globalEnabled", "workspaceDefaultEnabled", "entries"],
+    )?;
     if !root.get("globalEnabled").is_some_and(Value::is_boolean) {
         return Err("The global-memory enabled state is invalid.".to_string());
+    }
+    if !root
+        .get("workspaceDefaultEnabled")
+        .is_some_and(Value::is_boolean)
+    {
+        return Err("The workspace-memory default state is invalid.".to_string());
     }
     let entries = root
         .get("entries")
@@ -1570,6 +1588,7 @@ pub(crate) fn validate_chat_voice_preferences_value(value: &Value) -> Result<(),
             "mode",
             "reasoning",
             "sessionMemoryEnabled",
+            "useWorkspaceMemory",
             "useGlobalMemory",
             "uiControlEnabled",
         ],
@@ -1594,6 +1613,7 @@ pub(crate) fn validate_chat_voice_preferences_value(value: &Value) -> Result<(),
         || !validate_nullable_enum(new_chat.get("reasoning"), &REASONING_MODES)
         || [
             "sessionMemoryEnabled",
+            "useWorkspaceMemory",
             "useGlobalMemory",
             "uiControlEnabled",
         ]
@@ -2217,6 +2237,7 @@ mod tests {
                 "mode": "machdoch",
                 "reasoning": "high",
                 "sessionMemoryEnabled": true,
+                "useWorkspaceMemory": false,
                 "useGlobalMemory": true,
                 "uiControlEnabled": false
             },
@@ -2251,6 +2272,7 @@ mod tests {
     fn global_memory_schema_requires_ranked_keyed_records() {
         let memory = json!({
             "globalEnabled": true,
+            "workspaceDefaultEnabled": false,
             "entries": [{
                 "id": "summary-style",
                 "scope": "global",
