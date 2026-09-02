@@ -2,8 +2,12 @@ import { useCallback, useSyncExternalStore } from "react";
 import type {
   WorkspaceRunConfigurationDocument,
   WorkspaceRunDetection,
+  WorkspaceRunSnapshot,
 } from "../../../shared/workspace-run.js";
-import { precheckWorkspaceRunConfigurationJson } from "../runtime";
+import {
+  precheckWorkspaceRunConfigurationJson,
+  saveWorkspaceRunConfigurationDocument,
+} from "../runtime";
 import {
   generateWorkspaceRunDetection,
   validateWorkspaceRunDetections,
@@ -13,6 +17,7 @@ import { createWorkspaceRootKey } from "./workspace-management-model";
 export interface WorkspaceRunDetectionResult {
   document: WorkspaceRunConfigurationDocument;
   detections: WorkspaceRunDetection[];
+  snapshot: WorkspaceRunSnapshot;
 }
 
 export interface WorkspaceRunDetectionState {
@@ -136,34 +141,32 @@ const executeWorkspaceRunDetection = async (
 ): Promise<void> => {
   try {
     const generated = await generateWorkspaceRunDetection(workspaceRoot);
-    if (
-      entry.abandoned ||
-      !isCurrentDetectionEntry(workspaceRoot, entry)
-    ) {
+    if (entry.abandoned || !isCurrentDetectionEntry(workspaceRoot, entry)) {
       return;
     }
     const document = await precheckWorkspaceRunConfigurationJson(
       workspaceRoot,
       generated.documentJson,
     );
-    if (
-      entry.abandoned ||
-      !isCurrentDetectionEntry(workspaceRoot, entry)
-    ) {
+    if (entry.abandoned || !isCurrentDetectionEntry(workspaceRoot, entry)) {
       return;
     }
     validateWorkspaceRunDetections(document, generated.detections);
+    const snapshot = await saveWorkspaceRunConfigurationDocument(
+      workspaceRoot,
+      document,
+    );
+    if (entry.abandoned || !isCurrentDetectionEntry(workspaceRoot, entry)) {
+      return;
+    }
     publishDetectionState(entry, {
       phase: "complete",
       revision,
-      result: { document, detections: generated.detections },
+      result: { document, detections: generated.detections, snapshot },
       error: null,
     });
   } catch (cause) {
-    if (
-      entry.abandoned ||
-      !isCurrentDetectionEntry(workspaceRoot, entry)
-    ) {
+    if (entry.abandoned || !isCurrentDetectionEntry(workspaceRoot, entry)) {
       return;
     }
     publishDetectionState(entry, {
