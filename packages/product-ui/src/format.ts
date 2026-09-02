@@ -1,5 +1,6 @@
 export function formatRelativeTime(timestamp: number | undefined): string {
   if (timestamp === undefined) return "";
+  if (!getTimestampDate(timestamp)) return "—";
   const elapsed = Math.max(0, Date.now() - timestamp);
   if (elapsed < 60_000) return "now";
   const minutes = Math.floor(elapsed / 60_000);
@@ -28,15 +29,28 @@ export function formatBytes(bytes: number): string {
 export function formatTimestamp(
   timestamp: number | string | null | undefined,
 ): string {
-  if (timestamp === undefined || timestamp === null || timestamp === "") {
-    return "—";
-  }
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return "—";
+  const date = getTimestampDate(timestamp);
+  if (!date) return "—";
   return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+export function formatTimestampDateTime(
+  timestamp: number | string | null | undefined,
+): string | undefined {
+  return getTimestampDate(timestamp)?.toISOString();
+}
+
+function getTimestampDate(
+  timestamp: number | string | null | undefined,
+): Date | undefined {
+  if (timestamp === undefined || timestamp === null || timestamp === "") {
+    return undefined;
+  }
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? undefined : date;
 }

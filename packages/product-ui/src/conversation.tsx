@@ -12,7 +12,7 @@ import {
   WandSparkles,
 } from "lucide-react";
 import { useLayoutEffect, useRef } from "react";
-import { formatRelativeTime } from "./format";
+import { formatRelativeTime, formatTimestampDateTime } from "./format";
 import { ProductMarkdown } from "./markdown";
 import { PromptEnhancementIndicator } from "./prompt-enhancement";
 import type { ProductCommandHandler } from "./product-runtime";
@@ -100,7 +100,7 @@ function Message({
         <div className="m-product-message-meta">
           <span>{isUser ? "You" : "Machdoch"}</span>
           {message.createdAt !== undefined ? (
-            <time dateTime={new Date(message.createdAt).toISOString()}>
+            <time dateTime={formatTimestampDateTime(message.createdAt)}>
               {formatRelativeTime(message.createdAt)}
             </time>
           ) : null}
