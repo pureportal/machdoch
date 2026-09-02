@@ -3,7 +3,7 @@ import type { RalphBlockExecutionResult } from "../ralph.js";
 
 export const MAX_RALPH_FAILURE_SIGNATURE_CHARS = 8_000;
 
-const isRepeatableRalphFailureOutput = (
+export const isRepeatableRalphFailureResult = (
   result: RalphBlockExecutionResult,
 ): boolean => {
   if (result.output === "SUCCESS" || result.output === "DONE") {
@@ -92,7 +92,7 @@ const serializeFailureSignatureValue = (value: unknown): string =>
 export const createRalphFailureSignature = (
   result: RalphBlockExecutionResult,
 ): string | undefined => {
-  if (!isRepeatableRalphFailureOutput(result)) {
+  if (!isRepeatableRalphFailureResult(result)) {
     return undefined;
   }
 

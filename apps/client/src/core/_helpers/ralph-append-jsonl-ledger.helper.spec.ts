@@ -24,11 +24,42 @@ describe("RALPH APPEND_JSONL ledger", () => {
       },
     });
 
-    expect(parseRalphAppendJsonlLedger(ledger)).toEqual(ledger);
+    expect(parseRalphAppendJsonlLedger(ledger)).toEqual({
+      ledger,
+      source: "current",
+    });
+  });
+
+  it("normalizes the prior unversioned engine ledger", () => {
+    expect(
+      parseRalphAppendJsonlLedger({
+        operations: {
+          first: {
+            ...started,
+            state: "completed",
+            completedAt: "2026-09-01T00:00:01.000Z",
+          },
+        },
+      }),
+    ).toEqual({
+      ledger: {
+        schemaVersion: 1,
+        operations: {
+          first: {
+            ...started,
+            state: "completed",
+            completedAt: "2026-09-01T00:00:01.000Z",
+          },
+        },
+      },
+      source: "unversioned",
+    });
   });
 
   it.each([
-    { operations: {} },
+    {},
+    { schemaVersion: 2, operations: {} },
+    { operations: {}, unexpected: true },
     { schemaVersion: 1, operations: { first: { ...started, state: "done" } } },
     {
       schemaVersion: 1,
