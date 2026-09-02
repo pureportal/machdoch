@@ -1,4 +1,5 @@
 import {
+  chmod,
   mkdir,
   mkdtemp,
   open,
@@ -60,6 +61,21 @@ describe("atomic file persistence", () => {
       0,
     );
   });
+
+  it.runIf(process.platform !== "win32")(
+    "preserves existing file permissions when replacing content",
+    async () => {
+      const directory = await createTemporaryDirectory("atomic-mode-");
+      const path = join(directory, "credentials.json");
+      await writeFile(path, "first", "utf8");
+      await chmod(path, 0o600);
+
+      await writeFileAtomically(path, "second");
+
+      expect((await stat(path)).mode & 0o777).toBe(0o600);
+      expect(await readFile(path, "utf8")).toBe("second");
+    },
+  );
 
   it.runIf(process.platform === "win32")(
     "waits through short Windows destination locks before replacing a file",

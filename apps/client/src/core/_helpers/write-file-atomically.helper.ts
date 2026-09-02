@@ -40,6 +40,17 @@ const replaceFileAtomically = async (
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 };
 
+const loadExistingFileMode = async (
+  path: string,
+): Promise<number | undefined> => {
+  try {
+    return (await stat(path)).mode & 0o777;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+};
+
 export const scavengeAtomicTemporaryFiles = async (
   directory: string,
   options: { maxAgeMs?: number; now?: number } = {},
@@ -90,9 +101,10 @@ export const writeFileAtomically = async (
   );
 
   await mkdir(directory, { recursive: true });
+  const mode = options.mode ?? (await loadExistingFileMode(path));
 
   try {
-    const handle = await open(temporaryPath, "wx", options.mode);
+    const handle = await open(temporaryPath, "wx", mode);
     try {
       if (typeof data === "string") {
         await handle.writeFile(data, encoding);
@@ -100,6 +112,9 @@ export const writeFileAtomically = async (
         await handle.writeFile(
           new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
         );
+      }
+      if (mode !== undefined && process.platform !== "win32") {
+        await handle.chmod(mode);
       }
       await handle.sync();
     } finally {

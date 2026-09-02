@@ -177,6 +177,60 @@ describe("withCooperativeFileLock", () => {
     }
   });
 
+  it("immediately recovers a confirmed-dead owner when requested", async () => {
+    const directory = await mkdtemp(
+      join(tmpdir(), "machdoch-file-lock-dead-owner-"),
+    );
+    const destination = join(directory, "config.json");
+    const lockPath = `${destination}.machdoch.lock`;
+    const ownerDirectory = join(lockPath, "owner.dead-owner");
+
+    try {
+      await mkdir(ownerDirectory, { recursive: true });
+      await writeFile(
+        join(ownerDirectory, "owner.json"),
+        JSON.stringify({ token: "dead-owner", pid: 2_000_000_000 }),
+        "utf8",
+      );
+
+      await expect(
+        withCooperativeFileLock(destination, async () => undefined, {
+          timeoutMs: 2_000,
+          staleLockAgeMs: 5_000,
+          recoverDeadOwnerImmediately: true,
+        }),
+      ).resolves.toBeUndefined();
+      await expect(stat(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the stale-age grace period for malformed owner metadata", async () => {
+    const directory = await mkdtemp(
+      join(tmpdir(), "machdoch-file-lock-malformed-owner-"),
+    );
+    const destination = join(directory, "config.json");
+    const lockPath = `${destination}.machdoch.lock`;
+    const ownerDirectory = join(lockPath, "owner.malformed-owner");
+
+    try {
+      await mkdir(ownerDirectory, { recursive: true });
+      await writeFile(join(ownerDirectory, "owner.json"), '{"token":', "utf8");
+
+      await expect(
+        withCooperativeFileLock(destination, async () => undefined, {
+          timeoutMs: 60,
+          staleLockAgeMs: 5_000,
+          recoverDeadOwnerImmediately: true,
+        }),
+      ).rejects.toThrow("Owner metadata is not available yet");
+      await expect(stat(lockPath)).resolves.toBeDefined();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("serializes two contenders recovering the same stale owner", async () => {
     const directory = await mkdtemp(join(tmpdir(), "machdoch-file-lock-stale-"));
     const destination = join(directory, "config.json");

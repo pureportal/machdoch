@@ -34,6 +34,7 @@ interface ObservedFileLockOwner extends FileLockOwner {
 export interface CooperativeFileLockOptions {
   timeoutMs?: number;
   staleLockAgeMs?: number;
+  recoverDeadOwnerImmediately?: boolean;
   ownerDescription?: string;
 }
 
@@ -204,6 +205,7 @@ const removeCanonicalIfEmpty = async (lockPath: string): Promise<boolean> => {
 const quarantineStaleLock = async (
   lockPath: string,
   staleLockAgeMs: number,
+  recoverDeadOwnerImmediately: boolean,
 ): Promise<void> => {
   const owner = await loadObservedOwner(lockPath);
   if (!owner) {
@@ -258,8 +260,9 @@ const quarantineStaleLock = async (
   );
   if (
     !metadata ||
-    Date.now() - metadata.mtimeMs < staleLockAgeMs ||
-    isProcessAlive(owner.pid)
+    isProcessAlive(owner.pid) ||
+    (!recoverDeadOwnerImmediately &&
+      Date.now() - metadata.mtimeMs < staleLockAgeMs)
   ) {
     return;
   }
@@ -455,7 +458,11 @@ export const withCooperativeFileLock = async <T>(
         break;
       } catch (error) {
         if (await targetExists(lockPath)) {
-          await quarantineStaleLock(lockPath, staleLockAgeMs);
+          await quarantineStaleLock(
+            lockPath,
+            staleLockAgeMs,
+            options.recoverDeadOwnerImmediately === true,
+          );
         } else if (!(await targetExists(candidatePath))) {
           throw error;
         }
