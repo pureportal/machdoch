@@ -22,6 +22,7 @@ import {
   saveUserApiKey,
   saveUserDesktopSettingsPatch,
   saveUserGlobalMemoryEnabled,
+  saveUserWorkspaceMemoryDefaultEnabled,
   saveUserInternalTaskModelSettings,
   saveUserReviewModelSettings,
   saveUserWorkspaceRunSettings,
@@ -371,8 +372,30 @@ describe("user config API key helpers", () => {
     expect(firstEntry.content).toBe("Prefers compact summaries.");
     expect(secondEntry.content).toBe("Prefers compact summaries.");
     expect(settings.globalEnabled).toBe(true);
+    expect(settings.workspaceDefaultEnabled).toBe(true);
     expect(settings.entries).toHaveLength(1);
     expect(settings.entries[0]?.content).toBe("Prefers compact summaries.");
+  });
+
+  it("persists the global workspace-memory default independently", async () => {
+    isolateEnvironment();
+    const configDirectory = await createWorkspace();
+    process.env.MACHDOCH_USER_CONFIG_DIR = configDirectory;
+
+    expect((await loadUserMemorySettings()).workspaceDefaultEnabled).toBe(true);
+
+    await saveUserWorkspaceMemoryDefaultEnabled(false);
+
+    expect((await loadUserMemorySettings()).workspaceDefaultEnabled).toBe(
+      false,
+    );
+    expect(
+      JSON.parse(await readFile(getUserConfigPath(), "utf8")),
+    ).toMatchObject({
+      memory: {
+        workspaceDefaultEnabled: false,
+      },
+    });
   });
 
   it("replaces and deletes global memory by stable identity", async () => {

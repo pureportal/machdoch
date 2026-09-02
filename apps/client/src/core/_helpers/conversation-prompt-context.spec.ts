@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -19,6 +19,7 @@ const providerAdapters = vi.hoisted(() => ({
 }));
 const memorySettings = vi.hoisted(() => ({
   globalEnabled: false,
+  workspaceDefaultEnabled: true,
   entries: [] as ConversationMemoryEntry[],
 }));
 
@@ -31,6 +32,7 @@ const workspaceRoots: string[] = [];
 
 afterEach(async () => {
   memorySettings.globalEnabled = false;
+  memorySettings.workspaceDefaultEnabled = true;
   memorySettings.entries = [];
   providerAdapters.createProviderAdapter.mockReset();
   await Promise.all(
@@ -288,5 +290,97 @@ describe("conversation memory prompt context", () => {
     expect(context.memory.workspaceEnabled).toBe(false);
     expect(context.memory.workspaceEntries).toEqual([]);
     expect(context.memoryRetrieval?.candidateCount).toBe(0);
+  });
+
+  it("uses the workspace override ahead of the global workspace default", async () => {
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), "machdoch-prompt-memory-"),
+    );
+    workspaceRoots.push(workspaceRoot);
+    await rememberWorkspaceMemory(workspaceRoot, "Use pnpm package", {
+      key: "package-command",
+    });
+    await mkdir(join(workspaceRoot, ".machdoch"), { recursive: true });
+    await writeFile(
+      join(workspaceRoot, ".machdoch", "config.json"),
+      JSON.stringify({ workspaceMemoryEnabled: false }),
+    );
+
+    const disabledByOverride = await prepareConversationPromptContext(
+      "Run the package command",
+      { ...runtimeConfig, workspaceRoot },
+      {
+        history: [],
+        workspace: { selection: "selected", root: workspaceRoot },
+        workspaceMemoryEnabled: true,
+        globalMemoryEnabled: false,
+      },
+    );
+
+    expect(disabledByOverride.memory.workspaceEnabled).toBe(false);
+    expect(disabledByOverride.memory.workspaceEntries).toEqual([]);
+
+    memorySettings.workspaceDefaultEnabled = false;
+    await writeFile(
+      join(workspaceRoot, ".machdoch", "config.json"),
+      JSON.stringify({}),
+    );
+
+    const disabledByDefault = await prepareConversationPromptContext(
+      "Run the package command",
+      { ...runtimeConfig, workspaceRoot },
+      {
+        history: [],
+        workspace: { selection: "selected", root: workspaceRoot },
+        workspaceMemoryEnabled: true,
+        globalMemoryEnabled: false,
+      },
+    );
+
+    expect(disabledByDefault.memory.workspaceEnabled).toBe(false);
+    expect(disabledByDefault.memory.workspaceEntries).toEqual([]);
+
+    await writeFile(
+      join(workspaceRoot, ".machdoch", "config.json"),
+      JSON.stringify({ workspaceMemoryEnabled: true }),
+    );
+
+    const enabledByOverride = await prepareConversationPromptContext(
+      "Run the package command",
+      { ...runtimeConfig, workspaceRoot },
+      {
+        history: [],
+        workspace: { selection: "selected", root: workspaceRoot },
+        workspaceMemoryEnabled: true,
+        globalMemoryEnabled: false,
+      },
+    );
+
+    expect(enabledByOverride.memory.workspaceEnabled).toBe(true);
+    expect(enabledByOverride.memory.workspaceEntries).toHaveLength(1);
+  });
+
+  it("does not load workspace memory when the session opts out", async () => {
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), "machdoch-prompt-memory-"),
+    );
+    workspaceRoots.push(workspaceRoot);
+    await rememberWorkspaceMemory(workspaceRoot, "Use pnpm package", {
+      key: "package-command",
+    });
+
+    const context = await prepareConversationPromptContext(
+      "Run the package command",
+      { ...runtimeConfig, workspaceRoot },
+      {
+        history: [],
+        workspace: { selection: "selected", root: workspaceRoot },
+        workspaceMemoryEnabled: false,
+        globalMemoryEnabled: false,
+      },
+    );
+
+    expect(context.memory.workspaceEnabled).toBe(false);
+    expect(context.memory.workspaceEntries).toEqual([]);
   });
 });

@@ -189,6 +189,15 @@ export const saveWorkspaceDefaultMode = async (
   });
 };
 
+export const saveWorkspaceMemoryOverride = async (
+  workspaceRoot: string,
+  enabled: boolean | null,
+): Promise<string> => {
+  return saveWorkspaceConfigFile(workspaceRoot, {
+    workspaceMemoryEnabled: enabled,
+  });
+};
+
 export const saveWorkspaceReasoningMode = async (
   workspaceRoot: string,
   reasoning: string,

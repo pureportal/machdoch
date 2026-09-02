@@ -258,6 +258,7 @@ export type UserSpeechToTextSettings = SharedUserSpeechToTextSettings;
 
 export interface UserMemorySettings {
   globalEnabled: boolean;
+  workspaceDefaultEnabled?: boolean;
   entries: ConversationMemoryEntry[];
 }
 
@@ -1418,6 +1419,7 @@ const FLEET_CONTROL_COMMAND_KINDS = [
   "cancel-prompt-enhancement",
   "set-session-memory",
   "forget-session-memory",
+  "set-workspace-memory",
   "set-global-memory",
   "set-ui-control",
   "remove-attachment",
@@ -2675,6 +2677,7 @@ const createDefaultUserSpeechToTextSettings = (): UserSpeechToTextSettings => {
 const createDefaultUserMemorySettings = (): UserMemorySettings => {
   return {
     globalEnabled: false,
+    workspaceDefaultEnabled: true,
     entries: [],
   };
 };
@@ -3555,6 +3558,28 @@ export const saveUserGlobalMemoryEnabled = async (
   }
 };
 
+export const saveUserWorkspaceMemoryDefaultEnabled = async (
+  enabled: boolean,
+): Promise<UserMemorySettings> => {
+  if (!canInvokeTauriCommands()) {
+    return {
+      ...createDefaultUserMemorySettings(),
+      workspaceDefaultEnabled: enabled,
+    };
+  }
+
+  try {
+    const result = await tauriCore.invoke<UserMemorySettings>(
+      "save_user_workspace_memory_default_enabled",
+      { enabled },
+    );
+    await emitUserSettingsChanged("memory");
+    return result;
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
 export const forgetUserGlobalMemoryEntry = async (
   id: string,
 ): Promise<UserMemorySettings> => {
@@ -3797,6 +3822,34 @@ export const saveWorkspaceDefaultMode = async (
     return await tauriCore.invoke<string>("save_workspace_default_mode", {
       workspaceRoot: normalizedWorkspaceRoot,
       mode,
+    });
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const saveWorkspaceMemoryOverride = async (
+  workspaceRoot: string | null | undefined,
+  enabled: boolean | null,
+): Promise<string | null> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+
+  if (!normalizedWorkspaceRoot) {
+    throw new Error("Select a workspace before changing workspace memory.");
+  }
+
+  if (enabled !== null && typeof enabled !== "boolean") {
+    throw new Error("Expected workspace memory to be default, enabled, or disabled.");
+  }
+
+  if (!canInvokeTauriCommands()) {
+    return null;
+  }
+
+  try {
+    return await tauriCore.invoke<string>("save_workspace_memory_override", {
+      workspaceRoot: normalizedWorkspaceRoot,
+      enabled,
     });
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));

@@ -7,7 +7,10 @@ import {
   type ProductCommand,
   type ProductSnapshot,
 } from "@machdoch/fleet-protocol";
-import { loadRuntimeConfig } from "../../core/config.js";
+import {
+  loadRuntimeConfig,
+  loadWorkspaceConfigFile,
+} from "../../core/config.js";
 import { discoverCustomizations } from "../../core/customizations.js";
 import { loadUserMemorySettings } from "../../core/env.js";
 import {
@@ -17,6 +20,7 @@ import {
 import {
   MAX_SESSION_MEMORY_ENTRIES,
   mergeConversationMemoryEntries,
+  resolveWorkspaceMemoryEnabled,
 } from "../../core/memory.js";
 import { getReasoningModesForProviderModel } from "../../core/reasoning-modes.js";
 import {
@@ -74,6 +78,7 @@ interface ActiveFleetTask {
 
 interface FleetCliProductDependencies {
   loadRuntimeConfig: typeof loadRuntimeConfig;
+  loadWorkspaceConfigFile: typeof loadWorkspaceConfigFile;
   discoverCustomizations: typeof discoverCustomizations;
   createTaskExecutionController: typeof createTaskExecutionController;
   loadUserMemorySettings: typeof loadUserMemorySettings;
@@ -100,6 +105,7 @@ class FleetProductError extends Error {
 
 const defaultDependencies: FleetCliProductDependencies = {
   loadRuntimeConfig,
+  loadWorkspaceConfigFile,
   discoverCustomizations,
   createTaskExecutionController,
   loadUserMemorySettings,
@@ -166,6 +172,7 @@ const createSession = (
     draft: "",
     promptHistory: [],
     sessionMemoryEnabled: true,
+    useWorkspaceMemory: true,
     globalMemoryEnabled,
     messages: [],
   };
@@ -525,6 +532,13 @@ export class FleetCliProductRuntime {
           session.updatedAt = timestamp;
           return { record: { sessionId: session.id } };
         });
+      case "set-workspace-memory":
+        return await this.commitCommand(command, (state, _id, timestamp) => {
+          const session = this.getSession(state, command.sessionId);
+          session.useWorkspaceMemory = command.enabled;
+          session.updatedAt = timestamp;
+          return { record: { sessionId: session.id } };
+        });
       case "forget-session-memory":
         return await this.commitCommand(command, (state) => {
           const session = this.getSession(state, command.sessionId);
@@ -763,7 +777,9 @@ export class FleetCliProductRuntime {
           history,
           sessionMemoryEnabled: session.sessionMemoryEnabled,
           sessionMemory: this.sessionMemory.get(session.id) ?? [],
-          globalMemoryEnabled: session.globalMemoryEnabled,
+          workspaceMemoryEnabled: session.useWorkspaceMemory,
+          globalMemoryEnabled:
+            memory.globalEnabled && session.globalMemoryEnabled,
           globalMemory: memory.entries,
           uiControlEnabled: false,
         },
@@ -1072,7 +1088,15 @@ export class FleetCliProductRuntime {
     await this.mutationTail;
     const state = this.state;
     const activeSession = this.getActiveSession(state);
-    const config = await this.loadSessionRuntimeConfig(activeSession);
+    const [config, memory, { config: workspaceConfig }] = await Promise.all([
+      this.loadSessionRuntimeConfig(activeSession),
+      this.dependencies.loadUserMemorySettings(),
+      this.dependencies.loadWorkspaceConfigFile(activeSession.workspace),
+    ]);
+    const workspaceMemoryAvailable = resolveWorkspaceMemoryEnabled(
+      memory.workspaceDefaultEnabled,
+      workspaceConfig.workspaceMemoryEnabled,
+    );
     const configuredProviders = config.providerAvailability.filter(
       (entry) => entry.configured,
     );
@@ -1214,8 +1238,12 @@ export class FleetCliProductRuntime {
               };
             },
           ),
-          globalMemoryAvailable: false,
-          globalMemoryEnabled: activeSession.globalMemoryEnabled,
+          workspaceMemoryAvailable,
+          workspaceMemoryEnabled:
+            workspaceMemoryAvailable && activeSession.useWorkspaceMemory,
+          globalMemoryAvailable: memory.globalEnabled,
+          globalMemoryEnabled:
+            memory.globalEnabled && activeSession.globalMemoryEnabled,
           uiControlAvailable: false,
           uiControlEnabled: false,
           uiControlDescription: "",

@@ -2,10 +2,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  loadWorkspaceConfigFile,
   loadRuntimeConfig,
   saveWorkspaceContextWindow,
   saveWorkspaceDefaultMode,
   saveWorkspaceDefaultModel,
+  saveWorkspaceMemoryOverride,
   saveWorkspaceReasoningExecutionMode,
   saveWorkspaceReasoningMode,
   saveWorkspaceRuntimeProvider,
@@ -416,6 +418,21 @@ describe("loadRuntimeConfig", () => {
 
     expect(configPath).toBe(join(workspaceRoot, ".machdoch", "config.json"));
     expect(config.model).toBe("gpt-5.4");
+  });
+
+  it("persists nullable workspace-memory overrides", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    await saveWorkspaceMemoryOverride(workspaceRoot, false);
+    expect((await loadWorkspaceConfigFile(workspaceRoot)).config).toMatchObject({
+      workspaceMemoryEnabled: false,
+    });
+
+    await saveWorkspaceMemoryOverride(workspaceRoot, null);
+    expect((await loadWorkspaceConfigFile(workspaceRoot)).config).toMatchObject({
+      workspaceMemoryEnabled: null,
+    });
   });
 
   it("persists and loads a numeric Codex context window", async () => {

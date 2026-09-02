@@ -779,12 +779,15 @@ export const saveUserInternalTaskModelSettings = async (
  */
 export const loadUserMemorySettings = async (): Promise<{
   globalEnabled: boolean;
+  workspaceDefaultEnabled: boolean;
   entries: ConversationMemoryEntry[];
 }> => {
   const { config } = await loadUserConfigFile();
 
   return {
     globalEnabled: config.memory?.globalEnabled === true,
+    workspaceDefaultEnabled:
+      config.memory?.workspaceDefaultEnabled !== false,
     entries: normalizeConversationMemoryEntries(
       config.memory?.entries,
       "global",
@@ -803,6 +806,22 @@ export const saveUserGlobalMemoryEnabled = async (
     memory: {
       ...(config.memory ?? {}),
       globalEnabled: enabled,
+      entries: normalizeConversationMemoryEntries(
+        config.memory?.entries,
+        "global",
+      ),
+    },
+  }));
+};
+
+export const saveUserWorkspaceMemoryDefaultEnabled = async (
+  enabled: boolean,
+): Promise<string> => {
+  return updateUserConfigFile((config) => ({
+    ...config,
+    memory: {
+      ...(config.memory ?? {}),
+      workspaceDefaultEnabled: enabled,
       entries: normalizeConversationMemoryEntries(
         config.memory?.entries,
         "global",

@@ -1,4 +1,8 @@
-import { rememberUserGlobalMemory } from "./env.js";
+import { loadWorkspaceConfigFile } from "./config.js";
+import {
+  loadUserMemorySettings,
+  rememberUserGlobalMemory,
+} from "./env.js";
 import { compactTraceText } from "./_helpers/runtime-text.js";
 import {
   executeInternalTaskModelInference,
@@ -13,6 +17,7 @@ import {
   normalizeMemoryKey,
   normalizeMemorySearchTerms,
   rememberConversationMemoryEntry,
+  resolveWorkspaceMemoryEnabled,
   type ConversationMemoryMetadata,
 } from "./memory.js";
 import {
@@ -532,9 +537,25 @@ export const consolidateTaskExecutionMemory = async (
     return result;
   }
 
-  const workspaceEnabled =
-    conversationContext?.workspace?.selection === "selected";
   const workspaceRoot = config.workspaceRoot;
+  const workspaceSelected =
+    conversationContext?.workspace?.selection === "selected";
+  const [userMemorySettings, workspaceMemoryOverride] = await Promise.all([
+    loadUserMemorySettings(),
+    workspaceSelected
+      ? loadWorkspaceConfigFile(workspaceRoot).then(
+          ({ config: workspaceConfig }) =>
+            workspaceConfig.workspaceMemoryEnabled,
+        )
+      : Promise.resolve(undefined),
+  ]);
+  const workspaceEnabled =
+    workspaceSelected &&
+    resolveWorkspaceMemoryEnabled(
+      userMemorySettings.workspaceDefaultEnabled,
+      workspaceMemoryOverride,
+    ) &&
+    conversationContext?.workspaceMemoryEnabled !== false;
   const enabled: Record<ConversationMemoryScope, boolean> = {
     session:
       conversationContext !== undefined &&
@@ -542,6 +563,10 @@ export const consolidateTaskExecutionMemory = async (
     workspace: workspaceEnabled,
     global: conversationContext?.globalMemoryEnabled === true,
   };
+  if (!Object.values(enabled).some(Boolean)) {
+    return result;
+  }
+
   const workspaceEntries = workspaceEnabled
     ? await loadWorkspaceMemory(workspaceRoot).catch((error) => {
         console.error("Workspace memory could not be loaded", error);
