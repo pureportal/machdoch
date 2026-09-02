@@ -9,8 +9,11 @@ export const managedSettingsSchemaVersion = 2;
 export const maximumManagedSettingsCollectionEntries = 128;
 export const maximumManagedSettingsSecrets = 128;
 
+const serializedJsonBytes = (value: unknown): number =>
+  new TextEncoder().encode(JSON.stringify(value)).byteLength;
+
 export const serializedGatewayMessageBytes = (message: unknown): number =>
-  new TextEncoder().encode(JSON.stringify(message)).byteLength;
+  serializedJsonBytes(message);
 
 export interface FleetManagedSettingsDefaults {
   provider: string | null;
@@ -454,34 +457,45 @@ const managedSettingsDocumentSchema = z
     }
   });
 
-export const fleetManagedSettingsDeliverySchema = z.strictObject({
-  schemaVersion: z.literal(managedSettingsSchemaVersion),
-  managerId: managedSettingsIdentifier("manager"),
-  profile: z
-    .strictObject({
-      profileId: managedSettingsIdentifier("profile"),
-      name: managedSettingsName.max(120),
-      revision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-      document: managedSettingsDocumentSchema,
-      secrets: z.record(
-        z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
-        z
-          .string()
-          .min(1)
-          .max(8_192)
-          .refine((value) => !value.includes("\0")),
-      ),
-    })
-    .superRefine((profile, context) => {
-      if (Object.keys(profile.secrets).length > maximumManagedSettingsSecrets) {
-        context.addIssue({
-          code: "custom",
-          message: "Managed settings support at most 128 secrets.",
-        });
-      }
-    })
-    .nullable(),
-});
+export const fleetManagedSettingsDeliverySchema = z
+  .strictObject({
+    schemaVersion: z.literal(managedSettingsSchemaVersion),
+    managerId: managedSettingsIdentifier("manager"),
+    profile: z
+      .strictObject({
+        profileId: managedSettingsIdentifier("profile"),
+        name: managedSettingsName.max(120),
+        revision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+        document: managedSettingsDocumentSchema,
+        secrets: z.record(
+          z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
+          z
+            .string()
+            .min(1)
+            .max(8_192)
+            .refine((value) => !value.includes("\0")),
+        ),
+      })
+      .superRefine((profile, context) => {
+        if (
+          Object.keys(profile.secrets).length > maximumManagedSettingsSecrets
+        ) {
+          context.addIssue({
+            code: "custom",
+            message: "Managed settings support at most 128 secrets.",
+          });
+        }
+      })
+      .nullable(),
+  })
+  .superRefine((delivery, context) => {
+    if (serializedJsonBytes(delivery) > maximumManagedSettingsDeliveryBytes) {
+      context.addIssue({
+        code: "custom",
+        message: "Managed settings delivery exceeds the 18 MiB payload budget.",
+      });
+    }
+  });
 
 export const ralphScopeSchema = z.enum(["workspace", "user"]);
 
@@ -605,6 +619,11 @@ export const productCommandSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     ...sessionCommandShape,
     kind: z.literal("set-global-memory"),
+    enabled: z.boolean(),
+  }),
+  z.strictObject({
+    ...sessionCommandShape,
+    kind: z.literal("set-workspace-memory"),
     enabled: z.boolean(),
   }),
   z.strictObject({
@@ -1023,6 +1042,8 @@ export const productShellSchema = z.strictObject({
       isExecuting: z.boolean(),
       sessionMemoryEnabled: z.boolean(),
       sessionMemory: z.array(productMemoryEntrySchema).max(24),
+      workspaceMemoryAvailable: z.boolean().optional(),
+      workspaceMemoryEnabled: z.boolean().optional(),
       globalMemoryAvailable: z.boolean(),
       globalMemoryEnabled: z.boolean(),
       uiControlAvailable: z.boolean(),

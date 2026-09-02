@@ -6,6 +6,7 @@ import {
   hostMessageSchema,
   maximumGatewayMessageBytes,
   maximumManagedSettingsCollectionEntries,
+  maximumManagedSettingsDeliveryBytes,
   productCommandSchema,
   serializedGatewayMessageBytes,
 } from "./index.ts";
@@ -132,6 +133,38 @@ const snapshotMessageAtPayloadSize = (size: number) => {
   return snapshotMessage(chunks);
 };
 
+const managedSettingsDeliveryAtPayloadSize = (size: number) => {
+  const delivery = managedSettingsDelivery();
+  const contextPack = delivery.profile.document.contextPacks[0]!;
+  delivery.profile.document.instructions = [];
+  delivery.profile.document.prompts = [];
+  delivery.profile.document.contextPacks = Array.from(
+    { length: maximumManagedSettingsCollectionEntries },
+    (_, index) => ({
+      ...contextPack,
+      id: `123e4567-e89b-42d3-a456-${index.toString().padStart(12, "0")}`,
+      name: `Context pack ${index}`,
+      instructions: "",
+      prompt: "x",
+    }),
+  );
+
+  let remaining = size - serializedGatewayMessageBytes(delivery);
+  for (const pack of delivery.profile.document.contextPacks) {
+    const instructionLength = Math.min(remaining, 128 * 1024);
+    pack.instructions = "x".repeat(instructionLength);
+    remaining -= instructionLength;
+
+    const promptLength = Math.min(remaining, 128 * 1024 - 1);
+    pack.prompt = "x".repeat(promptLength + 1);
+    remaining -= promptLength;
+  }
+
+  assert.equal(remaining, 0);
+  assert.equal(serializedGatewayMessageBytes(delivery), size);
+  return delivery;
+};
+
 void test("accepts a gateway snapshot at the payload budget", () => {
   const message = snapshotMessageAtPayloadSize(maximumGatewayMessageBytes);
 
@@ -165,6 +198,34 @@ void test("accepts a complete managed settings delivery", () => {
       .success,
     true,
   );
+});
+
+void test("enforces the managed settings delivery payload budget", () => {
+  for (const size of [
+    maximumManagedSettingsDeliveryBytes - 1,
+    maximumManagedSettingsDeliveryBytes,
+  ]) {
+    assert.equal(
+      fleetManagedSettingsDeliverySchema.safeParse(
+        managedSettingsDeliveryAtPayloadSize(size),
+      ).success,
+      true,
+    );
+  }
+
+  const result = fleetManagedSettingsDeliverySchema.safeParse(
+    managedSettingsDeliveryAtPayloadSize(
+      maximumManagedSettingsDeliveryBytes + 1,
+    ),
+  );
+
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(
+      result.error.issues.map((issue) => issue.message),
+      ["Managed settings delivery exceeds the 18 MiB payload budget."],
+    );
+  }
 });
 
 void test("rejects invalid managed settings identifiers and relationships", () => {
@@ -250,6 +311,68 @@ void test("validates session-memory forget commands", () => {
   assert.equal(productCommandSchema.safeParse(command).success, true);
   assert.equal(
     productCommandSchema.safeParse({ ...command, memoryId: "" }).success,
+    false,
+  );
+});
+
+void test("canonicalizes product command values", () => {
+  const ralphRun = productCommandSchema.parse({
+    kind: "ralph-run",
+    commandId: " command-1 ",
+    workspace: " C:\\workspace ",
+    scope: "workspace",
+    flowId: " release-flow ",
+    parameters: { " environment ": "production" },
+    provider: " openai ",
+    model: " gpt-5.6 ",
+    reasoning: "high",
+  });
+
+  assert.deepEqual(ralphRun, {
+    kind: "ralph-run",
+    commandId: "command-1",
+    workspace: "C:\\workspace",
+    scope: "workspace",
+    flowId: "release-flow",
+    parameters: { environment: "production" },
+    provider: "openai",
+    model: "gpt-5.6",
+    reasoning: "high",
+  });
+
+  const mediaRun = productCommandSchema.parse({
+    kind: "generate-media",
+    prompt: " Create a geometric owl ",
+    modelId: " openai:gpt-image-2 ",
+    target: "image",
+    aspectRatio: "1:1",
+    outputCount: 1,
+    outputFormat: "png",
+    transparentBackground: false,
+  });
+
+  assert.deepEqual(mediaRun, {
+    kind: "generate-media",
+    prompt: "Create a geometric owl",
+    modelId: "openai:gpt-image-2",
+    target: "image",
+    aspectRatio: "1:1",
+    outputCount: 1,
+    outputFormat: "png",
+    transparentBackground: false,
+  });
+});
+
+void test("rejects product command fields from other variants", () => {
+  const cancel = { kind: "cancel", taskId: "task-1" };
+
+  assert.equal(productCommandSchema.safeParse(cancel).success, true);
+  assert.equal(
+    productCommandSchema.safeParse({ ...cancel, sessionId: "session-1" }).success,
+    false,
+  );
+  assert.equal(
+    productCommandSchema.safeParse({ ...cancel, sessionId: null }).success,
     false,
   );
 });
