@@ -190,6 +190,24 @@ pub(super) fn save_workspace_default_mode_value(
     Ok(config_path)
 }
 
+pub(super) fn save_workspace_memory_override_value(
+    workspace_root: &str,
+    enabled: Option<bool>,
+) -> Result<PathBuf, String> {
+    let workspace_path = resolve_workspace_root_path(workspace_root)?;
+    let config_path = workspace_path.join(".machdoch").join("config.json");
+    with_cooperative_file_lock(&config_path, || {
+        let mut config = load_workspace_config_json(&config_path)?;
+        config.insert(
+            "workspaceMemoryEnabled".to_string(),
+            enabled.map_or(serde_json::Value::Null, serde_json::Value::Bool),
+        );
+        write_workspace_config_json(&config_path, &config)
+    })?;
+
+    Ok(config_path)
+}
+
 pub(super) fn save_workspace_reasoning_mode_value(
     workspace_root: &str,
     reasoning: &str,
@@ -217,6 +235,47 @@ pub(super) fn save_workspace_reasoning_mode_value(
     })?;
 
     Ok(config_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use super::save_workspace_memory_override_value;
+
+    #[test]
+    fn workspace_memory_override_persists_boolean_and_unset_states() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after the Unix epoch")
+            .as_nanos();
+        let workspace =
+            std::env::temp_dir().join(format!("machdoch-workspace-memory-override-{unique}"));
+        fs::create_dir_all(&workspace).expect("workspace should be creatable");
+        let workspace_root = workspace.to_string_lossy();
+
+        save_workspace_memory_override_value(&workspace_root, Some(false))
+            .expect("disabled override should save");
+        let config_path = workspace.join(".machdoch").join("config.json");
+        let disabled: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(&config_path).expect("workspace config should be readable"),
+        )
+        .expect("workspace config should parse");
+        assert_eq!(disabled["workspaceMemoryEnabled"], false);
+
+        save_workspace_memory_override_value(&workspace_root, None)
+            .expect("unset override should save");
+        let unset: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(&config_path).expect("workspace config should be readable"),
+        )
+        .expect("workspace config should parse");
+        assert!(unset["workspaceMemoryEnabled"].is_null());
+
+        fs::remove_dir_all(workspace).expect("workspace should be removable");
+    }
 }
 
 pub(super) fn save_workspace_context_window_value(

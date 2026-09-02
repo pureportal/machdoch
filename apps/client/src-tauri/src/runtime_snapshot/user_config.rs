@@ -217,7 +217,12 @@ fn merge_typed_user_config(original: Value, typed: &UserConfigFile) -> Result<Va
             "sequentialReadinessTimeoutMs",
         ],
     );
-    merge_known_object_members(&mut target, source, "memory", &["globalEnabled", "entries"]);
+    merge_known_object_members(
+        &mut target,
+        source,
+        "memory",
+        &["globalEnabled", "workspaceDefaultEnabled", "entries"],
+    );
     merge_known_object_members(
         &mut target,
         source,
@@ -228,7 +233,7 @@ fn merge_typed_user_config(original: Value, typed: &UserConfigFile) -> Result<Va
         &mut target,
         source,
         "internalTaskModel",
-        &["provider", "model"],
+        &["provider", "model", "reasoning"],
     );
 
     Ok(Value::Object(target))
@@ -401,5 +406,56 @@ mod tests {
         assert_eq!(merged["workspaceRun"]["futureTimingSetting"], "keep-me");
         assert_eq!(merged["providerEnrollment"]["enabled"], true);
         assert_eq!(merged["futureRoot"]["nested"], true);
+    }
+
+    #[test]
+    fn typed_update_persists_internal_task_model_reasoning() {
+        let original = serde_json::json!({
+            "internalTaskModel": {
+                "provider": "openai",
+                "model": "gpt-5.6-terra",
+                "reasoning": "default"
+            }
+        });
+        let mut typed: UserConfigFile =
+            serde_json::from_value(original.clone()).expect("internal task settings should parse");
+        typed.internal_task_model.reasoning = Some("high".to_string());
+
+        let merged = merge_typed_user_config(original, &typed).expect("merge should succeed");
+        let reloaded: UserConfigFile =
+            serde_json::from_value(merged).expect("merged settings should reload");
+
+        assert_eq!(
+            reloaded.internal_task_model.provider.as_deref(),
+            Some("openai")
+        );
+        assert_eq!(
+            reloaded.internal_task_model.model.as_deref(),
+            Some("gpt-5.6-terra")
+        );
+        assert_eq!(
+            reloaded.internal_task_model.reasoning.as_deref(),
+            Some("high")
+        );
+    }
+
+    #[test]
+    fn typed_update_persists_workspace_memory_default() {
+        let original = serde_json::json!({
+            "memory": {
+                "globalEnabled": false,
+                "workspaceDefaultEnabled": true,
+                "entries": []
+            }
+        });
+        let mut typed: UserConfigFile =
+            serde_json::from_value(original.clone()).expect("memory settings should parse");
+        typed.memory.workspace_default_enabled = Some(false);
+
+        let merged = merge_typed_user_config(original, &typed).expect("merge should succeed");
+        let reloaded: UserConfigFile =
+            serde_json::from_value(merged).expect("merged settings should reload");
+
+        assert_eq!(reloaded.memory.workspace_default_enabled, Some(false));
     }
 }

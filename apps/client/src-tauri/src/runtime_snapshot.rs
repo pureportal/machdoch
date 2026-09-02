@@ -49,7 +49,8 @@ use settings_commands::{
     save_user_internal_task_model_settings_value, save_user_review_model_settings_value,
     save_user_speech_to_text_active_provider_value, save_user_speech_to_text_input_device_value,
     save_user_voice_active_provider_value, save_user_web_search_active_provider_value,
-    save_user_web_search_api_key_value, save_user_workspace_run_settings_value,
+    save_user_web_search_api_key_value, save_user_workspace_memory_default_enabled_value,
+    save_user_workspace_run_settings_value,
 };
 pub(super) use settings_commands::{
     merge_user_agent_cli_paths_into_env, merge_user_api_keys_into_env,
@@ -71,7 +72,8 @@ pub use types::{
 pub(crate) use workspace::{get_user_config_directory, resolve_workspace_root_path};
 use workspace::{
     save_workspace_context_window_value, save_workspace_default_mode_value,
-    save_workspace_reasoning_execution_mode_value, save_workspace_reasoning_mode_value,
+    save_workspace_memory_override_value, save_workspace_reasoning_execution_mode_value,
+    save_workspace_reasoning_mode_value,
 };
 use workspace_memory::{forget_workspace_memory_entry, load_workspace_memory_entries};
 
@@ -377,6 +379,14 @@ pub async fn save_user_global_memory_enabled(enabled: bool) -> Result<UserMemory
 }
 
 #[tauri::command]
+pub async fn save_user_workspace_memory_default_enabled(
+    enabled: bool,
+) -> Result<UserMemorySettings, String> {
+    save_user_workspace_memory_default_enabled_value(enabled)?;
+    load_user_memory_settings()
+}
+
+#[tauri::command]
 pub async fn forget_user_global_memory_entry(id: String) -> Result<UserMemorySettings, String> {
     forget_user_global_memory_value(&id)?;
     load_user_memory_settings()
@@ -428,6 +438,16 @@ pub async fn save_workspace_default_mode(
     mode: String,
 ) -> Result<String, String> {
     let config_path = save_workspace_default_mode_value(&workspace_root, &mode)?;
+
+    Ok(config_path.display().to_string())
+}
+
+#[tauri::command]
+pub async fn save_workspace_memory_override(
+    workspace_root: String,
+    enabled: Option<bool>,
+) -> Result<String, String> {
+    let config_path = save_workspace_memory_override_value(&workspace_root, enabled)?;
 
     Ok(config_path.display().to_string())
 }

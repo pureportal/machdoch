@@ -1245,6 +1245,7 @@ fn apply_memory(root: &mut Map<String, Value>, snapshot: &CategorySnapshot) -> R
     let value = category_data_json(snapshot)?;
     let local = ensure_object_member(root, "memory");
     replace_member(local, value, "globalEnabled")?;
+    replace_member(local, value, "workspaceDefaultEnabled")?;
     let mut preserved = local
         .get("entries")
         .and_then(Value::as_array)
@@ -2276,6 +2277,7 @@ mod tests {
         let mut root = serde_json::json!({
             "memory": {
                 "globalEnabled": false,
+                "workspaceDefaultEnabled": true,
                 "entries": [
                     { "id": "old-global", "scope": "global", "content": "old", "createdAt": 1, "updatedAt": 1 },
                     { "id": "session-only", "scope": "session", "content": "keep", "createdAt": 2, "updatedAt": 2 }
@@ -2285,13 +2287,16 @@ mod tests {
         });
         let snapshot = CategorySnapshot {
             id: SettingsCategoryId::GlobalMemory,
-            schema_version: super::super::contract::CATEGORY_SCHEMA_VERSION,
+            schema_version: super::super::contract::category_schema_version(
+                SettingsCategoryId::GlobalMemory,
+            ),
             replacement: "value".to_string(),
             item_count: 1,
             plaintext_bytes: 0,
             sha256: String::new(),
             data: super::super::contract::CategorySnapshotData::Json(serde_json::json!({
                 "globalEnabled": true,
+                "workspaceDefaultEnabled": false,
                 "entries": [
                     { "id": "new-global", "scope": "global", "content": "new", "createdAt": 3, "updatedAt": 3 }
                 ]
@@ -2302,6 +2307,7 @@ mod tests {
         apply_memory(root_object, &snapshot).expect("global memory should apply");
 
         assert_eq!(root["memory"]["globalEnabled"], true);
+        assert_eq!(root["memory"]["workspaceDefaultEnabled"], false);
         assert_eq!(root["memory"]["futureMemorySetting"], true);
         assert_eq!(root["memory"]["entries"].as_array().map(Vec::len), Some(2));
         assert_eq!(root["memory"]["entries"][0]["id"], "session-only");

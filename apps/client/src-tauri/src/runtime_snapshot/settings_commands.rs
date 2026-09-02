@@ -241,6 +241,7 @@ pub(super) fn load_user_memory_settings() -> Result<UserMemorySettings, String> 
 
     Ok(UserMemorySettings {
         global_enabled: config.memory.global_enabled.unwrap_or(false),
+        workspace_default_enabled: config.memory.workspace_default_enabled.unwrap_or(true),
         entries: normalize_user_memory_entries(&config.memory.entries, "global"),
     })
 }
@@ -340,6 +341,15 @@ pub(super) fn save_user_speech_to_text_input_device_value(
 pub(super) fn save_user_global_memory_enabled_value(enabled: bool) -> Result<PathBuf, String> {
     update_user_config_file(|config| {
         config.memory.global_enabled = Some(enabled);
+        config.memory.entries = normalize_user_memory_entries(&config.memory.entries, "global");
+    })
+}
+
+pub(super) fn save_user_workspace_memory_default_enabled_value(
+    enabled: bool,
+) -> Result<PathBuf, String> {
+    update_user_config_file(|config| {
+        config.memory.workspace_default_enabled = Some(enabled);
         config.memory.entries = normalize_user_memory_entries(&config.memory.entries, "global");
     })
 }

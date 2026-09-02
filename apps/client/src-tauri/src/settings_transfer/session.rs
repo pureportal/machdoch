@@ -26,13 +26,12 @@ use super::{
         validate_envelope_categories, zeroize_envelope, MAX_TOTAL_ITEMS, MAX_TOTAL_PLAINTEXT_BYTES,
     },
     contract::{
-        CategoryAvailabilityState, CategoryEffect, CategorySnapshot,
+        category_schema_version, CategoryAvailabilityState, CategoryEffect, CategorySnapshot,
         ConnectSettingsTransferRequest, DiscoveredTransferSession, ManifestEntry, OfferedCategory,
         PayloadCategoryRange, ReceiverHello, ReviewCategory, SenderHello, SettingsCategoryId,
         SettingsTransferStatus, SnapshotAvailability, StartSettingsReceiveRequest,
         StartSettingsTransferRequest, TransferEnvelope, TransferManifest, TransferMode,
-        TransferPhase, TransferReview, CATEGORY_SCHEMA_VERSION, PROTOCOL_MAJOR,
-        SETTINGS_TRANSFER_EVENT,
+        TransferPhase, TransferReview, PROTOCOL_MAJOR, SETTINGS_TRANSFER_EVENT,
     },
     discovery::{
         bind_listener, create_qr_svg, decode_manual_code, encode_manual_code,
@@ -528,7 +527,7 @@ fn effective_hash(effective: &BTreeSet<SettingsCategoryId>) -> Result<String, St
     let canonical = effective
         .iter()
         .copied()
-        .map(|id| (id, CATEGORY_SCHEMA_VERSION))
+        .map(|id| (id, category_schema_version(id)))
         .collect::<Vec<_>>();
     serde_json::to_vec(&canonical)
         .map(|bytes| sha256_hex(&bytes))
@@ -579,7 +578,7 @@ fn offered_categories(
                 },
                 SnapshotAvailability::Unavailable(reason) => OfferedCategory {
                     id,
-                    schema_version: CATEGORY_SCHEMA_VERSION,
+                    schema_version: category_schema_version(id),
                     availability: CategoryAvailabilityState::Unavailable,
                     item_count: 0,
                     plaintext_bytes: 0,
@@ -596,7 +595,7 @@ fn receiver_hello(display_name: String, wanted: BTreeSet<SettingsCategoryId>) ->
         wanted,
         supported: SettingsCategoryId::ALL
             .into_iter()
-            .map(|id| (id, vec![CATEGORY_SCHEMA_VERSION]))
+            .map(|id| (id, vec![category_schema_version(id)]))
             .collect(),
     }
 }
@@ -795,7 +794,7 @@ fn validate_manifest(
             .collect::<BTreeSet<_>>()
             != *expected
         || manifest.entries.iter().any(|entry| {
-            entry.schema_version != CATEGORY_SCHEMA_VERSION
+            entry.schema_version != category_schema_version(entry.id)
                 || !matches!(entry.replacement.as_str(), "value" | "empty")
                 || !is_sha256_hex(&entry.sha256)
         })
@@ -2583,7 +2582,7 @@ mod tests {
             session_label: "Machdoch Transfer TEST".to_string(),
             offered: vec![OfferedCategory {
                 id: SettingsCategoryId::GlobalMemory,
-                schema_version: CATEGORY_SCHEMA_VERSION,
+                schema_version: category_schema_version(SettingsCategoryId::GlobalMemory),
                 availability,
                 item_count,
                 plaintext_bytes,
@@ -2625,7 +2624,7 @@ mod tests {
                 .unwrap(),
             entries: vec![ManifestEntry {
                 id: SettingsCategoryId::GlobalMemory,
-                schema_version: CATEGORY_SCHEMA_VERSION,
+                schema_version: category_schema_version(SettingsCategoryId::GlobalMemory),
                 replacement: "empty".to_string(),
                 item_count: 0,
                 plaintext_bytes: 2,
@@ -2676,7 +2675,7 @@ mod tests {
             effective_hash: effective_hash(&effective).expect("effective set should hash"),
             entries: vec![ManifestEntry {
                 id: SettingsCategoryId::GlobalMemory,
-                schema_version: CATEGORY_SCHEMA_VERSION,
+                schema_version: category_schema_version(SettingsCategoryId::GlobalMemory),
                 replacement: "value".to_string(),
                 item_count: 1,
                 plaintext_bytes: 42,
@@ -2716,7 +2715,7 @@ mod tests {
         let effective = BTreeSet::from([SettingsCategoryId::GlobalMemory]);
         let snapshot = CategorySnapshot {
             id: SettingsCategoryId::GlobalMemory,
-            schema_version: CATEGORY_SCHEMA_VERSION,
+            schema_version: category_schema_version(SettingsCategoryId::GlobalMemory),
             replacement: "value".to_string(),
             item_count: u32::try_from(MAX_TOTAL_ITEMS + 1).expect("test count should fit"),
             plaintext_bytes: 2,
@@ -2734,7 +2733,7 @@ mod tests {
         let categories = vec![
             CategorySnapshot {
                 id: SettingsCategoryId::ApiKeys,
-                schema_version: CATEGORY_SCHEMA_VERSION,
+                schema_version: category_schema_version(SettingsCategoryId::ApiKeys),
                 replacement: "value".to_string(),
                 item_count: 1,
                 plaintext_bytes: 10,
@@ -2745,7 +2744,7 @@ mod tests {
             },
             CategorySnapshot {
                 id: SettingsCategoryId::GlobalMemory,
-                schema_version: CATEGORY_SCHEMA_VERSION,
+                schema_version: category_schema_version(SettingsCategoryId::GlobalMemory),
                 replacement: "empty".to_string(),
                 item_count: 0,
                 plaintext_bytes: 2,

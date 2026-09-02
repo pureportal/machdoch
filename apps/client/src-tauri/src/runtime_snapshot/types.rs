@@ -12,6 +12,8 @@ pub struct RuntimeSnapshot {
     pub(super) default_reasoning: String,
     pub(super) default_reasoning_mode: ReasoningExecutionMode,
     pub(super) default_context_window: ContextWindow,
+    pub(super) workspace_memory_enabled: bool,
+    pub(super) workspace_memory_override: Option<bool>,
     pub(super) mode: String,
     pub(super) provider: String,
     pub(super) model: String,
