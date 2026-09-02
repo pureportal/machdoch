@@ -1526,6 +1526,12 @@
   color: var(--app-sky-100);
 }
 
+.m-product-toggle-button[data-active="true"][data-tone="amber"] {
+  border-color: color-mix(in srgb, var(--app-amber-500) 30%, transparent);
+  background: color-mix(in srgb, var(--app-amber-500) 10%, transparent);
+  color: var(--app-amber-200);
+}
+
 .m-product-toggle-button[data-active="true"][data-tone="violet"] {
   border-color: color-mix(in srgb, var(--app-violet-500) 30%, transparent);
   background: color-mix(in srgb, var(--app-violet-500) 10%, transparent);

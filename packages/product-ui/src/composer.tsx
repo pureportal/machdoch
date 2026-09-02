@@ -9,6 +9,7 @@ import {
   CircleDashed,
   CircleOff,
   Folder,
+  FolderHeart,
   Layers3,
   MessageSquare,
   Monitor,
@@ -382,6 +383,20 @@ export function Composer({
             }
           />
           <Toggle
+            label="Workspace memory"
+            icon={<FolderHeart />}
+            tone="amber"
+            pressed={composer.workspaceMemoryEnabled === true}
+            disabled={composer.workspaceMemoryAvailable !== true}
+            onClick={() =>
+              onCommand({
+                kind: "set-workspace-memory",
+                sessionId: session.id,
+                enabled: composer.workspaceMemoryEnabled !== true,
+              })
+            }
+          />
+          <Toggle
             label="Global memory"
             icon={<BrainCircuit />}
             tone="sky"
@@ -687,7 +702,7 @@ function Toggle({
   icon: React.ReactNode;
   label: string;
   title?: string;
-  tone: "emerald" | "sky" | "cyan" | "violet";
+  tone: "emerald" | "sky" | "cyan" | "amber" | "violet";
   pressed: boolean;
   disabled?: boolean;
   onManage?: () => void;
