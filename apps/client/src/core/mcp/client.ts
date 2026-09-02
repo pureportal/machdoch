@@ -64,6 +64,7 @@ import {
   getUserMcpConfigPath,
   loadMcpDiscoveryCache,
   loadMcpConfig,
+  loadUserMcpConfig,
   saveUserMcpOAuthState,
   saveWorkspaceMcpDiscovery,
 } from "./config.js";
@@ -193,7 +194,10 @@ const resolveOperationServer = async (
       ? options.effectiveServer
       : undefined;
   }
-  const config = await loadMcpConfig(workspaceRoot, options.configOverride);
+  const config =
+    options.configurationScope === "user"
+      ? await loadUserMcpConfig()
+      : await loadMcpConfig(workspaceRoot, options.configOverride);
   return getEnabledMcpServer(config, serverId);
 };
 
@@ -1837,8 +1841,11 @@ export class McpClientManager {
     serverId: string,
     options: McpOperationOptions = {},
   ): Promise<McpOAuthFlowResult> {
-    const config = await loadMcpConfig(workspaceRoot, options.configOverride);
-    const server = getEnabledMcpServer(config, serverId);
+    const server = await resolveOperationServer(
+      workspaceRoot,
+      serverId,
+      options,
+    );
 
     if (!server) {
       throw new Error(
@@ -1892,11 +1899,11 @@ export class McpClientManager {
       openAuthorizationUrl = openExternalAuthorizationUrl,
       ...operationOptions
     } = options;
-    const config = await loadMcpConfig(
+    const server = await resolveOperationServer(
       workspaceRoot,
-      operationOptions.configOverride,
+      serverId,
+      operationOptions,
     );
-    const server = getEnabledMcpServer(config, serverId);
 
     if (!server) {
       throw new Error(
@@ -2013,8 +2020,11 @@ export class McpClientManager {
     authorizationResponse: string,
     options: McpOperationOptions = {},
   ): Promise<McpOAuthFlowResult> {
-    const config = await loadMcpConfig(workspaceRoot, options.configOverride);
-    const server = getEnabledMcpServer(config, serverId);
+    const server = await resolveOperationServer(
+      workspaceRoot,
+      serverId,
+      options,
+    );
 
     if (!server) {
       throw new Error(

@@ -95,15 +95,16 @@ const normalizeWorkspaceRootIdentity = (workspaceRoot: string): string => {
   return `\\\\?\\${resolvedRoot}`;
 };
 
+const getWorkspaceRootIdentityKey = (workspaceRoot: string): string => {
+  const normalized = normalizeWorkspaceRootIdentity(workspaceRoot);
+  return process.platform === "win32"
+    ? normalized.toLocaleLowerCase("en-US")
+    : normalized;
+};
+
 const getWorkspaceStateSuffix = (workspaceRoot: string): string => {
-  const normalized = normalizeWorkspaceRootIdentity(workspaceRoot).replaceAll(
-    "\\",
-    "/",
-  );
   return sha256(
-    process.platform === "win32"
-      ? normalized.toLocaleLowerCase("en-US")
-      : normalized,
+    getWorkspaceRootIdentityKey(workspaceRoot).replaceAll("\\", "/"),
   ).slice(0, 16);
 };
 
@@ -136,12 +137,7 @@ const deduplicateWorkspaceRoots = (roots: readonly string[]): string[] => {
   const unique = new Map<string, string>();
   for (const root of roots) {
     const resolvedRoot = resolve(root);
-    const key =
-      process.platform === "win32"
-        ? normalizeWorkspaceRootIdentity(resolvedRoot).toLocaleLowerCase(
-            "en-US",
-          )
-        : resolvedRoot;
+    const key = getWorkspaceRootIdentityKey(resolvedRoot);
     if (!unique.has(key)) unique.set(key, resolvedRoot);
   }
   return [...unique.values()].sort(compareCanonicalStrings);
@@ -434,6 +430,21 @@ const createCoverageEntries = (
         );
       return [serverEntry, ...capabilityEntries];
     }),
+    ...projection.uncoveredServers.map(
+      (server): EnrollmentCoverageEntry => ({
+        entityId: `${scope}:mcp-server:${server.canonicalId}`,
+        entityKind: "mcp-server",
+        provider,
+        digest: server.digest,
+        route: "uncovered",
+        fidelity: "degraded",
+        refreshState: "degraded",
+        covered: false,
+        capabilities: server.capabilities,
+        evidence: [],
+        warning: server.reason,
+      }),
+    ),
   ];
 };
 
@@ -915,6 +926,11 @@ export const createProviderSyncPlan = async (
             "uncovered",
           ],
         })),
+        uncoveredMcpServers: projection.uncoveredServers.map((server) => ({
+          id: server.canonicalId,
+          capabilities: server.capabilities,
+          reason: server.reason,
+        })),
         coverage: summarizeEnrollmentCoverage(coverage),
         warnings: projection.warnings,
       });
@@ -997,10 +1013,10 @@ export const doctorProviderSync = async (
     (target) =>
       target.exists && (!target.syntaxValid || !target.managedCurrent),
   );
-  const workspaceRootIdentity = normalizeWorkspaceRootIdentity(workspaceRoot);
+  const workspaceRootIdentity = getWorkspaceRootIdentityKey(workspaceRoot);
   const daemonWorkspaceResult = daemonDiagnostic?.workspaceResults.find(
     (result) =>
-      normalizeWorkspaceRootIdentity(result.workspaceRoot) ===
+      getWorkspaceRootIdentityKey(result.workspaceRoot) ===
       workspaceRootIdentity,
   );
   return {

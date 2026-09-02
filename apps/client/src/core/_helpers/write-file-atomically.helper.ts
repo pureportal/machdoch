@@ -101,7 +101,11 @@ export const writeFileAtomically = async (
   );
 
   await mkdir(directory, { recursive: true });
-  const mode = options.mode ?? (await loadExistingFileMode(path));
+  const mode =
+    options.mode ??
+    (process.platform === "win32"
+      ? undefined
+      : await loadExistingFileMode(path));
 
   try {
     const handle = await open(temporaryPath, "wx", mode);

@@ -21,7 +21,11 @@ import {
   type MachdochCliLaunch,
 } from "./machdoch-cli-launch.js";
 import { isMcpToolEnabledForProjection } from "./mcp-tool-exposure.js";
-import type { McpProjectedServer, McpProjection } from "./types.js";
+import type {
+  McpProjectedServer,
+  McpProjection,
+  McpUncoveredServer,
+} from "./types.js";
 
 export interface McpProjectionOptions {
   persistent?: boolean;
@@ -272,9 +276,7 @@ const createProxyConfig = (
         "mcp",
         "proxy",
         server.id,
-        ...(scope === "user"
-          ? ["--scope", "user"]
-          : ["--cwd", workspaceRoot]),
+        ...(scope === "user" ? ["--scope", "user"] : ["--cwd", workspaceRoot]),
       ],
       ...(scope === "user" ? {} : { cwd: launch.cwd }),
       ...(Object.keys(launch.environment).length > 0
@@ -483,16 +485,17 @@ const getProxyEnvironmentKeys = (
     .sort();
 };
 
-const getCopilotOAuthProxyWarning = (
+const getCopilotOAuthProxyBlock = (
   provider: AgentCliProvider,
   server: McpEffectiveServerConfig,
   environment: Record<string, string>,
+  workspaceRoot: string,
+  scope: McpProjectionOptions["scope"],
 ): string | undefined => {
   if (
     provider !== "copilot-cli" ||
     server.auth?.type !== "oauth" ||
-    !server.auth.redirectUrl ||
-    !isMcpOAuthLoopbackRedirectUrl(server.auth.redirectUrl)
+    !server.auth.redirectUrl
   ) {
     return undefined;
   }
@@ -503,8 +506,16 @@ const getCopilotOAuthProxyWarning = (
       : undefined);
   if (accessToken?.trim()) return undefined;
 
-  const commands = getMcpOAuthRecoveryCommands(server.id);
-  return `OAuth authorization must be completed in Machdoch before Copilot CLI can initialize this managed MCP proxy. Run \`${commands.authorize}\`, then reconnect Copilot CLI.`;
+  const recoveryScope =
+    scope ?? (server.sources.includes("workspace") ? "workspace" : "user");
+  const commands = getMcpOAuthRecoveryCommands(server.id, {
+    ...(recoveryScope === "user"
+      ? { scope: "user" as const }
+      : { workspaceRoot }),
+  });
+  return isMcpOAuthLoopbackRedirectUrl(server.auth.redirectUrl)
+    ? `OAuth authorization is required. Run \`${commands.authorize}\`, then refresh provider enrollment.`
+    : `OAuth authorization is required. Run \`${commands.start}\`, complete sign-in, then run \`${commands.finish}\` and refresh provider enrollment.`;
 };
 
 const createProviderConfig = (
@@ -538,6 +549,7 @@ export const projectMcpForProvider = async (
     },
   );
   const projectedServers: McpProjectedServer[] = [];
+  const uncoveredServers: McpUncoveredServer[] = [];
   const warnings: string[] = [];
   const environment = await resolveProjectionEnvironment(enabledServers);
   let machdochCliLaunch: MachdochCliLaunch | undefined;
@@ -561,6 +573,23 @@ export const projectMcpForProvider = async (
     });
 
     if (proxyReason) {
+      const oauthBlock = getCopilotOAuthProxyBlock(
+        provider,
+        server,
+        environment,
+        workspaceRoot,
+        options.scope,
+      );
+      if (oauthBlock) {
+        warnings.push(`${server.id}: ${oauthBlock}`);
+        uncoveredServers.push({
+          canonicalId: server.id,
+          digest: serverDigest,
+          capabilities,
+          reason: oauthBlock,
+        });
+        continue;
+      }
       try {
         machdochCliLaunch ??= options.machdochCliLaunch
           ? assertMachdochCliLaunch(options.machdochCliLaunch)
@@ -574,12 +603,6 @@ export const projectMcpForProvider = async (
       warnings.push(
         `${server.id}: ${proxyReason} Using the per-server stdio proxy.`,
       );
-      const oauthWarning = getCopilotOAuthProxyWarning(
-        provider,
-        server,
-        environment,
-      );
-      if (oauthWarning) warnings.push(`${server.id}: ${oauthWarning}`);
       projectedServers.push({
         id: projectedId,
         canonicalId: server.id,
@@ -594,7 +617,7 @@ export const projectMcpForProvider = async (
           getProxyEnvironmentKeys(server, environment),
         ),
         capabilities,
-        warnings: [proxyReason, ...(oauthWarning ? [oauthWarning] : [])],
+        warnings: [proxyReason],
       });
       continue;
     }
@@ -632,14 +655,22 @@ export const projectMcpForProvider = async (
       servers: enabledServers,
       workspacePresence: options.workspacePresence !== undefined,
     }),
-    catalogDigest: digestJson(
-      projectedServers.map((server) => ({
+    catalogDigest: digestJson([
+      ...projectedServers.map((server) => ({
         id: server.canonicalId,
         digest: server.digest,
         capabilities: server.capabilities,
+        covered: true,
       })),
-    ),
+      ...uncoveredServers.map((server) => ({
+        id: server.canonicalId,
+        digest: server.digest,
+        capabilities: server.capabilities,
+        covered: false,
+      })),
+    ]),
     servers: projectedServers,
+    uncoveredServers,
     config,
     environment,
     warnings,

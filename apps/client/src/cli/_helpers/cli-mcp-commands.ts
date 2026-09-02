@@ -289,7 +289,7 @@ export const printMcpSummary = async (args: ParsedCliArgs): Promise<void> => {
         await runMcpStdioProxy(
           args.workspaceRoot,
           serverId,
-          options.projectionScope,
+          options.scope === "user" ? "user" : undefined,
         );
         return;
       }
@@ -373,6 +373,7 @@ export const printMcpSummary = async (args: ParsedCliArgs): Promise<void> => {
         const result = await mcpClientManager.authorizeOAuth(
           args.workspaceRoot,
           serverId,
+          options.scope ? { configurationScope: options.scope } : {},
         );
 
         if (args.json) {
@@ -400,6 +401,7 @@ export const printMcpSummary = async (args: ParsedCliArgs): Promise<void> => {
         const result = await mcpClientManager.beginOAuth(
           args.workspaceRoot,
           serverId,
+          options.scope ? { configurationScope: options.scope } : {},
         );
 
         if (args.json) {
@@ -429,6 +431,7 @@ export const printMcpSummary = async (args: ParsedCliArgs): Promise<void> => {
           args.workspaceRoot,
           serverId,
           authorizationResponse,
+          options.scope ? { configurationScope: options.scope } : {},
         );
 
         if (args.json) {

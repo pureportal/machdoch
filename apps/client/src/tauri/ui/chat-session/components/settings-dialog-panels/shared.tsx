@@ -334,6 +334,22 @@ export interface ProviderSyncControlProps {
   className?: string;
 }
 
+const getProviderSyncDegradedMessage = (
+  status: ProviderSyncStatus,
+): string | undefined => {
+  const messages = status.targets
+    .filter((target) => target.state === "degraded")
+    .map(
+      (target) =>
+        target.error ??
+        target.warnings.find((warning) =>
+          warning.includes("OAuth authorization is required."),
+        ) ??
+        "Provider enrollment needs attention.",
+    );
+  return messages.length > 0 ? [...new Set(messages)].join(" ") : undefined;
+};
+
 export const ProviderSyncControl = ({
   workspaceRoot,
   showDiagnostics = false,
@@ -349,7 +365,13 @@ export const ProviderSyncControl = ({
     setMessage(null);
     void getProviderSyncStatus(workspaceRoot)
       .then((nextStatus) => {
-        if (active) setStatus(nextStatus);
+        if (active) {
+          setStatus(nextStatus);
+          const degradedMessage = getProviderSyncDegradedMessage(nextStatus);
+          if (degradedMessage) {
+            setMessage({ tone: "error", text: degradedMessage });
+          }
+        }
       })
       .catch((error: unknown) => {
         if (active) {
@@ -370,11 +392,14 @@ export const ProviderSyncControl = ({
     try {
       const nextStatus = await setProviderSyncEnabled(workspaceRoot, enabled);
       setStatus(nextStatus);
+      const degradedMessage = getProviderSyncDegradedMessage(nextStatus);
       setMessage({
-        tone: "success",
-        text: enabled
-          ? "Provider MCP sync enabled."
-          : "Provider MCP sync disabled and managed entries removed.",
+        tone: degradedMessage ? "error" : "success",
+        text:
+          degradedMessage ??
+          (enabled
+            ? "Provider MCP sync enabled."
+            : "Provider MCP sync disabled and managed entries removed."),
       });
     } catch (error) {
       setMessage({
@@ -395,9 +420,10 @@ export const ProviderSyncControl = ({
       if (action === "refresh") {
         const nextStatus = await refreshProviderSync(workspaceRoot);
         setStatus(nextStatus);
+        const degradedMessage = getProviderSyncDegradedMessage(nextStatus);
         setMessage({
-          tone: "success",
-          text: "Provider projections reconciled.",
+          tone: degradedMessage ? "error" : "success",
+          text: degradedMessage ?? "Provider projections reconciled.",
         });
       } else if (action === "plan") {
         const plan = await planProviderSync(workspaceRoot);
@@ -733,96 +759,100 @@ export const SettingsCredentialForm = ({
       <SettingPanel label={keyLabel ?? `${providerLabel} API key`}>
         <SubmitShortcut asChild>
           <div className="grid gap-2">
-          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-            <Input
-              type={keyVisible ? "text" : "password"}
-              value={draftKey}
-              onChange={(event) => {
-                updateDraftKey(event.target.value);
-              }}
-              onKeyDown={(event) => {
-                if (
-                  event.key === "Enter" &&
-                  !event.ctrlKey &&
-                  !event.metaKey
-                ) {
-                  event.preventDefault();
-                  void persistDraftKey();
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+              <Input
+                type={keyVisible ? "text" : "password"}
+                value={draftKey}
+                onChange={(event) => {
+                  updateDraftKey(event.target.value);
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    event.key === "Enter" &&
+                    !event.ctrlKey &&
+                    !event.metaKey
+                  ) {
+                    event.preventDefault();
+                    void persistDraftKey();
+                  }
+                }}
+                placeholder={
+                  placeholder ?? `Paste your ${providerLabel} API key`
                 }
-              }}
-              placeholder={placeholder ?? `Paste your ${providerLabel} API key`}
-              autoComplete="off"
-              spellCheck={false}
-              aria-label={keyLabel ?? `${providerLabel} API key`}
-              aria-invalid={validationMessage ? true : undefined}
-              className="h-10 rounded-lg border-slate-800 bg-slate-950 text-slate-100 placeholder:text-slate-500"
-            />
-            <div className="flex items-center gap-2 sm:justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                aria-label={`${keyVisible ? "Hide" : "Show"} ${providerLabel} API key`}
-                tooltip={`${keyVisible ? "Hide" : "Show"} ${providerLabel} API key`}
-                onClick={() => setKeyVisible((visible) => !visible)}
-                disabled={draftKey.trim().length === 0}
-                className="h-10 w-10 rounded-lg border-slate-800 bg-slate-950 text-slate-300 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-40"
-              >
-                {keyVisible ? (
-                  <EyeOff className="h-4 w-4" />
-                ) : (
-                  <Eye className="h-4 w-4" />
-                )}
-              </Button>
-              {portalAction ? (
+                autoComplete="off"
+                spellCheck={false}
+                aria-label={keyLabel ?? `${providerLabel} API key`}
+                aria-invalid={validationMessage ? true : undefined}
+                className="h-10 rounded-lg border-slate-800 bg-slate-950 text-slate-100 placeholder:text-slate-500"
+              />
+              <div className="flex items-center gap-2 sm:justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  aria-label={`${keyVisible ? "Hide" : "Show"} ${providerLabel} API key`}
+                  tooltip={`${keyVisible ? "Hide" : "Show"} ${providerLabel} API key`}
+                  onClick={() => setKeyVisible((visible) => !visible)}
+                  disabled={draftKey.trim().length === 0}
+                  className="h-10 w-10 rounded-lg border-slate-800 bg-slate-950 text-slate-300 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-40"
+                >
+                  {keyVisible ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </Button>
+                {portalAction ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={portalAction.label}
+                    tooltip={portalAction.title ?? portalAction.label}
+                    onClick={() => {
+                      void portalAction.onClick();
+                    }}
+                    className="h-10 w-10 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+                  >
+                    <ArrowUpRight className="h-4 w-4" />
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+
+            {keyDirty ? (
+              <div className="flex flex-wrap justify-end gap-2">
                 <Button
                   type="button"
                   variant="ghost"
-                  size="icon"
-                  aria-label={portalAction.label}
-                  tooltip={portalAction.title ?? portalAction.label}
+                  size="sm"
+                  disabled={saving || loading}
                   onClick={() => {
-                    void portalAction.onClick();
+                    editRevisionRef.current += 1;
+                    draftKeyRef.current = savedKey;
+                    setDraftKey(savedKey);
+                    setKeyVisible(false);
                   }}
-                  className="h-10 w-10 rounded-lg border border-slate-800 bg-slate-950 text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+                  className="text-slate-400 hover:bg-slate-900 hover:text-slate-100"
                 >
-                  <ArrowUpRight className="h-4 w-4" />
+                  Restore saved key
                 </Button>
-              ) : null}
-            </div>
-          </div>
-
-          {keyDirty ? (
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={saving || loading}
-                onClick={() => {
-                  editRevisionRef.current += 1;
-                  draftKeyRef.current = savedKey;
-                  setDraftKey(savedKey);
-                  setKeyVisible(false);
-                }}
-                className="text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-              >
-                Restore saved key
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                disabled={saving || loading || normalizedDraftKey.length === 0}
-                onClick={() => {
-                  void persistDraftKey();
-                }}
-                {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                className="bg-sky-500 text-slate-950 hover:bg-sky-400"
-              >
-                Save key
-              </Button>
-            </div>
-          ) : null}
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={
+                    saving || loading || normalizedDraftKey.length === 0
+                  }
+                  onClick={() => {
+                    void persistDraftKey();
+                  }}
+                  {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                  className="bg-sky-500 text-slate-950 hover:bg-sky-400"
+                >
+                  Save key
+                </Button>
+              </div>
+            ) : null}
           </div>
         </SubmitShortcut>
       </SettingPanel>

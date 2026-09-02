@@ -46,6 +46,120 @@ describe("provider sync coordinator", () => {
     );
   });
 
+  it("withholds an unauthorized Copilot OAuth proxy until authorization is available", async () => {
+    const root = await createRoot();
+    const workspaceRoot = join(root, "workspace");
+    const userConfigRoot = join(root, "user-config");
+    const copilotHome = join(root, "copilot-home");
+    const copilotUserPath = join(copilotHome, "mcp-config.json");
+    const userMcpPath = join(userConfigRoot, "mcp.json");
+    const oauthServer = {
+      id: "linear",
+      enabled: true,
+      transport: {
+        type: "streamable-http",
+        url: "https://example.test/mcp",
+      },
+      auth: {
+        type: "oauth",
+        redirectUrl: "http://127.0.0.1:43110/oauth/callback",
+      },
+    };
+    await Promise.all([
+      mkdir(workspaceRoot, { recursive: true }),
+      mkdir(userConfigRoot, { recursive: true }),
+      mkdir(copilotHome, { recursive: true }),
+    ]);
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+    vi.stubEnv("COPILOT_HOME", copilotHome);
+    await Promise.all([
+      writeFile(
+        join(userConfigRoot, "user-config.json"),
+        `${JSON.stringify({
+          agentCliPaths: {
+            "copilot-cli": process.execPath,
+          },
+          providerEnrollment: {
+            schemaVersion: 1,
+            enabled: true,
+            persistentSync: {
+              enabled: true,
+              watch: false,
+              daemonAtLogin: false,
+            },
+            providers: {
+              "codex-cli": { enabled: false },
+              "claude-cli": { enabled: false },
+              "copilot-cli": { enabled: true },
+            },
+          },
+        })}\n`,
+        "utf8",
+      ),
+      writeFile(
+        userMcpPath,
+        `${JSON.stringify({
+          schemaVersion: 1,
+          servers: [oauthServer],
+        })}\n`,
+        "utf8",
+      ),
+    ]);
+
+    const unauthorizedStatus = await reconcileProviderSync(workspaceRoot);
+
+    expect(unauthorizedStatus.targets).toContainEqual(
+      expect.objectContaining({
+        provider: "copilot-cli",
+        scope: "user",
+        state: "degraded",
+        warnings: [
+          expect.stringContaining(
+            "machdoch mcp oauth-authorize linear --scope user",
+          ),
+        ],
+      }),
+    );
+    await expect(stat(copilotUserPath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+
+    await writeFile(
+      userMcpPath,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        servers: [
+          {
+            ...oauthServer,
+            auth: {
+              ...oauthServer.auth,
+              accessToken: "authorized-token",
+            },
+          },
+        ],
+      })}\n`,
+      "utf8",
+    );
+
+    const authorizedStatus = await reconcileProviderSync(workspaceRoot);
+    const copilotConfig = JSON.parse(
+      await readFile(copilotUserPath, "utf8"),
+    ) as {
+      mcpServers: Record<string, unknown>;
+    };
+
+    expect(authorizedStatus.targets).toContainEqual(
+      expect.objectContaining({
+        provider: "copilot-cli",
+        scope: "user",
+        state: "awaiting-provider-refresh",
+      }),
+    );
+    expect(Object.keys(copilotConfig.mcpServers)).toEqual([
+      expect.stringMatching(/^machdoch-line-/u),
+    ]);
+  });
+
   it("attributes daemon reconciliation failures to the affected workspace", async () => {
     const root = await createRoot();
     const workspaceRoot = join(root, "workspace");
@@ -105,7 +219,13 @@ describe("provider sync coordinator", () => {
 
     await writeFile(
       getProviderSyncDaemonDiagnosticPath(),
-      `${JSON.stringify(createDiagnostic(workspaceRoot))}\n`,
+      `${JSON.stringify(
+        createDiagnostic(
+          process.platform === "win32"
+            ? workspaceRoot.toLocaleUpperCase("en-US")
+            : workspaceRoot,
+        ),
+      )}\n`,
       "utf8",
     );
     await expect(doctorProviderSync(workspaceRoot)).resolves.toMatchObject({
