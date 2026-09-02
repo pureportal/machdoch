@@ -803,27 +803,46 @@ const createMcpCoverage = (
   params: MaterializeCliEnrollmentParams,
   projection: McpProjection,
 ): EnrollmentCoverageEntry[] => {
-  return projection.servers.map((server) => ({
-    entityId: `mcp-server:${server.canonicalId}`,
-    entityKind: "mcp-server",
-    provider: params.provider,
-    digest: server.digest,
-    route: server.route,
-    fidelity: "exact",
-    refreshState: "filesystem-current",
-    covered: true,
-    capabilities: server.capabilities,
-    evidence: [
-      {
-        kind: "file-hash",
-        detail: "Run-scoped provider MCP configuration",
+  return [
+    ...projection.servers.map(
+      (server): EnrollmentCoverageEntry => ({
+        entityId: `mcp-server:${server.canonicalId}`,
+        entityKind: "mcp-server",
+        provider: params.provider,
         digest: server.digest,
-      },
-    ],
-    ...(server.warnings.length === 0
-      ? {}
-      : { warning: server.warnings.join(" ") }),
-  }));
+        route: server.route,
+        fidelity: "exact",
+        refreshState: "filesystem-current",
+        covered: true,
+        capabilities: server.capabilities,
+        evidence: [
+          {
+            kind: "file-hash",
+            detail: "Run-scoped provider MCP configuration",
+            digest: server.digest,
+          },
+        ],
+        ...(server.warnings.length === 0
+          ? {}
+          : { warning: server.warnings.join(" ") }),
+      }),
+    ),
+    ...projection.uncoveredServers.map(
+      (server): EnrollmentCoverageEntry => ({
+        entityId: `mcp-server:${server.canonicalId}`,
+        entityKind: "mcp-server",
+        provider: params.provider,
+        digest: server.digest,
+        route: "uncovered",
+        fidelity: "degraded",
+        refreshState: "degraded",
+        covered: false,
+        capabilities: server.capabilities,
+        evidence: [],
+        warning: server.reason,
+      }),
+    ),
+  ];
 };
 
 const createMaterializedInstructionDelivery = (

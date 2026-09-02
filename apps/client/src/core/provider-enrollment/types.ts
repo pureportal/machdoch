@@ -87,11 +87,19 @@ export interface McpProjectedServer {
   warnings: string[];
 }
 
+export interface McpUncoveredServer {
+  canonicalId: string;
+  digest: string;
+  capabilities: string[];
+  reason: string;
+}
+
 export interface McpProjection {
   provider: AgentCliProvider;
   effectiveConfigDigest: string;
   catalogDigest: string;
   servers: McpProjectedServer[];
+  uncoveredServers: McpUncoveredServer[];
   config: Record<string, unknown>;
   environment: Record<string, string>;
   warnings: string[];

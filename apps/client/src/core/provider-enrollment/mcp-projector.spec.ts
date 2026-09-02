@@ -132,9 +132,7 @@ describe("MCP projector", () => {
       env: { MACHDOCH_USER_CONFIG_DIR: join(root, "user") },
     });
     expect(
-      projection.servers.find(
-        (server) => server.canonicalId === "http-direct",
-      ),
+      projection.servers.find((server) => server.canonicalId === "http-direct"),
     ).toMatchObject({
       route: "cli-native-mcp",
       providerConfig: {
@@ -343,14 +341,7 @@ describe("MCP projector", () => {
     });
 
     expect(projection.servers[0]?.providerConfig).toMatchObject({
-      args: [
-        ...launch.args,
-        "mcp",
-        "proxy",
-        "shared",
-        "--scope",
-        "user",
-      ],
+      args: [...launch.args, "mcp", "proxy", "shared", "--scope", "user"],
     });
     expect(projection.servers[0]?.providerConfig).not.toHaveProperty("cwd");
   });
@@ -469,11 +460,15 @@ describe("MCP projector", () => {
       projection.servers.find(
         (server) => server.canonicalId === "oauth-server",
       ),
+    ).toBeUndefined();
+    expect(
+      projection.uncoveredServers.find(
+        (server) => server.canonicalId === "oauth-server",
+      ),
     ).toMatchObject({
-      route: "cli-stdio-proxy",
-      warnings: expect.arrayContaining([
-        expect.stringContaining("machdoch mcp oauth-authorize oauth-server"),
-      ]),
+      reason: expect.stringContaining(
+        `machdoch mcp oauth-authorize oauth-server --cwd "${root}"`,
+      ),
     });
     expect(
       projection.servers.find(
@@ -489,18 +484,16 @@ describe("MCP projector", () => {
     expect(projection.warnings).toEqual(
       expect.arrayContaining([
         expect.stringContaining(
-          "oauth-server: OAuth authorization must be completed in Machdoch before Copilot CLI can initialize this managed MCP proxy.",
+          "oauth-server: OAuth authorization is required.",
         ),
       ]),
     );
     expect(
-      projection.servers.find(
+      projection.uncoveredServers.find(
         (server) => server.canonicalId === "external-oauth-server",
-      )?.warnings,
-    ).not.toEqual(
-      expect.arrayContaining([
-        expect.stringContaining("machdoch mcp oauth-authorize"),
-      ]),
+      )?.reason,
+    ).toContain(
+      `machdoch mcp oauth-start external-oauth-server --cwd "${root}"`,
     );
   });
 
@@ -545,9 +538,8 @@ describe("MCP projector", () => {
     });
     expect(JSON.stringify(projection.config)).not.toContain("optional-secret");
     expect(
-      projection.servers.find(
-        (server) => server.canonicalId === "oauth-server",
-      )?.warnings,
+      projection.servers.find((server) => server.canonicalId === "oauth-server")
+        ?.warnings,
     ).not.toEqual(
       expect.arrayContaining([
         expect.stringContaining("machdoch mcp oauth-authorize"),

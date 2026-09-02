@@ -361,6 +361,7 @@ export interface McpDirectToolMapping {
 export interface McpOperationOptions {
   signal?: AbortSignal;
   onProgress?: (message: string) => void | Promise<void>;
+  configurationScope?: "user";
   configOverride?: McpConfigOverride;
   effectiveServer?: McpEffectiveServerConfig;
   authoritativeDiscovery?: McpServerDiscovery;

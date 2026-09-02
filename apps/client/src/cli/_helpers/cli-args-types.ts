@@ -264,7 +264,7 @@ export interface TaskInterviewCliOptions {
 
 export interface McpCliOptions {
   action: McpCliAction;
-  projectionScope?: "user";
+  scope?: "user";
   serverId?: string;
   target?: string;
   argumentsJson?: string;

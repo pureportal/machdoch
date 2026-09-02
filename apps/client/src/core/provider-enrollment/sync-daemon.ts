@@ -71,6 +71,11 @@ const getDaemonStopRequestPath = (): string =>
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const getErrorMessage = (error: unknown): string => {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.trim() ? message : "Unknown provider-sync error.";
+};
+
 class InvalidDaemonRecordError extends Error {
   constructor(
     readonly path: string,
@@ -771,8 +776,7 @@ export const runProviderSyncDaemon = async (
               outcome: "success",
             });
           } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error);
+            const message = getErrorMessage(error);
             workspaceResults.push({
               workspaceRoot: registeredWorkspaceRoot,
               outcome: "error",
@@ -801,7 +805,7 @@ export const runProviderSyncDaemon = async (
           workspaceResults,
         } satisfies ProviderSyncDaemonDiagnostic);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = getErrorMessage(error);
         await writeJsonAtomically(getProviderSyncDaemonDiagnosticPath(), {
           schemaVersion: 2,
           pid: process.pid,

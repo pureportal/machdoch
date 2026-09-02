@@ -20,9 +20,9 @@ import {
   getCurrentProviderSyncDaemonPid,
   getProviderSyncDaemonPid,
   getProviderSyncDaemonRuntimeId,
-  getProviderSyncDaemonDiagnosticPath,
   isProviderSyncUserWatchPath,
   isProviderSyncWorkspaceWatchPath,
+  loadProviderSyncDaemonDiagnostic,
   requestProviderSyncRefresh,
   runProviderSyncDaemon,
   stopProviderSyncDaemon,
@@ -51,15 +51,7 @@ const createExitedProcessPid = async (): Promise<number> => {
 
 const loadDiagnostic = async (): Promise<
   ProviderSyncDaemonDiagnostic | undefined
-> => {
-  try {
-    return JSON.parse(
-      await readFile(getProviderSyncDaemonDiagnosticPath(), "utf8"),
-    ) as ProviderSyncDaemonDiagnostic;
-  } catch {
-    return undefined;
-  }
-};
+> => await loadProviderSyncDaemonDiagnostic();
 
 const waitForDiagnostic = async (
   predicate: (diagnostic: ProviderSyncDaemonDiagnostic) => boolean,
