@@ -273,6 +273,13 @@ test("pins installer metadata, dependencies, and installation paths", async () =
       "utf8",
     ),
   );
+  const commandPathFragment = await readFile(
+    new URL(
+      "../../apps/client/src-tauri/windows/command-path.wxs",
+      import.meta.url,
+    ),
+    "utf8",
+  );
   const expectedLinuxFiles = {
     "/usr/share/kio/servicemenus/machdoch-folder-context.desktop":
       "linux/machdoch-folder-context.desktop",
@@ -300,6 +307,19 @@ test("pins installer metadata, dependencies, and installation paths", async () =
     configuration.bundle.windows.wix.upgradeCode,
     "47638e6f-1542-5d67-bc57-e5ae45db5fd8",
   );
+  assert.deepEqual(configuration.bundle.windows.wix.fragmentPaths, [
+    "windows/command-path.wxs",
+    "windows/file-manager-context-menu.wxs",
+  ]);
+  assert.deepEqual(configuration.bundle.windows.wix.componentRefs, [
+    "MachdochCommandPath",
+    "MachdochFileManagerContextMenu",
+  ]);
+  assert.match(commandPathFragment, /<DirectoryRef Id="INSTALLDIR">/u);
+  assert.match(commandPathFragment, /Name="PATH"/u);
+  assert.match(commandPathFragment, /Value="\[INSTALLDIR\]"/u);
+  assert.match(commandPathFragment, /Part="last"/u);
+  assert.match(commandPathFragment, /System="yes"/u);
   assert.equal(configuration.bundle.windows.nsis.installMode, "currentUser");
   assert.deepEqual(configuration.bundle.linux.deb.depends, [
     "libgbm1",

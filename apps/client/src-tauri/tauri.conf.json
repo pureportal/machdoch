@@ -22,9 +22,7 @@
         "enable": true,
         "scope": []
       },
-      "capabilities": [
-        "default"
-      ]
+      "capabilities": ["default"]
     },
     "windows": [
       {
@@ -59,20 +57,16 @@
       "python/media_diffusers_requirements.txt": "python/media_diffusers_requirements.txt",
       "../scripts/build_source_anchored_loop.py": "python/build_source_anchored_loop.py"
     },
-    "targets": [
-      "msi",
-      "nsis",
-      "deb",
-      "rpm",
-      "appimage"
-    ],
+    "targets": ["msi", "nsis", "deb", "rpm", "appimage"],
     "windows": {
       "wix": {
         "upgradeCode": "47638e6f-1542-5d67-bc57-e5ae45db5fd8",
         "fragmentPaths": [
+          "windows/command-path.wxs",
           "windows/file-manager-context-menu.wxs"
         ],
         "componentRefs": [
+          "MachdochCommandPath",
           "MachdochFileManagerContextMenu"
         ]
       },
@@ -83,13 +77,8 @@
     },
     "linux": {
       "deb": {
-        "depends": [
-          "libgbm1",
-          "libpipewire-0.3-0"
-        ],
-        "recommends": [
-          "python3-nautilus"
-        ],
+        "depends": ["libgbm1", "libpipewire-0.3-0"],
+        "recommends": ["python3-nautilus"],
         "files": {
           "/usr/share/kio/servicemenus/machdoch-folder-context.desktop": "linux/machdoch-folder-context.desktop",
           "/usr/share/kio/servicemenus/machdoch-files-context.desktop": "linux/machdoch-files-context.desktop",
@@ -97,13 +86,8 @@
         }
       },
       "rpm": {
-        "depends": [
-          "libgbm.so.1()(64bit)",
-          "libpipewire-0.3.so.0()(64bit)"
-        ],
-        "recommends": [
-          "nautilus-python"
-        ],
+        "depends": ["libgbm.so.1()(64bit)", "libpipewire-0.3.so.0()(64bit)"],
+        "recommends": ["nautilus-python"],
         "files": {
           "/usr/share/kio/servicemenus/machdoch-folder-context.desktop": "linux/machdoch-folder-context.desktop",
           "/usr/share/kio/servicemenus/machdoch-files-context.desktop": "linux/machdoch-files-context.desktop",

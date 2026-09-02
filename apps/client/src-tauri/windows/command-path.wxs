@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="MachdochCommandPath" Guid="6D652752-495E-406F-97E4-42D1A6C97259" KeyPath="yes">
+        <Environment
+          Id="MachdochCommandPathEnvironment"
+          Name="PATH"
+          Value="[INSTALLDIR]"
+          Permanent="no"
+          Part="last"
+          Action="set"
+          System="yes" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>
