@@ -28,6 +28,7 @@ impl Error for ManagedSettingsValidationError {}
 #[derive(Debug)]
 pub enum GatewayPayloadBudgetError {
     Serialization(serde_json::Error),
+    Deserialization(serde_json::Error),
     Exceeded,
 }
 
@@ -35,6 +36,7 @@ impl fmt::Display for GatewayPayloadBudgetError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Serialization(_) => formatter.write_str("Failed to encode gateway message."),
+            Self::Deserialization(_) => formatter.write_str("Failed to decode gateway message."),
             Self::Exceeded => {
                 formatter.write_str("Gateway message exceeds the 4 MiB payload budget.")
             }
@@ -45,7 +47,7 @@ impl fmt::Display for GatewayPayloadBudgetError {
 impl Error for GatewayPayloadBudgetError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::Serialization(error) => Some(error),
+            Self::Serialization(error) | Self::Deserialization(error) => Some(error),
             Self::Exceeded => None,
         }
     }
@@ -73,17 +75,43 @@ impl<'de> Deserialize<'de> for FleetManagedSettingsDelivery {
         D: Deserializer<'de>,
     {
         let raw = RawFleetManagedSettingsDelivery::deserialize(deserializer)?;
-        let delivery = Self {
+        let mut delivery = Self {
             schema_version: raw.schema_version,
             manager_id: raw.manager_id,
             profile: raw.profile,
         };
+        delivery.normalize();
         delivery.validate().map_err(D::Error::custom)?;
         Ok(delivery)
     }
 }
 
 impl FleetManagedSettingsDelivery {
+    fn normalize(&mut self) {
+        let Some(profile) = &mut self.profile else {
+            return;
+        };
+
+        normalize_managed_string(&mut profile.name);
+        normalize_managed_option(&mut profile.document.defaults.model);
+
+        for instruction in &mut profile.document.instructions {
+            normalize_managed_string(&mut instruction.name);
+            normalize_managed_values(&mut instruction.tags);
+        }
+
+        for context_pack in &mut profile.document.context_packs {
+            normalize_managed_string(&mut context_pack.name);
+            normalize_managed_option(&mut context_pack.model);
+            normalize_managed_values(&mut context_pack.trigger_phrases);
+            normalize_managed_values(&mut context_pack.path_patterns);
+        }
+
+        for prompt in &mut profile.document.prompts {
+            normalize_managed_string(&mut prompt.relative_path);
+        }
+    }
+
     pub fn validate(&self) -> Result<(), ManagedSettingsValidationError> {
         if self.schema_version != MANAGED_SETTINGS_SCHEMA_VERSION {
             return Err(managed_settings_error(
@@ -233,8 +261,8 @@ fn valid_managed_text(value: &str, maximum: usize, required: bool) -> bool {
 }
 
 fn valid_managed_name(value: &str, maximum: usize) -> bool {
+    let value = ecmascript_trim(value);
     !value.is_empty()
-        && value == value.trim()
         && value.encode_utf16().count() <= maximum
         && !value.chars().any(char::is_control)
 }
@@ -392,7 +420,7 @@ fn validate_managed_instructions(
                 .any(|tag| !valid_managed_list_value(tag, 80) || tag.contains(','))
             || !unique_normalized_values(&instruction.tags)
             || !ids.insert(instruction.id.clone())
-            || !names.insert(instruction.name.to_lowercase())
+            || !names.insert(ecmascript_trim(&instruction.name).to_lowercase())
         {
             return Err(managed_settings_error(
                 "Managed settings instructions are invalid.",
@@ -429,7 +457,7 @@ fn validate_managed_context_packs(
             || !valid_managed_prompt_enhancement_mode(pack.prompt_enhancement_mode.as_deref())
             || !valid_managed_variables(&pack.variables)
             || !ids.insert(pack.id.clone())
-            || !names.insert(pack.name.to_lowercase())
+            || !names.insert(ecmascript_trim(&pack.name).to_lowercase())
         {
             return Err(managed_settings_error(
                 "Managed settings context packs are invalid.",
@@ -472,7 +500,7 @@ fn validate_managed_prompts(
             || !valid_managed_prompt_path(&prompt.relative_path)
             || !valid_managed_text(&prompt.content, 128 * 1024, true)
             || !ids.insert(prompt.id.clone())
-            || !paths.insert(prompt.relative_path.to_lowercase())
+            || !paths.insert(ecmascript_trim(&prompt.relative_path).to_lowercase())
         {
             return Err(managed_settings_error(
                 "Managed settings prompts are invalid.",
@@ -483,8 +511,8 @@ fn validate_managed_prompts(
 }
 
 fn valid_managed_prompt_path(value: &str) -> bool {
+    let value = ecmascript_trim(value);
     if value.is_empty()
-        || value != value.trim()
         || value.len() > 1_000
         || value.contains('\\')
         || value.starts_with('/')
@@ -507,11 +535,27 @@ fn valid_managed_prompt_path(value: &str) -> bool {
         })
 }
 
+fn normalize_managed_string(value: &mut String) {
+    *value = ecmascript_trim(value).to_string();
+}
+
+fn normalize_managed_option(value: &mut Option<String>) {
+    if let Some(value) = value {
+        normalize_managed_string(value);
+    }
+}
+
+fn normalize_managed_values(values: &mut [String]) {
+    for value in values {
+        normalize_managed_string(value);
+    }
+}
+
 fn unique_normalized_values(values: &[String]) -> bool {
     let mut normalized_values = BTreeSet::new();
     values
         .iter()
-        .all(|value| normalized_values.insert(value.to_lowercase()))
+        .all(|value| normalized_values.insert(ecmascript_trim(value).to_lowercase()))
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -551,7 +595,7 @@ pub enum ManagerMessage {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(
     tag = "type",
     rename_all = "camelCase",
@@ -574,13 +618,80 @@ pub enum HostMessage {
     },
 }
 
+#[derive(Deserialize)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+enum RawHostMessage {
+    Hello {
+        instance_id: String,
+        protocol_version: u32,
+        product_version: String,
+        capabilities: Vec<String>,
+    },
+    Heartbeat {
+        sent_at: u64,
+    },
+    Response {
+        request_id: String,
+        response: HostResponse,
+    },
+}
+
+impl From<RawHostMessage> for HostMessage {
+    fn from(raw: RawHostMessage) -> Self {
+        match raw {
+            RawHostMessage::Hello {
+                instance_id,
+                protocol_version,
+                product_version,
+                capabilities,
+            } => Self::Hello {
+                instance_id,
+                protocol_version,
+                product_version,
+                capabilities,
+            },
+            RawHostMessage::Heartbeat { sent_at } => Self::Heartbeat { sent_at },
+            RawHostMessage::Response {
+                request_id,
+                response,
+            } => Self::Response {
+                request_id,
+                response,
+            },
+        }
+    }
+}
+
+impl HostMessage {
+    fn validate(&self) -> Result<(), GatewayPayloadBudgetError> {
+        let payload = serde_json::to_vec(self).map_err(GatewayPayloadBudgetError::Serialization)?;
+        if payload.len() > MAX_GATEWAY_MESSAGE_BYTES {
+            return Err(GatewayPayloadBudgetError::Exceeded);
+        }
+        Ok(())
+    }
+}
+
 pub fn serialize_host_message(message: &HostMessage) -> Result<String, GatewayPayloadBudgetError> {
-    let payload =
-        serde_json::to_string(message).map_err(GatewayPayloadBudgetError::Serialization)?;
+    message.validate()?;
+    serde_json::to_string(message).map_err(GatewayPayloadBudgetError::Serialization)
+}
+
+pub fn deserialize_host_message(
+    payload: impl AsRef<[u8]>,
+) -> Result<HostMessage, GatewayPayloadBudgetError> {
+    let payload = payload.as_ref();
     if payload.len() > MAX_GATEWAY_MESSAGE_BYTES {
         return Err(GatewayPayloadBudgetError::Exceeded);
     }
-    Ok(payload)
+    serde_json::from_slice::<RawHostMessage>(payload)
+        .map(HostMessage::from)
+        .map_err(GatewayPayloadBudgetError::Deserialization)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1197,7 +1308,6 @@ impl ProductCommand {
             }
             ProductCommandKind::GenerateMedia => {
                 valid_command_text(self.prompt.as_deref())
-                    && matches!(self.target.as_deref(), Some("image" | "svg"))
                     && valid_identifier(self.model_id.as_deref())
                     && matches!(
                         self.aspect_ratio.as_deref(),
@@ -1206,9 +1316,9 @@ impl ProductCommand {
                     && self
                         .output_count
                         .is_some_and(|count| (1..=8).contains(&count))
-                    && matches!(
+                    && valid_media_output_format(
+                        self.target.as_deref(),
                         self.output_format.as_deref(),
-                        Some("png" | "jpeg" | "webp" | "svg")
                     )
             }
             ProductCommandKind::CancelMediaRun => valid_identifier(self.run_id.as_deref()),
@@ -1293,6 +1403,13 @@ fn valid_short_text(value: Option<&str>) -> bool {
 
 fn valid_command_text(value: Option<&str>) -> bool {
     valid_trimmed_text(value, 8_000)
+}
+
+fn valid_media_output_format(target: Option<&str>, output_format: Option<&str>) -> bool {
+    matches!(
+        (target, output_format),
+        (Some("image"), Some("png" | "jpeg" | "webp")) | (Some("svg"), Some("svg"))
+    )
 }
 
 fn valid_workspace(value: &str) -> bool {
@@ -2137,6 +2254,43 @@ mod tests {
         }
     }
 
+    #[test]
+    fn media_commands_require_target_compatible_output_formats() {
+        for output_format in ["png", "jpeg", "webp"] {
+            let mut command = command_payload("generate-media");
+            command["outputFormat"] = Value::String(output_format.to_string());
+
+            assert!(
+                serde_json::from_value::<ProductCommand>(command).is_ok(),
+                "image target should accept {output_format}"
+            );
+        }
+
+        let mut svg_command = command_payload("generate-media");
+        svg_command["target"] = Value::String("svg".to_string());
+        svg_command["outputFormat"] = Value::String("svg".to_string());
+        assert!(
+            serde_json::from_value::<ProductCommand>(svg_command).is_ok(),
+            "svg target should accept svg"
+        );
+
+        for (target, output_format) in [
+            ("image", "svg"),
+            ("svg", "png"),
+            ("svg", "jpeg"),
+            ("svg", "webp"),
+        ] {
+            let mut command = command_payload("generate-media");
+            command["target"] = Value::String(target.to_string());
+            command["outputFormat"] = Value::String(output_format.to_string());
+
+            assert!(
+                serde_json::from_value::<ProductCommand>(command).is_err(),
+                "{target} target should reject {output_format}"
+            );
+        }
+    }
+
     fn snapshot_response_with_chunk_size(chunk_size: usize) -> HostMessage {
         HostMessage::Response {
             request_id: "request-1".to_string(),
@@ -2161,6 +2315,36 @@ mod tests {
     }
 
     #[test]
+    fn inbound_gateway_snapshot_below_the_budget_is_accepted() {
+        let overhead = serialize_host_message(&snapshot_response_with_chunk_size(0))
+            .expect("empty snapshot should encode")
+            .len();
+        let message = snapshot_response_with_chunk_size(MAX_GATEWAY_MESSAGE_BYTES - overhead - 1);
+        let payload = serde_json::to_string(&message).expect("snapshot should encode");
+
+        let decoded =
+            deserialize_host_message(&payload).expect("below-budget snapshot should decode");
+
+        assert_eq!(payload.len(), MAX_GATEWAY_MESSAGE_BYTES - 1);
+        assert_eq!(decoded, message);
+    }
+
+    #[test]
+    fn inbound_gateway_snapshot_at_the_budget_is_accepted() {
+        let overhead = serialize_host_message(&snapshot_response_with_chunk_size(0))
+            .expect("empty snapshot should encode")
+            .len();
+        let message = snapshot_response_with_chunk_size(MAX_GATEWAY_MESSAGE_BYTES - overhead);
+        let payload = serde_json::to_string(&message).expect("snapshot should encode");
+
+        let decoded =
+            deserialize_host_message(&payload).expect("boundary-sized snapshot should decode");
+
+        assert_eq!(payload.len(), MAX_GATEWAY_MESSAGE_BYTES);
+        assert_eq!(decoded, message);
+    }
+
+    #[test]
     fn gateway_snapshot_payload_over_the_budget_is_rejected() {
         let overhead = serialize_host_message(&snapshot_response_with_chunk_size(0))
             .expect("empty snapshot should encode")
@@ -2176,6 +2360,52 @@ mod tests {
     }
 
     #[test]
+    fn inbound_gateway_snapshot_over_the_budget_is_rejected() {
+        let overhead = serialize_host_message(&snapshot_response_with_chunk_size(0))
+            .expect("empty snapshot should encode")
+            .len();
+        let message = snapshot_response_with_chunk_size(MAX_GATEWAY_MESSAGE_BYTES - overhead + 1);
+        let payload = serde_json::to_string(&message).expect("snapshot should encode");
+        let error =
+            deserialize_host_message(&payload).expect_err("oversized snapshot should be rejected");
+
+        assert_eq!(payload.len(), MAX_GATEWAY_MESSAGE_BYTES + 1);
+        assert!(error
+            .to_string()
+            .contains("Gateway message exceeds the 4 MiB payload budget."));
+    }
+
+    #[test]
+    fn inbound_gateway_payload_with_excess_whitespace_is_rejected() {
+        let payload = format!(
+            "{}{}",
+            serde_json::to_string(&HostMessage::Heartbeat { sent_at: 1 })
+                .expect("heartbeat should encode"),
+            " ".repeat(MAX_GATEWAY_MESSAGE_BYTES),
+        );
+
+        let error = deserialize_host_message(&payload)
+            .expect_err("payload with excess whitespace should be rejected");
+
+        assert_eq!(payload.len(), MAX_GATEWAY_MESSAGE_BYTES + 31);
+        assert!(matches!(error, GatewayPayloadBudgetError::Exceeded));
+    }
+
+    #[test]
+    fn inbound_gateway_payload_with_expanded_escapes_is_rejected() {
+        let escaped_payload = "\\u0078".repeat(MAX_GATEWAY_MESSAGE_BYTES / 6);
+        let payload = format!(
+            r#"{{"type":"response","requestId":"request-1","response":{{"type":"productSnapshot","snapshot":{{"payload":"{escaped_payload}"}}}}}}"#,
+        );
+
+        let error = deserialize_host_message(&payload)
+            .expect_err("payload with expanded escapes should be rejected");
+
+        assert!(payload.len() > MAX_GATEWAY_MESSAGE_BYTES);
+        assert!(matches!(error, GatewayPayloadBudgetError::Exceeded));
+    }
+
+    #[test]
     fn managed_settings_delivery_deserializes_when_valid() {
         let delivery = serde_json::from_value::<FleetManagedSettingsDelivery>(
             managed_settings_delivery_json(),
@@ -2187,6 +2417,40 @@ mod tests {
             delivery.profile.as_ref().map(|profile| profile.revision),
             Some(1)
         );
+    }
+
+    #[test]
+    fn managed_settings_delivery_normalizes_ecmascript_boundary_whitespace() {
+        let mut payload = managed_settings_delivery_json();
+        payload["profile"]["name"] = Value::String(" \u{FEFF}Engineering\u{FEFF} ".to_string());
+        payload["profile"]["document"]["defaults"]["model"] =
+            Value::String("\u{3000}gpt-5.6\u{3000}".to_string());
+        payload["profile"]["document"]["instructions"][0]["name"] =
+            Value::String("\u{FEFF}Review\u{FEFF}".to_string());
+        payload["profile"]["document"]["instructions"][0]["tags"] =
+            serde_json::json!(["\u{FEFF}review\u{FEFF}"]);
+        payload["profile"]["document"]["contextPacks"][0]["name"] =
+            Value::String("\u{FEFF}Change review\u{FEFF}".to_string());
+        payload["profile"]["document"]["contextPacks"][0]["model"] =
+            Value::String("\u{FEFF}gpt-5.6\u{FEFF}".to_string());
+        payload["profile"]["document"]["contextPacks"][0]["triggerPhrases"] =
+            serde_json::json!(["\u{FEFF}review\u{FEFF}"]);
+        payload["profile"]["document"]["contextPacks"][0]["pathPatterns"] =
+            serde_json::json!(["\u{FEFF}src/**\u{FEFF}"]);
+        payload["profile"]["document"]["prompts"][0]["relativePath"] =
+            Value::String("\u{FEFF}review.prompt.md\u{FEFF}".to_string());
+
+        let delivery = serde_json::from_value::<FleetManagedSettingsDelivery>(payload)
+            .expect("BOM-padded managed settings should decode");
+
+        assert_eq!(
+            serde_json::to_value(delivery).expect("managed settings should encode"),
+            managed_settings_delivery_json()
+        );
+
+        let mut whitespace_only = managed_settings_delivery_json();
+        whitespace_only["profile"]["name"] = Value::String(" \u{FEFF}\u{3000} ".to_string());
+        assert!(serde_json::from_value::<FleetManagedSettingsDelivery>(whitespace_only).is_err());
     }
 
     #[test]

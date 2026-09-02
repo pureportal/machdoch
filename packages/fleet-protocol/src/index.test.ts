@@ -175,6 +175,16 @@ void test("accepts a gateway snapshot at the payload budget", () => {
   assert.equal(hostMessageSchema.safeParse(message).success, true);
 });
 
+void test("accepts a gateway snapshot below the payload budget", () => {
+  const message = snapshotMessageAtPayloadSize(maximumGatewayMessageBytes - 1);
+
+  assert.equal(
+    serializedGatewayMessageBytes(message),
+    maximumGatewayMessageBytes - 1,
+  );
+  assert.equal(hostMessageSchema.safeParse(message).success, true);
+});
+
 void test("rejects a gateway snapshot over the payload budget", () => {
   const message = snapshotMessageAtPayloadSize(maximumGatewayMessageBytes + 1);
   const result = hostMessageSchema.safeParse(message);
@@ -197,6 +207,33 @@ void test("accepts a complete managed settings delivery", () => {
     fleetManagedSettingsDeliverySchema.safeParse(managedSettingsDelivery())
       .success,
     true,
+  );
+});
+
+void test("normalizes ECMAScript boundary whitespace in managed settings", () => {
+  const delivery = managedSettingsDelivery();
+  const profile = delivery.profile!;
+  const document = profile.document;
+
+  profile.name = " \uFEFFEngineering\uFEFF ";
+  document.defaults.model = "\u3000gpt-5.6\u3000";
+  document.instructions[0]!.name = "\uFEFFReview\uFEFF";
+  document.instructions[0]!.tags = ["\uFEFFreview\uFEFF"];
+  document.contextPacks[0]!.name = "\uFEFFChange review\uFEFF";
+  document.contextPacks[0]!.model = "\uFEFFgpt-5.6\uFEFF";
+  document.contextPacks[0]!.triggerPhrases = ["\uFEFFreview\uFEFF"];
+  document.contextPacks[0]!.pathPatterns = ["\uFEFFsrc/**\uFEFF"];
+  document.prompts[0]!.relativePath = "\uFEFFreview.prompt.md\uFEFF";
+
+  const result = fleetManagedSettingsDeliverySchema.parse(delivery);
+
+  assert.deepEqual(result.profile, managedSettingsDelivery().profile);
+
+  const whitespaceOnly = managedSettingsDelivery();
+  whitespaceOnly.profile!.name = " \uFEFF\u3000 ";
+  assert.equal(
+    fleetManagedSettingsDeliverySchema.safeParse(whitespaceOnly).success,
+    false,
   );
 });
 
@@ -375,4 +412,42 @@ void test("rejects product command fields from other variants", () => {
     productCommandSchema.safeParse({ ...cancel, sessionId: null }).success,
     false,
   );
+});
+
+void test("requires GenerateMedia output formats compatible with the target", () => {
+  const command = {
+    kind: "generate-media",
+    prompt: "Create a geometric owl",
+    modelId: "openai:gpt-image-2",
+    target: "image",
+    aspectRatio: "1:1",
+    outputCount: 1,
+    outputFormat: "png",
+    transparentBackground: false,
+  };
+
+  for (const outputFormat of ["png", "jpeg", "webp"]) {
+    assert.equal(
+      productCommandSchema.safeParse({ ...command, outputFormat }).success,
+      true,
+    );
+  }
+
+  assert.equal(
+    productCommandSchema.safeParse({ ...command, target: "svg", outputFormat: "svg" })
+      .success,
+    true,
+  );
+
+  for (const [target, outputFormat] of [
+    ["image", "svg"],
+    ["svg", "png"],
+    ["svg", "jpeg"],
+    ["svg", "webp"],
+  ]) {
+    assert.equal(
+      productCommandSchema.safeParse({ ...command, target, outputFormat }).success,
+      false,
+    );
+  }
 });
