@@ -212,6 +212,9 @@
         },
         "compatibility": {
           "$ref": "#/$defs/WorkspaceCompatibilityConfig"
+        },
+        "workspaceMemoryEnabled": {
+          "type": ["boolean", "null"]
         }
       }
     },
@@ -459,6 +462,10 @@
         "globalEnabled": {
           "type": "boolean",
           "default": false
+        },
+        "workspaceDefaultEnabled": {
+          "type": "boolean",
+          "default": true
         },
         "entries": {
           "type": "array",
@@ -982,6 +989,8 @@
         "workspaceRoot",
         "defaultMode",
         "defaultReasoning",
+        "workspaceMemoryEnabled",
+        "workspaceMemoryOverride",
         "mode",
         "provider",
         "model",
@@ -1011,6 +1020,12 @@
         },
         "defaultContextWindow": {
           "$ref": "#/$defs/ContextWindow"
+        },
+        "workspaceMemoryEnabled": {
+          "type": "boolean"
+        },
+        "workspaceMemoryOverride": {
+          "type": ["boolean", "null"]
         },
         "mode": {
           "$ref": "#/$defs/RunMode"
