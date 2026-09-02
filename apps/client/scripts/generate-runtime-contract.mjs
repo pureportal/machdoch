@@ -321,6 +321,7 @@ export interface WorkspaceConfigFile {
   offline?: boolean;
   agentLimits?: RuntimeAgentLimitOverrides;
   compatibility?: WorkspaceCompatibilityConfig;
+  workspaceMemoryEnabled?: boolean | null;
 }
 
 export interface ProviderAvailability {
@@ -406,6 +407,8 @@ export interface RuntimeSnapshot extends Omit<RuntimeConfig, "agentLimits" | "co
   defaultReasoning: ReasoningMode;
   defaultReasoningMode?: ReasoningExecutionMode;
   defaultContextWindow?: ContextWindow;
+  workspaceMemoryEnabled: boolean;
+  workspaceMemoryOverride: boolean | null;
   contextWindow?: ContextWindow;
   agentLimits: RuntimeAgentLimits;
   uiControl?: UiControlAvailability;
@@ -445,6 +448,7 @@ export interface RuntimeMemoryEntry {
 
 export interface UserMemoryConfigFile {
   globalEnabled?: boolean;
+  workspaceDefaultEnabled?: boolean;
   entries?: RuntimeMemoryEntry[];
 }
 
