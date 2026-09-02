@@ -4,6 +4,7 @@ import type { ProductCommand, ProductSnapshot } from "@machdoch/fleet-protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProductRuntime } from "./product-runtime";
 import { ProductShell } from "./product-shell";
+import { SnapshotRefreshCoordinator } from "./snapshot-refresh-coordinator";
 
 const snapshotRefreshIntervalMs = 1_500;
 
@@ -18,35 +19,36 @@ export function RemoteProductApp({
   const [error, setError] = useState<string | null>(null);
   const [pendingCommands, setPendingCommands] = useState(0);
   const mountedRef = useRef(true);
-  const refreshInFlightRef = useRef(false);
+  const refreshCoordinatorRef =
+    useRef<SnapshotRefreshCoordinator<ProductSnapshot> | null>(null);
 
   const refresh = useCallback(
-    async (signal?: AbortSignal): Promise<void> => {
-      if (refreshInFlightRef.current) return;
-      refreshInFlightRef.current = true;
-      try {
-        const nextSnapshot = await runtime.getSnapshot(signal);
-        if (!signal?.aborted && mountedRef.current) {
+    (signal?: AbortSignal): Promise<void> =>
+      refreshCoordinatorRef.current?.request(signal) ?? Promise.resolve(),
+    [],
+  );
+
+  useEffect(() => {
+    mountedRef.current = true;
+    const refreshCoordinator = new SnapshotRefreshCoordinator({
+      fetchSnapshot: (signal) => runtime.getSnapshot(signal),
+      onSnapshot: (nextSnapshot) => {
+        if (mountedRef.current) {
           setSnapshot(nextSnapshot);
           setError(null);
         }
-      } catch (reason) {
-        if (!signal?.aborted && mountedRef.current) {
+      },
+      onError: (reason) => {
+        if (mountedRef.current) {
           setError(
             reason instanceof Error
               ? reason.message
               : "Instance is unavailable.",
           );
         }
-      } finally {
-        refreshInFlightRef.current = false;
-      }
-    },
-    [runtime],
-  );
-
-  useEffect(() => {
-    mountedRef.current = true;
+      },
+    });
+    refreshCoordinatorRef.current = refreshCoordinator;
     const controller = new AbortController();
     void refresh(controller.signal);
     const interval = window.setInterval(() => {
@@ -63,10 +65,14 @@ export function RemoteProductApp({
     return () => {
       mountedRef.current = false;
       controller.abort();
+      refreshCoordinator.dispose();
+      if (refreshCoordinatorRef.current === refreshCoordinator) {
+        refreshCoordinatorRef.current = null;
+      }
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [refresh]);
+  }, [refresh, runtime]);
 
   const execute = useCallback(
     async (command: ProductCommand): Promise<boolean> => {
