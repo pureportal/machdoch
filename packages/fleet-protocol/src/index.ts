@@ -689,7 +689,22 @@ export const productCommandSchema = z.discriminatedUnion("kind", [
     kind: z.literal("cancel-media-run"),
     runId: identifier,
   }),
-]);
+]).superRefine((command, context) => {
+    if (
+      command.kind === "generate-media" &&
+      !(
+        (command.target === "image" &&
+          ["png", "jpeg", "webp"].includes(command.outputFormat)) ||
+        (command.target === "svg" && command.outputFormat === "svg")
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["outputFormat"],
+        message: "Output format must be compatible with the media target.",
+      });
+    }
+});
 
 export type ProductCommand = z.infer<typeof productCommandSchema>;
 export type ProductCommandKind = ProductCommand["kind"];
