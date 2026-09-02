@@ -38,11 +38,13 @@ import {
   saveUserReviewModelSettings,
   saveUserWorkspaceRunSettings,
   saveUserGlobalMemoryEnabled,
+  saveUserWorkspaceMemoryDefaultEnabled,
   saveMcpConfigDocument,
   refreshMcpDiscoveryCache,
   saveUserVoiceActiveProvider,
   saveUserProviderApiKey,
   saveWorkspaceDefaultMode,
+  saveWorkspaceMemoryOverride,
   saveWorkspaceContextWindow,
   saveWorkspaceReasoningExecutionMode,
   saveWorkspaceReasoningMode,
@@ -187,6 +189,9 @@ export interface ChatSessionRuntimeController {
   handleWorkspaceDefaultModeSave: (
     mode: RuntimeSnapshot["mode"],
   ) => Promise<void>;
+  handleWorkspaceMemoryOverrideSave: (
+    enabled: boolean | null,
+  ) => Promise<void>;
   handleWorkspaceReasoningModeSave: (
     reasoning: RuntimeSnapshot["reasoning"],
   ) => Promise<void>;
@@ -212,6 +217,9 @@ export interface ChatSessionRuntimeController {
     authorizationResponse?: string,
   ) => Promise<void>;
   handleGlobalMemoryEnabledSave: (enabled: boolean) => Promise<void>;
+  handleWorkspaceMemoryDefaultEnabledSave: (
+    enabled: boolean,
+  ) => Promise<void>;
   handleGlobalMemoryForget: (id: string) => Promise<void>;
   refreshWorkspaceMemoryEntries: () => Promise<void>;
   applyLoadedUserDesktopSettings: (settings: UserDesktopSettings) => void;
@@ -1177,6 +1185,11 @@ export const useChatSessionRuntime = (
               settingsEventSequenceRef.current.get(kind) === sequence
             ) {
               applyLoadedUserMemorySettings(settings);
+              if (options.activeSessionWorkspace?.trim()) {
+                await refreshWorkspaceRuntimeSnapshot(
+                  options.activeSessionWorkspace,
+                );
+              }
             }
           } else if (kind === "agent-limits") {
             const settings = await loadUserAgentLimitsSettings();
@@ -1238,6 +1251,7 @@ export const useChatSessionRuntime = (
     applyLoadedUserVoiceSettings,
     options.activeSessionWorkspace,
     refreshMcpConfigDocuments,
+    refreshWorkspaceRuntimeSnapshot,
   ]);
 
   useEffect(() => {
@@ -2254,6 +2268,83 @@ export const useChatSessionRuntime = (
     [options.activeSessionWorkspace, refreshWorkspaceRuntimeSnapshot],
   );
 
+  const handleWorkspaceMemoryOverrideSave = useCallback(
+    async (enabled: boolean | null): Promise<void> => {
+      const workspaceRoot = options.activeSessionWorkspace;
+      if (!workspaceRoot) {
+        setWorkspaceSetupMessage({
+          tone: "error",
+          text: "Select a workspace before changing workspace memory.",
+        });
+        return;
+      }
+
+      const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
+      const requestId = workspaceSaveRequestIdRef.current + 1;
+      workspaceSaveRequestIdRef.current = requestId;
+
+      setWorkspaceSetupSaving(true);
+      setWorkspaceSetupMessage(null);
+
+      try {
+        await saveWorkspaceMemoryOverride(workspaceRoot, enabled);
+
+        if (
+          workspaceSaveRequestIdRef.current !== requestId ||
+          activeWorkspaceKeyRef.current !== workspaceKey
+        ) {
+          return;
+        }
+
+        if (!isTauri()) {
+          setRuntimeSnapshot((currentSnapshot) =>
+            currentSnapshot
+              ? {
+                  ...currentSnapshot,
+                  workspaceMemoryOverride: enabled,
+                  workspaceMemoryEnabled:
+                    enabled ??
+                    userMemorySettings.workspaceDefaultEnabled !==
+                      false,
+                }
+              : currentSnapshot,
+          );
+        }
+
+        await refreshWorkspaceRuntimeSnapshot(workspaceRoot);
+
+        if (activeWorkspaceKeyRef.current === workspaceKey) {
+          setWorkspaceSetupMessage({
+            tone: "success",
+            text: "Workspace memory setting saved.",
+          });
+        }
+      } catch (error) {
+        if (
+          workspaceSaveRequestIdRef.current === requestId &&
+          activeWorkspaceKeyRef.current === workspaceKey
+        ) {
+          setWorkspaceSetupMessage({
+            tone: "error",
+            text:
+              error instanceof Error
+                ? error.message
+                : "Workspace memory could not be updated.",
+          });
+        }
+      } finally {
+        if (workspaceSaveRequestIdRef.current === requestId) {
+          setWorkspaceSetupSaving(false);
+        }
+      }
+    },
+    [
+      options.activeSessionWorkspace,
+      refreshWorkspaceRuntimeSnapshot,
+      userMemorySettings.workspaceDefaultEnabled,
+    ],
+  );
+
   const handleWorkspaceReasoningModeSave = useCallback(
     async (reasoning: RuntimeSnapshot["reasoning"]): Promise<void> => {
       const workspaceRoot = options.activeSessionWorkspace;
@@ -3053,6 +3144,54 @@ export const useChatSessionRuntime = (
     [applyLoadedUserMemorySettings, userMemorySettings],
   );
 
+  const handleWorkspaceMemoryDefaultEnabledSave = useCallback(
+    async (enabled: boolean): Promise<void> => {
+      if (!isTauri()) {
+        applyLoadedUserMemorySettings({
+          ...userMemorySettings,
+          workspaceDefaultEnabled: enabled,
+        });
+        setRuntimeSnapshot((currentSnapshot) =>
+          currentSnapshot?.workspaceMemoryOverride === null
+            ? { ...currentSnapshot, workspaceMemoryEnabled: enabled }
+            : currentSnapshot,
+        );
+        return;
+      }
+
+      setMemorySetupSaving(true);
+      setMemorySetupMessage(null);
+
+      try {
+        const settings =
+          await saveUserWorkspaceMemoryDefaultEnabled(enabled);
+
+        applyLoadedUserMemorySettings(settings);
+        await refreshWorkspaceRuntimeSnapshot(options.activeSessionWorkspace);
+        setMemorySetupMessage({
+          tone: "success",
+          text: "Default workspace memory updated.",
+        });
+      } catch (error) {
+        setMemorySetupMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? error.message
+              : "Default workspace memory could not be updated.",
+        });
+      } finally {
+        setMemorySetupSaving(false);
+      }
+    },
+    [
+      applyLoadedUserMemorySettings,
+      options.activeSessionWorkspace,
+      refreshWorkspaceRuntimeSnapshot,
+      userMemorySettings,
+    ],
+  );
+
   const handleGlobalMemoryForget = useCallback(
     async (id: string): Promise<void> => {
       setMemorySetupSaving(true);
@@ -3159,6 +3298,7 @@ export const useChatSessionRuntime = (
     handleAgentLimitsSettingsSave,
     handleReviewModelSettingsSave,
     handleWorkspaceDefaultModeSave,
+    handleWorkspaceMemoryOverrideSave,
     handleWorkspaceReasoningModeSave,
     handleWorkspaceReasoningExecutionModeSave,
     handleWorkspaceContextWindowSave,
@@ -3175,6 +3315,7 @@ export const useChatSessionRuntime = (
     handleMcpOAuthStart,
     handleMcpOAuthFinish,
     handleGlobalMemoryEnabledSave,
+    handleWorkspaceMemoryDefaultEnabledSave,
     handleGlobalMemoryForget,
     refreshWorkspaceMemoryEntries,
     applyLoadedUserDesktopSettings,

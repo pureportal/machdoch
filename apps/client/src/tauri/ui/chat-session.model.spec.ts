@@ -412,6 +412,7 @@ describe("normalizeShellState", () => {
           workspace: 42,
           promptHistory: ["first", 7, "second"],
           sessionMemoryEnabled: false,
+          useWorkspaceMemory: false,
           useGlobalMemory: false,
           uiControlEnabled: true,
           createdAt: 123,
@@ -425,6 +426,7 @@ describe("normalizeShellState", () => {
         google: "",
       },
       lastSelectedSessionMemoryEnabled: false,
+      lastSelectedUseWorkspaceMemory: false,
       lastSelectedUseGlobalMemory: false,
       lastSelectedUiControlEnabled: true,
       voice: {
@@ -451,6 +453,7 @@ describe("normalizeShellState", () => {
       workspace: null,
       promptHistory: ["first", "second"],
       sessionMemoryEnabled: false,
+      useWorkspaceMemory: false,
       useGlobalMemory: false,
       uiControlEnabled: true,
       createdAt: 123,
@@ -459,6 +462,7 @@ describe("normalizeShellState", () => {
     expect(normalized.sessions[0]?.model.length).toBeGreaterThan(0);
     expect(normalized.lastSelectedMode).toBe("machdoch");
     expect(normalized.lastSelectedSessionMemoryEnabled).toBe(false);
+    expect(normalized.lastSelectedUseWorkspaceMemory).toBe(false);
     expect(normalized.lastSelectedUseGlobalMemory).toBe(false);
     expect(normalized.lastSelectedUiControlEnabled).toBe(true);
   });
@@ -809,6 +813,7 @@ describe("normalizeShellState", () => {
                 mode: "ask",
                 reasoning: "high",
                 sessionMemoryEnabled: false,
+                useWorkspaceMemory: false,
                 useGlobalMemory: true,
                 uiControlEnabled: true,
                 promptEnhancementMode: "web-search",
@@ -827,6 +832,7 @@ describe("normalizeShellState", () => {
       mode: "ask",
       reasoning: "high",
       sessionMemoryEnabled: false,
+      useWorkspaceMemory: false,
       useGlobalMemory: true,
       uiControlEnabled: true,
       promptEnhancementMode: "web-search",
@@ -972,6 +978,7 @@ describe("normalizeShellState", () => {
     expect(normalized.contextPacks[0]?.promptEnhancementMode).toBeUndefined();
     expect(normalized.contextPacks[0]?.interviewEnabled).toBeUndefined();
     expect(normalized.contextPacks[0]?.sessionMemoryEnabled).toBeUndefined();
+    expect(normalized.contextPacks[0]?.useWorkspaceMemory).toBeUndefined();
     expect(normalized.contextPacks[0]?.useGlobalMemory).toBeUndefined();
     expect(normalized.contextPacks[0]?.uiControlEnabled).toBeUndefined();
   });
@@ -998,6 +1005,7 @@ describe("normalizeShellState", () => {
           promptEnhancementMode: "off",
           interviewEnabled: false,
           sessionMemoryEnabled: true,
+          useWorkspaceMemory: false,
           useGlobalMemory: false,
           uiControlEnabled: true,
         },
@@ -1016,6 +1024,7 @@ describe("normalizeShellState", () => {
         promptEnhancementMode: "off",
         interviewEnabled: false,
         sessionMemoryEnabled: true,
+        useWorkspaceMemory: false,
         useGlobalMemory: false,
         uiControlEnabled: true,
       },

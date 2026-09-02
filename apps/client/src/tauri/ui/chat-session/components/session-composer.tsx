@@ -1,6 +1,7 @@
 import {
   Brain,
   BrainCircuit,
+  FolderHeart,
   LoaderCircle,
   MessageSquare,
   Mic,
@@ -70,11 +71,14 @@ export interface SessionComposerProps {
   recentWorkspaces: string[];
   composerWorkspaceLabel: string;
   sessionMemoryDescription: string;
+  workspaceMemoryDescription?: string;
   globalMemoryDescription: string;
   uiControlDescription: string;
   interviewDescription: string;
   isGlobalMemoryAvailable: boolean;
   isGlobalMemoryActive: boolean;
+  isWorkspaceMemoryAvailable?: boolean;
+  isWorkspaceMemoryActive?: boolean;
   isUiControlAvailable: boolean;
   interviewEnabled: boolean;
   interviewDisabled: boolean;
@@ -114,6 +118,7 @@ export interface SessionComposerProps {
   onSessionReasoningSelection: (reasoning: ReasoningMode | null) => void;
   onSessionMemoryEnabledChange: (enabled: boolean) => void;
   onForgetSessionMemory: (memoryId: string) => Promise<unknown> | unknown;
+  onUseWorkspaceMemoryChange?: (enabled: boolean) => void;
   onUseGlobalMemoryChange: (enabled: boolean) => void;
   onUiControlEnabledChange: (enabled: boolean) => void;
   onInterviewEnabledChange: (enabled: boolean) => void;
@@ -178,11 +183,14 @@ export const SessionComposer = ({
   recentWorkspaces,
   composerWorkspaceLabel,
   sessionMemoryDescription,
+  workspaceMemoryDescription = "",
   globalMemoryDescription,
   uiControlDescription,
   interviewDescription,
   isGlobalMemoryAvailable,
   isGlobalMemoryActive,
+  isWorkspaceMemoryAvailable = false,
+  isWorkspaceMemoryActive = false,
   isUiControlAvailable,
   interviewEnabled,
   interviewDisabled,
@@ -210,6 +218,7 @@ export const SessionComposer = ({
   onSessionReasoningSelection,
   onSessionMemoryEnabledChange,
   onForgetSessionMemory,
+  onUseWorkspaceMemoryChange = () => undefined,
   onUseGlobalMemoryChange,
   onUiControlEnabledChange,
   onInterviewEnabledChange,
@@ -363,6 +372,19 @@ export const SessionComposer = ({
     }
     next.push(
       {
+        id: "workspace-memory",
+        label: "Workspace memory",
+        description: workspaceMemoryDescription,
+        icon: <FolderHeart className="h-4 w-4" />,
+        pressed: isWorkspaceMemoryActive,
+        disabled: !isWorkspaceMemoryAvailable,
+        onPressedChange: onUseWorkspaceMemoryChange,
+        activeClassName:
+          "border-amber-500/30 bg-amber-500/10 text-amber-100 hover:bg-amber-500/15 hover:text-white",
+        unavailableClassName:
+          "border-dashed border-slate-800 bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600",
+      },
+      {
         id: "global-memory",
         label: "Global memory",
         description: globalMemoryDescription,
@@ -412,15 +434,19 @@ export const SessionComposer = ({
     interviewEnabled,
     isGlobalMemoryActive,
     isGlobalMemoryAvailable,
+    isWorkspaceMemoryActive,
+    isWorkspaceMemoryAvailable,
     isUiControlAvailable,
     onInterviewEnabledChange,
     openSessionMemory,
     onSessionMemoryEnabledChange,
+    onUseWorkspaceMemoryChange,
     onUiControlEnabledChange,
     onUseGlobalMemoryChange,
     sessionMemoryDescription,
     showSessionMemoryButton,
     uiControlDescription,
+    workspaceMemoryDescription,
   ]);
 
   const actions = useMemo<AgentComposerAction[]>(() => {

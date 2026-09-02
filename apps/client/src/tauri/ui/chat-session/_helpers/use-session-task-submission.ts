@@ -563,6 +563,9 @@ export const useSessionTaskSubmission = (options: {
         currentOptions.runtime.userMemorySettings.globalEnabled,
         currentOptions.uiControlAvailability,
         currentOptions.aiContextMessageLimit,
+        currentOptions.runtime.runtimeSnapshot?.workspaceMemoryEnabled ??
+          currentOptions.runtime.userMemorySettings.workspaceDefaultEnabled !==
+            false,
       );
       const nextRunMode = getEffectiveSessionMode(
         sessionMode,

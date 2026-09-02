@@ -576,6 +576,8 @@ export const useFleetControl = (options: {
   onRefreshInstructions: () => Promise<void>;
   isGlobalMemoryAvailable: boolean;
   isGlobalMemoryActive: boolean;
+  isWorkspaceMemoryAvailable: boolean;
+  isWorkspaceMemoryActive: boolean;
   isUiControlAvailable: boolean;
   uiControlDescription: string;
   canSendMessage: boolean;
@@ -638,6 +640,7 @@ export const useFleetControl = (options: {
   }) => boolean;
   onSetSessionMemory: (sessionId: string, enabled: boolean) => void;
   onForgetSessionMemory: (sessionId: string, memoryId: string) => void;
+  onSetWorkspaceMemory: (sessionId: string, enabled: boolean) => void;
   onSetGlobalMemory: (sessionId: string, enabled: boolean) => void;
   onSetUiControl: (sessionId: string, enabled: boolean) => void;
   onRemoveContextAttachment: (sessionId: string, attachmentId: string) => void;
@@ -1080,6 +1083,8 @@ export const useFleetControl = (options: {
               : {}),
           };
         }),
+        workspaceMemoryAvailable: options.isWorkspaceMemoryAvailable,
+        workspaceMemoryEnabled: options.isWorkspaceMemoryActive,
         globalMemoryAvailable: options.isGlobalMemoryAvailable,
         globalMemoryEnabled: options.isGlobalMemoryActive,
         uiControlAvailable: options.isUiControlAvailable,
@@ -1655,6 +1660,13 @@ export const useFleetControl = (options: {
         case "set-global-memory": {
           if (command.sessionId && typeof command.enabled === "boolean") {
             options.onSetGlobalMemory(command.sessionId, command.enabled);
+          }
+          break;
+        }
+
+        case "set-workspace-memory": {
+          if (command.sessionId && typeof command.enabled === "boolean") {
+            options.onSetWorkspaceMemory(command.sessionId, command.enabled);
           }
           break;
         }

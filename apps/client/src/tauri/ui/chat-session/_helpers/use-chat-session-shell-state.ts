@@ -1171,6 +1171,12 @@ const mergeSessionConcurrentFields = (
       baseSession.sessionMemoryEnabled,
       latestSession.sessionMemoryEnabled,
     ),
+    useWorkspaceMemory: mergeSessionFieldForPersistence(
+      primarySession.useWorkspaceMemory,
+      localSession.useWorkspaceMemory,
+      baseSession.useWorkspaceMemory,
+      latestSession.useWorkspaceMemory,
+    ),
     useGlobalMemory: mergeSessionFieldForPersistence(
       primarySession.useGlobalMemory,
       localSession.useGlobalMemory,
@@ -1587,6 +1593,7 @@ const createSessionMutationComparable = (
     promptHistory: session.promptHistory,
     promptContextHistory: session.promptContextHistory,
     sessionMemoryEnabled: session.sessionMemoryEnabled,
+    useWorkspaceMemory: session.useWorkspaceMemory,
     useGlobalMemory: session.useGlobalMemory,
     uiControlEnabled: session.uiControlEnabled,
     sessionMemory: session.sessionMemory,
@@ -2186,6 +2193,11 @@ export const mergeShellStateForPersistence = (
       baseState.lastSelectedSessionMemoryEnabled
         ? latestState.lastSelectedSessionMemoryEnabled
         : localState.lastSelectedSessionMemoryEnabled,
+    lastSelectedUseWorkspaceMemory:
+      localState.lastSelectedUseWorkspaceMemory ===
+      baseState.lastSelectedUseWorkspaceMemory
+        ? latestState.lastSelectedUseWorkspaceMemory
+        : localState.lastSelectedUseWorkspaceMemory,
     lastSelectedUseGlobalMemory:
       localState.lastSelectedUseGlobalMemory ===
       baseState.lastSelectedUseGlobalMemory

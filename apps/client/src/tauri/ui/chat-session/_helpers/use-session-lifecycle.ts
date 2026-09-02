@@ -60,6 +60,7 @@ interface NewSessionDefaults extends Pick<
   | "model"
   | "workspace"
   | "sessionMemoryEnabled"
+  | "useWorkspaceMemory"
   | "useGlobalMemory"
   | "uiControlEnabled"
 > {
@@ -94,6 +95,7 @@ const createNewSessionDefaults = (
     ...(state.lastSelectedMode ? { mode: state.lastSelectedMode } : {}),
     ...(reasoning ? { reasoning } : {}),
     sessionMemoryEnabled: state.lastSelectedSessionMemoryEnabled,
+    useWorkspaceMemory: state.lastSelectedUseWorkspaceMemory,
     useGlobalMemory: state.lastSelectedUseGlobalMemory,
     uiControlEnabled: state.lastSelectedUiControlEnabled,
   };
