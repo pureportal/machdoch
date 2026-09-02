@@ -183,12 +183,17 @@ impl TerminalOutputFlow {
     }
 
     fn wait_for_output_capacity(&self) {
+        self.wait_for_output_capacity_when(|| {});
+    }
+
+    fn wait_for_output_capacity_when(&self, waiting: impl FnOnce()) {
         let Ok(mut pending) = self.pending_output_bytes.lock() else {
             return;
         };
         if *pending < TERMINAL_OUTPUT_HIGH_WATERMARK_BYTES {
             return;
         }
+        waiting();
         while *pending > TERMINAL_OUTPUT_LOW_WATERMARK_BYTES
             && !self.output_cancelled.load(Ordering::SeqCst)
         {
@@ -1770,15 +1775,22 @@ mod tests {
         let flow = Arc::new(TerminalOutputFlow::default());
         flow.record_output(TERMINAL_OUTPUT_HIGH_WATERMARK_BYTES);
         let (finished_sender, finished_receiver) = mpsc::channel();
+        let (waiting_sender, waiting_receiver) = mpsc::channel();
         let waiting_flow = Arc::clone(&flow);
         let waiter = thread::spawn(move || {
-            waiting_flow.wait_for_output_capacity();
+            waiting_flow.wait_for_output_capacity_when(|| {
+                waiting_sender
+                    .send(())
+                    .expect("flow waiter should report when it is waiting");
+            });
             finished_sender
                 .send(())
                 .expect("flow completion should send");
         });
 
-        thread::sleep(Duration::from_millis(25));
+        waiting_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("flow waiter should begin waiting");
         flow.acknowledge_output(
             TERMINAL_OUTPUT_HIGH_WATERMARK_BYTES - TERMINAL_OUTPUT_LOW_WATERMARK_BYTES - 1,
         );
@@ -1793,14 +1805,21 @@ mod tests {
 
         flow.record_output(TERMINAL_OUTPUT_HIGH_WATERMARK_BYTES);
         let (cancelled_sender, cancelled_receiver) = mpsc::channel();
+        let (cancelled_waiting_sender, cancelled_waiting_receiver) = mpsc::channel();
         let waiting_flow = Arc::clone(&flow);
         let cancelled_waiter = thread::spawn(move || {
-            waiting_flow.wait_for_output_capacity();
+            waiting_flow.wait_for_output_capacity_when(|| {
+                cancelled_waiting_sender
+                    .send(())
+                    .expect("cancelled flow waiter should report when it is waiting");
+            });
             cancelled_sender
                 .send(())
                 .expect("cancelled completion should send");
         });
-        thread::sleep(Duration::from_millis(25));
+        cancelled_waiting_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("cancelled flow waiter should begin waiting");
         flow.cancel_output();
         cancelled_receiver
             .recv_timeout(Duration::from_secs(1))

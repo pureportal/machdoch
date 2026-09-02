@@ -615,9 +615,9 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
             if let Ok(pid) = fs::read_to_string(path) {
-                return pid
-                    .parse::<u32>()
-                    .expect("recorded descendant pid should be numeric");
+                if let Ok(pid) = pid.trim().parse::<u32>() {
+                    return pid;
+                }
             }
             assert!(
                 Instant::now() < deadline,
