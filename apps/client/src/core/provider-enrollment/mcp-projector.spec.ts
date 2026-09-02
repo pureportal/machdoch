@@ -409,9 +409,13 @@ describe("MCP projector", () => {
           {
             id: "oauth-server",
             enabled: true,
-            transport: { type: "stdio", command: "node" },
+            transport: {
+              type: "streamable-http",
+              url: "https://example.test/mcp",
+            },
             auth: {
               type: "oauth",
+              redirectUrl: "http://127.0.0.1:43110/oauth/callback",
               accessTokenEnv: "MCP_PROJECTOR_OPTIONAL_TOKEN",
             },
           },
@@ -435,6 +439,18 @@ describe("MCP projector", () => {
               },
             },
           },
+          {
+            id: "external-oauth-server",
+            enabled: true,
+            transport: {
+              type: "streamable-http",
+              url: "https://example.test/external-mcp",
+            },
+            auth: {
+              type: "oauth",
+              redirectUrl: "https://example.test/oauth/callback",
+            },
+          },
         ],
       }),
       "utf8",
@@ -452,8 +468,13 @@ describe("MCP projector", () => {
     expect(
       projection.servers.find(
         (server) => server.canonicalId === "oauth-server",
-      )?.route,
-    ).toBe("cli-stdio-proxy");
+      ),
+    ).toMatchObject({
+      route: "cli-stdio-proxy",
+      warnings: expect.arrayContaining([
+        expect.stringContaining("machdoch mcp oauth-authorize oauth-server"),
+      ]),
+    });
     expect(
       projection.servers.find(
         (server) => server.canonicalId === "bearer-server",
@@ -465,6 +486,22 @@ describe("MCP projector", () => {
       )?.route,
     ).toBe("cli-stdio-proxy");
     expect(projection.environment).toEqual({});
+    expect(projection.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "oauth-server: OAuth authorization must be completed in Machdoch before Copilot CLI can initialize this managed MCP proxy.",
+        ),
+      ]),
+    );
+    expect(
+      projection.servers.find(
+        (server) => server.canonicalId === "external-oauth-server",
+      )?.warnings,
+    ).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("machdoch mcp oauth-authorize"),
+      ]),
+    );
   });
 
   it("passes available optional auth environment overrides to the proxy process", async () => {
@@ -482,18 +519,16 @@ describe("MCP projector", () => {
         schemaVersion: 1,
         servers: [
           {
-            id: "header-server",
+            id: "oauth-server",
             enabled: true,
             transport: {
               type: "streamable-http",
               url: "https://example.test/mcp",
             },
             auth: {
-              type: "headers",
-              headers: { Authorization: "fallback" },
-              envHeaders: {
-                Authorization: "MCP_PROJECTOR_OPTIONAL_TOKEN",
-              },
+              type: "oauth",
+              redirectUrl: "http://127.0.0.1:43110/oauth/callback",
+              accessTokenEnv: "MCP_PROJECTOR_OPTIONAL_TOKEN",
             },
           },
         ],
@@ -509,5 +544,14 @@ describe("MCP projector", () => {
       MCP_PROJECTOR_OPTIONAL_TOKEN: "optional-secret",
     });
     expect(JSON.stringify(projection.config)).not.toContain("optional-secret");
+    expect(
+      projection.servers.find(
+        (server) => server.canonicalId === "oauth-server",
+      )?.warnings,
+    ).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("machdoch mcp oauth-authorize"),
+      ]),
+    );
   });
 });

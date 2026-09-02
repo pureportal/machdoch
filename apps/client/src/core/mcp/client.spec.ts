@@ -532,11 +532,30 @@ describe("McpClientManager lifecycle", () => {
       redirect_uris: ["http://127.0.0.1:43110/oauth/callback"],
     });
     await authProvider.saveCodeVerifier("verifier-1");
-    await expect(
-      authProvider.redirectToAuthorization(
-        new URL("https://example.com/oauth/authorize?state=state-1"),
-      ),
-    ).rejects.toBeInstanceOf(McpOAuthAuthorizationRequiredError);
+    const authorizationRequiredError = await Promise.resolve()
+      .then(() =>
+        authProvider.redirectToAuthorization(
+          new URL("https://example.com/oauth/authorize?state=state-1"),
+        ),
+      )
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    expect(authorizationRequiredError).toBeInstanceOf(
+      McpOAuthAuthorizationRequiredError,
+    );
+    expect(authorizationRequiredError).toMatchObject({
+      message:
+        "MCP OAuth authorization is required for server `test`. Run `machdoch mcp oauth-authorize test` before reconnecting. If automatic browser callback handling is unavailable, run `machdoch mcp oauth-start test`, then `machdoch mcp oauth-finish test <callback-url-or-code>`.",
+      authorizationUrl: "https://example.com/oauth/authorize?state=state-1",
+    });
+    if (!(authorizationRequiredError instanceof Error)) {
+      throw new Error("Expected OAuth authorization to fail.");
+    }
+    expect(authorizationRequiredError.message).not.toContain(
+      "https://example.com/oauth/authorize",
+    );
     await authProvider.saveTokens({
       access_token: "new-access-token",
       refresh_token: "new-refresh-token",
@@ -699,12 +718,29 @@ describe("McpClientManager lifecycle", () => {
     const openAuthorizationUrl = vi.fn(async () => undefined);
 
     try {
-      await expect(
-        manager.authorizeOAuth(workspaceRoot, "test", {
+      const authorizationError = await manager
+        .authorizeOAuth(workspaceRoot, "test", {
           callbackTimeoutMs: 1_000,
           openAuthorizationUrl,
-        }),
-      ).rejects.toThrow("already in use");
+        })
+        .then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+      expect(authorizationError).toBeInstanceOf(Error);
+      expect(authorizationError).toMatchObject({
+        message: expect.stringContaining("already in use"),
+      });
+      expect(authorizationError).toMatchObject({
+        message: expect.stringContaining(
+          "Retry `machdoch mcp oauth-authorize test`",
+        ),
+      });
+      expect(authorizationError).toMatchObject({
+        message: expect.stringContaining(
+          "run `machdoch mcp oauth-start test`, then `machdoch mcp oauth-finish test <callback-url-or-code>`",
+        ),
+      });
       expect(openAuthorizationUrl).not.toHaveBeenCalled();
     } finally {
       await new Promise<void>((resolve, reject) => {
