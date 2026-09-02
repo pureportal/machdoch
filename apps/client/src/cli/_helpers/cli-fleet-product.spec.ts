@@ -58,9 +58,34 @@ describe.sequential("Fleet CLI product runtime", () => {
     expect(response.snapshot.shell?.workspaces).toEqual([
       expect.objectContaining({ root: workspace, sessionCount: 2 }),
     ]);
+    const activeSessionId = response.snapshot.shell?.activeSessionId;
+    expect(activeSessionId).toBeTruthy();
+    if (!activeSessionId) return;
+
+    await runtime.handleRequest({
+      type: "executeProductCommand",
+      command: {
+        kind: "set-workspace-memory",
+        commandId: "command-disable-workspace-memory",
+        sessionId: activeSessionId,
+        enabled: false,
+      },
+    });
+
+    const updated = await runtime.handleRequest({
+      type: "getProductSnapshot",
+    });
+    expect(
+      updated.type === "productSnapshot"
+        ? updated.snapshot.shell?.composer
+        : undefined,
+    ).toMatchObject({
+      workspaceMemoryAvailable: true,
+      workspaceMemoryEnabled: false,
+    });
     await expect(
       readFile(getFleetCliStatePath(workspace), "utf8"),
-    ).resolves.toContain("command-create-session");
+    ).resolves.toContain('"useWorkspaceMemory": false');
     await runtime.shutdown();
   });
 

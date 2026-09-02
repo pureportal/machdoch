@@ -38,6 +38,45 @@ describe("memory tool definitions", () => {
     ]);
   });
 
+  it.each([
+    {
+      sessionEnabled: true,
+      workspaceEnabled: false,
+      globalEnabled: false,
+      expected: ["remember_session_memory"],
+    },
+    {
+      sessionEnabled: false,
+      workspaceEnabled: true,
+      globalEnabled: false,
+      expected: ["remember_workspace_memory"],
+    },
+    {
+      sessionEnabled: false,
+      workspaceEnabled: false,
+      globalEnabled: true,
+      expected: ["remember_global_memory"],
+    },
+    {
+      sessionEnabled: false,
+      workspaceEnabled: false,
+      globalEnabled: false,
+      expected: [],
+    },
+  ])(
+    "gates session, workspace, and global tools independently",
+    ({ sessionEnabled, workspaceEnabled, globalEnabled, expected }) => {
+      const names = createMemoryToolDefinitions({
+        ...createMemoryRuntime(),
+        sessionEnabled,
+        workspaceEnabled,
+        globalEnabled,
+      }).map((definition) => definition.spec.name);
+
+      expect(names).toEqual(expected);
+    },
+  );
+
   it("replaces session facts by stable concept key", async () => {
     const workspaceRoot = await mkdtemp(
       join(tmpdir(), "machdoch-memory-tool-"),

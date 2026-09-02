@@ -1,6 +1,10 @@
+import { loadWorkspaceConfigFile } from "../config.js";
 import { loadUserMemorySettings } from "../env.js";
 import { retrieveConversationMemory } from "../memory-retrieval.js";
-import { normalizeConversationMemoryEntries } from "../memory.js";
+import {
+  normalizeConversationMemoryEntries,
+  resolveWorkspaceMemoryEnabled,
+} from "../memory.js";
 import { loadWorkspaceMemory } from "../workspace-memory.js";
 import type {
   ConversationHistoryEntry,
@@ -425,8 +429,19 @@ export const prepareConversationPromptContext = async (
   const uiControlEnabled = conversationContext?.uiControlEnabled === true;
   const uiControl = conversationContext?.uiControl;
   const workspace = normalizeWorkspaceContext(conversationContext);
-  const workspaceEnabled = workspace.selection === "selected";
   const workspaceRoot = config.workspaceRoot;
+  const workspaceMemoryOverride =
+    workspace.selection === "selected"
+      ? (await loadWorkspaceConfigFile(workspaceRoot)).config
+          .workspaceMemoryEnabled
+      : undefined;
+  const workspaceEnabled =
+    workspace.selection === "selected" &&
+    resolveWorkspaceMemoryEnabled(
+      storedGlobalMemory.workspaceDefaultEnabled,
+      workspaceMemoryOverride,
+    ) &&
+    conversationContext?.workspaceMemoryEnabled !== false;
   let workspaceLoadFailed = false;
   const storedWorkspaceEntries = workspaceEnabled
     ? await loadWorkspaceMemory(workspaceRoot).catch(() => {
@@ -554,6 +569,7 @@ export const prepareConversationPromptContext = async (
                 `recent messages included: ${recentHistoryLines.length}`,
                 `earlier messages summarized: ${summary ? "yes" : "no"}`,
                 `session memory enabled: ${sessionEnabled ? "yes" : "no"}`,
+                `workspace memory enabled: ${workspaceEnabled ? "yes" : "no"}`,
                 `global memory enabled: ${globalEnabled ? "yes" : "no"}`,
               ],
             },

@@ -108,6 +108,37 @@ afterEach(async () => {
 });
 
 describe("consolidateTaskExecutionMemory", () => {
+  it("skips memory extraction when every scope is disabled", async () => {
+    const workspaceRoot = await createWorkspace();
+    const startTurn = vi.fn(async () => createMemoryTurn([]));
+    const result = createExecutionResult("Inspect the workspace");
+
+    const consolidated = await consolidateTaskExecutionMemory(
+      "Inspect the workspace",
+      createConfig(workspaceRoot),
+      result,
+      {
+        history: [],
+        workspace: { selection: "selected", root: workspaceRoot },
+        sessionMemoryEnabled: false,
+        workspaceMemoryEnabled: false,
+        globalMemoryEnabled: false,
+      },
+      {
+        modelAdapter: {
+          startTurn,
+          continueTurn: async (): Promise<never> => {
+            throw new Error("Memory extraction should not continue.");
+          },
+        },
+      },
+    );
+
+    expect(consolidated).toBe(result);
+    expect(startTurn).not.toHaveBeenCalled();
+    await expect(loadWorkspaceMemory(workspaceRoot)).resolves.toEqual([]);
+  });
+
   it("does not treat task or result prose as a memory command", async () => {
     const workspaceRoot = await createWorkspace();
     const task = [

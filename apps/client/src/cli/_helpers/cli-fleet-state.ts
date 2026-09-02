@@ -47,6 +47,7 @@ export interface FleetCliSession {
   draft: string;
   promptHistory: string[];
   sessionMemoryEnabled: boolean;
+  useWorkspaceMemory: boolean;
   globalMemoryEnabled: boolean;
   messages: FleetCliMessage[];
   pendingTask?: FleetCliPendingTask;
@@ -176,7 +177,12 @@ const parseSession = (value: unknown): FleetCliSession => {
   ] as const;
   if (
     !isRecord(value) ||
-    !hasOnlyKeys(value, required, ["archivedAt", "pinnedAt", "pendingTask"]) ||
+    !hasOnlyKeys(value, required, [
+      "archivedAt",
+      "pinnedAt",
+      "pendingTask",
+      "useWorkspaceMemory",
+    ]) ||
     !boundedString(value.id, 240) ||
     !boundedString(value.title, 12_000) ||
     !boundedString(value.workspace, 12_000) ||
@@ -190,6 +196,8 @@ const parseSession = (value: unknown): FleetCliSession => {
     (value.archivedAt !== undefined && !finiteTimestamp(value.archivedAt)) ||
     (value.pinnedAt !== undefined && !finiteTimestamp(value.pinnedAt)) ||
     typeof value.sessionMemoryEnabled !== "boolean" ||
+    (value.useWorkspaceMemory !== undefined &&
+      typeof value.useWorkspaceMemory !== "boolean") ||
     typeof value.globalMemoryEnabled !== "boolean" ||
     !boundedString(value.draft, 8_000, true) ||
     !Array.isArray(value.messages) ||
@@ -217,6 +225,7 @@ const parseSession = (value: unknown): FleetCliSession => {
     draft: value.draft,
     promptHistory: parseStringArray(value.promptHistory, 30, 8_000),
     sessionMemoryEnabled: value.sessionMemoryEnabled,
+    useWorkspaceMemory: value.useWorkspaceMemory !== false,
     globalMemoryEnabled: value.globalMemoryEnabled,
     messages: value.messages.map(parseMessage),
     ...(pendingTask ? { pendingTask } : {}),

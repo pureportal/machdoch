@@ -12,6 +12,12 @@ import type {
 export const MAX_SESSION_MEMORY_ENTRIES = 24;
 export const MAX_WORKSPACE_MEMORY_ENTRIES = 64;
 export const MAX_GLOBAL_MEMORY_ENTRIES = 40;
+
+export const resolveWorkspaceMemoryEnabled = (
+  workspaceDefaultEnabled: boolean | undefined,
+  workspaceOverride: boolean | null | undefined,
+): boolean => workspaceOverride ?? workspaceDefaultEnabled ?? true;
+
 const MAX_MEMORY_CONTENT_LENGTH = 280;
 const MAX_MEMORY_KEY_LENGTH = 96;
 const MAX_MEMORY_SEARCH_TERMS = 8;

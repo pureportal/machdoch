@@ -159,6 +159,7 @@ export interface TaskConversationContext {
   history: ConversationHistoryEntry[];
   sessionMemoryEnabled?: boolean;
   sessionMemory?: ConversationMemoryEntry[];
+  workspaceMemoryEnabled?: boolean;
   globalMemoryEnabled?: boolean;
   globalMemory?: ConversationMemoryEntry[];
   uiControlEnabled?: boolean;
