@@ -16,6 +16,7 @@ export const createSessionMessageSettings = (
   ...(session.mode ? { mode: session.mode } : {}),
   ...(session.reasoning ? { reasoning: session.reasoning } : {}),
   sessionMemoryEnabled: session.sessionMemoryEnabled,
+  useWorkspaceMemory: session.useWorkspaceMemory !== false,
   useGlobalMemory: session.useGlobalMemory,
   uiControlEnabled: session.uiControlEnabled,
   promptEnhancementMode,
@@ -47,6 +48,7 @@ export const applySessionMessageSettings = (
     provider: settings.provider,
     model: settings.model,
     sessionMemoryEnabled: settings.sessionMemoryEnabled,
+    useWorkspaceMemory: settings.useWorkspaceMemory,
     useGlobalMemory: settings.useGlobalMemory,
     uiControlEnabled: settings.uiControlEnabled,
   };

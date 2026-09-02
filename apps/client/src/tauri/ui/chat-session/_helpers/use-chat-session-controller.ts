@@ -1028,9 +1028,15 @@ export const useChatSessionController = (
   ]);
   const settingsActions = useSessionSettingsActions(state);
   const windowControls = useSessionWindowControls();
+  const workspaceMemoryEnabled =
+    activeComposerSession.workspace !== null &&
+    (runtime.runtimeSnapshot?.workspaceMemoryEnabled ??
+      runtime.userMemorySettings.workspaceDefaultEnabled !== false);
   const memorySummaryState = createMemorySummaryState({
     session: activeComposerSession,
     userMemorySettings: runtime.userMemorySettings,
+    workspaceMemoryEntries: runtime.workspaceMemoryEntries,
+    workspaceMemoryEnabled,
   });
   const currentSessionTitle = getSessionTitle(state.activeSession);
   const memorySourceSessions = useMemo(
@@ -1485,6 +1491,21 @@ export const useChatSessionController = (
       }
 
       settingsActions.setUseGlobalMemory(enabled);
+    },
+    [settingsActions, updateMessageEditSession],
+  );
+  const handleUseWorkspaceMemoryChange = useCallback(
+    (enabled: boolean): void => {
+      if (activeMessageEditRef.current) {
+        updateMessageEditSession((session) => ({
+          ...session,
+          useWorkspaceMemory: enabled,
+          updatedAt: Date.now(),
+        }));
+        return;
+      }
+
+      settingsActions.setUseWorkspaceMemory(enabled);
     },
     [settingsActions, updateMessageEditSession],
   );
@@ -5335,6 +5356,8 @@ export const useChatSessionController = (
               runtime.userMemorySettings.globalEnabled,
               uiControlAvailability,
               aiContextMessageLimit,
+              runtime.runtimeSnapshot?.workspaceMemoryEnabled ??
+                runtime.userMemorySettings.workspaceDefaultEnabled !== false,
             ),
             mode: "ask",
             ...(imagePaths.length > 0 ? { imagePaths } : {}),
@@ -6729,7 +6752,11 @@ export const useChatSessionController = (
   const handleRemoteSetSessionFlag = useCallback(
     (
       sessionId: string,
-      key: "sessionMemoryEnabled" | "useGlobalMemory" | "uiControlEnabled",
+      key:
+        | "sessionMemoryEnabled"
+        | "useWorkspaceMemory"
+        | "useGlobalMemory"
+        | "uiControlEnabled",
       enabled: boolean,
     ): void => {
       state.updateSessionById(sessionId, (session) => {
@@ -6949,6 +6976,9 @@ export const useChatSessionController = (
     onRefreshInstructions: refreshInstructionRegistry,
     isGlobalMemoryAvailable: memorySummaryState.isGlobalMemoryAvailable,
     isGlobalMemoryActive: memorySummaryState.isGlobalMemoryActive,
+    isWorkspaceMemoryAvailable:
+      memorySummaryState.isWorkspaceMemoryAvailable,
+    isWorkspaceMemoryActive: memorySummaryState.isWorkspaceMemoryActive,
     isUiControlAvailable,
     uiControlDescription,
     canSendMessage,
@@ -7024,6 +7054,8 @@ export const useChatSessionController = (
     onSetSessionMemory: (sessionId: string, enabled: boolean) =>
       handleRemoteSetSessionFlag(sessionId, "sessionMemoryEnabled", enabled),
     onForgetSessionMemory: forgetSessionMemory,
+    onSetWorkspaceMemory: (sessionId: string, enabled: boolean) =>
+      handleRemoteSetSessionFlag(sessionId, "useWorkspaceMemory", enabled),
     onSetGlobalMemory: (sessionId: string, enabled: boolean) =>
       handleRemoteSetSessionFlag(sessionId, "useGlobalMemory", enabled),
     onSetUiControl: (sessionId: string, enabled: boolean) =>
@@ -8425,10 +8457,15 @@ export const useChatSessionController = (
       recentWorkspaces: state.shellState.recentWorkspaces,
       composerWorkspaceLabel: memorySummaryState.composerWorkspaceLabel,
       sessionMemoryDescription: memorySummaryState.sessionMemoryDescription,
+      workspaceMemoryDescription:
+        memorySummaryState.workspaceMemoryDescription,
       globalMemoryDescription: memorySummaryState.globalMemoryDescription,
       uiControlDescription,
       isGlobalMemoryAvailable: memorySummaryState.isGlobalMemoryAvailable,
       isGlobalMemoryActive: memorySummaryState.isGlobalMemoryActive,
+      isWorkspaceMemoryAvailable:
+        memorySummaryState.isWorkspaceMemoryAvailable,
+      isWorkspaceMemoryActive: memorySummaryState.isWorkspaceMemoryActive,
       isUiControlAvailable,
       interviewEnabled: activeChatInterviewEnabled,
       interviewDisabled: !isDesktop || chatInterviewBusy,
@@ -8507,6 +8544,7 @@ export const useChatSessionController = (
       onForgetSessionMemory: (memoryId: string) =>
         forgetSessionMemory(activeComposerSession.id, memoryId),
       memorySourceSessions,
+      onUseWorkspaceMemoryChange: handleUseWorkspaceMemoryChange,
       onUseGlobalMemoryChange: handleUseGlobalMemoryChange,
       onUiControlEnabledChange: handleUiControlEnabledChange,
       onInterviewEnabledChange: handleInterviewEnabledChange,
@@ -8655,11 +8693,18 @@ export const useChatSessionController = (
         effectiveReasoningExecutionMode,
         defaultContextWindow: workspaceDefaultContextWindow,
         effectiveContextWindow,
+        workspaceMemoryDefaultEnabled:
+          runtime.userMemorySettings.workspaceDefaultEnabled !== false,
+        workspaceMemoryOverride:
+          runtime.runtimeSnapshot?.workspaceMemoryOverride ?? null,
+        workspaceMemoryEnabled,
         reasoningProvider: workspaceReasoningProvider,
         reasoningModel: workspaceReasoningModel,
         saving: runtime.workspaceSetupSaving,
         message: runtime.workspaceSetupMessage,
         onDefaultModeChange: runtime.handleWorkspaceDefaultModeSave,
+        onWorkspaceMemoryOverrideChange:
+          runtime.handleWorkspaceMemoryOverrideSave,
         onReasoningModeChange: runtime.handleWorkspaceReasoningModeSave,
         onReasoningExecutionModeChange:
           runtime.handleWorkspaceReasoningExecutionModeSave,
@@ -8713,6 +8758,8 @@ export const useChatSessionController = (
         saving: runtime.memorySetupSaving,
         message: runtime.memorySetupMessage,
         onGlobalEnabledChange: runtime.handleGlobalMemoryEnabledSave,
+        onWorkspaceDefaultEnabledChange:
+          runtime.handleWorkspaceMemoryDefaultEnabledSave,
         onForgetGlobal: runtime.handleGlobalMemoryForget,
       },
       desktopSetup: {

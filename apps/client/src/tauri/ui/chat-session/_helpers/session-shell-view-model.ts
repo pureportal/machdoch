@@ -86,7 +86,10 @@ export const createProviderChooserState = (options: {
 export interface MemorySummaryState {
   composerWorkspaceLabel: string;
   sessionMemoryDescription: string;
+  workspaceMemoryDescription: string;
   globalMemoryDescription: string;
+  isWorkspaceMemoryAvailable: boolean;
+  isWorkspaceMemoryActive: boolean;
   isGlobalMemoryAvailable: boolean;
   isGlobalMemoryActive: boolean;
 }
@@ -94,18 +97,32 @@ export interface MemorySummaryState {
 export const createMemorySummaryState = (options: {
   session: ChatSessionRecord;
   userMemorySettings: UserMemorySettings;
+  workspaceMemoryEntries: readonly unknown[];
+  workspaceMemoryEnabled: boolean;
 }): MemorySummaryState => {
   const composerWorkspaceLabel = options.session.workspace
     ? getWorkspaceLabel(options.session.workspace)
     : "Not Set";
   const sessionMemoryFactCount = options.session.sessionMemory.length;
+  const workspaceMemoryFactCount = options.workspaceMemoryEntries.length;
   const globalMemoryFactCount = options.userMemorySettings.entries.length;
+  const isWorkspaceMemoryAvailable =
+    options.session.workspace !== null && options.workspaceMemoryEnabled;
+  const isWorkspaceMemoryActive =
+    isWorkspaceMemoryAvailable && options.session.useWorkspaceMemory !== false;
   const isGlobalMemoryAvailable = options.userMemorySettings.globalEnabled;
   const isGlobalMemoryActive =
     isGlobalMemoryAvailable && options.session.useGlobalMemory;
   const sessionMemoryDescription = options.session.sessionMemoryEnabled
     ? `${formatSavedFactCount(sessionMemoryFactCount)} available in this session.`
     : "Session-only facts are paused for this conversation.";
+  const workspaceMemoryDescription = !options.session.workspace
+    ? "Select a workspace to use workspace memory."
+    : !isWorkspaceMemoryAvailable
+      ? "Workspace memory is disabled in Settings."
+      : isWorkspaceMemoryActive
+        ? `${formatSavedFactCount(workspaceMemoryFactCount)} available in this workspace.`
+        : `${formatSavedFactCount(workspaceMemoryFactCount)} available in this workspace, but this session is not using them.`;
   const globalMemoryDescription = !isGlobalMemoryAvailable
     ? "Unavailable right now. Enable global memory in Settings to bridge this session."
     : isGlobalMemoryActive
@@ -115,7 +132,10 @@ export const createMemorySummaryState = (options: {
   return {
     composerWorkspaceLabel,
     sessionMemoryDescription,
+    workspaceMemoryDescription,
     globalMemoryDescription,
+    isWorkspaceMemoryAvailable,
+    isWorkspaceMemoryActive,
     isGlobalMemoryAvailable,
     isGlobalMemoryActive,
   };

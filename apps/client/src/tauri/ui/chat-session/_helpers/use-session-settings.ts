@@ -8,12 +8,14 @@ import type { ChatSessionShellStateController } from "./use-chat-session-shell-s
 
 type SessionBooleanSettingKey =
   | "sessionMemoryEnabled"
+  | "useWorkspaceMemory"
   | "useGlobalMemory"
   | "uiControlEnabled";
 
 type RememberedSessionBooleanSettingKey = keyof Pick<
   ShellPersistedState,
   | "lastSelectedSessionMemoryEnabled"
+  | "lastSelectedUseWorkspaceMemory"
   | "lastSelectedUseGlobalMemory"
   | "lastSelectedUiControlEnabled"
 >;
@@ -117,6 +119,18 @@ export const useSessionSettingsActions = (
     [state],
   );
 
+  const setUseWorkspaceMemory = useCallback(
+    (enabled: boolean): void => {
+      updateActiveSessionBooleanSetting(
+        state,
+        "useWorkspaceMemory",
+        "lastSelectedUseWorkspaceMemory",
+        enabled,
+      );
+    },
+    [state],
+  );
+
   const setUiControlEnabled = useCallback(
     (enabled: boolean): void => {
       updateActiveSessionBooleanSetting(
@@ -132,6 +146,7 @@ export const useSessionSettingsActions = (
   return {
     openSettings,
     setSessionMemoryEnabled,
+    setUseWorkspaceMemory,
     setUseGlobalMemory,
     setUiControlEnabled,
   };

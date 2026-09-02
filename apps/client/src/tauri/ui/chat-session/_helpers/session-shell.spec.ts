@@ -17,6 +17,8 @@ const createRuntimeSnapshot = (
     model: "gpt-5.5",
     reasoning: "default",
     defaultReasoning: "default",
+    workspaceMemoryEnabled: true,
+    workspaceMemoryOverride: null,
     offline: false,
     agentLimits: {
       executorTurns: 64,
@@ -120,6 +122,8 @@ describe("session shell helpers", () => {
       session,
       false,
       uiControl,
+      undefined,
+      false,
     );
 
     expect(context.history).toEqual([
@@ -135,11 +139,65 @@ describe("session shell helpers", () => {
       },
     ]);
     expect(context.sessionMemoryEnabled).toBe(true);
+    expect(context.workspaceMemoryEnabled).toBe(false);
     expect(context.globalMemoryEnabled).toBe(false);
     expect(context.uiControlEnabled).toBe(true);
     expect(context.uiControl).toEqual(uiControl);
     expect(context.workspace).toEqual({ selection: "not-set" });
   });
+
+  it.each([
+    {
+      scope: "session",
+      sessionMemoryEnabled: true,
+      useWorkspaceMemory: false,
+      useGlobalMemory: false,
+      expected: [true, false, false],
+    },
+    {
+      scope: "workspace",
+      sessionMemoryEnabled: false,
+      useWorkspaceMemory: true,
+      useGlobalMemory: false,
+      expected: [false, true, false],
+    },
+    {
+      scope: "global",
+      sessionMemoryEnabled: false,
+      useWorkspaceMemory: false,
+      useGlobalMemory: true,
+      expected: [false, false, true],
+    },
+  ])(
+    "gates $scope memory independently in conversation context",
+    ({
+      sessionMemoryEnabled,
+      useWorkspaceMemory,
+      useGlobalMemory,
+      expected,
+    }) => {
+      const session = createSession({
+        workspace: "C:/Development/machdoch",
+        sessionMemoryEnabled,
+        useWorkspaceMemory,
+        useGlobalMemory,
+      });
+
+      const context = createConversationContextFromSession(
+        session,
+        true,
+        undefined,
+        undefined,
+        true,
+      );
+
+      expect([
+        context.sessionMemoryEnabled,
+        context.workspaceMemoryEnabled,
+        context.globalMemoryEnabled,
+      ]).toEqual(expected);
+    },
+  );
 
   it("limits conversation context to the configured latest messages", () => {
     const session = createSession({

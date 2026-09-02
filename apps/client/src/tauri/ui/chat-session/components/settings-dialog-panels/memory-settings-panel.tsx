@@ -27,8 +27,8 @@ export const MemorySettingsPanel = ({
   });
 
   return (
-    <SettingsCard title="Global memory">
-      <SettingPanel label="Use global memory">
+    <SettingsCard title="Memory">
+      <SettingPanel label="Global memory">
         <ChoiceButtons
           label="Global memory status"
           value={setup.settings.globalEnabled ? "enabled" : "disabled"}
@@ -39,6 +39,25 @@ export const MemorySettingsPanel = ({
           disabled={setup.saving}
           onChange={(value) => {
             void setup.onGlobalEnabledChange(value === "enabled");
+          }}
+        />
+      </SettingPanel>
+
+      <SettingPanel label="Default workspace memory">
+        <ChoiceButtons
+          label="Default workspace memory status"
+          value={
+            setup.settings.workspaceDefaultEnabled !== false
+              ? "enabled"
+              : "disabled"
+          }
+          options={[
+            { value: "enabled", label: "Enabled" },
+            { value: "disabled", label: "Disabled" },
+          ]}
+          disabled={setup.saving}
+          onChange={(value) => {
+            void setup.onWorkspaceDefaultEnabledChange?.(value === "enabled");
           }}
         />
       </SettingPanel>

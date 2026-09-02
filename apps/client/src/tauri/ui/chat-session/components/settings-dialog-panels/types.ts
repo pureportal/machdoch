@@ -65,6 +65,9 @@ export interface MemorySettingsControls {
   saving: boolean;
   message: SettingsStatusMessage | null;
   onGlobalEnabledChange: (enabled: boolean) => Promise<void> | void;
+  onWorkspaceDefaultEnabledChange?: (
+    enabled: boolean,
+  ) => Promise<void> | void;
   onForgetGlobal: (id: string) => Promise<void> | void;
 }
 
@@ -79,11 +82,17 @@ export interface WorkspaceSettingsControls {
   effectiveReasoningExecutionMode: ReasoningExecutionMode;
   defaultContextWindow: ContextWindow;
   effectiveContextWindow: ContextWindow;
+  workspaceMemoryDefaultEnabled?: boolean;
+  workspaceMemoryOverride?: boolean | null;
+  workspaceMemoryEnabled?: boolean;
   reasoningProvider?: RuntimeProvider;
   reasoningModel?: string;
   saving: boolean;
   message: SettingsStatusMessage | null;
   onDefaultModeChange: (mode: RunMode) => Promise<void> | void;
+  onWorkspaceMemoryOverrideChange?: (
+    enabled: boolean | null,
+  ) => Promise<void> | void;
   onReasoningModeChange: (reasoning: ReasoningMode) => Promise<void> | void;
   onReasoningExecutionModeChange: (
     reasoningMode: ReasoningExecutionMode,

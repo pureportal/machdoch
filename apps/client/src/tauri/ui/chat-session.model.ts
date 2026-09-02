@@ -152,6 +152,7 @@ export interface ChatSessionMessageSettings {
   mode?: RunMode;
   reasoning?: ReasoningMode;
   sessionMemoryEnabled: boolean;
+  useWorkspaceMemory: boolean;
   useGlobalMemory: boolean;
   uiControlEnabled: boolean;
   promptEnhancementMode: ChatSessionMessagePromptEnhancementMode;
@@ -262,6 +263,7 @@ export interface ChatSessionRecord {
   promptHistory: string[];
   promptContextHistory: ChatSessionContextAttachment[][];
   sessionMemoryEnabled: boolean;
+  useWorkspaceMemory?: boolean;
   useGlobalMemory: boolean;
   uiControlEnabled: boolean;
   sessionMemory: ConversationMemoryEntry[];
@@ -293,6 +295,7 @@ export type SmartContextPackSettingOverrides = Partial<
     | "promptEnhancementMode"
     | "interviewEnabled"
     | "sessionMemoryEnabled"
+    | "useWorkspaceMemory"
     | "useGlobalMemory"
     | "uiControlEnabled"
   >
@@ -367,6 +370,7 @@ export interface ShellPersistedState {
   lastSelectedMode?: RunMode;
   lastSelectedReasoning?: ReasoningMode;
   lastSelectedSessionMemoryEnabled: boolean;
+  lastSelectedUseWorkspaceMemory: boolean;
   lastSelectedUseGlobalMemory: boolean;
   lastSelectedUiControlEnabled: boolean;
   fleetManagedSettings?: FleetManagedSettingsState;
@@ -1154,6 +1158,9 @@ const normalizeSmartContextPacks = (value: unknown): SmartContextPack[] => {
     const sessionMemoryEnabled = normalizeOptionalBoolean(
       entry.sessionMemoryEnabled,
     );
+    const useWorkspaceMemory = normalizeOptionalBoolean(
+      entry.useWorkspaceMemory,
+    );
     const useGlobalMemory = normalizeOptionalBoolean(entry.useGlobalMemory);
     const uiControlEnabled = normalizeOptionalBoolean(entry.uiControlEnabled);
     const createdAt = Math.max(0, normalizeFiniteNumber(entry.createdAt, 0));
@@ -1182,6 +1189,7 @@ const normalizeSmartContextPacks = (value: unknown): SmartContextPack[] => {
       ...(promptEnhancementMode !== undefined ? { promptEnhancementMode } : {}),
       ...(interviewEnabled !== undefined ? { interviewEnabled } : {}),
       ...(sessionMemoryEnabled !== undefined ? { sessionMemoryEnabled } : {}),
+      ...(useWorkspaceMemory !== undefined ? { useWorkspaceMemory } : {}),
       ...(useGlobalMemory !== undefined ? { useGlobalMemory } : {}),
       ...(uiControlEnabled !== undefined ? { uiControlEnabled } : {}),
       createdAt,
@@ -1325,6 +1333,7 @@ export const createSession = (
     sessionMemoryEnabled: isQuickTaskSession
       ? false
       : (overrides.sessionMemoryEnabled ?? true),
+    useWorkspaceMemory: overrides.useWorkspaceMemory ?? true,
     useGlobalMemory: overrides.useGlobalMemory ?? true,
     uiControlEnabled: overrides.uiControlEnabled ?? false,
     sessionMemory: isQuickTaskSession ? [] : (overrides.sessionMemory ?? []),
@@ -1379,6 +1388,7 @@ export const createInitialShellState = (): ShellPersistedState => {
       google: getDefaultModelForProvider("google"),
     },
     lastSelectedSessionMemoryEnabled: true,
+    lastSelectedUseWorkspaceMemory: true,
     lastSelectedUseGlobalMemory: true,
     lastSelectedUiControlEnabled: false,
   };
@@ -2447,6 +2457,7 @@ const normalizeMessageSettings = (
     ...(mode ? { mode } : {}),
     ...(reasoning ? { reasoning } : {}),
     sessionMemoryEnabled: value.sessionMemoryEnabled === true,
+    useWorkspaceMemory: value.useWorkspaceMemory !== false,
     useGlobalMemory: value.useGlobalMemory === true,
     uiControlEnabled: value.uiControlEnabled === true,
     promptEnhancementMode,
@@ -2685,6 +2696,7 @@ const normalizeSessionRecord = (
     sessionMemoryEnabled: isQuickTaskSession
       ? false
       : session.sessionMemoryEnabled !== false,
+    useWorkspaceMemory: session.useWorkspaceMemory !== false,
     useGlobalMemory: session.useGlobalMemory !== false,
     uiControlEnabled: session.uiControlEnabled === true,
     sessionMemory: isQuickTaskSession
@@ -2968,6 +2980,10 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
     typeof candidate.lastSelectedSessionMemoryEnabled === "boolean"
       ? candidate.lastSelectedSessionMemoryEnabled
       : fallback.lastSelectedSessionMemoryEnabled;
+  const lastSelectedUseWorkspaceMemory =
+    typeof candidate.lastSelectedUseWorkspaceMemory === "boolean"
+      ? candidate.lastSelectedUseWorkspaceMemory
+      : fallback.lastSelectedUseWorkspaceMemory;
   const lastSelectedUseGlobalMemory =
     typeof candidate.lastSelectedUseGlobalMemory === "boolean"
       ? candidate.lastSelectedUseGlobalMemory
@@ -3064,6 +3080,7 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
     ...(lastSelectedMode ? { lastSelectedMode } : {}),
     ...(lastSelectedReasoning ? { lastSelectedReasoning } : {}),
     lastSelectedSessionMemoryEnabled,
+    lastSelectedUseWorkspaceMemory,
     lastSelectedUseGlobalMemory,
     lastSelectedUiControlEnabled,
     ...(fleetManagedSettings ? { fleetManagedSettings } : {}),
@@ -3869,6 +3886,7 @@ const createRetentionReplacementSession = (
       state.lastSelectedModelByProvider[provider] ??
       getDefaultModelForProvider(provider),
     sessionMemoryEnabled: state.lastSelectedSessionMemoryEnabled,
+    useWorkspaceMemory: state.lastSelectedUseWorkspaceMemory,
     useGlobalMemory: state.lastSelectedUseGlobalMemory,
     uiControlEnabled: state.lastSelectedUiControlEnabled,
   });

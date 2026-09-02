@@ -199,6 +199,34 @@ export const WorkspaceSettingsPanel = ({
       title="Workspace defaults"
       description="Defaults apply when a session uses Workspace default."
     >
+      <SettingPanel label="Workspace memory">
+        <ChoiceButtons
+          label="Workspace memory override"
+          value={
+            setup.workspaceMemoryOverride === null ||
+            setup.workspaceMemoryOverride === undefined
+              ? "default"
+              : setup.workspaceMemoryOverride
+                ? "enabled"
+                : "disabled"
+          }
+          options={[
+            {
+              value: "default",
+              label: `Default (${setup.workspaceMemoryDefaultEnabled !== false ? "Enabled" : "Disabled"})`,
+            },
+            { value: "enabled", label: "Enabled" },
+            { value: "disabled", label: "Disabled" },
+          ]}
+          disabled={setup.saving || !setup.workspaceRoot}
+          onChange={(value) => {
+            void setup.onWorkspaceMemoryOverrideChange?.(
+              value === "default" ? null : value === "enabled",
+            );
+          }}
+        />
+      </SettingPanel>
+
       <SettingPanel label="Default mode" detail={getDefaultModeDetail(setup)}>
         <ChoiceButtons
           label="Default workspace mode"

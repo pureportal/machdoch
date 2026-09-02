@@ -462,6 +462,7 @@ export const createEmptyWebSearchSettings = (): UserWebSearchSettings => {
 export const createEmptyUserMemorySettings = (): UserMemorySettings => {
   return {
     globalEnabled: false,
+    workspaceDefaultEnabled: true,
     entries: [],
   };
 };
@@ -471,6 +472,7 @@ export const createConversationContextFromSession = (
   globalMemoryEnabled: boolean,
   uiControl?: UiControlAvailability,
   maxHistoryMessages: unknown = DEFAULT_AI_CONTEXT_MESSAGE_LIMIT,
+  workspaceMemoryEnabled = true,
 ): TaskConversationContext => {
   const history = createAiContextHistory(session.messages, maxHistoryMessages);
 
@@ -482,6 +484,8 @@ export const createConversationContextFromSession = (
     history,
     sessionMemoryEnabled: session.sessionMemoryEnabled,
     sessionMemory: session.sessionMemory,
+    workspaceMemoryEnabled:
+      workspaceMemoryEnabled && session.useWorkspaceMemory !== false,
     globalMemoryEnabled: globalMemoryEnabled ? session.useGlobalMemory : false,
     uiControlEnabled: session.uiControlEnabled,
     ...(uiControl ? { uiControl } : {}),
