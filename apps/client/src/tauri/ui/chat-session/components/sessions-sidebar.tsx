@@ -1,5 +1,6 @@
 import {
   Archive,
+  ChevronDown,
   Copy,
   Download,
   Ellipsis,
@@ -41,6 +42,14 @@ import {
   type ChatSessionRecord,
 } from "../../chat-session.model";
 import { Button } from "../../components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "../../components/ui/dropdown-menu";
 import { EmptyState } from "../../components/ui/empty-state";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { SearchField } from "../../components/ui/search-field";
@@ -422,6 +431,21 @@ export const SessionsSidebar = ({
     () => normalizeSessionStatusFilterSelection(sessionStatusFilters),
     [sessionStatusFilters],
   );
+  const selectedScopeFilter =
+    SESSION_SCOPE_FILTERS.find((filter) => filter.id === sessionScopeFilter) ??
+    SESSION_SCOPE_FILTERS[0];
+  const selectedStatusFilter =
+    selectedStatusFilters.length === 1
+      ? (SESSION_STATUS_FILTERS.find((filter) =>
+          selectedStatusFilters.includes(filter.id),
+        ) ?? SESSION_STATUS_FILTERS[0])
+      : SESSION_STATUS_FILTERS[0];
+  const selectedStatusFilterLabel =
+    selectedStatusFilters.length === 1
+      ? selectedStatusFilter.label
+      : `${selectedStatusFilters.length} statuses`;
+  const SelectedScopeFilterIcon = selectedScopeFilter.icon;
+  const SelectedStatusFilterIcon = selectedStatusFilter.icon;
 
   const toggleSessionStatusFilter = useCallback(
     (filter: SessionStatusFilter): void => {
@@ -916,60 +940,97 @@ export const SessionsSidebar = ({
             ) : null}
           </div>
 
-          <div className="app-session-filter-strip flex h-9 items-center justify-between rounded-xl border border-slate-800/80 bg-slate-950/70 p-1">
-            <div className="flex items-center gap-0.5">
-              {SESSION_SCOPE_FILTERS.map((filter) => {
-                const FilterIcon = filter.icon;
-                const isSelected = sessionScopeFilter === filter.id;
+          <div className="app-session-filter-controls grid min-w-0 grid-cols-2 gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  aria-label={`Session scope: ${selectedScopeFilter.label}`}
+                  data-active={sessionScopeFilter !== "all"}
+                  className={cn(
+                    "app-session-filter-select h-9 w-full min-w-0 justify-start rounded-xl border-slate-800 bg-slate-950/70 px-2.5 text-xs font-medium text-slate-300 shadow-none hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
+                    sessionScopeFilter !== "all" &&
+                      "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
+                  )}
+                >
+                  <SelectedScopeFilterIcon className="h-3.5 w-3.5 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate text-left">
+                    {selectedScopeFilter.label}
+                  </span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                aria-label="Session scope"
+                className="w-[var(--radix-dropdown-menu-trigger-width)] rounded-xl shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/95 dark:text-slate-100"
+              >
+                <DropdownMenuRadioGroup value={sessionScopeFilter}>
+                  {SESSION_SCOPE_FILTERS.map((filter) => {
+                    const FilterIcon = filter.icon;
 
-                return (
-                  <Button
-                    key={filter.id}
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    aria-label={`Scope: ${filter.label}`}
-                    aria-pressed={isSelected}
-                    onClick={() => onSessionScopeFilterChange(filter.id)}
-                    className={cn(
-                      "app-session-filter-button h-7 w-6 rounded-lg border border-transparent text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100",
-                      isSelected &&
-                        "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
-                    )}
-                  >
-                    <FilterIcon className="h-3.5 w-3.5" />
-                  </Button>
-                );
-              })}
-            </div>
+                    return (
+                      <DropdownMenuRadioItem
+                        key={filter.id}
+                        value={filter.id}
+                        onSelect={() => onSessionScopeFilterChange(filter.id)}
+                        className="text-xs dark:focus:bg-slate-800 dark:focus:text-white"
+                      >
+                        <FilterIcon className="h-3.5 w-3.5" />
+                        {filter.label}
+                      </DropdownMenuRadioItem>
+                    );
+                  })}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-            <div className="mx-1 h-4 w-px shrink-0 bg-slate-800" />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  aria-label={`Session status: ${selectedStatusFilterLabel}`}
+                  data-active={!selectedStatusFilters.includes("any")}
+                  className={cn(
+                    "app-session-filter-select h-9 w-full min-w-0 justify-start rounded-xl border-slate-800 bg-slate-950/70 px-2.5 text-xs font-medium text-slate-300 shadow-none hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
+                    !selectedStatusFilters.includes("any") &&
+                      "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
+                  )}
+                >
+                  <SelectedStatusFilterIcon className="h-3.5 w-3.5 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate text-left">
+                    {selectedStatusFilterLabel}
+                  </span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                aria-label="Session status"
+                className="w-48 max-w-[calc(100vw-1rem)] rounded-xl shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/95 dark:text-slate-100"
+              >
+                {SESSION_STATUS_FILTERS.map((filter) => {
+                  const FilterIcon = filter.icon;
 
-            <div className="flex items-center gap-0.5">
-              {SESSION_STATUS_FILTERS.map((filter) => {
-                const FilterIcon = filter.icon;
-                const isSelected = selectedStatusFilters.includes(filter.id);
-
-                return (
-                  <Button
-                    key={filter.id}
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    aria-label={`Status: ${filter.label}`}
-                    aria-pressed={isSelected}
-                    onClick={() => toggleSessionStatusFilter(filter.id)}
-                    className={cn(
-                      "app-session-filter-button h-7 w-6 rounded-lg border border-transparent text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100",
-                      isSelected &&
-                        "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
-                    )}
-                  >
-                    <FilterIcon className="h-3.5 w-3.5" />
-                  </Button>
-                );
-              })}
-            </div>
+                  return (
+                    <DropdownMenuCheckboxItem
+                      key={filter.id}
+                      checked={selectedStatusFilters.includes(filter.id)}
+                      onSelect={(event) => event.preventDefault()}
+                      onCheckedChange={() =>
+                        toggleSessionStatusFilter(filter.id)
+                      }
+                      className="text-xs dark:focus:bg-slate-800 dark:focus:text-white"
+                    >
+                      <FilterIcon className="h-3.5 w-3.5" />
+                      {filter.label}
+                    </DropdownMenuCheckboxItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {filteredSessions.length === 0 ? (
