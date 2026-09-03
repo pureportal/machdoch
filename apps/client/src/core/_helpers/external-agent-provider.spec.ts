@@ -56,6 +56,14 @@ const writeCopilotAssistantMessage = (
 const writeCopilotResult = (child: MockChildProcess, exitCode = 0): void => {
   child.stdout.write(`${JSON.stringify({ type: "result", exitCode })}\n`);
 };
+const writeCopilotTaskComplete = (
+  child: MockChildProcess,
+  data: Record<string, unknown>,
+): void => {
+  child.stdout.write(
+    `${JSON.stringify({ type: "session.task_complete", data })}\n`,
+  );
+};
 const writeCodexMessage = (child: MockChildProcess, content: string): void => {
   child.stdout.write(
     `${JSON.stringify({
@@ -2602,6 +2610,87 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(result?.reason).toContain("Copilot authentication required");
   });
 
+  it("reports rejected Copilot task completion as blocked", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_COPILOT_CLI_PATH = process.execPath;
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot, {
+        provider: "copilot-cli",
+        model: "gpt-5.3-codex",
+      }),
+    );
+
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+
+    writeCopilotTaskComplete(call.child, {
+      summary: "More implementation work is required.",
+      success: false,
+      outcome: "continue",
+    });
+    writeCopilotResult(call.child);
+    call.child.emit("close", 0, null);
+
+    const result = await resultPromise;
+
+    expect(result?.status).toBe("blocked");
+    expect(result?.reason).toContain("More implementation work is required.");
+  });
+
+  it("preserves rejected Copilot completion when inherited streams stay open", async () => {
+    const workspaceRoot = await createWorkspace();
+    const processKillSpy =
+      process.platform === "win32"
+        ? undefined
+        : vi.spyOn(process, "kill").mockReturnValue(true);
+
+    try {
+      process.env.MACHDOCH_COPILOT_CLI_PATH = process.execPath;
+      const resultPromise = maybeExecuteExternalAgentProviderTask(
+        createParams(workspaceRoot, {
+          provider: "copilot-cli",
+          model: "gpt-5.3-codex",
+        }),
+      );
+
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      vi.useFakeTimers();
+      writeCopilotTaskComplete(call.child, {
+        summary: "More implementation work is required.",
+        success: false,
+        outcome: "continue",
+      });
+      writeCopilotResult(call.child);
+      call.child.emit("exit", 0, null);
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      if (process.platform === "win32") {
+        expect(spawnCalls[1]?.executable).toBe("taskkill");
+        spawnCalls[1]?.child.emit("close", 0, null);
+      } else {
+        expect(processKillSpy).toHaveBeenCalledWith(
+          -Number(call.child.pid),
+          "SIGTERM",
+        );
+        call.child.emit("close", 0, null);
+      }
+
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "blocked",
+        metadata: {
+          providerShutdownRecoveryKind: "child-exit-close-timeout",
+          providerChildExitObservedBeforeRecovery: true,
+          providerChildExitCode: 0,
+        },
+      });
+    } finally {
+      processKillSpy?.mockRestore();
+    }
+  });
+
   it("passes explicit copilot reasoning effort and context tier when configured", async () => {
     const workspaceRoot = await createWorkspace();
 
@@ -2631,7 +2720,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(result?.status).toBe("executed");
   });
 
-  it("passes the executor turn limit as the Copilot autopilot continuation cap", async () => {
+  it("does not map Machdoch loop budgets to Copilot continuation messages", async () => {
     const workspaceRoot = await createWorkspace();
 
     process.env.MACHDOCH_COPILOT_CLI_PATH = process.execPath;
@@ -2651,7 +2740,11 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     const call = spawnCalls[0];
 
     expect(call?.args).toContain("--autopilot");
-    expect(call?.args).toContain("--max-autopilot-continues=9");
+    expect(
+      call?.args.some((argument) =>
+        argument.startsWith("--max-autopilot-continues"),
+      ),
+    ).toBe(false);
 
     writeStructuredAnswer(call!, "Copilot delegated answer.");
     call?.child.emit("close", 0, null);
