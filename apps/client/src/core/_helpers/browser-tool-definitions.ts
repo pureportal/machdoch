@@ -308,15 +308,13 @@ const closeBrowserSession = async (session: BrowserSession): Promise<void> => {
   }
 };
 
-const closeAllBrowserSessions = async (): Promise<number> => {
+export const closeAllBrowserSessions = async (): Promise<number> => {
   const sessions = [...browserSessions.values()];
 
   await Promise.all(sessions.map((session) => closeBrowserSession(session)));
 
   return sessions.length;
 };
-
-export const closeAllBrowserSessionsForTests = closeAllBrowserSessions;
 
 const navigationSummaryLines = async (
   session: BrowserSession,
