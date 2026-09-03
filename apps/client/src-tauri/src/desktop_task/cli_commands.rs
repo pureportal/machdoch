@@ -645,7 +645,7 @@ pub(super) fn execute_task_interview_command(
     let output = match run_bounded_auxiliary_cli_command(
         &mut cli_command.command,
         TASK_INTERVIEW_CLI_SPEC.command_name,
-        None,
+        Some(AUXILIARY_CLI_COMMAND_TIMEOUT_MS),
         Some(AuxiliaryCliProgressContext {
             app_handle,
             window_label,
