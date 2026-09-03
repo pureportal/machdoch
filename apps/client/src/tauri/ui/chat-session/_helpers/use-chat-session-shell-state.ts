@@ -77,7 +77,10 @@ export const createShellStatePatch = (
   for (const [key, value] of Object.entries(nextTopLevel)) {
     const baseValue = baseTopLevel[key as keyof typeof baseTopLevel];
 
-    if (serializeShellFragment(value) !== serializeShellFragment(baseValue)) {
+    if (
+      !Object.is(value, baseValue) &&
+      serializeShellFragment(value) !== serializeShellFragment(baseValue)
+    ) {
       topLevel[key] = value;
     }
   }
@@ -89,7 +92,8 @@ export const createShellStatePatch = (
     const baseSession = baseSessionsById.get(session.id);
     return (
       !baseSession ||
-      serializeShellFragment(session) !== serializeShellFragment(baseSession)
+      (!Object.is(session, baseSession) &&
+        serializeShellFragment(session) !== serializeShellFragment(baseSession))
     );
   });
 
@@ -1974,6 +1978,10 @@ export const mergeShellStateForPersistence = (
   baseState: ShellPersistedState,
   latestState: ShellPersistedState,
 ): ShellPersistedState => {
+  if (Object.is(baseState, latestState)) {
+    return localState;
+  }
+
   const localSessionsById = new Map(
     localState.sessions.map((session) => [session.id, session]),
   );
@@ -2639,13 +2647,15 @@ export const useChatSessionShellState = (
         }
 
         while (true) {
-          mergedShellState = normalizeShellState(
-            mergeShellStateForPersistence(
-              durableShellStateRef.current,
-              lastPersistedShellStateRef.current,
-              latestPersistedState,
-            ),
+          const durableShellState = durableShellStateRef.current;
+          const mergedCandidate = mergeShellStateForPersistence(
+            durableShellState,
+            lastPersistedShellStateRef.current,
+            latestPersistedState,
           );
+          mergedShellState = Object.is(mergedCandidate, durableShellState)
+            ? mergedCandidate
+            : normalizeShellState(mergedCandidate);
           commit = await compareAndSwapShellStatePatch(
             latestStoreRevision,
             createShellStatePatch(latestPersistedState, mergedShellState),
@@ -2734,13 +2744,13 @@ export const useChatSessionShellState = (
   }, [settlePersistenceWaiters]);
 
   const scheduleShellStatePersistence = useCallback((): void => {
-    if (persistTimerRef.current !== null) {
-      return;
-    }
-
     if (typeof window === "undefined") {
       void persistShellState();
       return;
+    }
+
+    if (persistTimerRef.current !== null) {
+      window.clearTimeout(persistTimerRef.current);
     }
 
     persistTimerRef.current = window.setTimeout(() => {
