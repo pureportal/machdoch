@@ -3,7 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { productSnapshotSchema } from "@machdoch/fleet-protocol";
 import { loadRuntimeConfig } from "../../core/config.js";
-import { FleetCliProductRuntime } from "./cli-fleet-product.ts";
+import {
+  FleetCliProductRuntime,
+  pruneCompletedFleetTaskSessions,
+} from "./cli-fleet-product.ts";
 import { getFleetCliStatePath } from "./cli-fleet-state.ts";
 
 const roots: string[] = [];
@@ -16,6 +19,33 @@ afterEach(async () => {
 });
 
 describe.sequential("Fleet CLI product runtime", () => {
+  it("bounds completed task diagnostics without discarding active tasks", () => {
+    const taskSessions = new Map([
+      ["completed-old", { updatedAt: 1 }],
+      ["active-old", { updatedAt: 2 }],
+      ["completed-middle", { updatedAt: 3 }],
+      ["completed-new", { updatedAt: 4 }],
+    ]);
+
+    pruneCompletedFleetTaskSessions(taskSessions, new Set(["active-old"]), 3);
+
+    expect([...taskSessions.keys()]).toEqual([
+      "active-old",
+      "completed-middle",
+      "completed-new",
+    ]);
+
+    const activeTasks = new Set(taskSessions.keys());
+    taskSessions.set("completed-extra", { updatedAt: 5 });
+    pruneCompletedFleetTaskSessions(taskSessions, activeTasks, 2);
+
+    expect([...taskSessions.keys()]).toEqual([
+      "active-old",
+      "completed-middle",
+      "completed-new",
+    ]);
+  });
+
   it("hosts persistent product snapshots and idempotent commands without Tauri", async () => {
     const root = await mkdtemp(join(tmpdir(), "machdoch-fleet-product-"));
     roots.push(root);
@@ -207,6 +237,24 @@ describe.sequential("Fleet CLI product runtime", () => {
         ? final.snapshot.shell?.composer?.sessionMemory
         : undefined,
     ).toEqual([]);
+
+    const retainedSessionMemory = (
+      runtime as unknown as {
+        sessionMemory: Map<string, unknown>;
+      }
+    ).sessionMemory;
+    expect(retainedSessionMemory.has(sessionId)).toBe(true);
+
+    await runtime.handleRequest({
+      type: "executeProductCommand",
+      command: {
+        kind: "delete-session",
+        commandId: "command-delete-session",
+        sessionId,
+      },
+    });
+
+    expect(retainedSessionMemory.has(sessionId)).toBe(false);
     await runtime.shutdown();
   });
 });
