@@ -111,7 +111,7 @@ fn load_observed_owner(path: &Path) -> Option<ObservedFileLockOwner> {
             let Ok(owner) = serde_json::from_str::<FileLockOwner>(&raw) else {
                 continue;
             };
-            if owner.token == token {
+            if owner.token == token && owner.pid != 0 {
                 return Some(ObservedFileLockOwner {
                     owner,
                     path: owner_path,
@@ -205,8 +205,37 @@ fn cleanup_quarantined_owner(
 ) -> io::Result<()> {
     // This is deliberately non-recursive: a successor may have installed its
     // own token directory after this owner was quarantined.
-    let _ = fs::remove_dir(lock_path);
-    remove_directory_tree(quarantine_path, runtime)
+    let canonical_result =
+        remove_empty_lock_directory_with_runtime(lock_path, runtime, |path| fs::remove_dir(path));
+    let quarantine_result = remove_directory_tree(quarantine_path, runtime);
+
+    canonical_result?;
+    quarantine_result
+}
+
+fn remove_empty_lock_directory_with_runtime(
+    path: &Path,
+    runtime: &impl LockRuntime,
+    mut remove_directory: impl FnMut(&Path) -> io::Result<()>,
+) -> io::Result<()> {
+    let started = std::time::Instant::now();
+
+    loop {
+        match remove_directory(path) {
+            Ok(()) => return Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::DirectoryNotEmpty => return Ok(()),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::PermissionDenied | io::ErrorKind::ResourceBusy
+                ) && runtime.elapsed(started) < LOCK_CLEANUP_RETRY_TIMEOUT =>
+            {
+                runtime.sleep(LOCK_RETRY_DELAY);
+            }
+            Err(error) => return Err(error),
+        }
+    }
 }
 
 fn create_owned_directory_candidate(target: &Path, token: &str) -> Result<PathBuf, String> {
@@ -240,6 +269,47 @@ fn create_owned_directory_candidate(target: &Path, token: &str) -> Result<PathBu
         ));
     }
     Ok(candidate)
+}
+
+fn cleanup_stale_candidates(path: &Path, runtime: &impl LockRuntime) {
+    let Some(parent) = path.parent() else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(parent) else {
+        return;
+    };
+    let candidate_marker = format!("{LOCK_SUFFIX}.candidate.");
+
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !file_type.is_dir() || !name.contains(&candidate_marker) {
+            continue;
+        }
+
+        let candidate = entry.path();
+        let owner = load_observed_owner(&candidate);
+        let metadata_path = owner
+            .as_ref()
+            .map(|observed| owner_path(&observed.path))
+            .unwrap_or_else(|| candidate.clone());
+        if !is_path_stale(&metadata_path, runtime) {
+            continue;
+        }
+        if owner
+            .as_ref()
+            .is_some_and(|observed| runtime.is_process_alive(observed.owner.pid))
+        {
+            continue;
+        }
+
+        let _ = remove_directory_tree(&candidate, runtime);
+    }
 }
 
 fn quarantine_stale_lock(path: &Path, runtime: &impl LockRuntime) -> Result<(), String> {
@@ -364,6 +434,17 @@ fn quarantine_stale_lock(path: &Path, runtime: &impl LockRuntime) -> Result<(), 
 }
 
 fn release_owned_lock(path: &Path, token: &str) -> Result<(), String> {
+    release_owned_lock_with_runtime(path, token, &SystemLockRuntime, |source, target| {
+        fs::rename(source, target)
+    })
+}
+
+fn release_owned_lock_with_runtime(
+    path: &Path,
+    token: &str,
+    runtime: &impl LockRuntime,
+    mut rename_owner: impl FnMut(&Path, &Path) -> io::Result<()>,
+) -> Result<(), String> {
     let Some(observed) = load_observed_owner(path) else {
         return Ok(());
     };
@@ -372,20 +453,43 @@ fn release_owned_lock(path: &Path, token: &str) -> Result<(), String> {
     }
 
     let quarantine_path = create_quarantine_path(path, token);
-    match fs::rename(&observed.path, &quarantine_path) {
-        Ok(()) => {
-            cleanup_quarantined_owner(path, &quarantine_path, &SystemLockRuntime).map_err(|error| {
-                format!(
-                    "Failed to remove released configuration lock {}: {error}",
-                    quarantine_path.display()
-                )
-            })
+    let started = std::time::Instant::now();
+
+    loop {
+        match rename_owner(&observed.path, &quarantine_path) {
+            Ok(()) => {
+                return cleanup_quarantined_owner(path, &quarantine_path, runtime).map_err(
+                    |error| {
+                        format!(
+                            "Failed to remove released configuration lock {}: {error}",
+                            quarantine_path.display()
+                        )
+                    },
+                );
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => {
+                let still_same_owner = load_observed_owner(path).is_some_and(|current| {
+                    current.owner.token == observed.owner.token
+                        && current.owner.pid == observed.owner.pid
+                });
+                if !still_same_owner {
+                    return Ok(());
+                }
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::PermissionDenied | io::ErrorKind::ResourceBusy
+                ) && runtime.elapsed(started) < LOCK_CLEANUP_RETRY_TIMEOUT
+                {
+                    runtime.sleep(LOCK_RETRY_DELAY);
+                    continue;
+                }
+                return Err(format!(
+                    "Failed to release configuration lock {}: {error}",
+                    path.display()
+                ));
+            }
         }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(format!(
-            "Failed to release configuration lock {}: {error}",
-            path.display()
-        )),
     }
 }
 
@@ -405,6 +509,7 @@ fn acquire_cooperative_file_lock_with_runtime(
     }
 
     let path = lock_path(destination);
+    cleanup_stale_candidates(&path, runtime);
     let token = create_token();
     let owner = FileLockOwner {
         token: token.clone(),
@@ -538,6 +643,108 @@ mod tests {
     }
 
     #[test]
+    fn acquisition_reaps_stale_candidates_from_dead_processes() {
+        let (destination, directory) = test_destination();
+        let stale_candidate =
+            directory.join("old-runtime.machdoch.lock.candidate.2000000000.dead-owner.abandoned");
+        let owner_directory = stale_candidate.join("owner.dead-owner");
+        fs::create_dir_all(&owner_directory).expect("stale candidate should be created");
+        fs::write(
+            owner_path(&owner_directory),
+            serde_json::to_vec(&FileLockOwner {
+                token: "dead-owner".to_string(),
+                pid: 2_000_000_000,
+            })
+            .expect("stale candidate owner should serialize"),
+        )
+        .expect("stale candidate owner should write");
+        let now = SystemTime::now();
+        let owner_file = OpenOptions::new()
+            .write(true)
+            .open(owner_path(&owner_directory))
+            .expect("stale candidate owner should open");
+        owner_file
+            .set_times(FileTimes::new().set_modified(now - Duration::from_secs(180)))
+            .expect("stale candidate timestamp should update");
+        drop(owner_file);
+        let runtime = TestLockRuntime::new(now, false);
+
+        let acquired = acquire_cooperative_file_lock_with_runtime(&destination, &runtime)
+            .expect("lock acquisition should succeed");
+
+        assert!(!stale_candidate.exists());
+        drop(acquired);
+        remove_directory_tree(&directory, &SystemLockRuntime)
+            .expect("test directory should be removable");
+    }
+
+    #[test]
+    fn stale_zero_pid_owner_is_treated_as_malformed() {
+        let (destination, directory) = test_destination();
+        let path = lock_path(&destination);
+        let owner_directory = path.join("owner.invalid-pid");
+        fs::create_dir_all(&owner_directory).expect("invalid owner directory should be created");
+        fs::write(
+            owner_path(&owner_directory),
+            serde_json::to_vec(&FileLockOwner {
+                token: "invalid-pid".to_string(),
+                pid: 0,
+            })
+            .expect("invalid owner should serialize"),
+        )
+        .expect("invalid owner should write");
+        let now = SystemTime::now();
+        let owner_file = OpenOptions::new()
+            .write(true)
+            .open(owner_path(&owner_directory))
+            .expect("invalid owner should open");
+        owner_file
+            .set_times(FileTimes::new().set_modified(now - Duration::from_secs(180)))
+            .expect("invalid owner timestamp should update");
+        drop(owner_file);
+        let runtime = TestLockRuntime::new(now, true);
+
+        let acquired = acquire_cooperative_file_lock_with_runtime(&destination, &runtime)
+            .expect("malformed stale owner should be recovered");
+
+        assert_ne!(
+            load_observed_owner(&path)
+                .expect("replacement owner should be observable")
+                .owner
+                .token,
+            "invalid-pid"
+        );
+        drop(acquired);
+        remove_directory_tree(&directory, &SystemLockRuntime)
+            .expect("test directory should be removable");
+    }
+
+    #[test]
+    fn release_retries_transient_rename_failures() {
+        let (destination, directory) = test_destination();
+        let lock = acquire_cooperative_file_lock(&destination).expect("lock should be acquired");
+        let runtime = TestLockRuntime::new(SystemTime::now(), true);
+        let attempts = AtomicUsize::new(0);
+
+        release_owned_lock_with_runtime(&lock.path, &lock.token, &runtime, |source, target| {
+            if attempts.fetch_add(1, Ordering::SeqCst) < 2 {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "simulated transient rename failure",
+                ));
+            }
+            fs::rename(source, target)
+        })
+        .expect("transient release failure should be retried");
+
+        assert_eq!(attempts.load(Ordering::SeqCst), 3);
+        assert!(!lock.path.exists());
+        drop(lock);
+        remove_directory_tree(&directory, &SystemLockRuntime)
+            .expect("test directory should be removable");
+    }
+
+    #[test]
     fn release_does_not_remove_a_lock_owned_by_another_token() {
         let (destination, directory) = test_destination();
         let lock = acquire_cooperative_file_lock(&destination).expect("lock should be acquired");
@@ -601,6 +808,31 @@ mod tests {
                 .token,
             "successor"
         );
+        remove_directory_tree(&directory, &SystemLockRuntime)
+            .expect("test directory should be removable");
+    }
+
+    #[test]
+    fn canonical_lock_cleanup_retries_transient_remove_failures() {
+        let (_destination, directory) = test_destination();
+        let path = directory.join("config.json.machdoch.lock");
+        fs::create_dir(&path).expect("empty lock directory should be created");
+        let runtime = TestLockRuntime::new(SystemTime::now(), true);
+        let attempts = AtomicUsize::new(0);
+
+        remove_empty_lock_directory_with_runtime(&path, &runtime, |target| {
+            if attempts.fetch_add(1, Ordering::SeqCst) < 2 {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "simulated transient remove failure",
+                ));
+            }
+            fs::remove_dir(target)
+        })
+        .expect("transient empty-lock removal failure should be retried");
+
+        assert_eq!(attempts.load(Ordering::SeqCst), 3);
+        assert!(!path.exists());
         remove_directory_tree(&directory, &SystemLockRuntime)
             .expect("test directory should be removable");
     }
