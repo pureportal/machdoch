@@ -118,6 +118,30 @@ const defaultDependencies: FleetCliProductDependencies = {
 const boundedText = (value: string, maximum = 12_000): string =>
   value.length <= maximum ? value : `${value.slice(0, maximum - 1)}…`;
 
+const MAX_RETAINED_FLEET_TASK_SESSIONS = 128;
+
+export const pruneCompletedFleetTaskSessions = <
+  TaskSession extends { updatedAt: number },
+>(
+  taskSessions: Map<string, TaskSession>,
+  activeTaskIds: { has(taskId: string): boolean },
+  maximum = MAX_RETAINED_FLEET_TASK_SESSIONS,
+): void => {
+  const overflow = taskSessions.size - maximum;
+  if (overflow <= 0) return;
+
+  const completedTasks = [...taskSessions.entries()]
+    .filter(([taskId]) => !activeTaskIds.has(taskId))
+    .sort(
+      ([leftId, left], [rightId, right]) =>
+        left.updatedAt - right.updatedAt || leftId.localeCompare(rightId),
+    );
+
+  for (const [taskId] of completedTasks.slice(0, overflow)) {
+    taskSessions.delete(taskId);
+  }
+};
+
 const promptPreview = (value: string): string =>
   boundedText(value.replace(/\s+/gu, " ").trim(), 240);
 
@@ -689,8 +713,9 @@ export class FleetCliProductRuntime {
         state.activeSessionId = copy.id;
         return { record: { sessionId: copy.id } };
       } else {
+        const deletedSessionId = session.id;
         state.sessions = state.sessions.filter(
-          (entry) => entry.id !== session.id,
+          (entry) => entry.id !== deletedSessionId,
         );
         if (state.sessions.length === 0) {
           const [config, memory] = await Promise.all([
@@ -707,10 +732,16 @@ export class FleetCliProductRuntime {
             ),
           );
         }
-        if (state.activeSessionId === session.id) {
+        if (state.activeSessionId === deletedSessionId) {
           state.activeSessionId =
             state.sessions[0]?.id ?? state.activeSessionId;
         }
+        return {
+          record: { sessionId: deletedSessionId },
+          afterCommit: () => {
+            this.sessionMemory.delete(deletedSessionId);
+          },
+        };
       }
       return { record: { sessionId: session.id } };
     });
@@ -884,6 +915,7 @@ export class FleetCliProductRuntime {
   ): void {
     this.activeTasks.set(taskSession.taskId, { sessionId, controller });
     this.taskSessions.set(taskSession.taskId, taskSession);
+    pruneCompletedFleetTaskSessions(this.taskSessions, this.activeTasks);
     this.eventId += 1;
     const settlement = controller
       .execute()
@@ -981,6 +1013,7 @@ export class FleetCliProductRuntime {
         task.updatedAt = timestamp;
         task.progressCount += 1;
       }
+      pruneCompletedFleetTaskSessions(this.taskSessions, this.activeTasks);
       this.eventId += 1;
     });
   }
@@ -1019,6 +1052,7 @@ export class FleetCliProductRuntime {
         task.updatedAt = timestamp;
         task.progressCount += 1;
       }
+      pruneCompletedFleetTaskSessions(this.taskSessions, this.activeTasks);
       this.eventId += 1;
     });
   }
@@ -1111,7 +1145,7 @@ export class FleetCliProductRuntime {
       eventId: this.eventId,
       sessions: [...this.taskSessions.values()]
         .sort((left, right) => right.updatedAt - left.updatedAt)
-        .slice(0, 128),
+        .slice(0, MAX_RETAINED_FLEET_TASK_SESSIONS),
       commands: state.commands.map(
         ({ digest: _digest, ...command }) => command,
       ),
