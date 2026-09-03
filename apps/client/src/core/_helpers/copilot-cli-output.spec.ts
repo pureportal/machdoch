@@ -87,4 +87,102 @@ describe("Copilot CLI output decoder", () => {
     expect(finalUpdate.resultExitCode).toBe(0);
     expect(decoder.getFinalOutput()).toBe("Task finished.");
   });
+
+  it("ignores subagent messages and completion events", () => {
+    const decoder = new CopilotCliOutputDecoder();
+
+    const rootUpdate = decoder.push(
+      eventLine({
+        type: "assistant.message",
+        data: { content: "Implemented the ticket." },
+      }),
+    );
+    const subagentUpdate = decoder.push(
+      [
+        eventLine({
+          type: "assistant.message",
+          agentId: "rubber-duck-1",
+          data: { content: "No findings." },
+        }),
+        eventLine({
+          type: "session.task_complete",
+          agentId: "rubber-duck-1",
+          data: {
+            summary: "Review blocked.",
+            success: false,
+            outcome: "blocked",
+          },
+        }),
+      ].join(""),
+    );
+    decoder.push(
+      eventLine({
+        type: "session.task_complete",
+        data: {
+          summary: "Implemented and verified the ticket.",
+          success: true,
+          outcome: "completed",
+        },
+      }),
+    );
+    const resultUpdate = decoder.push(
+      eventLine({ type: "result", exitCode: 0 }),
+    );
+
+    expect(rootUpdate.displayText).toEqual(["Implemented the ticket.\n\n"]);
+    expect(subagentUpdate.displayText).toEqual([]);
+    expect(resultUpdate.resultExitCode).toBe(0);
+    expect(decoder.getFinalOutput()).toBe("Implemented the ticket.");
+  });
+
+  it("reports rejected root task completion as a failed result", () => {
+    const decoder = new CopilotCliOutputDecoder();
+
+    decoder.push(
+      eventLine({
+        type: "session.task_complete",
+        data: {
+          summary: "More implementation work is required.",
+          reason: "The continuation limit was reached.",
+          success: false,
+          outcome: "continue",
+        },
+      }),
+    );
+    const update = decoder.push(eventLine({ type: "result", exitCode: 0 }));
+
+    expect(update.resultExitCode).toBe(1);
+    expect(decoder.hasTerminalResult()).toBe(true);
+    expect(decoder.getFinalOutput()).toBe(
+      [
+        "More implementation work is required.",
+        "The continuation limit was reached.",
+      ].join("\n"),
+    );
+  });
+
+  it("accepts successful completion after a rejected completion attempt", () => {
+    const decoder = new CopilotCliOutputDecoder();
+
+    decoder.push(
+      eventLine({
+        type: "session.task_complete",
+        data: { success: false, outcome: "continue" },
+      }),
+    );
+    decoder.push(
+      eventLine({
+        type: "session.task_complete",
+        data: {
+          summary: "The remaining work was completed.",
+          success: true,
+          outcome: "completed",
+        },
+      }),
+    );
+    const update = decoder.push(eventLine({ type: "result", exitCode: 0 }));
+
+    expect(update.resultExitCode).toBe(0);
+    expect(decoder.getFinalOutput()).toBe("The remaining work was completed.");
+  });
 });

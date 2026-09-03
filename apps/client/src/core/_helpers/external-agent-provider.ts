@@ -960,7 +960,11 @@ export const runExternalAgentCommand = async (
       const usage = outputDecoder.getUsage();
       const retryCount = outputDecoder.getRetryCount();
       const effectiveExitCode =
-        exitCode === 0 && !outputDecoder.hasTerminalResult() ? 1 : exitCode;
+        exitCode === 0 && structuredResultExitCode !== undefined
+          ? structuredResultExitCode
+          : exitCode === 0 && !outputDecoder.hasTerminalResult()
+            ? 1
+            : exitCode;
       resolve({
         exitCode: effectiveExitCode,
         signal: exitSignal,
@@ -1252,13 +1256,7 @@ export const runExternalAgentCommand = async (
         return;
       }
 
-      const effectiveExitCode =
-        structuredResultExitCode !== undefined && exitCode === 0
-          ? structuredResultExitCode
-          : exitCode === 0 && !outputDecoder.hasTerminalResult()
-            ? 1
-            : exitCode;
-      resolveOnce(effectiveExitCode, exitSignal);
+      resolveOnce(exitCode, exitSignal);
     }
 
     child.stdout?.setEncoding("utf8");
@@ -1536,7 +1534,6 @@ const createCopilotCommand = ({
     config.model,
   );
   const effort = mapReasoningToCopilotCliEffort(config.model, config.reasoning);
-  const maxTurns = getExecutorTurnLimit(config);
   const mcpEnvironmentKeySet = new Set(
     mcpEnvironmentKeys.map(normalizeEnvironmentKey),
   );
@@ -1583,10 +1580,6 @@ const createCopilotCommand = ({
     args.push("--context=long_context");
   }
 
-  if (maxTurns !== undefined) {
-    args.push(`--max-autopilot-continues=${maxTurns}`);
-  }
-
   if ((imageInputs?.length ?? 0) > 0) {
     if (!providerFeatures.includes("--attachment")) {
       throw new Error(
@@ -1614,9 +1607,6 @@ const createCopilotCommand = ({
       `model argument: ${config.model}`,
       ...(effort ? [`effort: ${effort}`] : []),
       ...(contextWindow === "long" ? ["context window: long"] : []),
-      ...(maxTurns !== undefined
-        ? [`max autopilot continues: ${maxTurns}`]
-        : []),
     ],
     metadata: {
       access: "allow-all",
@@ -1626,7 +1616,6 @@ const createCopilotCommand = ({
       modelArgument: config.model,
       contextWindow,
       ...(effort ? { effort } : {}),
-      ...(maxTurns !== undefined ? { maxTurns } : {}),
     },
   };
 };

@@ -12,6 +12,7 @@ interface CopilotCliEvent {
   type: string;
   data?: unknown;
   exitCode?: unknown;
+  agentId?: string;
 }
 
 interface AssistantMessageChunks {
@@ -41,6 +42,7 @@ const parseEvent = (line: string): CopilotCliEvent | undefined => {
     type: value.type,
     ...(Object.hasOwn(value, "data") ? { data: value.data } : {}),
     ...(Object.hasOwn(value, "exitCode") ? { exitCode: value.exitCode } : {}),
+    ...(typeof value.agentId === "string" ? { agentId: value.agentId } : {}),
   };
 };
 
@@ -58,9 +60,11 @@ export class CopilotCliOutputDecoder implements ExternalAgentCliOutputDecoder {
   private latestAssistantText = "";
   private latestStandaloneAssistantText = "";
   private taskSummary = "";
+  private taskCompletionReason = "";
   private assistantMessageSequence = 0;
   private latestStandaloneSequence = 0;
   private latestToolRequestSequence = 0;
+  private taskCompletionRejected = false;
   private reportedResultExitCode: number | undefined;
 
   push(chunk: string): CopilotCliOutputUpdate {
@@ -110,7 +114,16 @@ export class CopilotCliOutputDecoder implements ExternalAgentCliOutputDecoder {
       this.latestStandaloneSequence > this.latestToolRequestSequence
         ? this.latestStandaloneAssistantText.trim()
         : "";
+    const rejectedCompletionText = this.taskCompletionRejected
+      ? [this.taskSummary.trim(), this.taskCompletionReason.trim()]
+          .filter(
+            (value, index, values) =>
+              value.length > 0 && values.indexOf(value) === index,
+          )
+          .join("\n")
+      : "";
     return (
+      rejectedCompletionText ||
       finalStandaloneText ||
       this.taskSummary.trim() ||
       this.latestAssistantText.trim() ||
@@ -168,14 +181,31 @@ export class CopilotCliOutputDecoder implements ExternalAgentCliOutputDecoder {
       return;
     }
 
-    if (event.type === "assistant.message") {
+    if (event.type === "assistant.message" && event.agentId === undefined) {
       this.processAssistantMessage(event.data, update);
       return;
     }
 
-    if (event.type === "session.task_complete" && isRecord(event.data)) {
-      if (typeof event.data.summary === "string") {
-        this.taskSummary = event.data.summary;
+    if (
+      event.type === "session.task_complete" &&
+      event.agentId === undefined &&
+      isRecord(event.data)
+    ) {
+      this.taskSummary =
+        typeof event.data.summary === "string" ? event.data.summary : "";
+      this.taskCompletionReason =
+        typeof event.data.reason === "string" ? event.data.reason : "";
+      if (
+        event.data.success === false ||
+        event.data.outcome === "continue" ||
+        event.data.outcome === "blocked"
+      ) {
+        this.taskCompletionRejected = true;
+      } else if (
+        event.data.success === true ||
+        event.data.outcome === "completed"
+      ) {
+        this.taskCompletionRejected = false;
       }
       return;
     }
@@ -186,8 +216,12 @@ export class CopilotCliOutputDecoder implements ExternalAgentCliOutputDecoder {
       Number.isInteger(event.exitCode)
     ) {
       if (this.reportedResultExitCode === undefined) {
-        this.reportedResultExitCode = event.exitCode;
-        update.resultExitCode = event.exitCode;
+        const resultExitCode =
+          event.exitCode === 0 && this.taskCompletionRejected
+            ? 1
+            : event.exitCode;
+        this.reportedResultExitCode = resultExitCode;
+        update.resultExitCode = resultExitCode;
       }
       return;
     }
