@@ -1,15 +1,34 @@
 import process from "node:process";
 import { getHelpText, parseCliArgs } from "./_helpers/cli-args.js";
+import type { CommandName, ParsedCliArgs } from "./_helpers/cli-args.js";
 import { writeStderrLine, writeStdoutLine } from "./_helpers/cli-io.js";
 import { createCliStyle } from "./_helpers/cli-terminal.js";
 import { readTaskFromStdin } from "./_helpers/cli-task-stdin.js";
 
-export const runCli = async (argv: string[]): Promise<void> => {
-  let args = parseCliArgs(argv);
-  if (args.task === "-") {
-    args = { ...args, task: await readTaskFromStdin() };
-  }
+const AGENT_RUNTIME_COMMANDS = new Set<CommandName>([
+  "run",
+  "chat",
+  "interview",
+  "ralph",
+  "scheduler",
+  "fleet",
+]);
 
+const closeAgentRuntimeResources = async (
+  command: CommandName,
+): Promise<void> => {
+  if (!AGENT_RUNTIME_COMMANDS.has(command)) return;
+
+  const [{ closeAllBrowserSessions }, { mcpClientManager }] = await Promise.all(
+    [
+      import("../core/_helpers/browser-tool-definitions.js"),
+      import("../core/mcp/client.js"),
+    ],
+  );
+  await Promise.all([closeAllBrowserSessions(), mcpClientManager.closeAll()]);
+};
+
+const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
   const isInternalProviderProcess =
     args.command === "provider-sync" ||
     (args.command === "mcp" &&
@@ -136,5 +155,18 @@ export const runCli = async (argv: string[]): Promise<void> => {
       await printTaskPreview(args);
       return;
     }
+  }
+};
+
+export const runCli = async (argv: string[]): Promise<void> => {
+  let args = parseCliArgs(argv);
+  if (args.task === "-") {
+    args = { ...args, task: await readTaskFromStdin() };
+  }
+
+  try {
+    await runParsedCliCommand(args);
+  } finally {
+    await closeAgentRuntimeResources(args.command);
   }
 };

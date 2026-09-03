@@ -228,6 +228,135 @@ afterEach(async () => {
 });
 
 describe("McpClientManager lifecycle", () => {
+  it("shares connection startup across concurrent requests", async () => {
+    let finishConnect: () => void = () => undefined;
+    const connectPending = new Promise<void>((resolve) => {
+      finishConnect = resolve;
+    });
+    const transport = createTransport();
+    const client = createClient({
+      connect: vi.fn(async () => connectPending),
+    });
+    const createTransportMock = vi.fn(() => transport);
+    const createClientMock = vi.fn(() => client);
+    const manager = new McpClientManager({
+      createClient: createClientMock,
+      createTransport: createTransportMock,
+      loadRuntimeEnvironment: async () => ({}),
+    });
+    const server = createServer();
+
+    const first = manager.getConnection("C:/workspace", server);
+    const second = manager.getConnection("C:/workspace", server);
+
+    await vi.waitFor(() => {
+      expect(client.connect).toHaveBeenCalledTimes(1);
+    });
+    finishConnect();
+
+    const [firstConnection, secondConnection] = await Promise.all([
+      first,
+      second,
+    ]);
+
+    expect(firstConnection).toBe(secondConnection);
+    expect(createTransportMock).toHaveBeenCalledTimes(1);
+    expect(createClientMock).toHaveBeenCalledTimes(1);
+    expect(manager.listConnections()).toHaveLength(1);
+    await manager.closeAll();
+  });
+
+  it("closes a transport when connection startup fails", async () => {
+    const failedTransport = createTransport();
+    const replacementTransport = createTransport();
+    const clients = [
+      createClient({
+        connect: vi.fn(async () => {
+          throw new Error("handshake failed");
+        }),
+      }),
+      createClient(),
+    ];
+    const transports = [failedTransport, replacementTransport];
+    const manager = new McpClientManager({
+      createClient: () => clients.shift() ?? createClient(),
+      createTransport: () => transports.shift() ?? createTransport(),
+      loadRuntimeEnvironment: async () => ({}),
+    });
+    const server = createServer();
+
+    await expect(manager.getConnection("C:/workspace", server)).rejects.toThrow(
+      "handshake failed",
+    );
+
+    expect(failedTransport.close).toHaveBeenCalledTimes(1);
+    expect(manager.listConnections()).toEqual([]);
+
+    await expect(
+      manager.getConnection("C:/workspace", server),
+    ).resolves.toBeDefined();
+    expect(manager.listConnections()).toHaveLength(1);
+    await manager.closeAll();
+  });
+
+  it("waits for an in-flight connection before closing all transports", async () => {
+    let finishConnect: () => void = () => undefined;
+    const connectPending = new Promise<void>((resolve) => {
+      finishConnect = resolve;
+    });
+    const transport = createTransport();
+    const client = createClient({
+      connect: vi.fn(async () => connectPending),
+    });
+    const manager = new McpClientManager({
+      createClient: () => client,
+      createTransport: () => transport,
+      loadRuntimeEnvironment: async () => ({}),
+    });
+
+    const connection = manager.getConnection("C:/workspace", createServer());
+
+    await vi.waitFor(() => {
+      expect(client.connect).toHaveBeenCalledTimes(1);
+    });
+    const closing = manager.closeAll();
+    finishConnect();
+
+    await Promise.all([connection, closing]);
+
+    expect(transport.close).toHaveBeenCalledTimes(1);
+    expect(manager.listConnections()).toEqual([]);
+  });
+
+  it("waits for an in-flight server connection before closing it", async () => {
+    let finishConnect: () => void = () => undefined;
+    const connectPending = new Promise<void>((resolve) => {
+      finishConnect = resolve;
+    });
+    const transport = createTransport();
+    const client = createClient({
+      connect: vi.fn(async () => connectPending),
+    });
+    const manager = new McpClientManager({
+      createClient: () => client,
+      createTransport: () => transport,
+      loadRuntimeEnvironment: async () => ({}),
+    });
+
+    const connection = manager.getConnection("C:/workspace", createServer());
+
+    await vi.waitFor(() => {
+      expect(client.connect).toHaveBeenCalledTimes(1);
+    });
+    const closing = manager.closeServer("C:/workspace", "test");
+    finishConnect();
+
+    await Promise.all([connection, closing]);
+
+    expect(transport.close).toHaveBeenCalledTimes(1);
+    expect(manager.listConnections()).toEqual([]);
+  });
+
   it("closes idle connections after the configured shutdown window", async () => {
     const transport = createTransport();
     const manager = new McpClientManager({

@@ -1576,6 +1576,10 @@ const normalizePrompt = (
 
 export class McpClientManager {
   private readonly connections = new Map<string, McpConnection>();
+  private readonly pendingConnections = new Map<
+    string,
+    Promise<McpConnection>
+  >();
   private readonly createClientImpl: (context: McpConnectionContext) => Client;
   private readonly createTransportImpl: (
     context: McpConnectionContext,
@@ -1679,6 +1683,35 @@ export class McpClientManager {
       return current;
     }
 
+    const pending = this.pendingConnections.get(key);
+
+    if (pending) {
+      return pending;
+    }
+
+    const connection = this.createConnection(key, workspaceRoot, server);
+    this.pendingConnections.set(key, connection);
+
+    try {
+      return await connection;
+    } finally {
+      if (this.pendingConnections.get(key) === connection) {
+        this.pendingConnections.delete(key);
+      }
+    }
+  }
+
+  private async createConnection(
+    key: string,
+    workspaceRoot: string,
+    server: McpEffectiveServerConfig,
+  ): Promise<McpConnection> {
+    const current = this.connections.get(key);
+
+    if (current) {
+      return current;
+    }
+
     const env = await this.loadRuntimeEnvironmentImpl();
     const context: McpConnectionContext = { workspaceRoot, env, server };
     const transport = this.createTransportImpl(context);
@@ -1687,10 +1720,15 @@ export class McpClientManager {
 
     registerClientRequestHandlers(client, context, this.samplingHandler);
 
-    await client.connect(transport, {
-      timeout: server.timeoutMs,
-      maxTotalTimeout: server.maxTotalTimeoutMs,
-    });
+    try {
+      await client.connect(transport, {
+        timeout: server.timeoutMs,
+        maxTotalTimeout: server.maxTotalTimeoutMs,
+      });
+    } catch (error) {
+      await transport.close().catch(() => undefined);
+      throw error;
+    }
 
     const connectedAt = this.now();
     const protocolVersion = getProtocolVersion();
@@ -1811,6 +1849,7 @@ export class McpClientManager {
   }
 
   async closeServer(workspaceRoot: string, serverId: string): Promise<void> {
+    await Promise.allSettled(this.pendingConnections.values());
     const pending = [...this.connections.entries()].filter(([, connection]) => {
       return (
         connection.server.id === serverId &&
@@ -1826,6 +1865,7 @@ export class McpClientManager {
   }
 
   async closeAll(): Promise<void> {
+    await Promise.allSettled(this.pendingConnections.values());
     const connections = [...this.connections.entries()];
     this.connections.clear();
 
