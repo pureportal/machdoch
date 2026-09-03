@@ -790,7 +790,6 @@ export const useChatSessionController = (
     Map<string, DesktopTaskProgressRoute>
   >(new Map());
   const recoveredTaskAssistantTextRef = useRef<Map<string, string>>(new Map());
-  const finalizedRecoveredTaskIdsRef = useRef<Set<string>>(new Set());
   const recoveredTransientTaskIdsRef = useRef<Set<string>>(new Set());
   const orphanedChatOperationCancellationIdsRef = useRef<Set<string>>(
     new Set(),
@@ -2564,10 +2563,6 @@ export const useChatSessionController = (
         recoveredTaskAssistantTextRef.current.set(taskId, assistantText);
       }
 
-      if (finalizedRecoveredTaskIdsRef.current.has(taskId)) {
-        return;
-      }
-
       const execution = createExecutionFromTerminalProgress(
         progress,
         recoveredTaskAssistantTextRef.current.get(taskId) ?? "",
@@ -2577,7 +2572,6 @@ export const useChatSessionController = (
         return;
       }
 
-      finalizedRecoveredTaskIdsRef.current.add(taskId);
       recoveredTaskAssistantTextRef.current.delete(taskId);
 
       state.updateSessionById(sessionId, (session) => {
