@@ -1,6 +1,6 @@
 {
   "name": "@machdoch/client",
-  "version": "10.1.0",
+  "version": "10.1.1",
   "private": true,
   "description": "Local-first OS AI agent for CLI and desktop.",
   "type": "module",
