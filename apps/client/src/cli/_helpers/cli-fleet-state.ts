@@ -303,8 +303,7 @@ const parseState = (value: unknown, workspaceRoot: string): FleetCliState => {
   const sessions = value.sessions.map(parseSession);
   if (
     new Set(sessions.map((session) => session.id)).size !== sessions.length ||
-    !sessions.some((session) => session.id === value.activeSessionId) ||
-    sessions.some((session) => session.workspace !== workspaceRoot)
+    !sessions.some((session) => session.id === value.activeSessionId)
   ) {
     throw new Error("Fleet CLI state is invalid.");
   }

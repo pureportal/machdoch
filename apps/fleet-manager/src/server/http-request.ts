@@ -21,6 +21,7 @@ export async function createWebRequest(
   request: IncomingMessage,
   externalBaseUrl: string,
   maximumBodyBytes: number,
+  signal?: AbortSignal,
 ): Promise<Request> {
   const headers = new Headers();
   for (let index = 0; index < request.rawHeaders.length; index += 2) {
@@ -46,6 +47,7 @@ export async function createWebRequest(
   return new Request(url, {
     method,
     headers,
+    signal,
     body: body.byteLength === 0 ? undefined : new Uint8Array(body),
   });
 }

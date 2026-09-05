@@ -20,6 +20,7 @@ export function InstanceProduct({
   const runtime = useMemo<ProductRuntime>(() => {
     const basePath = `/api/instances/${encodeURIComponent(instanceId)}/product`;
     return {
+      servicesHref: `/instances/${encodeURIComponent(instanceId)}/runs`,
       async getSnapshot(signal) {
         const payload = await api<unknown>(`${basePath}/snapshot`, { signal });
         const result = productSnapshotSchema.safeParse(payload);

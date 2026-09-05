@@ -25,19 +25,35 @@ export interface McpInitializationInstructionSnapshot {
 export const loadMcpInitializationInstructionSnapshot = async (
   workspaceRoot: string,
 ): Promise<McpInitializationInstructionSnapshot[]> => {
-  const config = await loadMcpConfig(workspaceRoot);
-  const discovery = (await loadMcpDiscoveryCache(workspaceRoot)).servers;
+  const [config, cache] = await Promise.all([
+    loadMcpConfig(workspaceRoot),
+    loadMcpDiscoveryCache(workspaceRoot),
+  ]);
+  const discovery = cache.servers;
   const byDigest = new Map<string, McpInitializationInstructionSnapshot>();
+  const normalizedBodies = new Map<
+    string,
+    { body: string; digest: string; byteLength: number }
+  >();
+  let minimumRenderedBytes = 0;
 
   for (const server of listEnabledMcpServers(config)) {
     const rawBody = discovery[server.id]?.instructions;
     if (typeof rawBody !== "string" || rawBody.trim().length === 0) continue;
-    let body: string;
+    let normalized = normalizedBodies.get(rawBody);
     try {
-      body = normalizeInstructionBody(
-        rawBody,
-        `MCP initialization instructions from ${server.id}`,
-      );
+      if (!normalized) {
+        const body = normalizeInstructionBody(
+          rawBody,
+          `MCP initialization instructions from ${server.id}`,
+        );
+        normalized = {
+          body,
+          digest: sha256(body),
+          byteLength: utf8ByteLength(body),
+        };
+        normalizedBodies.set(rawBody, normalized);
+      }
     } catch (error) {
       if (
         error instanceof InstructionSystemError &&
@@ -52,15 +68,22 @@ export const loadMcpInitializationInstructionSnapshot = async (
       }
       throw error;
     }
-    const byteLength = utf8ByteLength(body);
+    const { body, digest, byteLength } = normalized;
     if (byteLength > MAX_INSTRUCTION_SOURCE_BYTES) {
       throw new InstructionSystemError(
         "MCP_INITIALIZATION_INSTRUCTIONS_TOO_LARGE",
         `MCP server ${server.id} initialization instructions exceed ${MAX_INSTRUCTION_SOURCE_BYTES} bytes.`,
       );
     }
-    const digest = sha256(body);
     const existing = byDigest.get(digest);
+    minimumRenderedBytes += utf8ByteLength(JSON.stringify(server.id)) + 1;
+    if (!existing) minimumRenderedBytes += byteLength;
+    if (minimumRenderedBytes > MAX_INSTRUCTION_ENVELOPE_BYTES) {
+      throw new InstructionSystemError(
+        "MCP_INITIALIZATION_INSTRUCTIONS_TOO_LARGE",
+        `MCP initialization instructions exceed the ${MAX_INSTRUCTION_ENVELOPE_BYTES}-byte runtime supplement limit.`,
+      );
+    }
     if (existing) {
       existing.serverIds.push(server.id);
     } else {

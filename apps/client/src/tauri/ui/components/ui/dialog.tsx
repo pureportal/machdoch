@@ -1,33 +1,34 @@
-import * as React from "react"
-import { XIcon } from "lucide-react"
-import { Dialog as DialogPrimitive } from "radix-ui"
+import * as React from "react";
+import { XIcon } from "lucide-react";
+import { Dialog as DialogPrimitive } from "radix-ui";
 
-import { cn } from "../../lib/utils"
-import { useCommandOverlay } from "../../commands/use-command-overlay"
-import { Button } from "./button"
+import { cn } from "../../lib/utils";
+import { useCommandOverlay } from "../../commands/use-command-overlay";
+import { Button } from "./button";
 
 interface DialogInteractOutsideConfirmationOptions {
-  title?: string
-  description?: string
-  cancelLabel?: string
-  confirmLabel?: string
+  title?: string;
+  description?: string;
+  cancelLabel?: string;
+  confirmLabel?: string;
 }
 
 type DialogInteractOutsideConfirmation =
   | boolean
-  | DialogInteractOutsideConfirmationOptions
+  | DialogInteractOutsideConfirmationOptions;
 
-type DialogContentProps =
-  React.ComponentProps<typeof DialogPrimitive.Content> & {
-    showCloseButton?: boolean
-    confirmOnInteractOutside?: DialogInteractOutsideConfirmation
-  }
+type DialogContentProps = React.ComponentProps<
+  typeof DialogPrimitive.Content
+> & {
+  showCloseButton?: boolean;
+  confirmOnInteractOutside?: DialogInteractOutsideConfirmation;
+};
 
 const getDialogInteractOutsideConfirmationOptions = (
   value: DialogInteractOutsideConfirmation | undefined,
 ): DialogInteractOutsideConfirmationOptions | null => {
   if (!value) {
-    return null
+    return null;
   }
 
   return {
@@ -36,13 +37,13 @@ const getDialogInteractOutsideConfirmationOptions = (
     cancelLabel: "Stay",
     confirmLabel: "Close",
     ...(typeof value === "object" ? value : {}),
-  }
-}
+  };
+};
 
 type DialogProps = React.ComponentProps<typeof DialogPrimitive.Root> & {
-  commandOverlayId?: string
-  commandOverlayAllowGlobalCommands?: readonly string[]
-}
+  commandOverlayId?: string;
+  commandOverlayAllowGlobalCommands?: readonly string[];
+};
 
 function Dialog({
   commandOverlayId,
@@ -52,23 +53,25 @@ function Dialog({
   onOpenChange,
   ...props
 }: DialogProps) {
-  const generatedId = React.useId()
-  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen ?? false)
-  const open = controlledOpen ?? uncontrolledOpen
+  const generatedId = React.useId();
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(
+    defaultOpen ?? false,
+  );
+  const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = React.useCallback(
     (nextOpen: boolean) => {
-      if (controlledOpen === undefined) setUncontrolledOpen(nextOpen)
-      onOpenChange?.(nextOpen)
+      if (controlledOpen === undefined) setUncontrolledOpen(nextOpen);
+      onOpenChange?.(nextOpen);
     },
     [controlledOpen, onOpenChange],
-  )
+  );
   useCommandOverlay({
     open,
     id: commandOverlayId ?? `dialog:${generatedId}`,
     kind: "modal",
     allowGlobalCommands: commandOverlayAllowGlobalCommands,
     dismiss: () => setOpen(false),
-  })
+  });
   return (
     <DialogPrimitive.Root
       data-slot="dialog"
@@ -76,25 +79,25 @@ function Dialog({
       onOpenChange={setOpen}
       {...props}
     />
-  )
+  );
 }
 
 function DialogTrigger({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
-  return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />
+  return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />;
 }
 
 function DialogPortal({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Portal>) {
-  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
+  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />;
 }
 
 function DialogClose({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Close>) {
-  return <DialogPrimitive.Close data-slot="dialog-close" {...props} />
+  return <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
 }
 
 function DialogOverlay({
@@ -106,11 +109,11 @@ function DialogOverlay({
       data-slot="dialog-overlay"
       className={cn(
         "fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
-        className
+        className,
       )}
       {...props}
     />
-  )
+  );
 }
 
 function DialogContent({
@@ -125,22 +128,20 @@ function DialogContent({
   ...props
 }: DialogContentProps) {
   const [showInteractOutsideConfirmation, setShowInteractOutsideConfirmation] =
-    React.useState(false)
+    React.useState(false);
   const interactOutsideConfirmation =
-    getDialogInteractOutsideConfirmationOptions(confirmOnInteractOutside)
-  const confirmationTitleId = React.useId()
-  const confirmationDescriptionId = React.useId()
+    getDialogInteractOutsideConfirmationOptions(confirmOnInteractOutside);
+  const confirmationTitleId = React.useId();
+  const confirmationDescriptionId = React.useId();
 
-  const requestInteractOutsideConfirmation = (
-    event: Event,
-  ): void => {
+  const requestInteractOutsideConfirmation = (event: Event): void => {
     if (!interactOutsideConfirmation || event.defaultPrevented) {
-      return
+      return;
     }
 
-    event.preventDefault()
-    setShowInteractOutsideConfirmation(true)
-  }
+    event.preventDefault();
+    setShowInteractOutsideConfirmation(true);
+  };
 
   return (
     <DialogPortal data-slot="dialog-portal">
@@ -148,24 +149,24 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border border-slate-200 bg-white p-6 text-slate-950 shadow-2xl duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100",
-          className
+          "fixed top-[50%] left-[50%] z-50 grid min-h-0 min-w-0 w-[calc(100%-2rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain [overflow-wrap:anywhere] [&>*]:min-w-0 max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border border-slate-200 bg-white p-6 text-slate-950 shadow-2xl duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100",
+          className,
         )}
         onOpenAutoFocus={(event) => {
-          setShowInteractOutsideConfirmation(false)
-          onOpenAutoFocus?.(event)
+          setShowInteractOutsideConfirmation(false);
+          onOpenAutoFocus?.(event);
         }}
         onCloseAutoFocus={(event) => {
-          setShowInteractOutsideConfirmation(false)
-          onCloseAutoFocus?.(event)
+          setShowInteractOutsideConfirmation(false);
+          onCloseAutoFocus?.(event);
         }}
         onInteractOutside={(event) => {
-          onInteractOutside?.(event)
-          requestInteractOutsideConfirmation(event)
+          onInteractOutside?.(event);
+          requestInteractOutsideConfirmation(event);
         }}
         onPointerDownOutside={(event) => {
-          onPointerDownOutside?.(event)
-          requestInteractOutsideConfirmation(event)
+          onPointerDownOutside?.(event);
+          requestInteractOutsideConfirmation(event);
         }}
         {...props}
       >
@@ -231,7 +232,7 @@ function DialogContent({
         )}
       </DialogPrimitive.Content>
     </DialogPortal>
-  )
+  );
 }
 
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
@@ -241,7 +242,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
       className={cn("flex flex-col gap-2 text-center sm:text-left", className)}
       {...props}
     />
-  )
+  );
 }
 
 function DialogFooter({
@@ -250,14 +251,14 @@ function DialogFooter({
   children,
   ...props
 }: React.ComponentProps<"div"> & {
-  showCloseButton?: boolean
+  showCloseButton?: boolean;
 }) {
   return (
     <div
       data-slot="dialog-footer"
       className={cn(
         "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
-        className
+        className,
       )}
       {...props}
     >
@@ -268,7 +269,7 @@ function DialogFooter({
         </DialogPrimitive.Close>
       )}
     </div>
-  )
+  );
 }
 
 function DialogTitle({
@@ -281,7 +282,7 @@ function DialogTitle({
       className={cn("text-lg leading-none font-semibold", className)}
       {...props}
     />
-  )
+  );
 }
 
 function DialogDescription({
@@ -291,10 +292,13 @@ function DialogDescription({
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"
-      className={cn("text-sm text-oklch(0.552 0.016 285.938) dark:text-oklch(0.705 0.015 286.067)", className)}
+      className={cn(
+        "text-sm text-oklch(0.552 0.016 285.938) dark:text-oklch(0.705 0.015 286.067)",
+        className,
+      )}
       {...props}
     />
-  )
+  );
 }
 
 export {
@@ -308,4 +312,4 @@ export {
   DialogPortal,
   DialogTitle,
   DialogTrigger,
-}
+};

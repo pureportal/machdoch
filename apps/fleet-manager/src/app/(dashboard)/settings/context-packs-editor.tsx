@@ -41,6 +41,7 @@ const reasoning = [
   "xhigh",
   "max",
   "ultra",
+  "aeon",
 ];
 
 export function ContextPacksEditor({

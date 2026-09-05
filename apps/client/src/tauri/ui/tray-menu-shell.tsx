@@ -276,7 +276,7 @@ export const TrayMenuShell = (): JSX.Element => {
       windowKind="tray"
     >
       <div className="fixed inset-0 overflow-hidden bg-transparent p-1.5">
-        <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-700/80 bg-slate-950/98 text-slate-100 shadow-[0_18px_50px_rgba(2,6,23,0.42)] backdrop-blur-xl">
+        <div className="relative flex h-full min-h-0 flex-col overflow-y-auto rounded-xl border border-slate-700/80 bg-slate-950/98 text-slate-100 shadow-[0_18px_50px_rgba(2,6,23,0.42)] backdrop-blur-xl">
           <span
             aria-hidden="true"
             className="absolute left-4 right-4 top-0 h-px bg-gradient-to-r from-sky-400/0 via-sky-300/80 to-violet-300/0"

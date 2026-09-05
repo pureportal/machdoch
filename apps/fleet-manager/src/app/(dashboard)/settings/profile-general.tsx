@@ -26,6 +26,7 @@ const reasoningOptions = [
   "xhigh",
   "max",
   "ultra",
+  "aeon",
 ];
 
 export function ProfileGeneral({

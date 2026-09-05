@@ -306,6 +306,7 @@ jobs:
             pkg-config \
             python3 \
             rpm \
+            systemd \
             wget \
             xdg-utils \
             xz-utils
@@ -372,6 +373,16 @@ jobs:
           apps/client/src-tauri/tauri.conf.json
           "$GITHUB_OUTPUT"
 
+      - name: Build and verify headless Linux package
+        id: headless
+        if: matrix.release_target == 'linux-amd64'
+        shell: bash
+        run: |
+          pnpm build:headless
+          node .github/scripts/verify-headless-package.mjs apps/client/dist/machdoch-headless.tar.gz
+          cp apps/client/dist/machdoch-headless.tar.gz release-assets/
+          echo "path=release-assets/machdoch-headless.tar.gz" >> "$GITHUB_OUTPUT"
+
       - name: Verify Debian package
         if: matrix.debian_architecture != ''
         shell: bash
@@ -401,6 +412,7 @@ jobs:
             gh release upload "$TAG_NAME" "$file" --clobber
           done <<'EOF'
           ${{ steps.assets.outputs.paths }}
+          ${{ steps.headless.outputs.path }}
           EOF
 
       - name: Generate SBOM
@@ -415,13 +427,17 @@ jobs:
         if: ${{ github.event.repository.visibility == 'public' }}
         uses: actions/attest-build-provenance@v3
         with:
-          subject-path: ${{ steps.assets.outputs.paths }}
+          subject-path: |
+            ${{ steps.assets.outputs.paths }}
+            ${{ steps.headless.outputs.path }}
 
       - name: Attest SBOM
         if: ${{ github.event.repository.visibility == 'public' }}
         uses: actions/attest-sbom@v3
         with:
-          subject-path: ${{ steps.assets.outputs.paths }}
+          subject-path: |
+            ${{ steps.assets.outputs.paths }}
+            ${{ steps.headless.outputs.path }}
           sbom-path: sbom-${{ matrix.release_target }}.spdx.json
 
   build-and-publish-landing:

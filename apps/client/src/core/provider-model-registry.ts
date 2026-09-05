@@ -267,6 +267,20 @@ export const PROVIDER_CATALOG_METADATA: readonly ProviderCatalogMetadata[] = [
 export const PROVIDER_MODEL_METADATA = [
   {
     provider: "openai",
+    id: "gpt-6-astra",
+    label: "GPT-6 Astra",
+    lifecycle: "stable",
+    releaseDate: "2026-09-03",
+    recommendedFor: ["coding", "vision", "computer-use"],
+    capabilities: createOpenAiCapabilities({
+      contextWindowTokens: 1_050_000,
+      maxOutputTokens: 128_000,
+    }),
+    warnings: [],
+    source: "curated-fallback",
+  },
+  {
+    provider: "openai",
     id: "gpt-5.6",
     label: "GPT-5.6 (Sol)",
     lifecycle: "stable",
@@ -608,6 +622,23 @@ export const PROVIDER_MODEL_METADATA = [
     }),
     warnings: [
       "Langdock model availability is tied to the API key account; use live model discovery to confirm this key can access the model.",
+    ],
+    source: "curated-fallback",
+  },
+  {
+    provider: "codex-cli",
+    id: "gpt-6-astra",
+    label: "GPT-6 Astra",
+    lifecycle: "stable",
+    releaseDate: "2026-09-03",
+    recommendedFor: ["coding", "vision", "computer-use"],
+    capabilities: createCodexCliCapabilities({
+      computerUse: true,
+      contextWindowTokens: 1_050_000,
+      maxOutputTokens: 128_000,
+    }),
+    warnings: [
+      "Requires Codex CLI 0.153.0 or newer; availability depends on Codex authentication and account rollout.",
     ],
     source: "curated-fallback",
   },

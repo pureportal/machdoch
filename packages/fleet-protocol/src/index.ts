@@ -1,5 +1,203 @@
 import { z } from "zod";
 
+export const workspaceRunsCapability = "workspace-runs.v1";
+export const redactedRunValue = "__MACHDOCH_REDACTED__";
+const id = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/);
+const port = z.number().int().min(1024).max(65535);
+const localUrl = z
+  .string()
+  .max(2048)
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return (
+        url.protocol === "http:" &&
+        ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) &&
+        !url.username &&
+        !url.password &&
+        !url.hash &&
+        Number(url.port) >= 1024
+      );
+    } catch {
+      return false;
+    }
+  }, "Use an HTTP loopback URL with a port of 1024 or higher.");
+export const runTaskSchema = z.strictObject({
+  id,
+  name: z.string().trim().min(1).max(120),
+  kind: z.literal("task"),
+  primary: z.boolean(),
+  command: z
+    .string()
+    .trim()
+    .min(1)
+    .max(8000)
+    .refine((v) => !v.includes("\0")),
+  workingDirectory: z
+    .string()
+    .max(2048)
+    .refine((v) => !v.includes("\0"))
+    .default("."),
+  environment: z
+    .record(
+      z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+      z
+        .string()
+        .max(8000)
+        .refine((v) => !v.includes("\0")),
+    )
+    .refine((v) => Object.keys(v).length <= 64)
+    .default({}),
+  hotReload: z.boolean().default(false),
+  ports: z
+    .array(port)
+    .max(8)
+    .refine((v) => new Set(v).size === v.length)
+    .default([]),
+  urls: z.array(localUrl).max(8).default([]),
+  healthCheck: z
+    .strictObject({
+      kind: z.enum(["tcp", "http"]),
+      host: z.enum(["localhost", "127.0.0.1", "::1"]).nullish(),
+      port: port.nullish(),
+      url: localUrl.nullish(),
+      restartOnFailure: z.boolean(),
+    })
+    .refine(
+      (v) => (v.kind === "tcp" ? Boolean(v.port) : Boolean(v.url)),
+      "Health check target is required.",
+    )
+    .nullish(),
+  restartPolicy: z
+    .strictObject({
+      onCrash: z.boolean().default(false),
+      maxRestarts: z.number().int().min(0).max(20).default(5),
+      windowMs: z.number().int().min(1000).max(3600000).default(60000),
+      backoffMs: z.number().int().min(100).max(60000).default(1000),
+      maxBackoffMs: z.number().int().min(100).max(300000).default(30000),
+    })
+    .refine((v) => v.maxBackoffMs >= v.backoffMs)
+    .default({
+      onCrash: false,
+      maxRestarts: 5,
+      windowMs: 60000,
+      backoffMs: 1000,
+      maxBackoffMs: 30000,
+    }),
+});
+export const runDocumentSchema = z
+  .strictObject({
+    schemaVersion: z.literal(2),
+    configurations: z
+      .array(
+        z.discriminatedUnion("kind", [
+          runTaskSchema,
+          z.strictObject({
+            id,
+            name: z.string().trim().min(1).max(120),
+            kind: z.literal("composite"),
+            primary: z.boolean(),
+            children: z.array(id).min(1).max(16),
+            startOrder: z.enum(["parallel", "sequence"]).default("parallel"),
+          }),
+        ]),
+      )
+      .max(32),
+  })
+  .superRefine((doc, ctx) => {
+    const ids = new Set<string>();
+    const children = new Set<string>();
+    const fail = (message: string): void =>
+      ctx.addIssue({ code: "custom", message });
+    if (
+      doc.configurations.length &&
+      doc.configurations.filter((c) => c.primary).length !== 1
+    )
+      fail("Select exactly one primary configuration.");
+    for (const c of doc.configurations) {
+      if (ids.has(c.id)) fail("Configuration ids must be unique.");
+      ids.add(c.id);
+      if (c.kind === "composite")
+        for (const child of c.children) {
+          if (
+            children.has(child) ||
+            !doc.configurations.some(
+              (entry) => entry.id === child && entry.kind === "task",
+            )
+          )
+            fail("Composite children must be unique tasks and cannot overlap.");
+          children.add(child);
+        }
+    }
+  });
+export type RunDocument = z.infer<typeof runDocumentSchema>;
+export type RunTask = z.infer<typeof runTaskSchema>;
+export const runCommandSchema = z.discriminatedUnion("action", [
+  z.strictObject({
+    action: z.literal("save"),
+    commandId: z.string().uuid(),
+    document: runDocumentSchema,
+    expectedRevision: z.string().max(64),
+  }),
+  z.strictObject({
+    action: z.enum(["start", "stop", "restart"]),
+    commandId: z.string().uuid(),
+    configurationId: id,
+  }),
+]);
+export type RunCommand = z.infer<typeof runCommandSchema>;
+export const runSnapshotSchema = z.strictObject({
+  workspace: z.string().max(12000),
+  revision: z.string().max(64),
+  document: runDocumentSchema,
+  statuses: z
+    .array(
+      z.strictObject({
+        id,
+        state: z.enum([
+          "stopped",
+          "starting",
+          "running",
+          "unhealthy",
+          "restarting",
+          "crashed",
+          "stopping",
+        ]),
+        pid: z.number().int().positive().nullable(),
+        startedAt: z.number().nullable(),
+        exitCode: z.number().nullable(),
+        restartCount: z.number().int().nonnegative(),
+        health: z.string().max(240).nullable(),
+        logs: z
+          .array(
+            z.strictObject({
+              sequence: z.number(),
+              at: z.number(),
+              stream: z.enum(["system", "stdout", "stderr"]),
+              line: z.string().max(2048),
+            }),
+          )
+          .max(120),
+      }),
+    )
+    .max(32),
+  host: z.strictObject({
+    platform: z.string().max(40),
+    uptimeSeconds: z.number(),
+    cpuPercent: z.number().nullable(),
+    totalMemory: z.number(),
+    freeMemory: z.number(),
+    serviceMemory: z.number(),
+  }),
+});
+export type RunSnapshot = z.infer<typeof runSnapshotSchema>;
+export const previewTargetSchema = z.strictObject({
+  workspace: z.string().trim().min(1).max(12000),
+  configurationId: id,
+  port,
+});
+export type PreviewTarget = z.infer<typeof previewTargetSchema>;
+
 export const gatewayProtocolVersion = 4;
 export const maximumGatewayMessageBytes = 4 * 1024 * 1024;
 export const maximumManagedSettingsDeliveryBytes = 18 * 1024 * 1024;
@@ -229,6 +427,7 @@ export const reasoningModeSchema = z.enum([
   "xhigh",
   "max",
   "ultra",
+  "aeon",
 ]);
 
 export const promptEnhancementModeSchema = z.enum([
@@ -537,159 +736,216 @@ const ralphRuntimeCommandShape = {
   maxTransitions: z.number().int().min(1).max(1_000_000).optional(),
 };
 
-export const productCommandSchema = z.discriminatedUnion("kind", [
-  ...taskCommandSchema.options,
+export const projectNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(80)
+  .regex(
+    /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/u,
+    "Use letters, numbers, dots, dashes, or underscores.",
+  )
+  .refine(
+    (name) =>
+      !name.endsWith(".") &&
+      !/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/iu.test(name),
+    "This folder name is reserved.",
+  );
+
+export const workspaceCommandSchema = z.discriminatedUnion("kind", [
   z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("submit-message"),
-    prompt: commandText,
-    promptEnhancementMode: promptEnhancementModeSchema,
-    interviewEnabled: z.boolean(),
+    ...baseCommandShape,
+    kind: z.literal("create-project"),
+    name: projectNameSchema,
+    initializeGit: z.boolean(),
   }),
   z.strictObject({
     ...baseCommandShape,
-    kind: z.literal("create-session"),
-    workspace: workspace.optional(),
-  }),
-  ...simpleSessionCommandSchema.options,
-  z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("rename-session"),
-    title: shortText,
-  }),
-  z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("tag-session"),
-    tags: z.array(z.string().trim().min(1).max(64)).max(24),
-  }),
-  z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("update-draft"),
-    prompt: z.string().max(8_000),
-  }),
-  z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("set-session-model"),
-    provider: shortText,
-    model: shortText,
-  }),
-  z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("set-session-mode"),
-    mode: z.enum(["ask", "machdoch"]),
-  }),
-  z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("set-session-reasoning"),
-    reasoning: reasoningModeSchema,
-  }),
-  z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("set-session-workspace"),
-    workspace,
-  }),
-  z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("clear-session-workspace"),
-  }),
-  z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("set-prompt-enhancement-mode"),
-    promptEnhancementMode: promptEnhancementModeSchema,
-  }),
-  z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("set-interview"),
-    enabled: z.boolean(),
-  }),
-  z.strictObject({
-    ...taskCommandShape,
-    kind: z.literal("cancel-prompt-enhancement"),
-  }),
-  z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("set-session-memory"),
-    enabled: z.boolean(),
-  }),
-  z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("forget-session-memory"),
-    memoryId: identifier,
-  }),
-  z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("set-global-memory"),
-    enabled: z.boolean(),
-  }),
-  z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("set-workspace-memory"),
-    enabled: z.boolean(),
-  }),
-  z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("set-ui-control"),
-    enabled: z.boolean(),
-  }),
-  z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("remove-attachment"),
-    attachmentId: identifier,
-  }),
-  z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("apply-context-pack"),
-    contextPackId: identifier,
+    kind: z.literal("clone-project"),
+    name: projectNameSchema,
+    repository: z.string().trim().min(1).max(2048),
+    branch: z.string().trim().min(1).max(240).optional(),
+    shallow: z.boolean(),
   }),
   z.strictObject({
     ...baseCommandShape,
-    kind: z.literal("delete-context-pack"),
-    contextPackId: identifier,
-  }),
-  z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("save-message-context-pack"),
-    messageId: identifier,
-  }),
-  z.strictObject({
-    ...sessionCommandShape,
-    kind: z.literal("speak-message"),
-    messageId: identifier,
+    kind: z.literal("import-project"),
+    name: projectNameSchema,
   }),
   z.strictObject({
     ...baseCommandShape,
-    kind: z.literal("stop-speaking"),
-  }),
-  ...schedulerJobCommandSchema.options,
-  ...schedulerRunCommandSchema.options,
-  z.strictObject({
-    ...ralphRuntimeCommandShape,
-    kind: z.literal("ralph-run"),
-    flowId: identifier,
-    parameters: ralphParametersSchema,
-  }),
-  z.strictObject({
-    ...ralphRuntimeCommandShape,
-    kind: z.literal("ralph-resume-run"),
-    runId: identifier,
+    kind: z.literal("cancel-project-operation"),
+    projectId: identifier,
   }),
   z.strictObject({
     ...baseCommandShape,
-    kind: z.literal("generate-media"),
-    prompt: commandText,
-    target: productMediaTargetSchema,
-    modelId: identifier,
-    aspectRatio: productMediaAspectRatioSchema,
-    outputCount: z.number().int().min(1).max(8),
-    outputFormat: productMediaOutputFormatSchema,
-    transparentBackground: z.boolean(),
+    kind: z.literal("retry-project-operation"),
+    projectId: identifier,
   }),
   z.strictObject({
     ...baseCommandShape,
-    kind: z.literal("cancel-media-run"),
-    runId: identifier,
+    kind: z.literal("forget-project"),
+    projectId: identifier,
   }),
-]).superRefine((command, context) => {
+]);
+export type WorkspaceCommand = z.infer<typeof workspaceCommandSchema>;
+
+export const productCommandSchema = z
+  .discriminatedUnion("kind", [
+    ...workspaceCommandSchema.options,
+    ...taskCommandSchema.options,
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("submit-message"),
+      prompt: commandText,
+      promptEnhancementMode: promptEnhancementModeSchema,
+      interviewEnabled: z.boolean(),
+    }),
+    z.strictObject({
+      ...baseCommandShape,
+      kind: z.literal("create-session"),
+      workspace: workspace.optional(),
+    }),
+    ...simpleSessionCommandSchema.options,
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("rename-session"),
+      title: shortText,
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("tag-session"),
+      tags: z.array(z.string().trim().min(1).max(64)).max(24),
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("update-draft"),
+      prompt: z.string().max(8_000),
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("set-session-model"),
+      provider: shortText,
+      model: shortText,
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("set-session-mode"),
+      mode: z.enum(["ask", "machdoch"]),
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("set-session-reasoning"),
+      reasoning: reasoningModeSchema,
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("set-session-workspace"),
+      workspace,
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("clear-session-workspace"),
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("set-prompt-enhancement-mode"),
+      promptEnhancementMode: promptEnhancementModeSchema,
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("set-interview"),
+      enabled: z.boolean(),
+    }),
+    z.strictObject({
+      ...taskCommandShape,
+      kind: z.literal("cancel-prompt-enhancement"),
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("set-session-memory"),
+      enabled: z.boolean(),
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("forget-session-memory"),
+      memoryId: identifier,
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("set-global-memory"),
+      enabled: z.boolean(),
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("set-workspace-memory"),
+      enabled: z.boolean(),
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("set-ui-control"),
+      enabled: z.boolean(),
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("remove-attachment"),
+      attachmentId: identifier,
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("apply-context-pack"),
+      contextPackId: identifier,
+    }),
+    z.strictObject({
+      ...baseCommandShape,
+      kind: z.literal("delete-context-pack"),
+      contextPackId: identifier,
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("save-message-context-pack"),
+      messageId: identifier,
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("speak-message"),
+      messageId: identifier,
+    }),
+    z.strictObject({
+      ...baseCommandShape,
+      kind: z.literal("stop-speaking"),
+    }),
+    ...schedulerJobCommandSchema.options,
+    ...schedulerRunCommandSchema.options,
+    z.strictObject({
+      ...ralphRuntimeCommandShape,
+      kind: z.literal("ralph-run"),
+      flowId: identifier,
+      parameters: ralphParametersSchema,
+    }),
+    z.strictObject({
+      ...ralphRuntimeCommandShape,
+      kind: z.literal("ralph-resume-run"),
+      runId: identifier,
+    }),
+    z.strictObject({
+      ...baseCommandShape,
+      kind: z.literal("generate-media"),
+      prompt: commandText,
+      target: productMediaTargetSchema,
+      modelId: identifier,
+      aspectRatio: productMediaAspectRatioSchema,
+      outputCount: z.number().int().min(1).max(8),
+      outputFormat: productMediaOutputFormatSchema,
+      transparentBackground: z.boolean(),
+    }),
+    z.strictObject({
+      ...baseCommandShape,
+      kind: z.literal("cancel-media-run"),
+      runId: identifier,
+    }),
+  ])
+  .superRefine((command, context) => {
     if (
       command.kind === "generate-media" &&
       !(
@@ -704,7 +960,7 @@ export const productCommandSchema = z.discriminatedUnion("kind", [
         message: "Output format must be compatible with the media target.",
       });
     }
-});
+  });
 
 export type ProductCommand = z.infer<typeof productCommandSchema>;
 export type ProductCommandKind = ProductCommand["kind"];
@@ -863,7 +1119,7 @@ const productModelProviderSchema = z.strictObject({
       z.strictObject({
         id: z.string().max(240),
         label: text,
-        reasoningOptions: z.array(reasoningModeSchema).min(1).max(9),
+        reasoningOptions: z.array(reasoningModeSchema).min(1).max(10),
       }),
     )
     .max(256),
@@ -1017,7 +1273,37 @@ export const productMediaSchema = z.strictObject({
 
 export type ProductMedia = z.infer<typeof productMediaSchema>;
 
+export const projectSchema = z.strictObject({
+  id: z.string().uuid(),
+  name: projectNameSchema,
+  kind: z.enum(["empty", "git", "imported"]),
+  status: z.enum(["creating", "cloning", "ready", "failed", "cancelled"]),
+  repository: z.string().max(2048).optional(),
+  branch: z.string().max(240).optional(),
+  shallow: z.boolean().optional(),
+  initializeGit: z.boolean().optional(),
+  error: z.string().max(1000).optional(),
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+export type FleetProject = z.infer<typeof projectSchema>;
+
+export const projectLibrarySchema = z.strictObject({
+  root: workspace,
+  projects: z
+    .array(
+      projectSchema.extend({
+        workspace,
+        progress: z.string().max(500).optional(),
+      }),
+    )
+    .max(100),
+  maximumProjects: z.number().int().positive(),
+  maximumConcurrentOperations: z.number().int().positive(),
+});
+
 export const productShellSchema = z.strictObject({
+  projectLibrary: projectLibrarySchema.optional(),
   version: z.literal(productSnapshotVersion),
   capturedAt: timestamp,
   activeSessionId: identifier.optional(),
@@ -1030,7 +1316,7 @@ export const productShellSchema = z.strictObject({
         sessionCount: z.number().int().nonnegative(),
       }),
     )
-    .max(40),
+    .max(128),
   visibleMessages: z.array(productMessageSchema).max(80),
   composer: z
     .strictObject({
@@ -1046,7 +1332,7 @@ export const productShellSchema = z.strictObject({
       defaultMode: z.enum(["ask", "machdoch"]),
       reasoning: reasoningModeSchema,
       defaultReasoning: reasoningModeSchema,
-      reasoningOptions: z.array(reasoningModeSchema).min(1).max(9),
+      reasoningOptions: z.array(reasoningModeSchema).min(1).max(10),
       promptEnhancementMode: promptEnhancementModeSchema,
       interviewEnabled: z.boolean(),
       interviewAvailable: z.boolean(),
@@ -1237,6 +1523,22 @@ export const commandReceiptSchema = z.strictObject({
 export type CommandReceipt = z.infer<typeof commandReceiptSchema>;
 
 export const hostRequestSchema = z.discriminatedUnion("type", [
+  z.strictObject({
+    type: z.literal("getWorkspaceRuns"),
+    workspace,
+    includeLogs: z.boolean().optional(),
+  }),
+  z.strictObject({
+    type: z.literal("executeWorkspaceRun"),
+    workspace,
+    command: runCommandSchema,
+  }),
+  z.strictObject({
+    type: z.literal("openPreviewTunnel"),
+    target: previewTargetSchema,
+    tunnelId: z.string().uuid(),
+    token: z.string().regex(/^[a-f0-9]{64}$/),
+  }),
   z.strictObject({ type: z.literal("getProductSnapshot") }),
   z.strictObject({
     type: z.literal("executeProductCommand"),
@@ -1247,6 +1549,11 @@ export const hostRequestSchema = z.discriminatedUnion("type", [
 export type HostRequest = z.infer<typeof hostRequestSchema>;
 
 export const hostResponseSchema = z.discriminatedUnion("type", [
+  z.strictObject({
+    type: z.literal("workspaceRuns"),
+    snapshot: runSnapshotSchema,
+  }),
+  z.strictObject({ type: z.literal("previewTunnelReady") }),
   z.strictObject({
     type: z.literal("productSnapshot"),
     snapshot: productSnapshotSchema,

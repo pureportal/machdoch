@@ -29,11 +29,11 @@ import {
   type FilePreviewSyntax,
   type FilePreviewVisualKind,
 } from "../_helpers/file-preview-language";
-import { highlightFilePreviewContent } from "../_helpers/file-preview-highlight";
 import {
-  addSearchMatchesToHighlightedHtml,
-  findFilePreviewMatches,
-} from "../_helpers/file-preview-search";
+  useFilePreviewHighlight,
+  useFilePreviewSearch,
+} from "../_helpers/use-file-preview-processing";
+import { addSearchMatchesToHighlightedHtml } from "../_helpers/file-preview-search";
 import {
   getFilePreviewTargetLineIndex,
   scrollFilePreviewTargetLineIntoView,
@@ -312,17 +312,14 @@ export const FilePreviewTextContent = ({
     preview.targetLine,
     lines.length,
   );
-  const highlightedContent = useMemo(
-    () =>
-      preview.content === null
-        ? null
-        : highlightFilePreviewContent(preview.content, selectedLanguage),
-    [preview.content, selectedLanguage],
+  const highlightedContent = useFilePreviewHighlight(
+    preview.content,
+    selectedLanguage,
   );
-  const searchResult = useMemo(
-    () =>
-      findFilePreviewMatches(preview.content ?? "", searchQuery, isRegexSearch),
-    [isRegexSearch, preview.content, searchQuery],
+  const { result: searchResult, pending: searchPending } = useFilePreviewSearch(
+    preview.content ?? "",
+    searchQuery,
+    isRegexSearch,
   );
   const safeActiveMatchIndex =
     searchResult.matches.length === 0
@@ -334,15 +331,27 @@ export const FilePreviewTextContent = ({
         highlightedContent,
         preview.content ?? "",
         searchResult.matches,
-        safeActiveMatchIndex,
+        -1,
       ),
-    [
-      highlightedContent,
-      preview.content,
-      safeActiveMatchIndex,
-      searchResult.matches,
-    ],
+    [highlightedContent, preview.content, searchResult.matches],
   );
+
+  useEffect(() => {
+    const code = codeRef.current;
+    if (!code) return;
+    for (const mark of code.querySelectorAll<HTMLElement>(
+      '[data-file-preview-match="active"]',
+    )) {
+      mark.dataset.filePreviewMatch = "match";
+      mark.classList.remove("app-file-preview-match-active");
+    }
+    for (const mark of code.querySelectorAll<HTMLElement>(
+      `[data-match-index="${safeActiveMatchIndex}"]`,
+    )) {
+      mark.dataset.filePreviewMatch = "active";
+      mark.classList.add("app-file-preview-match-active");
+    }
+  }, [renderedContent, safeActiveMatchIndex]);
 
   useEffect(() => {
     setViewMode("text");
@@ -654,11 +663,13 @@ export const FilePreviewTextContent = ({
   };
 
   const searchStatus = searchQuery
-    ? searchResult.error
-      ? "Invalid regex"
-      : searchResult.matches.length === 0
-        ? "No matches"
-        : `${safeActiveMatchIndex + 1} of ${searchResult.matches.length}`
+    ? searchPending
+      ? "Searching…"
+      : searchResult.error
+        ? "Search unavailable"
+        : searchResult.matches.length === 0
+          ? "No matches"
+          : `${safeActiveMatchIndex + 1} of ${searchResult.matches.length}${searchResult.limited ? "+" : ""}`
     : "";
   const regexSearchButtonLabel = isRegexSearch
     ? "Use plain text search"

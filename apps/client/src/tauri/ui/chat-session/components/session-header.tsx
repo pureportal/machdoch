@@ -87,8 +87,8 @@ export const SessionHeader = ({
   };
 
   return (
-    <header className="app-session-header flex h-16 items-center justify-between gap-4 border-b border-slate-900 bg-slate-950/60 px-8 backdrop-blur-md">
-      <div className="min-w-0 flex-1">
+    <header className="app-session-header flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2 border-b border-slate-900 bg-slate-950/60 px-8 backdrop-blur-md">
+      <div className="min-w-0 basis-40 flex-1">
         {isRenamingSession ? (
           <SubmitShortcut asChild onSubmitShortcut={onRenameCommit}>
             <Input
@@ -97,11 +97,7 @@ export const SessionHeader = ({
               onChange={(event) => onRenameValueChange(event.target.value)}
               onBlur={onRenameCommit}
               onKeyDown={(event) => {
-                if (
-                  event.key === "Enter" &&
-                  !event.ctrlKey &&
-                  !event.metaKey
-                ) {
+                if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
                   event.preventDefault();
                   onRenameCommit();
                 }
@@ -121,7 +117,7 @@ export const SessionHeader = ({
         )}
       </div>
 
-      <div className="app-session-header-controls flex shrink-0 items-center gap-2">
+      <div className="app-session-header-controls flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
         <WorkspaceRunDialogControl
           workspaceRoot={activeSession.workspace}
           primaryTaskRunning={primaryTaskRunning}
@@ -135,11 +131,7 @@ export const SessionHeader = ({
               onChange={(event) => setTagDraft(event.target.value)}
               onBlur={commitTags}
               onKeyDown={(event) => {
-                if (
-                  event.key === "Enter" &&
-                  !event.ctrlKey &&
-                  !event.metaKey
-                ) {
+                if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
                   event.preventDefault();
                   commitTags();
                 }

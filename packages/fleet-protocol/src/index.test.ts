@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  projectNameSchema,
   fleetManagedSettingsDeliverySchema,
   hostMessageSchema,
   maximumGatewayMessageBytes,
@@ -10,6 +11,48 @@ import {
   productCommandSchema,
   serializedGatewayMessageBytes,
 } from "./index.ts";
+
+void test("project commands constrain folder names and reject arbitrary paths or extra fields", () => {
+  for (const name of [
+    "../escape",
+    "C:\\projects",
+    "/etc",
+    ".hidden",
+    "CON",
+    "nul.txt",
+    "com1",
+    "name.",
+    "with space",
+    "a/b",
+  ])
+    assert.equal(projectNameSchema.safeParse(name).success, false, name);
+  for (const name of ["my-project", "repo_2", "App.UI"])
+    assert.equal(projectNameSchema.safeParse(name).success, true, name);
+  const command = {
+    kind: "clone-project",
+    name: "repo",
+    repository: "https://example.com/repo.git",
+    shallow: false,
+  };
+  assert.equal(productCommandSchema.safeParse(command).success, true);
+  assert.equal(
+    productCommandSchema.safeParse({ ...command, workspace: "/arbitrary" })
+      .success,
+    false,
+  );
+  assert.equal(
+    productCommandSchema.safeParse({ kind: "create-project", name: "repo" })
+      .success,
+    false,
+  );
+  assert.equal(
+    productCommandSchema.safeParse({
+      kind: "cancel-project-operation",
+      projectId: "project-1",
+    }).success,
+    true,
+  );
+});
 
 const managedSettingsDelivery = () => ({
   schemaVersion: 2,
@@ -405,7 +448,8 @@ void test("rejects product command fields from other variants", () => {
 
   assert.equal(productCommandSchema.safeParse(cancel).success, true);
   assert.equal(
-    productCommandSchema.safeParse({ ...cancel, sessionId: "session-1" }).success,
+    productCommandSchema.safeParse({ ...cancel, sessionId: "session-1" })
+      .success,
     false,
   );
   assert.equal(
@@ -434,8 +478,11 @@ void test("requires GenerateMedia output formats compatible with the target", ()
   }
 
   assert.equal(
-    productCommandSchema.safeParse({ ...command, target: "svg", outputFormat: "svg" })
-      .success,
+    productCommandSchema.safeParse({
+      ...command,
+      target: "svg",
+      outputFormat: "svg",
+    }).success,
     true,
   );
 
@@ -446,7 +493,8 @@ void test("requires GenerateMedia output formats compatible with the target", ()
     ["svg", "webp"],
   ]) {
     assert.equal(
-      productCommandSchema.safeParse({ ...command, target, outputFormat }).success,
+      productCommandSchema.safeParse({ ...command, target, outputFormat })
+        .success,
       false,
     );
   }

@@ -13,6 +13,8 @@ import type { FleetCliOptions, ParsedCliArgs } from "./cli-args.js";
 import { runFleetGatewayService } from "./cli-fleet-gateway.js";
 import { FleetCliProductRuntime } from "./cli-fleet-product.js";
 import { writeStdoutLine } from "./cli-io.js";
+import { CliConfigurationError } from "./cli-error.js";
+import { manageFleetService } from "../../core/fleet-service.js";
 
 const fail = (message: string): never => {
   throw new Error(message);
@@ -64,45 +66,76 @@ const resolveServiceWorkspace = async (
 };
 
 const runService = async (args: ParsedCliArgs): Promise<void> => {
-  const config =
-    (await loadFleetConnectionConfig()) ??
-    fail(
-      "Enroll this CLI with a Fleet Manager before starting the Fleet service.",
-    );
-  if (!config.enabled) {
-    fail(
-      "Fleet is disabled. Set fleet.enabled to on before starting the service.",
+  let workspaceRoot: string;
+  try {
+    const config = await loadFleetConnectionConfig();
+    if (!config)
+      throw new Error(
+        "Enroll this CLI with a Fleet Manager before starting the Fleet service.",
+      );
+    if (!config.enabled)
+      throw new Error(
+        "Fleet is disabled. Enable it before starting the service.",
+      );
+    workspaceRoot = await resolveServiceWorkspace(args.workspaceRoot);
+  } catch (error) {
+    throw new CliConfigurationError(
+      error instanceof Error
+        ? error.message
+        : "Fleet service configuration is invalid.",
     );
   }
-  const workspaceRoot = await resolveServiceWorkspace(args.workspaceRoot);
 
   const controller = new AbortController();
-  const stop = (): void => controller.abort("Fleet service stopped.");
+  let shutdownDeadline: NodeJS.Timeout | undefined;
+  const stop = (): void => {
+    if (controller.signal.aborted) return;
+    controller.abort("Fleet service stopped.");
+    // systemd additionally kills the entire control group after TimeoutStopSec.
+    shutdownDeadline = setTimeout(() => {
+      process.stderr.write("Fleet service shutdown timed out.\n");
+      process.exit(1);
+    }, 30_000);
+    shutdownDeadline.unref();
+  };
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
-  let runtime: FleetCliProductRuntime | undefined;
   try {
     await withCooperativeFileLock(
       `${getFleetConnectionPath()}.cli-service`,
       async () => {
-        const fleetRuntime = await FleetCliProductRuntime.create(workspaceRoot);
-        runtime = fleetRuntime;
-        const result = await runFleetGatewayService({
-          signal: controller.signal,
-          productVersion: resolveProductVersion(),
-          handleRequest: (request) => fleetRuntime.handleRequest(request),
-          onStatus: (event) => {
-            if (args.json) {
+        if (controller.signal.aborted) return;
+        let fleetRuntime: FleetCliProductRuntime;
+        try {
+          fleetRuntime = await FleetCliProductRuntime.create(workspaceRoot);
+        } catch (error) {
+          throw new CliConfigurationError(
+            `Fleet service could not initialize: ${error instanceof Error ? error.message : "Check the host configuration and project library."}`,
+          );
+        }
+        let result: Awaited<ReturnType<typeof runFleetGatewayService>>;
+        try {
+          result = await runFleetGatewayService({
+            signal: controller.signal,
+            productVersion: resolveProductVersion(),
+            handleRequest: (request) => fleetRuntime.handleRequest(request),
+            onStatus: (event) => {
+              if (args.json) {
+                writeStdoutLine(
+                  JSON.stringify({ type: "fleetStatus", ...event }),
+                );
+                return;
+              }
               writeStdoutLine(
-                JSON.stringify({ type: "fleetStatus", ...event }),
+                `fleet service: ${event.phase}${event.message ? ` - ${event.message}` : ""}`,
               );
-              return;
-            }
-            writeStdoutLine(
-              `fleet service: ${event.phase}${event.message ? ` - ${event.message}` : ""}`,
-            );
-          },
-        });
+            },
+          });
+        } finally {
+          stop();
+          // Retain the ownership lock until task cancellation and persistence finish.
+          await fleetRuntime.shutdown("Fleet CLI service stopped.");
+        }
         if (args.json) {
           writeStdoutLine(
             JSON.stringify({ type: "fleetServiceStopped", ...result }),
@@ -111,14 +144,14 @@ const runService = async (args: ParsedCliArgs): Promise<void> => {
       },
       {
         timeoutMs: 100,
-        staleLockAgeMs: 0,
+        recoverDeadOwnerImmediately: true,
         ownerDescription: "Fleet CLI service",
       },
     );
   } finally {
     process.removeListener("SIGINT", stop);
     process.removeListener("SIGTERM", stop);
-    await runtime?.shutdown("Fleet CLI service stopped.");
+    if (shutdownDeadline) clearTimeout(shutdownDeadline);
   }
 };
 
@@ -157,7 +190,17 @@ export const printFleetSummary = async (args: ParsedCliArgs): Promise<void> => {
       await printStatus(args.json);
       return;
     case "service":
-      await runService(args);
+      if (!options.serviceAction || options.serviceAction === "run") {
+        await runService(args);
+      } else {
+        const result = await manageFleetService(
+          options.serviceAction,
+          args.workspaceRoot,
+        );
+        if (options.serviceAction === "unit" && !args.json)
+          writeStdoutLine(String(result.unit).trimEnd());
+        else printJson(result);
+      }
       return;
   }
 };

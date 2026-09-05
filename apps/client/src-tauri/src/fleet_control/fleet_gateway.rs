@@ -1,4 +1,4 @@
-﻿use machdoch_fleet_protocol::{HostErrorCode, HostRequest, HostResponse};
+use machdoch_fleet_protocol::{HostErrorCode, HostRequest, HostResponse};
 use tauri::Manager;
 
 use super::{
@@ -16,6 +16,12 @@ pub(crate) fn handle_fleet_request(
         HostRequest::ExecuteProductCommand { command } => {
             execute_product_command(app_handle, command)
         }
+        HostRequest::GetWorkspaceRuns { .. }
+        | HostRequest::ExecuteWorkspaceRun { .. }
+        | HostRequest::OpenPreviewTunnel { .. } => HostResponse::Error {
+            code: HostErrorCode::Unavailable,
+            message: "Remote services and previews require the headless Fleet service.".to_string(),
+        },
     }
 }
 
@@ -73,6 +79,12 @@ mod tests {
             .expect("snapshot request should serialize");
         let command = serde_json::to_value(HostRequest::ExecuteProductCommand {
             command: ProductCommand {
+                name: None,
+                repository: None,
+                branch: None,
+                shallow: None,
+                initialize_git: None,
+                project_id: None,
                 kind: ProductCommandKind::CreateSession,
                 command_id: Some("command-1".to_string()),
                 task_id: None,

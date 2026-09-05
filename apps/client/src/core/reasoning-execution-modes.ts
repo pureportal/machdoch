@@ -6,20 +6,22 @@ const STANDARD_REASONING_EXECUTION_MODES = [
   "standard",
 ] as const satisfies readonly ReasoningExecutionMode[];
 
-const GPT_56_REASONING_EXECUTION_MODES = [
+const OPENAI_PRO_REASONING_EXECUTION_MODES = [
   "standard",
   "pro",
 ] as const satisfies readonly ReasoningExecutionMode[];
 
-const isGpt56Model = (model: string): boolean =>
-  /^gpt-5\.6(?:-(?:sol|terra|luna))?(?:-\d{4}-\d{2}-\d{2})?$/u.test(model);
+const supportsOpenAiProReasoning = (model: string): boolean =>
+  /^(?:gpt-6-astra|gpt-5\.6(?:-(?:sol|terra|luna))?)(?:-\d{4}-\d{2}-\d{2})?$/u.test(
+    model,
+  );
 
 export const getReasoningExecutionModesForProviderModel = (
   provider: ConfiguredModelProvider | null | undefined,
   model?: string | null,
 ): readonly ReasoningExecutionMode[] =>
-  provider === "openai" && isGpt56Model(normalizeModelId(model))
-    ? GPT_56_REASONING_EXECUTION_MODES
+  provider === "openai" && supportsOpenAiProReasoning(normalizeModelId(model))
+    ? OPENAI_PRO_REASONING_EXECUTION_MODES
     : STANDARD_REASONING_EXECUTION_MODES;
 
 export const assertReasoningExecutionModeSupportedForProviderModel = (

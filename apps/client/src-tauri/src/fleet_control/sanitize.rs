@@ -315,7 +315,16 @@ fn sanitize_reasoning_options(options: Vec<String>) -> Vec<String> {
         let mode = sanitize_text(mode, MAX_FLEET_SHORT_TEXT_CHARS);
         if matches!(
             mode.as_str(),
-            "default" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra"
+            "default"
+                | "none"
+                | "minimal"
+                | "low"
+                | "medium"
+                | "high"
+                | "xhigh"
+                | "max"
+                | "ultra"
+                | "aeon"
         ) && !sanitized.contains(&mode)
         {
             sanitized.push(mode);

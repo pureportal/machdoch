@@ -1210,9 +1210,28 @@ export const parseCliArgs = (
         ).join(", ")}.`,
       );
     }
-    if (extraPositionals.length > 0) {
+    const serviceAction =
+      actionText === "service" ? (extraPositionals[0] ?? "run") : undefined;
+    if (
+      serviceAction &&
+      ![
+        "run",
+        "install",
+        "uninstall",
+        "start",
+        "stop",
+        "restart",
+        "status",
+        "unit",
+      ].includes(serviceAction)
+    ) {
       fail(
-        `Command \`fleet ${actionText}\` does not accept positional arguments: ${extraPositionals.join(" ")}`,
+        "Expected `fleet service` action to be run, install, uninstall, start, stop, restart, status, or unit.",
+      );
+    }
+    if (extraPositionals.length > (actionText === "service" ? 1 : 0)) {
+      fail(
+        `Command \`fleet ${actionText}\` has unexpected positional arguments: ${extraPositionals.join(" ")}`,
       );
     }
     if (
@@ -1260,6 +1279,13 @@ export const parseCliArgs = (
 
     const fleet: FleetCliOptions = {
       action,
+      ...(serviceAction
+        ? {
+            serviceAction: serviceAction as NonNullable<
+              FleetCliOptions["serviceAction"]
+            >,
+          }
+        : {}),
       ...(rawFleetManagerUrl ? { managerUrl: rawFleetManagerUrl } : {}),
       ...(rawFleetEnrollmentKey
         ? { enrollmentKey: rawFleetEnrollmentKey }

@@ -23,6 +23,7 @@ export const reasoningLevels = [
   "xhigh",
   "max",
   "ultra",
+  "aeon",
 ] as const;
 export const webSearchProviders = [
   "none",

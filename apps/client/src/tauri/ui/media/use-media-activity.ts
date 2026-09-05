@@ -5,6 +5,7 @@ import { toAppActivityState } from "../app-shell/operation-activity";
 import type { MainAppId } from "../lib/shell-store";
 import type { MediaRuntimeRunRecord } from "../../../core/media/contracts.js";
 import { isMediaRunActive } from "./media-run-activity";
+import { startActivityPolling } from "../app-shell/activity-polling";
 
 const POLL_INTERVAL_MS = 2_000;
 
@@ -26,59 +27,55 @@ export const useMediaActivity = (activeApp: MainAppId): AppActivityState => {
   const [completedSinceView, setCompletedSinceView] = useState(false);
   const previousActiveRunIdsRef = useRef<Set<string>>(new Set());
   const firstPollRef = useRef(true);
+  const activeAppRef = useRef(activeApp);
+  activeAppRef.current = activeApp;
+  const pollingRef = useRef<ReturnType<typeof startActivityPolling> | null>(
+    null,
+  );
+  const previousAppRef = useRef(activeApp);
 
   useEffect(() => {
     if (activeApp === "media") {
       setCompletedSinceView(false);
+      if (previousAppRef.current !== "media") pollingRef.current?.refresh();
     }
+    previousAppRef.current = activeApp;
   }, [activeApp]);
 
   useEffect(() => {
-    let cancelled = false;
-    let inFlight = false;
+    const poll = async (signal: AbortSignal): Promise<boolean> => {
+      const runs = await loadRunsForActivity();
+      if (signal.aborted) return false;
 
-    const poll = async (): Promise<void> => {
-      if (cancelled || inFlight) {
-        return;
+      const nextActiveRunIds = new Set(
+        runs.filter(isMediaRunActive).map((run) => run.id),
+      );
+      const hasNewTerminalRun = [...previousActiveRunIdsRef.current].some(
+        (runId) => !nextActiveRunIds.has(runId),
+      );
+      if (
+        !firstPollRef.current &&
+        hasNewTerminalRun &&
+        activeAppRef.current !== "media"
+      ) {
+        setCompletedSinceView(true);
       }
-      inFlight = true;
-      try {
-        const runs = await loadRunsForActivity();
-        if (cancelled) {
-          return;
-        }
 
-        const nextActiveRunIds = new Set(
-          runs.filter(isMediaRunActive).map((run) => run.id),
-        );
-        const hasNewTerminalRun = [...previousActiveRunIdsRef.current].some(
-          (runId) => !nextActiveRunIds.has(runId),
-        );
-        if (
-          !firstPollRef.current &&
-          hasNewTerminalRun &&
-          activeApp !== "media"
-        ) {
-          setCompletedSinceView(true);
-        }
-
-        firstPollRef.current = false;
-        previousActiveRunIdsRef.current = nextActiveRunIds;
-        setRunning(nextActiveRunIds.size > 0);
-      } catch {
-        // The Media Studio surface owns detailed runtime error reporting.
-      } finally {
-        inFlight = false;
-      }
+      firstPollRef.current = false;
+      previousActiveRunIdsRef.current = nextActiveRunIds;
+      setRunning(nextActiveRunIds.size > 0);
+      return nextActiveRunIds.size > 0;
     };
 
-    void poll();
-    const interval = window.setInterval(() => void poll(), POLL_INTERVAL_MS);
+    const polling = startActivityPolling(poll, (active) =>
+      active || activeAppRef.current === "media" ? POLL_INTERVAL_MS : 30_000,
+    );
+    pollingRef.current = polling;
     return () => {
-      cancelled = true;
-      window.clearInterval(interval);
+      polling.stop();
+      pollingRef.current = null;
     };
-  }, [activeApp]);
+  }, []);
 
   return toAppActivityState(running, completedSinceView);
 };

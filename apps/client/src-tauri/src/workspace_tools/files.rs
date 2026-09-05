@@ -1,5 +1,4 @@
 use std::{
-    cmp::Ordering,
     fs::{self, File, OpenOptions},
     io::Read,
     path::{Component, Path, PathBuf},
@@ -216,13 +215,37 @@ fn metadata_modified_at(metadata: &fs::Metadata) -> Option<u64> {
     metadata.modified().ok().and_then(system_time_millis)
 }
 
-fn entry_sort(left: &WorkspaceDirectoryEntry, right: &WorkspaceDirectoryEntry) -> Ordering {
-    let left_directory = left.kind == "directory";
-    let right_directory = right.kind == "directory";
-    right_directory
-        .cmp(&left_directory)
-        .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
-        .then_with(|| left.name.cmp(&right.name))
+struct DirectoryEntryCandidate {
+    name: String,
+    sort_name: String,
+    path: PathBuf,
+    file_type: fs::FileType,
+}
+
+impl DirectoryEntryCandidate {
+    fn into_entry(self, root: &Path) -> Result<WorkspaceDirectoryEntry, String> {
+        let metadata = fs::symlink_metadata(&self.path).ok();
+        let (kind, target_kind) = if self.file_type.is_symlink() {
+            ("symlink", classify_symlink_target(root, &self.path))
+        } else if self.file_type.is_dir() {
+            ("directory", None)
+        } else if self.file_type.is_file() {
+            ("file", None)
+        } else {
+            ("other", None)
+        };
+        Ok(WorkspaceDirectoryEntry {
+            name: self.name,
+            path: relative_path_for_ui(root, &self.path)?,
+            size: metadata
+                .as_ref()
+                .filter(|metadata| metadata.is_file())
+                .map(fs::Metadata::len),
+            modified_at: metadata.as_ref().and_then(metadata_modified_at),
+            kind: kind.to_string(),
+            target_kind,
+        })
+    }
 }
 
 fn classify_symlink_target(root: &Path, path: &Path) -> Option<String> {
@@ -293,34 +316,31 @@ fn list_directory_sync(
                 continue;
             }
         };
-        let metadata = fs::symlink_metadata(&path).ok();
-        let (kind, target_kind) = if file_type.is_symlink() {
-            ("symlink".to_string(), classify_symlink_target(&root, &path))
-        } else if file_type.is_dir() {
-            ("directory".to_string(), None)
-        } else if file_type.is_file() {
-            ("file".to_string(), None)
-        } else {
-            ("other".to_string(), None)
-        };
-
-        entries.push(WorkspaceDirectoryEntry {
+        entries.push(DirectoryEntryCandidate {
+            sort_name: name.to_lowercase(),
             name,
-            path: relative_path_for_ui(&root, &path)?,
-            size: metadata
-                .as_ref()
-                .filter(|metadata| metadata.is_file())
-                .map(fs::Metadata::len),
-            modified_at: metadata.as_ref().and_then(metadata_modified_at),
-            kind,
-            target_kind,
+            path,
+            file_type,
         });
     }
 
-    entries.sort_by(entry_sort);
+    entries.sort_unstable_by(|left, right| {
+        right
+            .file_type
+            .is_dir()
+            .cmp(&left.file_type.is_dir())
+            .then_with(|| left.sort_name.cmp(&right.sort_name))
+            .then_with(|| left.name.cmp(&right.name))
+    });
     let total_entries = entries.len() + omitted_entries;
     let (page_start, page_end, next_offset) = directory_page_window(entries.len(), offset);
-    let page_entries = entries[page_start..page_end].to_vec();
+    // Only the visible page needs metadata and symlink target resolution.
+    let page_entries = entries
+        .into_iter()
+        .skip(page_start)
+        .take(page_end - page_start)
+        .map(|entry| entry.into_entry(&root))
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(WorkspaceDirectoryPage {
         path: relative_path_for_ui(&root, &directory)?,
@@ -455,7 +475,11 @@ fn read_file_sync(
         });
     }
 
-    let (bytes, oversized) = read_bounded(&path, MAX_EDITABLE_FILE_BYTES)?;
+    let (bytes, oversized) = if metadata.len() > MAX_EDITABLE_FILE_BYTES {
+        (Vec::new(), true)
+    } else {
+        read_bounded(&path, MAX_EDITABLE_FILE_BYTES)?
+    };
     if oversized {
         return Ok(WorkspaceFileDocument {
             path: relative_path_for_ui(&root, &path)?,
@@ -872,6 +896,9 @@ mod tests {
         .expect("second page should list");
         assert_eq!(first.entries.len(), DIRECTORY_PAGE_SIZE);
         assert_eq!(second.entries.len(), 1);
+        assert_eq!(second.entries[0].name, "file-0400.txt");
+        assert_eq!(second.entries[0].size, Some(3));
+        assert!(second.entries[0].modified_at.is_some());
         assert_eq!(first.total_entries, DIRECTORY_PAGE_SIZE + 1);
         assert!(first
             .entries

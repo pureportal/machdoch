@@ -12,6 +12,7 @@ export class SnapshotRefreshCoordinator<Snapshot> {
   private latestSignal: AbortSignal | undefined;
   private completion: Promise<void> = Promise.resolve();
   private resolveCompletion: (() => void) | null = null;
+  private activeController: AbortController | null = null;
 
   constructor(
     private readonly options: SnapshotRefreshCoordinatorOptions<Snapshot>,
@@ -27,9 +28,16 @@ export class SnapshotRefreshCoordinator<Snapshot> {
     return this.completion;
   }
 
+  // Background polling must not invalidate a slow response on every timer tick.
+  poll(signal?: AbortSignal): Promise<void> {
+    if (this.disposed || signal?.aborted) return Promise.resolve();
+    return this.inFlight ? this.completion : this.request(signal);
+  }
+
   dispose(): void {
     this.disposed = true;
     this.refreshQueued = false;
+    this.activeController?.abort();
     this.complete();
   }
 
@@ -47,9 +55,14 @@ export class SnapshotRefreshCoordinator<Snapshot> {
       this.refreshQueued = false;
       const requestId = this.latestRequestId;
       const signal = this.latestSignal;
+      const controller = new AbortController();
+      this.activeController = controller;
+      const abort = (): void => controller.abort();
+      signal?.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted) controller.abort();
 
       try {
-        const snapshot = await this.options.fetchSnapshot(signal);
+        const snapshot = await this.options.fetchSnapshot(controller.signal);
         if (this.isCurrentRequest(requestId, signal)) {
           this.options.onSnapshot(snapshot);
         }
@@ -57,6 +70,9 @@ export class SnapshotRefreshCoordinator<Snapshot> {
         if (this.isCurrentRequest(requestId, signal)) {
           this.options.onError(reason);
         }
+      } finally {
+        signal?.removeEventListener("abort", abort);
+        if (this.activeController === controller) this.activeController = null;
       }
 
       if (requestId === this.latestRequestId) {

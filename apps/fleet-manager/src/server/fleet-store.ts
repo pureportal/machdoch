@@ -26,6 +26,12 @@ export interface EnrollmentInput {
   protocolVersion: number;
 }
 
+export interface EnrollmentGrant {
+  grantId: string;
+  createdAt: number;
+  expiresAt: number;
+}
+
 export class FleetStoreError extends Error {
   constructor(readonly code: "enrollment-limit" | "invalid-enrollment-grant") {
     super(code);
@@ -39,7 +45,7 @@ export class FleetStore {
     enrollmentKey: string,
     now: number,
     policy: FleetManagerConfig["enrollmentPolicy"],
-  ): number {
+  ): EnrollmentGrant {
     return this.database.transaction(() => {
       this.database.run(
         "UPDATE enrollment_grants SET used_at = ? WHERE used_at IS NULL AND expires_at <= ?",
@@ -67,7 +73,37 @@ export class FleetStore {
         expiresAt,
       );
       this.database.audit(now, "enrollment_key.created", grantId, "success");
-      return expiresAt;
+      return { grantId, createdAt: now, expiresAt };
+    });
+  }
+
+  listEnrollmentGrants(now: number): EnrollmentGrant[] {
+    // Return metadata only. Enrollment secrets are never recoverable from this inventory.
+    return this.database
+      .all(
+        `SELECT id, created_at, expires_at FROM enrollment_grants
+       WHERE used_at IS NULL AND expires_at > ? ORDER BY created_at DESC, id`,
+        now,
+      )
+      .map((row) => ({
+        grantId: requiredString(row, "id"),
+        createdAt: requiredNumber(row, "created_at"),
+        expiresAt: requiredNumber(row, "expires_at"),
+      }));
+  }
+
+  revokeEnrollmentGrant(grantId: string, now: number): boolean {
+    return this.database.transaction(() => {
+      // Consuming a grant invalidates it atomically against enrollment and releases its slot.
+      const updated = this.database.run(
+        "UPDATE enrollment_grants SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > ?",
+        now,
+        grantId,
+        now,
+      );
+      if (updated === 1)
+        this.database.audit(now, "enrollment_key.revoked", grantId, "success");
+      return updated === 1;
     });
   }
 

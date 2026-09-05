@@ -3,12 +3,14 @@ import {
   hostMessageSchema,
   maximumGatewayMessageBytes,
   productCapability,
+  workspaceRunsCapability,
   type HostMessage,
   type HostRequest,
   type HostResponse,
   managerMessageSchema,
 } from "@machdoch/fleet-protocol";
 import WebSocket, { type RawData } from "ws";
+import { CliConfigurationError } from "./cli-error.js";
 import {
   loadFleetConnectionConfig,
   validateFleetManagerUrl,
@@ -47,6 +49,9 @@ export interface FleetGatewayServiceOptions {
 }
 
 const permanentCloseCodes = new Set([1002, 1003, 1007, 1008, 1009, 1010]);
+const maximumPendingRequests = 8;
+const maximumBufferedBytes = 8 * 1024 * 1024;
+class OversizedGatewayMessageError extends Error {}
 
 const wait = async (durationMs: number, signal: AbortSignal): Promise<void> => {
   if (signal.aborted) return;
@@ -94,16 +99,39 @@ const sendHostMessage = async (
   }
   const payload = JSON.stringify(parsed.data);
   if (Buffer.byteLength(payload) > maximumGatewayMessageBytes) {
-    throw new Error("Fleet gateway message exceeded the configured limit.");
+    throw new OversizedGatewayMessageError(
+      "Fleet gateway message exceeded the configured limit.",
+    );
   }
   if (socket.readyState !== WebSocket.OPEN) {
     throw new Error("Fleet gateway connection closed.");
   }
+  if (
+    socket.bufferedAmount + Buffer.byteLength(payload) >
+    maximumBufferedBytes
+  ) {
+    throw new Error("Fleet gateway write buffer is full.");
+  }
   await new Promise<void>((resolve, reject) => {
-    socket.send(payload, (error) => {
+    const finish = (error?: Error | null): void => {
+      clearTimeout(timer);
+      socket.removeListener("close", onClose);
       if (error) reject(error);
       else resolve();
-    });
+    };
+    const onClose = (): void =>
+      finish(new Error("Fleet gateway connection closed."));
+    const timer = setTimeout(
+      () => finish(new Error("Fleet gateway write timed out.")),
+      10_000,
+    );
+    timer.unref();
+    socket.once("close", onClose);
+    try {
+      socket.send(payload, finish);
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error(String(error)));
+    }
   });
 };
 
@@ -119,7 +147,10 @@ const closeMessage = (
   code: number,
   reason: Buffer,
 ): FleetGatewayConnectionResult => {
-  const normalizedReason = reason.toString("utf8").trim();
+  const normalizedReason = reason
+    .toString("utf8")
+    .replace(/[\p{Cc}\p{Cf}]/gu, " ")
+    .trim();
   const message = normalizedReason
     ? `Fleet Manager closed the connection: ${normalizedReason}`
     : `Fleet gateway connection closed (${code}).`;
@@ -155,10 +186,13 @@ export const runFleetGatewayConnection = async (options: {
     }
 
     let settled = false;
-    let opened = false;
     let lastError: string | undefined;
     let heartbeat: NodeJS.Timeout | undefined;
     let activeRequests = 0;
+    let activePreviewRequests = 0;
+    let pendingBytes = 0;
+    let lastReceived = performance.now();
+    let closeDeadline: NodeJS.Timeout | undefined;
 
     const finish = (result: FleetGatewayConnectionResult): void => {
       if (settled) return;
@@ -170,6 +204,10 @@ export const runFleetGatewayConnection = async (options: {
       } else if (socket.readyState === WebSocket.CONNECTING) {
         socket.terminate();
       }
+      if (socket.readyState !== WebSocket.CLOSED) {
+        closeDeadline = setTimeout(() => socket.terminate(), 5_000);
+        closeDeadline.unref();
+      }
       resolve(result);
     };
 
@@ -179,7 +217,7 @@ export const runFleetGatewayConnection = async (options: {
     options.signal.addEventListener("abort", stop, { once: true });
 
     socket.once("unexpected-response", (_request, response) => {
-      response.resume();
+      response.destroy();
       const status = response.statusCode ?? 0;
       const message =
         status === 409
@@ -187,22 +225,30 @@ export const runFleetGatewayConnection = async (options: {
           : [401, 403, 404].includes(status)
             ? "Fleet Manager rejected the instance credentials."
             : `Fleet Manager rejected the gateway connection (${status}).`;
-      finish({ reconnect: ![401, 403, 404, 409].includes(status), message });
+      finish({ reconnect: ![401, 403, 404].includes(status), message });
     });
 
     socket.once("open", () => {
-      opened = true;
+      if (settled) return;
       void sendHostMessage(socket, {
         type: "hello",
         instanceId: options.config.instanceId,
         protocolVersion: gatewayProtocolVersion,
         productVersion: options.productVersion,
-        capabilities: [productCapability],
+        capabilities: [productCapability, workspaceRunsCapability],
       })
         .then(() => {
           if (settled) return;
           options.onConnected?.();
           heartbeat = setInterval(() => {
+            if (performance.now() - lastReceived > 60_000) {
+              finish({
+                reconnect: true,
+                message: "Fleet gateway became unresponsive.",
+              });
+              return;
+            }
+            socket.ping();
             void sendHostMessage(socket, {
               type: "heartbeat",
               sentAt: Date.now(),
@@ -225,9 +271,11 @@ export const runFleetGatewayConnection = async (options: {
 
     socket.on("message", (data, isBinary) => {
       if (settled) return;
+      lastReceived = performance.now();
       const payload = rawDataBuffer(data);
       if (isBinary || payload.byteLength > maximumGatewayMessageBytes) {
         socket.close(1003, "Unsupported gateway message.");
+        finish({ reconnect: false, message: "Unsupported gateway message." });
         return;
       }
       let input: unknown;
@@ -235,19 +283,30 @@ export const runFleetGatewayConnection = async (options: {
         input = JSON.parse(payload.toString("utf8")) as unknown;
       } catch {
         socket.close(1007, "Invalid gateway message.");
+        finish({ reconnect: false, message: "Invalid gateway message." });
         return;
       }
       const parsed = managerMessageSchema.safeParse(input);
       if (!parsed.success) {
         socket.close(1008, "Invalid gateway message.");
+        finish({ reconnect: false, message: "Invalid gateway message." });
         return;
       }
       if (parsed.data.type === "disconnect") {
-        finish({ reconnect: false, message: parsed.data.reason });
+        finish({
+          reconnect: false,
+          message: parsed.data.reason.replace(/[\p{Cc}\p{Cf}]/gu, " "),
+        });
         return;
       }
       const { requestId, request } = parsed.data;
-      if (activeRequests >= 64) {
+      const previewRequest = request.type === "openPreviewTunnel";
+      if (
+        (previewRequest
+          ? activePreviewRequests >= 32
+          : activeRequests >= maximumPendingRequests) ||
+        pendingBytes + payload.byteLength > maximumBufferedBytes
+      ) {
         void sendHostMessage(socket, {
           type: "response",
           requestId,
@@ -264,17 +323,33 @@ export const runFleetGatewayConnection = async (options: {
         });
         return;
       }
-      activeRequests += 1;
-      void options
-        .handleRequest(request)
+      if (previewRequest) activePreviewRequests += 1;
+      else activeRequests += 1;
+      pendingBytes += payload.byteLength;
+      void Promise.resolve()
+        .then(() => (settled ? undefined : options.handleRequest(request)))
         .catch(gatewayErrorResponse)
-        .then((response) =>
-          sendHostMessage(socket, {
-            type: "response",
-            requestId,
-            response,
-          }),
-        )
+        .then(async (response) => {
+          if (settled || !response) return;
+          try {
+            await sendHostMessage(socket, {
+              type: "response",
+              requestId,
+              response,
+            });
+          } catch (error) {
+            if (!(error instanceof OversizedGatewayMessageError)) throw error;
+            await sendHostMessage(socket, {
+              type: "response",
+              requestId,
+              response: {
+                type: "error",
+                code: "unavailable",
+                message: error.message,
+              },
+            });
+          }
+        })
         .catch((error: unknown) => {
           finish({
             reconnect: true,
@@ -282,21 +357,28 @@ export const runFleetGatewayConnection = async (options: {
           });
         })
         .finally(() => {
-          activeRequests -= 1;
+          if (previewRequest) activePreviewRequests -= 1;
+          else activeRequests -= 1;
+          pendingBytes -= payload.byteLength;
         });
     });
 
+    socket.on("ping", () => {
+      lastReceived = performance.now();
+    });
+    socket.on("pong", () => {
+      lastReceived = performance.now();
+    });
     socket.on("error", (error) => {
       lastError = error.message;
-      if (!opened) {
-        finish({
-          reconnect: true,
-          message: `Fleet gateway connection failed: ${error.message}`,
-        });
-      }
+      finish({
+        reconnect: true,
+        message: `Fleet gateway connection failed: ${error.message}`,
+      });
     });
 
     socket.once("close", (code, reason) => {
+      if (closeDeadline) clearTimeout(closeDeadline);
       if (settled) return;
       const result = closeMessage(code, reason);
       finish({
@@ -346,6 +428,22 @@ export const runFleetGatewayService = async (
   ];
   const configPollIntervalMs = options.configPollIntervalMs ?? 1_000;
   let reconnectAttempt = 0;
+  // Keep the limit across reconnects: unfinished work on an old socket still counts.
+  let activeRequests = 0;
+  const handleRequest = async (request: HostRequest): Promise<HostResponse> => {
+    if (activeRequests >= maximumPendingRequests)
+      return {
+        type: "error",
+        code: "unavailable",
+        message: "The Fleet CLI service is busy.",
+      };
+    activeRequests += 1;
+    try {
+      return await options.handleRequest(request);
+    } finally {
+      activeRequests -= 1;
+    }
+  };
   let config = await loadConfig();
 
   if (!config?.enabled) {
@@ -363,6 +461,7 @@ export const runFleetGatewayService = async (
     ]);
     let changedConfig: FleetConnectionConfig | null | undefined;
     let configError: unknown;
+    let connectedAt: number | undefined;
     const monitor = monitorFleetConfig({
       initialConfig: config,
       intervalMs: configPollIntervalMs,
@@ -378,9 +477,9 @@ export const runFleetGatewayService = async (
       config,
       signal: connectionSignal,
       productVersion: options.productVersion,
-      handleRequest: options.handleRequest,
+      handleRequest,
       onConnected: () => {
-        reconnectAttempt = 0;
+        connectedAt = performance.now();
         options.onStatus?.({ phase: "connected" });
       },
     });
@@ -388,7 +487,12 @@ export const runFleetGatewayService = async (
     await monitor;
 
     if (options.signal.aborted) break;
-    if (configError) throw configError;
+    if (configError)
+      throw new CliConfigurationError(
+        configError instanceof Error
+          ? configError.message
+          : String(configError),
+      );
     if (changedConfig !== undefined) {
       if (!changedConfig?.enabled) {
         options.onStatus?.({ phase: "disabled" });
@@ -399,19 +503,23 @@ export const runFleetGatewayService = async (
       continue;
     }
     if (!result.reconnect) {
-      throw new Error(result.message);
+      throw new CliConfigurationError(result.message);
     }
+    if (connectedAt !== undefined && performance.now() - connectedAt >= 60_000)
+      reconnectAttempt = 0;
 
-    const delay =
+    const baseDelay =
       reconnectDelays[
         Math.min(reconnectAttempt, Math.max(0, reconnectDelays.length - 1))
       ] ?? 60_000;
+    const delay = Math.max(0, baseDelay) * (0.8 + Math.random() * 0.4);
     reconnectAttempt += 1;
     options.onStatus?.({
       phase: "reconnecting",
       message: `${result.message} Retrying in ${Math.ceil(delay / 1_000)} seconds.`,
     });
     await wait(delay, options.signal);
+    if (options.signal.aborted) break;
     const current = await loadConfig();
     if (!current?.enabled) {
       options.onStatus?.({ phase: "disabled" });

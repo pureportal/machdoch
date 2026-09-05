@@ -450,31 +450,14 @@ Inside terminal chat, use `/help`, `/paste` for multiline input ending with `/en
 
 ### Run Fleet without the desktop UI
 
-The installed `machdoch` executable can host Fleet directly. Enroll it, select a workspace, and run the foreground service:
+On Linux servers, use the headless package and systemd. It runs without desktop libraries or a graphical login. After enrolling the service account, install a user service:
 
 ```bash
-machdoch fleet enroll --manager-url https://fleet.example.com --enrollment-key <key> --display-name "Build host"
-machdoch config set fleet.enabled on
-machdoch fleet service --cwd /absolute/path/to/workspace
+machdoch fleet service install --cwd /absolute/path/to/workspace
+machdoch fleet service status
 ```
 
-`fleet service` requires no graphical session and handles normal service-stop signals. Run it as the OS account that enrolled the host and owns its workspace and provider credentials. A service manager can supervise that command. For example, a Linux user unit can use:
-
-```ini
-[Unit]
-After=network-online.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/machdoch --cli fleet service --cwd=/absolute/path/to/workspace
-Restart=on-failure
-RestartSec=5s
-
-[Install]
-WantedBy=default.target
-```
-
-Use the installed executable's actual absolute path. On Windows, the same foreground command can be hosted by a service wrapper; the standard Windows Service Control Manager cannot register a normal CLI process directly. Run either the desktop client gateway or the CLI service for an enrollment, not both. Disable the gateway with `machdoch config set fleet.enabled off`; a running CLI service observes the change and exits.
+Enable lingering to keep a user service running after logout and at boot. Dedicated servers can instead use the supplied system unit with an unprivileged account. Windows background use continues through the desktop tray and launch-on-sign-in settings. See the [background Fleet guide](docs/fleet-background-service.md) for installation, credentials, service management, upgrades, and troubleshooting. The foreground command remains `machdoch fleet service run --cwd /absolute/path/to/workspace`.
 
 Inspect and change a workspace default:
 

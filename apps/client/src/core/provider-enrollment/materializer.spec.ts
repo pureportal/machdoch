@@ -18,6 +18,18 @@ import {
 } from "../__test__/instruction-test-helpers.js";
 import type { AgentCliProvider } from "../runtime-contract.generated.js";
 
+const readdirMock = vi.hoisted(() => vi.fn());
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    readdir: (...args: Parameters<typeof actual.readdir>) => {
+      readdirMock(...args);
+      return actual.readdir(...args);
+    },
+  };
+});
+
 const probeProviderCliMock = vi.hoisted(() =>
   vi.fn(async (provider: AgentCliProvider, executable: string) => ({
     provider,
@@ -271,6 +283,27 @@ afterEach(async () => {
 });
 
 describe("CLI provider enrollment materializer", () => {
+  it("throttles automatic temporary-directory scans while allowing explicit cleanup", async () => {
+    const now = Date.now() + 10 * 60_000;
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    readdirMock.mockClear();
+    const enrollments: Awaited<ReturnType<typeof createCodexEnrollment>>[] = [];
+    try {
+      enrollments.push(await createCodexEnrollment("cleanup-throttle-one"));
+      enrollments.push(await createCodexEnrollment("cleanup-throttle-two"));
+      const scans = () =>
+        readdirMock.mock.calls.filter(([path]) => path === tmpdir()).length;
+      expect(scans()).toBe(1);
+      await cleanupStaleEnrollmentArtifacts();
+      expect(scans()).toBe(2);
+      clock.mockReturnValue(now + 5 * 60_000 + 1);
+      enrollments.push(await createCodexEnrollment("cleanup-throttle-expired"));
+      expect(scans()).toBe(3);
+    } finally {
+      clock.mockRestore();
+      await Promise.all(enrollments.map((enrollment) => enrollment.dispose()));
+    }
+  });
   it("retries transient capability probes before materializing Codex", async () => {
     const expectedProbe = createProbe("codex-cli");
     probeProviderCliMock

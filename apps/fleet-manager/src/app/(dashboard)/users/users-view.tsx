@@ -143,12 +143,12 @@ export function UsersView(): React.ReactElement {
           {sessions.map((session) => (
             <div
               key={session.sessionId}
-              className="flex items-center gap-3 rounded-lg border border-border px-4 py-3"
+              className="flex min-w-0 items-center gap-3 rounded-lg border border-border px-4 py-3"
             >
               <Laptop className="size-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <p className="truncate text-sm font-medium">
+                  <p className="min-w-0 truncate text-sm font-medium">
                     {session.clientLabel}
                   </p>
                   {session.current ? (

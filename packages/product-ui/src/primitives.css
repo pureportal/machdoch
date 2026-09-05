@@ -568,24 +568,22 @@
 }
 
 .m-composer-model-popover {
-  position: absolute;
+  position: relative;
   z-index: 120;
-  bottom: calc(100% + 0.5rem);
-  left: 0;
   width: 24rem;
-  max-width: calc(100vw - 2rem);
-  overflow: hidden;
+  max-width: min(
+    calc(100dvw - 1rem),
+    var(--radix-popover-content-available-width)
+  );
+  max-height: var(--radix-popover-content-available-height);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--app-slate-800);
   border-radius: 1.5rem;
   background: color-mix(in srgb, var(--app-slate-950) 98%, transparent);
   color: var(--app-text);
   box-shadow: 0 24px 60px color-mix(in srgb, var(--app-sky-950) 30%, black);
   backdrop-filter: blur(24px);
-}
-
-.m-composer-model-popover[data-placement="bottom"] {
-  top: calc(100% + 0.5rem);
-  bottom: auto;
 }
 
 .m-composer-model-heading {

@@ -1,5 +1,6 @@
 import {
   Aperture,
+  FolderKanban,
   CalendarClock,
   MessageSquareText,
   PanelRight,
@@ -8,7 +9,7 @@ import {
   Workflow,
 } from "lucide-react";
 
-export type ProductView = "chat" | "media" | "scheduler" | "ralph";
+export type ProductView = "chat" | "media" | "scheduler" | "ralph" | "projects";
 
 export function ProductRail({
   inspectorOpen,
@@ -16,6 +17,7 @@ export function ProductRail({
   mediaAvailable,
   schedulerAvailable,
   ralphAvailable,
+  projectsAvailable,
   onSelectView,
   onToggleInspector,
 }: {
@@ -24,6 +26,7 @@ export function ProductRail({
   mediaAvailable: boolean;
   schedulerAvailable: boolean;
   ralphAvailable: boolean;
+  projectsAvailable: boolean;
   onSelectView: (view: ProductView) => void;
   onToggleInspector: () => void;
 }): React.ReactElement {
@@ -34,6 +37,18 @@ export function ProductRail({
           <TerminalSquare />
         </div>
         <div className="m-product-rail-separator" />
+        {projectsAvailable ? (
+          <button
+            type="button"
+            className="m-product-rail-button"
+            data-active={activeView === "projects"}
+            aria-label="Projects"
+            aria-current={activeView === "projects" ? "page" : undefined}
+            onClick={() => onSelectView("projects")}
+          >
+            <FolderKanban aria-hidden="true" />
+          </button>
+        ) : null}
         <button
           type="button"
           className="m-product-rail-button"

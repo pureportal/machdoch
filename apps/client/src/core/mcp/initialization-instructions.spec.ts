@@ -216,6 +216,24 @@ it("enforces the aggregate MCP initialization-instruction budget", async () => {
   });
 });
 
+it("counts repeated server guidance once against the instruction budget", async () => {
+  const root = await mkdtemp(join(tmpdir(), "machdoch-mcp-instructions-"));
+  roots.push(root);
+  await writeFixture(
+    root,
+    Object.fromEntries(
+      Array.from({ length: 20 }, (_, i) => [
+        `server-${i}`,
+        "A".repeat(70 * 1024),
+      ]),
+    ),
+  );
+  const snapshot = await loadMcpInitializationInstructionSnapshot(root);
+  expect(snapshot).toHaveLength(1);
+  expect(snapshot[0]?.serverIds).toHaveLength(20);
+  expect(snapshot[0]?.byteLength).toBe(70 * 1024);
+});
+
 it("does not trim oversized MCP guidance around a small visible body", async () => {
   const root = await mkdtemp(join(tmpdir(), "machdoch-mcp-instructions-"));
   const workspaceRoot = join(root, "workspace");

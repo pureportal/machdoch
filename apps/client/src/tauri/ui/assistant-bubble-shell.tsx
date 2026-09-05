@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   hideAssistantPopup,
+  DISPLAY_LAYOUT_CHANGED_EVENT,
   isAssistantPopupVisible,
   resolveAssistantSurfaceLayout,
   resolveMonitorTopologyKey,
@@ -281,7 +282,7 @@ export const AssistantBubbleShell = () => {
           lastMonitorTopologyKeyRef.current = topologyKey;
         }
 
-        const layout = await resolveAssistantSurfaceLayout();
+        const layout = await resolveAssistantSurfaceLayout("window");
 
         if (!layout || !isCurrentSync()) {
           return;
@@ -331,7 +332,7 @@ export const AssistantBubbleShell = () => {
           (await setWindowPosition(currentWindow, layout.bubblePosition))
         ) {
           lastBubblePositionRef.current = nextPositionKey;
-          await syncAssistantPopupPosition();
+          await syncAssistantPopupPosition(layout);
         }
 
         await setBubbleVisibility(shouldShow);
@@ -341,10 +342,16 @@ export const AssistantBubbleShell = () => {
       }
     };
 
+    let syncQueued = false;
     const runSyncBubbleWindow = (): void => {
+      if (disposed || syncQueued) return;
+      syncQueued = true;
       const operation = windowSyncQueueRef.current
         .catch(() => undefined)
-        .then(syncBubbleWindow);
+        .then(async () => {
+          syncQueued = false;
+          await syncBubbleWindow();
+        });
       windowSyncQueueRef.current = operation.then(
         () => undefined,
         () => undefined,
@@ -372,6 +379,11 @@ export const AssistantBubbleShell = () => {
     runSyncBubbleWindow();
     const subscribeToWindowEvents = async (): Promise<void> => {
       const subscribe = [
+        () =>
+          currentWindow.listen(
+            DISPLAY_LAYOUT_CHANGED_EVENT,
+            scheduleSyncBubbleWindow,
+          ),
         () => currentWindow.onScaleChanged(scheduleSyncBubbleWindow),
         () => currentWindow.onMoved(scheduleSyncBubbleWindow),
         () => currentWindow.onResized(scheduleSyncBubbleWindow),

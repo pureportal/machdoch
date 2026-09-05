@@ -13,7 +13,7 @@ export function Field({
   children: React.ReactNode;
 }): React.ReactElement {
   return (
-    <div className="grid gap-2">
+    <div className="grid min-w-0 gap-2">
       <Label htmlFor={htmlFor}>{label}</Label>
       {children}
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}

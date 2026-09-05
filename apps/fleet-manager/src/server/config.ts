@@ -28,7 +28,7 @@ const enrollmentPolicySchema = z
 const connectionPolicySchema = z
   .strictObject({
     requestTimeoutSeconds: positiveInteger.max(300),
-    heartbeatTimeoutSeconds: positiveInteger.max(300),
+    heartbeatTimeoutSeconds: positiveInteger.min(30).max(300),
   })
   .default({ requestTimeoutSeconds: 30, heartbeatTimeoutSeconds: 45 });
 
@@ -76,6 +76,7 @@ const configSchema = z.strictObject({
   enrollmentPolicy: enrollmentPolicySchema,
   connectionPolicy: connectionPolicySchema,
   settingsManager: settingsManagerSchema,
+  previews: z.strictObject({ baseUrl: z.string().url() }).optional(),
 });
 
 export type FleetManagerConfig = z.infer<typeof configSchema>;
@@ -105,6 +106,30 @@ export function loadConfig(
   }
   const config = result.data;
   validateExternalUrl(config.externalBaseUrl, runtimeMode);
+  if (config.previews) {
+    const preview = new URL(config.previews.baseUrl);
+    const manager = new URL(config.externalBaseUrl);
+    const dev =
+      runtimeMode === "development" &&
+      preview.protocol === "http:" &&
+      preview.hostname.endsWith(".localhost");
+    if (
+      (!dev && preview.protocol !== "https:") ||
+      preview.pathname !== "/" ||
+      preview.username ||
+      preview.password ||
+      preview.search ||
+      preview.hash ||
+      !/^[a-z0-9][a-z0-9.-]+[a-z0-9]$/i.test(preview.hostname) ||
+      preview.hostname.length > 200 ||
+      preview.hostname === manager.hostname ||
+      manager.hostname.endsWith(`.${preview.hostname}`)
+    ) {
+      throw new Error(
+        "previews.baseUrl must be a separate HTTPS wildcard base origin, outside the manager hostname. Development accepts HTTP *.localhost.",
+      );
+    }
+  }
   validateListener(config.listen.address);
   if (config.sessionPolicy.idleSeconds > config.sessionPolicy.absoluteSeconds) {
     throw new Error("Session idleSeconds cannot exceed absoluteSeconds.");

@@ -163,7 +163,7 @@ export function SettingsManager(): React.ReactElement {
           {error}
         </p>
       ) : null}
-      <div className="grid min-h-[620px] gap-4 lg:grid-cols-[230px_1fr]">
+      <div className="grid min-w-0 gap-4 lg:min-h-[620px] lg:grid-cols-[230px_minmax(0,1fr)]">
         <Card className="h-fit p-2">
           <div className="grid gap-1">
             {profiles.map((item) => (
@@ -171,7 +171,7 @@ export function SettingsManager(): React.ReactElement {
                 key={item.profileId}
                 type="button"
                 className={cn(
-                  "rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted",
+                  "min-w-0 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted",
                   profile?.profileId === item.profileId &&
                     "bg-primary/10 text-primary",
                 )}
@@ -200,7 +200,7 @@ export function SettingsManager(): React.ReactElement {
         {profile && catalog ? (
           <Card className="min-w-0 overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <h2 className="truncate font-semibold">{profile.name}</h2>
                 <p className="text-xs text-muted-foreground">
                   Revision {profile.revision}

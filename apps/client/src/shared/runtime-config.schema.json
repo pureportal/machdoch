@@ -38,7 +38,8 @@
         "high",
         "xhigh",
         "max",
-        "ultra"
+        "ultra",
+        "aeon"
       ]
     },
     "ReasoningExecutionMode": {

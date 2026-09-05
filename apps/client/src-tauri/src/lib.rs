@@ -154,6 +154,7 @@ pub fn run() {
             desktop_shell::create_desktop_launch_id(),
         ))
         .manage(desktop_shell::QuickVoiceShortcutState::default())
+        .manage(desktop_shell::display_layout::DisplayLayoutState::default())
         .manage(fleet::FleetConnectionState::default())
         .manage(fleet_control::FleetControlState::default())
         .manage(media::MediaRuntimeState::default())
@@ -204,6 +205,8 @@ pub fn run() {
             if let Err(error) = desktop_shell::sync_assistant_bubble_window(app.handle()) {
                 eprintln!("Failed to initialize the assistant bubble window: {error}");
             }
+
+            desktop_shell::display_layout::initialize(app.handle());
 
             Ok(())
         })
@@ -409,6 +412,8 @@ pub fn run() {
         .expect("error while building machdoch desktop shell")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
+                app.state::<desktop_shell::display_layout::DisplayLayoutState>()
+                    .shutdown();
                 app.state::<workspace_run::WorkspaceRunState>().shutdown();
                 app.state::<sleep_inhibition::SystemSleepInhibitor>()
                     .shutdown();

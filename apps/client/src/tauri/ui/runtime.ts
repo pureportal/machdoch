@@ -4,6 +4,7 @@ import type {
   FleetManagedPrompt,
   ProductAttachment,
   ProductCommandKind,
+  WorkspaceCommand,
   ProductMessage,
   ProductSession,
   ProductShell,
@@ -703,7 +704,10 @@ export interface FleetManagedSettingsSyncStatus {
   lastError?: string;
 }
 
-export type FleetControlCommandKind = ProductCommandKind;
+export type FleetControlCommandKind = Exclude<
+  ProductCommandKind,
+  WorkspaceCommand["kind"]
+>;
 
 export interface FleetControlCommandEvent {
   commandId: string;
@@ -3862,7 +3866,7 @@ export const saveWorkspaceReasoningMode = async (
 
   if (!isRuntimeReasoningMode(reasoning)) {
     throw new Error(
-      "Expected workspace reasoning to be one of default, none, minimal, low, medium, high, xhigh, max, or ultra.",
+      "Expected workspace reasoning to be one of default, none, minimal, low, medium, high, xhigh, max, ultra, or aeon.",
     );
   }
 
@@ -6599,13 +6603,24 @@ export const deleteSchedulerJob = async (
   );
 };
 
+const pendingSchedulerRunLists = new Map<
+  string,
+  Promise<SchedulerListRunsResult>
+>();
+
 export const listSchedulerRuns = async (
   workspaceRoot: string | null | undefined,
   jobId?: string | null,
 ): Promise<SchedulerListRunsResult> => {
   const normalizedJobId = normalizeSchedulerCliString(jobId);
+  const key = JSON.stringify([
+    normalizeSchedulerCommandWorkspace(workspaceRoot),
+    normalizedJobId,
+  ]);
+  const pending = pendingSchedulerRunLists.get(key);
+  if (pending) return pending;
 
-  return runSchedulerCommand(
+  const request = runSchedulerCommand(
     workspaceRoot,
     normalizedJobId ? ["runs", normalizedJobId] : ["runs"],
     normalizeSchedulerListRunsResult,
@@ -6615,6 +6630,13 @@ export const listSchedulerRuns = async (
       runs: [],
     }),
   );
+  pendingSchedulerRunLists.set(key, request);
+  try {
+    return await request;
+  } finally {
+    if (pendingSchedulerRunLists.get(key) === request)
+      pendingSchedulerRunLists.delete(key);
+  }
 };
 
 export const runDueSchedulerJobs = async (

@@ -4,6 +4,7 @@ import process from "node:process";
 import { runCli } from "./app.js";
 import {
   CliUsageError,
+  CliConfigurationError,
   hasJsonOutputFlag,
   isBrokenPipeError,
 } from "./_helpers/cli-error.js";
@@ -23,7 +24,12 @@ process.stderr.on("error", handleStreamError);
 runCli(process.argv.slice(2)).catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
   const usageError = error instanceof CliUsageError;
-  const exitCode = usageError ? 2 : 1;
+  const exitCode =
+    error instanceof CliConfigurationError
+      ? error.exitCode
+      : usageError
+        ? 2
+        : 1;
 
   if (hasJsonOutputFlag(process.argv.slice(2))) {
     process.stderr.write(`${JSON.stringify({ error: message, exitCode })}\n`);

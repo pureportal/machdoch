@@ -1,12 +1,13 @@
 use std::{
+    collections::VecDeque,
     sync::{Arc, Mutex},
     time::Duration,
 };
 
 use futures_util::{SinkExt, StreamExt};
 use machdoch_fleet_protocol::{
-    serialize_host_message, HostMessage, ManagerMessage, GATEWAY_PROTOCOL_VERSION,
-    MAX_GATEWAY_MESSAGE_BYTES, PRODUCT_CAPABILITY,
+    serialize_host_message, HostErrorCode, HostMessage, HostResponse, ManagerMessage,
+    GATEWAY_PROTOCOL_VERSION, MAX_GATEWAY_MESSAGE_BYTES, PRODUCT_CAPABILITY,
 };
 use tokio_tungstenite::{
     connect_async_with_config,
@@ -28,6 +29,13 @@ use super::{
 };
 
 const GATEWAY_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+const GATEWAY_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+const GATEWAY_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+const MAX_QUEUED_REQUESTS: usize = 32;
+const MAX_QUEUED_REQUEST_BYTES: usize = 2 * MAX_GATEWAY_MESSAGE_BYTES;
+// A disconnected generation may still be finishing disk I/O. Never start an unbounded
+// number of blocking workers across reconnects or configuration changes.
+static REQUEST_WORKER: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 
 pub(super) async fn run(
     app_handle: tauri::AppHandle,
@@ -41,7 +49,14 @@ pub(super) async fn run(
             return;
         }
         set_phase(&state, generation, FleetConnectionPhase::Connecting, None);
-        match connect_once(&app_handle, &state, &config, generation).await {
+        let started = tokio::time::Instant::now();
+        // Cancellation covers DNS, TLS, blocked writes, and reconnects as well as idle sockets.
+        let result = tokio::select! {
+            biased;
+            _ = wait_for_generation_change(&state, generation) => return,
+            result = connect_once(&app_handle, &state, &config, generation) => result,
+        };
+        match result {
             ConnectionResult::Reset => return,
             ConnectionResult::Stopped(error) => {
                 set_phase(&state, generation, FleetConnectionPhase::Error, Some(error));
@@ -51,10 +66,10 @@ pub(super) async fn run(
                 set_phase(&state, generation, FleetConnectionPhase::Error, Some(error));
             }
         }
-        if !wait_for_reconnect(&state, generation, reconnect_delay).await {
+        reconnect_delay = reconnect_backoff(reconnect_delay, started.elapsed());
+        if !wait_for_reconnect(&state, generation, jittered_delay(reconnect_delay)).await {
             return;
         }
-        reconnect_delay = (reconnect_delay * 2).min(Duration::from_secs(60));
     }
 }
 
@@ -106,12 +121,17 @@ async fn connect_once(
     let (socket, _) = match connection {
         Ok(connection) => connection,
         Err(tokio_tungstenite::tungstenite::Error::Http(response))
-            if matches!(response.status().as_u16(), 401 | 403 | 404 | 409) =>
+            if permanent_upgrade_status(response.status().as_u16()) =>
         {
-            return ConnectionResult::Stopped(match response.status().as_u16() {
-                409 => "Fleet Manager rejected a duplicate instance connection.".to_string(),
-                _ => "Fleet Manager rejected the instance credentials.".to_string(),
-            });
+            return ConnectionResult::Stopped(
+                "Fleet Manager rejected the instance credentials.".to_string(),
+            );
+        }
+        Err(tokio_tungstenite::tungstenite::Error::Http(response)) => {
+            return ConnectionResult::Reconnect(format!(
+                "Fleet gateway connection failed (HTTP {}).",
+                response.status().as_u16()
+            ));
         }
         Err(error) => {
             return ConnectionResult::Reconnect(format!("Fleet gateway connection failed: {error}"))
@@ -131,22 +151,73 @@ async fn connect_once(
     }
     set_phase(state, generation, FleetConnectionPhase::Connected, None);
     let mut heartbeat = tokio::time::interval(Duration::from_secs(15));
-    let mut generation_check = tokio::time::interval(Duration::from_secs(1));
+    heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut last_received = tokio::time::Instant::now();
+    let mut requests = VecDeque::new();
+    let mut queued_bytes = 0usize;
+    let mut work: Option<tokio::task::JoinHandle<Result<String, String>>> = None;
 
     loop {
+        if !is_current(state, generation) {
+            return ConnectionResult::Reset;
+        }
+        if work.is_none() && !requests.is_empty() {
+            if let Ok(permit) = REQUEST_WORKER.try_acquire() {
+                let (request_id, request, bytes) = requests.pop_front().expect("queued request");
+                queued_bytes = queued_bytes.saturating_sub(bytes);
+                let app_handle = app_handle.clone();
+                let state = state.clone();
+                // Serialize disk-backed command work without blocking the async runtime or heartbeats.
+                work = Some(tokio::task::spawn_blocking(move || {
+                    let _permit = permit;
+                    let response = if is_current(&state, generation) {
+                        crate::fleet_control::handle_fleet_request(&app_handle, request)
+                    } else {
+                        HostResponse::Error {
+                            code: HostErrorCode::Unavailable,
+                            message: "Fleet connection changed.".to_string(),
+                        }
+                    };
+                    encode_host_message(&HostMessage::Response {
+                        request_id,
+                        response,
+                    })
+                }));
+            }
+        }
         tokio::select! {
+            _ = REQUEST_WORKER.acquire(), if work.is_none() && !requests.is_empty() => {}
             _ = heartbeat.tick() => {
                 if send_host_message(&mut sender, &HostMessage::Heartbeat { sent_at: now_seconds() }).await.is_err() {
                     return ConnectionResult::Reconnect("Fleet gateway connection closed.".to_string());
                 }
+                // Older managers do not send periodic pings; solicit their WebSocket pong.
+                if send_message(&mut sender, Message::Ping(Vec::new().into()), GATEWAY_WRITE_TIMEOUT).await.is_err() {
+                    return ConnectionResult::Reconnect("Fleet gateway connection closed.".to_string());
+                }
             }
-            _ = generation_check.tick() => {
+            _ = tokio::time::sleep_until(last_received + GATEWAY_IDLE_TIMEOUT) => {
+                return ConnectionResult::Reconnect("Fleet Manager stopped responding.".to_string());
+            }
+            completed = async { work.as_mut().expect("guarded worker").await }, if work.is_some() => {
+                work = None;
                 if !is_current(state, generation) {
-                    let _ = sender.close().await;
                     return ConnectionResult::Reset;
+                }
+                match completed {
+                    Ok(Ok(payload)) => {
+                        if send_message(&mut sender, Message::Text(payload.into()), GATEWAY_WRITE_TIMEOUT).await.is_err() {
+                            return ConnectionResult::Reconnect("Fleet gateway connection closed.".to_string());
+                        }
+                    }
+                    Ok(Err(_)) | Err(_) => return ConnectionResult::Reconnect("Fleet request worker failed.".to_string()),
                 }
             }
             inbound = receiver.next() => {
+                if !is_current(state, generation) {
+                    return ConnectionResult::Reset;
+                }
+                last_received = tokio::time::Instant::now();
                 match inbound {
                     Some(Ok(Message::Text(payload))) => {
                         if payload.len() > MAX_GATEWAY_MESSAGE_BYTES {
@@ -154,9 +225,15 @@ async fn connect_once(
                         }
                         match serde_json::from_str::<ManagerMessage>(&payload) {
                             Ok(ManagerMessage::Request { request_id, request }) => {
-                                let response = crate::fleet_control::handle_fleet_request(app_handle, request);
-                                if send_host_message(&mut sender, &HostMessage::Response { request_id, response }).await.is_err() {
-                                    return ConnectionResult::Reconnect("Fleet gateway connection closed.".to_string());
+                                if requests.len() >= MAX_QUEUED_REQUESTS || queued_bytes + payload.len() > MAX_QUEUED_REQUEST_BYTES {
+                                    let response = HostResponse::Error { code: HostErrorCode::Unavailable,
+                                        message: "Fleet command queue is full; retry after pending requests finish.".to_string() };
+                                    if send_host_message(&mut sender, &HostMessage::Response { request_id, response }).await.is_err() {
+                                        return ConnectionResult::Reconnect("Fleet gateway connection closed.".to_string());
+                                    }
+                                } else {
+                                    queued_bytes += payload.len();
+                                    requests.push_back((request_id, request, payload.len()));
                                 }
                             }
                             Ok(ManagerMessage::Disconnect { reason }) => {
@@ -170,7 +247,7 @@ async fn connect_once(
                         }
                     }
                     Some(Ok(Message::Ping(payload))) => {
-                        if sender.send(Message::Pong(payload)).await.is_err() {
+                        if send_message(&mut sender, Message::Pong(payload), GATEWAY_WRITE_TIMEOUT).await.is_err() {
                             return ConnectionResult::Reconnect("Fleet gateway connection closed.".to_string());
                         }
                     }
@@ -230,11 +307,66 @@ where
     S: futures_util::Sink<Message> + Unpin,
     S::Error: std::fmt::Display,
 {
-    let payload = serialize_host_message(message).map_err(|error| error.to_string())?;
-    sender
-        .send(Message::Text(payload.into()))
+    let payload = encode_host_message(message)?;
+    send_message(sender, Message::Text(payload.into()), GATEWAY_WRITE_TIMEOUT).await
+}
+
+fn encode_host_message(message: &HostMessage) -> Result<String, String> {
+    match serialize_host_message(message) {
+        Ok(payload) => Ok(payload),
+        Err(error) => {
+            if let HostMessage::Response { request_id, .. } = message {
+                // Return a correlated error instead of disconnecting on a large snapshot.
+                serialize_host_message(&HostMessage::Response {
+                    request_id: request_id.clone(),
+                    response: HostResponse::Error {
+                        code: HostErrorCode::Internal,
+                        message: error.to_string(),
+                    },
+                })
+                .map_err(|error| error.to_string())
+            } else {
+                Err(error.to_string())
+            }
+        }
+    }
+}
+
+async fn send_message<S>(sender: &mut S, message: Message, timeout: Duration) -> Result<(), String>
+where
+    S: futures_util::Sink<Message> + Unpin,
+    S::Error: std::fmt::Display,
+{
+    tokio::time::timeout(timeout, sender.send(message))
         .await
+        .map_err(|_| "Fleet gateway write timed out.".to_string())?
         .map_err(|error| format!("Failed to send gateway message: {error}"))
+}
+
+fn permanent_upgrade_status(status: u16) -> bool {
+    // A previous half-open connection can temporarily cause 409 after a network change.
+    matches!(status, 401 | 403 | 404)
+}
+
+fn reconnect_backoff(previous: Duration, connected_for: Duration) -> Duration {
+    if connected_for >= GATEWAY_IDLE_TIMEOUT {
+        Duration::from_secs(1)
+    } else {
+        (previous * 2).min(Duration::from_secs(60))
+    }
+}
+
+fn jittered_delay(base: Duration) -> Duration {
+    let mut random = [0u8; 2];
+    let _ = getrandom::fill(&mut random);
+    // Spread reconnects across the second half of the backoff window.
+    base / 2 + base.mul_f64(f64::from(u16::from_ne_bytes(random)) / f64::from(u16::MAX) / 2.0)
+}
+
+async fn wait_for_generation_change(state: &Arc<Mutex<FleetConnectionInner>>, generation: u64) {
+    while is_current(state, generation) {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
 }
 
 fn gateway_url(manager_url: &str, instance_id: &str) -> Result<url::Url, String> {
@@ -291,6 +423,96 @@ async fn wait_for_reconnect(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn oversized_snapshots_return_correlated_errors_without_dropping_the_connection() {
+        let message = HostMessage::Response {
+            request_id: "request-1".to_string(),
+            response: HostResponse::ProductSnapshot {
+                snapshot: serde_json::json!({
+                    "content": "x".repeat(MAX_GATEWAY_MESSAGE_BYTES),
+                }),
+            },
+        };
+        let payload = encode_host_message(&message).expect("error response should fit");
+        assert!(payload.len() < 1024);
+        let response = machdoch_fleet_protocol::deserialize_host_message(&payload)
+            .expect("valid gateway response");
+        assert!(
+            matches!(response, HostMessage::Response { request_id, response: HostResponse::Error { code: HostErrorCode::Internal, .. } } if request_id == "request-1")
+        );
+    }
+
+    #[test]
+    fn temporary_upgrade_failures_allow_reconnects() {
+        for status in [409, 429, 500, 502, 503, 504] {
+            assert!(!permanent_upgrade_status(status));
+        }
+        for status in [401, 403, 404] {
+            assert!(permanent_upgrade_status(status));
+        }
+    }
+
+    #[test]
+    fn restart_close_allows_reconnects() {
+        assert!(matches!(
+            connection_result_from_close(Some(CloseFrame {
+                code: CloseCode::Restart,
+                reason: "Fleet Manager is restarting.".into(),
+            })),
+            ConnectionResult::Reconnect(_)
+        ));
+    }
+
+    #[test]
+    fn reconnect_backoff_is_bounded_and_resets_after_a_healthy_connection() {
+        assert_eq!(
+            reconnect_backoff(Duration::from_secs(60), Duration::from_secs(5)),
+            Duration::from_secs(60)
+        );
+        assert_eq!(
+            reconnect_backoff(Duration::from_secs(4), Duration::from_secs(5)),
+            Duration::from_secs(8)
+        );
+        assert_eq!(
+            reconnect_backoff(Duration::from_secs(60), Duration::from_secs(120)),
+            Duration::from_secs(1)
+        );
+        for _ in 0..100 {
+            let jitter = jittered_delay(Duration::from_secs(60));
+            assert!(jitter >= Duration::from_secs(30) && jitter <= Duration::from_secs(60));
+        }
+    }
+
+    #[tokio::test]
+    async fn stalled_gateway_writes_have_a_deadline() {
+        let mut sink = Box::pin(futures_util::sink::unfold(
+            (),
+            |(), _message: Message| async {
+                std::future::pending::<Result<(), std::io::Error>>().await
+            },
+        ));
+        let result = send_message(
+            &mut sink,
+            Message::Ping(Vec::new().into()),
+            Duration::from_millis(10),
+        )
+        .await;
+        assert_eq!(result.unwrap_err(), "Fleet gateway write timed out.");
+    }
+
+    #[tokio::test]
+    async fn obsolete_generations_cancel_before_stalled_network_work() {
+        let state = Arc::new(Mutex::new(FleetConnectionInner::default()));
+        let completed = tokio::time::timeout(Duration::from_millis(100), async {
+            tokio::select! {
+                _ = wait_for_generation_change(&state, 1) => true,
+                _ = std::future::pending::<()>() => false,
+            }
+        })
+        .await;
+        assert_eq!(completed, Ok(true));
+    }
 
     #[test]
     fn gateway_url_is_wss_and_instance_scoped() {

@@ -1,5 +1,4 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
   CancelTaskRequestSchema,
@@ -14,6 +13,8 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { mcpClientManager } from "../../mcp/client.js";
+import { mapWithConcurrencyLimit } from "../../_helpers/task-file-change-concurrency.js";
+import { runManagedStdioServer } from "../stdio-server-lifecycle.js";
 import {
   listEnabledMcpServers,
   loadMcpConfig,
@@ -148,6 +149,7 @@ const loadCatalog = async (
   workspaceRoot: string,
   serverId?: string,
   scope?: "user",
+  signal?: AbortSignal,
 ): Promise<ProxyCatalogEntry[]> => {
   const config =
     scope === "user"
@@ -163,13 +165,26 @@ const loadCatalog = async (
         : "No enabled MCP servers are configured.",
     );
   }
-  return await Promise.all(
-    servers.map(async (server) => ({
-      serverId: server.id,
-      config: server,
-      discovery: await mcpClientManager.discoverServer(workspaceRoot, server),
-    })),
-  );
+  let failure: { error: unknown } | undefined;
+  let closingAfterFailure: Promise<void> | undefined;
+  return await mapWithConcurrencyLimit(servers, 4, async (server) => {
+    signal?.throwIfAborted();
+    if (failure) throw failure.error;
+    try {
+      return {
+        serverId: server.id,
+        config: server,
+        discovery: await mcpClientManager.discoverServer(workspaceRoot, server),
+      };
+    } catch (error) {
+      failure ??= { error };
+      // A failed aggregate startup cannot serve requests. Cancel other active
+      // handshakes now rather than waiting for every server's timeout.
+      closingAfterFailure ??= mcpClientManager.closeAll();
+      await closingAfterFailure;
+      throw failure.error;
+    }
+  });
 };
 
 const createOperationOptions = (
@@ -398,49 +413,44 @@ export const runMcpStdioProxy = async (
   serverId?: string,
   scope?: "user",
 ): Promise<void> => {
-  const entries = await loadCatalog(workspaceRoot, serverId, scope);
-  const aggregate = entries.length > 1;
-  const instructions = entries
-    .flatMap((entry) =>
-      entry.discovery.instructions
-        ? [`${entry.serverId}: ${entry.discovery.instructions}`]
-        : [],
-    )
-    .join("\n\n");
-  const supportsTasks = entries.some(
-    (entry) =>
-      entry.config.tasks !== "disabled" &&
-      entry.discovery.capabilities &&
-      "tasks" in entry.discovery.capabilities,
-  );
-  const server = new Server(
-    {
-      name: aggregate
-        ? "machdoch-compat"
-        : `machdoch-proxy-${entries[0]?.serverId ?? "mcp"}`,
-      version: "1.0.0",
+  await runManagedStdioServer(
+    async (signal) => {
+      const entries = await loadCatalog(workspaceRoot, serverId, scope, signal);
+      signal.throwIfAborted();
+      const aggregate = entries.length > 1;
+      const instructions = entries
+        .flatMap((entry) =>
+          entry.discovery.instructions
+            ? [`${entry.serverId}: ${entry.discovery.instructions}`]
+            : [],
+        )
+        .join("\n\n");
+      const supportsTasks = entries.some(
+        (entry) =>
+          entry.config.tasks !== "disabled" &&
+          entry.discovery.capabilities &&
+          "tasks" in entry.discovery.capabilities,
+      );
+      const server = new Server(
+        {
+          name: aggregate
+            ? "machdoch-compat"
+            : `machdoch-proxy-${entries[0]?.serverId ?? "mcp"}`,
+          version: "1.0.0",
+        },
+        {
+          capabilities: {
+            tools: {},
+            resources: {},
+            prompts: {},
+            ...(supportsTasks ? { tasks: { list: {}, cancel: {} } } : {}),
+          },
+          ...(instructions ? { instructions } : {}),
+        },
+      );
+      registerHandlers(server, workspaceRoot, entries);
+      return server;
     },
-    {
-      capabilities: {
-        tools: {},
-        resources: {},
-        prompts: {},
-        ...(supportsTasks ? { tasks: { list: {}, cancel: {} } } : {}),
-      },
-      ...(instructions ? { instructions } : {}),
-    },
+    { cleanup: () => mcpClientManager.closeAll() },
   );
-  registerHandlers(server, workspaceRoot, entries);
-  const transport = new StdioServerTransport();
-
-  const close = (): void => {
-    void Promise.all([server.close(), mcpClientManager.closeAll()]).finally(
-      () => {
-        process.exitCode = 0;
-      },
-    );
-  };
-  process.once("SIGINT", close);
-  process.once("SIGTERM", close);
-  await server.connect(transport);
 };

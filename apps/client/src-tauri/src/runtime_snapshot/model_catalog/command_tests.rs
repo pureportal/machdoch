@@ -133,7 +133,7 @@ fn wait_for_pid_exit(pid: u32, timeout: Duration) -> bool {
 #[test]
 fn agent_cli_test_child_entrypoint() {
     match env::var(TEST_CHILD_MODE_ENV).as_deref() {
-        Ok("spawn-descendant") => {
+        Ok("spawn-descendant" | "exit-with-descendant") => {
             let pid_file = env::var(TEST_DESCENDANT_PID_FILE_ENV)
                 .expect("descendant pid file should be configured");
             let mut descendant =
@@ -150,11 +150,23 @@ fn agent_cli_test_child_entrypoint() {
                 .expect("descendant test process should start");
             fs::write(pid_file, descendant.id().to_string())
                 .expect("descendant pid file should be written");
+            if env::var(TEST_CHILD_MODE_ENV).as_deref() == Ok("exit-with-descendant") {
+                std::process::exit(0);
+            }
             let _ = descendant.wait();
         }
         Ok("hold-pipes") => {
             println!("descendant holding stdout");
             eprintln!("descendant holding stderr");
+            loop {
+                thread::park();
+            }
+        }
+        #[cfg(unix)]
+        Ok("ignore-term") => {
+            unsafe {
+                libc::signal(libc::SIGTERM, libc::SIG_IGN);
+            }
             loop {
                 thread::park();
             }
@@ -254,4 +266,59 @@ fn agent_cli_command_timeout_stops_descendant_and_joins_pipe_readers() {
         descendant_exited,
         "timeout cleanup should terminate the spawned descendant process"
     );
+}
+
+#[test]
+fn agent_cli_command_reaps_descendants_after_successful_parent_exit() {
+    let (executable, args) = test_child_command();
+    let pid_file = env::temp_dir().join(format!(
+        "machdoch-agent-cli-exited-parent-{}.pid",
+        std::process::id()
+    ));
+    let env_values = HashMap::from([
+        (
+            TEST_CHILD_MODE_ENV.to_string(),
+            "exit-with-descendant".to_string(),
+        ),
+        (
+            TEST_DESCENDANT_PID_FILE_ENV.to_string(),
+            pid_file.display().to_string(),
+        ),
+    ]);
+    // Run on a worker so regressions fail with a deadline instead of hanging
+    // the test runner forever while inherited pipe handles remain open.
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let worker = thread::spawn(move || {
+        let result = run_agent_cli_command(&executable, &args, &env_values, Duration::from_secs(3));
+        let _ = sender.send(result.map(|output| output.exit_code));
+    });
+    let result = receiver.recv_timeout(Duration::from_secs(8));
+    let pid = read_descendant_pid(&pid_file);
+    let exited = wait_for_pid_exit(pid, Duration::from_secs(2));
+    if !exited {
+        kill_pid(pid);
+    }
+    worker.join().expect("probe worker should finish");
+    let _ = fs::remove_file(pid_file);
+    assert_eq!(
+        result
+            .expect("probe should finish without waiting for inherited pipes")
+            .unwrap(),
+        Some(0)
+    );
+    assert!(
+        exited,
+        "successful probes must not leave descendants running"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn agent_cli_command_escalates_when_sigterm_is_ignored() {
+    let (executable, args) = test_child_command();
+    let env_values = HashMap::from([(TEST_CHILD_MODE_ENV.to_string(), "ignore-term".to_string())]);
+    let started = Instant::now();
+    let result = run_agent_cli_command(&executable, &args, &env_values, Duration::from_millis(500));
+    assert!(result.is_err());
+    assert!(started.elapsed() < Duration::from_secs(4));
 }

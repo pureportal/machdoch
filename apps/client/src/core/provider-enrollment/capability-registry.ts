@@ -1,5 +1,6 @@
-import { spawnSync } from "node:child_process";
+import { stat } from "node:fs/promises";
 import { extname } from "node:path";
+import { runStreamingCommand } from "../_helpers/streaming-command.js";
 import type {
   AgentCliProvider,
   ConfiguredModelProvider,
@@ -79,9 +80,12 @@ export const PROVIDER_CAPABILITY_REGISTRY = {
 const PROVIDER_PROBE_CACHE_TTL_MS = 5 * 60 * 1_000;
 const PROVIDER_PROBE_TIMEOUT_MS = 4_000;
 const PROVIDER_PROBE_RETRY_TIMEOUT_MS = 12_000;
+const MAX_CACHED_PROBES = 64;
+let activeProbeCommands = 0;
+const waitingProbeCommands: Array<() => void> = [];
 const probeCache = new Map<
   string,
-  { expiresAt: number; result: Promise<ProviderProbeResult> }
+  { expiresAt: number; pending: boolean; result: Promise<ProviderProbeResult> }
 >();
 
 const shouldUseShell = (executable: string): boolean => {
@@ -91,29 +95,62 @@ const shouldUseShell = (executable: string): boolean => {
   );
 };
 
-const captureCommand = (
+const captureCommand = async (
   executable: string,
   args: string[],
   timeoutMs = PROVIDER_PROBE_TIMEOUT_MS,
-): { output: string; exitCode: number | null } => {
-  if (typeof spawnSync !== "function") {
-    return { output: "", exitCode: null };
+): Promise<{ output: string; exitCode: number | null }> => {
+  const shell = shouldUseShell(executable);
+  if (
+    shell &&
+    (/["\r\n&|<>^%!]/u.test(executable) ||
+      args.some((arg) => !/^[A-Za-z0-9-]+$/u.test(arg)))
+  ) {
+    throw new Error(
+      "The provider command wrapper or probe arguments contain shell metacharacters.",
+    );
   }
-  const result = spawnSync(executable, args, {
-    env: process.env,
-    shell: shouldUseShell(executable),
-    stdio: ["ignore", "pipe", "pipe"],
-    windowsHide: true,
-    encoding: "utf8",
-    timeout: timeoutMs,
-    maxBuffer: 64_000,
+  await new Promise<void>((resolve) => {
+    if (activeProbeCommands < 2) {
+      activeProbeCommands += 1;
+      resolve();
+    } else waitingProbeCommands.push(resolve);
   });
-  return {
-    output: `${result.stdout ?? ""}${result.stderr ?? ""}`
-      .trim()
-      .slice(-64_000),
-    exitCode: result.status,
-  };
+  try {
+    // Probe arguments are fixed flag/subcommand tokens, checked above. Supply
+    // a complete command for .cmd/.bat wrappers; Node's shell+args API is deprecated.
+    const result = await runStreamingCommand(
+      shell ? `"${executable}" ${args.join(" ")}` : executable,
+      shell ? [] : args,
+      {
+        cwd: process.cwd(),
+        env: process.env,
+        shell,
+        timeoutMs,
+        maxBufferBytes: 128_000,
+      },
+    );
+    return {
+      output: `${result.stdout}\n${result.stderr}`.trim().slice(-64_000),
+      exitCode: result.exitCode,
+    };
+  } catch (error) {
+    const failure = error as {
+      stdout?: string;
+      stderr?: string;
+      code?: unknown;
+    };
+    return {
+      output: `${failure.stdout ?? ""}\n${failure.stderr ?? ""}`
+        .trim()
+        .slice(-64_000),
+      exitCode: typeof failure.code === "number" ? failure.code : null,
+    };
+  } finally {
+    const next = waitingProbeCommands.shift();
+    if (next) next();
+    else activeProbeCommands -= 1;
+  }
 };
 
 const detectFeatures = (provider: AgentCliProvider, help: string): string[] => {
@@ -159,18 +196,31 @@ export const probeProviderCli = async (
   executable: string,
   options: { force?: boolean } = {},
 ): Promise<ProviderProbeResult> => {
-  const key = `${provider}:${executable}`;
+  const metadata = await stat(executable).catch(() => undefined);
+  const key = JSON.stringify([
+    provider,
+    executable,
+    process.cwd(),
+    process.env.PATH ?? process.env.Path,
+    metadata && [metadata.dev, metadata.ino, metadata.size, metadata.mtimeMs],
+  ]);
   const cached = probeCache.get(key);
-  if (options.force !== true && cached && cached.expiresAt > Date.now()) {
-    return await cached.result;
+  if (
+    cached &&
+    (cached.pending ||
+      (options.force !== true && cached.expiresAt > Date.now()))
+  ) {
+    probeCache.delete(key);
+    probeCache.set(key, cached);
+    return structuredClone(await cached.result);
   }
   probeCache.delete(key);
 
   const pending = (async (): Promise<ProviderProbeResult> => {
     const warnings: string[] = [];
-    let versionResult = captureCommand(executable, ["--version"]);
+    let versionResult = await captureCommand(executable, ["--version"]);
     if (versionResult.exitCode !== 0) {
-      versionResult = captureCommand(
+      versionResult = await captureCommand(
         executable,
         ["--version"],
         PROVIDER_PROBE_RETRY_TIMEOUT_MS,
@@ -180,10 +230,10 @@ export const probeProviderCli = async (
       );
     }
 
-    let helpResult = captureCommand(executable, ["--help"]);
+    let helpResult = await captureCommand(executable, ["--help"]);
 
     if (helpResult.exitCode !== 0) {
-      helpResult = captureCommand(
+      helpResult = await captureCommand(
         executable,
         ["--help"],
         PROVIDER_PROBE_RETRY_TIMEOUT_MS,
@@ -194,9 +244,9 @@ export const probeProviderCli = async (
     }
 
     if (provider === "codex-cli") {
-      let execHelpResult = captureCommand(executable, ["exec", "--help"]);
+      let execHelpResult = await captureCommand(executable, ["exec", "--help"]);
       if (execHelpResult.exitCode !== 0) {
-        execHelpResult = captureCommand(
+        execHelpResult = await captureCommand(
           executable,
           ["exec", "--help"],
           PROVIDER_PROBE_RETRY_TIMEOUT_MS,
@@ -240,15 +290,34 @@ export const probeProviderCli = async (
   })();
 
   probeCache.set(key, {
-    expiresAt: Date.now() + PROVIDER_PROBE_CACHE_TTL_MS,
+    expiresAt: Infinity,
+    pending: true,
     result: pending,
   });
-  pending.catch(() => {
-    if (probeCache.get(key)?.result === pending) {
-      probeCache.delete(key);
-    }
-  });
-  return await pending;
+  void pending.then(
+    (result) => {
+      const cached = probeCache.get(key);
+      if (cached?.result === pending) {
+        cached.pending = false;
+        cached.expiresAt =
+          Date.now() +
+          (result.available ? PROVIDER_PROBE_CACHE_TTL_MS : 15_000);
+      }
+      for (const [cachedKey, entry] of probeCache) {
+        if (
+          !entry.pending &&
+          (entry.expiresAt <= Date.now() || probeCache.size > MAX_CACHED_PROBES)
+        )
+          probeCache.delete(cachedKey);
+      }
+    },
+    () => {
+      if (probeCache.get(key)?.result === pending) {
+        probeCache.delete(key);
+      }
+    },
+  );
+  return structuredClone(await pending);
 };
 
 export const createProviderProbeEvidence = (

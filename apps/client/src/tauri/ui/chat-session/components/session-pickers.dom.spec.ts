@@ -12,6 +12,12 @@ import { createElement } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { RUN_MODE_META } from "../_helpers/session-shell";
 import { TooltipProvider } from "../../components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "../../components/ui/dialog";
 import { SessionModePicker } from "./session-mode-picker";
 import { SessionReasoningPicker } from "./session-reasoning-picker";
 
@@ -27,6 +33,62 @@ beforeAll(() => {
 afterEach(() => cleanup());
 
 describe("session picker popovers", () => {
+  it("portals out of clipped containers and preserves focus inside a parent dialog", async () => {
+    const onSelect = vi.fn();
+    render(
+      createElement(
+        Dialog,
+        { defaultOpen: true },
+        createElement(
+          DialogContent,
+          null,
+          createElement(DialogTitle, null, "Parent settings"),
+          createElement(DialogDescription, null, "Model settings"),
+          createElement(
+            "div",
+            {
+              "data-testid": "clipped",
+              style: { overflow: "hidden", width: 100 },
+            },
+            createElement(ComposerModelPicker, {
+              providers: [
+                {
+                  id: "test",
+                  label: "Test",
+                  available: true,
+                  models: [{ id: "model", label: "Model" }],
+                },
+              ],
+              activeProvider: "test",
+              activeProviderLabel: "Test",
+              activeModel: "model",
+              activeModelLabel: "Model",
+              loading: false,
+              onSelect,
+            }),
+          ),
+        ),
+      ),
+    );
+    const trigger = screen.getByLabelText("Session model: Test Model");
+    fireEvent.click(trigger);
+    const search = await screen.findByLabelText("Search models");
+    await waitFor(() => expect(document.activeElement).toBe(search));
+    expect(screen.getByTestId("clipped").contains(search)).toBe(false);
+    fireEvent.change(search, { target: { value: "Model" } });
+    fireEvent.click(screen.getByLabelText("Choose Test Model"));
+    expect(onSelect).toHaveBeenCalledWith("test", "model");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Session model" }),
+      ).toBeNull(),
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Parent settings" }),
+    ).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
   it("filters and selects a model from the shared picker", async () => {
     const onSelect = vi.fn();
     render(

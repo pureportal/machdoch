@@ -4,6 +4,7 @@ import {
   gatewayProtocolVersion,
   hostMessageSchema,
   productCapability,
+  workspaceRunsCapability,
   type HostMessage,
   type HostRequest,
   type HostResponse,
@@ -21,6 +22,7 @@ export type GatewayFailure =
   | "busy"
   | "timeout"
   | "closed"
+  | "cancelled"
   | "protocol";
 
 export class GatewayError extends Error {
@@ -31,22 +33,32 @@ export class GatewayError extends Error {
 
 const gatewayMessageWindowMilliseconds = 10_000;
 const maximumGatewayMessagesPerWindow = 256;
+// A development page can load hundreds of modules, each with a tiny tunnel receipt.
+// Keep the existing byte budget and stream limits while allowing these bursts.
+const maximumPreviewGatewayMessagesPerWindow = 2048;
 const maximumGatewayBytesPerWindow = 16 * 1024 * 1024;
 const presenceUpdateIntervalMilliseconds = 30_000;
+const gatewayPingIntervalMilliseconds = 15_000;
+const gatewayCloseTimeoutMilliseconds = 5_000;
+const maximumGatewayBufferedBytes = 2 * maximumGatewayMessageBytes;
 
 interface PendingRequest {
   resolve: (response: HostResponse) => void;
   reject: (error: GatewayError) => void;
-  timeout: NodeJS.Timeout;
+  cleanup: () => void;
+  responseType: HostResponse["type"];
+  commandId?: string;
 }
 
 interface GatewayConnection {
+  capabilities: string[];
   generation: string;
   socket: WebSocket | null;
   active: boolean;
   productVersion: string | null;
   protocolVersion: number | null;
   lastSeenAt: number;
+  lastPingAt: number;
   lastPresenceUpdateAt: number;
   messageWindowStartedAt: number;
   messageWindowCount: number;
@@ -62,11 +74,16 @@ export class GatewayHub {
   });
   private readonly connections = new Map<string, GatewayConnection>();
   private closed = false;
+  private readonly heartbeatCheck: NodeJS.Timeout;
 
   constructor(
     private readonly config: FleetManagerConfig,
     private readonly fleetStore: FleetStore,
-  ) {}
+  ) {
+    // One timer for the hub, regardless of the number of connected instances.
+    this.heartbeatCheck = setInterval(() => this.checkConnections(), 5_000);
+    this.heartbeatCheck.unref();
+  }
 
   handleUpgrade(
     request: IncomingMessage,
@@ -111,18 +128,20 @@ export class GatewayHub {
     try {
       this.server.handleUpgrade(request, socket, head, (webSocket) => {
         if (this.closed || this.connections.has(instanceId)) {
-          webSocket.close(1013, "Gateway connection is unavailable.");
+          closeSocket(webSocket, 1013, "Gateway connection is unavailable.");
           return;
         }
         this.connections.set(instanceId, {
+          capabilities: [],
           generation,
           socket: null,
           active: false,
           productVersion: null,
           protocolVersion: null,
-          lastSeenAt: Date.now(),
+          lastSeenAt: performance.now(),
+          lastPingAt: performance.now(),
           lastPresenceUpdateAt: 0,
-          messageWindowStartedAt: Date.now(),
+          messageWindowStartedAt: performance.now(),
           messageWindowCount: 0,
           messageWindowBytes: 0,
           pending: new Map(),
@@ -136,40 +155,119 @@ export class GatewayHub {
   }
 
   isOnline(instanceId: string): boolean {
-    return this.connections.get(instanceId)?.active === true;
+    const connection = this.connections.get(instanceId);
+    return Boolean(
+      connection?.active &&
+      connection.socket?.readyState === WebSocket.OPEN &&
+      performance.now() - connection.lastSeenAt <
+        this.config.connectionPolicy.heartbeatTimeoutSeconds * 1000,
+    );
   }
 
-  async relay(instanceId: string, request: HostRequest): Promise<HostResponse> {
+  supportsRuns(instanceId: string): boolean {
+    return (
+      this.isOnline(instanceId) &&
+      Boolean(
+        this.connections
+          .get(instanceId)
+          ?.capabilities.includes(workspaceRunsCapability),
+      )
+    );
+  }
+
+  generation(instanceId: string): string | null {
+    return this.isOnline(instanceId)
+      ? (this.connections.get(instanceId)?.generation ?? null)
+      : null;
+  }
+
+  async relay(
+    instanceId: string,
+    request: HostRequest,
+    signal?: AbortSignal,
+  ): Promise<HostResponse> {
+    if (signal?.aborted) throw new GatewayError("cancelled");
     const connection = this.connections.get(instanceId);
     if (
-      !connection?.active ||
+      !this.isOnline(instanceId) ||
+      !connection ||
       connection.socket?.readyState !== WebSocket.OPEN
     ) {
       throw new GatewayError("offline");
     }
     if (connection.pending.size >= 64) throw new GatewayError("busy");
+    if (
+      ["getWorkspaceRuns", "executeWorkspaceRun", "openPreviewTunnel"].includes(
+        request.type,
+      ) &&
+      !this.supportsRuns(instanceId)
+    )
+      throw new GatewayError("protocol");
     const requestId = createId("request");
     const message: ManagerMessage = { type: "request", requestId, request };
     const payload = JSON.stringify(message);
     if (Buffer.byteLength(payload) > maximumGatewayMessageBytes) {
       throw new GatewayError("protocol");
     }
-    const response = new Promise<HostResponse>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        connection.pending.delete(requestId);
-        reject(new GatewayError("timeout"));
-      }, this.config.connectionPolicy.requestTimeoutSeconds * 1000);
-      connection.pending.set(requestId, { resolve, reject, timeout });
-    });
-    try {
-      connection.socket.send(payload);
-    } catch {
-      const pending = connection.pending.get(requestId);
-      if (pending) clearTimeout(pending.timeout);
-      connection.pending.delete(requestId);
-      throw new GatewayError("closed");
+    if (
+      connection.socket.bufferedAmount + Buffer.byteLength(payload) >
+      maximumGatewayBufferedBytes
+    ) {
+      throw new GatewayError("busy");
     }
-    return response;
+    return new Promise<HostResponse>((resolve, reject) => {
+      const fail = (reason: GatewayFailure): void => {
+        const pending = connection.pending.get(requestId);
+        if (!pending) return;
+        connection.pending.delete(requestId);
+        pending.cleanup();
+        reject(new GatewayError(reason));
+      };
+      const abort = (): void => fail("cancelled");
+      const timeout = setTimeout(() => {
+        fail("timeout");
+      }, this.config.connectionPolicy.requestTimeoutSeconds * 1000);
+      connection.pending.set(requestId, {
+        resolve,
+        reject,
+        cleanup: () => {
+          clearTimeout(timeout);
+          signal?.removeEventListener("abort", abort);
+        },
+        responseType:
+          request.type === "getProductSnapshot"
+            ? "productSnapshot"
+            : request.type === "getWorkspaceRuns"
+              ? "workspaceRuns"
+              : request.type === "openPreviewTunnel"
+                ? "previewTunnelReady"
+                : "commandAccepted",
+        commandId:
+          request.type === "executeProductCommand" ||
+          request.type === "executeWorkspaceRun"
+            ? request.command.commandId
+            : undefined,
+      });
+      signal?.addEventListener("abort", abort, { once: true });
+      try {
+        connection.socket!.send(payload, (error) => {
+          if (error)
+            this.closeConnection(
+              instanceId,
+              connection.generation,
+              1011,
+              "Gateway write failed.",
+            );
+        });
+      } catch {
+        this.closeConnection(
+          instanceId,
+          connection.generation,
+          1011,
+          "Gateway write failed.",
+        );
+      }
+    });
   }
 
   disconnect(instanceId: string, reason: string): void {
@@ -179,19 +277,25 @@ export class GatewayHub {
       try {
         const message: ManagerMessage = { type: "disconnect", reason };
         connection.socket.send(JSON.stringify(message));
-        connection.socket.close(1008, reason.slice(0, 123));
       } catch {
         connection.socket.terminate();
       }
     }
-    this.remove(instanceId, connection.generation);
+    this.closeConnection(instanceId, connection.generation, 1008, reason);
   }
 
   close(): void {
     if (this.closed) return;
     this.closed = true;
-    for (const instanceId of this.connections.keys()) {
-      this.disconnect(instanceId, "Fleet Manager is shutting down.");
+    clearInterval(this.heartbeatCheck);
+    for (const [instanceId, connection] of this.connections) {
+      // A restart must allow reconnects; the disconnect message revokes access permanently.
+      this.closeConnection(
+        instanceId,
+        connection.generation,
+        1012,
+        "Fleet Manager is restarting.",
+      );
     }
     this.server.close();
   }
@@ -203,37 +307,32 @@ export class GatewayHub {
   ): void {
     const connection = this.connections.get(instanceId);
     if (!connection || connection.generation !== generation) {
-      socket.close(1011);
+      closeSocket(socket, 1011, "Gateway connection is unavailable.");
       return;
     }
     connection.socket = socket;
-    const helloTimeout = setTimeout(
-      () => socket.close(1008, "Hello message required."),
-      10_000,
-    );
-    const heartbeatCheck = setInterval(() => {
-      const current = this.connections.get(instanceId);
-      if (
-        !current ||
-        current.generation !== generation ||
-        Date.now() - current.lastSeenAt >
-          this.config.connectionPolicy.heartbeatTimeoutSeconds * 1000
-      ) {
-        socket.close(1001, "Heartbeat timeout.");
-      }
-    }, 5_000);
     socket.on("message", (data, isBinary) => {
       try {
         const payload = rawDataBuffer(data);
         if (isBinary || payload.byteLength > maximumGatewayMessageBytes) {
-          socket.close(1003, "Unsupported gateway message.");
+          this.closeConnection(
+            instanceId,
+            generation,
+            1003,
+            "Unsupported gateway message.",
+          );
           return;
         }
         if (!this.acceptFrame(instanceId, generation, socket, payload.length))
           return;
-        this.receive(instanceId, generation, payload, helloTimeout);
+        this.receive(instanceId, generation, payload);
       } catch {
-        socket.close(1011, "Gateway message could not be processed.");
+        this.closeConnection(
+          instanceId,
+          generation,
+          1011,
+          "Gateway message could not be processed.",
+        );
       }
     });
     socket.on("ping", (data) => {
@@ -247,44 +346,59 @@ export class GatewayHub {
       }
     });
     socket.on("close", () => {
-      clearTimeout(helloTimeout);
-      clearInterval(heartbeatCheck);
       this.remove(instanceId, generation);
     });
-    socket.on("error", () => socket.close());
+    socket.on("error", () =>
+      this.closeConnection(
+        instanceId,
+        generation,
+        1011,
+        "Gateway connection failed.",
+      ),
+    );
   }
 
-  private receive(
-    instanceId: string,
-    generation: string,
-    data: Buffer,
-    helloTimeout: NodeJS.Timeout,
-  ): void {
+  private receive(instanceId: string, generation: string, data: Buffer): void {
     const connection = this.connections.get(instanceId);
     if (!connection || connection.generation !== generation) return;
     let input: unknown;
     try {
       input = JSON.parse(data.toString());
     } catch {
-      connection.socket?.close(1007, "Invalid gateway message.");
+      this.closeConnection(
+        instanceId,
+        generation,
+        1007,
+        "Invalid gateway message.",
+      );
       return;
     }
     const parsed = hostMessageSchema.safeParse(input);
     if (!parsed.success) {
-      connection.socket?.close(1008, "Invalid gateway message.");
+      this.closeConnection(
+        instanceId,
+        generation,
+        1008,
+        "Invalid gateway message.",
+      );
       return;
     }
     const message: HostMessage = parsed.data;
     if (!connection.active) {
       if (!validHello(message, instanceId)) {
-        connection.socket?.close(1008, "Invalid hello message.");
+        this.closeConnection(
+          instanceId,
+          generation,
+          1008,
+          "Invalid hello message.",
+        );
         return;
       }
-      clearTimeout(helloTimeout);
       connection.active = true;
+      connection.capabilities = message.capabilities;
       connection.productVersion = message.productVersion;
       connection.protocolVersion = message.protocolVersion;
-      connection.lastSeenAt = Date.now();
+      connection.lastSeenAt = performance.now();
       this.fleetStore.updateInstancePresence(
         instanceId,
         message.productVersion,
@@ -300,21 +414,42 @@ export class GatewayHub {
       return;
     }
     if (message.type !== "response") {
-      connection.socket?.close(1008, "Invalid gateway message.");
+      this.closeConnection(
+        instanceId,
+        generation,
+        1008,
+        "Invalid gateway message.",
+      );
       return;
     }
     this.markSeen(instanceId, generation);
     const pending = connection.pending.get(message.requestId);
     if (!pending) return;
-    clearTimeout(pending.timeout);
+    pending.cleanup();
     connection.pending.delete(message.requestId);
+    if (
+      message.response.type !== "error" &&
+      (message.response.type !== pending.responseType ||
+        (message.response.type === "commandAccepted" &&
+          pending.commandId !== undefined &&
+          message.response.receipt.commandId !== pending.commandId))
+    ) {
+      pending.reject(new GatewayError("protocol"));
+      this.closeConnection(
+        instanceId,
+        generation,
+        1008,
+        "Mismatched gateway response.",
+      );
+      return;
+    }
     pending.resolve(message.response);
   }
 
   private markSeen(instanceId: string, generation: string): void {
     const connection = this.connections.get(instanceId);
-    if (connection?.generation === generation)
-      connection.lastSeenAt = Date.now();
+    if (connection?.generation === generation && connection.active)
+      connection.lastSeenAt = performance.now();
   }
 
   private updatePresence(
@@ -348,7 +483,7 @@ export class GatewayHub {
   ): boolean {
     const connection = this.connections.get(instanceId);
     if (!connection || connection.generation !== generation) return false;
-    const now = Date.now();
+    const now = performance.now();
     if (
       now < connection.messageWindowStartedAt ||
       now - connection.messageWindowStartedAt >=
@@ -361,7 +496,10 @@ export class GatewayHub {
     connection.messageWindowCount += 1;
     connection.messageWindowBytes += bytes;
     return (
-      connection.messageWindowCount <= maximumGatewayMessagesPerWindow &&
+      connection.messageWindowCount <=
+        (connection.capabilities.includes(workspaceRunsCapability)
+          ? maximumPreviewGatewayMessagesPerWindow
+          : maximumGatewayMessagesPerWindow) &&
       connection.messageWindowBytes <= maximumGatewayBytesPerWindow
     );
   }
@@ -374,7 +512,12 @@ export class GatewayHub {
   ): boolean {
     if (this.consumeMessageBudget(instanceId, generation, bytes)) return true;
     if (socket.readyState === WebSocket.OPEN) {
-      socket.close(1008, "Gateway message rate exceeded.");
+      this.closeConnection(
+        instanceId,
+        generation,
+        1008,
+        "Gateway message rate exceeded.",
+      );
     }
     return false;
   }
@@ -384,10 +527,90 @@ export class GatewayHub {
     if (!connection || connection.generation !== generation) return;
     this.connections.delete(instanceId);
     for (const pending of connection.pending.values()) {
-      clearTimeout(pending.timeout);
+      pending.cleanup();
       pending.reject(new GatewayError("closed"));
     }
     connection.pending.clear();
+  }
+
+  private closeConnection(
+    instanceId: string,
+    generation: string,
+    code: number,
+    reason: string,
+  ): void {
+    const connection = this.connections.get(instanceId);
+    if (!connection || connection.generation !== generation) return;
+    this.remove(instanceId, generation);
+    if (connection.socket) closeSocket(connection.socket, code, reason);
+  }
+
+  private checkConnections(): void {
+    const now = performance.now();
+    for (const [instanceId, connection] of this.connections) {
+      const timeout = connection.active
+        ? this.config.connectionPolicy.heartbeatTimeoutSeconds * 1000
+        : 10_000;
+      if (now - connection.lastSeenAt >= timeout) {
+        this.closeConnection(
+          instanceId,
+          connection.generation,
+          connection.active ? 1001 : 1008,
+          connection.active ? "Heartbeat timeout." : "Hello message required.",
+        );
+        continue;
+      }
+      if (
+        !connection.active ||
+        now - connection.lastPingAt < gatewayPingIntervalMilliseconds
+      )
+        continue;
+      connection.lastPingAt = now;
+      try {
+        connection.socket?.ping(
+          undefined,
+          false,
+          (error: Error | undefined) => {
+            if (error)
+              this.closeConnection(
+                instanceId,
+                connection.generation,
+                1011,
+                "Gateway write failed.",
+              );
+          },
+        );
+      } catch {
+        this.closeConnection(
+          instanceId,
+          connection.generation,
+          1011,
+          "Gateway write failed.",
+        );
+      }
+    }
+  }
+}
+
+function closeSocket(socket: WebSocket, code: number, reason: string): void {
+  if (socket.readyState === WebSocket.CLOSED) return;
+  socket.once("error", () => socket.terminate());
+  const timeout = setTimeout(
+    () => socket.terminate(),
+    gatewayCloseTimeoutMilliseconds,
+  );
+  timeout.unref();
+  socket.once("close", () => clearTimeout(timeout));
+  try {
+    // WebSocket close reasons are limited in UTF-8 bytes, not JS characters.
+    let truncated = "";
+    for (const character of reason) {
+      if (Buffer.byteLength(truncated + character) > 123) break;
+      truncated += character;
+    }
+    socket.close(code, truncated);
+  } catch {
+    socket.terminate();
   }
 }
 
@@ -407,7 +630,18 @@ function bearerToken(value: string | undefined): string | null {
   return /^Bearer ([^\s]+)$/iu.exec(value ?? "")?.[1] ?? null;
 }
 
-function rejectUpgrade(socket: Duplex, status: number, reason: string): void {
+export function rejectUpgrade(
+  socket: Duplex,
+  status: number,
+  reason: string,
+): void {
+  socket.once("error", () => socket.destroy());
+  const timeout = setTimeout(
+    () => socket.destroy(),
+    gatewayCloseTimeoutMilliseconds,
+  );
+  timeout.unref();
+  socket.once("close", () => clearTimeout(timeout));
   socket.end(
     `HTTP/1.1 ${status} ${reason}\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: 0\r\nX-Content-Type-Options: nosniff\r\n\r\n`,
   );

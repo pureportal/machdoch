@@ -8,6 +8,8 @@ import {
   type KeyboardEvent,
 } from "react";
 
+import { Popover } from "radix-ui";
+
 export interface ComposerModelOption {
   id: string;
   label: string;
@@ -93,7 +95,6 @@ export function ComposerModelPicker({
   const [open, setOpen] = useState(false);
   const [visibleProviderId, setVisibleProviderId] = useState(activeProvider);
   const [search, setSearch] = useState("");
-  const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const focusMovedIntoPickerRef = useRef(false);
@@ -102,23 +103,6 @@ export function ComposerModelPicker({
   useEffect(() => {
     setVisibleProviderId(activeProvider);
   }, [activeProvider]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const handlePointerDown = (event: PointerEvent): void => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const handleKeyDown = (event: globalThis.KeyboardEvent): void => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open]);
 
   useEffect(() => {
     onOpenChange?.(open);
@@ -197,114 +181,127 @@ export function ComposerModelPicker({
         : "No matching models.";
 
   return (
-    <div className="m-composer-model-picker" ref={rootRef}>
-      <button
-        ref={triggerRef}
-        type="button"
-        className="m-composer-model-trigger app-model-picker-button"
-        aria-label={`${label}: ${activeProviderLabel} ${activeModelLabel}`}
-        aria-expanded={open}
-        aria-controls={open ? popoverId : undefined}
-        aria-haspopup="dialog"
-        disabled={providers.length === 0}
-        onClick={() => setPickerOpen(!open)}
-      >
-        <Bot aria-hidden="true" />
-        <span>
-          {activeProviderLabel} / {activeModelLabel}
-        </span>
-        <ChevronDown aria-hidden="true" />
-      </button>
-      {open ? (
-        <div
-          id={popoverId}
-          className="m-composer-model-popover"
-          data-placement={placement}
-          role="dialog"
-          aria-label={label}
-        >
-          <div className="m-composer-model-heading">
-            <span>{label}</span>
-            <strong>
+    <Popover.Root open={open} onOpenChange={setPickerOpen}>
+      <div className="m-composer-model-picker">
+        <Popover.Trigger asChild>
+          <button
+            ref={triggerRef}
+            type="button"
+            className="m-composer-model-trigger app-model-picker-button"
+            aria-label={`${label}: ${activeProviderLabel} ${activeModelLabel}`}
+            aria-expanded={open}
+            aria-controls={open ? popoverId : undefined}
+            aria-haspopup="dialog"
+            disabled={providers.length === 0}
+          >
+            <Bot aria-hidden="true" />
+            <span>
               {activeProviderLabel} / {activeModelLabel}
-            </strong>
-          </div>
-          <div className="m-composer-model-content">
-            <div
-              className="m-composer-provider-tabs"
-              role="tablist"
-              aria-label="Model providers"
-            >
-              {providers.map((provider) => (
-                <button
-                  key={provider.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={selectedProvider?.id === provider.id}
-                  data-active={selectedProvider?.id === provider.id}
-                  onClick={() => {
-                    setVisibleProviderId(provider.id);
-                    setSearch("");
-                  }}
-                >
-                  {provider.id === activeProvider ? (
-                    <Check aria-hidden="true" />
-                  ) : null}
-                  {provider.label}
-                </button>
-              ))}
+            </span>
+            <ChevronDown aria-hidden="true" />
+          </button>
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content
+            id={popoverId}
+            className="m-composer-model-popover"
+            side={placement}
+            align="start"
+            sideOffset={8}
+            collisionPadding={8}
+            onOpenAutoFocus={(event) => {
+              event.preventDefault();
+              searchRef.current?.focus();
+              focusMovedIntoPickerRef.current =
+                document.activeElement === searchRef.current;
+            }}
+            onCloseAutoFocus={(event) => event.preventDefault()}
+            role="dialog"
+            aria-label={label}
+          >
+            <div className="m-composer-model-heading">
+              <span>{label}</span>
+              <strong>
+                {activeProviderLabel} / {activeModelLabel}
+              </strong>
             </div>
-            <label className="m-composer-model-search">
-              <Search aria-hidden="true" />
-              <input
-                ref={searchRef}
-                value={search}
-                aria-label="Search models"
-                placeholder="Search models"
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(event) => setSearch(event.target.value)}
-                onKeyDown={handleSearchKeyDown}
-              />
-            </label>
-            <div className="m-composer-model-list-heading">
-              <strong>{selectedProvider?.label ?? "Models"}</strong>
-              <span aria-live="polite">{availability}</span>
-            </div>
-            <div className="m-composer-model-list">
-              {visibleModels.length === 0 ? (
-                <div className="m-composer-model-empty" role="status">
-                  {emptyState}
-                </div>
-              ) : null}
-              {visibleModels.map((model) => {
-                const selected =
-                  selectedProvider?.id === activeProvider &&
-                  model.id === activeModel;
-                return (
+            <div className="m-composer-model-content">
+              <div
+                className="m-composer-provider-tabs"
+                role="tablist"
+                aria-label="Model providers"
+              >
+                {providers.map((provider) => (
                   <button
-                    key={`${selectedProvider?.id}:${model.id}`}
+                    key={provider.id}
                     type="button"
-                    className="m-composer-model-option"
-                    data-active={selected}
-                    aria-label={`Choose ${selectedProvider?.label} ${model.label}`}
-                    aria-pressed={selected}
-                    onClick={() =>
-                      selectedProvider &&
-                      selectModel(selectedProvider.id, model.id)
-                    }
+                    role="tab"
+                    aria-selected={selectedProvider?.id === provider.id}
+                    data-active={selectedProvider?.id === provider.id}
+                    onClick={() => {
+                      setVisibleProviderId(provider.id);
+                      setSearch("");
+                    }}
                   >
-                    <span className="m-composer-model-check">
-                      {selected ? <Check aria-hidden="true" /> : null}
-                    </span>
-                    <strong>{model.label}</strong>
+                    {provider.id === activeProvider ? (
+                      <Check aria-hidden="true" />
+                    ) : null}
+                    {provider.label}
                   </button>
-                );
-              })}
+                ))}
+              </div>
+              <label className="m-composer-model-search">
+                <Search aria-hidden="true" />
+                <input
+                  ref={searchRef}
+                  value={search}
+                  aria-label="Search models"
+                  placeholder="Search models"
+                  autoComplete="off"
+                  spellCheck={false}
+                  onChange={(event) => setSearch(event.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                />
+              </label>
+              <div className="m-composer-model-list-heading">
+                <strong>{selectedProvider?.label ?? "Models"}</strong>
+                <span aria-live="polite">{availability}</span>
+              </div>
+              <div className="m-composer-model-list">
+                {visibleModels.length === 0 ? (
+                  <div className="m-composer-model-empty" role="status">
+                    {emptyState}
+                  </div>
+                ) : null}
+                {visibleModels.map((model) => {
+                  const selected =
+                    selectedProvider?.id === activeProvider &&
+                    model.id === activeModel;
+                  return (
+                    <button
+                      key={`${selectedProvider?.id}:${model.id}`}
+                      type="button"
+                      className="m-composer-model-option"
+                      data-active={selected}
+                      aria-label={`Choose ${selectedProvider?.label} ${model.label}`}
+                      aria-pressed={selected}
+                      onClick={() =>
+                        selectedProvider &&
+                        selectModel(selectedProvider.id, model.id)
+                      }
+                    >
+                      <span className="m-composer-model-check">
+                        {selected ? <Check aria-hidden="true" /> : null}
+                      </span>
+                      <strong>{model.label}</strong>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
+          </Popover.Content>
+        </Popover.Portal>
+      </div>
+    </Popover.Root>
   );
 }

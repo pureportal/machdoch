@@ -345,6 +345,8 @@ describe("run_shell_command", () => {
 
     await vi.advanceTimersByTimeAsync(SHELL_TIMEOUT_MS);
     child.emit("close", null);
+    taskkillChild.emit("close", 0);
+    await vi.advanceTimersByTimeAsync(500);
 
     const result = await resultPromise;
 
@@ -363,11 +365,12 @@ describe("run_shell_command", () => {
       expect(child.kill).not.toHaveBeenCalled();
     } else {
       expect(processKillSpy).toHaveBeenCalledWith(-4242, "SIGTERM");
-      expect(child.kill).toHaveBeenCalledTimes(1);
+      expect(child.kill).toHaveBeenCalledTimes(2);
     }
   });
 
   it("terminates the process tree when a streaming shell command is aborted", async () => {
+    vi.useFakeTimers();
     const processKillSpy = vi.spyOn(process, "kill").mockImplementation(() => {
       throw new Error("missing process group");
     });
@@ -412,6 +415,8 @@ describe("run_shell_command", () => {
 
     controller.abort("User requested cancellation.");
     child.emit("close", null, "SIGTERM");
+    taskkillChild.emit("close", 0);
+    await vi.advanceTimersByTimeAsync(500);
 
     const result = await resultPromise;
 
@@ -430,7 +435,7 @@ describe("run_shell_command", () => {
       expect(child.kill).not.toHaveBeenCalled();
     } else {
       expect(processKillSpy).toHaveBeenCalledWith(-5252, "SIGTERM");
-      expect(child.kill).toHaveBeenCalledTimes(1);
+      expect(child.kill).toHaveBeenCalledTimes(2);
     }
   });
 

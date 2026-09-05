@@ -88,7 +88,7 @@ export const createLangdockReasoningConfig = (
 
   assertReasoningModeSupportedForProviderModel(reasoning, "langdock", model);
 
-  if (reasoning === "max" || reasoning === "ultra") {
+  if (reasoning === "max" || reasoning === "ultra" || reasoning === "aeon") {
     throw new Error(
       `Langdock Chat Completions does not accept reasoning effort ${reasoning}.`,
     );

@@ -124,49 +124,73 @@ const validateConfiguredScopes = async (
   return diagnostics;
 };
 
-const createProfileSource = (input: {
-  id: string;
-  kind:
-    | "profile-global"
-    | "profile-auto"
-    | "profile-workspace"
-    | "profile-unassigned";
-  name: string;
-  body: string;
-  profileId: string;
-  scopePath: string;
-  assignmentPath: string;
-  workspaceId?: string;
-  precedence: number;
-  sequence: number;
-  status?: "selected" | "skipped";
-  reason?: ResolvedInstructionSource["reason"];
-  otherAssignments?: ResolvedInstructionSource["otherAssignments"];
-}): PendingSource => ({
-  id: input.id,
-  kind: input.kind,
-  name: input.name,
-  body: input.body,
-  digest: sha256(input.body),
-  byteLength: utf8ByteLength(input.body),
-  lineCount: input.body.split("\n").length,
-  scopePath: input.scopePath,
-  assignmentPath: input.assignmentPath,
-  precedence: input.precedence,
-  sequence: input.sequence,
-  trusted: true,
-  profileId: input.profileId,
-  ...(input.workspaceId === undefined
-    ? {}
-    : { workspaceId: input.workspaceId }),
-  status: input.status ?? "selected",
-  ...(input.reason === undefined ? {} : { reason: input.reason }),
-  ...(input.otherAssignments === undefined
-    ? {}
-    : {
-        otherAssignments: input.otherAssignments.map((entry) => ({ ...entry })),
-      }),
-});
+const createProfileSourceFactory = () => {
+  const bodyMetadata = new Map<
+    string,
+    Pick<PendingSource, "digest" | "byteLength" | "lineCount">
+  >();
+  return (input: {
+    id: string;
+    kind:
+      | "profile-global"
+      | "profile-auto"
+      | "profile-workspace"
+      | "profile-unassigned";
+    name: string;
+    body: string;
+    profileId: string;
+    scopePath: string;
+    assignmentPath: string;
+    workspaceId?: string;
+    precedence: number;
+    sequence: number;
+    status?: "selected" | "skipped";
+    reason?: ResolvedInstructionSource["reason"];
+    otherAssignments?: ResolvedInstructionSource["otherAssignments"];
+  }): PendingSource => {
+    let metadata = bodyMetadata.get(input.body);
+    if (!metadata) {
+      let lineCount = 1;
+      for (
+        let index = input.body.indexOf("\n");
+        index !== -1;
+        index = input.body.indexOf("\n", index + 1)
+      )
+        lineCount += 1;
+      metadata = {
+        digest: sha256(input.body),
+        byteLength: utf8ByteLength(input.body),
+        lineCount,
+      };
+      bodyMetadata.set(input.body, metadata);
+    }
+    return {
+      id: input.id,
+      kind: input.kind,
+      name: input.name,
+      body: input.body,
+      ...metadata,
+      scopePath: input.scopePath,
+      assignmentPath: input.assignmentPath,
+      precedence: input.precedence,
+      sequence: input.sequence,
+      trusted: true,
+      profileId: input.profileId,
+      ...(input.workspaceId === undefined
+        ? {}
+        : { workspaceId: input.workspaceId }),
+      status: input.status ?? "selected",
+      ...(input.reason === undefined ? {} : { reason: input.reason }),
+      ...(input.otherAssignments === undefined
+        ? {}
+        : {
+            otherAssignments: input.otherAssignments.map((entry) => ({
+              ...entry,
+            })),
+          }),
+    };
+  };
+};
 
 const createBodyGroups = (
   selected: readonly ResolvedInstructionSource[],
@@ -553,6 +577,7 @@ export const resolveInstructionSet = async (
     library.profiles.map((profile) => [profile.id, profile]),
   );
   const selected: PendingSource[] = [];
+  const createProfileSource = createProfileSourceFactory();
   const assignmentEntries: PendingSource[] = [];
   let sequence = 0;
   let precedence = 0;
@@ -608,20 +633,17 @@ export const resolveInstructionSet = async (
     }
   }
 
-  const workspaceScopes = workspace
-    ? [...workspace.scopes].sort((left, right) =>
-        compareScope(left.path, right.path),
-      )
-    : [];
+  const workspaceScopes = workspace?.scopes ?? [];
   const allScopePaths = new Set<string>(
     workspaceScopes.map((scope) => scope.path),
   );
   const orderedScopePaths = [...allScopePaths].sort(compareScope);
+  const assignmentByScope = new Map(
+    workspaceScopes.map((scope) => [hostPathKey(scope.path), scope]),
+  );
 
   for (const scopePath of orderedScopePaths) {
-    const assignment = workspaceScopes.find(
-      (scope) => hostPathKey(scope.path) === hostPathKey(scopePath),
-    );
+    const assignment = assignmentByScope.get(hostPathKey(scopePath));
     for (const profileId of assignment?.profiles ?? []) {
       const profile = profileById.get(profileId);
       if (!profile || !workspace) {
@@ -680,9 +702,30 @@ export const resolveInstructionSet = async (
   const assignedProfileIds = new Set(
     assignmentEntries.map((source) => source.profileId).filter(Boolean),
   );
-  const unassignedProfileEntries: PendingSource[] = library.profiles
-    .filter((profile) => !assignedProfileIds.has(profile.id))
-    .map((profile) =>
+  const unassignedProfiles = library.profiles.filter(
+    (profile) => !assignedProfileIds.has(profile.id),
+  );
+  const unassignedProfileIds = new Set(
+    unassignedProfiles.map((profile) => profile.id),
+  );
+  const otherAssignmentsByProfile = new Map<
+    string,
+    Array<{ workspaceId: string; scopePath: string }>
+  >();
+  for (const binding of unassignedProfiles.length > 0
+    ? library.workspaces
+    : []) {
+    for (const scope of binding.scopes) {
+      for (const profileId of scope.profiles) {
+        if (!unassignedProfileIds.has(profileId)) continue;
+        const assignments = otherAssignmentsByProfile.get(profileId) ?? [];
+        assignments.push({ workspaceId: binding.id, scopePath: scope.path });
+        otherAssignmentsByProfile.set(profileId, assignments);
+      }
+    }
+  }
+  const unassignedProfileEntries: PendingSource[] = unassignedProfiles.map(
+    (profile) =>
       createProfileSource({
         id: `profile-unassigned:${profile.id}`,
         kind: "profile-unassigned",
@@ -695,16 +738,9 @@ export const resolveInstructionSet = async (
         sequence: sequence++,
         status: "skipped",
         reason: "NO_APPLICABLE_ASSIGNMENT",
-        otherAssignments: library.workspaces.flatMap((binding) =>
-          binding.scopes
-            .filter((scope) => scope.profiles.includes(profile.id))
-            .map((scope) => ({
-              workspaceId: binding.id,
-              scopePath: scope.path,
-            })),
-        ),
+        otherAssignments: otherAssignmentsByProfile.get(profile.id) ?? [],
       }),
-    );
+  );
 
   selected.sort(
     (left, right) =>

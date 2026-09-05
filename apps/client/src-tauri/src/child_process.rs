@@ -1,10 +1,13 @@
 use std::{
     fmt, io,
     ops::{Deref, DerefMut},
-    process::{Child, Command, ExitStatus, Stdio},
+    process::{Child, Command, ExitStatus},
     thread,
     time::{Duration, Instant},
 };
+
+#[cfg(target_os = "windows")]
+use std::process::Stdio;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::{io::AsRawHandle, process::CommandExt};
@@ -218,7 +221,7 @@ impl SupervisedChild {
 
         #[cfg(unix)]
         {
-            let graceful_signal_sent = signal_process_group(&self.child, "-TERM");
+            let graceful_signal_sent = signal_process_group(&self.child, libc::SIGTERM);
             if graceful_signal_sent {
                 if let Some(status) = self.wait_for_exit(GRACEFUL_TERMINATION_TIMEOUT)? {
                     // The direct child may exit before a descendant that inherited its pipes.
@@ -282,7 +285,7 @@ impl SupervisedChild {
         }
 
         #[cfg(unix)]
-        if signal_process_group(&self.child, "-KILL") {
+        if signal_process_group(&self.child, libc::SIGKILL) {
             return;
         }
 
@@ -423,16 +426,12 @@ pub(crate) fn assign_child_process_to_kill_on_close_job(
 }
 
 #[cfg(unix)]
-fn signal_process_group(child: &Child, signal: &str) -> bool {
-    let process_group_id = format!("-{}", child.id());
-    Command::new("kill")
-        .args([signal, process_group_id.as_str()])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+fn signal_process_group(child: &Child, signal: i32) -> bool {
+    let Ok(pid) = i32::try_from(child.id()) else {
+        return false;
+    };
+    // Never let an invalid group id target Machdoch's own process group.
+    pid > 0 && unsafe { libc::kill(-pid, signal) == 0 }
 }
 
 pub(crate) fn terminate_child_process_tree(child: &mut Child) {
@@ -445,14 +444,14 @@ pub(crate) fn terminate_child_process_tree(child: &mut Child) {
 
     #[cfg(unix)]
     {
-        if signal_process_group(child, "-TERM") {
+        if signal_process_group(child, libc::SIGTERM) {
             for _ in 0..10 {
                 if !process_group_exists(child) {
                     return;
                 }
                 thread::sleep(Duration::from_millis(50));
             }
-            let _ = signal_process_group(child, "-KILL");
+            let _ = signal_process_group(child, libc::SIGKILL);
             return;
         }
     }
@@ -474,7 +473,7 @@ impl ChildProcessJob {
 
 #[cfg(unix)]
 fn process_group_exists(child: &Child) -> bool {
-    signal_process_group(child, "-0")
+    signal_process_group(child, 0)
 }
 
 #[cfg(target_os = "windows")]

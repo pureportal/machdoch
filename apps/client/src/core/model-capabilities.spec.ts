@@ -72,6 +72,7 @@ describe("model image input capabilities", () => {
   });
 
   it("recognizes configured vision-capable runtime models", () => {
+    expect(modelSupportsImageInput("openai", "gpt-6-astra")).toBe(true);
     expect(modelSupportsImageInput("openai", "gpt-5.5")).toBe(true);
     expect(modelSupportsImageInput("openai", "gpt-5.5-pro")).toBe(true);
     expect(modelSupportsImageInput("anthropic", "claude-sonnet-5")).toBe(true);
@@ -96,6 +97,9 @@ describe("model image input capabilities", () => {
   });
 
   it("uses documented OpenAI capabilities when the Models API is sparse", () => {
+    expect(getModelContextWindowTokens("openai", "gpt-6-astra")).toBe(
+      1_050_000,
+    );
     expect(getModelContextWindowTokens("openai", "gpt-5.5-pro")).toBe(
       1_050_000,
     );

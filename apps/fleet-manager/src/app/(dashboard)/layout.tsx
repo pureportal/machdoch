@@ -14,8 +14,8 @@ export default async function DashboardLayout({
   const session = await requirePageSession();
   const settingsEnabled = getRuntime().settingsCipher !== null;
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[240px_1fr]">
-      <aside className="border-b border-border bg-card/80 backdrop-blur lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
+    <div className="fleet-dashboard min-h-dvh lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
+      <aside className="border-b border-border bg-card/80 backdrop-blur lg:sticky lg:top-0 lg:h-dvh lg:border-b-0 lg:border-r">
         <div className="flex h-16 items-center justify-between px-5 lg:justify-start">
           <div className="flex items-center gap-2.5 font-semibold tracking-tight">
             <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">

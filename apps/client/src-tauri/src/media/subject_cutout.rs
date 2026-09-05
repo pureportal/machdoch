@@ -114,6 +114,10 @@ fn create_session(model_path: &Path) -> MediaResult<Session> {
                 .min(8),
         )
         .map_err(|error| format!("failed to configure ONNX worker threads: {error}"))?
+        .with_intra_op_spinning(false)
+        .map_err(|error| format!("failed to configure ONNX worker waiting: {error}"))?
+        .with_inter_op_spinning(false)
+        .map_err(|error| format!("failed to configure ONNX executor waiting: {error}"))?
         .commit_from_file(model_path)
         .map_err(|error| format!("failed to load the installed BiRefNet model: {error}"))
 }
@@ -127,6 +131,9 @@ fn infer_logits(model_path: &Path, input: Vec<f32>) -> MediaResult<Vec<f32>> {
         .as_ref()
         .is_none_or(|cached| cached.model_path != model_path)
     {
+        // Release the previous model before loading its replacement so their
+        // weights and worker pools do not coexist at peak memory usage.
+        *cache = None;
         *cache = Some(CachedSession {
             model_path: model_path.to_path_buf(),
             session: create_session(model_path)?,

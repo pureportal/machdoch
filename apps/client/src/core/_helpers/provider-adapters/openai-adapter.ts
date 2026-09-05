@@ -97,6 +97,10 @@ export const createOpenAIReasoningConfig = (
 
   if (reasoning && reasoning !== "default") {
     assertReasoningModeSupportedForProviderModel(reasoning, "openai", model);
+
+    if (reasoning === "aeon") {
+      throw new Error("The OpenAI API does not expose Aeon reasoning.");
+    }
   }
 
   return {

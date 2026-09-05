@@ -4,15 +4,18 @@ import {
   managedSettingsSchemaVersion,
   maximumManagedSettingsDeliveryBytes,
   productCommandSchema,
+  runCommandSchema,
   type FleetManagedSettingsDelivery,
   type FleetManagedSettingsSyncReport,
   type HostRequest,
   type HostResponse,
 } from "@machdoch/fleet-protocol";
 import { z } from "zod";
+import { getPreviewHub, previewOpenSchema } from "./previews";
 import type { AuthenticationOperation } from "./authentication-rate-limiter";
 import {
   CredentialValidationError,
+  createId,
   createSecret,
   validateId,
   validateSecret,
@@ -20,7 +23,7 @@ import {
 import { nowSeconds } from "./database";
 import { errorResponse, HttpError } from "./errors";
 import { GatewayError } from "./gateway";
-import { FleetStoreError } from "./fleet-store";
+import { FleetStoreError, type EnrollmentGrant } from "./fleet-store";
 import {
   bearerToken,
   clearCsrfCookie,
@@ -176,6 +179,27 @@ async function routeApi(
   if (method === "POST" && matches(path, "enrollment-keys")) {
     return createEnrollmentKey(runtime, request);
   }
+  if (method === "GET" && matches(path, "enrollment-keys")) {
+    requireOwner(runtime, request);
+    return Response.json({
+      grants: runtime.fleetStore.listEnrollmentGrants(nowSeconds()),
+    });
+  }
+  if (
+    method === "DELETE" &&
+    path[0] === "enrollment-keys" &&
+    path.length === 2
+  ) {
+    requireMutation(runtime, request);
+    const grantId = path[1] ?? "";
+    if (
+      !validateId(grantId, "grant") ||
+      !runtime.fleetStore.revokeEnrollmentGrant(grantId, nowSeconds())
+    ) {
+      throw new HttpError(404, "Enrollment key is no longer available.");
+    }
+    return Response.json({ ok: true });
+  }
   if (method === "POST" && matches(path, "enroll"))
     return enroll(runtime, request);
   if (method === "GET" && matches(path, "instances"))
@@ -195,6 +219,112 @@ async function routeApi(
     if (method === "POST" && path[3] === "commands") {
       return executeInstanceProductCommand(runtime, request, path[1]);
     }
+  }
+  if (
+    method === "GET" &&
+    path[0] === "instances" &&
+    path[1] &&
+    path[2] === "previews" &&
+    path[3] &&
+    path[4] === "launch" &&
+    path.length === 5
+  ) {
+    const session = requireOwner(runtime, request);
+    requireManagedInstance(runtime, path[1]);
+    return getPreviewHub(runtime).launchPage(
+      path[3],
+      session.sessionHash,
+      path[1],
+    );
+  }
+  if (
+    path[0] === "instances" &&
+    path[1] &&
+    path.length === 3 &&
+    ["runs", "previews"].includes(path[2] ?? "")
+  ) {
+    const instanceId = path[1];
+    const session =
+      method === "GET"
+        ? requireOwner(runtime, request)
+        : requireMutation(runtime, request);
+    requireManagedInstance(runtime, instanceId);
+    const previews = getPreviewHub(runtime);
+    if (path[2] === "previews") {
+      if (method === "POST") {
+        const input = await parseJson(request, previewOpenSchema);
+        requireMutation(runtime, request);
+        const launch = await previews.create(
+          instanceId,
+          session,
+          input,
+          request.signal,
+        );
+        return Response.json({
+          url: `/api/instances/${encodeURIComponent(instanceId)}/previews/${launch.id}/launch#${launch.ticket}`,
+          expiresAt: launch.expiresAt,
+        });
+      }
+      if (method === "DELETE") {
+        previews.revokeInstance(
+          instanceId,
+          new URL(request.url).searchParams.get("id") ?? undefined,
+        );
+        return Response.json({ ok: true });
+      }
+    } else {
+      if (!runtime.gateways.supportsRuns(instanceId))
+        throw new HttpError(
+          503,
+          "Services require a connected headless Fleet host with workspace-runs.v1 support. Update the host and start machdoch fleet service.",
+        );
+      const workspace = new URL(request.url).searchParams.get("workspace");
+      if (!workspace || workspace.length > 12000)
+        throw new HttpError(400, "Select a project.");
+      if (method === "GET") {
+        const result = await relay(
+          runtime,
+          instanceId,
+          {
+            type: "getWorkspaceRuns",
+            workspace,
+            includeLogs: new URL(request.url).searchParams.get("logs") === "1",
+          },
+          request.signal,
+        );
+        requireOwner(runtime, request);
+        requireManagedInstance(runtime, instanceId);
+        if (result.type === "error") throwHostError(result);
+        if (result.type !== "workspaceRuns")
+          throw new HttpError(502, "Invalid service status.");
+        return Response.json({
+          snapshot: result.snapshot,
+          previewsEnabled: previews.enabled,
+          previews: previews.list(instanceId),
+        });
+      }
+      if (method === "POST") {
+        const command = await parseJson(request, runCommandSchema);
+        requireMutation(runtime, request);
+        const result = await relay(
+          runtime,
+          instanceId,
+          { type: "executeWorkspaceRun", workspace, command },
+          request.signal,
+        );
+        if (result.type === "error") throwHostError(result);
+        if (result.type !== "commandAccepted")
+          throw new HttpError(502, "Invalid service command receipt.");
+        runtime.database.audit(
+          nowSeconds(),
+          `service.${command.action}`,
+          instanceId,
+          "success",
+        );
+        return Response.json(result.receipt, { status: 202 });
+      }
+    }
+    throw new HttpError(405, "Method is not supported.");
   }
   if (path[0] === "settings")
     return settingsApi(runtime, request, path.slice(1));
@@ -380,9 +510,9 @@ function createEnrollmentKey(
 ): Response {
   requireMutation(runtime, request);
   const enrollmentKey = createSecret("mch_enroll");
-  let expiresAt: number;
+  let grant: EnrollmentGrant;
   try {
-    expiresAt = runtime.fleetStore.createEnrollmentGrant(
+    grant = runtime.fleetStore.createEnrollmentGrant(
       enrollmentKey,
       nowSeconds(),
       runtime.config.enrollmentPolicy,
@@ -398,9 +528,10 @@ function createEnrollmentKey(
   }
   return Response.json({
     enrollmentKey,
+    grantId: grant.grantId,
     managerUrl: runtime.config.externalBaseUrl,
     managerId: runtime.database.managerId(),
-    expiresAt,
+    expiresAt: grant.expiresAt,
   });
 }
 
@@ -474,11 +605,12 @@ function listInstances(runtime: FleetRuntime, request: Request): Response {
       .listInstances()
       .map(({ revokedAt, ...instance }) => ({
         ...instance,
-        status: revokedAt
-          ? "revoked"
-          : runtime.gateways.isOnline(instance.instanceId)
-            ? "online"
-            : "offline",
+        status:
+          revokedAt !== null
+            ? "revoked"
+            : runtime.gateways.isOnline(instance.instanceId)
+              ? "online"
+              : "offline",
       })),
   });
 }
@@ -503,9 +635,16 @@ async function instanceProductSnapshot(
 ): Promise<Response> {
   requireOwner(runtime, request);
   requireManagedInstance(runtime, instanceId);
-  const response = await relay(runtime, instanceId, {
-    type: "getProductSnapshot",
-  });
+  const response = await relay(
+    runtime,
+    instanceId,
+    {
+      type: "getProductSnapshot",
+    },
+    request.signal,
+  );
+  requireOwner(runtime, request);
+  requireManagedInstance(runtime, instanceId);
   if (response.type === "error") throwHostError(response);
   if (response.type !== "productSnapshot") {
     throw new HttpError(502, "Instance returned an invalid product response.");
@@ -520,13 +659,27 @@ async function executeInstanceProductCommand(
 ): Promise<Response> {
   requireMutation(runtime, request);
   requireManagedInstance(runtime, instanceId);
-  const command = await parseJson(request, productCommandSchema);
-  const response = await relay(runtime, instanceId, {
-    type: "executeProductCommand",
-    command,
-  });
+  const input = await parseJson(request, productCommandSchema);
+  const command = {
+    ...input,
+    commandId: input.commandId ?? createId("command"),
+  };
+  requireMutation(runtime, request);
+  requireManagedInstance(runtime, instanceId);
+  const response = await relay(
+    runtime,
+    instanceId,
+    {
+      type: "executeProductCommand",
+      command,
+    },
+    request.signal,
+  );
   if (response.type === "error") throwHostError(response);
-  if (response.type !== "commandAccepted") {
+  if (
+    response.type !== "commandAccepted" ||
+    response.receipt.commandId !== command.commandId
+  ) {
     throw new HttpError(502, "Instance returned an invalid product response.");
   }
   return Response.json(response.receipt, { status: 202 });
@@ -837,14 +990,16 @@ async function relay(
   runtime: FleetRuntime,
   instanceId: string,
   request: HostRequest,
+  signal?: AbortSignal,
 ): Promise<HostResponse> {
   try {
-    return await runtime.gateways.relay(instanceId, request);
+    return await runtime.gateways.relay(instanceId, request, signal);
   } catch (error) {
     if (!(error instanceof GatewayError)) throw error;
     const failure = {
       offline: [503, "Instance is offline."],
       closed: [503, "Instance is offline."],
+      cancelled: [408, "Request was cancelled."],
       timeout: [504, "Instance did not respond in time."],
       busy: [429, "Instance has too many active requests."],
       protocol: [502, "Instance returned an invalid gateway response."],
@@ -990,8 +1145,10 @@ function requirePasswordOperation(
 
 function applyApiResponseHeaders(response: Response): void {
   response.headers.set("Cache-Control", "no-store");
-  response.headers.set("Content-Security-Policy", "default-src 'none'");
-  response.headers.set("Referrer-Policy", "no-referrer");
+  if (!response.headers.has("Content-Security-Policy"))
+    response.headers.set("Content-Security-Policy", "default-src 'none'");
+  if (!response.headers.has("Referrer-Policy"))
+    response.headers.set("Referrer-Policy", "no-referrer");
   response.headers.set("Strict-Transport-Security", "max-age=31536000");
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("X-Frame-Options", "DENY");

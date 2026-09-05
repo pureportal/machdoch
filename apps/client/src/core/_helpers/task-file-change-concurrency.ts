@@ -10,12 +10,16 @@ export const mapWithConcurrencyLimit = async <Input, Output>(
   const results = new Array<Output>(values.length);
   const workerCount = Math.min(
     values.length,
-    Math.max(1, Math.floor(concurrencyLimit)),
+    Number.isNaN(concurrencyLimit)
+      ? 1
+      : Math.max(1, Math.floor(concurrencyLimit)),
   );
   const pendingValues = values.entries();
+  let failed = false;
+  let failure: unknown;
 
   const runWorker = async (): Promise<void> => {
-    while (true) {
+    while (!failed) {
       const nextValue = pendingValues.next();
 
       if (nextValue.done) {
@@ -23,10 +27,20 @@ export const mapWithConcurrencyLimit = async <Input, Output>(
       }
 
       const [index, value] = nextValue.value;
-      results[index] = await mapper(value, index);
+      try {
+        results[index] = await mapper(value, index);
+      } catch (error) {
+        if (!failed) {
+          failed = true;
+          failure = error;
+        }
+      }
     }
   };
 
   await Promise.all(Array.from({ length: workerCount }, runWorker));
+  // Finish active work before the caller releases resources, and never start
+  // more work once a worker has failed.
+  if (failed) throw failure;
   return results;
 };

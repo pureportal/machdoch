@@ -92,6 +92,15 @@ describe("OpenAI Responses conformance", () => {
   });
 
   it("validates reasoning effort for the selected OpenAI model", () => {
+    expect(createOpenAIReasoningConfig("gpt-6-astra", "max")).toEqual({
+      reasoning: { effort: "max" },
+    });
+    expect(createOpenAIReasoningConfig("gpt-6-astra", "ultra")).toEqual({
+      reasoning: { effort: "max" },
+    });
+    expect(() => createOpenAIReasoningConfig("gpt-6-astra", "aeon")).toThrow(
+      "Reasoning mode `aeon` is not supported",
+    );
     expect(createOpenAIReasoningConfig("gpt-5.5", "xhigh")).toEqual({
       reasoning: { effort: "xhigh" },
     });
@@ -120,7 +129,14 @@ describe("OpenAI Responses conformance", () => {
     );
   });
 
-  it("enables four-agent Ultra orchestration for every GPT-5.6 tier", () => {
+  it("enables four-agent Ultra orchestration for Astra and every GPT-5.6 tier", () => {
+    expect(createOpenAIMultiAgentConfig("gpt-6-astra", "ultra")).toEqual({
+      multi_agent: {
+        enabled: true,
+        max_concurrent_subagents: 4,
+      },
+      betas: ["responses_multi_agent=v1"],
+    });
     expect(createOpenAIMultiAgentConfig("gpt-5.6-sol", "ultra")).toEqual({
       multi_agent: {
         enabled: true,

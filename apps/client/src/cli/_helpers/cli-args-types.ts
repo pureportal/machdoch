@@ -120,6 +120,15 @@ export type FleetCliAction =
 
 export interface FleetCliOptions {
   action: FleetCliAction;
+  serviceAction?:
+    | "run"
+    | "install"
+    | "uninstall"
+    | "start"
+    | "stop"
+    | "restart"
+    | "status"
+    | "unit";
   managerUrl?: string;
   enrollmentKey?: string;
   displayName?: string;

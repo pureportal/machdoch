@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,6 +12,7 @@ import type {
   TaskExecutionFileChanges,
 } from "../types.js";
 import { mapWithConcurrencyLimit } from "./task-file-change-concurrency.js";
+import { runTaskGitCommand } from "./task-git-command.js";
 import {
   discoverWorkspaceGitRepositories,
   type DiscoveredGitRepository,
@@ -24,6 +24,7 @@ const REPOSITORY_START_CONCURRENCY = 4;
 const REPOSITORY_FINISH_CONCURRENCY = 2;
 const GITLINK_HEAD_CONCURRENCY = 8;
 const MAX_GIT_ERROR_OUTPUT_BYTES = 64 * 1_024;
+const MAX_GIT_BUFFER_BYTES = 32 * 1024 * 1024;
 const MAX_DIFF_CONTROL_LINE_CHARS = 8 * 1_024;
 const ZERO_OBJECT_PATTERN = /^0+$/u;
 
@@ -99,96 +100,28 @@ const runGitProcess = async (
   options: GitCommandOptions,
   onStdout: (chunk: Buffer) => void,
 ): Promise<void> => {
-  await new Promise<void>((resolvePromise, rejectPromise) => {
-    const child = spawn(
-      "git",
-      ["--no-optional-locks", "-c", "core.quotePath=false", ...args],
-      {
-        cwd: options.cwd,
-        env: {
-          ...process.env,
-          ...options.env,
-          GIT_OPTIONAL_LOCKS: "0",
-        },
-        stdio: [options.input ? "pipe" : "ignore", "pipe", "pipe"],
-        windowsHide: true,
+  try {
+    await runTaskGitCommand(args, {
+      cwd: options.cwd,
+      env: {
+        ...process.env,
+        ...options.env,
+        GIT_OPTIONAL_LOCKS: "0",
       },
+      timeoutMs: GIT_COMMAND_TIMEOUT_MS,
+      maxBufferBytes: MAX_GIT_ERROR_OUTPUT_BYTES,
+      ...(options.input === undefined ? {} : { input: options.input }),
+      onStdoutBytes: onStdout,
+    });
+  } catch (error) {
+    const stderr =
+      error && typeof error === "object" && "stderr" in error
+        ? String(error.stderr).trim()
+        : "";
+    throw new GitCommandError(
+      `Git command failed: git ${args.join(" ")}\n${error instanceof Error ? error.message : String(error)}${stderr ? `\n${stderr}` : ""}`,
     );
-    const stderr: Buffer[] = [];
-    let stderrBytes = 0;
-    let settled = false;
-    const reject = (error: Error): void => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      clearTimeout(timeout);
-      child.kill();
-      rejectPromise(error);
-    };
-    const timeout = setTimeout(() => {
-      reject(
-        new GitCommandError(`Git command timed out: git ${args.join(" ")}`),
-      );
-    }, GIT_COMMAND_TIMEOUT_MS);
-
-    child.stdout?.on("data", (chunk: Buffer) => {
-      if (settled) {
-        return;
-      }
-
-      try {
-        onStdout(chunk);
-      } catch (error) {
-        reject(error instanceof Error ? error : new Error(String(error)));
-      }
-    });
-    child.stderr?.on("data", (chunk: Buffer) => {
-      const remaining = MAX_GIT_ERROR_OUTPUT_BYTES - stderrBytes;
-
-      if (remaining <= 0) {
-        return;
-      }
-
-      const boundedChunk =
-        chunk.length > remaining ? chunk.subarray(0, remaining) : chunk;
-      stderr.push(boundedChunk);
-      stderrBytes += boundedChunk.length;
-    });
-    child.once("error", (error) => {
-      reject(new GitCommandError(`Failed to start Git: ${error.message}`));
-    });
-    child.stdin?.once("error", (error) => {
-      reject(new GitCommandError(`Failed to send Git input: ${error.message}`));
-    });
-    child.once("close", (code) => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      clearTimeout(timeout);
-      const stderrText = Buffer.concat(stderr).toString("utf8").trim();
-
-      if (code !== 0) {
-        rejectPromise(
-          new GitCommandError(
-            `Git command failed (${code ?? "unknown"}): git ${args.join(" ")}${
-              stderrText ? `\n${stderrText}` : ""
-            }`,
-          ),
-        );
-        return;
-      }
-
-      resolvePromise();
-    });
-
-    if (options.input) {
-      child.stdin?.end(options.input);
-    }
-  });
+  }
 };
 
 const runGitCommand = async (
@@ -196,7 +129,16 @@ const runGitCommand = async (
   options: GitCommandOptions,
 ): Promise<Buffer> => {
   const stdout: Buffer[] = [];
-  await runGitProcess(args, options, (chunk) => stdout.push(chunk));
+  let bytes = 0;
+  await runGitProcess(args, options, (chunk) => {
+    bytes += chunk.length;
+    if (bytes > MAX_GIT_BUFFER_BYTES) {
+      throw new GitCommandError(
+        "Git output exceeded the 32 MB snapshot buffer limit.",
+      );
+    }
+    stdout.push(chunk);
+  });
   return Buffer.concat(stdout);
 };
 
@@ -263,10 +205,7 @@ const runGitPatchRangeAnalysis = async (
 
       const newlineIndex = text.indexOf("\n");
       if (newlineIndex < 0) {
-        if (
-          pendingLine.length + text.length >
-          MAX_DIFF_CONTROL_LINE_CHARS
-        ) {
+        if (pendingLine.length + text.length > MAX_DIFF_CONTROL_LINE_CHARS) {
           pendingLine = "";
           discardingLine = true;
         } else {
@@ -494,7 +433,10 @@ const createEmptyTree = async (
   state: RepositoryCaptureState,
 ): Promise<string> => {
   state.snapshotSequence += 1;
-  const indexPath = join(state.objectDirectory, `empty-${state.snapshotSequence}.index`);
+  const indexPath = join(
+    state.objectDirectory,
+    `empty-${state.snapshotSequence}.index`,
+  );
   const environment = { ...state.environment, GIT_INDEX_FILE: indexPath };
 
   try {
@@ -527,7 +469,9 @@ const createRepositoryCaptureState = async (
   await mkdir(objectDirectory, { recursive: true });
   const [realIndexOutput, realObjectOutput] = await Promise.all([
     runGitText(["rev-parse", "--git-path", "index"], { cwd: repository.root }),
-    runGitText(["rev-parse", "--git-path", "objects"], { cwd: repository.root }),
+    runGitText(["rev-parse", "--git-path", "objects"], {
+      cwd: repository.root,
+    }),
   ]);
   const realObjectDirectory = resolveGitPath(repository.root, realObjectOutput);
   const alternateSeparator = process.platform === "win32" ? ";" : ":";
@@ -584,9 +528,7 @@ const parseRawDiffAndNumstat = (
     index += 1;
 
     const match =
-      /^:(\d{6}) (\d{6}) ([0-9a-f]+) ([0-9a-f]+) ([A-Z])(\d*)$/u.exec(
-        header,
-      );
+      /^:(\d{6}) (\d{6}) ([0-9a-f]+) ([0-9a-f]+) ([A-Z])(\d*)$/u.exec(header);
 
     if (!match) {
       throw new Error(`Unexpected Git raw diff record: ${header}`);
@@ -601,14 +543,18 @@ const parseRawDiffAndNumstat = (
 
     const status = match[5] ?? "M";
     const hasTwoPaths = status === "R" || status === "C";
-    const secondPath = hasTwoPaths ? tokens[index]?.toString("utf8") : undefined;
+    const secondPath = hasTwoPaths
+      ? tokens[index]?.toString("utf8")
+      : undefined;
 
     if (hasTwoPaths) {
       index += 1;
     }
 
     if (hasTwoPaths && !secondPath) {
-      throw new Error("Git rename record did not contain its destination path.");
+      throw new Error(
+        "Git rename record did not contain its destination path.",
+      );
     }
 
     entries.push({
@@ -636,9 +582,7 @@ const parseRawDiffAndNumstat = (
       throw new Error("Git returned inconsistent binary line statistics.");
     }
     const inlinePath = match[3] ?? "";
-    const oldGitPath = inlinePath
-      ? undefined
-      : tokens[index]?.toString("utf8");
+    const oldGitPath = inlinePath ? undefined : tokens[index]?.toString("utf8");
     const gitPath = inlinePath
       ? inlinePath
       : tokens[index + 1]?.toString("utf8");
@@ -661,7 +605,9 @@ const parseRawDiffAndNumstat = (
   }
 
   if (entries.length !== analyses.length) {
-    throw new Error("Git raw and numstat outputs contained different path counts.");
+    throw new Error(
+      "Git raw and numstat outputs contained different path counts.",
+    );
   }
 
   for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
@@ -680,7 +626,9 @@ const parseRawDiffAndNumstat = (
   return { entries, analyses };
 };
 
-const mapOperation = (entry: RawDiffEntry): TaskExecutionFileChangeOperation => {
+const mapOperation = (
+  entry: RawDiffEntry,
+): TaskExecutionFileChangeOperation => {
   if (entry.status === "A") {
     return "added";
   }
@@ -769,7 +717,8 @@ const analyzeRegularFile = (
       lineAnalysis: {
         state: "failed",
         code: "git-failed",
-        message: "Git returned line statistics without changed-line coordinates.",
+        message:
+          "Git returned line statistics without changed-line coordinates.",
       },
       hunkCount: 0,
     };
@@ -883,11 +832,7 @@ const analyzeRepository = async (
 
   try {
     const rawDiff = await runGitCommand(
-      createTreeDiffArguments(state, finishTree, [
-        "--raw",
-        "--numstat",
-        "-z",
-      ]),
+      createTreeDiffArguments(state, finishTree, ["--raw", "--numstat", "-z"]),
       { cwd: state.repository.root, env: state.environment },
     );
     ({ entries, analyses } = parseRawDiffAndNumstat(rawDiff));
@@ -1197,7 +1142,10 @@ export const startTaskFileChangeCapture = async (
     await mapWithConcurrencyLimit(
       discovery.repositories,
       REPOSITORY_START_CONCURRENCY,
-      async (repository, index): Promise<RepositoryCaptureState | undefined> => {
+      async (
+        repository,
+        index,
+      ): Promise<RepositoryCaptureState | undefined> => {
         try {
           return await createRepositoryCaptureState(
             repository,

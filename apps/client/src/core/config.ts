@@ -206,7 +206,7 @@ export const saveWorkspaceReasoningMode = async (
 
   if (!normalizedReasoning || !isReasoningMode(normalizedReasoning)) {
     throw new Error(
-      "Expected workspace.reasoning to be one of default, none, minimal, low, medium, high, xhigh, max, or ultra.",
+      "Expected workspace.reasoning to be one of default, none, minimal, low, medium, high, xhigh, max, ultra, or aeon.",
     );
   }
 
@@ -516,7 +516,7 @@ export const loadRuntimeConfig = async (
 
   if (rawReasoningFromEnv && reasoningFromEnv === undefined) {
     throw new Error(
-      "MACHDOCH_REASONING must be default, none, minimal, low, medium, high, xhigh, max, or ultra.",
+      "MACHDOCH_REASONING must be default, none, minimal, low, medium, high, xhigh, max, ultra, or aeon.",
     );
   }
 
@@ -530,7 +530,7 @@ export const loadRuntimeConfig = async (
     configuredReasoning === undefined
   ) {
     throw new Error(
-      "workspace.reasoning must be default, none, minimal, low, medium, high, xhigh, max, or ultra.",
+      "workspace.reasoning must be default, none, minimal, low, medium, high, xhigh, max, ultra, or aeon.",
     );
   }
   const reasoning =

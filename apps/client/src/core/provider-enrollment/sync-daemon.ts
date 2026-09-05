@@ -13,6 +13,7 @@ import {
   getProviderSyncWorkspaceRegistryPath,
   loadRegisteredProviderSyncWorkspaces,
   reconcileProviderSync,
+  registerProviderSyncWorkspace,
 } from "./sync-coordinator.js";
 
 const DAEMON_PID_FILE_NAME = "daemon.json";
@@ -21,7 +22,7 @@ const DAEMON_DIAGNOSTIC_FILE_NAME = "daemon-diagnostic.json";
 const REFRESH_REQUEST_FILE_NAME = "refresh.request";
 const DAEMON_STOP_TIMEOUT_MS = 10_000;
 const DAEMON_STOP_POLL_MS = 50;
-const DAEMON_CONTROL_POLL_MS = 250;
+const DAEMON_CONTROL_POLL_MS = 1_000;
 const DAEMON_RECORD_KEYS = new Set([
   "schemaVersion",
   "pid",
@@ -573,16 +574,14 @@ const normalizeWatchedPath = (path: string): string => {
     : normalized;
 };
 
-const isPathOrChild = (path: string, root: string): boolean => {
-  return path === root || path.startsWith(`${root}/`);
-};
-
 export const isProviderSyncWorkspaceWatchPath = (path: string): boolean => {
   const normalized = normalizeWatchedPath(path);
   return (
     normalized === ".env" ||
     normalized === ".machdoch" ||
-    isPathOrChild(normalized, ".machdoch/mcp")
+    normalized === ".machdoch/mcp" ||
+    normalized === ".machdoch/mcp/mcp.json" ||
+    normalized === ".machdoch/mcp/discovery-cache.json"
   );
 };
 
@@ -607,35 +606,39 @@ const resolveWatcherRoot = (path: string): string => {
 const createWorkspaceWatchers = (
   workspaceRoot: string,
   onChange: () => void,
+  onInvalidated: (reschedule?: boolean) => void,
 ): FSWatcher[] => {
   const watchWorkspaceRoot = resolveWatcherRoot(workspaceRoot);
-  const useSeparateDirectoryWatchers =
-    process.platform === "linux" || process.platform === "win32";
-  const roots = useSeparateDirectoryWatchers
-    ? [
-        ...new Set([
-          watchWorkspaceRoot,
-          join(watchWorkspaceRoot, ".machdoch"),
-          join(watchWorkspaceRoot, ".machdoch", "mcp"),
-        ]),
-      ]
-    : [watchWorkspaceRoot];
+  const roots = [
+    ...new Set([
+      watchWorkspaceRoot,
+      join(watchWorkspaceRoot, ".machdoch"),
+      join(watchWorkspaceRoot, ".machdoch", "mcp"),
+    ]),
+  ];
 
   const watchers: FSWatcher[] = [];
   for (const root of roots) {
     try {
       const watcher = watch(
         root,
-        { recursive: !useSeparateDirectoryWatchers },
+        { recursive: false },
         (_eventType, filename) => {
-          if (!filename) return onChange();
+          if (!filename) return onInvalidated();
           const changedPath = relative(
             watchWorkspaceRoot,
             join(root, filename.toString()),
           );
-          if (isProviderSyncWorkspaceWatchPath(changedPath)) onChange();
+          const normalized = normalizeWatchedPath(changedPath);
+          if (normalized === ".machdoch" || normalized === ".machdoch/mcp")
+            onInvalidated();
+          else if (isProviderSyncWorkspaceWatchPath(changedPath)) onChange();
         },
       );
+      watcher.on("error", () => {
+        watcher.close();
+        onInvalidated(false);
+      });
       watchers.push(watcher);
     } catch {
       // Periodic full scans cover missing or unsupported watcher roots.
@@ -644,7 +647,10 @@ const createWorkspaceWatchers = (
   return watchers;
 };
 
-const createSharedWatchers = (onChange: () => void): FSWatcher[] => {
+const createSharedWatchers = (
+  onChange: () => void,
+  onInvalidated: (reschedule?: boolean) => void,
+): FSWatcher[] => {
   const userConfigRoot = resolveWatcherRoot(dirname(getUserConfigPath()));
   const stateRoot = resolveWatcherRoot(getProviderEnrollmentStateDirectory());
   const userRoots = [userConfigRoot];
@@ -654,7 +660,7 @@ const createSharedWatchers = (onChange: () => void): FSWatcher[] => {
     try {
       watchers.push(
         watch(root, { recursive: false }, (_eventType, filename) => {
-          if (!filename) return onChange();
+          if (!filename) return onInvalidated();
           const changedPath = relative(
             userConfigRoot,
             join(root, filename.toString()),
@@ -671,6 +677,7 @@ const createSharedWatchers = (onChange: () => void): FSWatcher[] => {
     watchers.push(
       watch(stateRoot, { recursive: false }, (_eventType, filename) => {
         const name = filename?.toString();
+        if (!name) return onInvalidated();
         if (
           name === REFRESH_REQUEST_FILE_NAME ||
           name === basename(getProviderSyncWorkspaceRegistryPath())
@@ -682,19 +689,25 @@ const createSharedWatchers = (onChange: () => void): FSWatcher[] => {
   } catch {
     // The periodic full scan remains the recovery path.
   }
+  for (const watcher of watchers)
+    watcher.on("error", () => {
+      watcher.close();
+      onInvalidated(false);
+    });
   return watchers;
 };
 
 export const requestProviderSyncRefresh = async (): Promise<void> => {
   const path = getProviderSyncRefreshRequestPath();
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${Date.now()}\n`, "utf8");
+  await writeFile(path, `${Date.now()}:${randomUUID()}\n`, "utf8");
 };
 
 export const runProviderSyncDaemon = async (
   workspaceRoot: string,
   options: { signal?: AbortSignal } = {},
 ): Promise<void> => {
+  if (options.signal?.aborted) return;
   const daemonLease = await acquireDaemon(workspaceRoot);
   let controlTimer: ReturnType<typeof setInterval> | undefined;
   let activeControlCheck: Promise<void> | undefined;
@@ -702,7 +715,9 @@ export const runProviderSyncDaemon = async (
   let running = false;
   let rerun = false;
   let watchers: FSWatcher[] = [];
-  let fullScan: ReturnType<typeof setInterval> | undefined;
+  let watcherSignature: string | undefined;
+  let watchersInvalidated = false;
+  let fullScan: ReturnType<typeof setTimeout> | undefined;
   let stopping = false;
   let activeReconcile: Promise<void> | undefined;
   let resolveDaemonStop: () => void;
@@ -723,6 +738,7 @@ export const runProviderSyncDaemon = async (
   if (options.signal?.aborted) stopDaemon();
 
   try {
+    if (stopping) return;
     controlTimer = setInterval(() => {
       if (activeControlCheck) return;
       const pending = (async (): Promise<void> => {
@@ -743,17 +759,34 @@ export const runProviderSyncDaemon = async (
     }, DAEMON_CONTROL_POLL_MS);
     controlTimer.unref?.();
     let config = await loadProviderEnrollmentConfig();
+    // Register before watching the registry so startup does not observe its
+    // own registration as another request to reconcile.
+    await registerProviderSyncWorkspace(workspaceRoot);
 
     const refreshWatchers = (workspaceRoots: readonly string[]): void => {
-      for (const watcher of watchers) watcher.close();
+      const signature = JSON.stringify([
+        config.persistentSync.watch,
+        workspaceRoots,
+        dirname(getUserConfigPath()),
+        getProviderEnrollmentStateDirectory(),
+      ]);
+      if (!watchersInvalidated && watcherSignature === signature) return;
+      const previous = watchers;
+      watchersInvalidated = false;
+      const invalidate = (reschedule = true) => {
+        watchersInvalidated = true;
+        if (reschedule) schedule();
+      };
       watchers = config.persistentSync.watch
         ? [
             ...workspaceRoots.flatMap((root) =>
-              createWorkspaceWatchers(root, schedule),
+              createWorkspaceWatchers(root, schedule, invalidate),
             ),
-            ...createSharedWatchers(schedule),
+            ...createSharedWatchers(schedule, invalidate),
           ]
         : [];
+      watcherSignature = signature;
+      for (const watcher of previous) watcher.close();
     };
 
     const reconcile = async (): Promise<void> => {
@@ -768,7 +801,9 @@ export const runProviderSyncDaemon = async (
         config = await loadProviderEnrollmentConfig();
         const workspaceRoots =
           await loadRegisteredProviderSyncWorkspaces(workspaceRoot);
+        refreshWatchers(workspaceRoots);
         for (const registeredWorkspaceRoot of workspaceRoots) {
+          if (stopping) break;
           try {
             await reconcileProviderSync(registeredWorkspaceRoot);
             workspaceResults.push({
@@ -788,14 +823,14 @@ export const runProviderSyncDaemon = async (
           }
         }
         refreshWatchers(workspaceRoots);
-        const outcome = workspaceResults.some(
-          (result) => result.outcome === "error",
-        )
-          ? "error"
-          : "success";
-        if (outcome === "success") {
-          await rm(getProviderSyncRefreshRequestPath(), { force: true });
-        }
+        const interrupted = workspaceResults.length < workspaceRoots.length;
+        const outcome =
+          interrupted ||
+          workspaceResults.some((result) => result.outcome === "error")
+            ? "error"
+            : "success";
+        // Keep the refresh marker: unlinking it can erase a concurrent request
+        // and feeds a spurious change event back into our own watcher.
         await writeJsonAtomically(getProviderSyncDaemonDiagnosticPath(), {
           schemaVersion: 2,
           pid: process.pid,
@@ -803,6 +838,12 @@ export const runProviderSyncDaemon = async (
           runCompletedAt: new Date().toISOString(),
           outcome,
           workspaceResults,
+          ...(interrupted
+            ? {
+                error:
+                  "Synchronization stopped before all workspaces were processed.",
+              }
+            : {}),
         } satisfies ProviderSyncDaemonDiagnostic);
       } catch (error) {
         const message = getErrorMessage(error);
@@ -830,13 +871,22 @@ export const runProviderSyncDaemon = async (
         running = false;
         if (rerun && !stopping) {
           rerun = false;
-          startReconcile();
+          schedule();
+        } else if (!stopping) {
+          fullScan = setTimeout(() => {
+            watchersInvalidated = true;
+            startReconcile();
+          }, config.persistentSync.fullRescanIntervalMs);
         }
       }
     };
 
     function startReconcile(): void {
       if (stopping) return;
+      if (timer) clearTimeout(timer);
+      timer = undefined;
+      if (fullScan) clearTimeout(fullScan);
+      fullScan = undefined;
       if (running) {
         rerun = true;
         return;
@@ -869,10 +919,6 @@ export const runProviderSyncDaemon = async (
     }
 
     await reconcile();
-    fullScan = setInterval(
-      startReconcile,
-      config.persistentSync.fullRescanIntervalMs,
-    );
 
     await stopped;
   } finally {
@@ -884,7 +930,7 @@ export const runProviderSyncDaemon = async (
     await activeControlCheck;
     await activeReconcile;
     if (timer) clearTimeout(timer);
-    if (fullScan) clearInterval(fullScan);
+    if (fullScan) clearTimeout(fullScan);
     for (const watcher of watchers) watcher.close();
     await daemonLease.release();
   }

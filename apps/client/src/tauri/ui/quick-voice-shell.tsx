@@ -1,3 +1,4 @@
+import { useAssistantDisplayLayout } from "./use-assistant-display-layout";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ArrowUpRight, X } from "lucide-react";
@@ -13,6 +14,7 @@ import {
   revealMainWindow,
   resolveAssistantSurfaceLayout,
   setWindowPosition,
+  setWindowSize,
 } from "./assistant-surface";
 import { useAppearanceSettings } from "./chat-session/_helpers/use-appearance-settings";
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
@@ -41,6 +43,7 @@ const VOICE_ACTIVITY_THRESHOLD = 0.012;
 const VOICE_ACTIVITY_FRAME_COUNT = 2;
 
 export const QuickVoiceShell = (): JSX.Element => {
+  useAssistantDisplayLayout("quickVoice");
   useAppearanceSettings();
   const controller = useChatSessionController({
     enableBackgroundMaintenance: false,
@@ -138,6 +141,7 @@ export const QuickVoiceShell = (): JSX.Element => {
     }
 
     await setWindowPosition(getCurrentWindow(), layout.quickVoicePosition);
+    await setWindowSize(getCurrentWindow(), layout.quickVoiceSize);
   }, []);
 
   const cancelRecordingWithStatus = useCallback(

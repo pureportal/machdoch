@@ -6,6 +6,8 @@ import {
 
 describe("reasoning execution modes", () => {
   it.each([
+    "gpt-6-astra",
+    "gpt-6-astra-2026-09-03",
     "gpt-5.6",
     "gpt-5.6-sol",
     "gpt-5.6-terra",

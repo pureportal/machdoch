@@ -3,6 +3,7 @@ import {
   ChevronsUp,
   CircleDashed,
   CircleOff,
+  Infinity as InfinityIcon,
   SignalHigh,
   SignalLow,
   SignalMedium,
@@ -126,13 +127,21 @@ const REASONING_META: Record<
   },
   ultra: {
     label: "Ultra",
-    description:
-      "Use maximum GPT-5.6 reasoning with proactive parallel subagents.",
+    description: "Use maximum reasoning with proactive parallel subagents.",
     icon: Sparkles,
     triggerClassName:
       "border-violet-400/35 bg-violet-400/10 text-violet-100 hover:border-violet-300/50 hover:bg-violet-400/15 hover:text-white",
     selectedClassName: "border-violet-400/35 bg-violet-400/10 text-violet-100",
     iconClassName: "text-violet-200",
+  },
+  aeon: {
+    label: "Aeon",
+    description: "Keep working until stopped.",
+    icon: InfinityIcon,
+    triggerClassName:
+      "border-indigo-400/35 bg-indigo-400/10 text-indigo-100 hover:border-indigo-300/50 hover:bg-indigo-400/15 hover:text-white",
+    selectedClassName: "border-indigo-400/35 bg-indigo-400/10 text-indigo-100",
+    iconClassName: "text-indigo-200",
   },
 };
 

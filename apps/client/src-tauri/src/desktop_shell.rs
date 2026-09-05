@@ -10,6 +10,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
+pub(crate) mod display_layout;
 pub(crate) mod file_manager;
 mod shortcut;
 mod startup;

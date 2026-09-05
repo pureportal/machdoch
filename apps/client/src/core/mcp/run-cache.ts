@@ -4,6 +4,7 @@ import type { McpOperationCacheOptions } from "./types.js";
 export interface McpRunCacheLookupOptions {
   workspaceRoot: string;
   serverId: string;
+  serverIdentity?: string;
   operation: McpOperationCacheOptions["operation"];
   target: string;
   args?: unknown;
@@ -27,19 +28,37 @@ export interface McpRunCacheResult<T> {
 export interface McpRunCacheManagerOptions {
   now?: () => number;
   maxEntries?: number;
+  maxBytes?: number;
+  maxEntryBytes?: number;
 }
 
 const DEFAULT_MCP_RUN_CACHE_TTL_MS = 15 * 60 * 1_000;
 const DEFAULT_MAX_ENTRIES = 1_000;
+const DEFAULT_MAX_BYTES = 32 * 1024 * 1024;
+const DEFAULT_MAX_ENTRY_BYTES = 2 * 1024 * 1024;
+const normalizeLimit = (value: number | undefined, fallback: number): number =>
+  value !== undefined && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : fallback;
 
 export class McpRunCacheManager {
   private readonly entries = new Map<string, McpRunCacheEntry<unknown>>();
   private readonly now: () => number;
   private readonly maxEntries: number;
+  private readonly maxBytes: number;
+  private readonly maxEntryBytes: number;
+  private readonly entryBytes = new Map<string, number>();
+  private retainedBytes = 0;
+  private lastPrunedAt: number | undefined;
 
   constructor(options: McpRunCacheManagerOptions = {}) {
     this.now = options.now ?? Date.now;
-    this.maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
+    this.maxEntries = normalizeLimit(options.maxEntries, DEFAULT_MAX_ENTRIES);
+    this.maxBytes = normalizeLimit(options.maxBytes, DEFAULT_MAX_BYTES);
+    this.maxEntryBytes = normalizeLimit(
+      options.maxEntryBytes,
+      DEFAULT_MAX_ENTRY_BYTES,
+    );
   }
 
   createKey(options: McpRunCacheLookupOptions): string {
@@ -47,6 +66,7 @@ export class McpRunCacheManager {
       workspaceRoot: options.workspaceRoot,
       runId: options.policy?.runId ?? null,
       serverId: options.serverId,
+      serverIdentity: options.serverIdentity ?? null,
       operation: options.operation,
       target: options.target,
       args: options.args ?? null,
@@ -57,7 +77,11 @@ export class McpRunCacheManager {
     const key = this.createKey(options);
     const policy = options.policy;
 
-    if (!policy?.runId || policy.enabled === false || policy.forceRefresh === true) {
+    if (
+      !policy?.runId ||
+      policy.enabled === false ||
+      policy.forceRefresh === true
+    ) {
       return { hit: false, key };
     }
 
@@ -67,18 +91,30 @@ export class McpRunCacheManager {
       return { hit: false, key };
     }
 
-    if (entry.expiresAt !== undefined && entry.expiresAt <= this.now()) {
-      this.entries.delete(key);
+    if (
+      (entry.expiresAt !== undefined && entry.expiresAt <= this.now()) ||
+      (policy.ttlMs !== undefined &&
+        policy.ttlMs > 0 &&
+        entry.createdAt + policy.ttlMs <= this.now())
+    ) {
+      this.deleteEntry(key);
       return { hit: false, key };
     }
 
     this.entries.delete(key);
     this.entries.set(key, entry);
 
-    return { hit: true, key, entry };
+    return {
+      hit: true,
+      key,
+      entry: { ...entry, value: structuredClone(entry.value) },
+    };
   }
 
-  set<T>(options: McpRunCacheLookupOptions, value: T): McpRunCacheEntry<T> | undefined {
+  set<T>(
+    options: McpRunCacheLookupOptions,
+    value: T,
+  ): McpRunCacheEntry<T> | undefined {
     const policy = options.policy;
 
     if (!policy?.runId || policy.enabled === false) {
@@ -86,20 +122,36 @@ export class McpRunCacheManager {
     }
 
     const key = this.createKey(options);
-    const ttlMs = policy.ttlMs ?? DEFAULT_MCP_RUN_CACHE_TTL_MS;
+    this.deleteEntry(key);
+    if (this.maxEntries === 0 || this.maxBytes === 0) return undefined;
+    let byteLength: number;
+    let cachedValue: T;
+    try {
+      const serialized = JSON.stringify(value);
+      if (serialized === undefined) return undefined;
+      byteLength = Buffer.byteLength(serialized, "utf8");
+      if (byteLength > this.maxEntryBytes || byteLength > this.maxBytes)
+        return undefined;
+      cachedValue = structuredClone(value);
+    } catch {
+      return undefined;
+    }
+    const ttlMs = normalizeLimit(policy.ttlMs, DEFAULT_MCP_RUN_CACHE_TTL_MS);
     const createdAt = this.now();
     const entry: McpRunCacheEntry<T> = {
       key,
       runId: policy.runId,
       createdAt,
       ...(ttlMs > 0 ? { expiresAt: createdAt + ttlMs } : {}),
-      value,
+      value: cachedValue,
     };
 
     this.entries.set(key, entry);
+    this.entryBytes.set(key, byteLength);
+    this.retainedBytes += byteLength;
     this.prune();
 
-    return entry;
+    return { ...entry, value };
   }
 
   deleteRun(runId: string): number {
@@ -107,7 +159,7 @@ export class McpRunCacheManager {
 
     for (const [key, entry] of this.entries) {
       if (entry.runId === runId) {
-        this.entries.delete(key);
+        this.deleteEntry(key);
         deleted += 1;
       }
     }
@@ -117,29 +169,47 @@ export class McpRunCacheManager {
 
   clear(): void {
     this.entries.clear();
+    this.entryBytes.clear();
+    this.retainedBytes = 0;
+    this.lastPrunedAt = undefined;
   }
 
   size(): number {
     return this.entries.size;
   }
 
+  private deleteEntry(key: string): void {
+    this.retainedBytes -= this.entryBytes.get(key) ?? 0;
+    this.entryBytes.delete(key);
+    this.entries.delete(key);
+  }
+
   private prune(): void {
     const now = this.now();
 
-    for (const [key, entry] of this.entries) {
-      if (entry.expiresAt !== undefined && entry.expiresAt <= now) {
-        this.entries.delete(key);
+    if (
+      this.lastPrunedAt === undefined ||
+      now - this.lastPrunedAt >= 1000 ||
+      now < this.lastPrunedAt
+    ) {
+      this.lastPrunedAt = now;
+      for (const [key, entry] of this.entries) {
+        if (entry.expiresAt !== undefined && entry.expiresAt <= now)
+          this.deleteEntry(key);
       }
     }
 
-    while (this.entries.size > this.maxEntries) {
+    while (
+      this.entries.size > this.maxEntries ||
+      this.retainedBytes > this.maxBytes
+    ) {
       const oldestKey = this.entries.keys().next().value as string | undefined;
 
       if (!oldestKey) {
         return;
       }
 
-      this.entries.delete(oldestKey);
+      this.deleteEntry(oldestKey);
     }
   }
 }
