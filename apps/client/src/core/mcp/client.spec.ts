@@ -1,4 +1,6 @@
+/// <reference types="vitest/globals" />
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type {
   CreateMessageRequest,
   CreateMessageResult,
@@ -228,6 +230,141 @@ afterEach(async () => {
 });
 
 describe("McpClientManager lifecycle", () => {
+  it("cleans up transports when client construction fails", async () => {
+    const transport = createTransport();
+    const manager = new McpClientManager({
+      createTransport: () => transport,
+      createClient: () => {
+        throw new Error("constructor failed");
+      },
+      loadRuntimeEnvironment: async () => ({}),
+    });
+    await expect(
+      manager.getConnection("C:/workspace", createServer()),
+    ).rejects.toThrow("constructor failed");
+    expect(transport.close).toHaveBeenCalledTimes(1);
+    expect(manager.listConnections()).toEqual([]);
+  });
+
+  it("does not register a connection that closes during its handshake", async () => {
+    const transport = createTransport();
+    const client = createClient();
+    vi.mocked(client.connect).mockImplementation(async () => {
+      client.onclose?.();
+    });
+    const manager = new McpClientManager({
+      createTransport: () => transport,
+      createClient: () => client,
+      loadRuntimeEnvironment: async () => ({}),
+    });
+    await expect(
+      manager.getConnection("C:/workspace", createServer()),
+    ).rejects.toThrow("closed during startup");
+    expect(transport.close).toHaveBeenCalledTimes(1);
+    expect(manager.listConnections()).toEqual([]);
+  });
+
+  it("cancels startup before environment loading completes without creating a transport", async () => {
+    let finish = (_env: Record<string, string>) => {};
+    const environment = new Promise<Record<string, string>>((resolve) => {
+      finish = resolve;
+    });
+    const loadRuntimeEnvironment = vi.fn(() => environment);
+    const createTransportMock = vi.fn(createTransport);
+    const manager = new McpClientManager({
+      createTransport: createTransportMock,
+      createClient: () => createClient(),
+      loadRuntimeEnvironment,
+    });
+    const pending = manager.getConnection("C:/workspace", createServer());
+    await vi.waitFor(() =>
+      expect(loadRuntimeEnvironment).toHaveBeenCalledTimes(1),
+    );
+    await Promise.all([
+      expect(pending).rejects.toThrow("cancelled by shutdown"),
+      manager.closeAll(),
+    ]);
+    finish({});
+    await Promise.resolve();
+    expect(createTransportMock).not.toHaveBeenCalled();
+    expect(manager.listConnections()).toEqual([]);
+  });
+
+  it("closes one server without waiting for another server's stalled handshake", async () => {
+    let finish = () => {};
+    const handshake = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const slow = createClient({ connect: vi.fn(() => handshake) });
+    const manager = new McpClientManager({
+      createTransport,
+      createClient: ({ server }) =>
+        server.id === "slow" ? slow : createClient(),
+      loadRuntimeEnvironment: async () => ({}),
+    });
+    const pending = manager.getConnection(
+      "C:/workspace",
+      createServer({ id: "slow" }),
+    );
+    try {
+      await manager.getConnection("C:/workspace", createServer());
+      await manager.closeServer("C:/workspace", "test");
+      expect(manager.listConnections()).toEqual([]);
+    } finally {
+      finish();
+      await pending;
+      await manager.closeAll();
+    }
+  });
+
+  it("rejects new connections until shutdown completes and then allows reuse", async () => {
+    let finish = () => {};
+    const closePending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const transport = createTransport();
+    vi.mocked(transport.close).mockImplementationOnce(() => closePending);
+    const manager = new McpClientManager({
+      createTransport: () => transport,
+      createClient: () => createClient(),
+      loadRuntimeEnvironment: async () => ({}),
+    });
+    const server = createServer();
+    await manager.getConnection("C:/workspace", server);
+    const closing = manager.closeAll();
+    try {
+      await expect(
+        manager.getConnection("C:/workspace", server),
+      ).rejects.toThrow("shutting down");
+    } finally {
+      finish();
+      await closing;
+    }
+    await expect(
+      manager.getConnection("C:/workspace", server),
+    ).resolves.toBeDefined();
+    await manager.closeAll();
+  });
+
+  it("reuses equivalent paths but separates changed connection settings", async () => {
+    const manager = new McpClientManager({
+      createTransport,
+      createClient: () => createClient(),
+      loadRuntimeEnvironment: async () => ({}),
+    });
+    const server = createServer();
+    const initial = await manager.getConnection("C:/workspace", server);
+    expect(await manager.getConnection("C:/workspace/child/..", server)).toBe(
+      initial,
+    );
+    const changed = await manager.getConnection("C:/workspace", {
+      ...server,
+      roots: "disabled",
+    });
+    expect(changed).not.toBe(initial);
+    expect(manager.listConnections()).toHaveLength(2);
+    await manager.closeAll();
+  });
   it("shares connection startup across concurrent requests", async () => {
     let finishConnect: () => void = () => undefined;
     const connectPending = new Promise<void>((resolve) => {
@@ -299,7 +436,7 @@ describe("McpClientManager lifecycle", () => {
     await manager.closeAll();
   });
 
-  it("waits for an in-flight connection before closing all transports", async () => {
+  it("cancels an in-flight connection when closing all transports", async () => {
     let finishConnect: () => void = () => undefined;
     const connectPending = new Promise<void>((resolve) => {
       finishConnect = resolve;
@@ -320,15 +457,18 @@ describe("McpClientManager lifecycle", () => {
       expect(client.connect).toHaveBeenCalledTimes(1);
     });
     const closing = manager.closeAll();
+    await Promise.all([
+      expect(connection).rejects.toThrow("cancelled by shutdown"),
+      closing,
+    ]);
     finishConnect();
-
-    await Promise.all([connection, closing]);
+    await Promise.resolve();
 
     expect(transport.close).toHaveBeenCalledTimes(1);
     expect(manager.listConnections()).toEqual([]);
   });
 
-  it("waits for an in-flight server connection before closing it", async () => {
+  it("cancels an in-flight server connection before closing it", async () => {
     let finishConnect: () => void = () => undefined;
     const connectPending = new Promise<void>((resolve) => {
       finishConnect = resolve;
@@ -349,9 +489,12 @@ describe("McpClientManager lifecycle", () => {
       expect(client.connect).toHaveBeenCalledTimes(1);
     });
     const closing = manager.closeServer("C:/workspace", "test");
+    await Promise.all([
+      expect(connection).rejects.toThrow("cancelled by shutdown"),
+      closing,
+    ]);
     finishConnect();
-
-    await Promise.all([connection, closing]);
+    await Promise.resolve();
 
     expect(transport.close).toHaveBeenCalledTimes(1);
     expect(manager.listConnections()).toEqual([]);
@@ -408,6 +551,91 @@ describe("McpClientManager lifecycle", () => {
     expect(firstTransport.close).toHaveBeenCalledTimes(1);
     expect(secondTransport.close).not.toHaveBeenCalled();
     expect(manager.listConnections()).toHaveLength(1);
+  });
+
+  it.each([ErrorCode.InvalidParams, ErrorCode.RequestTimeout])(
+    "keeps the server alive after RPC failure %s",
+    async (code) => {
+      const transport = createTransport();
+      const client = createClient({
+        getServerCapabilities: vi.fn(() => ({ tools: {} })),
+        listTools: vi
+          .fn()
+          .mockRejectedValueOnce(new McpError(code, "invalid request"))
+          .mockResolvedValue({ tools: [] }),
+      } as Partial<Client>);
+      const createTransportMock = vi.fn(() => transport);
+      const manager = new McpClientManager({
+        createClient: () => client,
+        createTransport: createTransportMock,
+        loadRuntimeEnvironment: async () => ({}),
+      });
+      const server = createServer();
+      await expect(
+        manager.discoverServer("C:/workspace", server),
+      ).rejects.toThrow("invalid request");
+      expect(transport.close).not.toHaveBeenCalled();
+      await manager.discoverServer("C:/workspace", server);
+      expect(createTransportMock).toHaveBeenCalledTimes(1);
+      await manager.closeAll();
+    },
+  );
+
+  it("rejects looping discovery without reconnecting to the same broken catalog", async () => {
+    const transport = createTransport();
+    const client = createClient({
+      getServerCapabilities: vi.fn(() => ({ tools: {} })),
+      listTools: vi.fn(async () => ({ tools: [], nextCursor: "again" })),
+    } as Partial<Client>);
+    const manager = new McpClientManager({
+      createTransport: () => transport,
+      createClient: () => client,
+      loadRuntimeEnvironment: async () => ({}),
+    });
+    await expect(
+      manager.discoverServer("C:/workspace", createServer()),
+    ).rejects.toThrow("repeated pagination cursor");
+    expect(client.listTools).toHaveBeenCalledTimes(2);
+    expect(client.connect).toHaveBeenCalledTimes(1);
+    expect(transport.close).not.toHaveBeenCalled();
+    await manager.closeAll();
+  });
+
+  it("evicts a closed transport before the next operation tries to reuse it", async () => {
+    const client = createClient();
+    const manager = new McpClientManager({
+      createClient: () => client,
+      createTransport,
+      loadRuntimeEnvironment: async () => ({}),
+    });
+    const server = createServer({ idleShutdownMs: 60_000 });
+    const connection = await manager.getConnection("C:/workspace", server);
+    client.onclose?.();
+    expect(manager.listConnections()).toEqual([]);
+    expect(connection.idleTimer).toBeUndefined();
+    const replacement = await manager.getConnection("C:/workspace", server);
+    expect(replacement).not.toBe(connection);
+    await manager.closeAll();
+  });
+
+  it("evicts the retry connection when discovery fails again", async () => {
+    const transports = [createTransport(), createTransport()];
+    let index = 0;
+    const manager = new McpClientManager({
+      createClient: () =>
+        createClient({
+          getServerCapabilities: vi.fn(() => ({ tools: {} })),
+          listTools: vi.fn().mockRejectedValue(new Error("broken transport")),
+        } as Partial<Client>),
+      createTransport: () => transports[index++]!,
+      loadRuntimeEnvironment: async () => ({}),
+    });
+    await expect(
+      manager.discoverServer("C:/workspace", createServer()),
+    ).rejects.toThrow("broken transport");
+    expect(manager.listConnections()).toEqual([]);
+    for (const transport of transports)
+      expect(transport.close).toHaveBeenCalledTimes(1);
   });
 
   it("enriches live discovery with protocol and catalog hashes", async () => {

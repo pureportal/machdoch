@@ -3,9 +3,9 @@ import { loadRuntimeEnvironment } from "../env.js";
 import {
   listEnabledMcpServers,
   loadMcpConfig,
-  loadMcpDiscoveryCacheSync,
+  loadMcpDiscoveryCache,
   loadUserMcpConfig,
-  loadUserMcpDiscoveryCacheSync,
+  loadUserMcpDiscoveryCache,
 } from "../mcp/config.js";
 import { isMcpOAuthLoopbackRedirectUrl } from "../mcp/oauth-loopback.js";
 import { getMcpOAuthRecoveryCommands } from "../mcp/oauth-recovery.js";
@@ -531,14 +531,15 @@ export const projectMcpForProvider = async (
   workspaceRoot: string,
   options: McpProjectionOptions = {},
 ): Promise<McpProjection> => {
-  const effectiveConfig =
+  const [effectiveConfig, discoveryCache] = await Promise.all([
     options.scope === "user"
-      ? await loadUserMcpConfig()
-      : await loadMcpConfig(workspaceRoot);
-  const discovery =
+      ? loadUserMcpConfig()
+      : loadMcpConfig(workspaceRoot),
     options.scope === "user"
-      ? loadUserMcpDiscoveryCacheSync().servers
-      : loadMcpDiscoveryCacheSync(workspaceRoot).servers;
+      ? loadUserMcpDiscoveryCache()
+      : loadMcpDiscoveryCache(workspaceRoot),
+  ]);
+  const discovery = discoveryCache.servers;
   const enabledServers = listEnabledMcpServers(effectiveConfig).filter(
     (server) => {
       if (!options.scope) return true;

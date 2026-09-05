@@ -68,7 +68,7 @@ const FLOW_ID_COMMANDS: &[&str] = &["ralph-run"];
 const RALPH_COMMANDS: &[&str] = &["ralph-run", "ralph-resume-run"];
 
 const SUPPORTED_REASONING_MODES: &[&str] = &[
-    "default", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
+    "default", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra", "aeon",
 ];
 
 const SUPPORTED_COMMAND_GROUPS: &[&[&str]] = &[
@@ -250,11 +250,12 @@ mod tests {
         assert!(is_supported_reasoning(Some("default")));
         assert!(is_supported_reasoning(Some("xhigh")));
         assert!(is_supported_reasoning(Some("ultra")));
+        assert!(is_supported_reasoning(Some("aeon")));
         assert!(!is_supported_reasoning(None));
         assert!(!is_supported_reasoning(Some("maximum")));
         assert_eq!(
             supported_reasoning_modes_label(),
-            "default, none, minimal, low, medium, high, xhigh, max, ultra"
+            "default, none, minimal, low, medium, high, xhigh, max, ultra, aeon"
         );
     }
 }

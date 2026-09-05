@@ -498,6 +498,21 @@ describe("loadRuntimeConfig", () => {
     ).rejects.toThrow("Reasoning execution mode `pro` is not supported");
   });
 
+  it("persists Aeon reasoning for GPT-6 Astra through Codex CLI", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    await saveWorkspaceRuntimeProvider(workspaceRoot, "codex-cli");
+    await saveWorkspaceDefaultModel(workspaceRoot, "gpt-6-astra");
+    await saveWorkspaceReasoningMode(workspaceRoot, "aeon");
+
+    const runtime = await loadRuntimeConfig(workspaceRoot);
+    expect(runtime.provider).toBe("codex-cli");
+    expect(runtime.model).toBe("gpt-6-astra");
+    expect(runtime.reasoning).toBe("aeon");
+  });
+
   it("rejects unsupported reasoning execution mode overrides", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();

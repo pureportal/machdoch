@@ -4,6 +4,18 @@ import { describe, expect, it } from "vitest";
 import { createWebRequest, IncomingRequestError } from "./http-request";
 
 describe("Fleet Manager HTTP request conversion", () => {
+  it("propagates browser disconnect cancellation after body conversion", async () => {
+    const controller = new AbortController();
+    const converted = await createWebRequest(
+      incomingRequest("GET", []),
+      "https://fleet.example.test",
+      1024,
+      controller.signal,
+    );
+    expect(converted.signal.aborted).toBe(false);
+    controller.abort();
+    expect(converted.signal.aborted).toBe(true);
+  });
   it("uses the configured external origin instead of the inbound Host header", async () => {
     const request = incomingRequest("POST", ["{}"], {
       host: "attacker.example",

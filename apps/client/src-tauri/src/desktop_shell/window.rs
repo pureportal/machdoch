@@ -26,6 +26,20 @@ const FULLSCREEN_TOLERANCE_PX: i32 = 12;
 const FULLSCREEN_MIN_AREA_RATIO: f64 = 0.96;
 
 pub(crate) fn handle_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
+    if matches!(
+        event,
+        WindowEvent::ScaleFactorChanged { .. } | WindowEvent::Focused(true)
+    ) {
+        if let Some(state) = window
+            .app_handle()
+            .try_state::<super::display_layout::DisplayLayoutState>()
+        {
+            state.window_changed(
+                window.label(),
+                matches!(event, WindowEvent::ScaleFactorChanged { .. }),
+            );
+        }
+    }
     if window.label() != MAIN_WINDOW_LABEL {
         return;
     }
@@ -90,7 +104,6 @@ pub(crate) fn ensure_assistant_window<R: Runtime>(
         ASSISTANT_BUBBLE_WINDOW_LABEL => builder
             .title("machdoch Assistant Bubble")
             .inner_size(128.0, 104.0)
-            .min_inner_size(128.0, 104.0)
             .focused(false)
             .focusable(false)
             .build()
@@ -98,13 +111,11 @@ pub(crate) fn ensure_assistant_window<R: Runtime>(
         ASSISTANT_POPUP_WINDOW_LABEL => builder
             .title("machdoch Assistant Popup")
             .inner_size(448.0, 720.0)
-            .min_inner_size(448.0, 620.0)
             .build()
             .map_err(|error| error.to_string()),
         QUICK_VOICE_WINDOW_LABEL => builder
             .title("machdoch Quick Voice")
             .inner_size(380.0, 220.0)
-            .min_inner_size(380.0, 220.0)
             .build()
             .map_err(|error| error.to_string()),
         _ => Err(format!("Unsupported assistant window label `{label}`.")),
@@ -125,7 +136,6 @@ pub(super) fn ensure_tray_menu_window<R: Runtime>(
     )
     .title("machdoch")
     .inner_size(324.0, 252.0)
-    .min_inner_size(324.0, 252.0)
     .visible(false)
     .resizable(false)
     .always_on_top(true)
@@ -249,6 +259,7 @@ pub(crate) fn show_quick_voice_window<R: Runtime>(
 
     let _ = window.show();
     let _ = window.unminimize();
+    super::display_layout::recover_on_reveal(&window);
     let _ = window.set_focus();
     let _ = app.emit_to(
         QUICK_VOICE_WINDOW_LABEL,
@@ -290,6 +301,7 @@ pub(super) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     let _ = window.set_skip_taskbar(false);
     let _ = window.show();
     let _ = window.unminimize();
+    super::display_layout::recover_on_reveal(&window);
     let _ = window.set_focus();
 }
 

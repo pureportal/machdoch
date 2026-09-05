@@ -298,7 +298,16 @@ fn valid_managed_reasoning(value: Option<&str>) -> bool {
     value.is_none_or(|value| {
         matches!(
             value,
-            "default" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra"
+            "default"
+                | "none"
+                | "minimal"
+                | "low"
+                | "medium"
+                | "high"
+                | "xhigh"
+                | "max"
+                | "ultra"
+                | "aeon"
         )
     })
 }
@@ -667,19 +676,13 @@ impl From<RawHostMessage> for HostMessage {
     }
 }
 
-impl HostMessage {
-    fn validate(&self) -> Result<(), GatewayPayloadBudgetError> {
-        let payload = serde_json::to_vec(self).map_err(GatewayPayloadBudgetError::Serialization)?;
-        if payload.len() > MAX_GATEWAY_MESSAGE_BYTES {
-            return Err(GatewayPayloadBudgetError::Exceeded);
-        }
-        Ok(())
-    }
-}
-
 pub fn serialize_host_message(message: &HostMessage) -> Result<String, GatewayPayloadBudgetError> {
-    message.validate()?;
-    serde_json::to_string(message).map_err(GatewayPayloadBudgetError::Serialization)
+    let payload =
+        serde_json::to_string(message).map_err(GatewayPayloadBudgetError::Serialization)?;
+    if payload.len() > MAX_GATEWAY_MESSAGE_BYTES {
+        return Err(GatewayPayloadBudgetError::Exceeded);
+    }
+    Ok(payload)
 }
 
 pub fn deserialize_host_message(
@@ -703,7 +706,23 @@ pub fn deserialize_host_message(
 )]
 pub enum HostRequest {
     GetProductSnapshot,
-    ExecuteProductCommand { command: ProductCommand },
+    ExecuteProductCommand {
+        command: ProductCommand,
+    },
+    GetWorkspaceRuns {
+        workspace: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        include_logs: Option<bool>,
+    },
+    ExecuteWorkspaceRun {
+        workspace: String,
+        command: Value,
+    },
+    OpenPreviewTunnel {
+        target: Value,
+        tunnel_id: String,
+        token: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -714,6 +733,10 @@ pub enum HostRequest {
     deny_unknown_fields
 )]
 pub enum HostResponse {
+    WorkspaceRuns {
+        snapshot: Value,
+    },
+    PreviewTunnelReady,
     ProductSnapshot {
         snapshot: Value,
     },
@@ -746,6 +769,18 @@ pub enum HostErrorCode {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProductCommand {
     pub kind: ProductCommandKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shallow: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initialize_git: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -811,6 +846,12 @@ pub struct ProductCommand {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ProductCommandKind {
+    CreateProject,
+    CloneProject,
+    ImportProject,
+    CancelProjectOperation,
+    RetryProjectOperation,
+    ForgetProject,
     Cancel,
     Retry,
     Continue,
@@ -864,6 +905,18 @@ pub enum ProductCommandKind {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RawProductCommand {
     kind: ProductCommandKind,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    repository: Option<String>,
+    #[serde(default)]
+    branch: Option<String>,
+    #[serde(default)]
+    shallow: Option<bool>,
+    #[serde(default)]
+    initialize_git: Option<bool>,
+    #[serde(default)]
+    project_id: Option<String>,
     #[serde(default)]
     command_id: Option<String>,
     #[serde(default)]
@@ -941,6 +994,12 @@ impl<'de> Deserialize<'de> for ProductCommand {
         let raw = RawProductCommand::deserialize(payload).map_err(D::Error::custom)?;
         let mut command = Self {
             kind: raw.kind,
+            name: raw.name,
+            repository: raw.repository,
+            branch: raw.branch,
+            shallow: raw.shallow,
+            initialize_git: raw.initialize_git,
+            project_id: raw.project_id,
             command_id: raw.command_id,
             task_id: raw.task_id,
             session_id: raw.session_id,
@@ -1002,6 +1061,10 @@ impl ProductCommand {
 
     fn normalize(&mut self) {
         for value in [
+            &mut self.name,
+            &mut self.repository,
+            &mut self.branch,
+            &mut self.project_id,
             &mut self.command_id,
             &mut self.task_id,
             &mut self.session_id,
@@ -1048,6 +1111,21 @@ impl ProductCommand {
         let mut required = Vec::new();
 
         match self.kind {
+            ProductCommandKind::CreateProject => required.extend([
+                ("name", self.name.is_some()),
+                ("initializeGit", self.initialize_git.is_some()),
+            ]),
+            ProductCommandKind::CloneProject => required.extend([
+                ("name", self.name.is_some()),
+                ("repository", self.repository.is_some()),
+                ("shallow", self.shallow.is_some()),
+            ]),
+            ProductCommandKind::ImportProject => required.push(("name", self.name.is_some())),
+            ProductCommandKind::CancelProjectOperation
+            | ProductCommandKind::RetryProjectOperation
+            | ProductCommandKind::ForgetProject => {
+                required.push(("projectId", self.project_id.is_some()))
+            }
             ProductCommandKind::Cancel
             | ProductCommandKind::Retry
             | ProductCommandKind::Continue
@@ -1204,6 +1282,20 @@ impl ProductCommand {
 
     fn validate_values(&self) -> Result<(), String> {
         let valid = match self.kind {
+            ProductCommandKind::CreateProject | ProductCommandKind::ImportProject => {
+                valid_project_name(self.name.as_deref())
+            }
+            ProductCommandKind::CloneProject => {
+                valid_project_name(self.name.as_deref())
+                    && valid_trimmed_text(self.repository.as_deref(), 2048)
+                    && self
+                        .branch
+                        .as_deref()
+                        .is_none_or(|branch| valid_trimmed_text(Some(branch), 240))
+            }
+            ProductCommandKind::CancelProjectOperation
+            | ProductCommandKind::RetryProjectOperation
+            | ProductCommandKind::ForgetProject => valid_identifier(self.project_id.as_deref()),
             ProductCommandKind::Cancel
             | ProductCommandKind::Retry
             | ProductCommandKind::Continue
@@ -1412,6 +1504,24 @@ fn valid_media_output_format(target: Option<&str>, output_format: Option<&str>) 
     )
 }
 
+fn valid_project_name(value: Option<&str>) -> bool {
+    value.is_some_and(|value| {
+        let value = ecmascript_trim(value);
+        let stem = value.split('.').next().unwrap_or("").to_ascii_lowercase();
+        !value.is_empty()
+            && value.len() <= 80
+            && value.as_bytes()[0].is_ascii_alphanumeric()
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+            && !value.ends_with('.')
+            && !matches!(stem.as_str(), "con" | "prn" | "aux" | "nul")
+            && !(stem.len() == 4
+                && (stem.starts_with("com") || stem.starts_with("lpt"))
+                && stem.as_bytes()[3].is_ascii_digit())
+    })
+}
+
 fn valid_workspace(value: &str) -> bool {
     valid_trimmed_text(Some(value), 12_000)
 }
@@ -1430,7 +1540,16 @@ fn valid_reasoning(value: Option<&str>) -> bool {
     matches!(
         value,
         Some(
-            "default" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra"
+            "default"
+                | "none"
+                | "minimal"
+                | "low"
+                | "medium"
+                | "high"
+                | "xhigh"
+                | "max"
+                | "ultra"
+                | "aeon"
         )
     )
 }
@@ -1453,8 +1572,33 @@ fn valid_ralph_parameters(parameters: &BTreeMap<String, String>) -> bool {
 }
 
 impl ProductCommandKind {
+    pub fn is_workspace_command(self) -> bool {
+        matches!(
+            self,
+            Self::CreateProject
+                | Self::CloneProject
+                | Self::ImportProject
+                | Self::CancelProjectOperation
+                | Self::RetryProjectOperation
+                | Self::ForgetProject
+        )
+    }
+
     fn allowed_fields(self) -> &'static [&'static str] {
         match self {
+            Self::CreateProject => &["kind", "commandId", "name", "initializeGit"],
+            Self::CloneProject => &[
+                "kind",
+                "commandId",
+                "name",
+                "repository",
+                "branch",
+                "shallow",
+            ],
+            Self::ImportProject => &["kind", "commandId", "name"],
+            Self::CancelProjectOperation | Self::RetryProjectOperation | Self::ForgetProject => {
+                &["kind", "commandId", "projectId"]
+            }
             Self::Cancel | Self::Retry | Self::Continue | Self::CancelPromptEnhancement => {
                 &["kind", "commandId", "taskId"]
             }
@@ -1548,6 +1692,12 @@ impl ProductCommandKind {
 
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::CreateProject => "create-project",
+            Self::CloneProject => "clone-project",
+            Self::ImportProject => "import-project",
+            Self::CancelProjectOperation => "cancel-project-operation",
+            Self::RetryProjectOperation => "retry-project-operation",
+            Self::ForgetProject => "forget-project",
             Self::Cancel => "cancel",
             Self::Retry => "retry",
             Self::Continue => "continue",
@@ -1723,6 +1873,12 @@ mod tests {
 
     fn cancel_command() -> ProductCommand {
         ProductCommand {
+            name: None,
+            repository: None,
+            branch: None,
+            shallow: None,
+            initialize_git: None,
+            project_id: None,
             kind: ProductCommandKind::Cancel,
             command_id: Some("command-1".to_string()),
             task_id: Some("task-1".to_string()),
@@ -2522,5 +2678,30 @@ mod tests {
         delivery["profile"]["revision"] = serde_json::json!(MAX_MANAGED_SETTINGS_REVISION + 1);
 
         assert!(serde_json::from_value::<FleetManagedSettingsDelivery>(delivery).is_err());
+    }
+
+    #[test]
+    fn project_commands_validate_names_and_allowed_fields() {
+        for name in [
+            "../escape",
+            "C:\\projects",
+            "/etc",
+            ".hidden",
+            "CON",
+            "nul.txt",
+            "com1",
+            "name.",
+            "with space",
+            "a/b",
+        ] {
+            assert!(serde_json::from_value::<ProductCommand>(serde_json::json!({"kind": "create-project", "name": name, "initializeGit": false})).is_err(), "{name}");
+        }
+        let clone = serde_json::json!({"kind": "clone-project", "name": "my-project", "repository": "https://example.com/repo.git", "shallow": false});
+        let parsed: ProductCommand = serde_json::from_value(clone.clone()).unwrap();
+        assert!(parsed.kind.is_workspace_command());
+        assert_eq!(serde_json::to_value(parsed).unwrap(), clone);
+        let mut invalid = clone;
+        invalid["workspace"] = serde_json::json!("/arbitrary");
+        assert!(serde_json::from_value::<ProductCommand>(invalid).is_err());
     }
 }

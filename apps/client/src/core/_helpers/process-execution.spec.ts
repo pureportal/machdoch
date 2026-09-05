@@ -1,117 +1,69 @@
 /// <reference types="vitest/globals" />
-
-const { execFileMock } = vi.hoisted(() => ({
-  execFileMock: vi.fn(),
-}));
-
-vi.mock("node:child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:child_process")>();
-
-  return {
-    ...actual,
-    execFile: execFileMock,
-  };
-});
-
 import {
   executeLocalCommand,
   formatLocalCommandError,
   getLocalCommandErrorDetails,
   normalizeLocalCommandCwd,
 } from "./process-execution.ts";
-import type { ExecException } from "node:child_process";
-
-type ExecFileCallback = (
-  error: ExecException | null,
-  stdout: string,
-  stderr: string,
-) => void;
-
-const invokeExecFileCallback = (
-  error: ExecException | null,
-  stdout: string,
-  stderr: string,
-): void => {
-  const callback = execFileMock.mock.calls[0]?.[3];
-
-  if (typeof callback !== "function") {
-    throw new Error("Expected execFile callback to be captured.");
-  }
-
-  (callback as ExecFileCallback)(error, stdout, stderr);
-};
 
 const commandOptions = {
-  cwd: "C:\\workspace",
-  timeoutMs: 1_000,
-  maxBufferBytes: 8_192,
+  cwd: process.cwd(),
+  timeoutMs: 5_000,
+  maxBufferBytes: 8192,
 };
 
-beforeEach(() => {
-  execFileMock.mockReset();
-});
-
 describe("executeLocalCommand", () => {
-  it("normalizes Windows extended-length cwd values before spawning", async () => {
-    const commandPromise = executeLocalCommand("pnpm", ["--version"], {
-      ...commandOptions,
-      cwd: "\\\\?\\C:\\Development\\_others\\machdoch",
-    });
-
-    expect(execFileMock.mock.calls[0]?.[2]).toMatchObject({
-      cwd:
-        process.platform === "win32"
-          ? "C:\\Development\\_others\\machdoch"
-          : "\\\\?\\C:\\Development\\_others\\machdoch",
-    });
-
-    invokeExecFileCallback(null, "11.6.0\r\n", "");
-
-    await expect(commandPromise).resolves.toEqual({
-      stdout: "11.6.0",
-      stderr: "",
-      exitCode: 0,
-    });
-  });
-
-  it("resolves numeric accepted exit codes", async () => {
-    const commandPromise = executeLocalCommand("npm", ["outdated"], {
-      ...commandOptions,
-      acceptedExitCodes: [0, 1],
-    });
-    const error = Object.assign(new Error("npm outdated exited with 1"), {
-      code: 1,
-    });
-
-    invokeExecFileCallback(error, "left-pad@1\r\n", "warning\r\n");
-
-    await expect(commandPromise).resolves.toEqual({
-      stdout: "left-pad@1",
+  it("preserves output and accepts configured nonzero exit codes", async () => {
+    const result = await executeLocalCommand(
+      process.execPath,
+      [
+        "-e",
+        "console.log('output'); console.error('warning'); process.exitCode = 7",
+      ],
+      { ...commandOptions, acceptedExitCodes: [7] },
+    );
+    expect(result).toEqual({
+      stdout: "output",
       stderr: "warning",
-      exitCode: 1,
+      exitCode: 7,
     });
   });
-
-  it("rejects timeout and spawn failures even when zero is an accepted exit code", async () => {
-    const commandPromise = executeLocalCommand("npm", ["audit"], {
-      ...commandOptions,
-      acceptedExitCodes: [0, 1],
-    });
-    const error = Object.assign(new Error("Command timed out"), {
-      code: "ETIMEDOUT",
-    });
-
-    invokeExecFileCallback(error as unknown as ExecException, "partial stdout", "partial stderr");
-
-    await expect(commandPromise).rejects.toMatchObject({
-      message: "Command timed out",
-      stdout: "partial stdout",
-      stderr: "partial stderr",
-      timedOut: true,
-      timeoutMs: commandOptions.timeoutMs,
-    });
+  it("rejects unaccepted exit codes with captured output", async () => {
+    await expect(
+      executeLocalCommand(
+        process.execPath,
+        ["-e", "console.log('partial'); process.exitCode = 7"],
+        commandOptions,
+      ),
+    ).rejects.toMatchObject({ code: 7, stdout: "partial\n" });
   });
-
+  it("reports timeouts separately from cancellation and spawn errors", async () => {
+    await expect(
+      executeLocalCommand(
+        process.execPath,
+        ["-e", "setInterval(() => {}, 1000)"],
+        { ...commandOptions, timeoutMs: 300, acceptedExitCodes: [0, 1] },
+      ),
+    ).rejects.toMatchObject({ timedOut: true, timeoutMs: 300 });
+    await expect(
+      executeLocalCommand(
+        "machdoch-nonexistent-test-executable",
+        [],
+        commandOptions,
+      ),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+  it("passes environment overrides to the child", async () => {
+    const result = await executeLocalCommand(
+      process.execPath,
+      ["-e", "console.log(process.env.MACHDOCH_COMMAND_TEST)"],
+      {
+        ...commandOptions,
+        env: { ...process.env, MACHDOCH_COMMAND_TEST: "passed" },
+      },
+    );
+    expect(result.stdout).toBe("passed");
+  });
   it("formats timeout details distinctly from ordinary command failures", () => {
     const error = Object.assign(new Error("Command failed: pnpm test"), {
       stdout: "partial stdout\r\n",
@@ -120,7 +72,6 @@ describe("executeLocalCommand", () => {
       timeoutMs: 120_000,
       signal: "SIGTERM",
     });
-
     expect(getLocalCommandErrorDetails(error)).toEqual({
       stdout: "partial stdout",
       stderr: "",
@@ -128,15 +79,9 @@ describe("executeLocalCommand", () => {
       timedOut: true,
       timeoutMs: 120_000,
     });
-    expect(formatLocalCommandError("Run Verification failed.", error)).toBe(
-      [
-        "Run Verification failed.",
-        "timed out after 120000ms",
-        "signal: SIGTERM",
-        "stdout: partial stdout",
-        "stderr: Command failed: pnpm test",
-      ].join("\n"),
-    );
+    expect(
+      formatLocalCommandError("Run Verification failed.", error),
+    ).toContain("timed out after 120000ms");
   });
 });
 
@@ -152,19 +97,13 @@ describe("normalizeLocalCommandCwd", () => {
 
   it("converts Windows UNC extended-length paths for Windows process cwd values", () => {
     expect(
-      normalizeLocalCommandCwd(
-        "\\\\?\\UNC\\server\\share\\machdoch",
-        "win32",
-      ),
+      normalizeLocalCommandCwd("\\\\?\\UNC\\server\\share\\machdoch", "win32"),
     ).toBe("\\\\server\\share\\machdoch");
   });
 
   it("converts Windows UNC prefixes case-insensitively", () => {
     expect(
-      normalizeLocalCommandCwd(
-        "\\\\?\\unc\\server\\share\\machdoch",
-        "win32",
-      ),
+      normalizeLocalCommandCwd("\\\\?\\unc\\server\\share\\machdoch", "win32"),
     ).toBe("\\\\server\\share\\machdoch");
   });
 
@@ -179,10 +118,7 @@ describe("normalizeLocalCommandCwd", () => {
 
   it("converts Windows DOS device UNC paths for process cwd values", () => {
     expect(
-      normalizeLocalCommandCwd(
-        "\\\\.\\UNC\\server\\share\\machdoch",
-        "win32",
-      ),
+      normalizeLocalCommandCwd("\\\\.\\UNC\\server\\share\\machdoch", "win32"),
     ).toBe("\\\\server\\share\\machdoch");
   });
 

@@ -5,6 +5,7 @@ import type {
 } from "@machdoch/fleet-protocol";
 
 export interface ProductRuntime {
+  servicesHref?: string;
   getSnapshot(signal?: AbortSignal): Promise<ProductSnapshot>;
   execute(
     command: ProductCommand,

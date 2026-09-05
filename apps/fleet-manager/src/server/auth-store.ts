@@ -301,6 +301,17 @@ export class AuthStore {
       .map(ownerSessionFromRow);
   }
 
+  isSessionActive(sessionHash: string, now: number): boolean {
+    return Boolean(
+      this.database.get(
+        "SELECT session_hash FROM owner_sessions WHERE session_hash = ? AND idle_expires_at > ? AND absolute_expires_at > ?",
+        sessionHash,
+        now,
+        now,
+      ),
+    );
+  }
+
   verifySessionCsrf(sessionHash: string, csrfToken: string): boolean {
     const row = this.database.get(
       "SELECT csrf_hash FROM owner_sessions WHERE session_hash = ?",

@@ -14,6 +14,26 @@ const ALL_REASONING_MODES = [
   "xhigh",
   "max",
   "ultra",
+  "aeon",
+] as const satisfies readonly ReasoningMode[];
+
+const GPT_6_ASTRA_REASONING_EFFORT_MODES = [
+  "default",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const satisfies readonly ReasoningMode[];
+
+const OPENAI_GPT_6_ASTRA_REASONING_MODES = [
+  ...GPT_6_ASTRA_REASONING_EFFORT_MODES,
+  "ultra",
+] as const satisfies readonly ReasoningMode[];
+
+const CODEX_CLI_GPT_6_ASTRA_REASONING_MODES = [
+  ...OPENAI_GPT_6_ASTRA_REASONING_MODES,
+  "aeon",
 ] as const satisfies readonly ReasoningMode[];
 
 const GPT_56_REASONING_EFFORT_MODES = [
@@ -170,7 +190,7 @@ const TRANSPORT_REASONING_MODES: Record<
   ConfiguredModelProvider,
   readonly ReasoningMode[]
 > = {
-  openai: ALL_REASONING_MODES,
+  openai: ALL_REASONING_MODES.filter((mode) => mode !== "aeon"),
   anthropic: ["default", "low", "medium", "high", "xhigh", "max"],
   google: ["default", "none", "minimal", "low", "medium", "high"],
   langdock: ["default", "none", "minimal", "low", "medium", "high", "xhigh"],
@@ -178,6 +198,9 @@ const TRANSPORT_REASONING_MODES: Record<
   "claude-cli": ["default", "low", "medium", "high", "xhigh", "max"],
   "copilot-cli": COPILOT_CLI_REASONING_MODES,
 };
+
+const isOpenAiGpt6AstraModel = (model: string): boolean =>
+  /^gpt-6-astra(?:-\d{4}-\d{2}-\d{2})?$/u.test(model);
 
 const isOpenAiGpt55Model = (model: string): boolean =>
   /^gpt-5\.5(?:-|$)/u.test(model);
@@ -240,6 +263,10 @@ const isGemini37FlashModel = (model: string): boolean =>
   /\bgemini-3\.7\b.*\bflash\b/u.test(model);
 
 const getOpenAiReasoningModes = (model: string): readonly ReasoningMode[] => {
+  if (isOpenAiGpt6AstraModel(model)) {
+    return OPENAI_GPT_6_ASTRA_REASONING_MODES;
+  }
+
   if (isOpenAiGpt56Model(model)) {
     return OPENAI_GPT_56_REASONING_MODES;
   }
@@ -374,17 +401,35 @@ export const getReasoningModesForProviderModel = (
       ? TRANSPORT_REASONING_MODES[provider]
       : ALL_REASONING_MODES;
     const modes = effectiveDiscoveredModes
-      .map((mode) => mode.trim().toLowerCase())
+      .map((mode) => {
+        const normalizedMode = mode.trim().toLowerCase();
+
+        return provider === "codex-cli" && normalizedMode === "persistent"
+          ? "aeon"
+          : normalizedMode;
+      })
       .filter(isReasoningMode)
       .filter((mode) => transportModes.includes(mode))
       .filter((mode, index, entries) => entries.indexOf(mode) === index);
 
     if (
-      ((provider === "openai" && isOpenAiGpt56Model(normalizedModel)) ||
-        (provider === "codex-cli" && isOpenAiGpt56SolModel(normalizedModel))) &&
+      ((provider === "openai" &&
+        (isOpenAiGpt56Model(normalizedModel) ||
+          isOpenAiGpt6AstraModel(normalizedModel))) ||
+        (provider === "codex-cli" &&
+          (isOpenAiGpt56SolModel(normalizedModel) ||
+            isOpenAiGpt6AstraModel(normalizedModel)))) &&
       !modes.includes("ultra")
     ) {
       modes.push("ultra");
+    }
+
+    if (
+      provider === "codex-cli" &&
+      isOpenAiGpt6AstraModel(normalizedModel) &&
+      !modes.includes("aeon")
+    ) {
+      modes.push("aeon");
     }
 
     return modes.includes("default") ? modes : ["default", ...modes];
@@ -405,6 +450,10 @@ export const getReasoningModesForProviderModel = (
     case "langdock":
       return getLangdockReasoningModes(normalizedModel);
     case "codex-cli":
+      if (isOpenAiGpt6AstraModel(normalizedModel)) {
+        return CODEX_CLI_GPT_6_ASTRA_REASONING_MODES;
+      }
+
       if (isOpenAiGpt56SolModel(normalizedModel)) {
         return CODEX_CLI_GPT_56_SOL_REASONING_MODES;
       }

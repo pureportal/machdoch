@@ -49,7 +49,7 @@ export function InstancesView(): React.ReactElement {
 
   return (
     <section className="grid gap-6">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold tracking-tight">Instances</h1>
         <Button asChild>
           <Link href="/enrollment">
@@ -89,7 +89,9 @@ export function InstancesView(): React.ReactElement {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="font-medium">{instance.displayName}</h2>
+                  <h2 className="min-w-0 [overflow-wrap:anywhere] font-medium">
+                    {instance.displayName}
+                  </h2>
                   <Badge variant={instance.status}>{instance.status}</Badge>
                 </div>
                 <p className="mt-1 truncate font-mono text-xs text-muted-foreground">

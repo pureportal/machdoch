@@ -19,10 +19,15 @@ mod model_catalog_parser_tests {
     }
 
     #[test]
-    fn codex_cli_model_catalog_parser_keeps_only_codex_runtime_models() {
+    fn codex_cli_model_catalog_parser_uses_catalog_availability() {
         let raw = r#"
         {
             "models": [
+                {
+                    "slug": "gpt-6-astra",
+                    "display_name": "GPT-6-Astra",
+                    "visibility": "list"
+                },
                 { "slug": "gpt-5.5", "display_name": "GPT-5.5" },
                 {
                     "slug": "gpt-5.6-sol",
@@ -49,10 +54,13 @@ mod model_catalog_parser_tests {
                 { "slug": "gpt-5.2", "display_name": "GPT-5.2" },
                 { "slug": "gpt-5.1", "display_name": "GPT-5.1", "status": "deprecated" },
                 { "slug": "gpt-5.7", "display_name": "GPT-5.7", "visibility": "hide" },
-                { "slug": "claude-opus-4-8", "display_name": "Claude Opus 4.8" },
-                { "slug": "gemini-3.1-pro-preview", "display_name": "Gemini 3.1 Pro" },
-                { "slug": "codex-auto-review", "display_name": "Codex Auto Review" },
-                { "slug": "gemini-embedding-001", "display_name": "Gemini Embedding" }
+                {
+                    "slug": "future-coding-model",
+                    "display_name": "Future Coding Model",
+                    "visibility": "list"
+                },
+                { "slug": "gpt-reserve", "display_name": "GPT Reserve", "visibility": "hide" },
+                { "slug": "codex-auto-review", "display_name": "Codex Auto Review", "visibility": "hide" }
             ]
         }
         "#;
@@ -66,13 +74,15 @@ mod model_catalog_parser_tests {
         assert_eq!(
             model_ids,
             vec![
+                "future-coding-model",
                 "gpt-5.2",
                 "gpt-5.3-codex",
                 "gpt-5.3-codex-spark",
                 "gpt-5.5",
                 "gpt-5.6-luna",
                 "gpt-5.6-sol",
-                "gpt-5.6-terra"
+                "gpt-5.6-terra",
+                "gpt-6-astra"
             ]
         );
         let sol = models
@@ -100,6 +110,47 @@ mod model_catalog_parser_tests {
                 .find(|model| model.id == "gpt-5.6-terra")
                 .and_then(|model| model.capabilities.image_input),
             None
+        );
+    }
+
+    #[test]
+    fn codex_cli_model_catalog_maps_persistent_reasoning_to_aeon() {
+        let raw = r#"
+        {
+            "models": [
+                {
+                    "slug": "gpt-6-astra",
+                    "display_name": "GPT-6 Astra",
+                    "supported_reasoning_levels": [
+                        { "effort": "low", "description": "Low" },
+                        { "effort": "medium", "description": "Medium" },
+                        { "effort": "high", "description": "High" },
+                        { "effort": "xhigh", "description": "Extra high" },
+                        { "effort": "max", "description": "Maximum" },
+                        { "effort": "ultra", "description": "Ultra" },
+                        { "effort": "persistent", "description": "Persistent" }
+                    ],
+                    "default_reasoning_level": "persistent"
+                }
+            ]
+        }
+        "#;
+        let models = parse_codex_cli_model_catalog(raw)
+            .expect("Codex CLI persistent reasoning metadata should parse");
+        let astra = models
+            .iter()
+            .find(|model| model.id == "gpt-6-astra")
+            .expect("Astra metadata should be present");
+
+        assert_eq!(
+            string_values(astra.capabilities.reasoning_modes.as_deref()),
+            Some(vec![
+                "default", "low", "medium", "high", "xhigh", "max", "ultra", "aeon"
+            ])
+        );
+        assert_eq!(
+            astra.capabilities.default_reasoning_mode.as_deref(),
+            Some("aeon")
         );
     }
 
@@ -379,6 +430,81 @@ mod model_catalog_parser_tests {
                 "gemini-3.5-flash-preview-09-2025",
                 "gemini-flash-latest"
             ]
+        );
+    }
+
+    #[test]
+    fn provider_catalog_parsers_accept_future_text_model_names() {
+        let openai_payload = serde_json::json!({
+            "data": [
+                { "id": "gpt-6-astra" },
+                { "id": "gpt-7-orion-ultra" },
+                { "id": "gpt-7-image" }
+            ]
+        });
+        assert_eq!(
+            parse_openai_model_catalog(&openai_payload)
+                .into_iter()
+                .map(|model| model.id)
+                .collect::<Vec<_>>(),
+            vec!["gpt-6-astra", "gpt-7-orion-ultra"]
+        );
+
+        let anthropic_payload = serde_json::json!({
+            "data": [
+                { "id": "anthropic-frontier-1" },
+                { "id": "claude-nebula-6" },
+                { "id": "claude-embedding-6" }
+            ]
+        });
+        assert_eq!(
+            parse_anthropic_model_catalog(&anthropic_payload)
+                .into_iter()
+                .map(|model| model.id)
+                .collect::<Vec<_>>(),
+            vec!["anthropic-frontier-1", "claude-nebula-6"]
+        );
+
+        let google_payload = serde_json::json!({
+            "models": [
+                {
+                    "name": "models/gemini-4-ultra",
+                    "supportedGenerationMethods": ["generateContent"]
+                },
+                {
+                    "name": "models/gemma-4-27b-it",
+                    "supportedGenerationMethods": ["generateContent"]
+                },
+                {
+                    "name": "models/gemini-4-image",
+                    "supportedGenerationMethods": ["generateContent"]
+                }
+            ]
+        });
+        assert_eq!(
+            parse_google_model_catalog(&google_payload)
+                .into_iter()
+                .map(|model| model.id)
+                .collect::<Vec<_>>(),
+            vec!["gemini-4-ultra", "gemma-4-27b-it"]
+        );
+
+        let langdock_payload = r#"
+        {
+            "data": [
+                { "id": "gpt-6-astra" },
+                { "id": "provider-next-chat" },
+                { "id": "provider-next-embedding" }
+            ]
+        }
+        "#;
+        assert_eq!(
+            parse_langdock_model_catalog(langdock_payload)
+                .expect("Langdock catalog should parse")
+                .into_iter()
+                .map(|model| model.id)
+                .collect::<Vec<_>>(),
+            vec!["gpt-6-astra", "provider-next-chat"]
         );
     }
 

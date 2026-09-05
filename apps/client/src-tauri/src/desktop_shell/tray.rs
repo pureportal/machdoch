@@ -4,7 +4,7 @@ use tauri::{
     image::Image,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     window::{ProgressBarState, ProgressBarStatus},
-    AppHandle, LogicalPosition, Manager, Runtime,
+    AppHandle, Manager, PhysicalPosition, PhysicalSize, Runtime,
 };
 
 use super::window;
@@ -371,7 +371,14 @@ fn show_tray_menu_window<R: Runtime>(
     };
 
     let _ = window.set_skip_taskbar(true);
-    let _ = window.set_position(LogicalPosition::new(position.x, position.y));
+    let _ = window.set_position(PhysicalPosition::new(
+        position.x.round() as i32,
+        position.y.round() as i32,
+    ));
+    let _ = window.set_size(PhysicalSize::new(
+        position.width as u32,
+        position.height as u32,
+    ));
     let _ = window.show();
     let _ = window.unminimize();
     let _ = window.set_focus();
@@ -381,6 +388,8 @@ fn show_tray_menu_window<R: Runtime>(
 struct TrayMenuPosition {
     x: f64,
     y: f64,
+    width: f64,
+    height: f64,
 }
 
 fn resolve_tray_menu_position<R: Runtime>(
@@ -394,18 +403,52 @@ fn resolve_tray_menu_position<R: Runtime>(
         .ok()
         .flatten()
         .or_else(|| app.primary_monitor().ok().flatten())?;
-    let work_area = monitor.work_area();
-    let scale_factor = monitor.scale_factor();
-    let menu_width = TRAY_MENU_WIDTH * scale_factor;
-    let menu_height = TRAY_MENU_HEIGHT * scale_factor;
-    let menu_gap = TRAY_MENU_GAP * scale_factor;
+    let work = monitor.work_area();
+    let (position, size) = if work.size.width > 0 && work.size.height > 0 {
+        (work.position, work.size)
+    } else {
+        (*monitor.position(), *monitor.size())
+    };
+    compute_tray_menu_position(
+        position,
+        size,
+        monitor.scale_factor(),
+        (click_x, click_y),
+        tray_rect,
+    )
+}
+
+fn compute_tray_menu_position(
+    work_position: PhysicalPosition<i32>,
+    work_size: PhysicalSize<u32>,
+    scale_factor: f64,
+    (click_x, click_y): (f64, f64),
+    tray_rect: tauri::Rect,
+) -> Option<TrayMenuPosition> {
+    if work_size.width == 0 || work_size.height == 0 {
+        return None;
+    }
+    let scale_factor = if scale_factor.is_finite() && scale_factor > 0.0 {
+        scale_factor
+    } else {
+        1.0
+    };
+    let menu_gap = (TRAY_MENU_GAP * scale_factor)
+        .min((f64::from(work_size.width.min(work_size.height)) - 1.0).max(0.0) / 2.0)
+        .floor();
+    let menu_width = (TRAY_MENU_WIDTH * scale_factor)
+        .round()
+        .min((f64::from(work_size.width) - 2.0 * menu_gap).max(1.0));
+    let menu_height = (TRAY_MENU_HEIGHT * scale_factor)
+        .round()
+        .min((f64::from(work_size.height) - 2.0 * menu_gap).max(1.0));
     let tray_position = tray_rect.position.to_physical::<f64>(scale_factor);
     let tray_size = tray_rect.size.to_physical::<f64>(scale_factor);
 
-    let work_x = work_area.position.x as f64;
-    let work_y = work_area.position.y as f64;
-    let work_width = work_area.size.width as f64;
-    let work_height = work_area.size.height as f64;
+    let work_x = work_position.x as f64;
+    let work_y = work_position.y as f64;
+    let work_width = work_size.width as f64;
+    let work_height = work_size.height as f64;
     let tray_center_x = if tray_size.width > 0.0 {
         tray_position.x + tray_size.width / 2.0
     } else {
@@ -440,8 +483,10 @@ fn resolve_tray_menu_position<R: Runtime>(
     );
 
     Some(TrayMenuPosition {
-        x: x / scale_factor,
-        y: y / scale_factor,
+        x,
+        y,
+        width: menu_width,
+        height: menu_height,
     })
 }
 
@@ -451,4 +496,56 @@ fn clamp_f64(value: f64, min: f64, max: f64) -> f64 {
     }
 
     value.min(max).max(min)
+}
+
+#[cfg(test)]
+mod display_tests {
+    use super::*;
+    fn tray(x: f64, y: f64) -> tauri::Rect {
+        tauri::Rect {
+            position: PhysicalPosition::new(x, y).into(),
+            size: PhysicalSize::new(20.0, 20.0).into(),
+        }
+    }
+    #[test]
+    fn tray_menu_keeps_physical_coordinates_on_a_negative_high_dpi_display() {
+        let layout = compute_tray_menu_position(
+            PhysicalPosition::new(-2560, 0),
+            PhysicalSize::new(2560, 1400),
+            2.0,
+            (-390.0, 1410.0),
+            tray(-400.0, 1400.0),
+        )
+        .unwrap();
+        assert_eq!(
+            layout,
+            TrayMenuPosition {
+                x: -1038.0,
+                y: 876.0,
+                width: 648.0,
+                height: 504.0
+            }
+        );
+    }
+    #[test]
+    fn tray_menu_fits_compact_displays_and_top_taskbars() {
+        let layout = compute_tray_menu_position(
+            PhysicalPosition::new(0, 40),
+            PhysicalSize::new(200, 100),
+            1.5,
+            (10.0, 10.0),
+            tray(0.0, 0.0),
+        )
+        .unwrap();
+        assert!(layout.x >= 0.0 && layout.y >= 40.0);
+        assert!(layout.x + layout.width <= 200.0 && layout.y + layout.height <= 140.0);
+        assert!(compute_tray_menu_position(
+            PhysicalPosition::new(0, 0),
+            PhysicalSize::new(0, 0),
+            1.0,
+            (0.0, 0.0),
+            tray(0.0, 0.0)
+        )
+        .is_none());
+    }
 }

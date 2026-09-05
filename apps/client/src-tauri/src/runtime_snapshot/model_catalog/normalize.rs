@@ -95,230 +95,62 @@ pub(super) fn looks_like_dated_snapshot(model_id: &str) -> bool {
     tail.len() == 8 && tail.chars().all(|character| character.is_ascii_digit())
 }
 
+const UNSUPPORTED_TEXT_RUNTIME_MODEL_PARTS: [&str; 24] = [
+    "aqa",
+    "audio",
+    "banana",
+    "dall",
+    "deprecated",
+    "embed",
+    "embedding",
+    "embeddings",
+    "image",
+    "images",
+    "imagen",
+    "live",
+    "lyria",
+    "moderation",
+    "realtime",
+    "rerank",
+    "reranker",
+    "search",
+    "sora",
+    "speech",
+    "transcribe",
+    "tts",
+    "veo",
+    "whisper",
+];
+
+pub(super) fn is_text_generation_runtime_model(model_id: &str) -> bool {
+    let normalized = model_id.trim().to_ascii_lowercase();
+
+    !normalized.is_empty()
+        && !normalized
+            .split(|character: char| !character.is_ascii_alphanumeric())
+            .any(|part| UNSUPPORTED_TEXT_RUNTIME_MODEL_PARTS.contains(&part))
+}
+
 pub(super) fn is_openai_runtime_model(model_id: &str) -> bool {
     let normalized = model_id.to_ascii_lowercase();
 
-    if looks_like_dated_snapshot(&normalized) {
-        return false;
-    }
-
-    if [
-        "embedding",
-        "moderation",
-        "chatgpt",
-        "codex",
-        "computer-use",
-        "dall",
-        "image",
-        "realtime",
-        "search",
-        "sora",
-        "tts",
-        "transcribe",
-        "whisper",
-    ]
-    .iter()
-    .any(|excluded| normalized.contains(excluded))
-    {
+    if looks_like_dated_snapshot(&normalized) || !is_text_generation_runtime_model(&normalized) {
         return false;
     }
 
     let Some(suffix) = normalized.strip_prefix("gpt-") else {
         return false;
     };
-    let mut parts = suffix.split('-');
-    let Some(version) = parts.next() else {
-        return false;
-    };
-    let valid_version = !version.is_empty()
-        && version
-            .chars()
-            .all(|character| character.is_ascii_digit() || character == '.')
-        && version.chars().any(|character| character.is_ascii_digit());
 
-    if !valid_version {
-        return false;
-    }
-
-    let major_version = version
-        .split('.')
-        .next()
-        .and_then(|part| part.parse::<u16>().ok())
-        .unwrap_or(0);
-
-    if major_version < 5 {
-        return false;
-    }
-
-    matches!(
-        parts.collect::<Vec<_>>().as_slice(),
-        [] | ["preview"]
-            | ["mini" | "nano" | "pro" | "sol" | "terra" | "luna"]
-            | ["mini" | "nano", "preview"]
-    )
-}
-
-pub(super) fn is_anthropic_runtime_model(model_id: &str) -> bool {
-    let normalized = model_id.to_ascii_lowercase();
-
-    if normalized.contains("deprecated") {
-        return false;
-    }
-
-    let parts = normalized.split('-').collect::<Vec<_>>();
-    let is_family = |value: &str| matches!(value, "fable" | "mythos" | "opus" | "sonnet" | "haiku");
-    let is_date =
-        |value: &str| value.len() == 8 && value.chars().all(|character| character.is_ascii_digit());
-
-    matches!(parts.as_slice(), ["claude", "mythos", "preview"])
-        || matches!(parts.as_slice(), ["claude", family, "5"] if is_family(family))
-        || matches!(parts.as_slice(), ["claude", family, "5", date] if is_family(family) && is_date(date))
-        || matches!(
-            parts.as_slice(),
-            ["claude", "opus" | "sonnet" | "haiku", "4", minor]
-                if minor.chars().all(|character| character.is_ascii_digit())
-        )
-        || matches!(
-            parts.as_slice(),
-            ["claude", "opus" | "sonnet" | "haiku", "4", minor, date]
-                if minor.chars().all(|character| character.is_ascii_digit()) && is_date(date)
-        )
-        || matches!(parts.as_slice(), ["claude", "5", family] if is_family(family))
-        || matches!(parts.as_slice(), ["claude", "5", family, date] if is_family(family) && is_date(date))
-        || matches!(
-            parts.as_slice(),
-            ["claude", "4", minor, "opus" | "sonnet" | "haiku"]
-                if minor.chars().all(|character| character.is_ascii_digit())
-        )
-}
-
-pub(super) fn is_google_runtime_model(model_id: &str) -> bool {
-    let normalized = model_id.to_ascii_lowercase();
-
-    if !normalized.starts_with("gemini-") || looks_like_dated_snapshot(&normalized) {
-        return false;
-    }
-
-    if [
-        "aqa",
-        "audio",
-        "banana",
-        "customtools",
-        "embedding",
-        "gemma",
-        "imagen",
-        "image",
-        "learnlm",
-        "live",
-        "lyria",
-        "tts",
-        "veo",
-    ]
-    .iter()
-    .any(|excluded| normalized.contains(excluded))
-    {
-        return false;
-    }
-
-    let Some(suffix) = normalized.strip_prefix("gemini-") else {
-        return false;
-    };
-    let parts = suffix.split('-').collect::<Vec<_>>();
-
-    if matches!(
-        parts.as_slice(),
-        ["pro" | "flash", "latest"] | ["flash", "lite", "latest"]
-    ) {
-        return true;
-    }
-
-    let Some(version) = parts.first() else {
-        return false;
-    };
-    let valid_version = !version.is_empty()
-        && version
-            .chars()
-            .all(|character| character.is_ascii_digit() || character == '.')
-        && version.chars().any(|character| character.is_ascii_digit());
-
-    if !valid_version {
-        return false;
-    }
-
-    match parts.as_slice() {
-        [_, "pro" | "flash"] => true,
-        [_, "pro" | "flash", "preview"] => true,
-        [_, "pro" | "flash", "preview", month, year]
-            if is_month_year_preview_suffix(month, year) =>
-        {
-            true
-        }
-        [_, "pro" | "flash", "latest"] => true,
-        [_, "flash", "lite"] => true,
-        [_, "flash", "lite", "preview"] => true,
-        [_, "flash", "lite", "preview", month, year]
-            if is_month_year_preview_suffix(month, year) =>
-        {
-            true
-        }
-        [_, "flash", "lite", "latest"] => true,
-        _ => false,
-    }
-}
-
-fn is_month_year_preview_suffix(month: &str, year: &str) -> bool {
-    month.len() == 2
-        && year.len() == 4
-        && month.chars().all(|character| character.is_ascii_digit())
-        && year.chars().all(|character| character.is_ascii_digit())
+    suffix
+        .chars()
+        .any(|character| character.is_ascii_alphanumeric())
 }
 
 pub(super) fn is_langdock_runtime_model(model_id: &str) -> bool {
     let normalized = model_id.to_ascii_lowercase();
 
-    if normalized.contains("deprecated") || looks_like_dated_snapshot(&normalized) {
-        return false;
-    }
-
-    if [
-        "audio",
-        "dall",
-        "embed",
-        "embedding",
-        "imagen",
-        "image",
-        "moderation",
-        "realtime",
-        "rerank",
-        "search",
-        "sora",
-        "transcribe",
-        "tts",
-        "veo",
-        "whisper",
-    ]
-    .iter()
-    .any(|excluded| normalized.contains(excluded))
-    {
-        return false;
-    }
-
-    ![
-        "gpt-3",
-        "gpt-4",
-        "claude-1",
-        "claude-2",
-        "claude-3",
-        "claude-opus-3",
-        "claude-sonnet-3",
-        "claude-haiku-3",
-        "gemini-1",
-        "gemini-2.0",
-        "gemini-2.1",
-        "gemini-2-",
-    ]
-    .iter()
-    .any(|old_prefix| normalized.starts_with(old_prefix))
+    !looks_like_dated_snapshot(&normalized) && is_text_generation_runtime_model(&normalized)
 }
 
 pub(super) fn runtime_model_stage(model_id: &str) -> Option<String> {

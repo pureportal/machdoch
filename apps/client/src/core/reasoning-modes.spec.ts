@@ -16,6 +16,15 @@ describe("provider model reasoning modes", () => {
   });
 
   it("matches OpenAI reasoning effort support by model family", () => {
+    expect(getReasoningModesForProviderModel("openai", "gpt-6-astra")).toEqual([
+      "default",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra",
+    ]);
     expect(getReasoningModesForProviderModel("openai", "gpt-5.6-sol")).toEqual([
       "default",
       "none",
@@ -127,6 +136,18 @@ describe("provider model reasoning modes", () => {
 
   it("matches CLI provider effort switches", () => {
     expect(
+      getReasoningModesForProviderModel("codex-cli", "gpt-6-astra"),
+    ).toEqual([
+      "default",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra",
+      "aeon",
+    ]);
+    expect(
       getReasoningModesForProviderModel("codex-cli", "gpt-5.6-terra"),
     ).toEqual(["default", "none", "low", "medium", "high", "xhigh", "max"]);
     expect(getReasoningModesForProviderModel("codex-cli", "gpt-5.5")).toEqual([
@@ -164,6 +185,16 @@ describe("provider model reasoning modes", () => {
   });
 
   it("does not silently translate unsupported modes", () => {
+    expect(
+      normalizeReasoningModeForProviderModel(
+        "aeon",
+        "codex-cli",
+        "gpt-6-astra",
+      ),
+    ).toBe("aeon");
+    expect(
+      normalizeReasoningModeForProviderModel("aeon", "openai", "gpt-6-astra"),
+    ).toBe("default");
     expect(
       normalizeReasoningModeForProviderModel("ultra", "openai", "gpt-5.6-sol"),
     ).toBe("ultra");
@@ -241,6 +272,26 @@ describe("provider model reasoning modes", () => {
         "gpt-5.6-terra",
       ),
     ).not.toThrow();
+    expect(
+      getReasoningModesForProviderModel("codex-cli", "gpt-6-astra", [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra",
+        "persistent",
+      ]),
+    ).toEqual([
+      "default",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra",
+      "aeon",
+    ]);
     expect(
       getReasoningModesForProviderModel("copilot-cli", "dynamic-model", [
         "low",

@@ -6,7 +6,10 @@ export interface FilePreviewSearchMatch {
 export interface FilePreviewSearchResult {
   matches: readonly FilePreviewSearchMatch[];
   error: string | null;
+  limited?: boolean;
 }
+
+export const MAX_FILE_PREVIEW_MATCHES = 2_000;
 
 interface PreviewTextNodeRange {
   node: Text;
@@ -25,6 +28,12 @@ export const findFilePreviewMatches = (
   if (!query) {
     return { matches: [], error: null };
   }
+  if (query.length > 2_048) {
+    return {
+      matches: [],
+      error: "Search expressions must be at most 2,048 characters.",
+    };
+  }
 
   try {
     const expression = new RegExp(
@@ -38,6 +47,9 @@ export const findFilePreviewMatches = (
 
       if (!value) {
         continue;
+      }
+      if (matches.length === MAX_FILE_PREVIEW_MATCHES) {
+        return { matches, error: null, limited: true };
       }
 
       matches.push({

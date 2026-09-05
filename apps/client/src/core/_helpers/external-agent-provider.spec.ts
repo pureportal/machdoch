@@ -114,6 +114,24 @@ const waitForCondition = async (callback: () => unknown): Promise<void> => {
   await vi.waitFor(callback, { timeout: 5_000 });
 };
 
+// Capability probes now use the asynchronous command runner. Keep their
+// canned outputs separate from the long-lived delegated process fixtures.
+vi.mock("./streaming-command.js", () => ({
+  runStreamingCommand: async (executable: string, args: string[]) => {
+    const result = spawnSync(executable, args, { encoding: "utf8" });
+    if (result.error)
+      throw Object.assign(result.error, {
+        stdout: result.stdout,
+        stderr: result.stderr,
+      });
+    return {
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.status,
+    };
+  },
+}));
+
 vi.mock("node:child_process", () => ({
   spawnSync: vi.fn((_executable: string, args: string[]) => ({
     status: 0,
@@ -1473,6 +1491,38 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     await expect(resultPromise).resolves.toMatchObject({
       status: "executed",
       response: { markdown: "Codex Ultra answer." },
+    });
+  });
+
+  it("passes GPT-6 Astra Aeon through as persistent Codex reasoning", async () => {
+    const workspaceRoot = await createWorkspace();
+
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot, {
+        provider: "codex-cli",
+        model: "gpt-6-astra",
+        reasoning: "aeon",
+        contextWindow: 1_050_000,
+      }),
+    );
+
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0];
+
+    expect(call?.args).toContain("--model");
+    expect(call?.args).toContain("gpt-6-astra");
+    expect(call?.args).toContain('model_reasoning_effort="persistent"');
+    expect(call?.args).not.toContain('model_reasoning_effort="aeon"');
+    expect(call?.args).toContain("model_context_window=1050000");
+
+    writeStructuredAnswer(call!, "Codex Aeon answer.");
+    call?.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: "executed",
+      response: { markdown: "Codex Aeon answer." },
     });
   });
 

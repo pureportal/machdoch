@@ -42,6 +42,27 @@ describe("provider model registry", () => {
     );
   });
 
+  it("includes GPT-6 Astra in OpenAI and Codex CLI fallbacks", () => {
+    for (const provider of ["openai", "codex-cli"] as const) {
+      expect(
+        getProviderModelMetadata(provider).find(
+          (model) => model.id === "gpt-6-astra",
+        ),
+      ).toMatchObject({
+        label: "GPT-6 Astra",
+        lifecycle: "stable",
+        releaseDate: "2026-09-03",
+        capabilities: {
+          imageInput: true,
+          reasoning: true,
+          computerUse: true,
+          contextWindowTokens: 1_050_000,
+          maxOutputTokens: 128_000,
+        },
+      });
+    }
+  });
+
   it("includes the GPT-5.6 family in OpenAI and Codex CLI fallbacks", () => {
     for (const provider of ["openai", "codex-cli"] as const) {
       expect(

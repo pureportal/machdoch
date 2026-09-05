@@ -1,4 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
+import { join } from "node:path";
+import { FleetRunManager } from "../../core/fleet-runs.js";
+import { FleetPreviewTunnels } from "../../core/fleet-preview-tunnel.js";
+import {
+  FleetProjectLibrary,
+  FleetProjectError,
+} from "../../core/fleet-projects.js";
 import {
   productSnapshotSchema,
   productSnapshotVersion,
@@ -77,6 +84,7 @@ interface ActiveFleetTask {
 }
 
 interface FleetCliProductDependencies {
+  createProjectLibrary: typeof FleetProjectLibrary.create;
   loadRuntimeConfig: typeof loadRuntimeConfig;
   loadWorkspaceConfigFile: typeof loadWorkspaceConfigFile;
   discoverCustomizations: typeof discoverCustomizations;
@@ -104,6 +112,7 @@ class FleetProductError extends Error {
 }
 
 const defaultDependencies: FleetCliProductDependencies = {
+  createProjectLibrary: FleetProjectLibrary.create,
   loadRuntimeConfig,
   loadWorkspaceConfigFile,
   discoverCustomizations,
@@ -158,7 +167,10 @@ const commandDigest = (command: ProductCommand): string =>
   createHash("sha256").update(JSON.stringify(command)).digest("hex");
 
 const createErrorResponse = (error: unknown): HostResponse => {
-  if (error instanceof FleetProductError) {
+  if (
+    error instanceof FleetProductError ||
+    error instanceof FleetProjectError
+  ) {
     return {
       type: "error",
       code: error.code,
@@ -283,16 +295,22 @@ const cloneState = (state: FleetCliState): FleetCliState =>
   structuredClone(state);
 
 export class FleetCliProductRuntime {
+  private readonly runs = new FleetRunManager((workspace) =>
+    this.assertWorkspace(workspace),
+  );
+  private readonly previewTunnels = new FleetPreviewTunnels(this.runs);
   private readonly activeTasks = new Map<string, ActiveFleetTask>();
   private readonly taskSessions = new Map<string, FleetCliTaskSession>();
   private readonly taskSettlements = new Map<string, Promise<void>>();
   private readonly sessionMemory = new Map<string, ConversationMemoryEntry[]>();
   private eventId: number;
   private mutationTail: Promise<void> = Promise.resolve();
+  private stopping = false;
 
   private constructor(
     private state: FleetCliState,
     private readonly dependencies: FleetCliProductDependencies,
+    private readonly projects: FleetProjectLibrary,
   ) {
     this.eventId = dependencies.now();
   }
@@ -302,10 +320,11 @@ export class FleetCliProductRuntime {
     dependencyOverrides: Partial<FleetCliProductDependencies> = {},
   ): Promise<FleetCliProductRuntime> {
     const dependencies = { ...defaultDependencies, ...dependencyOverrides };
-    const [savedState, config, memory] = await Promise.all([
+    const [savedState, config, memory, projects] = await Promise.all([
       dependencies.loadState(workspaceRoot),
       dependencies.loadRuntimeConfig(workspaceRoot),
       dependencies.loadUserMemorySettings(),
+      dependencies.createProjectLibrary(workspaceRoot),
     ]);
     const state =
       savedState ??
@@ -316,13 +335,52 @@ export class FleetCliProductRuntime {
         dependencies,
       );
     const recovered = recoverInterruptedTasks(state, dependencies);
+    const library = projects.getSnapshot();
+    const knownWorkspaces = new Set([
+      workspaceRoot,
+      ...library.projects.map((project) => join(library.root, project.name)),
+    ]);
+    if (
+      state.sessions.some((session) => !knownWorkspaces.has(session.workspace))
+    )
+      throw new FleetProductError(
+        "invalidRequest",
+        "A saved session references a project missing from this host's library. Restore the project library before starting the service.",
+      );
     if (!savedState || recovered) await dependencies.saveState(state);
-    return new FleetCliProductRuntime(state, dependencies);
+    return new FleetCliProductRuntime(state, dependencies, projects);
   }
 
   async handleRequest(request: HostRequest): Promise<HostResponse> {
+    if (this.stopping)
+      return {
+        type: "error",
+        code: "unavailable",
+        message: "Fleet service is stopping.",
+      };
     try {
       switch (request.type) {
+        case "getWorkspaceRuns":
+          return {
+            type: "workspaceRuns",
+            snapshot: await this.runs.snapshot(
+              request.workspace,
+              request.includeLogs ?? false,
+            ),
+          };
+        case "executeWorkspaceRun": {
+          const duplicate = await this.runs.execute(
+            request.workspace,
+            request.command,
+          );
+          return {
+            type: "commandAccepted",
+            receipt: { commandId: request.command.commandId, duplicate },
+          };
+        }
+        case "openPreviewTunnel":
+          await this.previewTunnels.open(request);
+          return { type: "previewTunnelReady" };
         case "getProductSnapshot":
           return {
             type: "productSnapshot",
@@ -337,10 +395,19 @@ export class FleetCliProductRuntime {
   }
 
   async shutdown(reason = "Fleet CLI service stopped."): Promise<void> {
+    this.stopping = true;
+    this.previewTunnels.close();
+    const runsStopped = this.runs.shutdown();
+    const projectsStopped = this.projects.shutdown();
+    await this.mutationTail;
     for (const task of this.activeTasks.values()) {
       task.controller.cancel(reason);
     }
-    await Promise.allSettled([...this.taskSettlements.values()]);
+    await Promise.allSettled([
+      ...this.taskSettlements.values(),
+      projectsStopped,
+      runsStopped,
+    ]);
   }
 
   private async serializeMutation<T>(operation: () => Promise<T>): Promise<T> {
@@ -368,12 +435,11 @@ export class FleetCliProductRuntime {
     return this.getSession(state, state.activeSessionId);
   }
 
-  private assertWorkspace(workspace: string | undefined): string {
+  private async assertWorkspace(
+    workspace: string | undefined,
+  ): Promise<string> {
     if (workspace !== undefined && workspace !== this.state.workspaceRoot) {
-      throw new FleetProductError(
-        "invalidRequest",
-        "The workspace is not available to this Fleet CLI service.",
-      );
+      return await this.projects.resolveWorkspace(workspace);
     }
     return this.state.workspaceRoot;
   }
@@ -386,7 +452,14 @@ export class FleetCliProductRuntime {
     const existing = state.commands.find(
       (entry) => entry.commandId === commandId,
     );
-    if (!existing) return null;
+    if (!existing) {
+      if (this.projects.hasCommandId(commandId))
+        throw new FleetProductError(
+          "conflict",
+          "The command id was already used for a project operation.",
+        );
+      return null;
+    }
     if (existing.digest !== commandDigest(command)) {
       throw new FleetProductError(
         "conflict",
@@ -426,6 +499,11 @@ export class FleetCliProductRuntime {
         },
   ): Promise<HostResponse> {
     return await this.serializeMutation(async () => {
+      if (this.stopping)
+        throw new FleetProductError(
+          "unavailable",
+          "Fleet service is stopping.",
+        );
       const commandId = command.commandId ?? this.dependencies.createId();
       const existing = this.existingReceipt(this.state, command, commandId);
       if (existing) return existing;
@@ -449,6 +527,35 @@ export class FleetCliProductRuntime {
 
   private async executeCommand(command: ProductCommand): Promise<HostResponse> {
     switch (command.kind) {
+      case "create-project":
+      case "clone-project":
+      case "import-project":
+      case "cancel-project-operation":
+      case "retry-project-operation":
+      case "forget-project":
+        return await this.serializeMutation(async () => {
+          if (
+            command.commandId &&
+            this.state.commands.some(
+              (record) => record.commandId === command.commandId,
+            )
+          )
+            throw new FleetProductError(
+              "conflict",
+              "The command id was already used for another operation.",
+            );
+          return {
+            type: "commandAccepted",
+            receipt: await this.projects.execute(
+              command,
+              (workspace) =>
+                this.runs.isInUse(workspace) ||
+                this.state.sessions.some(
+                  (session) => session.workspace === workspace,
+                ),
+            ),
+          };
+        });
       case "submit-message":
         return await this.submitMessage(command);
       case "cancel":
@@ -458,7 +565,12 @@ export class FleetCliProductRuntime {
         return await this.repeatTask(command);
       case "create-session":
         return await this.commitCommand(command, async (state) => {
-          const workspace = this.assertWorkspace(command.workspace);
+          if (state.sessions.length >= 80)
+            throw new FleetProductError(
+              "conflict",
+              "The host has reached its saved session limit. Delete an unused session first.",
+            );
+          const workspace = await this.assertWorkspace(command.workspace);
           const [config, memory] = await Promise.all([
             this.dependencies.loadRuntimeConfig(workspace),
             this.dependencies.loadUserMemorySettings(),
@@ -538,12 +650,25 @@ export class FleetCliProductRuntime {
       case "clear-session-reasoning":
         return await this.resetSessionMode(command, "reasoning");
       case "set-session-workspace":
-        return await this.commitCommand(command, (state, _id, timestamp) => {
-          const session = this.getSession(state, command.sessionId);
-          session.workspace = this.assertWorkspace(command.workspace);
-          session.updatedAt = timestamp;
-          return { record: { sessionId: session.id } };
-        });
+        return await this.commitCommand(
+          command,
+          async (state, _id, timestamp) => {
+            const session = this.getSession(state, command.sessionId);
+            if (session.pendingTask)
+              throw new FleetProductError(
+                "conflict",
+                "Wait for the running task to finish before switching projects.",
+              );
+            session.workspace = await this.assertWorkspace(command.workspace);
+            session.updatedAt = timestamp;
+            return {
+              record: { sessionId: session.id },
+              afterCommit: () => {
+                this.sessionMemory.delete(session.id);
+              },
+            };
+          },
+        );
       case "clear-session-workspace":
         throw new FleetProductError(
           "invalidRequest",
@@ -648,10 +773,10 @@ export class FleetCliProductRuntime {
     setting: "mode" | "reasoning",
   ): Promise<HostResponse> {
     return await this.commitCommand(command, async (state, _id, timestamp) => {
-      const config = await this.dependencies.loadRuntimeConfig(
-        this.state.workspaceRoot,
-      );
       const session = this.getSession(state, command.sessionId);
+      const config = await this.dependencies.loadRuntimeConfig(
+        session.workspace,
+      );
       if (setting === "mode") session.mode = config.mode;
       else session.reasoning = config.reasoning;
       session.updatedAt = timestamp;
@@ -692,6 +817,11 @@ export class FleetCliProductRuntime {
         command.kind === "duplicate-session" ||
         command.kind === "branch-session"
       ) {
+        if (state.sessions.length >= 80)
+          throw new FleetProductError(
+            "conflict",
+            "The host has reached its saved session limit. Delete an unused session first.",
+          );
         const copy = cloneState({
           ...state,
           sessions: [session],
@@ -783,6 +913,7 @@ export class FleetCliProductRuntime {
     prompt: string,
     taskId: string,
   ): Promise<TaskExecutionController> {
+    await this.assertWorkspace(session.workspace);
     const config = await this.loadSessionRuntimeConfig(session);
     this.assertRuntimeAvailable(config);
     const customizations = await this.dependencies.discoverCustomizations(
@@ -863,6 +994,17 @@ export class FleetCliProductRuntime {
           "The session has a running task.",
         );
       }
+      if (
+        state.sessions.some(
+          (session) =>
+            session.workspace === currentSession.workspace &&
+            session.pendingTask,
+        )
+      )
+        throw new FleetProductError(
+          "conflict",
+          "Another agent task is already running in this project. Wait for it to finish or use a separate project.",
+        );
       const taskId = this.dependencies.createId();
       const controller = await this.prepareTask(currentSession, prompt, taskId);
       const session = this.getSession(state, sessionId);
@@ -1138,7 +1280,14 @@ export class FleetCliProductRuntime {
       (entry) => entry.provider === activeSession.provider && entry.configured,
     );
     const running = Boolean(activeSession.pendingTask);
+    const workspaceBusy = state.sessions.some(
+      (session) =>
+        session.id !== activeSession.id &&
+        session.workspace === activeSession.workspace &&
+        session.pendingTask,
+    );
     const timestamp = this.dependencies.now();
+    const projectLibrary = this.projects.getSnapshot();
     const snapshot = {
       enabled: true,
       serverTime: timestamp,
@@ -1150,6 +1299,7 @@ export class FleetCliProductRuntime {
         ({ digest: _digest, ...command }) => command,
       ),
       shell: {
+        projectLibrary,
         version: productSnapshotVersion,
         capturedAt: timestamp,
         activeSessionId: activeSession.id,
@@ -1183,16 +1333,21 @@ export class FleetCliProductRuntime {
           canBranch: !session.pendingTask,
         })),
         workspaces: [
-          {
-            root: state.workspaceRoot,
-            label:
-              state.workspaceRoot
-                .split(/[\\/]+/u)
-                .filter(Boolean)
-                .at(-1) ?? state.workspaceRoot,
-            sessionCount: state.sessions.length,
-          },
-        ],
+          state.workspaceRoot,
+          ...projectLibrary.projects
+            .filter((project) => project.status === "ready")
+            .map((project) => project.workspace),
+        ].map((root) => ({
+          root,
+          label:
+            root
+              .split(/[\\/]+/u)
+              .filter(Boolean)
+              .at(-1) ?? root,
+          sessionCount: state.sessions.filter(
+            (session) => session.workspace === root,
+          ).length,
+        })),
         visibleMessages: activeSession.messages
           .slice(-80)
           .map((message) => this.createMessageSnapshot(message)),
@@ -1238,15 +1393,21 @@ export class FleetCliProductRuntime {
               .split(/[\\/]+/u)
               .filter(Boolean)
               .at(-1) ?? activeSession.workspace,
-          canSend: !running && providerAvailable && !config.offline,
-          ...(!providerAvailable
+          canSend:
+            !running && !workspaceBusy && providerAvailable && !config.offline,
+          ...(workspaceBusy
             ? {
                 sendDisabledReason:
-                  "No configured model provider is available.",
+                  "Another agent task is running in this project.",
               }
-            : config.offline
-              ? { sendDisabledReason: "Offline mode is enabled." }
-              : {}),
+            : !providerAvailable
+              ? {
+                  sendDisabledReason:
+                    "No configured model provider is available.",
+                }
+              : config.offline
+                ? { sendDisabledReason: "Offline mode is enabled." }
+                : {}),
           isExecuting: running,
           sessionMemoryEnabled: activeSession.sessionMemoryEnabled,
           sessionMemory: (this.sessionMemory.get(activeSession.id) ?? []).map(

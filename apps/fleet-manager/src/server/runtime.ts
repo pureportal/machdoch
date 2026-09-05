@@ -15,8 +15,10 @@ import {
   verifySettingsCipher,
 } from "./settings-crypto";
 import { SettingsStore } from "./settings-store";
+import type { FleetPreviewHub } from "./previews";
 
 export interface FleetRuntime {
+  previews?: FleetPreviewHub;
   config: FleetManagerConfig;
   database: FleetDatabase;
   authStore: AuthStore;
@@ -66,6 +68,7 @@ export function closeRuntime(): void {
   const runtime = globalRuntime[runtimeSymbol];
   if (!runtime) return;
   runtime.gateways.close();
+  runtime.previews?.close();
   runtime.database.close();
   delete globalRuntime[runtimeSymbol];
 }

@@ -3,15 +3,12 @@ use std::{collections::HashMap, time::Duration};
 use super::super::normalize_optional_string;
 use super::{
     command::run_agent_cli_command,
-    normalize::{
-        json_bool_from_keys, json_date_prefix, json_string, looks_like_dated_snapshot,
-        runtime_model_stage,
-    },
+    normalize::{json_bool_from_keys, json_date_prefix, json_string, runtime_model_stage},
     resolve_agent_cli_binary, ProviderRuntimeModel, ProviderRuntimeModelCapabilities,
 };
 
-const CANONICAL_REASONING_MODES: [&str; 8] = [
-    "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
+const CANONICAL_REASONING_MODES: [&str; 9] = [
+    "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra", "aeon",
 ];
 
 fn json_string_from_keys(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
@@ -65,7 +62,15 @@ fn json_string_array_from_keys(
                     .map(str::to_string)
                     .or_else(|| json_string_from_keys(entry, &["effort", "mode", "value", "name"]))
             })
-            .map(|entry| entry.trim().to_ascii_lowercase())
+            .map(|entry| {
+                let normalized = entry.trim().to_ascii_lowercase();
+
+                if normalized == "persistent" {
+                    "aeon".to_string()
+                } else {
+                    normalized
+                }
+            })
             .filter(|entry| CANONICAL_REASONING_MODES.contains(&entry.as_str()))
             .fold(Vec::new(), |mut modes, mode| {
                 if !modes.contains(&mode) {
@@ -95,43 +100,6 @@ fn codex_reasoning_modes(entry: Option<&serde_json::Value>) -> Option<Vec<String
     modes.insert(0, "default".to_string());
 
     Some(modes)
-}
-
-fn is_numeric_model_version(value: &str) -> bool {
-    value
-        .split('.')
-        .all(|part| !part.is_empty() && part.chars().all(|character| character.is_ascii_digit()))
-}
-
-fn is_codex_cli_runtime_model(model_id: &str) -> bool {
-    let normalized = model_id.to_ascii_lowercase();
-
-    if normalized == "auto" || looks_like_dated_snapshot(&normalized) {
-        return false;
-    }
-
-    if let Some(suffix) = normalized.strip_prefix("gpt-") {
-        let mut parts = suffix.split('-');
-        let Some(version) = parts.next() else {
-            return false;
-        };
-
-        if !is_numeric_model_version(version) {
-            return false;
-        }
-
-        let suffix_parts = parts.collect::<Vec<_>>();
-
-        return matches!(
-            suffix_parts.as_slice(),
-            [] | ["preview"]
-                | ["mini" | "nano" | "sol" | "terra" | "luna"]
-                | ["mini" | "nano", "preview"]
-                | ["codex", ..]
-        );
-    }
-
-    false
 }
 
 fn entry_marks_model_unavailable(entry: Option<&serde_json::Value>) -> bool {
@@ -250,7 +218,13 @@ fn create_codex_cli_runtime_model(
                 ],
             )
         })
-        .map(|mode| mode.to_ascii_lowercase())
+        .map(|mode| {
+            if mode.eq_ignore_ascii_case("persistent") {
+                "aeon".to_string()
+            } else {
+                mode.to_ascii_lowercase()
+            }
+        })
         .filter(|mode| CANONICAL_REASONING_MODES.contains(&mode.as_str()));
     let image_input = codex_image_input(entry).or_else(|| is_text_only_preview.then_some(false));
 
@@ -321,10 +295,6 @@ fn add_codex_cli_catalog_model(
         return;
     };
     let normalized = normalized.to_ascii_lowercase();
-
-    if !is_codex_cli_runtime_model(&normalized) {
-        return;
-    }
 
     if entry_marks_model_unavailable(entry) {
         return;

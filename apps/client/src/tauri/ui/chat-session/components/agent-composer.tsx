@@ -1275,7 +1275,7 @@ export const AgentComposer = ({
         {toggleButtons}
       </div>
 
-      <div className="app-composer-body mt-3 grid gap-2">
+      <div className="app-composer-body mt-3 grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
         {runningTaskControls}
 
         <ContextAttachmentsList
@@ -1288,7 +1288,7 @@ export const AgentComposer = ({
         <SubmitShortcut asChild>
           <form
             className={cn(
-              "app-composer-form flex gap-3",
+              "app-composer-form flex min-w-0 flex-wrap gap-3",
               showCancelAlongsideSend ? "items-end" : "items-center",
             )}
             onSubmit={(event) => {

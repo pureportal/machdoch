@@ -111,7 +111,8 @@ type CodexCliReasoningEffort =
   | "high"
   | "xhigh"
   | "max"
-  | "ultra";
+  | "ultra"
+  | "persistent";
 
 type ClaudeCliReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -127,7 +128,7 @@ const mapReasoningToCodexCliEffort = (
 
   assertReasoningModeSupportedForProviderModel(reasoning, "codex-cli", model);
 
-  return reasoning;
+  return reasoning === "aeon" ? "persistent" : reasoning;
 };
 
 const mapReasoningToClaudeCliEffort = (
@@ -143,7 +144,8 @@ const mapReasoningToClaudeCliEffort = (
   if (
     reasoning === "none" ||
     reasoning === "minimal" ||
-    reasoning === "ultra"
+    reasoning === "ultra" ||
+    reasoning === "aeon"
   ) {
     throw new Error(`Unsupported Claude CLI reasoning effort: ${reasoning}.`);
   }
@@ -164,7 +166,8 @@ const mapReasoningToCopilotCliEffort = (
   if (
     reasoning === "none" ||
     reasoning === "minimal" ||
-    reasoning === "ultra"
+    reasoning === "ultra" ||
+    reasoning === "aeon"
   ) {
     throw new Error(`Copilot CLI does not accept reasoning mode ${reasoning}.`);
   }

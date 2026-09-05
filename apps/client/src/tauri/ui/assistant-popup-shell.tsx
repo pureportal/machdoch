@@ -1,3 +1,4 @@
+import { useAssistantDisplayLayout } from "./use-assistant-display-layout";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -286,6 +287,7 @@ const QuickTaskComposer = ({
 };
 
 export const AssistantPopupShell = (): JSX.Element => {
+  useAssistantDisplayLayout("popup");
   const [quickChatPinned, setQuickChatPinned] = useState(false);
   const quickChatPinnedRef = useRef(false);
   const controller = useChatSessionController({

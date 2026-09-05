@@ -53,7 +53,7 @@ Task options:
   --runtime-provider <provider> Override the model provider
   --model <name>                Override the model
   --reasoning <mode>            default, none, minimal, low, medium, high,
-                                xhigh, max, or ultra
+                                xhigh, max, ultra, or aeon
   --context <path>              Attach a file or folder; repeatable
   --image <path>                Attach an image; repeatable
   --conversation-context-file <path>
@@ -258,9 +258,18 @@ Usage:
   machdoch fleet enable|disable [--json]
   machdoch fleet reset [--json]
   machdoch fleet service [--cwd <workspace>] [--json]
+  machdoch fleet service run [--cwd <workspace>] [--json]
+  machdoch fleet service install [--cwd <workspace>]
+  machdoch fleet service start|stop|restart|status|uninstall [--json]
+  machdoch fleet service unit [--cwd <workspace>]
 
 The service stays in the foreground for an operating-system service manager.
-Run one Fleet host gateway for an enrollment at a time.`;
+Run one Fleet host gateway for an enrollment at a time.
+Linux service management uses systemd --user. Enable lingering for boot/logout
+operation, or use the dedicated-account system unit from the headless package.
+On Windows, enable desktop autostart and Start in tray. The service run command
+is also available for terminal-only hosts without a desktop.
+Service configuration or revoked credentials exit with status 78.`;
 
 const SCHEDULER_HELP = `machdoch scheduler - scheduled and event-triggered tasks
 

@@ -108,6 +108,12 @@ describe("provider sync daemon", () => {
     expect(isProviderSyncWorkspaceWatchPath("src/index.ts")).toBe(false);
     expect(isProviderSyncWorkspaceWatchPath(".git/index")).toBe(false);
     expect(
+      isProviderSyncWorkspaceWatchPath(".machdoch/mcp/lifecycle.jsonl"),
+    ).toBe(false);
+    expect(
+      isProviderSyncWorkspaceWatchPath(".machdoch/mcp/discovery-cache.json"),
+    ).toBe(true);
+    expect(
       isProviderSyncWorkspaceWatchPath("node_modules/package/index.js"),
     ).toBe(false);
 
@@ -205,6 +211,62 @@ describe("provider sync daemon", () => {
       await waitForDiagnostic(
         (diagnostic) => diagnostic.runCompletedAt !== initial.runCompletedAt,
       );
+      // A newly created directory and its first file can arrive as separate
+      // source events while watchers are being attached. Let that catch-up finish.
+      await wait(300);
+      const configured = (await loadDiagnostic())!;
+      await writeFile(
+        join(workspaceRoot, ".machdoch", "mcp", "lifecycle.jsonl"),
+        "runtime noise\n",
+      );
+      await wait(300);
+      await expect(loadDiagnostic()).resolves.toMatchObject({
+        runCompletedAt: configured.runCompletedAt,
+      });
+      await requestProviderSyncRefresh();
+      const refreshed = await waitForDiagnostic(
+        (diagnostic) => diagnostic.runCompletedAt !== configured.runCompletedAt,
+      );
+      await wait(300);
+      await expect(loadDiagnostic()).resolves.toMatchObject({
+        runCompletedAt: refreshed.runCompletedAt,
+      });
+
+      let releaseLock = () => {};
+      let notifyAcquired = () => {};
+      const acquired = new Promise<void>((resolve) => {
+        notifyAcquired = resolve;
+      });
+      const heldLock = withCooperativeFileLock(
+        join(userConfigRoot, "provider-enrollment", "reconcile.state"),
+        async () => {
+          notifyAcquired();
+          await new Promise<void>((resolve) => {
+            releaseLock = resolve;
+          });
+        },
+      );
+      await acquired;
+      try {
+        await requestProviderSyncRefresh();
+        await wait(150);
+        // Request another pass after the first has started reading its inputs.
+        await requestProviderSyncRefresh();
+        await wait(50);
+      } finally {
+        releaseLock();
+        await heldLock;
+      }
+      const first = await waitForDiagnostic(
+        (diagnostic) => diagnostic.runCompletedAt !== refreshed.runCompletedAt,
+      );
+      const followUp = await waitForDiagnostic(
+        (diagnostic) => diagnostic.runCompletedAt !== first.runCompletedAt,
+      );
+      await wait(300);
+      await expect(loadDiagnostic()).resolves.toMatchObject({
+        runCompletedAt: followUp.runCompletedAt,
+      });
     } finally {
       controller.abort();
       await daemon;
@@ -308,11 +370,7 @@ describe("provider sync daemon", () => {
     const failingWorkspaceRoot = join(root, "a-failing-workspace");
     const successfulWorkspaceRoot = join(root, "z-successful-workspace");
     const userConfigRoot = join(root, "user-config");
-    const invalidTargetPath = join(
-      failingWorkspaceRoot,
-      ".github",
-      "mcp.json",
-    );
+    const invalidTargetPath = join(failingWorkspaceRoot, ".github", "mcp.json");
     await Promise.all([
       mkdir(join(failingWorkspaceRoot, ".github"), { recursive: true }),
       mkdir(successfulWorkspaceRoot, { recursive: true }),

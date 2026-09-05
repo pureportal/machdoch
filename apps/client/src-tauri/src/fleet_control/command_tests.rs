@@ -7,6 +7,12 @@ use super::{
 
 fn command_request(kind: ProductCommandKind) -> ProductCommand {
     ProductCommand {
+        name: None,
+        repository: None,
+        branch: None,
+        shallow: None,
+        initialize_git: None,
+        project_id: None,
         command_id: None,
         kind,
         task_id: None,
@@ -162,7 +168,7 @@ fn set_session_reasoning_requires_supported_reasoning() {
         .expect_err("missing or unsupported reasoning should reject");
 
         assert!(
-            error.contains("default, none, minimal, low, medium, high, xhigh, max, ultra"),
+            error.contains("default, none, minimal, low, medium, high, xhigh, max, ultra, aeon"),
             "unexpected reasoning error: {error}"
         );
     }

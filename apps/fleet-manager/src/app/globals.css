@@ -62,6 +62,36 @@ body {
   color: var(--foreground);
 }
 
+/* Grid children must be allowed to shrink before truncation and local scrolling apply. */
+.fleet-dashboard :where(section, form, fieldset, input, select, textarea) {
+  min-width: 0;
+}
+
+.fleet-dashboard :where(p, h1, h2, h3, label),
+.fleet-dialog :where(p, h1, h2, h3, label) {
+  overflow-wrap: anywhere;
+}
+
+.fleet-dashboard > main {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.fleet-dashboard {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+@media (pointer: coarse) {
+  :where(.fleet-dashboard, .fleet-dialog, form)
+    :where(button, a, input:not([type="checkbox"]), select) {
+    min-height: 44px;
+  }
+
+  :where(input, textarea, select) {
+    font-size: 16px;
+  }
+}
+
 button,
 a,
 input,

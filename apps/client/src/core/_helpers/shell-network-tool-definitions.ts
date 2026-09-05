@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import {
   executeWebSearch,
@@ -12,7 +12,11 @@ import {
   stripHtmlToText,
   type AgentToolDefinition,
 } from "./agent-tools-shared.js";
-import { normalizeLocalCommandCwd } from "./process-execution.js";
+import {
+  normalizeLocalCommandCwd,
+  normalizeProcessOutput as normalizeShellOutput,
+} from "./process-execution.js";
+import { runStreamingCommand } from "./streaming-command.js";
 import {
   compactTraceText,
   createTextSection,
@@ -168,290 +172,6 @@ export const startDetachedShellCommand = async (
   return pid;
 };
 
-interface ShellCommandResult {
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-}
-
-const normalizeShellOutput = (value: string): string => {
-  return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
-};
-
-const createCommandProcessError = (
-  message: string,
-  result: {
-    stdout: string;
-    stderr: string;
-    exitCode?: number;
-  },
-): Error & { stdout: string; stderr: string; code?: number } => {
-  const error = new Error(message) as Error & {
-    stdout: string;
-    stderr: string;
-    code?: number;
-  };
-
-  error.stdout = result.stdout;
-  error.stderr = result.stderr;
-
-  if (result.exitCode !== undefined) {
-    error.code = result.exitCode;
-  }
-
-  return error;
-};
-
-const getAbortReasonMessage = (signal: AbortSignal | undefined): string => {
-  const reason = signal?.reason;
-
-  if (reason instanceof Error && reason.message.trim().length > 0) {
-    return reason.message;
-  }
-
-  if (typeof reason === "string" && reason.trim().length > 0) {
-    return reason;
-  }
-
-  return "Execution cancelled by user.";
-};
-
-const terminateChildProcessTree = (child: ChildProcess): void => {
-  const pid = child.pid;
-
-  if (pid === undefined) {
-    child.kill();
-    return;
-  }
-
-  if (process.platform === "win32") {
-    try {
-      const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
-        stdio: "ignore",
-        windowsHide: true,
-      });
-      const fallbackToChildKill = (): void => {
-        if (!child.killed) {
-          child.kill();
-        }
-      };
-
-      killer.once("error", fallbackToChildKill);
-      killer.once("exit", (code) => {
-        if (code !== 0) {
-          fallbackToChildKill();
-        }
-      });
-      return;
-    } catch {
-      child.kill();
-      return;
-    }
-  }
-
-  try {
-    process.kill(-pid, "SIGTERM");
-  } catch {
-    child.kill();
-  }
-};
-
-const runStreamingShellCommand = async (
-  shellExecutable: string,
-  shellArgs: string[],
-  options: {
-    cwd: string;
-    timeoutMs: number;
-    maxBufferBytes: number;
-    signal?: AbortSignal;
-    onOutput?: (output: {
-      stream: "stdout" | "stderr";
-      chunk: string;
-    }) => void | Promise<void>;
-  },
-): Promise<ShellCommandResult> => {
-  if (options.signal?.aborted) {
-    throw createCommandProcessError(getAbortReasonMessage(options.signal), {
-      stdout: "",
-      stderr: "",
-    });
-  }
-
-  return new Promise((resolve, reject) => {
-    const cwd = normalizeLocalCommandCwd(options.cwd);
-    const child = spawn(shellExecutable, shellArgs, {
-      cwd,
-      detached: process.platform !== "win32",
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-    });
-    const chunks = {
-      stdout: [] as string[],
-      stderr: [] as string[],
-    };
-    let outputBytes = 0;
-    let settled = false;
-    let timedOut = false;
-    let aborted = false;
-    let exceededBuffer = false;
-    let outputHandlerError: unknown;
-
-    const timeoutHandle = setTimeout(() => {
-      timedOut = true;
-      terminateChildProcessTree(child);
-    }, options.timeoutMs);
-
-    const cleanup = (): void => {
-      clearTimeout(timeoutHandle);
-      options.signal?.removeEventListener("abort", handleAbort);
-    };
-
-    const settle = (callback: () => void): void => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      cleanup();
-      callback();
-    };
-
-    function handleAbort(): void {
-      if (settled || aborted) {
-        return;
-      }
-
-      aborted = true;
-      terminateChildProcessTree(child);
-    }
-
-    options.signal?.addEventListener("abort", handleAbort, { once: true });
-
-    if (options.signal?.aborted) {
-      handleAbort();
-    }
-
-    const appendOutput = (
-      stream: "stdout" | "stderr",
-      value: string | Buffer,
-    ): void => {
-      const chunk = value.toString();
-
-      outputBytes += Buffer.byteLength(chunk);
-      chunks[stream].push(chunk);
-
-      try {
-        void Promise.resolve(options.onOutput?.({ stream, chunk })).catch(
-          () => undefined,
-        );
-      } catch (error) {
-        outputHandlerError ??= error;
-        terminateChildProcessTree(child);
-      }
-
-      if (outputBytes > options.maxBufferBytes && !exceededBuffer) {
-        exceededBuffer = true;
-        terminateChildProcessTree(child);
-      }
-    };
-
-    child.stdout?.on("data", (chunk: string | Buffer) => {
-      appendOutput("stdout", chunk);
-    });
-    child.stderr?.on("data", (chunk: string | Buffer) => {
-      appendOutput("stderr", chunk);
-    });
-    child.once("error", (error) => {
-      settle(() => {
-        reject(
-          createCommandProcessError(error.message, {
-            stdout: chunks.stdout.join(""),
-            stderr: chunks.stderr.join(""),
-          }),
-        );
-      });
-    });
-    child.once("close", (code, signal) => {
-      settle(() => {
-        const stdout = chunks.stdout.join("");
-        const stderr = chunks.stderr.join("");
-
-        if (timedOut) {
-          reject(
-            createCommandProcessError(
-              `Command timed out after ${options.timeoutMs}ms.`,
-              { stdout, stderr },
-            ),
-          );
-          return;
-        }
-
-        if (aborted) {
-          reject(
-            createCommandProcessError(getAbortReasonMessage(options.signal), {
-              stdout,
-              stderr,
-            }),
-          );
-          return;
-        }
-
-        if (outputHandlerError !== undefined) {
-          reject(
-            createCommandProcessError(
-              `Command output handler failed: ${
-                outputHandlerError instanceof Error
-                  ? outputHandlerError.message
-                  : String(outputHandlerError)
-              }`,
-              { stdout, stderr },
-            ),
-          );
-          return;
-        }
-
-        if (exceededBuffer) {
-          reject(
-            createCommandProcessError(
-              `Command output exceeded ${options.maxBufferBytes} bytes.`,
-              { stdout, stderr },
-            ),
-          );
-          return;
-        }
-
-        if (code === null) {
-          reject(
-            createCommandProcessError(
-              `Command terminated by signal ${signal ?? "unknown"}.`,
-              { stdout, stderr },
-            ),
-          );
-          return;
-        }
-
-        const exitCode = code;
-
-        if (exitCode !== 0) {
-          reject(
-            createCommandProcessError(
-              `Command failed with exit code ${exitCode}.`,
-              { stdout, stderr, exitCode },
-            ),
-          );
-          return;
-        }
-
-        resolve({
-          stdout: normalizeShellOutput(stdout),
-          stderr: normalizeShellOutput(stderr),
-          exitCode,
-        });
-      });
-    });
-  });
-};
-
 export const createShellNetworkToolDefinitions = (
   config: RuntimeConfig,
 ): AgentToolDefinition[] => {
@@ -492,7 +212,7 @@ export const createShellNetworkToolDefinitions = (
         const cwd = normalizeLocalCommandCwd(context.workspaceRoot);
 
         try {
-          const { stdout, stderr } = await runStreamingShellCommand(
+          const { stdout, stderr } = await runStreamingCommand(
             shellExecutable,
             shellArgs,
             {

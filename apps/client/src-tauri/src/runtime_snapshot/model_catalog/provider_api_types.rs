@@ -2,9 +2,8 @@ use std::collections::HashMap;
 
 use super::{
     normalize::{
-        is_anthropic_runtime_model, is_google_runtime_model, is_langdock_runtime_model,
-        is_openai_runtime_model, json_date_prefix, json_string, json_u64, runtime_model_stage,
-        unix_seconds_to_utc_date,
+        is_langdock_runtime_model, is_openai_runtime_model, is_text_generation_runtime_model,
+        json_date_prefix, json_string, json_u64, runtime_model_stage, unix_seconds_to_utc_date,
     },
     ProviderRuntimeModel, ProviderRuntimeModelCapabilities,
 };
@@ -395,9 +394,10 @@ pub(super) fn create_google_runtime_model(
     })
     .unwrap_or_default();
 
-    if !methods
-        .iter()
-        .any(|method| method.eq_ignore_ascii_case("generateContent"))
+    if !is_text_generation_runtime_model(&id)
+        || !methods
+            .iter()
+            .any(|method| method.eq_ignore_ascii_case("generateContent"))
     {
         return None;
     }
@@ -636,7 +636,7 @@ pub(super) fn parse_anthropic_model_catalog(
             entries
                 .iter()
                 .filter_map(create_anthropic_runtime_model)
-                .filter(|model| is_anthropic_runtime_model(&model.id))
+                .filter(|model| is_text_generation_runtime_model(&model.id))
                 .collect::<Vec<_>>()
         })
         .map(sorted_runtime_models)
@@ -648,12 +648,7 @@ pub(super) fn parse_google_model_catalog(payload: &serde_json::Value) -> Vec<Pro
         .get("models")
         .and_then(serde_json::Value::as_array)
         .map(|entries| {
-            sorted_unique_runtime_models(
-                entries
-                    .iter()
-                    .filter_map(create_google_runtime_model)
-                    .filter(|model| is_google_runtime_model(&model.id)),
-            )
+            sorted_unique_runtime_models(entries.iter().filter_map(create_google_runtime_model))
         })
         .unwrap_or_default()
 }

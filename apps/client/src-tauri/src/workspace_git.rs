@@ -4,11 +4,16 @@ use std::{
     io::{self, Read},
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
+    sync::OnceLock,
     thread,
+    time::{Duration, Instant},
 };
+
+use crate::child_process::SupervisedChild;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::Semaphore;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -19,6 +24,27 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const MAX_GIT_ENTRIES: usize = 300;
 const MAX_GIT_DIFF_BYTES: usize = 128 * 1024;
 const MAX_GIT_ERROR_BYTES: usize = 32 * 1024;
+const MAX_GIT_COMMAND_BYTES: usize = 32 * 1024 * 1024;
+static GIT_READ_PERMITS: OnceLock<Semaphore> = OnceLock::new();
+
+fn git_read_permits() -> &'static Semaphore {
+    GIT_READ_PERMITS.get_or_init(|| Semaphore::new(4))
+}
+
+async fn run_git_read<R: Send + 'static>(
+    read: impl FnOnce() -> Result<R, String> + Send + 'static,
+) -> Result<R, String> {
+    let permit = git_read_permits()
+        .acquire()
+        .await
+        .map_err(|error| format!("The workspace Git reader is unavailable: {error}"))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _permit = permit;
+        read()
+    })
+    .await
+    .map_err(|error| format!("The workspace Git reader stopped unexpectedly: {error}"))?
+}
 const MAX_REPOSITORY_SCAN_DIRECTORIES: usize = 50_000;
 const MAX_DISCOVERED_REPOSITORIES: usize = 256;
 const MAX_REPOSITORY_SCAN_ISSUES: usize = 20;
@@ -193,6 +219,8 @@ fn configured_command(program: &str, args: &[&str], cwd: &Path) -> Command {
         .args(args)
         .current_dir(cwd)
         .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_LITERAL_PATHSPECS", "1")
+        .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GCM_INTERACTIVE", "Never")
         .env("GH_PROMPT_DISABLED", "1")
         .stdin(Stdio::null())
@@ -204,10 +232,13 @@ fn configured_command(program: &str, args: &[&str], cwd: &Path) -> Command {
 }
 
 fn command_output(program: &str, args: &[&str], cwd: &Path) -> Result<Output, String> {
-    let mut command = configured_command(program, args, cwd);
-    command
-        .output()
-        .map_err(|error| format!("Failed to run {program}: {error}"))
+    let output = command_output_bounded(program, args, cwd, MAX_GIT_COMMAND_BYTES + 1)?;
+    if output.stdout.len() > MAX_GIT_COMMAND_BYTES {
+        return Err(format!(
+            "{program} output exceeded the 32 MB workspace command limit."
+        ));
+    }
+    Ok(output)
 }
 
 fn read_bounded<R: Read>(mut reader: R, limit: usize) -> io::Result<Vec<u8>> {
@@ -230,8 +261,7 @@ fn command_output_bounded(
     stdout_limit: usize,
 ) -> Result<Output, String> {
     let mut command = configured_command(program, args, cwd);
-    let mut child = command
-        .spawn()
+    let mut child = SupervisedChild::spawn_with_required_isolation(&mut command)
         .map_err(|error| format!("Failed to run {program}: {error}"))?;
     let stdout = child
         .stdout
@@ -245,8 +275,7 @@ fn command_output_bounded(
         .name("workspace-git-stdout".to_string())
         .spawn(move || read_bounded(stdout, stdout_limit))
         .map_err(|error| {
-            let _ = child.kill();
-            let _ = child.wait();
+            let _ = child.terminate_and_reap();
             format!("Failed to read {program} output: {error}")
         })?;
     let stderr_worker = match thread::Builder::new()
@@ -255,22 +284,36 @@ fn command_output_bounded(
     {
         Ok(worker) => worker,
         Err(error) => {
-            let _ = child.kill();
-            let _ = child.wait();
+            let _ = child.terminate_and_reap();
             let _ = stdout_worker.join();
             return Err(format!("Failed to read {program} errors: {error}"));
         }
     };
-    let status_result = child.wait();
-    let stdout = stdout_worker
-        .join()
+    let deadline = Instant::now() + Duration::from_secs(120);
+    let status_result = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(25)),
+            Ok(None) => {
+                let _ = child.terminate_and_reap();
+                break Err(format!("{program} timed out after 120 seconds."));
+            }
+            Err(error) => {
+                let _ = child.terminate_and_reap();
+                break Err(format!("Failed to wait for {program}: {error}"));
+            }
+        }
+    };
+    // Reap descendants before joining: helpers can inherit pipes and outlive git.
+    let stdout_result = stdout_worker.join();
+    let stderr_result = stderr_worker.join();
+    let status = status_result?;
+    let stdout = stdout_result
         .map_err(|_| format!("The {program} output reader stopped unexpectedly."))?
         .map_err(|error| format!("Failed to read {program} output: {error}"))?;
-    let stderr = stderr_worker
-        .join()
+    let stderr = stderr_result
         .map_err(|_| format!("The {program} error reader stopped unexpectedly."))?
         .map_err(|error| format!("Failed to read {program} errors: {error}"))?;
-    let status = status_result.map_err(|error| format!("Failed to wait for {program}: {error}"))?;
     Ok(Output {
         status,
         stdout,
@@ -457,7 +500,13 @@ fn scan_repository_candidates(workspace: &Path) -> (Vec<PathBuf>, bool, Vec<Stri
                 && !file_type.is_symlink()
                 && !repository_scan_directory_is_ignored(&entry.file_name())
             {
-                child_directories.push(entry.path());
+                if directories_scanned + pending.len() + child_directories.len()
+                    < MAX_REPOSITORY_SCAN_DIRECTORIES
+                {
+                    child_directories.push(entry.path());
+                } else {
+                    scan_limited = true;
+                }
             }
         }
         if has_git_marker {
@@ -543,9 +592,7 @@ fn status_is_conflicted(left: char, right: char) -> bool {
     matches!((left, right), ('U', _) | (_, 'U') | ('A', 'A') | ('D', 'D'))
 }
 
-fn parse_status(
-    output: &str,
-) -> (
+type StatusSummary = (
     Vec<WorkspaceGitChange>,
     bool,
     usize,
@@ -553,7 +600,13 @@ fn parse_status(
     usize,
     usize,
     usize,
-) {
+);
+
+fn parse_status(output: &str) -> StatusSummary {
+    parse_status_matching(output, None)
+}
+
+fn parse_status_matching(output: &str, selected_path: Option<&str>) -> StatusSummary {
     let mut changes = Vec::new();
     let mut total = 0usize;
     let mut staged = 0usize;
@@ -589,7 +642,9 @@ fn parse_status(
         let original_path = (matches!(left, 'R' | 'C') || matches!(right, 'R' | 'C'))
             .then(|| records.next())
             .flatten();
-        if changes.len() < MAX_GIT_ENTRIES {
+        if changes.len() < MAX_GIT_ENTRIES
+            && selected_path.is_none_or(|path| record.get(3..) == Some(path))
+        {
             changes.push(WorkspaceGitChange {
                 status: format!("{left}{right}"),
                 path: record.get(3..).unwrap_or_default().to_string(),
@@ -613,7 +668,23 @@ fn parse_status(
 }
 
 fn status_output(repository: &Path) -> Result<String, String> {
-    let arguments = ["status", "--porcelain=v1", "-z", "--untracked-files=all"];
+    read_status(repository, None, true)
+}
+
+fn read_status(repository: &Path, path: Option<&str>, untracked: bool) -> Result<String, String> {
+    let mut arguments = vec![
+        "status",
+        "--porcelain=v1",
+        "-z",
+        if untracked {
+            "--untracked-files=all"
+        } else {
+            "--untracked-files=no"
+        },
+    ];
+    if let Some(path) = path {
+        arguments.extend(["--", path]);
+    }
     let output = command_output("git", &arguments, repository)?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
@@ -656,11 +727,28 @@ fn load_diff(request: WorkspaceGitDiffRequest) -> Result<WorkspaceGitDiff, Strin
     if request.relative_path.is_empty() || request.relative_path.contains('\0') {
         return Err("Select a changed file to view its diff.".to_string());
     }
-    let (changes, _, _, _, _, _, _) = parse_status(&status_output(&repository)?);
-    let change = changes
+    let (changes, _, _, _, _, _, _) = parse_status_matching(
+        &read_status(&repository, Some(&request.relative_path), true)?,
+        Some(&request.relative_path),
+    );
+    let mut change = changes
         .into_iter()
         .find(|change| change.path == request.relative_path)
         .ok_or_else(|| "This file is no longer changed.".to_string())?;
+    // A path-limited status represents a staged rename as an addition because
+    // its source was excluded. Only these additions need the wider tracked scan.
+    if change.status.starts_with('A') {
+        if let Some(renamed) = parse_status_matching(
+            &read_status(&repository, None, false)?,
+            Some(&request.relative_path),
+        )
+        .0
+        .into_iter()
+        .next()
+        {
+            change = renamed;
+        }
+    }
     let mut patches = Vec::new();
     if change.staged {
         patches.push(run_diff(
@@ -737,6 +825,11 @@ fn parse_branches(output: &str, remote: bool) -> Vec<WorkspaceGitBranch> {
             let commit = parts.next().unwrap_or_default().trim().to_string();
             let upstream = parts.next().unwrap_or_default().trim();
             let marker = parts.next().unwrap_or_default().trim();
+            if let Some(reference) = parts.next() {
+                if reference.starts_with("refs/remotes/") != remote {
+                    return None;
+                }
+            }
             Some(WorkspaceGitBranch {
                 name,
                 commit,
@@ -908,18 +1001,17 @@ fn load_overview(
             Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
         })
         .unwrap_or((0, 0));
-    let mut local_branches = parse_branches(
-        &run_required(
+    let branch_output = run_required(
             "git",
             &[
                 "for-each-ref",
-                "--format=%(refname:short)%09%(objectname:short)%09%(upstream:short)%09%(HEAD)",
+                "--format=%(refname:short)%09%(objectname:short)%09%(upstream:short)%09%(HEAD)%09%(refname)",
                 "refs/heads",
+                "refs/remotes",
             ],
             &repository,
-        )?,
-        false,
-    );
+        )?;
+    let mut local_branches = parse_branches(&branch_output, false);
     if !detached
         && !local_branches
             .iter()
@@ -935,18 +1027,7 @@ fn load_overview(
             },
         );
     }
-    let remote_branches = parse_branches(
-        &run_required(
-            "git",
-            &[
-                "for-each-ref",
-                "--format=%(refname:short)%09%(objectname:short)%09%(upstream:short)%09%(HEAD)",
-                "refs/remotes",
-            ],
-            &repository,
-        )?,
-        true,
-    );
+    let remote_branches = parse_branches(&branch_output, true);
     let remotes = parse_remotes(&run_required("git", &["remote", "-v"], &repository)?);
     let head_commit = run_optional(
         "git",
@@ -1017,43 +1098,34 @@ fn validate_remote_url(remote_url: Option<&str>) -> Result<String, String> {
 pub async fn discover_workspace_git_repositories(
     workspace_root: String,
 ) -> Result<WorkspaceGitRepositoryDiscovery, String> {
-    tauri::async_runtime::spawn_blocking(move || discover_repositories(&workspace_root))
-        .await
-        .map_err(|error| format!("The workspace Git scan stopped unexpectedly: {error}"))?
+    run_git_read(move || discover_repositories(&workspace_root)).await
 }
 
 #[tauri::command]
 pub async fn get_workspace_git_overview(
     request: WorkspaceGitRepositoryRequest,
 ) -> Result<WorkspaceGitOverview, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        load_overview(&request.workspace_root, &request.repository_root)
-    })
-    .await
-    .map_err(|error| format!("The workspace Git reader stopped unexpectedly: {error}"))?
+    run_git_read(move || load_overview(&request.workspace_root, &request.repository_root)).await
 }
 
 #[tauri::command]
 pub async fn get_workspace_git_diff(
     request: WorkspaceGitDiffRequest,
 ) -> Result<WorkspaceGitDiff, String> {
-    tauri::async_runtime::spawn_blocking(move || load_diff(request))
-        .await
-        .map_err(|error| format!("The workspace Git diff reader stopped unexpectedly: {error}"))?
+    run_git_read(move || load_diff(request)).await
 }
 
 #[tauri::command]
 pub async fn get_workspace_pull_requests(
     request: WorkspaceGitRepositoryRequest,
 ) -> Result<WorkspacePullRequestOverview, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    run_git_read(move || {
         let (_, repository) =
             repository_context(&request.workspace_root, &request.repository_root)?;
         let has_remote = !run_required("git", &["remote"], &repository)?.is_empty();
         Ok(pull_request_overview(&repository, has_remote))
     })
     .await
-    .map_err(|error| format!("The pull-request reader stopped unexpectedly: {error}"))?
 }
 
 fn execute_workspace_git_action(
@@ -1119,7 +1191,7 @@ mod tests {
         command_output, discover_repositories, execute_workspace_git_action, load_diff,
         load_overview, parse_branches, parse_remotes, parse_status, repository_context,
         run_required, validate_remote_url, WorkspaceGitActionRequest, WorkspaceGitDiffRequest,
-        MAX_GIT_DIFF_BYTES,
+        MAX_GIT_DIFF_BYTES, MAX_GIT_ENTRIES,
     };
 
     #[test]
@@ -1504,6 +1576,47 @@ mod tests {
         assert!(large.patches[0].truncated);
         assert!(large.patches[0].content.len() <= MAX_GIT_DIFF_BYTES);
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn diff_reader_selects_literal_paths_beyond_the_overview_limit() {
+        let root = env::temp_dir().join(format!(
+            "machdoch-git-literal-diff-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        run_required("git", &["init"], &root).unwrap();
+        for index in 0..=MAX_GIT_ENTRIES {
+            fs::write(root.join(format!("a-{index:04}.txt")), "filler\n").unwrap();
+        }
+        fs::write(root.join("z[1].txt"), "selected literal file\n").unwrap();
+        fs::write(root.join("z1.txt"), "unrelated pattern match\n").unwrap();
+        let diff = load_diff(WorkspaceGitDiffRequest {
+            workspace_root: root.display().to_string(),
+            repository_root: root.display().to_string(),
+            relative_path: "z[1].txt".to_string(),
+        })
+        .unwrap();
+        assert_eq!(diff.patches.len(), 1);
+        assert!(diff.patches[0].content.contains("selected literal file"));
+        assert!(!diff.patches[0].content.contains("unrelated pattern match"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn combined_branch_output_keeps_local_and_remote_refs_separate() {
+        let output = "main\tabc\torigin/main\t*\trefs/heads/main\norigin/main\tabc\t\t \trefs/remotes/origin/main\norigin/HEAD\tabc\t\t \trefs/remotes/origin/HEAD\n";
+        let local = parse_branches(output, false);
+        let remote = parse_branches(output, true);
+        assert_eq!(local.len(), 1);
+        assert_eq!(local[0].name, "main");
+        assert!(local[0].current);
+        assert_eq!(remote.len(), 1);
+        assert_eq!(remote[0].name, "origin/main");
     }
 
     #[test]

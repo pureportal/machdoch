@@ -7,6 +7,16 @@ interface StartedTerminal {
   processId: number | null;
 }
 
+const createDeferred = <T>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
+
 type StartTerminal = (
   workspaceRoot: string,
   shellId: string,
@@ -657,6 +667,127 @@ describe("WorkspaceTerminalStore shell startup", () => {
       ),
     ).toBe(true);
     expect(store.getSnapshot().terminals[0]?.status).toBe("running");
+  });
+
+  it.each([false, true])(
+    "rejects an oversized input atomically (binary: %s)",
+    async (binary) => {
+      runtimeMocks.startWorkspaceTerminal.mockResolvedValue({
+        sessionId: "bounded",
+        shellId: "windows-powershell",
+        processId: 41,
+      });
+      const store = new WorkspaceTerminalStore("C:\\Workspace");
+      await store.initialize();
+      const terminal = xtermState.instances[0];
+      const input = binary
+        ? terminal?.binaryHandlers[0]
+        : terminal?.dataHandlers[0];
+      input?.(binary ? "x".repeat(1024 * 1024 + 1) : "漢".repeat(350_000));
+      await Promise.resolve();
+      expect(runtimeMocks.writeWorkspaceTerminal).not.toHaveBeenCalled();
+      expect(runtimeMocks.writeWorkspaceTerminalBinary).not.toHaveBeenCalled();
+      expect(store.getSnapshot().terminals[0]?.error).toContain("was not sent");
+      expect(store.getSnapshot().terminals[0]?.status).toBe("running");
+      input?.("accepted");
+      await vi.waitFor(() =>
+        expect(
+          binary
+            ? runtimeMocks.writeWorkspaceTerminalBinary
+            : runtimeMocks.writeWorkspaceTerminal,
+        ).toHaveBeenCalledWith("bounded", "accepted"),
+      );
+      await store.disposeAfterWorkspaceRemoval();
+    },
+  );
+
+  it("counts stalled writes against the buffer and allows a restarted session to drain independently", async () => {
+    const blockedWrite = createDeferred<void>();
+    runtimeMocks.startWorkspaceTerminal
+      .mockResolvedValueOnce({
+        sessionId: "blocked",
+        shellId: "windows-powershell",
+        processId: 41,
+      })
+      .mockResolvedValueOnce({
+        sessionId: "replacement",
+        shellId: "windows-powershell",
+        processId: 42,
+      });
+    runtimeMocks.writeWorkspaceTerminal.mockImplementation(
+      async (sessionId) => {
+        if (sessionId === "blocked") await blockedWrite.promise;
+      },
+    );
+    const store = new WorkspaceTerminalStore("C:\\Workspace");
+    await store.initialize();
+    const input = xtermState.instances[0]?.dataHandlers[0];
+    input?.("x".repeat(1024 * 1024));
+    await vi.waitFor(() =>
+      expect(runtimeMocks.writeWorkspaceTerminal).toHaveBeenCalledTimes(1),
+    );
+    input?.("rejected");
+    expect(store.getSnapshot().terminals[0]?.error).toContain("backed up");
+    await store.startActiveTerminal();
+    input?.("replacement input");
+    await vi.waitFor(() =>
+      expect(runtimeMocks.writeWorkspaceTerminal).toHaveBeenCalledWith(
+        "replacement",
+        "replacement input",
+      ),
+    );
+    blockedWrite.reject(new Error("old session closed"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.getSnapshot().terminals[0]?.error).toBeNull();
+    expect(
+      runtimeMocks.writeWorkspaceTerminal.mock.calls.filter(
+        ([sessionId]) => sessionId === "blocked",
+      ),
+    ).toHaveLength(1);
+    input?.("more input");
+    await vi.waitFor(() =>
+      expect(runtimeMocks.writeWorkspaceTerminal).toHaveBeenCalledWith(
+        "replacement",
+        "more input",
+      ),
+    );
+    await store.disposeAfterWorkspaceRemoval();
+  });
+
+  it("bounds small input events buffered during startup and recovers after draining", async () => {
+    const started = createDeferred<StartedTerminal>();
+    runtimeMocks.startWorkspaceTerminal.mockImplementation(
+      () => started.promise,
+    );
+    const store = new WorkspaceTerminalStore("C:\\Workspace");
+    const initialize = store.initialize();
+    await vi.waitFor(() =>
+      expect(runtimeMocks.startWorkspaceTerminal).toHaveBeenCalledTimes(1),
+    );
+    const input = xtermState.instances[0]?.dataHandlers[0];
+    for (let index = 0; index < 5000; index += 1) input?.("x");
+    expect(store.getSnapshot().terminals[0]?.error).toContain("backed up");
+    started.resolve({
+      sessionId: "starting",
+      shellId: "windows-powershell",
+      processId: 41,
+    });
+    await initialize;
+    await vi.waitFor(() =>
+      expect(runtimeMocks.writeWorkspaceTerminal).toHaveBeenCalledWith(
+        "starting",
+        "x".repeat(4096),
+      ),
+    );
+    input?.("after drain");
+    await vi.waitFor(() =>
+      expect(runtimeMocks.writeWorkspaceTerminal).toHaveBeenCalledWith(
+        "starting",
+        "after drain",
+      ),
+    );
+    await store.disposeAfterWorkspaceRemoval();
   });
 
   it("batches high-volume render acknowledgements without losing bytes", async () => {

@@ -126,6 +126,7 @@ const mapReasoningToGeminiThinkingBudget = (
     case "xhigh":
     case "max":
     case "ultra":
+    case "aeon":
       throw new Error(`Unsupported Gemini 2.5 thinking mode: ${reasoning}.`);
   }
 };

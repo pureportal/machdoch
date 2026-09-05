@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -34,6 +34,60 @@ function configurationPath(
 }
 
 describe("Fleet Manager configuration", () => {
+  it("requires isolated preview origins and HTTPS outside localhost development", () => {
+    const path = configurationPath("https://fleet.example.test");
+    const config = JSON.parse(readFileSync(path, "utf8"));
+    for (const baseUrl of [
+      "https://fleet.example.test",
+      "https://example.test",
+      "http://previews.example.test",
+      "https://apps.example.test/path",
+      "https://user@apps.example.test",
+    ]) {
+      writeFileSync(path, JSON.stringify({ ...config, previews: { baseUrl } }));
+      expect(() => loadConfig(path)).toThrow("previews.baseUrl");
+    }
+    writeFileSync(
+      path,
+      JSON.stringify({
+        ...config,
+        previews: { baseUrl: "https://previews.example.test" },
+      }),
+    );
+    expect(loadConfig(path).previews?.baseUrl).toBe(
+      "https://previews.example.test",
+    );
+    writeFileSync(
+      path,
+      JSON.stringify({
+        ...config,
+        previews: { baseUrl: "http://preview.localhost:43188" },
+      }),
+    );
+    expect(loadConfig(path, "development").previews?.baseUrl).toContain(
+      "preview.localhost",
+    );
+    expect(() => loadConfig(path)).toThrow("previews.baseUrl");
+  });
+  it("rejects heartbeat deadlines shorter than the client heartbeat cadence", () => {
+    const path = configurationPath("https://fleet.example.test");
+    const config = JSON.parse(readFileSync(path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    config.connectionPolicy = {
+      requestTimeoutSeconds: 30,
+      heartbeatTimeoutSeconds: 10,
+    };
+    writeFileSync(path, JSON.stringify(config));
+    expect(() => loadConfig(path)).toThrow("heartbeatTimeoutSeconds");
+    config.connectionPolicy = {
+      requestTimeoutSeconds: 30,
+      heartbeatTimeoutSeconds: 30,
+    };
+    writeFileSync(path, JSON.stringify(config));
+    expect(loadConfig(path).connectionPolicy.heartbeatTimeoutSeconds).toBe(30);
+  });
   it("accepts loopback HTTP origins in development", () => {
     const config = loadConfig(
       configurationPath("http://127.0.0.1:43188"),

@@ -16,91 +16,66 @@ import {
   MAIN_WINDOW_LABEL,
   QUICK_VOICE_START_EVENT,
   QUICK_VOICE_WINDOW_LABEL,
-  type MonitorBoundsInput,
 } from "./runtime";
 
-export const ASSISTANT_BUBBLE_DIMENSIONS = {
-  width: 128,
-  height: 104,
-} as const;
-
-export const ASSISTANT_POPUP_DIMENSIONS = {
-  width: 448,
-  height: 720,
-  minHeight: 420,
-} as const;
-
-export const QUICK_VOICE_DIMENSIONS = {
-  width: 380,
-  height: 220,
-} as const;
-
-const SURFACE_MARGIN = 24;
-const POPUP_VERTICAL_GAP = 16;
-
+import {
+  computeAssistantSurfaceLayout,
+  clampSurfacePosition,
+  type AssistantSurfaceLayout,
+} from "./assistant-surface-geometry";
+export {
+  ASSISTANT_BUBBLE_DIMENSIONS,
+  ASSISTANT_POPUP_DIMENSIONS,
+  QUICK_VOICE_DIMENSIONS,
+} from "./assistant-surface-geometry";
+export type { AssistantSurfaceLayout } from "./assistant-surface-geometry";
+export const DISPLAY_LAYOUT_CHANGED_EVENT = "machdoch://display-layout-changed";
 type MonitorSnapshot = Awaited<ReturnType<typeof monitorFromPoint>>;
-
-export interface AssistantSurfaceLayout {
-  monitorBounds: MonitorBoundsInput;
-  bubbleSize: { width: number; height: number };
-  bubblePosition: { x: number; y: number };
-  popupSize: { width: number; height: number };
-  popupPosition: { x: number; y: number };
-  quickVoicePosition: { x: number; y: number };
-}
-
-const clampPosition = (value: number, min: number, max: number): number => {
-  if (min > max) {
-    return min;
-  }
-
-  return Math.min(Math.max(value, min), max);
-};
-
-const toPhysicalPixels = (logicalValue: number, scaleFactor: number): number => {
-  return Math.round(logicalValue * scaleFactor);
-};
-
-const toMonitorBounds = (monitor: NonNullable<MonitorSnapshot>): MonitorBoundsInput => {
-  return {
-    x: monitor.position.x,
-    y: monitor.position.y,
-    width: monitor.size.width,
-    height: monitor.size.height,
-  };
-};
 
 const resolveFirstAvailableMonitor = async (): Promise<MonitorSnapshot> => {
   try {
     const monitors = await availableMonitors();
 
-    return monitors[0] ?? null;
+    return (
+      monitors.find((monitor) => computeAssistantSurfaceLayout(monitor)) ?? null
+    );
   } catch {
     return null;
   }
 };
 
-const resolveTargetMonitor = async (): Promise<MonitorSnapshot> => {
+const resolveTargetMonitor = async (
+  target: "cursor" | "window",
+): Promise<MonitorSnapshot> => {
   if (!isTauri()) {
     return null;
+  }
+
+  if (target === "window") {
+    const monitor = await currentMonitor().catch(() => null);
+    if (monitor && computeAssistantSurfaceLayout(monitor)) return monitor;
   }
 
   try {
     const cursor = await cursorPosition();
     const cursorMonitor = await monitorFromPoint(cursor.x, cursor.y);
 
-    if (cursorMonitor) {
+    if (cursorMonitor && computeAssistantSurfaceLayout(cursorMonitor)) {
       return cursorMonitor;
     }
   } catch {
     // Cursor/monitor information can be temporarily unavailable while displays change.
   }
 
-  return (
-    (await currentMonitor().catch(() => null)) ??
-    (await primaryMonitor().catch(() => null)) ??
-    (await resolveFirstAvailableMonitor())
-  );
+  for (const resolve of [
+    currentMonitor,
+    primaryMonitor,
+    resolveFirstAvailableMonitor,
+  ]) {
+    const monitor = await resolve().catch(() => null);
+    if (monitor && computeAssistantSurfaceLayout(monitor)) return monitor;
+  }
+  return null;
 };
 
 export const resolveMonitorTopologyKey = async (): Promise<string | null> => {
@@ -114,7 +89,8 @@ export const resolveMonitorTopologyKey = async (): Promise<string | null> => {
     return monitors
       .map((monitor) => {
         const scaleFactor =
-          typeof monitor.scaleFactor === "number" && Number.isFinite(monitor.scaleFactor)
+          typeof monitor.scaleFactor === "number" &&
+          Number.isFinite(monitor.scaleFactor)
             ? monitor.scaleFactor.toFixed(3)
             : "1.000";
 
@@ -137,102 +113,16 @@ export const resolveMonitorTopologyKey = async (): Promise<string | null> => {
   }
 };
 
-export const resolveAssistantSurfaceLayout = async (): Promise<AssistantSurfaceLayout | null> => {
-  const monitor = await resolveTargetMonitor();
-
-  if (!monitor) {
-    return null;
-  }
-
-  const workX = monitor.workArea.position.x;
-  const workY = monitor.workArea.position.y;
-  const workWidth = monitor.workArea.size.width;
-  const workHeight = monitor.workArea.size.height;
-  const scaleFactor =
-    typeof monitor.scaleFactor === "number" && Number.isFinite(monitor.scaleFactor)
-      ? monitor.scaleFactor
-      : 1;
-  const surfaceMargin = toPhysicalPixels(SURFACE_MARGIN, scaleFactor);
-  const popupVerticalGap = toPhysicalPixels(POPUP_VERTICAL_GAP, scaleFactor);
-  const bubbleWidth = toPhysicalPixels(
-    ASSISTANT_BUBBLE_DIMENSIONS.width,
-    scaleFactor,
-  );
-  const bubbleHeight = toPhysicalPixels(
-    ASSISTANT_BUBBLE_DIMENSIONS.height,
-    scaleFactor,
-  );
-  const popupWidth = toPhysicalPixels(
-    ASSISTANT_POPUP_DIMENSIONS.width,
-    scaleFactor,
-  );
-  const preferredPopupHeight = toPhysicalPixels(
-    ASSISTANT_POPUP_DIMENSIONS.height,
-    scaleFactor,
-  );
-  const minimumPopupHeight = toPhysicalPixels(
-    ASSISTANT_POPUP_DIMENSIONS.minHeight,
-    scaleFactor,
-  );
-  const quickVoiceWidth = toPhysicalPixels(
-    QUICK_VOICE_DIMENSIONS.width,
-    scaleFactor,
-  );
-  const quickVoiceHeight = toPhysicalPixels(
-    QUICK_VOICE_DIMENSIONS.height,
-    scaleFactor,
-  );
-  const bubbleX =
-    clampPosition(
-      workX + workWidth - bubbleWidth - surfaceMargin,
-      workX + surfaceMargin,
-      workX + workWidth - bubbleWidth - surfaceMargin,
-    );
-  const bubbleY = clampPosition(
-    workY + workHeight - bubbleHeight - surfaceMargin,
-    workY + surfaceMargin,
-    workY + workHeight - bubbleHeight - surfaceMargin,
-  );
-  const popupHeightAvailableAboveBubble =
-    bubbleY - workY - surfaceMargin - popupVerticalGap;
-  const popupHeight = clampPosition(
-    preferredPopupHeight,
-    minimumPopupHeight,
-    popupHeightAvailableAboveBubble,
-  );
-  const popupX = clampPosition(
-    workX + workWidth - popupWidth - surfaceMargin,
-    workX + surfaceMargin,
-    workX + workWidth - popupWidth - surfaceMargin,
-  );
-  const popupY = clampPosition(
-    bubbleY - popupHeight - popupVerticalGap,
-    workY + surfaceMargin,
-    workY + workHeight - popupHeight - surfaceMargin,
-  );
-  const quickVoiceX =
-    clampPosition(
-      workX + workWidth - quickVoiceWidth - surfaceMargin,
-      workX + surfaceMargin,
-      workX + workWidth - quickVoiceWidth - surfaceMargin,
-    );
-  const quickVoiceY = clampPosition(
-    workY + workHeight - quickVoiceHeight - surfaceMargin,
-    workY + surfaceMargin,
-    workY + workHeight - quickVoiceHeight - surfaceMargin,
-  );
-
-  return {
-    monitorBounds: toMonitorBounds(monitor),
-    bubbleSize: { width: bubbleWidth, height: bubbleHeight },
-    bubblePosition: { x: bubbleX, y: bubbleY },
-    popupSize: { width: popupWidth, height: popupHeight },
-    popupPosition: { x: popupX, y: popupY },
-    quickVoicePosition: { x: quickVoiceX, y: quickVoiceY },
-  };
+export const resolveAssistantSurfaceLayout = async (
+  target: "cursor" | "window" = "cursor",
+): Promise<AssistantSurfaceLayout | null> => {
+  const monitor = await resolveTargetMonitor(target);
+  return monitor ? computeAssistantSurfaceLayout(monitor) : null;
 };
 
-export const getWindowByLabel = async (label: string): Promise<Window | null> => {
+export const getWindowByLabel = async (
+  label: string,
+): Promise<Window | null> => {
   if (!isTauri()) {
     return null;
   }
@@ -329,26 +219,27 @@ export const setWindowSize = async (
 const applyAssistantPopupLayout = async (
   popupWindow: Window | null,
   popupPositionOverride?: { x: number; y: number },
+  resolvedLayout?: AssistantSurfaceLayout,
 ): Promise<void> => {
   if (!popupWindow) {
     return;
   }
 
-  const layout = await resolveAssistantSurfaceLayout();
+  const layout = resolvedLayout ?? (await resolveAssistantSurfaceLayout());
 
   if (!layout) {
-    if (popupPositionOverride) {
-      await setWindowPosition(popupWindow, popupPositionOverride);
-    }
-
     return;
   }
 
-  await setWindowSize(popupWindow, layout.popupSize);
   await setWindowPosition(
     popupWindow,
-    popupPositionOverride ?? layout.popupPosition,
+    clampSurfacePosition(
+      popupPositionOverride ?? layout.popupPosition,
+      layout.popupSize,
+      layout.workArea,
+    ),
   );
+  await setWindowSize(popupWindow, layout.popupSize);
 };
 
 const closeWindowByLabel = async (
@@ -369,10 +260,7 @@ const closeWindowByLabel = async (
 };
 
 export const hideAssistantPopup = async (): Promise<void> => {
-  await closeWindowByLabel(
-    ASSISTANT_POPUP_WINDOW_LABEL,
-    "the assistant popup",
-  );
+  await closeWindowByLabel(ASSISTANT_POPUP_WINDOW_LABEL, "the assistant popup");
 };
 
 export const hideTransientAssistantWindows = async (): Promise<void> => {
@@ -382,7 +270,9 @@ export const hideTransientAssistantWindows = async (): Promise<void> => {
   ]);
 };
 
-export const syncAssistantPopupPosition = async (): Promise<void> => {
+export const syncAssistantPopupPosition = async (
+  layout?: AssistantSurfaceLayout,
+): Promise<void> => {
   const popupWindow = await getWindowByLabel(ASSISTANT_POPUP_WINDOW_LABEL);
 
   if (!popupWindow) {
@@ -393,7 +283,7 @@ export const syncAssistantPopupPosition = async (): Promise<void> => {
     return;
   }
 
-  await applyAssistantPopupLayout(popupWindow);
+  await applyAssistantPopupLayout(popupWindow, undefined, layout);
 };
 
 export const isAssistantPopupVisible = async (): Promise<boolean> => {
@@ -411,9 +301,10 @@ export const isAssistantPopupVisible = async (): Promise<boolean> => {
   }
 };
 
-export const showAssistantPopup = async (
-  popupPositionOverride?: { x: number; y: number },
-): Promise<boolean> => {
+export const showAssistantPopup = async (popupPositionOverride?: {
+  x: number;
+  y: number;
+}): Promise<boolean> => {
   const popupWindow = await getOrCreateAssistantWindow(
     ASSISTANT_POPUP_WINDOW_LABEL,
   );
@@ -434,9 +325,10 @@ export const showAssistantPopup = async (
   }
 };
 
-export const toggleAssistantPopup = async (
-  popupPositionOverride?: { x: number; y: number },
-): Promise<boolean> => {
+export const toggleAssistantPopup = async (popupPositionOverride?: {
+  x: number;
+  y: number;
+}): Promise<boolean> => {
   const popupWindow = await getWindowByLabel(ASSISTANT_POPUP_WINDOW_LABEL);
 
   if (!popupWindow) {
@@ -544,6 +436,7 @@ export const showQuickVoiceWindow = async (): Promise<void> => {
 
     if (layout) {
       await setWindowPosition(quickVoiceWindow, layout.quickVoicePosition);
+      await setWindowSize(quickVoiceWindow, layout.quickVoiceSize);
     }
 
     await Promise.all([quickVoiceWindow.show(), quickVoiceWindow.unminimize()]);

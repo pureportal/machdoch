@@ -5,29 +5,28 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { AgentToolExecutionContext } from "./agent-tools-shared.js";
 
-type ExecFileCallback = (
-  error: Error | null,
-  stdout: string,
-  stderr: string,
-) => void;
+import type {
+  LocalCommandOptions,
+  LocalCommandResult,
+} from "./process-execution.ts";
 
-type ExecFileMock = (
+type ExecuteCommandMock = (
   file: string,
   args: string[],
-  options: Record<string, unknown>,
-  callback: ExecFileCallback,
-) => unknown;
+  options: LocalCommandOptions,
+) => Promise<LocalCommandResult>;
 
-const { execFileMock } = vi.hoisted(() => ({
-  execFileMock: vi.fn<ExecFileMock>(),
+const { executeCommandMock } = vi.hoisted(() => ({
+  executeCommandMock: vi.fn<ExecuteCommandMock>(),
 }));
 
-vi.mock("node:child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:child_process")>();
+vi.mock("./process-execution.ts", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("./process-execution.ts")>();
 
   return {
     ...actual,
-    execFile: execFileMock,
+    executeLocalCommand: executeCommandMock,
   };
 });
 
@@ -64,11 +63,7 @@ const createExecutionContext = (
   };
 };
 
-const createExecError = (
-  message: string,
-  stderr: string,
-  code = 1,
-): Error => {
+const createExecError = (message: string, stderr: string, code = 1): Error => {
   return Object.assign(new Error(message), {
     code,
     stdout: "",
@@ -79,16 +74,27 @@ const createExecError = (
 const queueGitResponses = (...responses: GitMockResponse[]): void => {
   const pendingResponses = [...responses];
 
-  execFileMock.mockImplementation((_file, _args, _options, callback) => {
+  executeCommandMock.mockImplementation(async (_file, _args, options) => {
     const response = pendingResponses.shift() ?? {};
 
-    callback(
-      response.error ?? null,
-      response.stdout ?? "",
-      response.stderr ?? "",
-    );
-
-    return undefined;
+    const code =
+      response.error && "code" in response.error
+        ? response.error.code
+        : undefined;
+    if (
+      response.error &&
+      !(typeof code === "number" && options.acceptedExitCodes?.includes(code))
+    ) {
+      throw Object.assign(response.error, {
+        stdout: response.stdout ?? "",
+        stderr: response.stderr ?? "",
+      });
+    }
+    return {
+      stdout: response.stdout ?? "",
+      stderr: response.stderr ?? "",
+      exitCode: typeof code === "number" ? code : 0,
+    };
   });
 };
 
@@ -105,7 +111,7 @@ const getGitTool = (name: string) => {
 };
 
 afterEach(async () => {
-  execFileMock.mockReset();
+  executeCommandMock.mockReset();
 
   await Promise.all(
     workspacesToClean
@@ -201,16 +207,14 @@ describe("createGitToolDefinitions", () => {
     );
     expect(result.toolResult.output).toContain("Staged: 1");
     expect(result.toolResult.output).toContain("Untracked: 1");
-    expect(execFileMock).toHaveBeenNthCalledWith(
+    expect(executeCommandMock).toHaveBeenNthCalledWith(
       2,
       "git",
       ["status", "--porcelain=v1", "--branch", "--untracked-files=all"],
       expect.objectContaining({
-        timeout: 15_000,
-        maxBuffer: 1_000_000,
-        windowsHide: true,
+        timeoutMs: 15_000,
+        maxBufferBytes: 1_000_000,
       }),
-      expect.any(Function),
     );
   });
 
@@ -238,7 +242,7 @@ describe("createGitToolDefinitions", () => {
     expect(result.toolResult.isError).toBeUndefined();
     expect(result.toolResult.output).toContain("Scope: staged");
     expect(result.toolResult.output).toContain("M\tsrc/app.ts");
-    expect(execFileMock).toHaveBeenNthCalledWith(
+    expect(executeCommandMock).toHaveBeenNthCalledWith(
       2,
       "git",
       [
@@ -251,7 +255,6 @@ describe("createGitToolDefinitions", () => {
         "src/app.ts",
       ],
       expect.any(Object),
-      expect.any(Function),
     );
   });
 
@@ -276,19 +279,17 @@ describe("createGitToolDefinitions", () => {
 
     expect(result.toolResult.isError).toBeUndefined();
     expect(result.toolResult.output).toContain("Created commit: abc1234");
-    expect(execFileMock).toHaveBeenNthCalledWith(
+    expect(executeCommandMock).toHaveBeenNthCalledWith(
       2,
       "git",
       ["add", "--", "README.md"],
       expect.any(Object),
-      expect.any(Function),
     );
-    expect(execFileMock).toHaveBeenNthCalledWith(
+    expect(executeCommandMock).toHaveBeenNthCalledWith(
       3,
       "git",
       ["commit", "-m", "Improve README"],
       expect.any(Object),
-      expect.any(Function),
     );
   });
 
@@ -307,7 +308,7 @@ describe("createGitToolDefinitions", () => {
     expect(result.toolResult.output).toContain(
       "outside the active workspace boundary",
     );
-    expect(execFileMock).toHaveBeenCalledTimes(1);
+    expect(executeCommandMock).toHaveBeenCalledTimes(1);
   });
 
   it("surfaces Git command stderr on failures", async () => {

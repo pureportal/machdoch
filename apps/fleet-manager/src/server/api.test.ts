@@ -19,11 +19,234 @@ let runtime: FleetRuntime | null = null;
 afterEach(() => {
   setRuntimeForTests(undefined);
   runtime?.gateways.close();
+  runtime?.previews?.close();
   runtime?.database.close();
   runtime = null;
 });
 
 describe("Fleet Manager API", () => {
+  it("requires owner CSRF for service mutations and preview grants and gates unsupported hosts", async () => {
+    runtime = testRuntime();
+    setRuntimeForTests(runtime);
+    const { cookie, csrf } = await authenticateTestOwner();
+    const instance = enrollTestInstance(runtime);
+    const base = `/api/instances/${instance.instanceId}`;
+    expect(
+      (await apiRequest(`${base}/runs?workspace=/project`, "GET")).status,
+    ).toBe(401);
+    expect(
+      (await apiRequest(`${base}/runs?workspace=/project`, "POST", {}, cookie))
+        .status,
+    ).toBe(403);
+    expect(
+      (await apiRequest(`${base}/previews`, "POST", {}, cookie)).status,
+    ).toBe(403);
+    expect(
+      (await apiRequest(`${base}/previews`, "DELETE", undefined, cookie))
+        .status,
+    ).toBe(403);
+    expect(
+      (
+        await apiRequest(
+          `${base}/runs?workspace=/project`,
+          "GET",
+          undefined,
+          cookie,
+        )
+      ).status,
+    ).toBe(503);
+    expect(
+      (await apiRequest(`${base}/previews`, "DELETE", undefined, cookie, csrf))
+        .status,
+    ).toBe(200);
+  });
+  it("protects enrollment-key inventory and revocation with owner authentication and CSRF", async () => {
+    runtime = testRuntime();
+    setRuntimeForTests(runtime);
+    const { cookie, csrf } = await authenticateTestOwner();
+    const created = await apiRequest(
+      "/api/enrollment-keys",
+      "POST",
+      undefined,
+      cookie,
+      csrf,
+    );
+    const grant = (await created.json()) as {
+      grantId: string;
+      enrollmentKey: string;
+      expiresAt: number;
+    };
+    expect(grant.grantId).toMatch(/^grant_/u);
+    expect((await apiRequest("/api/enrollment-keys", "GET")).status).toBe(401);
+    const inventory = await apiRequest(
+      "/api/enrollment-keys",
+      "GET",
+      undefined,
+      cookie,
+    );
+    const body = (await inventory.json()) as { grants: unknown[] };
+    expect(body.grants).toEqual([
+      expect.objectContaining({
+        grantId: grant.grantId,
+        expiresAt: grant.expiresAt,
+      }),
+    ]);
+    expect(JSON.stringify(body)).not.toContain(grant.enrollmentKey);
+    const path = `/api/enrollment-keys/${grant.grantId}`;
+    expect((await apiRequest(path, "DELETE", undefined, cookie)).status).toBe(
+      403,
+    );
+    const crossOrigin = await handleApiRequest(
+      new Request(`https://fleet.example.test${path}`, {
+        method: "DELETE",
+        headers: {
+          Cookie: cookie,
+          Origin: "https://attacker.example",
+          "X-Machdoch-Fleet-CSRF": csrf,
+        },
+      }),
+      { clientAddress: "198.51.100.10" },
+    );
+    expect(crossOrigin.status).toBe(403);
+    expect(runtime.fleetStore.listEnrollmentGrants(nowSeconds())).toHaveLength(
+      1,
+    );
+    expect(
+      (await apiRequest(path, "DELETE", undefined, cookie, csrf)).status,
+    ).toBe(200);
+    expect(
+      (await apiRequest(path, "DELETE", undefined, cookie, csrf)).status,
+    ).toBe(404);
+    expect(runtime.fleetStore.listEnrollmentGrants(nowSeconds())).toEqual([]);
+    const enrollment = await handleApiRequest(
+      new Request("https://fleet.example.test/api/enroll", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${grant.enrollmentKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          instanceSecret: createSecret("mch_instance"),
+          displayName: "Intruder",
+          productVersion: "7.0.6",
+          protocolVersion: gatewayProtocolVersion,
+        }),
+      }),
+      { clientAddress: "198.51.100.10" },
+    );
+    expect(enrollment.status).toBe(401);
+  });
+
+  it("rechecks revoked authorization before delivering an in-flight snapshot", async () => {
+    runtime = testRuntime();
+    setRuntimeForTests(runtime);
+    const { cookie } = await authenticateTestOwner();
+    const instance = enrollTestInstance(runtime);
+    vi.spyOn(runtime.gateways, "relay").mockImplementation(async () => {
+      runtime!.authStore.changeOwnerPassword(
+        "owner",
+        "a changed secure test password",
+        nowSeconds(),
+      );
+      return {
+        type: "productSnapshot",
+        snapshot: {
+          enabled: true,
+          serverTime: 1,
+          eventId: 1,
+          sessions: [],
+          commands: [],
+        },
+      };
+    });
+    const response = await apiRequest(
+      `/api/instances/${instance.instanceId}/product/snapshot`,
+      "GET",
+      undefined,
+      cookie,
+    );
+    expect(response.status).toBe(401);
+    expect(await response.text()).not.toContain("sessions");
+  });
+
+  it("does not dispatch a command after the session is revoked while its body is being read", async () => {
+    runtime = testRuntime();
+    setRuntimeForTests(runtime);
+    const { cookie, csrf } = await authenticateTestOwner();
+    const instance = enrollTestInstance(runtime);
+    const relay = vi.spyOn(runtime.gateways, "relay");
+    const request = new Request(
+      `https://fleet.example.test/api/instances/${instance.instanceId}/product/commands`,
+      {
+        method: "POST",
+        headers: {
+          Origin: "https://fleet.example.test",
+          Cookie: cookie,
+          "X-Machdoch-Fleet-CSRF": csrf,
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      },
+    );
+    vi.spyOn(request, "json").mockImplementation(async () => {
+      runtime!.authStore.changeOwnerPassword(
+        "owner",
+        "a changed secure test password",
+        nowSeconds(),
+      );
+      return { kind: "cancel", commandId: "command-1", taskId: "task-1" };
+    });
+    const response = await handleApiRequest(request, {
+      clientAddress: "198.51.100.10",
+    });
+    expect(response.status).toBe(401);
+    expect(relay).not.toHaveBeenCalled();
+  });
+
+  it("assigns missing command IDs and refuses a receipt for a different command", async () => {
+    runtime = testRuntime();
+    setRuntimeForTests(runtime);
+    const { cookie, csrf } = await authenticateTestOwner();
+    const instance = enrollTestInstance(runtime);
+    const relayed = vi
+      .spyOn(runtime.gateways, "relay")
+      .mockImplementation(async (_instanceId, request) => {
+        if (request.type !== "executeProductCommand")
+          throw new Error("Expected a command.");
+        expect(request.command.commandId).toMatch(/^command_/u);
+        return {
+          type: "commandAccepted",
+          receipt: { commandId: request.command.commandId!, duplicate: false },
+        };
+      });
+    const path = `/api/instances/${instance.instanceId}/product/commands`;
+    expect(
+      (
+        await apiRequest(
+          path,
+          "POST",
+          { kind: "cancel", taskId: "task-1" },
+          cookie,
+          csrf,
+        )
+      ).status,
+    ).toBe(202);
+    relayed.mockResolvedValue({
+      type: "commandAccepted",
+      receipt: { commandId: "other-command", duplicate: false },
+    });
+    expect(
+      (
+        await apiRequest(
+          path,
+          "POST",
+          { kind: "cancel", taskId: "task-1", commandId: "command-1" },
+          cookie,
+          csrf,
+        )
+      ).status,
+    ).toBe(502);
+  });
   it("covers login, enrollment, registry, settings, assignment, and delivery", async () => {
     runtime = testRuntime();
     setRuntimeForTests(runtime);
@@ -470,6 +693,43 @@ interface SettingsProfileResponse {
     prompts: Array<Record<string, unknown>>;
   };
   secrets: Array<{ secretId: string; lastFour: string }>;
+}
+
+async function authenticateTestOwner(): Promise<{
+  cookie: string;
+  csrf: string;
+}> {
+  runtime!.authStore.seedOwner("owner", "a secure test password", nowSeconds());
+  const response = await apiRequest("/api/auth/login", "POST", {
+    username: "owner",
+    password: "a secure test password",
+  });
+  const cookies = response.headers.getSetCookie();
+  const cookie = cookies.map((value) => value.split(";", 1)[0]).join("; ");
+  const csrf = /^__Host-machdoch_fleet_csrf=([^;]+)/mu.exec(
+    cookies.join("\n"),
+  )?.[1];
+  if (!csrf) throw new Error("Missing test CSRF cookie.");
+  return { cookie, csrf };
+}
+
+function enrollTestInstance(runtime: FleetRuntime) {
+  const enrollmentKey = createSecret("mch_enroll");
+  runtime.fleetStore.createEnrollmentGrant(
+    enrollmentKey,
+    nowSeconds(),
+    runtime.config.enrollmentPolicy,
+  );
+  return runtime.fleetStore.enrollInstance(
+    {
+      enrollmentKey,
+      instanceSecret: createSecret("mch_instance"),
+      displayName: "Test",
+      productVersion: "7.0.6",
+      protocolVersion: gatewayProtocolVersion,
+    },
+    nowSeconds(),
+  );
 }
 
 async function apiRequest(

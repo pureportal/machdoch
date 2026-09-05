@@ -5,29 +5,28 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentToolExecutionContext } from "./agent-tools-shared.js";
 
-type ExecFileCallback = (
-  error: Error | null,
-  stdout: string,
-  stderr: string,
-) => void;
+import type {
+  LocalCommandOptions,
+  LocalCommandResult,
+} from "./process-execution.ts";
 
-type ExecFileMock = (
+type ExecuteCommandMock = (
   file: string,
   args: string[],
-  options: Record<string, unknown>,
-  callback: ExecFileCallback,
-) => unknown;
+  options: LocalCommandOptions,
+) => Promise<LocalCommandResult>;
 
-const { execFileMock } = vi.hoisted(() => ({
-  execFileMock: vi.fn<ExecFileMock>(),
+const { executeCommandMock } = vi.hoisted(() => ({
+  executeCommandMock: vi.fn<ExecuteCommandMock>(),
 }));
 
-vi.mock("node:child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:child_process")>();
+vi.mock("./process-execution.ts", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("./process-execution.ts")>();
 
   return {
     ...actual,
-    execFile: execFileMock,
+    executeLocalCommand: executeCommandMock,
   };
 });
 
@@ -97,11 +96,7 @@ const createPackageJson = async (
   );
 };
 
-const createExecError = (
-  message: string,
-  stderr: string,
-  code = 1,
-): Error => {
+const createExecError = (message: string, stderr: string, code = 1): Error => {
   return Object.assign(new Error(message), {
     code,
     stdout: "",
@@ -112,16 +107,27 @@ const createExecError = (
 const queueCommandResponses = (...responses: CommandResponse[]): void => {
   const pendingResponses = [...responses];
 
-  execFileMock.mockImplementation((_file, _args, _options, callback) => {
+  executeCommandMock.mockImplementation(async (_file, _args, options) => {
     const response = pendingResponses.shift() ?? {};
 
-    callback(
-      response.error ?? null,
-      response.stdout ?? "",
-      response.stderr ?? "",
-    );
-
-    return undefined;
+    const code =
+      response.error && "code" in response.error
+        ? response.error.code
+        : undefined;
+    if (
+      response.error &&
+      !(typeof code === "number" && options.acceptedExitCodes?.includes(code))
+    ) {
+      throw Object.assign(response.error, {
+        stdout: response.stdout ?? "",
+        stderr: response.stderr ?? "",
+      });
+    }
+    return {
+      stdout: response.stdout ?? "",
+      stderr: response.stderr ?? "",
+      exitCode: typeof code === "number" ? code : 0,
+    };
   });
 };
 
@@ -138,7 +144,7 @@ const getPackageTool = (name: string) => {
 };
 
 afterEach(async () => {
-  execFileMock.mockReset();
+  executeCommandMock.mockReset();
 
   await Promise.all(
     workspacesToClean
@@ -219,7 +225,7 @@ describe("createPackageToolDefinitions", () => {
     expect(result.toolResult.output).toContain("Manager source: lockfile");
     expect(result.toolResult.output).toContain("Scripts: build, test");
     expect(result.toolResult.output).toContain("lockfileVersion=3");
-    expect(execFileMock).not.toHaveBeenCalled();
+    expect(executeCommandMock).not.toHaveBeenCalled();
   });
 
   it("runs declared package scripts through the detected manager", async () => {
@@ -240,16 +246,14 @@ describe("createPackageToolDefinitions", () => {
 
     expect(result.toolResult.isError).toBeUndefined();
     expect(result.toolResult.output).toContain("tests passed");
-    expect(execFileMock).toHaveBeenCalledWith(
+    expect(executeCommandMock).toHaveBeenCalledWith(
       "npm",
       ["run", "test", "--", "--runInBand"],
       expect.objectContaining({
         cwd: packageRoot,
-        timeout: 10_000,
-        maxBuffer: 1_500_000,
-        windowsHide: true,
+        timeoutMs: 10_000,
+        maxBufferBytes: 1_500_000,
       }),
-      expect.any(Function),
     );
   });
 
@@ -265,7 +269,7 @@ describe("createPackageToolDefinitions", () => {
 
     expect(result.toolResult.isError).toBe(true);
     expect(result.toolResult.output).toContain("does not declare");
-    expect(execFileMock).not.toHaveBeenCalled();
+    expect(executeCommandMock).not.toHaveBeenCalled();
   });
 
   it("parses npm outdated JSON even when npm exits with code 1 for outdated dependencies", async () => {
@@ -295,13 +299,12 @@ describe("createPackageToolDefinitions", () => {
     expect(result.toolResult.output).toContain(
       "react - current=19.0.0 - wanted=19.2.5 - latest=19.2.5",
     );
-    expect(execFileMock).toHaveBeenCalledWith(
+    expect(executeCommandMock).toHaveBeenCalledWith(
       "npm",
       ["outdated", "--json"],
       expect.objectContaining({
         cwd: packageRoot,
       }),
-      expect.any(Function),
     );
   });
 
@@ -332,13 +335,12 @@ describe("createPackageToolDefinitions", () => {
     expect(result.toolResult.isError).toBeUndefined();
     expect(result.toolResult.output).toContain("Manager: pnpm");
     expect(result.toolResult.output).toContain("vite - current=8.0.0");
-    expect(execFileMock).toHaveBeenCalledWith(
+    expect(executeCommandMock).toHaveBeenCalledWith(
       "pnpm",
       ["outdated", "--format", "json"],
       expect.objectContaining({
         cwd: packageRoot,
       }),
-      expect.any(Function),
     );
   });
 
@@ -388,13 +390,12 @@ describe("createPackageToolDefinitions", () => {
       "Severity counts: info=0, low=0, moderate=0, high=1, critical=0",
     );
     expect(result.toolResult.output).toContain("vite (high)");
-    expect(execFileMock).toHaveBeenCalledWith(
+    expect(executeCommandMock).toHaveBeenCalledWith(
       "npm",
       ["audit", "--json", "--audit-level=moderate", "--production"],
       expect.objectContaining({
         cwd: packageRoot,
       }),
-      expect.any(Function),
     );
   });
 
@@ -417,7 +418,7 @@ describe("createPackageToolDefinitions", () => {
 
     expect(result.toolResult.isError).toBeUndefined();
     expect(result.toolResult.output).toContain("added 1 package");
-    expect(execFileMock).toHaveBeenCalledWith(
+    expect(executeCommandMock).toHaveBeenCalledWith(
       "npm",
       [
         "install",
@@ -429,7 +430,6 @@ describe("createPackageToolDefinitions", () => {
       expect.objectContaining({
         cwd: packageRoot,
       }),
-      expect.any(Function),
     );
   });
 
@@ -445,7 +445,7 @@ describe("createPackageToolDefinitions", () => {
 
     expect(result.toolResult.isError).toBe(true);
     expect(result.toolResult.output).toContain("registry package specs");
-    expect(execFileMock).not.toHaveBeenCalled();
+    expect(executeCommandMock).not.toHaveBeenCalled();
   });
 
   it("rejects Git and remote package specs", async () => {
@@ -468,7 +468,7 @@ describe("createPackageToolDefinitions", () => {
       expect(result.toolResult.output).toContain("Git specs");
     }
 
-    expect(execFileMock).not.toHaveBeenCalled();
+    expect(executeCommandMock).not.toHaveBeenCalled();
   });
 
   it("uses bun lockfile-only installs when bun is the detected manager", async () => {
@@ -489,13 +489,12 @@ describe("createPackageToolDefinitions", () => {
     );
 
     expect(result.toolResult.isError).toBeUndefined();
-    expect(execFileMock).toHaveBeenCalledWith(
+    expect(executeCommandMock).toHaveBeenCalledWith(
       "bun",
       ["add", "--lockfile-only", "vite@latest"],
       expect.objectContaining({
         cwd: packageRoot,
       }),
-      expect.any(Function),
     );
   });
 
@@ -549,13 +548,11 @@ describe("createPackageToolDefinitions", () => {
     );
 
     expect(result.toolResult.isError).toBeUndefined();
-    expect(result.toolResult.output).toContain("Workspace patterns: packages/*");
+    expect(result.toolResult.output).toContain(
+      "Workspace patterns: packages/*",
+    );
     expect(result.toolResult.output).toContain("Workspace packages: 2");
-    expect(result.toolResult.output).toContain(
-      "packages/app: workspace-app",
-    );
-    expect(result.toolResult.output).toContain(
-      "packages/lib: workspace-lib",
-    );
+    expect(result.toolResult.output).toContain("packages/app: workspace-app");
+    expect(result.toolResult.output).toContain("packages/lib: workspace-lib");
   });
 });

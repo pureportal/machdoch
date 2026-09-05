@@ -1,9 +1,5 @@
-use std::{
-    collections::HashMap,
-    sync::OnceLock,
-    time::{Duration, Instant},
-};
-use tokio::sync::Mutex as AsyncMutex;
+use futures_util::{stream, StreamExt};
+use std::{collections::HashMap, sync::OnceLock};
 
 use crate::runtime_contract_generated::{REASONING_MODES, VALID_MODEL_PROVIDERS};
 mod collect;
@@ -14,6 +10,7 @@ mod env_paths;
 mod env_process;
 mod mcp_config;
 mod model_catalog;
+mod model_catalog_cache;
 mod settings;
 mod settings_commands;
 mod settings_types;
@@ -77,22 +74,15 @@ use workspace::{
 };
 use workspace_memory::{forget_workspace_memory_entry, load_workspace_memory_entries};
 
-const PROVIDER_MODEL_CATALOG_CACHE_TTL: Duration = Duration::from_secs(60);
-
-struct CachedProviderModelCatalog {
-    cached_at: Instant,
-    snapshot: ProviderModelCatalogSnapshot,
-}
-
-static PROVIDER_MODEL_CATALOG_CACHE: OnceLock<AsyncMutex<Option<CachedProviderModelCatalog>>> =
+static PROVIDER_MODEL_CATALOG_CACHE: OnceLock<model_catalog_cache::ModelCatalogCache> =
     OnceLock::new();
 
-fn provider_model_catalog_cache() -> &'static AsyncMutex<Option<CachedProviderModelCatalog>> {
-    PROVIDER_MODEL_CATALOG_CACHE.get_or_init(|| AsyncMutex::new(None))
+fn provider_model_catalog_cache() -> &'static model_catalog_cache::ModelCatalogCache {
+    PROVIDER_MODEL_CATALOG_CACHE.get_or_init(Default::default)
 }
 
 async fn invalidate_provider_model_catalog_cache() {
-    *provider_model_catalog_cache().lock().await = None;
+    provider_model_catalog_cache().invalidate().await;
 }
 
 pub(crate) fn normalize_optional_string(value: Option<&str>) -> Option<String> {
@@ -129,32 +119,31 @@ pub async fn get_global_provider_availability() -> Result<Vec<ProviderAvailabili
 
 #[tauri::command]
 pub async fn get_provider_model_catalog() -> Result<ProviderModelCatalogSnapshot, String> {
-    let mut cache = provider_model_catalog_cache().lock().await;
-
-    if let Some(cached) = cache.as_ref() {
-        if cached.cached_at.elapsed() < PROVIDER_MODEL_CATALOG_CACHE_TTL {
-            return Ok(cached.snapshot.clone());
-        }
-    }
-
-    let env = load_global_env()?;
-    let client = create_provider_model_http_client()?;
-    let mut providers = Vec::new();
-
-    for provider in VALID_MODEL_PROVIDERS {
-        providers.push(fetch_provider_model_catalog(&client, &env, provider).await);
-    }
-
-    let snapshot = ProviderModelCatalogSnapshot {
-        generated_at: create_timestamp_millis(),
-        providers,
-    };
-    *cache = Some(CachedProviderModelCatalog {
-        cached_at: Instant::now(),
-        snapshot: snapshot.clone(),
-    });
-
-    Ok(snapshot)
+    // Keep the refresh alive if its caller goes away: blocking CLI probes must
+    // finish and clean up before another caller starts a replacement refresh.
+    tokio::spawn(async {
+        provider_model_catalog_cache()
+            .get_or_refresh(|| async {
+                let env = tokio::task::spawn_blocking(load_global_env)
+                    .await
+                    .map_err(|error| {
+                        format!("Model catalog environment reader failed: {error}")
+                    })??;
+                let client = create_provider_model_http_client()?;
+                let probes: Vec<_> = VALID_MODEL_PROVIDERS
+                    .iter()
+                    .map(|provider| fetch_provider_model_catalog(&client, &env, provider))
+                    .collect();
+                let providers = stream::iter(probes).buffered(3).collect().await;
+                Ok(ProviderModelCatalogSnapshot {
+                    generated_at: create_timestamp_millis(),
+                    providers,
+                })
+            })
+            .await
+    })
+    .await
+    .map_err(|error| format!("Model catalog refresh failed: {error}"))?
 }
 
 #[tauri::command]

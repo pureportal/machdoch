@@ -10,6 +10,7 @@ import {
   CircleOff,
   Folder,
   FolderHeart,
+  Infinity as InfinityIcon,
   Layers3,
   MessageSquare,
   Monitor,
@@ -19,6 +20,7 @@ import {
   SignalLow,
   SignalMedium,
   SignalZero,
+  SlidersHorizontal,
   Sparkles,
   Tally5,
   WandSparkles,
@@ -32,6 +34,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
+import { useMediaQuery } from "./responsive-layout";
 import { ComposerModelPicker } from "./composer-model-picker";
 import { SessionMemoryDialog } from "./memory-management";
 import type { ProductCommandHandler } from "./product-runtime";
@@ -118,6 +121,12 @@ const REASONING_OPTIONS: Record<
     icon: Sparkles,
     tone: "violet",
   },
+  aeon: {
+    label: "Aeon",
+    description: "Keep working until stopped.",
+    icon: InfinityIcon,
+    tone: "violet",
+  },
 };
 
 const MODE_OPTION_BY_VALUE: Record<"ask" | "machdoch", OptionMenuItem> = {
@@ -159,8 +168,46 @@ export function Composer({
   const [draft, setDraft] = useState(composer.draft);
   const [draftSessionId, setDraftSessionId] = useState(composer.sessionId);
   const [sessionMemoryOpen, setSessionMemoryOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const touchInput = useMediaQuery("(pointer: coarse)");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
   const closeSessionMemory = useCallback(() => setSessionMemoryOpen(false), []);
+  useEffect(() => {
+    const root = composerRef.current;
+    if (!root) return;
+    const closeMenus = (event: Event): void => {
+      for (const details of root.querySelectorAll<HTMLDetailsElement>(
+        "details[open]",
+      )) {
+        if (event instanceof KeyboardEvent && event.key === "Escape") {
+          event.preventDefault();
+          details.open = false;
+          details.querySelector("summary")?.focus();
+        } else if (
+          event.type === "pointerdown" &&
+          event.target instanceof Node &&
+          !details.contains(event.target)
+        )
+          details.open = false;
+        else if (
+          event.type === "toggle" &&
+          event.target instanceof HTMLDetailsElement &&
+          event.target.open &&
+          event.target !== details
+        )
+          details.open = false;
+      }
+    };
+    document.addEventListener("pointerdown", closeMenus);
+    document.addEventListener("keydown", closeMenus);
+    root.addEventListener("toggle", closeMenus, true);
+    return () => {
+      document.removeEventListener("pointerdown", closeMenus);
+      document.removeEventListener("keydown", closeMenus);
+      root.removeEventListener("toggle", closeMenus, true);
+    };
+  }, []);
 
   useEffect(() => {
     if (draftSessionId !== composer.sessionId) {
@@ -201,6 +248,9 @@ export function Composer({
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (
       event.key === "Enter" &&
+      !touchInput &&
+      !event.nativeEvent.isComposing &&
+      event.nativeEvent.keyCode !== 229 &&
       !event.shiftKey &&
       !event.ctrlKey &&
       !event.metaKey &&
@@ -262,9 +312,12 @@ export function Composer({
     ) ?? offEnhancement;
 
   return (
-    <div className="m-product-composer-wrap">
+    <div ref={composerRef} className="m-product-composer-wrap">
       <div className="m-product-composer app-agent-composer">
-        <div className="m-product-composer-toolbar app-composer-toolbar">
+        <div
+          className="m-product-composer-toolbar app-composer-toolbar"
+          data-options-open={optionsOpen}
+        >
           <ComposerModelPicker
             providers={composer.modelCatalog.map((provider) => ({
               id: provider.provider,
@@ -287,6 +340,16 @@ export function Composer({
               })
             }
           />
+          <button
+            type="button"
+            className="m-product-composer-options-toggle"
+            aria-label="Composer options"
+            aria-expanded={optionsOpen}
+            onClick={() => setOptionsOpen((current) => !current)}
+          >
+            <SlidersHorizontal aria-hidden="true" />
+            <span>Options</span>
+          </button>
           <OptionMenu
             label="Reasoning mode"
             activeValue={session.reasoning ?? WORKSPACE_DEFAULT_VALUE}
@@ -472,6 +535,7 @@ export function Composer({
               session.runningTaskId ? "Queue a follow-up" : "Message Machdoch"
             }
             aria-label="Task composer"
+            enterKeyHint={touchInput ? "enter" : "send"}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={handleKeyDown}
           />

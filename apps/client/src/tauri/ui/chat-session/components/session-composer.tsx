@@ -492,7 +492,7 @@ export const SessionComposer = ({
   ]);
 
   return (
-    <div className="relative grid gap-3">
+    <div className="relative grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
       {notification ? (
         <div className="pointer-events-none absolute bottom-[calc(100%+0.75rem)] right-0 z-30 flex w-full justify-end">
           <AppNotification

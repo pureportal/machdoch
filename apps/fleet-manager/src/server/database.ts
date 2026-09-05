@@ -1,12 +1,17 @@
 import { chmodSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import {
+  DatabaseSync,
+  type SQLInputValue,
+  type StatementSync,
+} from "node:sqlite";
 import { createId } from "./crypto";
 
 export type DatabaseRow = Record<string, unknown>;
 
 export class FleetDatabase {
   readonly connection: DatabaseSync;
+  private readonly statements = new Map<string, StatementSync>();
 
   constructor(path: string) {
     if (path !== ":memory:") {
@@ -32,21 +37,34 @@ export class FleetDatabase {
   }
 
   close(): void {
+    this.statements.clear();
     this.connection.close();
   }
 
   get(sql: string, ...parameters: SQLInputValue[]): DatabaseRow | undefined {
-    return this.connection.prepare(sql).get(...parameters) as
-      | DatabaseRow
-      | undefined;
+    return this.statement(sql).get(...parameters) as DatabaseRow | undefined;
   }
 
   all(sql: string, ...parameters: SQLInputValue[]): DatabaseRow[] {
-    return this.connection.prepare(sql).all(...parameters) as DatabaseRow[];
+    return this.statement(sql).all(...parameters) as DatabaseRow[];
   }
 
   run(sql: string, ...parameters: SQLInputValue[]): number {
-    return Number(this.connection.prepare(sql).run(...parameters).changes);
+    return Number(this.statement(sql).run(...parameters).changes);
+  }
+
+  private statement(sql: string): StatementSync {
+    const cached = this.statements.get(sql);
+    if (cached) {
+      this.statements.delete(sql);
+      this.statements.set(sql, cached);
+      return cached;
+    }
+    const statement = this.connection.prepare(sql);
+    if (this.statements.size >= 128)
+      this.statements.delete(this.statements.keys().next().value!);
+    this.statements.set(sql, statement);
+    return statement;
   }
 
   transaction<T>(operation: () => T): T {

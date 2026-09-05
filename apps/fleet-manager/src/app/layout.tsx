@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import "@machdoch/product-ui/styles.css";
@@ -12,6 +12,13 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Fleet Manager",
   description: "Machdoch Fleet Manager",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({

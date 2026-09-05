@@ -290,30 +290,52 @@ const SessionContextActionMenu = ({
       return;
     }
 
-    const menuRect = menu.getBoundingClientRect();
-    const preferredLeft =
-      anchor.kind === "pointer" ? anchor.left : anchor.right - menuRect.width;
-    const preferredTop =
-      anchor.kind === "pointer" ? anchor.top : anchor.preferredTop;
-    const hasBottomRoom =
-      preferredTop + menuRect.height + SESSION_CONTEXT_MENU_MARGIN <=
-      window.innerHeight;
-    const resolvedTop =
-      anchor.kind === "dropdown" && !hasBottomRoom
-        ? anchor.fallbackBottom - menuRect.height
-        : preferredTop;
+    const updatePosition = (): void => {
+      const menuRect = menu.getBoundingClientRect();
+      const preferredLeft =
+        anchor.kind === "pointer" ? anchor.left : anchor.right - menuRect.width;
+      const preferredTop =
+        anchor.kind === "pointer" ? anchor.top : anchor.preferredTop;
+      const hasBottomRoom =
+        preferredTop + menuRect.height + SESSION_CONTEXT_MENU_MARGIN <=
+        window.innerHeight;
+      const resolvedTop =
+        anchor.kind === "dropdown" && !hasBottomRoom
+          ? anchor.fallbackBottom - menuRect.height
+          : preferredTop;
 
-    menu.style.left = `${clampMenuCoordinate(
-      preferredLeft,
-      menuRect.width,
-      window.innerWidth,
-    )}px`;
-    menu.style.top = `${clampMenuCoordinate(
-      resolvedTop,
-      menuRect.height,
-      window.innerHeight,
-    )}px`;
-    menu.style.visibility = "visible";
+      menu.style.left = `${clampMenuCoordinate(
+        preferredLeft,
+        menuRect.width,
+        window.innerWidth,
+      )}px`;
+      menu.style.top = `${clampMenuCoordinate(
+        resolvedTop,
+        menuRect.height,
+        window.innerHeight,
+      )}px`;
+      menu.style.visibility = "visible";
+    };
+    updatePosition();
+    let frame: number | undefined;
+    const schedule = (): void => {
+      if (frame !== undefined) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = undefined;
+        updatePosition();
+      });
+    };
+    window.addEventListener("resize", schedule);
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(schedule);
+    observer?.observe(menu);
+    return () => {
+      window.removeEventListener("resize", schedule);
+      observer?.disconnect();
+      if (frame !== undefined) window.cancelAnimationFrame(frame);
+    };
   }, [actions.length, anchor]);
 
   const menu = (
@@ -321,7 +343,7 @@ const SessionContextActionMenu = ({
       ref={menuRef}
       role="menu"
       aria-label={`Session actions for ${title}`}
-      className="app-session-context-menu fixed z-[140] w-[192px] rounded-lg border border-slate-700 bg-slate-950 p-1.5 text-slate-100 shadow-2xl shadow-black/45"
+      className="app-session-context-menu fixed z-[140] w-[192px] max-w-[calc(100dvw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain rounded-lg border border-slate-700 bg-slate-950 p-1.5 text-slate-100 shadow-2xl shadow-black/45"
       style={{ visibility: "hidden" }}
       onPointerDown={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}

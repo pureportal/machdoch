@@ -1,10 +1,10 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { queryWorkspaceAgentPresence } from "../../_helpers/workspace-agent-presence.js";
+import { runManagedStdioServer } from "../stdio-server-lifecycle.js";
 
 const TOOL_NAME = "get_active_workspace_agents";
 
@@ -60,14 +60,7 @@ export const createWorkspacePresenceMcpServer = (
 export const runWorkspacePresenceMcpServer = async (
   workspaceRoot: string,
 ): Promise<void> => {
-  const server = createWorkspacePresenceMcpServer(workspaceRoot);
-
-  const close = (): void => {
-    void server.close().finally(() => {
-      process.exitCode = 0;
-    });
-  };
-  process.once("SIGINT", close);
-  process.once("SIGTERM", close);
-  await server.connect(new StdioServerTransport());
+  await runManagedStdioServer(() =>
+    createWorkspacePresenceMcpServer(workspaceRoot),
+  );
 };

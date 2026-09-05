@@ -55,6 +55,10 @@ const SESSION_ROOT_PREFIX = "machdoch-instruction-run-";
 const SESSION_MARKER_NAME = ".machdoch-instruction-session.json";
 const SESSION_MARKER_SCHEMA_VERSION = 3;
 const STALE_SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
+const STARTUP_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+let startupCleanup:
+  | { directory: string; completedAt: number; pending?: Promise<void> }
+  | undefined;
 const SESSION_REMOVAL_RETRY_DELAYS_MS = [50, 100, 200, 400, 800] as const;
 const PROVIDER_CAPABILITY_PROBE_ATTEMPTS = 3;
 const MAX_SESSION_MARKER_BYTES = 16 * 1024;
@@ -349,6 +353,31 @@ export const cleanupStaleEnrollmentArtifacts = async (
       continue;
     }
     await removeSessionRoot(path).catch(() => undefined);
+  }
+};
+
+const cleanupBeforeEnrollment = async (): Promise<void> => {
+  const directory = tmpdir();
+  const now = Date.now();
+  if (startupCleanup?.directory === directory) {
+    if (startupCleanup.pending) return startupCleanup.pending;
+    if (
+      now >= startupCleanup.completedAt &&
+      now - startupCleanup.completedAt < STARTUP_CLEANUP_INTERVAL_MS
+    )
+      return;
+  }
+  const cleanup: NonNullable<typeof startupCleanup> = {
+    directory,
+    completedAt: -Infinity,
+  };
+  startupCleanup = cleanup;
+  cleanup.pending = cleanupStaleEnrollmentArtifacts(now);
+  try {
+    await cleanup.pending;
+    cleanup.completedAt = Date.now();
+  } finally {
+    delete cleanup.pending;
   }
 };
 
@@ -971,7 +1000,7 @@ export const materializeCliEnrollment = async (
       `The selected CLI cannot satisfy the native instruction contract: ${params.deliveryPlan.blockingReasons.join(" ") || "the reviewed delivery plan is unsupported."}`,
     );
   }
-  await cleanupStaleEnrollmentArtifacts();
+  await cleanupBeforeEnrollment();
   const rootPath = await mkdtemp(join(tmpdir(), SESSION_ROOT_PREFIX));
   await chmod(rootPath, 0o700).catch(() => undefined);
   await writeSessionMarker({

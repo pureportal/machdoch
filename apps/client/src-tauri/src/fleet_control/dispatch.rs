@@ -20,6 +20,12 @@ pub(super) fn dispatch_fleet_command(
     app_handle: &tauri::AppHandle,
     request: ProductCommand,
 ) -> Result<CommandReceipt, FleetCommandDispatchError> {
+    if request.kind.is_workspace_command() {
+        return Err(FleetCommandDispatchError::Unavailable(
+            "Project management requires a headless Fleet host running machdoch fleet service."
+                .to_string(),
+        ));
+    }
     let event = match normalize_command(request) {
         Ok(event) => event,
         Err(error) => return Err(FleetCommandDispatchError::InvalidRequest(error)),

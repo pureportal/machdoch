@@ -19,6 +19,73 @@ afterEach(async () => {
 });
 
 describe.sequential("Fleet CLI product runtime", () => {
+  it("drains an accepted task and persists cancellation while rejecting new work at shutdown", async () => {
+    const root = await mkdtemp(join(tmpdir(), "machdoch-fleet-shutdown-"));
+    roots.push(root);
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", join(root, "config"));
+    const workspace = join(root, "workspace");
+    let finish: (() => void) | undefined;
+    const cancelled = vi.fn();
+    const runtime = await FleetCliProductRuntime.create(workspace, {
+      loadRuntimeConfig: async (...args) => ({
+        ...(await loadRuntimeConfig(...args)),
+        provider: "openai",
+        model: "gpt-5.4",
+        offline: false,
+        providerAvailability: [{ provider: "openai", configured: true }],
+      }),
+      createTaskExecutionController: (task, config) => ({
+        signal: new AbortController().signal,
+        cancel: () => {
+          cancelled();
+          finish?.();
+        },
+        execute: async () => {
+          await new Promise<void>((resolve) => {
+            finish = resolve;
+          });
+          return {
+            task,
+            mode: config.mode,
+            status: "cancelled" as const,
+            summary: "Service stopped",
+            executedTools: [],
+            outputSections: [],
+          };
+        },
+      }),
+    });
+    const initial = await runtime.handleRequest({ type: "getProductSnapshot" });
+    if (
+      initial.type !== "productSnapshot" ||
+      !initial.snapshot.shell?.activeSessionId
+    )
+      throw new Error("Missing initial session");
+    const accepted = await runtime.handleRequest({
+      type: "executeProductCommand",
+      command: {
+        kind: "submit-message",
+        commandId: "shutdown-task",
+        sessionId: initial.snapshot.shell.activeSessionId,
+        prompt: "Run a task",
+        promptEnhancementMode: "off",
+        interviewEnabled: false,
+      },
+    });
+    expect(accepted.type).toBe("commandAccepted");
+    const shutdown = runtime.shutdown();
+    expect(
+      await runtime.handleRequest({
+        type: "executeProductCommand",
+        command: { kind: "create-session" },
+      }),
+    ).toMatchObject({ type: "error", code: "unavailable" });
+    await shutdown;
+    expect(cancelled).toHaveBeenCalledOnce();
+    const state = await readFile(getFleetCliStatePath(workspace), "utf8");
+    expect(state).toContain("Service stopped");
+    expect(state).not.toContain('"pendingTask"');
+  });
   it("bounds completed task diagnostics without discarding active tasks", () => {
     const taskSessions = new Map([
       ["completed-old", { updatedAt: 1 }],

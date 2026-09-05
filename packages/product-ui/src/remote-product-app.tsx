@@ -17,8 +17,10 @@ export function RemoteProductApp({
 }): React.ReactElement {
   const [snapshot, setSnapshot] = useState<ProductSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [commandError, setCommandError] = useState<string | null>(null);
   const [pendingCommands, setPendingCommands] = useState(0);
   const mountedRef = useRef(true);
+  const runtimeControllerRef = useRef<AbortController | null>(null);
   const refreshCoordinatorRef =
     useRef<SnapshotRefreshCoordinator<ProductSnapshot> | null>(null);
 
@@ -30,6 +32,10 @@ export function RemoteProductApp({
 
   useEffect(() => {
     mountedRef.current = true;
+    setSnapshot(null);
+    setError(null);
+    setCommandError(null);
+    setPendingCommands(0);
     const refreshCoordinator = new SnapshotRefreshCoordinator({
       fetchSnapshot: (signal) => runtime.getSnapshot(signal),
       onSnapshot: (nextSnapshot) => {
@@ -50,21 +56,24 @@ export function RemoteProductApp({
     });
     refreshCoordinatorRef.current = refreshCoordinator;
     const controller = new AbortController();
+    runtimeControllerRef.current = controller;
     void refresh(controller.signal);
     const interval = window.setInterval(() => {
       if (document.visibilityState === "visible") {
-        void refresh(controller.signal);
+        void refreshCoordinator.poll(controller.signal);
       }
     }, snapshotRefreshIntervalMs);
     const handleVisibilityChange = (): void => {
       if (document.visibilityState === "visible") {
-        void refresh(controller.signal);
+        void refreshCoordinator.poll(controller.signal);
       }
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       mountedRef.current = false;
       controller.abort();
+      if (runtimeControllerRef.current === controller)
+        runtimeControllerRef.current = null;
       refreshCoordinator.dispose();
       if (refreshCoordinatorRef.current === refreshCoordinator) {
         refreshCoordinatorRef.current = null;
@@ -76,25 +85,31 @@ export function RemoteProductApp({
 
   const execute = useCallback(
     async (command: ProductCommand): Promise<boolean> => {
+      const controller = runtimeControllerRef.current;
+      if (!controller || controller.signal.aborted) return false;
+      const isCurrent = (): boolean =>
+        runtimeControllerRef.current === controller &&
+        !controller.signal.aborted;
       const request = {
         ...command,
         commandId: command.commandId ?? crypto.randomUUID(),
       } as ProductCommand;
       setPendingCommands((current) => current + 1);
-      setError(null);
+      setCommandError(null);
       try {
-        await runtime.execute(request);
+        await runtime.execute(request, controller.signal);
+        if (!isCurrent()) return false;
         await refresh();
-        return true;
+        return isCurrent();
       } catch (reason) {
-        if (mountedRef.current) {
-          setError(
+        if (isCurrent()) {
+          setCommandError(
             reason instanceof Error ? reason.message : "Command failed.",
           );
         }
         return false;
       } finally {
-        if (mountedRef.current) {
+        if (isCurrent()) {
           setPendingCommands((current) => Math.max(0, current - 1));
         }
       }
@@ -104,9 +119,12 @@ export function RemoteProductApp({
 
   return (
     <ProductShell
+      servicesHref={runtime.servicesHref}
       instanceName={instanceName}
       snapshot={snapshot}
       error={error}
+      commandError={commandError}
+      onDismissCommandError={() => setCommandError(null)}
       pendingCommands={pendingCommands}
       onCommand={execute}
       onRefresh={() => refresh()}

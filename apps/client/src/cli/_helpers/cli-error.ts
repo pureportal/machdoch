@@ -5,6 +5,11 @@ export class CliUsageError extends Error {
   }
 }
 
+/** A service configuration failure must not trigger an endless supervisor restart loop. */
+export class CliConfigurationError extends Error {
+  readonly exitCode = 78;
+}
+
 export const isBrokenPipeError = (error: unknown): boolean =>
   typeof error === "object" &&
   error !== null &&

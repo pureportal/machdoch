@@ -2,6 +2,7 @@
 
 import {
   cleanup,
+  act,
   fireEvent,
   render,
   screen,
@@ -46,6 +47,163 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("WorkspaceRunEditor", () => {
+  it("preserves unsaved edits during background refreshes and resets when switching workspaces", () => {
+    const onSaved = vi.fn();
+    const { rerender } = render(
+      createElement(WorkspaceRunEditor, {
+        workspaceRoot: "C:/workspace",
+        document,
+        onSaved,
+      }),
+    );
+    const draft =
+      '{"schemaVersion":2,"configurations":[],"draft":"unfinished"}';
+    fireEvent.change(screen.getByLabelText("Run configuration JSON"), {
+      target: { value: draft },
+    });
+    const refreshed = {
+      ...document,
+      configurations: [
+        {
+          id: "group",
+          name: "Updated",
+          kind: "composite" as const,
+          primary: true,
+          children: [],
+          startOrder: "parallel" as const,
+        },
+      ],
+    };
+    rerender(
+      createElement(WorkspaceRunEditor, {
+        workspaceRoot: "C:/workspace",
+        document: refreshed,
+        onSaved,
+      }),
+    );
+    expect(
+      (screen.getByLabelText("Run configuration JSON") as HTMLTextAreaElement)
+        .value,
+    ).toBe(draft);
+    expect(
+      (screen.getByRole("button", { name: "Detect" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    rerender(
+      createElement(WorkspaceRunEditor, {
+        workspaceRoot: "C:/another-workspace",
+        document,
+        onSaved,
+      }),
+    );
+    expect(
+      (screen.getByLabelText("Run configuration JSON") as HTMLTextAreaElement)
+        .value,
+    ).toBe(JSON.stringify(document, null, 2));
+  });
+
+  it("does not start a native save if prechecking finishes after switching workspaces", async () => {
+    let finish = (_document: WorkspaceRunConfigurationDocument) => {};
+    runtime.precheckWorkspaceRunConfigurationJson.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const onSaved = vi.fn();
+    const { rerender } = render(
+      createElement(WorkspaceRunEditor, {
+        workspaceRoot: "C:/workspace",
+        document,
+        onSaved,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    rerender(
+      createElement(WorkspaceRunEditor, {
+        workspaceRoot: "C:/another-workspace",
+        document,
+        onSaved,
+      }),
+    );
+    await act(async () => {
+      finish(document);
+    });
+    expect(
+      runtime.saveWorkspaceRunConfigurationDocument,
+    ).not.toHaveBeenCalled();
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it("ignores an old workspace's completed save and prevents duplicate saves and edits while saving", async () => {
+    runtime.precheckWorkspaceRunConfigurationJson.mockResolvedValueOnce(
+      document,
+    );
+    let finish = (_snapshot: WorkspaceRunSnapshot) => {};
+    runtime.saveWorkspaceRunConfigurationDocument.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const onSaved = vi.fn();
+    const { rerender } = render(
+      createElement(WorkspaceRunEditor, {
+        workspaceRoot: "C:/workspace",
+        document,
+        onSaved,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(
+        runtime.saveWorkspaceRunConfigurationDocument,
+      ).toHaveBeenCalledTimes(1),
+    );
+    const editor = screen.getByLabelText(
+      "Run configuration JSON",
+    ) as HTMLTextAreaElement;
+    expect(editor.disabled).toBe(true);
+    fireEvent.change(editor, { target: { value: "discard this raced edit" } });
+    expect(editor.value).toBe(JSON.stringify(document, null, 2));
+    rerender(
+      createElement(WorkspaceRunEditor, {
+        workspaceRoot: "C:/another-workspace",
+        document,
+        onSaved,
+      }),
+    );
+    await act(async () => {
+      finish(snapshot);
+    });
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it("marks a normalized save as clean even before its parent refreshes the document", async () => {
+    runtime.precheckWorkspaceRunConfigurationJson.mockResolvedValueOnce(
+      document,
+    );
+    runtime.saveWorkspaceRunConfigurationDocument.mockResolvedValueOnce(
+      snapshot,
+    );
+    const onDirtyChange = vi.fn();
+    render(
+      createElement(WorkspaceRunEditor, {
+        workspaceRoot: "C:/workspace",
+        document,
+        onSaved: vi.fn(),
+        onDirtyChange,
+      }),
+    );
+    fireEvent.change(screen.getByLabelText("Run configuration JSON"), {
+      target: { value: JSON.stringify(document) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
+    expect(
+      (screen.getByRole("button", { name: "Detect" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
   it("keeps invalid edited JSON recoverable and does not save it", async () => {
     runtime.precheckWorkspaceRunConfigurationJson.mockRejectedValueOnce(
       new Error("Invalid run configuration JSON: expected value"),

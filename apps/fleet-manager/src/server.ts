@@ -18,6 +18,7 @@ import { initializeSettingsKeyFile } from "./server/settings-crypto";
 import { closeRuntime, getRuntime } from "./server/runtime";
 import { requestClientAddress } from "./server/network";
 import { maximumRequestBodyBytes } from "./server/request-limits";
+import { getPreviewHub } from "./server/previews";
 
 type Command = "dev" | "serve" | "seed" | "password" | "settings-key";
 
@@ -76,6 +77,7 @@ async function runServer(
   const server = createServer((request, response) => {
     void dispatchHttpRequest(request, response, requestHandler).catch(
       (error: unknown) => {
+        if (response.destroyed) return;
         const expected = error instanceof IncomingRequestError;
         if (!expected) console.error(error);
         if (response.headersSent) {
@@ -106,7 +108,20 @@ async function runServer(
   server.maxHeadersCount = 100;
   server.on("upgrade", (request, socket, head) => {
     try {
-      if (!getRuntime().gateways.handleUpgrade(request, socket, head)) {
+      const runtime = getRuntime();
+      const previews = getPreviewHub(runtime);
+      if (
+        !previews.matchesHost(request) &&
+        (request.headers.host ?? "").toLowerCase() !==
+          new URL(runtime.config.externalBaseUrl).host.toLowerCase()
+      ) {
+        socket.destroy();
+        return;
+      }
+      if (
+        !previews.handleUpgrade(request, socket, head) &&
+        !runtime.gateways.handleUpgrade(request, socket, head)
+      ) {
         void upgradeHandler(request, socket, head).catch((error: unknown) => {
           console.error(error);
           socket.destroy();
@@ -121,8 +136,16 @@ async function runServer(
   const shutdown = (): void => {
     if (shuttingDown) return;
     shuttingDown = true;
+    const deadline = setTimeout(() => {
+      server.closeAllConnections();
+      closeRuntime();
+      process.exit(1);
+    }, 10_000);
+    deadline.unref();
     getRuntime().gateways.close();
+    getRuntime().previews?.close();
     server.close(() => {
+      clearTimeout(deadline);
       closeRuntime();
       process.exit(0);
     });
@@ -149,10 +172,23 @@ async function dispatchHttpRequest(
     response: ServerResponse,
   ) => Promise<void>,
 ): Promise<void> {
+  const previewRuntime = getRuntime();
+  if (await getPreviewHub(previewRuntime).handleHttp(request, response)) return;
   const pathname = incomingRequestUrl(request.url).pathname;
   if (pathname === "/healthz") {
     response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
     response.end("ok");
+    return;
+  }
+  if (
+    (request.headers.host ?? "").toLowerCase() !==
+    new URL(previewRuntime.config.externalBaseUrl).host.toLowerCase()
+  ) {
+    response.writeHead(421, {
+      "Content-Type": "text/plain",
+      "Cache-Control": "no-store",
+    });
+    response.end("Unknown Fleet Manager host.");
     return;
   }
   if (pathname === "/favicon.ico") {
@@ -162,17 +198,26 @@ async function dispatchHttpRequest(
   }
   if (pathname === "/api" || pathname.startsWith("/api/")) {
     const runtime = getRuntime();
-    await writeWebResponse(
-      response,
-      await handleApiRequest(
-        await createWebRequest(
-          request,
-          runtime.config.externalBaseUrl,
-          maximumRequestBodyBytes(pathname, runtime.config),
+    const controller = new AbortController();
+    const disconnected = (): void => controller.abort();
+    response.once("close", disconnected);
+    if (response.destroyed) controller.abort();
+    try {
+      await writeWebResponse(
+        response,
+        await handleApiRequest(
+          await createWebRequest(
+            request,
+            runtime.config.externalBaseUrl,
+            maximumRequestBodyBytes(pathname, runtime.config),
+            controller.signal,
+          ),
+          { clientAddress: requestClientAddress(request) },
         ),
-        { clientAddress: requestClientAddress(request) },
-      ),
-    );
+      );
+    } finally {
+      response.removeListener("close", disconnected);
+    }
     return;
   }
   await nextHandler(request, response);
@@ -182,7 +227,9 @@ async function writeWebResponse(
   outgoing: ServerResponse,
   incoming: Response,
 ): Promise<void> {
+  if (outgoing.destroyed) return;
   const body = Buffer.from(await incoming.arrayBuffer());
+  if (outgoing.destroyed) return;
   for (const [name, value] of incoming.headers) {
     if (name !== "set-cookie") outgoing.setHeader(name, value);
   }

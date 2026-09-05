@@ -35,6 +35,26 @@ fn get_capture_limits(max_width: Option<u32>, max_height: Option<u32>) -> (u32, 
     )
 }
 
+fn validate_capture_region(
+    region: &UiCaptureRegion,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    if region.width == 0 || region.height == 0 {
+        return Err("A screen capture region must have a positive width and height.".to_string());
+    }
+    // Subtraction avoids overflowing on untrusted region sizes. Coordinates are
+    // physical pixels relative to this monitor, not virtual-desktop coordinates.
+    if region.x >= width
+        || region.y >= height
+        || region.width > width.saturating_sub(region.x)
+        || region.height > height.saturating_sub(region.y)
+    {
+        return Err(format!("The capture region is outside the selected display ({width} × {height}). Refresh the display list after changing monitors or resolution."));
+    }
+    Ok(())
+}
+
 fn encode_image_payload(
     image: RgbaImage,
     max_width: u32,
@@ -42,6 +62,12 @@ fn encode_image_payload(
 ) -> Result<UiImagePayload, String> {
     let original_width = image.width();
     let original_height = image.height();
+    if original_width == 0 || original_height == 0 {
+        return Err(
+            "The display returned an empty capture. Refresh the display list and retry."
+                .to_string(),
+        );
+    }
     let scale = f32::min(
         f32::min(
             max_width as f32 / original_width as f32,
@@ -168,6 +194,7 @@ pub(super) fn capture_screen_action(payload: CaptureScreenPayload) -> Result<Val
     let monitor_info = monitor_to_info(&monitor)?;
     let region = normalize_capture_region(&payload)?;
     let image = if let Some(region) = region {
+        validate_capture_region(&region, monitor_info.width, monitor_info.height)?;
         monitor
             .capture_region(region.x, region.y, region.width, region.height)
             .map_err(|error| error.to_string())?
@@ -182,6 +209,42 @@ pub(super) fn capture_screen_action(payload: CaptureScreenPayload) -> Result<Val
     };
 
     serialize_data(&capture)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capture_regions_require_nonempty_monitor_relative_bounds() {
+        let valid = UiCaptureRegion {
+            x: 100,
+            y: 50,
+            width: 1820,
+            height: 1030,
+        };
+        assert!(validate_capture_region(&valid, 1920, 1080).is_ok());
+        for region in [
+            UiCaptureRegion { width: 0, ..valid },
+            UiCaptureRegion { x: 1920, ..valid },
+            UiCaptureRegion {
+                height: 1031,
+                ..valid
+            },
+            UiCaptureRegion {
+                width: u32::MAX,
+                ..valid
+            },
+        ] {
+            assert!(validate_capture_region(&region, 1920, 1080).is_err());
+        }
+        assert!(validate_capture_region(&valid, 1280, 720).is_err());
+    }
+
+    #[test]
+    fn empty_captures_fail_before_resize_or_encoding() {
+        assert!(encode_image_payload(RgbaImage::new(0, 0), 100, 100).is_err());
+    }
 }
 
 pub(super) fn list_windows_action() -> Result<Value, String> {

@@ -19,6 +19,7 @@ import {
 } from "./normalization.js";
 import { readOpenedFileExactly } from "../_helpers/read-opened-file-exactly.helper.js";
 import { sameFileSnapshotIdentity } from "../_helpers/same-file-identity.helper.js";
+import { mapWithConcurrencyLimit } from "../_helpers/task-file-change-concurrency.js";
 import type { NativeInstructionRecord } from "./types.js";
 import { InstructionSystemError } from "./types.js";
 
@@ -1300,10 +1301,8 @@ export const inventoryNativeInstructions = async (input: {
     );
   }
   const inspected = (
-    await Promise.all(
-      candidates.map((candidate) =>
-        inspectCandidate(candidate, input.providerId, input.surface),
-      ),
+    await mapWithConcurrencyLimit(candidates, 8, (candidate) =>
+      inspectCandidate(candidate, input.providerId, input.surface),
     )
   ).filter((record): record is NativeInstructionRecord => record !== undefined);
   return mergeNativeRecords([

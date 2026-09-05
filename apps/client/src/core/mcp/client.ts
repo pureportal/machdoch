@@ -6,10 +6,8 @@ import {
   OAuthDiscoveryState,
 } from "@modelcontextprotocol/sdk/client/auth.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import {
-  StdioClientTransport,
-  getDefaultEnvironment,
-} from "@modelcontextprotocol/sdk/client/stdio.js";
+import { getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { ManagedMcpStdioTransport } from "./stdio-transport.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ResponseMessage } from "@modelcontextprotocol/sdk/shared/responseMessage.js";
@@ -48,6 +46,7 @@ import type {
 } from "@modelcontextprotocol/sdk/types.js";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { collectMcpPages } from "./pagination.js";
 import { basename, isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { normalizeOptionalString } from "../../helpers/normalize-optional-string.helper.js";
@@ -70,6 +69,7 @@ import {
 } from "./config.js";
 import {
   compareMcpDiscoveries,
+  createMcpMetadataHash,
   enrichMcpDiscoveryMetadata,
 } from "./discovery-metadata.js";
 import {
@@ -846,7 +846,7 @@ const createTransport = (context: McpConnectionContext): Transport => {
   const transport = server.transport;
 
   if (transport.type === "stdio") {
-    return new StdioClientTransport({
+    return new ManagedMcpStdioTransport({
       command: resolveTemplateValue(transport.command, context),
       ...(transport.args
         ? {
@@ -1279,13 +1279,44 @@ const createConnectionKey = (
   workspaceRoot: string,
   server: McpEffectiveServerConfig,
 ): string => {
-  return JSON.stringify({
-    workspaceRoot,
+  return createMcpMetadataHash({
+    workspaceRoot: normalizeMcpWorkspaceKey(workspaceRoot),
     serverId: server.id,
     transport: server.transport,
     auth: server.auth ?? null,
+    roots: server.roots,
+    sampling: server.sampling,
+    tasks: server.tasks,
+    timeoutMs: server.timeoutMs,
+    maxTotalTimeoutMs: server.maxTotalTimeoutMs,
+    idleShutdownMs: server.idleShutdownMs,
   });
 };
+
+const normalizeMcpWorkspaceKey = (workspaceRoot: string): string => {
+  const path = resolve(workspaceRoot);
+  return process.platform === "win32" ? path.toLowerCase() : path;
+};
+
+const connectionScopeKey = (workspaceRoot: string, serverId: string): string =>
+  JSON.stringify([normalizeMcpWorkspaceKey(workspaceRoot), serverId]);
+
+const waitForConnectionStep = <T>(
+  start: () => Promise<T>,
+  signal: AbortSignal,
+): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    if (signal.aborted) return abort();
+    signal.addEventListener("abort", abort, { once: true });
+    void Promise.resolve()
+      .then(() => {
+        signal.throwIfAborted();
+        return start();
+      })
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener("abort", abort));
+  });
 
 const createRequestOptions = (
   server: McpEffectiveServerConfig,
@@ -1416,19 +1447,16 @@ const listAllTools = async (
   server: McpEffectiveServerConfig,
   options: McpOperationOptions,
 ): Promise<ListToolsResult["tools"]> => {
-  const tools: ListToolsResult["tools"] = [];
-  let cursor: string | undefined;
-
-  do {
+  return collectMcpPages(async (cursor) => {
     const result = await client.listTools(
       cursor ? { cursor } : undefined,
       createRequestOptions(server, options),
     );
-    tools.push(...result.tools);
-    cursor = result.nextCursor;
-  } while (cursor);
-
-  return tools;
+    return {
+      items: result.tools,
+      ...(result.nextCursor ? { nextCursor: result.nextCursor } : {}),
+    };
+  });
 };
 
 const listAllResources = async (
@@ -1436,19 +1464,16 @@ const listAllResources = async (
   server: McpEffectiveServerConfig,
   options: McpOperationOptions,
 ): Promise<ListResourcesResult["resources"]> => {
-  const resources: ListResourcesResult["resources"] = [];
-  let cursor: string | undefined;
-
-  do {
+  return collectMcpPages(async (cursor) => {
     const result = await client.listResources(
       cursor ? { cursor } : undefined,
       createRequestOptions(server, options),
     );
-    resources.push(...result.resources);
-    cursor = result.nextCursor;
-  } while (cursor);
-
-  return resources;
+    return {
+      items: result.resources,
+      ...(result.nextCursor ? { nextCursor: result.nextCursor } : {}),
+    };
+  });
 };
 
 const listAllResourceTemplates = async (
@@ -1456,19 +1481,16 @@ const listAllResourceTemplates = async (
   server: McpEffectiveServerConfig,
   options: McpOperationOptions,
 ): Promise<ListResourceTemplatesResult["resourceTemplates"]> => {
-  const templates: ListResourceTemplatesResult["resourceTemplates"] = [];
-  let cursor: string | undefined;
-
-  do {
+  return collectMcpPages(async (cursor) => {
     const result = await client.listResourceTemplates(
       cursor ? { cursor } : undefined,
       createRequestOptions(server, options),
     );
-    templates.push(...result.resourceTemplates);
-    cursor = result.nextCursor;
-  } while (cursor);
-
-  return templates;
+    return {
+      items: result.resourceTemplates,
+      ...(result.nextCursor ? { nextCursor: result.nextCursor } : {}),
+    };
+  });
 };
 
 const listAllPrompts = async (
@@ -1476,19 +1498,16 @@ const listAllPrompts = async (
   server: McpEffectiveServerConfig,
   options: McpOperationOptions,
 ): Promise<ListPromptsResult["prompts"]> => {
-  const prompts: ListPromptsResult["prompts"] = [];
-  let cursor: string | undefined;
-
-  do {
+  return collectMcpPages(async (cursor) => {
     const result = await client.listPrompts(
       cursor ? { cursor } : undefined,
       createRequestOptions(server, options),
     );
-    prompts.push(...result.prompts);
-    cursor = result.nextCursor;
-  } while (cursor);
-
-  return prompts;
+    return {
+      items: result.prompts,
+      ...(result.nextCursor ? { nextCursor: result.nextCursor } : {}),
+    };
+  });
 };
 
 const normalizeTool = (
@@ -1574,12 +1593,30 @@ const normalizePrompt = (
   };
 };
 
+const isMcpRequestFailure = (error: unknown): boolean => {
+  return (
+    (error instanceof McpError && error.code !== ErrorCode.ConnectionClosed) ||
+    (error instanceof Error && error.name === "AbortError")
+  );
+};
+
 export class McpClientManager {
   private readonly connections = new Map<string, McpConnection>();
+  private readonly closingConnections = new WeakMap<
+    McpConnection,
+    Promise<void>
+  >();
   private readonly pendingConnections = new Map<
     string,
-    Promise<McpConnection>
+    {
+      scope: string;
+      controller: AbortController;
+      promise: Promise<McpConnection>;
+    }
   >();
+  private readonly activeClosures = new Map<McpConnection, Promise<void>>();
+  private readonly closingScopes = new Map<string, Promise<void>>();
+  private closingAll: Promise<void> | undefined;
   private readonly createClientImpl: (context: McpConnectionContext) => Client;
   private readonly createTransportImpl: (
     context: McpConnectionContext,
@@ -1621,7 +1658,11 @@ export class McpClientManager {
   private scheduleIdleShutdown(connection: McpConnection): void {
     this.clearConnectionIdleTimer(connection);
 
-    if (connection.idleShutdownMs <= 0 || connection.activeOperations > 0) {
+    if (
+      this.connections.get(connection.key) !== connection ||
+      connection.idleShutdownMs <= 0 ||
+      connection.activeOperations > 0
+    ) {
       return;
     }
 
@@ -1639,13 +1680,24 @@ export class McpClientManager {
     key: string,
     connection: McpConnection,
   ): Promise<void> {
+    const closing = this.closingConnections.get(connection);
+    if (closing) return closing;
     this.clearConnectionIdleTimer(connection);
 
     if (this.connections.get(key) === connection) {
       this.connections.delete(key);
     }
 
-    await connection.transport.close().catch(() => undefined);
+    const close = Promise.resolve()
+      .then(() => connection.transport.close())
+      .catch(() => undefined);
+    this.closingConnections.set(connection, close);
+    this.activeClosures.set(connection, close);
+    try {
+      await close;
+    } finally {
+      this.activeClosures.delete(connection);
+    }
   }
 
   private async closeConnectionIfIdle(
@@ -1676,6 +1728,13 @@ export class McpClientManager {
     workspaceRoot: string,
     server: McpEffectiveServerConfig,
   ): Promise<McpConnection> {
+    const scope = connectionScopeKey(workspaceRoot, server.id);
+    if (this.closingAll || this.closingScopes.has(scope)) {
+      throw new McpError(
+        ErrorCode.ConnectionClosed,
+        "The MCP connection is shutting down.",
+      );
+    }
     const key = createConnectionKey(workspaceRoot, server);
     const current = this.connections.get(key);
 
@@ -1686,16 +1745,26 @@ export class McpClientManager {
     const pending = this.pendingConnections.get(key);
 
     if (pending) {
-      return pending;
+      return pending.promise;
     }
 
-    const connection = this.createConnection(key, workspaceRoot, server);
-    this.pendingConnections.set(key, connection);
+    const controller = new AbortController();
+    const connection = this.createConnection(
+      key,
+      workspaceRoot,
+      server,
+      controller.signal,
+    );
+    this.pendingConnections.set(key, {
+      scope,
+      controller,
+      promise: connection,
+    });
 
     try {
       return await connection;
     } finally {
-      if (this.pendingConnections.get(key) === connection) {
+      if (this.pendingConnections.get(key)?.promise === connection) {
         this.pendingConnections.delete(key);
       }
     }
@@ -1705,6 +1774,7 @@ export class McpClientManager {
     key: string,
     workspaceRoot: string,
     server: McpEffectiveServerConfig,
+    signal: AbortSignal,
   ): Promise<McpConnection> {
     const current = this.connections.get(key);
 
@@ -1712,42 +1782,70 @@ export class McpClientManager {
       return current;
     }
 
-    const env = await this.loadRuntimeEnvironmentImpl();
+    const env = await waitForConnectionStep(
+      () => this.loadRuntimeEnvironmentImpl(),
+      signal,
+    );
+    signal.throwIfAborted();
     const context: McpConnectionContext = { workspaceRoot, env, server };
     const transport = this.createTransportImpl(context);
-    const client = this.createClientImpl(context);
-    const getProtocolVersion = captureTransportProtocolVersion(transport);
-
-    registerClientRequestHandlers(client, context, this.samplingHandler);
-
+    let connection: McpConnection | undefined;
     try {
-      await client.connect(transport, {
-        timeout: server.timeoutMs,
-        maxTotalTimeout: server.maxTotalTimeoutMs,
-      });
+      const client = this.createClientImpl(context);
+      const getProtocolVersion = captureTransportProtocolVersion(transport);
+      let closed = false;
+      const previousOnClose = client.onclose;
+      client.onclose = () => {
+        closed = true;
+        if (connection) {
+          this.clearConnectionIdleTimer(connection);
+          if (this.connections.get(key) === connection)
+            this.connections.delete(key);
+        }
+        previousOnClose?.();
+      };
+      registerClientRequestHandlers(client, context, this.samplingHandler);
+      await waitForConnectionStep(
+        () =>
+          client.connect(transport, {
+            timeout: server.timeoutMs,
+            maxTotalTimeout: server.maxTotalTimeoutMs,
+            signal,
+          }),
+        signal,
+      );
+      signal.throwIfAborted();
+      if (closed) {
+        throw new McpError(
+          ErrorCode.ConnectionClosed,
+          "The MCP connection closed during startup.",
+        );
+      }
+      const connectedAt = this.now();
+      const protocolVersion = getProtocolVersion();
+      connection = {
+        key,
+        client,
+        transport,
+        server,
+        workspaceRoot,
+        connectedAt,
+        lastUsedAt: connectedAt,
+        activeOperations: 0,
+        idleShutdownMs: server.idleShutdownMs,
+        ...(protocolVersion ? { protocolVersion } : {}),
+      };
+      this.connections.set(key, connection);
+      this.scheduleIdleShutdown(connection);
+      return connection;
     } catch (error) {
-      await transport.close().catch(() => undefined);
+      if (connection && this.connections.get(key) === connection)
+        this.connections.delete(key);
+      await Promise.resolve()
+        .then(() => transport.close())
+        .catch(() => undefined);
       throw error;
     }
-
-    const connectedAt = this.now();
-    const protocolVersion = getProtocolVersion();
-    const connection: McpConnection = {
-      key,
-      client,
-      transport,
-      server,
-      workspaceRoot,
-      connectedAt,
-      lastUsedAt: connectedAt,
-      activeOperations: 0,
-      idleShutdownMs: server.idleShutdownMs,
-      ...(protocolVersion ? { protocolVersion } : {}),
-    };
-
-    this.connections.set(key, connection);
-    this.scheduleIdleShutdown(connection);
-    return connection;
   }
 
   private async acquireConnection(
@@ -1755,6 +1853,12 @@ export class McpClientManager {
     server: McpEffectiveServerConfig,
   ): Promise<McpConnectionLease> {
     const connection = await this.getOrCreateConnection(workspaceRoot, server);
+    if (this.connections.get(connection.key) !== connection) {
+      throw new McpError(
+        ErrorCode.ConnectionClosed,
+        "The MCP connection closed before the operation started.",
+      );
+    }
     let released = false;
 
     this.clearConnectionIdleTimer(connection);
@@ -1790,6 +1894,10 @@ export class McpClientManager {
     try {
       return await operation(lease.connection);
     } catch (error) {
+      // An RPC rejection or cancelled request does not make the shared
+      // transport unusable. Closing it kills unrelated concurrent work and
+      // respawns stdio servers for ordinary validation failures.
+      if (isMcpRequestFailure(error)) throw error;
       const failedConnection = lease.connection;
       lease.release();
       await this.closeConnection(failedConnection.key, failedConnection);
@@ -1802,6 +1910,14 @@ export class McpClientManager {
 
       try {
         return await operation(retryLease.connection);
+      } catch (retryError) {
+        if (!isMcpRequestFailure(retryError)) {
+          await this.closeConnection(
+            retryLease.connection.key,
+            retryLease.connection,
+          );
+        }
+        throw retryError;
       } finally {
         retryLease.release();
       }
@@ -1849,31 +1965,71 @@ export class McpClientManager {
   }
 
   async closeServer(workspaceRoot: string, serverId: string): Promise<void> {
-    await Promise.allSettled(this.pendingConnections.values());
-    const pending = [...this.connections.entries()].filter(([, connection]) => {
-      return (
-        connection.server.id === serverId &&
-        connection.workspaceRoot === workspaceRoot
+    if (this.closingAll) return this.closingAll;
+    const scope = connectionScopeKey(workspaceRoot, serverId);
+    const existing = this.closingScopes.get(scope);
+    if (existing) return existing;
+    const closing = Promise.resolve().then(async () => {
+      const pending = [...this.pendingConnections.values()].filter(
+        (entry) => entry.scope === scope,
       );
+      for (const entry of pending)
+        entry.controller.abort(
+          new McpError(
+            ErrorCode.ConnectionClosed,
+            "MCP server startup was cancelled by shutdown.",
+          ),
+        );
+      const matches = (connection: McpConnection) =>
+        connectionScopeKey(connection.workspaceRoot, connection.server.id) ===
+        scope;
+      await Promise.allSettled([
+        ...pending.map((entry) => entry.promise),
+        ...[...this.connections.values()]
+          .filter(matches)
+          .map((connection) =>
+            this.closeConnection(connection.key, connection),
+          ),
+        ...[...this.activeClosures]
+          .filter(([connection]) => matches(connection))
+          .map(([, promise]) => promise),
+      ]);
     });
-
-    await Promise.all(
-      pending.map(async ([key, connection]) => {
-        await this.closeConnection(key, connection);
-      }),
-    );
+    this.closingScopes.set(scope, closing);
+    try {
+      await closing;
+    } finally {
+      if (this.closingScopes.get(scope) === closing)
+        this.closingScopes.delete(scope);
+    }
   }
 
   async closeAll(): Promise<void> {
-    await Promise.allSettled(this.pendingConnections.values());
-    const connections = [...this.connections.entries()];
-    this.connections.clear();
-
-    await Promise.all(
-      connections.map(([, connection]) =>
-        this.closeConnection(connection.key, connection),
-      ),
-    );
+    if (this.closingAll) return this.closingAll;
+    const closing = Promise.resolve().then(async () => {
+      const pending = [...this.pendingConnections.values()];
+      for (const entry of pending)
+        entry.controller.abort(
+          new McpError(
+            ErrorCode.ConnectionClosed,
+            "MCP startup was cancelled by shutdown.",
+          ),
+        );
+      await Promise.allSettled([
+        ...pending.map((entry) => entry.promise),
+        ...[...this.connections.values()].map((connection) =>
+          this.closeConnection(connection.key, connection),
+        ),
+        ...this.activeClosures.values(),
+        ...this.closingScopes.values(),
+      ]);
+    });
+    this.closingAll = closing;
+    try {
+      await closing;
+    } finally {
+      if (this.closingAll === closing) this.closingAll = undefined;
+    }
   }
 
   async beginOAuth(
@@ -2261,6 +2417,7 @@ export class McpClientManager {
     const cacheLookup = mcpRunCacheManager.get<CallToolResult>({
       workspaceRoot,
       serverId: server.id,
+      serverIdentity: createConnectionKey(workspaceRoot, server),
       operation: "tool",
       target: toolName,
       args,
@@ -2326,6 +2483,7 @@ export class McpClientManager {
           serverId: server.id,
           operation: "tool",
           target: toolName,
+          serverIdentity: createConnectionKey(workspaceRoot, server),
           args,
           policy: cachePolicy,
         },
@@ -2557,6 +2715,7 @@ export class McpClientManager {
     const cacheLookup = mcpRunCacheManager.get<ReadResourceResult>({
       workspaceRoot,
       serverId: server.id,
+      serverIdentity: createConnectionKey(workspaceRoot, server),
       operation: "resource",
       target: uri,
       ...(cachePolicy ? { policy: cachePolicy } : {}),
@@ -2595,6 +2754,7 @@ export class McpClientManager {
           serverId: server.id,
           operation: "resource",
           target: uri,
+          serverIdentity: createConnectionKey(workspaceRoot, server),
           policy: cachePolicy,
         },
         result,
@@ -2635,6 +2795,7 @@ export class McpClientManager {
     const cacheLookup = mcpRunCacheManager.get<GetPromptResult>({
       workspaceRoot,
       serverId: server.id,
+      serverIdentity: createConnectionKey(workspaceRoot, server),
       operation: "prompt",
       target: promptName,
       args,
@@ -2680,6 +2841,7 @@ export class McpClientManager {
           serverId: server.id,
           operation: "prompt",
           target: promptName,
+          serverIdentity: createConnectionKey(workspaceRoot, server),
           args,
           policy: cachePolicy,
         },

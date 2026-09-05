@@ -842,7 +842,7 @@ const mergeExposure = (
             typeof patchDirectTools === "object" &&
             patchDirectTools.enabled === undefined
           ? { ...patchDirectTools, enabled: baseDirectTools }
-        : patchDirectTools;
+          : patchDirectTools;
   return {
     ...(base ?? {}),
     ...(patch ?? {}),
@@ -1423,6 +1423,10 @@ const loadDiscoveryCacheFile = async (
 
 export const loadUserMcpDiscoveryCacheSync = (): McpDiscoveryCacheFile =>
   loadDiscoveryCacheFileSync(getUserMcpDiscoveryCachePath());
+
+export const loadUserMcpDiscoveryCache =
+  async (): Promise<McpDiscoveryCacheFile> =>
+    loadDiscoveryCacheFile(getUserMcpDiscoveryCachePath());
 
 export const loadMcpDiscoveryCacheSync = (
   workspaceRoot: string,

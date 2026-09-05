@@ -78,6 +78,8 @@ const terminalTheme = {
 } as const;
 
 const TERMINAL_INPUT_CHUNK_BYTES = 48 * 1024;
+const TERMINAL_INPUT_BUFFER_BYTES = 1024 * 1024;
+const TERMINAL_INPUT_BUFFER_ENTRIES = 4096;
 const TERMINAL_OUTPUT_ACK_CHUNK_BYTES = 256 * 1024;
 const TERMINAL_SCROLLBACK_LINES = 10_000;
 
@@ -123,17 +125,15 @@ const splitUtf8Input = (value: string): string[] => {
   return chunks;
 };
 
-interface PendingTerminalInput {
+interface PendingTerminalInput extends PendingStartingInput {
   sessionId: string;
-  generation: number;
-  data: string;
-  binary: boolean;
 }
 
 interface PendingStartingInput {
   generation: number;
   data: string;
   binary: boolean;
+  byteLength: number;
 }
 
 let fallbackTerminalId = 0;
@@ -163,7 +163,9 @@ class WorkspaceTerminalSession {
   private resizeTimer: number | null = null;
   private readonly pendingInput: PendingTerminalInput[] = [];
   private readonly pendingStartingInput: PendingStartingInput[] = [];
-  private inputDrainRunning = false;
+  private inputDrainGeneration: number | null = null;
+  private bufferedInputBytes = 0;
+  private bufferedInputEntries = 0;
   private readonly pendingOutputAcknowledgements = new Map<string, number>();
   private acknowledgementDrainRunning = false;
   private pendingTerminalWrites = 0;
@@ -327,13 +329,38 @@ class WorkspaceTerminalSession {
     const sessionId = this.backendSessionId;
     const generation = this.generation;
     if (this.disposed || !data) return;
-    if (!sessionId) {
-      if (this.transitionPending) {
-        this.pendingStartingInput.push({ generation, data, binary });
+    if (!sessionId && !this.transitionPending) return;
+    // Count in-flight writes as well as queued input; a stalled IPC write must
+    // not let a large paste or repeated keystrokes grow the buffer indefinitely.
+    let byteLength = data.length;
+    if (!binary && byteLength <= TERMINAL_INPUT_BUFFER_BYTES) {
+      byteLength = 0;
+      for (const character of data) {
+        byteLength += utf8CodePointByteLength(character.codePointAt(0) ?? 0);
+        if (byteLength > TERMINAL_INPUT_BUFFER_BYTES) break;
+      }
+    }
+    if (
+      byteLength > TERMINAL_INPUT_BUFFER_BYTES - this.bufferedInputBytes ||
+      this.bufferedInputEntries >= TERMINAL_INPUT_BUFFER_ENTRIES
+    ) {
+      const message =
+        byteLength > TERMINAL_INPUT_BUFFER_BYTES
+          ? "This terminal input exceeds 1 MB and was not sent. Paste a smaller amount."
+          : "Terminal input is backed up. This input was not sent. Wait for pending input to finish, then try again.";
+      if (this.error !== message) {
+        this.error = message;
+        this.onChange();
       }
       return;
     }
-    this.pendingInput.push({ sessionId, generation, data, binary });
+    this.bufferedInputBytes += byteLength;
+    this.bufferedInputEntries += 1;
+    if (!sessionId) {
+      this.pendingStartingInput.push({ generation, data, binary, byteLength });
+      return;
+    }
+    this.pendingInput.push({ sessionId, generation, data, binary, byteLength });
     this.scheduleInputDrain();
   }
 
@@ -358,78 +385,108 @@ class WorkspaceTerminalSession {
   }
 
   private scheduleInputDrain(): void {
-    if (this.inputDrainRunning || this.pendingInput.length === 0) return;
-    this.inputDrainRunning = true;
-    queueMicrotask(() => void this.drainInput());
+    if (
+      this.inputDrainGeneration === this.generation ||
+      this.pendingInput.length === 0
+    )
+      return;
+    const generation = this.generation;
+    this.inputDrainGeneration = generation;
+    queueMicrotask(() => void this.drainInput(generation));
   }
 
-  private async drainInput(): Promise<void> {
+  private clearInput(): void {
+    this.pendingInput.length = 0;
+    this.pendingStartingInput.length = 0;
+    this.bufferedInputBytes = 0;
+    this.bufferedInputEntries = 0;
+  }
+
+  private async drainInput(generation: number): Promise<void> {
     try {
-      while (this.pendingInput.length > 0) {
-        const first = this.pendingInput.shift();
+      while (this.generation === generation && this.pendingInput.length > 0) {
+        const first = this.pendingInput[0];
         if (!first) break;
         const values = [first.data];
+        let count = 1;
+        let bytes = first.byteLength;
         while (
-          this.pendingInput[0]?.sessionId === first.sessionId &&
-          this.pendingInput[0]?.generation === first.generation &&
-          this.pendingInput[0]?.binary === first.binary
+          this.pendingInput[count]?.sessionId === first.sessionId &&
+          this.pendingInput[count]?.generation === generation &&
+          this.pendingInput[count]?.binary === first.binary
         ) {
-          const next = this.pendingInput.shift();
-          if (next) values.push(next.data);
+          const next = this.pendingInput[count];
+          if (!next || bytes + next.byteLength > TERMINAL_INPUT_CHUNK_BYTES)
+            break;
+          values.push(next.data);
+          bytes += next.byteLength;
+          count += 1;
         }
-        if (
-          this.backendSessionId !== first.sessionId ||
-          this.generation !== first.generation ||
-          this.disposed
-        ) {
-          continue;
-        }
-        const value = values.join("");
-        const chunks = first.binary
-          ? Array.from(
-              { length: Math.ceil(value.length / TERMINAL_INPUT_CHUNK_BYTES) },
-              (_, index) =>
-                value.slice(
-                  index * TERMINAL_INPUT_CHUNK_BYTES,
-                  (index + 1) * TERMINAL_INPUT_CHUNK_BYTES,
-                ),
-            )
-          : splitUtf8Input(value);
-        for (const chunk of chunks) {
+        this.pendingInput.splice(0, count);
+        try {
           if (
             this.backendSessionId !== first.sessionId ||
             this.generation !== first.generation ||
             this.disposed
           ) {
-            break;
+            continue;
           }
-          try {
-            if (first.binary) {
-              await writeWorkspaceTerminalBinary(first.sessionId, chunk);
-            } else {
-              await writeWorkspaceTerminal(first.sessionId, chunk);
-            }
-          } catch (failure) {
-            this.pendingInput.splice(
-              0,
-              this.pendingInput.length,
-              ...this.pendingInput.filter(
-                (input) => input.sessionId !== first.sessionId,
-              ),
-            );
+          const value = values.join("");
+          const chunks = first.binary
+            ? Array.from(
+                {
+                  length: Math.ceil(value.length / TERMINAL_INPUT_CHUNK_BYTES),
+                },
+                (_, index) =>
+                  value.slice(
+                    index * TERMINAL_INPUT_CHUNK_BYTES,
+                    (index + 1) * TERMINAL_INPUT_CHUNK_BYTES,
+                  ),
+              )
+            : splitUtf8Input(value);
+          for (const chunk of chunks) {
             if (
-              this.backendSessionId === first.sessionId &&
-              this.generation === first.generation
+              this.backendSessionId !== first.sessionId ||
+              this.generation !== first.generation ||
+              this.disposed
             ) {
-              this.setError(failure);
+              break;
             }
-            break;
+            try {
+              if (first.binary) {
+                await writeWorkspaceTerminalBinary(first.sessionId, chunk);
+              } else {
+                await writeWorkspaceTerminal(first.sessionId, chunk);
+              }
+            } catch (failure) {
+              if (
+                this.backendSessionId === first.sessionId &&
+                this.generation === first.generation
+              ) {
+                this.clearInput();
+                this.setError(failure);
+              }
+              break;
+            }
+          }
+        } finally {
+          if (this.generation === generation) {
+            this.bufferedInputBytes = Math.max(
+              0,
+              this.bufferedInputBytes - bytes,
+            );
+            this.bufferedInputEntries = Math.max(
+              0,
+              this.bufferedInputEntries - count,
+            );
           }
         }
       }
     } finally {
-      this.inputDrainRunning = false;
-      this.scheduleInputDrain();
+      if (this.inputDrainGeneration === generation) {
+        this.inputDrainGeneration = null;
+        this.scheduleInputDrain();
+      }
     }
   }
 
@@ -539,8 +596,7 @@ class WorkspaceTerminalSession {
   private async startInternal(): Promise<boolean> {
     this.transitionPending = true;
     const generation = ++this.generation;
-    this.pendingInput.length = 0;
-    this.pendingStartingInput.length = 0;
+    this.clearInput();
     const previousSessionId = this.backendSessionId;
     this.backendSessionId = null;
     if (this.resizeTimer !== null) {
@@ -598,6 +654,7 @@ class WorkspaceTerminalSession {
         case "exit":
           exitedBeforeStartResolved = true;
           this.backendSessionId = null;
+          this.clearInput();
           this.status = "exited";
           const exitCode =
             typeof event.exitCode === "number" ? event.exitCode : null;
@@ -650,6 +707,7 @@ class WorkspaceTerminalSession {
       if (!this.disposed && this.generation === generation) {
         const provisionalSessionId = this.backendSessionId;
         this.backendSessionId = null;
+        this.clearInput();
         if (provisionalSessionId) {
           await stopWorkspaceTerminal(provisionalSessionId).catch(() => {});
         }
@@ -667,8 +725,7 @@ class WorkspaceTerminalSession {
   async stop(): Promise<void> {
     if (this.disposed) return;
     this.generation += 1;
-    this.pendingInput.length = 0;
-    this.pendingStartingInput.length = 0;
+    this.clearInput();
     this.transitionPending = false;
     if (this.resizeTimer !== null) {
       window.clearTimeout(this.resizeTimer);
@@ -690,8 +747,7 @@ class WorkspaceTerminalSession {
     if (this.disposed) return;
     this.disposed = true;
     this.generation += 1;
-    this.pendingInput.length = 0;
-    this.pendingStartingInput.length = 0;
+    this.clearInput();
     if (this.resizeTimer !== null) window.clearTimeout(this.resizeTimer);
     const sessionId = this.backendSessionId;
     const startPromise = this.startPromise;

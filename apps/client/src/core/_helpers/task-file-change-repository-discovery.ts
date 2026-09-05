@@ -1,13 +1,17 @@
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readdir, realpath } from "node:fs/promises";
+import { opendir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { mapWithConcurrencyLimit } from "./task-file-change-concurrency.js";
+import { runTaskGitCommand } from "./task-git-command.js";
 
 const DIRECTORY_READ_CONCURRENCY = 16;
 const REPOSITORY_VALIDATION_CONCURRENCY = 8;
 const DIRECTORY_BATCH_SIZE = 256;
 const GIT_INSPECTION_TIMEOUT_MS = 30_000;
+const MAX_SCAN_DIRECTORIES = 50_000;
+const MAX_DIRECTORY_ENTRIES = 50_000;
+const MAX_REPOSITORIES = 256;
+const MAX_SCAN_ISSUES = 100;
 
 export interface DiscoveredGitRepository {
   root: string;
@@ -31,6 +35,7 @@ interface DirectoryInspection {
   path: string;
   hasGitMarker: boolean;
   childDirectories: string[];
+  truncated?: boolean;
   error?: string;
 }
 
@@ -72,11 +77,17 @@ const inspectDirectory = async (
   directoryPath: string,
 ): Promise<DirectoryInspection> => {
   try {
-    const entries = await readdir(directoryPath, { withFileTypes: true });
+    const entries = await opendir(directoryPath);
     const childDirectories: string[] = [];
     let hasGitMarker = false;
+    let count = 0;
+    let truncated = false;
 
-    for (const entry of entries) {
+    for await (const entry of entries) {
+      if (++count > MAX_DIRECTORY_ENTRIES) {
+        truncated = true;
+        break;
+      }
       if (entry.name.toLowerCase() === ".git") {
         hasGitMarker = entry.isDirectory() || entry.isFile();
         continue;
@@ -88,7 +99,7 @@ const inspectDirectory = async (
     }
 
     childDirectories.sort((left, right) => left.localeCompare(right));
-    return { path: directoryPath, hasGitMarker, childDirectories };
+    return { path: directoryPath, hasGitMarker, childDirectories, truncated };
   } catch (error) {
     return {
       path: directoryPath,
@@ -108,7 +119,8 @@ const scanWorkspaceForRepositoryCandidates = async (
   const candidatesByPath = new Map<string, RepositoryCandidate>();
   const issues: string[] = [];
   const pendingDirectories = [workspaceRoot];
-  let offset = 0;
+  let scheduledDirectories = 1;
+  let truncated = false;
 
   if (hasGitMarkerInAncestors(workspaceRoot)) {
     candidatesByPath.set(getPathKey(workspaceRoot), {
@@ -117,9 +129,8 @@ const scanWorkspaceForRepositoryCandidates = async (
     });
   }
 
-  while (offset < pendingDirectories.length) {
-    const batch = pendingDirectories.slice(offset, offset + DIRECTORY_BATCH_SIZE);
-    offset += batch.length;
+  while (pendingDirectories.length > 0) {
+    const batch = pendingDirectories.splice(0, DIRECTORY_BATCH_SIZE);
     const inspections = await mapWithConcurrencyLimit(
       batch,
       DIRECTORY_READ_CONCURRENCY,
@@ -128,27 +139,46 @@ const scanWorkspaceForRepositoryCandidates = async (
 
     for (const inspection of inspections) {
       if (inspection.error) {
-        issues.push(
-          `Could not scan ${relative(workspaceRoot, inspection.path) || "."}: ${inspection.error}`,
-        );
+        if (issues.length < MAX_SCAN_ISSUES)
+          issues.push(
+            `Could not scan ${relative(workspaceRoot, inspection.path) || "."}: ${inspection.error}`,
+          );
         continue;
       }
 
+      truncated ||= inspection.truncated ?? false;
       if (inspection.hasGitMarker) {
         const source =
           getPathKey(inspection.path) === getPathKey(workspaceRoot)
             ? "workspace"
             : "nested";
-        candidatesByPath.set(getPathKey(inspection.path), {
-          path: inspection.path,
-          source,
-        });
+        if (
+          candidatesByPath.size >= MAX_REPOSITORIES &&
+          !candidatesByPath.has(getPathKey(inspection.path))
+        ) {
+          truncated = true;
+        } else
+          candidatesByPath.set(getPathKey(inspection.path), {
+            path: inspection.path,
+            source,
+          });
       }
 
-      pendingDirectories.push(...inspection.childDirectories);
+      for (const child of inspection.childDirectories) {
+        if (scheduledDirectories >= MAX_SCAN_DIRECTORIES) {
+          truncated = true;
+          break;
+        }
+        pendingDirectories.push(child);
+        scheduledDirectories += 1;
+      }
     }
   }
 
+  if (truncated)
+    issues.push(
+      "Repository discovery reached its directory, entry, or repository limit; some nested repositories may be missing.",
+    );
   return { candidates: Array.from(candidatesByPath.values()), issues };
 };
 
@@ -156,54 +186,13 @@ const runGitInspection = async (
   cwd: string,
   args: readonly string[],
 ): Promise<string> => {
-  return await new Promise<string>((resolvePromise, rejectPromise) => {
-    const child = spawn(
-      "git",
-      ["--no-optional-locks", "-c", "core.quotePath=false", ...args],
-      { cwd, stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
-    );
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    let settled = false;
-    const timeout = setTimeout(() => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      child.kill();
-      rejectPromise(new Error("Git repository inspection timed out."));
-    }, GIT_INSPECTION_TIMEOUT_MS);
-
-    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.once("error", (error) => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      clearTimeout(timeout);
-      rejectPromise(error);
-    });
-    child.once("close", (code) => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      clearTimeout(timeout);
-
-      if (code !== 0) {
-        rejectPromise(
-          new Error(Buffer.concat(stderr).toString("utf8").trim() || `Git exited with ${code}.`),
-        );
-        return;
-      }
-
-      resolvePromise(Buffer.concat(stdout).toString("utf8"));
-    });
+  const result = await runTaskGitCommand(args, {
+    cwd,
+    timeoutMs: GIT_INSPECTION_TIMEOUT_MS,
+    maxBufferBytes: 128 * 1024,
+    normalizeOutput: false,
   });
+  return result.stdout;
 };
 
 const inspectGitRepository = async (
@@ -262,7 +251,9 @@ export const discoverWorkspaceGitRepositories = async (
   const normalizedWorkspaceRoot = await realpath(workspaceRoot).catch(() =>
     resolve(workspaceRoot),
   );
-  const scan = await scanWorkspaceForRepositoryCandidates(normalizedWorkspaceRoot);
+  const scan = await scanWorkspaceForRepositoryCandidates(
+    normalizedWorkspaceRoot,
+  );
   const issues = [...scan.issues];
   const inspectedRepositories = await mapWithConcurrencyLimit(
     scan.candidates,

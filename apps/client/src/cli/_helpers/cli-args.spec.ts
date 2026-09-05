@@ -1,6 +1,43 @@
 import { getHelpText, parseCliArgs } from "./cli-args.ts";
 
 describe("cli args public parser", () => {
+  it.each([
+    "run",
+    "install",
+    "uninstall",
+    "start",
+    "stop",
+    "restart",
+    "status",
+    "unit",
+  ])("parses fleet service %s", (serviceAction) => {
+    expect(
+      parseCliArgs(
+        ["fleet", "service", serviceAction, "--cwd", "C:/workspace", "--json"],
+        { currentWorkingDirectory: "C:/workspace" },
+      ),
+    ).toMatchObject({
+      command: "fleet",
+      json: true,
+      fleet: { action: "service", serviceAction },
+    });
+  });
+
+  it("keeps foreground fleet service compatible and rejects stray arguments", () => {
+    expect(parseCliArgs(["fleet", "service"]).fleet).toMatchObject({
+      action: "service",
+      serviceAction: "run",
+    });
+    expect(() => parseCliArgs(["fleet", "service", "unknown"])).toThrow(
+      /service.*action/u,
+    );
+    expect(() =>
+      parseCliArgs(["fleet", "service", "install", "extra"]),
+    ).toThrow(/positional/u);
+    expect(() => parseCliArgs(["fleet", "status", "install"])).toThrow(
+      /positional/u,
+    );
+  });
   it("provides concise root help and focused command help", () => {
     expect(getHelpText()).toContain("machdoch config edit");
     expect(getHelpText("run")).toContain("--context <path>");

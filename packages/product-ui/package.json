@@ -17,6 +17,7 @@
   "dependencies": {
     "@machdoch/fleet-protocol": "workspace:*",
     "lucide-react": "^1.18.0",
+    "radix-ui": "^1.6.7",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   },
