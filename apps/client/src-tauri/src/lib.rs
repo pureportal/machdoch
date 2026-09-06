@@ -12,6 +12,7 @@ mod launcher;
 mod media;
 mod runtime_contract_generated;
 mod runtime_snapshot;
+mod scheduler_activity;
 mod settings_transfer;
 mod shared_cli;
 mod shell_state;
@@ -251,6 +252,7 @@ pub fn run() {
             desktop_task::run_provider_sync_command,
             desktop_task::run_ralph_command,
             desktop_task::run_scheduler_command,
+            scheduler_activity::get_scheduler_activity,
             desktop_task::start_scheduler_service,
             desktop_task::run_task_interview_command,
             desktop_task::run_desktop_task,

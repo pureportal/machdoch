@@ -55,6 +55,7 @@ struct AuxiliaryCliSpec {
     parse_name: &'static str,
     failure_name: &'static str,
     stdout_capture_limit_bytes: usize,
+    timeout_ms: u64,
 }
 
 struct AuxiliaryCliProgressContext {
@@ -82,6 +83,12 @@ const SCHEDULER_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
     parse_name: "scheduler",
     failure_name: "scheduler",
     stdout_capture_limit_bytes: SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
+    timeout_ms: AUXILIARY_CLI_COMMAND_TIMEOUT_MS,
+};
+
+const SCHEDULER_QUERY_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
+    timeout_ms: 10_000,
+    ..SCHEDULER_CLI_SPEC
 };
 
 const MCP_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
@@ -90,6 +97,7 @@ const MCP_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
     parse_name: "MCP",
     failure_name: "MCP",
     stdout_capture_limit_bytes: SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
+    timeout_ms: AUXILIARY_CLI_COMMAND_TIMEOUT_MS,
 };
 
 const PROVIDER_SYNC_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
@@ -98,6 +106,7 @@ const PROVIDER_SYNC_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
     parse_name: "provider sync",
     failure_name: "provider sync",
     stdout_capture_limit_bytes: SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
+    timeout_ms: AUXILIARY_CLI_COMMAND_TIMEOUT_MS,
 };
 
 const INSTRUCTION_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
@@ -106,6 +115,7 @@ const INSTRUCTION_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
     parse_name: "instruction",
     failure_name: "instruction",
     stdout_capture_limit_bytes: INSTRUCTION_CLI_OUTPUT_CAPTURE_LIMIT_BYTES,
+    timeout_ms: AUXILIARY_CLI_COMMAND_TIMEOUT_MS,
 };
 
 const TASK_INTERVIEW_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
@@ -114,6 +124,7 @@ const TASK_INTERVIEW_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
     parse_name: "task interview",
     failure_name: "task interview",
     stdout_capture_limit_bytes: SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
+    timeout_ms: AUXILIARY_CLI_COMMAND_TIMEOUT_MS,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -480,7 +491,7 @@ fn run_auxiliary_json_command_with_process_mode(
     let output = run_bounded_auxiliary_cli_command(
         &mut cli_command.command,
         spec.command_name,
-        Some(AUXILIARY_CLI_COMMAND_TIMEOUT_MS),
+        Some(spec.timeout_ms),
         None,
         spec.stdout_capture_limit_bytes,
         process_mode,
@@ -502,11 +513,19 @@ fn run_auxiliary_json_command(
     )
 }
 
+fn scheduler_cli_spec(arguments: &[String]) -> &'static AuxiliaryCliSpec {
+    match arguments.first().map(String::as_str) {
+        Some("list" | "runs" | "events") => &SCHEDULER_QUERY_CLI_SPEC,
+        _ => &SCHEDULER_CLI_SPEC,
+    }
+}
+
 pub(super) fn execute_scheduler_command(request: SchedulerCommandRequest) -> Result<Value, String> {
+    let spec = scheduler_cli_spec(&request.arguments);
     run_auxiliary_json_command(
         &request.workspace_root,
         request.arguments,
-        &SCHEDULER_CLI_SPEC,
+        spec,
     )
 }
 
@@ -678,7 +697,7 @@ mod tests {
     use super::{
         append_auxiliary_arguments, classify_scheduler_service_owner,
         parse_auxiliary_command_response, recover_scheduler_service_owner,
-        run_bounded_auxiliary_cli_command, scheduler_service_start_decision,
+        run_bounded_auxiliary_cli_command, scheduler_cli_spec, scheduler_service_start_decision,
         AuxiliaryCliProcessMode, SchedulerProcessInspector, SchedulerServiceOwnerClassification,
         SchedulerServiceStartDecision, INSTRUCTION_CLI_SPEC,
     };
@@ -688,6 +707,19 @@ mod tests {
     };
 
     const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_AUXILIARY_CLI_TEST_CHILD_MODE";
+
+    #[test]
+    fn scheduler_queries_have_a_short_timeout_without_limiting_job_execution() {
+        for action in ["list", "runs", "events"] {
+            assert_eq!(scheduler_cli_spec(&[action.to_string()]).timeout_ms, 10_000);
+        }
+        for action in ["run-due", "trigger", "retry", "cancel", "create"] {
+            assert_eq!(
+                scheduler_cli_spec(&[action.to_string()]).timeout_ms,
+                crate::desktop_task::AUXILIARY_CLI_COMMAND_TIMEOUT_MS
+            );
+        }
+    }
 
     #[derive(Default)]
     struct TestSchedulerProcessInspector {
