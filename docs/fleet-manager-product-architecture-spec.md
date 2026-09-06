@@ -428,7 +428,7 @@ The host request context includes manager, instance, owner/client, scopes, reque
 
 ### 10.1 One product surface
 
-Desktop and remote operation use the same React product components and view models. Fleet Manager adds a dashboard shell around that product surface; it does not fork chat, Workspace Management, terminal, scheduler, Ralph, media, marketplace, instruction, or settings screens.
+Desktop and remote operation use the same React product components and view models. Fleet Manager adds a dashboard shell around that product surface; it does not fork chat, Workspace Management, terminal, scheduler, Ralph, media, instruction, or settings screens.
 
 Shared components depend on three injected boundaries:
 

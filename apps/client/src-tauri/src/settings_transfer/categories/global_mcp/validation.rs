@@ -5,7 +5,6 @@ use serde_json::Value;
 use super::super::{
     require_exact_keys, require_only_keys, required_trimmed_string, MAX_TOTAL_ITEMS,
 };
-use super::normalize_marketplace;
 
 fn validate_mcp_string_array(value: &Value) -> bool {
     value.as_array().is_some_and(|values| {
@@ -477,7 +476,7 @@ pub(super) fn validate(value: &Value) -> Result<(), String> {
     let root = value
         .as_object()
         .ok_or_else(|| "The MCP category is invalid.".to_string())?;
-    require_exact_keys(root, &["exists", "config", "marketplace"])?;
+    require_exact_keys(root, &["exists", "config"])?;
     if !root.get("exists").is_some_and(Value::is_boolean) {
         return Err("The MCP file-presence marker is invalid.".to_string());
     }
@@ -485,9 +484,5 @@ pub(super) fn validate(value: &Value) -> Result<(), String> {
         root.get("config")
             .ok_or_else(|| "The MCP configuration is missing.".to_string())?,
     )?;
-    let normalized = normalize_marketplace(root.get("marketplace").cloned())?;
-    if normalized != root["marketplace"] {
-        return Err("MCP marketplace registries are not normalized.".to_string());
-    }
     Ok(())
 }

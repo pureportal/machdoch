@@ -397,8 +397,8 @@ versioned shell state in
 `apps/client/src/tauri/ui/lib/_helpers/shell-store-normalizers.helper.ts`; earlier state is
 recreated. The Media Studio item and activity badge live in
 `apps/client/src/tauri/ui/app-shell/app-rail.tsx`, and the media shell is lazy-loaded from
-`apps/client/src/tauri/ui/chat-session-shell.tsx` using the same isolation pattern as Ralph
-and Marketplace. A broken or slow media bundle must not delay Chat startup.
+`apps/client/src/tauri/ui/chat-session-shell.tsx` using the same isolation pattern as Ralph.
+A broken or slow media bundle must not delay Chat startup.
 
 Do not extend `apps/client/src/tauri/ui/ralph/ralph-flow-editor.tsx` into a second domain. It is already a large control-flow editor and Ralph edges represent execution outcomes, while media edges carry typed values. Extract only small presentation primitives that are genuinely reusable, such as node chrome, selection styling, minimap conventions, keyboard helpers, and viewport persistence. Media graph state, validation, undo history, ports, and execution remain independent.
 
@@ -2875,7 +2875,7 @@ Before adding a package:
 
 ### Product And Platform Requirements
 
-- Media Studio must remain optional. The base desktop app, Chat, Ralph, and Marketplace start and operate without Python, a GPU, FFmpeg, installed models, or provider keys.
+- Media Studio must remain optional. The base desktop app, Chat, and Ralph start and operate without Python, a GPU, FFmpeg, installed models, or provider keys.
 - Remote-only usage works on supported desktop hardware with sufficient disk for uploads/downloads. Local generation is advertised only for model/runtime/device combinations that pass the catalog probe.
 - Initial production support should target Windows with NVIDIA CUDA for local image generation, CPU utilities on all supported desktop platforms, and OpenAI GPT Image 2 remotely. Add Linux NVIDIA and Apple MPS from tested packs, then AMD Linux and the limited official AMD Windows matrix. Capability detection may show experimental packs earlier, but marketing/support status must match CI hardware coverage.
 - Local image planning baseline: 32 GB system RAM, a fast SSD, and roughly 16 GB GPU/unified memory for the first recommended FLUX.2 klein 4B profile. Lower-memory Stable Diffusion or offloaded variants may be offered when measured. These are catalog estimates, not application minimums.

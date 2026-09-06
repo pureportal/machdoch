@@ -44,7 +44,6 @@ import {
   type AppShellState,
   type MainAppId,
 } from "./lib/shell-store";
-import { cn } from "./lib/utils";
 import { useRalphActivity } from "./ralph/use-ralph-activity";
 import { useMediaActivity } from "./media/use-media-activity";
 import { useMediaShutdownGuard } from "./media/use-media-shutdown-guard";
@@ -84,12 +83,6 @@ const FilePreviewDialog = lazy(async () => {
   const module = await import("./chat-session/components/file-preview-dialog");
 
   return { default: module.FilePreviewDialog };
-});
-
-const McpMarketplace = lazy(async () => {
-  const module = await import("./marketplace/mcp-marketplace");
-
-  return { default: module.McpMarketplace };
 });
 
 const RalphApp = lazy(async () => {
@@ -399,11 +392,6 @@ export const ChatSession = (): JSX.Element => {
       { id: "app.view.chat", app: "chat", title: "Open Chat" },
       { id: "app.view.ralph", app: "ralph", title: "Open Ralph" },
       { id: "app.view.media", app: "media", title: "Open Media Studio" },
-      {
-        id: "app.view.marketplace",
-        app: "marketplace",
-        title: "Open Marketplace",
-      },
       {
         id: "app.view.instructions",
         app: "instructions",
@@ -1068,26 +1056,6 @@ export const ChatSession = (): JSX.Element => {
                 </Suspense>
               </div>
             ) : null}
-
-            <div
-              hidden={activeApp !== "marketplace"}
-              className={cn(
-                "min-h-0 min-w-0 flex-1 overflow-hidden",
-                activeApp === "marketplace" ? "flex" : "hidden",
-              )}
-            >
-              {activeApp === "marketplace" ? (
-                <Suspense fallback={appLoadingFallback}>
-                  <McpMarketplace
-                    workspaceRoot={controller.composer.activeSession.workspace}
-                    onOpenSettings={() => {
-                      controller.settingsDialog.onSettingsSectionChange("mcp");
-                      controller.setCatalogOpen(true);
-                    }}
-                  />
-                </Suspense>
-              ) : null}
-            </div>
 
             {activeApp === "instructions" ? (
               <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">

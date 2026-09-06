@@ -102,7 +102,6 @@ The main application does not use URL routing. <code>apps/client/src/tauri/ui/ch
 - <code>chat</code>
 - <code>ralph</code>
 - <code>media</code>
-- <code>marketplace</code>
 - <code>instructions</code>
 - <code>workspaces</code>
 
@@ -1007,7 +1006,6 @@ This matrix uses only actions already present in the inspected application. The 
 | <code>app.view.chat</code>          | Select Chat Sessions              | global                  | Mod+1                             | visible                   | Tauri desktop only; call guarded <code>selectApp("chat")</code>              |
 | <code>app.view.ralph</code>         | Select RALPH                      | global                  | Mod+2                             | visible                   | Tauri desktop only                                                           |
 | <code>app.view.media</code>         | Select Media Studio               | global                  | Mod+3                             | visible                   | Tauri desktop only                                                           |
-| <code>app.view.marketplace</code>   | Select Marketplace                | global                  | Mod+4                             | visible                   | Tauri desktop only                                                           |
 | <code>app.view.instructions</code>  | Select Instructions               | global                  | Mod+5                             | visible                   | Preserve unsaved-change guard                                                |
 | <code>app.view.workspaces</code>    | Select Workspace Management       | global                  | Mod+6                             | visible                   | Preserve unsaved-change guard                                                |
 | <code>app.scheduler.open</code>     | Open Smart Scheduler              | global                  | none                              | visible                   | Call the existing shell action                                               |
@@ -1254,7 +1252,7 @@ Manual:
 
 Run at least these scenarios before release:
 
-1. From each of Chat, RALPH, Media, Marketplace, Instructions, and Workspaces, open Mod+K, search Settings, execute it, close Settings, and verify focus.
+1. From each of Chat, RALPH, Media, Instructions, and Workspaces, open Mod+K, search Settings, execute it, close Settings, and verify focus.
 2. Switch between each view through the palette and its proposed Mod+number binding in Tauri. Verify cancelled unsaved guards.
 3. In RALPH, test every migrated shortcut with no selection, valid selection, during edit, during run, in an input, and with a local menu open.
 4. In Chat, test session commands against the active conversation, including the command-specific deletion confirmation. Do not test focused-row targeting until the sidebar publishes a persistent selection.

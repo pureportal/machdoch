@@ -1,22 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_MCP_MARKETPLACE_STATE,
   DEFAULT_RALPH_SETTINGS,
   DEFAULT_TERMINAL_PROFILE_SETTINGS,
-  normalizeMcpMarketplaceState,
   normalizeRalphSettings,
   normalizeTerminalProfileSettings,
 } from "./shell-store-normalizers.helper";
 
 describe("Shell store normalizers", () => {
   it("returns shared defaults for invalid persisted records", () => {
-    expect(normalizeMcpMarketplaceState(undefined)).toBe(
-      DEFAULT_MCP_MARKETPLACE_STATE,
-    );
     expect(normalizeRalphSettings("invalid")).toBe(DEFAULT_RALPH_SETTINGS);
-    expect(normalizeMcpMarketplaceState({ registries: [] })).toBe(
-      DEFAULT_MCP_MARKETPLACE_STATE,
-    );
     expect(normalizeRalphSettings({ workspaceRoot: "C:\\Project" })).toBe(
       DEFAULT_RALPH_SETTINGS,
     );
@@ -102,38 +94,6 @@ describe("Shell store normalizers", () => {
         defaultMaxTransitions: Number.POSITIVE_INFINITY,
       }),
     ).not.toHaveProperty("defaultMaxTransitions");
-  });
-
-  it("filters marketplace registries while trimming required fields", () => {
-    expect(
-      normalizeMcpMarketplaceState({
-        version: 1,
-        registries: [
-          null,
-          {
-            id: " official ",
-            title: " Official ",
-            baseUrl: " https://registry.example.test ",
-            enabled: false,
-          },
-          {
-            id: "missing-title",
-            title: "",
-            baseUrl: "https://registry.example.test",
-          },
-        ],
-      }),
-    ).toEqual({
-      version: 1,
-      registries: [
-        {
-          id: "official",
-          title: "Official",
-          baseUrl: "https://registry.example.test",
-          enabled: false,
-        },
-      ],
-    });
   });
 
   it("normalizes terminal profile identifiers", () => {
