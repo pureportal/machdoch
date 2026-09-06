@@ -1,19 +1,5 @@
-import {
-  AlertTriangle,
-  ArrowLeftRight,
-  Brain,
-  Gauge,
-  KeyRound,
-  LoaderCircle,
-  Monitor,
-  Network,
-  Palette,
-  Search as SearchIcon,
-  Timer,
-  Volume2,
-  X,
-  type LucideIcon,
-} from "lucide-react";
+import { isTauri } from "@tauri-apps/api/core";
+import { AlertTriangle, LoaderCircle, X, type LucideIcon } from "lucide-react";
 import {
   useEffect,
   useId,
@@ -31,7 +17,6 @@ import {
   DialogTitle,
 } from "../../components/ui/dialog";
 import { ScrollArea } from "../../components/ui/scroll-area";
-import { SearchField } from "../../components/ui/search-field";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
@@ -42,7 +27,6 @@ import {
   type CommandDefinition,
   type CommandPageItem,
 } from "../../commands/command-types";
-import { cn } from "../../lib/utils";
 import { getProviderLabel } from "../../model-catalog";
 import {
   getUserApiKeyProviderLabel,
@@ -55,7 +39,6 @@ import {
   getWebSearchProviderLabel,
   SETTINGS_SECTIONS,
   type SettingsSection,
-  type SettingsSectionGroup,
 } from "../_helpers/session-shell";
 import { AgentLimitsSettingsPanel } from "./settings-dialog-panels/agent-limits-settings-panel";
 import { AppearanceSettingsPanel } from "./settings-dialog-panels/appearance-settings-panel";
@@ -83,38 +66,14 @@ import { VoiceSettingsPanel } from "./settings-dialog-panels/voice-settings-pane
 import { WebSearchSettingsPanel } from "./settings-dialog-panels/web-search-settings-panel";
 import { WorkspaceRunSettingsPanel } from "./settings-dialog-panels/workspace-run-settings-panel";
 
-const SETTINGS_SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
-  providers: KeyRound,
-  "web-search": SearchIcon,
-  mcp: Network,
-  agent: Gauge,
-  appearance: Palette,
-  voice: Volume2,
-  memory: Brain,
-  desktop: Monitor,
-  "workspace-run": Timer,
-  transfer: ArrowLeftRight,
-};
-
-const SETTINGS_SECTION_GROUP_ORDER = [
-  "Setup",
-  "Agent",
-  "Capabilities",
-  "App",
-  "Data",
-] as const satisfies readonly SettingsSectionGroup[];
-
-const INTRO_SECTION_ID = "__intro";
-
-type SettingsDialogSectionId = SettingsSection | typeof INTRO_SECTION_ID;
-
-interface SettingsDialogSectionDefinition {
-  id: SettingsDialogSectionId;
-  label: string;
-  group: SettingsSectionGroup;
-  description: string;
-  keywords: readonly string[];
-}
+import { matchesSettingsSearch } from "../_helpers/settings-search";
+import {
+  INTRO_SECTION_ID,
+  SETTINGS_SECTION_GROUP_ORDER,
+  SettingsNavigation,
+  type SettingsDialogSectionId,
+  type SettingsDialogSectionDefinition,
+} from "./settings-navigation";
 
 type PendingNavigation =
   | { target: "close"; guard: SettingsNavigationGuardState }
@@ -207,7 +166,13 @@ const renderSettingsPanel = ({
       return <VoiceSettingsPanel setup={voiceSetup} />;
 
     case "transfer":
-      return <SettingsTransferPanel />;
+      return isTauri() ? (
+        <SettingsTransferPanel />
+      ) : (
+        <p role="status" className="text-sm text-slate-400">
+          Open the desktop app to transfer settings.
+        </p>
+      );
   }
 };
 
@@ -269,10 +234,6 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
   const activeSection =
     dialogSections.find((section) => section.id === activeSectionId) ??
     dialogSections[0];
-  const ActiveSectionIcon =
-    activeSection.id === INTRO_SECTION_ID
-      ? (introSection?.icon ?? KeyRound)
-      : SETTINGS_SECTION_ICONS[activeSection.id];
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const visibleSections = useMemo(() => {
     if (!normalizedSearchQuery) {
@@ -280,10 +241,10 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
     }
 
     return dialogSections.filter((section) =>
-      [section.label, section.description, ...section.keywords]
-        .join(" ")
-        .toLowerCase()
-        .includes(normalizedSearchQuery),
+      matchesSettingsSearch(
+        [section.label, section.description, ...section.keywords].join(" "),
+        normalizedSearchQuery,
+      ),
     );
   }, [dialogSections, normalizedSearchQuery]);
 
@@ -356,6 +317,33 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
     }
 
     if (section) {
+      const query = searchQuery;
+      setSearchQuery("");
+      if (query.trim()) {
+        window.setTimeout(() => {
+          const panels = document.querySelectorAll<HTMLElement>(
+            ".app-settings-dialog [data-setting-panel]",
+          );
+          const match = [...panels].find((panel) =>
+            matchesSettingsSearch(
+              [
+                panel.textContent,
+                ...[...panel.querySelectorAll("[aria-label]")].map((element) =>
+                  element.getAttribute("aria-label"),
+                ),
+              ].join(" "),
+              query,
+            ),
+          );
+          const target =
+            match ?? document.getElementById("active-settings-section-title");
+          match?.scrollIntoView({ block: "center" });
+          const control = match?.querySelector<HTMLElement>(
+            "input:not(:disabled), select:not(:disabled), button:not(:disabled)",
+          );
+          (control ?? target)?.focus({ preventScroll: true });
+        }, 0);
+      }
       if (section === INTRO_SECTION_ID) {
         setIntroActive(true);
       } else {
@@ -367,7 +355,10 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
         window.setTimeout(() => {
           const sectionButton = navigationButtonRefs.current.get(section);
 
-          if (sectionButton?.isConnected) {
+          if (
+            sectionButton?.isConnected &&
+            sectionButton.getClientRects().length > 0
+          ) {
             sectionButton.focus();
             return;
           }
@@ -396,7 +387,7 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
   }, [discarding, navigationGuard, pendingNavigation]);
 
   const requestSectionChange = (section: SettingsDialogSectionId): void => {
-    if (section === activeSectionId) {
+    if (section === activeSectionId && !searchQuery) {
       return;
     }
 
@@ -1424,6 +1415,11 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
           return;
         }
 
+        if (searchQuery) {
+          setSearchQuery("");
+          return;
+        }
+
         requestClose();
       }}
       onInteractOutside={(event) => {
@@ -1445,12 +1441,12 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
           }
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
-          <DialogHeader className="min-h-16 flex-row items-center justify-between gap-4 border-b border-slate-800/80 px-5 py-2.5 pr-4 text-left">
+          <DialogHeader className="min-h-14 shrink-0 flex-row items-center justify-between gap-4 border-b border-slate-800/80 px-5 py-2.5 pr-4 text-left">
             <div className="min-w-0">
               <DialogTitle className="text-lg font-semibold tracking-tight text-white">
                 {title}
               </DialogTitle>
-              <DialogDescription className="mt-0.5 truncate text-xs text-slate-400">
+              <DialogDescription className="sr-only">
                 {description}
               </DialogDescription>
               {actionError ? (
@@ -1480,168 +1476,50 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
             </div>
           </DialogHeader>
 
-          <SubmitShortcut asChild>
-            <div className="border-b border-slate-800/80 bg-slate-950/80 p-3 md:hidden">
-              <label htmlFor="mobile-settings-section" className="sr-only">
-                Settings section
-              </label>
-              <select
-                ref={mobileSectionRef}
-                id="mobile-settings-section"
-                value={activeSectionId}
-                onChange={(event) =>
-                  requestSectionChange(
-                    event.target.value as SettingsDialogSectionId,
-                  )
-                }
-                className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm font-medium text-slate-100 outline-none focus:border-sky-500/50 focus:ring-2 focus:ring-sky-500/20"
-              >
-                {SETTINGS_SECTION_GROUP_ORDER.map((group) => (
-                  <optgroup key={group} label={group}>
-                    {dialogSections
-                      .filter((section) => section.group === group)
-                      .map((section) => (
-                        <option key={section.id} value={section.id}>
-                          {section.label}
-                        </option>
-                      ))}
-                  </optgroup>
-                ))}
-              </select>
-            </div>
-          </SubmitShortcut>
-
-          <div className="grid min-h-0 flex-1 overflow-hidden md:grid-cols-[13rem_minmax(0,1fr)]">
-            <SubmitShortcut asChild>
-              <nav
-                aria-label="Settings sections"
-                className="hidden min-h-0 overflow-y-auto border-r border-slate-800/80 bg-slate-950/70 px-3 py-3 md:block"
-              >
-                <SearchField
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  aria-label="Find settings"
-                  placeholder="Find settings"
-                  containerClassName="mb-3"
-                  className="h-9 rounded-lg border-slate-800 bg-slate-950 text-sm text-slate-100"
-                />
-
-                {visibleSections.length === 0 ? (
-                  <div className="grid justify-items-start gap-2 px-2 py-3">
-                    <p className="text-sm text-slate-400">No settings found.</p>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSearchQuery("")}
-                      className="-ml-2 text-sky-300 hover:bg-slate-900 hover:text-sky-200"
-                    >
-                      Clear search
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="grid gap-3">
-                    {SETTINGS_SECTION_GROUP_ORDER.map((group) => {
-                      const groupSections = visibleSections.filter(
-                        (section) => section.group === group,
-                      );
-
-                      if (groupSections.length === 0) {
-                        return null;
-                      }
-
-                      return (
-                        <div key={group} className="grid gap-1">
-                          <p className="px-3 pb-1 text-[0.6875rem] font-semibold tracking-[0.12em] text-slate-500 uppercase">
-                            {group}
-                          </p>
-                          {groupSections.map((section) => {
-                            const SectionIcon =
-                              section.id === INTRO_SECTION_ID
-                                ? (introSection?.icon ?? KeyRound)
-                                : SETTINGS_SECTION_ICONS[section.id];
-                            const selected = activeSectionId === section.id;
-
-                            return (
-                              <Button
-                                key={section.id}
-                                ref={(node) => {
-                                  if (node) {
-                                    navigationButtonRefs.current.set(
-                                      section.id,
-                                      node,
-                                    );
-                                  } else {
-                                    navigationButtonRefs.current.delete(
-                                      section.id,
-                                    );
-                                  }
-                                }}
-                                type="button"
-                                variant="ghost"
-                                aria-current={selected ? "page" : undefined}
-                                onKeyDown={(event) =>
-                                  handleNavigationKeyDown(event, section.id)
-                                }
-                                onClick={() => requestSectionChange(section.id)}
-                                className={cn(
-                                  "h-8.5 w-full justify-start rounded-lg border border-transparent bg-transparent px-3 text-sm text-slate-400 hover:border-slate-800 hover:bg-slate-900/70 hover:text-slate-100",
-                                  selected &&
-                                    "border-sky-500/25 bg-sky-500/10 font-semibold text-sky-100",
-                                )}
-                              >
-                                <SectionIcon className="size-4" />
-                                <span className="truncate">
-                                  {section.label}
-                                </span>
-                              </Button>
-                            );
-                          })}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </nav>
-            </SubmitShortcut>
-
-            <ScrollArea
-              key={activeSectionId}
-              type="always"
-              role="region"
-              aria-labelledby="active-settings-section-title"
-              className="min-h-0 bg-slate-950/40 [&_[data-slot=scroll-area-scrollbar]]:w-3 [&_[data-slot=scroll-area-scrollbar]]:border-l [&_[data-slot=scroll-area-scrollbar]]:border-l-slate-800 [&_[data-slot=scroll-area-scrollbar]]:bg-slate-950/80 [&_[data-slot=scroll-area-thumb]]:bg-slate-600/80 [&_[data-slot=scroll-area-thumb]]:hover:bg-slate-500"
-            >
-              <div className="mx-auto grid w-full max-w-5xl content-start gap-4 px-4 py-4 pr-7 sm:px-6 sm:py-5 sm:pr-9">
-                <header className="flex items-start gap-3 border-b border-slate-800/70 pb-4">
-                  <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border border-sky-500/20 bg-sky-500/10 text-sky-300">
-                    <ActiveSectionIcon className="size-4.5" />
-                  </span>
-                  <div className="min-w-0">
-                    <h2
-                      id="active-settings-section-title"
-                      className="text-lg font-semibold tracking-tight text-slate-100"
-                    >
-                      {activeSection.label}
-                    </h2>
-                    <p className="mt-1 text-sm leading-5 text-slate-400">
-                      {activeSection.description}
-                    </p>
-                  </div>
-                </header>
-
-                <SettingsNavigationGuardProvider
-                  onGuardChange={setNavigationGuard}
+          <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden md:grid-cols-[14rem_minmax(0,1fr)] md:grid-rows-1">
+            <SettingsNavigation
+              sections={dialogSections}
+              visibleSections={visibleSections}
+              activeSectionId={activeSectionId}
+              introIcon={introSection?.icon}
+              query={searchQuery}
+              onQueryChange={setSearchQuery}
+              onSectionChange={requestSectionChange}
+              onNavigationKeyDown={handleNavigationKeyDown}
+              buttonRefs={navigationButtonRefs}
+              mobileSectionRef={mobileSectionRef}
+            />
+            <div className="flex min-h-0 min-w-0 flex-col">
+              <header className="sr-only md:not-sr-only md:shrink-0 md:border-b md:border-slate-800/70 md:px-6 md:py-4">
+                <h2
+                  id="active-settings-section-title"
+                  tabIndex={-1}
+                  className="text-lg font-semibold tracking-tight text-slate-100 outline-none"
                 >
-                  {activeSectionId === INTRO_SECTION_ID && introSection
-                    ? introSection.content
-                    : renderSettingsPanel({
-                        ...props,
-                        settingsSection: activeSectionId as SettingsSection,
-                      })}
-                </SettingsNavigationGuardProvider>
-              </div>
-            </ScrollArea>
+                  {activeSection.label}
+                </h2>
+              </header>
+              <ScrollArea
+                key={activeSectionId}
+                type="auto"
+                role="region"
+                aria-labelledby="active-settings-section-title"
+                className="min-h-0 flex-1 bg-slate-950/40 [&_[data-slot=scroll-area-scrollbar]]:w-3 [&_[data-slot=scroll-area-scrollbar]]:border-l [&_[data-slot=scroll-area-scrollbar]]:border-l-slate-800 [&_[data-slot=scroll-area-scrollbar]]:bg-slate-950/80 [&_[data-slot=scroll-area-thumb]]:bg-slate-600/80 [&_[data-slot=scroll-area-thumb]]:hover:bg-slate-500"
+              >
+                <div className="mx-auto grid w-full max-w-5xl min-w-0 content-start gap-5 px-4 py-4 sm:px-6 sm:py-5">
+                  <SettingsNavigationGuardProvider
+                    onGuardChange={setNavigationGuard}
+                  >
+                    {activeSectionId === INTRO_SECTION_ID && introSection
+                      ? introSection.content
+                      : renderSettingsPanel({
+                          ...props,
+                          settingsSection: activeSectionId as SettingsSection,
+                        })}
+                  </SettingsNavigationGuardProvider>
+                </div>
+              </ScrollArea>
+            </div>
           </div>
           {primaryAction || closeText ? (
             <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-800/80 bg-slate-950/95 px-4 py-3 sm:px-5">

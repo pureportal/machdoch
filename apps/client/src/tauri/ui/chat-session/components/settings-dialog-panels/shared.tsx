@@ -1,4 +1,11 @@
-import { ArrowUpRight, Eye, EyeOff, RefreshCw } from "lucide-react";
+import {
+  ArrowUpRight,
+  Check,
+  Eye,
+  EyeOff,
+  LoaderCircle,
+  RefreshCw,
+} from "lucide-react";
 import {
   useEffect,
   useId,
@@ -168,11 +175,11 @@ export const SettingsCard = ({
     <section
       aria-labelledby={titleId}
       className={cn(
-        "grid content-start rounded-xl border border-slate-800/80 bg-slate-950/35 shadow-sm shadow-black/10",
+        "@container/settings-card grid min-w-0 content-start rounded-xl border border-slate-800/80 bg-slate-950/40",
         className,
       )}
     >
-      <div className="grid gap-1 px-4 pt-4 pb-2 sm:px-5">
+      <div className="grid gap-1 border-b border-slate-800/70 px-4 py-3 sm:px-5">
         <h3 id={titleId} className="text-sm font-semibold text-slate-100">
           {title}
         </h3>
@@ -180,7 +187,7 @@ export const SettingsCard = ({
           <p className="text-xs leading-5 text-slate-400">{description}</p>
         ) : null}
       </div>
-      <div className="grid gap-3 px-4 pb-4 sm:px-5">{children}</div>
+      <div className="grid min-w-0 gap-0 px-4 pb-2 sm:px-5">{children}</div>
     </section>
   );
 };
@@ -203,8 +210,9 @@ export const SettingPanel = ({
   return (
     <div
       data-setting-panel
+      data-setting-label={label}
       className={cn(
-        "grid min-w-0 gap-2.5 border-b border-slate-800/70 py-3.5 last:border-b-0 md:grid-cols-[10rem_minmax(0,1fr)] md:items-center",
+        "grid min-w-0 gap-2.5 border-b border-slate-800/70 py-3.5 last:border-b-0 @min-[36rem]/settings-card:grid-cols-[minmax(11rem,0.8fr)_minmax(0,1.5fr)] @min-[36rem]/settings-card:items-center @min-[36rem]/settings-card:gap-6",
         className,
       )}
     >
@@ -262,7 +270,7 @@ export function ChoiceButtons<TValue extends string>({
             disabled={disabled || option.disabled}
             onClick={() => onChange(option.value)}
             className={cn(
-              "h-8 shrink-0 rounded-[5px] border-transparent bg-transparent px-3 text-xs text-slate-300 shadow-none hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-40",
+              "h-9 shrink-0 rounded-md border-transparent bg-transparent px-3 text-sm text-slate-300 shadow-none hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-40",
               selected &&
                 "border-sky-500/30 bg-sky-500/15 text-sky-100 hover:bg-sky-500/20",
             )}
@@ -590,14 +598,43 @@ export const SettingsAutoSaveStatus = ({
   onSaveNow,
   saveLabel = "Save now",
 }: SettingsAutoSaveStatusProps): JSX.Element => {
+  const [changed, setChanged] = useState(false);
+
+  useEffect(() => {
+    if (dirty || saving) {
+      setChanged(true);
+      return;
+    }
+    const timeout = window.setTimeout(() => setChanged(false), 3000);
+    return () => window.clearTimeout(timeout);
+  }, [dirty, saving]);
+
+  const visible = dirty || saving || (changed && Boolean(cleanText));
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-4">
+    <div
+      className={cn(
+        "flex flex-wrap items-center justify-between gap-2",
+        visible && "py-3",
+      )}
+    >
       <p
         role="status"
         aria-live="polite"
-        className="text-sm leading-6 text-slate-400"
+        className="flex items-center gap-2 text-sm leading-6 text-slate-400"
       >
-        {saving ? savingText : dirty ? dirtyText : cleanText}
+        {visible ? (
+          <>
+            {saving ? (
+              <LoaderCircle
+                aria-hidden="true"
+                className="size-4 animate-spin"
+              />
+            ) : !dirty ? (
+              <Check aria-hidden="true" className="size-4" />
+            ) : null}
+            {saving ? savingText : dirty ? dirtyText : cleanText}
+          </>
+        ) : null}
       </p>
       {dirty && onSaveNow ? (
         <Button
@@ -862,12 +899,16 @@ export const SettingsCredentialForm = ({
         dirtyText={
           validationMessage ? "Fix the API key before saving" : dirtyText
         }
-        cleanText={cleanText}
+        cleanText={savedKey ? cleanText : ""}
         saving={saving || loading}
         savingText={loading ? "Loading saved key…" : undefined}
       />
 
-      <SettingsStatus message={validationMessage ?? message} />
+      <SettingsStatus
+        message={
+          validationMessage ?? (message?.tone === "success" ? null : message)
+        }
+      />
     </>
   );
 };

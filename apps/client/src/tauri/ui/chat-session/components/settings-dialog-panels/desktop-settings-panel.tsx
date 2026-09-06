@@ -1,3 +1,5 @@
+import { SettingsToggle } from "./settings-toggle";
+import { SettingsNumberInput } from "./settings-number-input";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { detectCommandPlatform } from "../../../commands/command-context";
@@ -26,12 +28,7 @@ import {
 } from "./shared";
 import { useSettingsNavigationGuard } from "./navigation-guard";
 import type { DesktopSettingsControls, SettingsStatusMessage } from "./types";
-import {
-  clampDecimalSetting,
-  clampIntegerSetting,
-  parseDecimalSettingInput,
-  parseIntegerSettingInput,
-} from "./number-settings";
+import { clampDecimalSetting, clampIntegerSetting } from "./number-settings";
 
 const getDesktopAutostartMode = (
   settings: UserDesktopSettings,
@@ -372,7 +369,10 @@ export const DesktopSettingsPanel = ({
 
   return (
     <div className="grid gap-5">
-      {dirty || setup.saving || setup.message || cacheMessage ? (
+      {dirty ||
+      setup.saving ||
+      (setup.message && setup.message.tone !== "success") ||
+      cacheMessage ? (
         <div className="sticky top-0 z-10 rounded-xl border border-slate-800 bg-slate-950/95 px-4 pb-4 shadow-lg shadow-black/20">
           <SettingsAutoSaveStatus
             dirty={dirty}
@@ -388,32 +388,24 @@ export const DesktopSettingsPanel = ({
             }
           />
           <div className="mt-3 grid gap-2">
-            <SettingsStatus message={setup.message} />
+            <SettingsStatus
+              message={setup.message?.tone === "success" ? null : setup.message}
+            />
             <SettingsStatus message={cacheMessage} />
           </div>
         </div>
       ) : null}
 
-      <SettingsCard
-        title="Startup"
-        description="Choose whether and how Machdoch starts with your computer."
-      >
+      <SettingsCard title="Startup">
         <div className="grid gap-0">
           <SettingPanel label="Launch on sign-in">
-            <ChoiceButtons
+            <SettingsToggle
               label="Launch on sign-in"
-              value={draft.autostartEnabled ? "enabled" : "disabled"}
-              options={[
-                { value: "enabled", label: "Enabled" },
-                { value: "disabled", label: "Disabled" },
-              ]}
+              checked={draft.autostartEnabled}
               disabled={setup.saving}
-              onChange={(value) => {
-                setDraft({
-                  ...draft,
-                  autostartEnabled: value === "enabled",
-                });
-              }}
+              onCheckedChange={(checked) =>
+                setDraft({ ...draft, autostartEnabled: checked })
+              }
             />
           </SettingPanel>
 
@@ -421,7 +413,7 @@ export const DesktopSettingsPanel = ({
             label="Startup behavior"
             detail={
               draft.autostartEnabled
-                ? "Choose what appears after sign-in."
+                ? undefined
                 : "Available when launch on sign-in is enabled."
             }
           >
@@ -444,20 +436,13 @@ export const DesktopSettingsPanel = ({
             label="Always run as administrator"
             detail="Request elevated access when Machdoch starts."
           >
-            <ChoiceButtons
+            <SettingsToggle
               label="Always run as administrator"
-              value={draft.alwaysRunAsAdministrator ? "enabled" : "disabled"}
-              options={[
-                { value: "enabled", label: "Enabled" },
-                { value: "disabled", label: "Disabled" },
-              ]}
+              checked={draft.alwaysRunAsAdministrator}
               disabled={setup.saving}
-              onChange={(value) => {
-                setDraft({
-                  ...draft,
-                  alwaysRunAsAdministrator: value === "enabled",
-                });
-              }}
+              onCheckedChange={(checked) =>
+                setDraft({ ...draft, alwaysRunAsAdministrator: checked })
+              }
             />
           </SettingPanel>
         </div>
@@ -466,20 +451,13 @@ export const DesktopSettingsPanel = ({
       <SettingsCard title="Assistant surfaces">
         <div className="grid gap-0">
           <SettingPanel label="Floating bubble">
-            <ChoiceButtons
+            <SettingsToggle
               label="Floating bubble"
-              value={draft.assistantBubbleEnabled ? "enabled" : "disabled"}
-              options={[
-                { value: "enabled", label: "Enabled" },
-                { value: "disabled", label: "Disabled" },
-              ]}
+              checked={draft.assistantBubbleEnabled}
               disabled={setup.saving}
-              onChange={(value) => {
-                setDraft({
-                  ...draft,
-                  assistantBubbleEnabled: value === "enabled",
-                });
-              }}
+              onCheckedChange={(checked) =>
+                setDraft({ ...draft, assistantBubbleEnabled: checked })
+              }
             />
           </SettingPanel>
 
@@ -512,9 +490,8 @@ export const DesktopSettingsPanel = ({
             label="Temporary hide"
             detail="Seconds before the bubble returns."
           >
-            <Input
+            <SettingsNumberInput
               aria-label="Temporary bubble hide duration in seconds"
-              type="number"
               min={
                 DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.min
               }
@@ -524,18 +501,10 @@ export const DesktopSettingsPanel = ({
               step="1"
               value={draft.assistantBubbleTemporarilyHideSeconds}
               disabled={setup.saving || !draft.assistantBubbleEnabled}
-              onChange={(event) => {
+              onValueChange={(value) => {
                 setDraft({
                   ...draft,
-                  assistantBubbleTemporarilyHideSeconds:
-                    parseIntegerSettingInput(
-                      event.target.value,
-                      DESKTOP_SETTING_BOUNDS
-                        .assistantBubbleTemporarilyHideSeconds.min,
-                      DESKTOP_SETTING_BOUNDS
-                        .assistantBubbleTemporarilyHideSeconds.max,
-                      draft.assistantBubbleTemporarilyHideSeconds,
-                    ),
+                  assistantBubbleTemporarilyHideSeconds: value,
                 });
               }}
               className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
@@ -544,28 +513,19 @@ export const DesktopSettingsPanel = ({
         </div>
       </SettingsCard>
 
-      <SettingsCard
-        title="Sessions"
-        description="Control context size and automatic session retention."
-      >
+      <SettingsCard title="Sessions">
         <div className="grid gap-0">
           <SettingPanel label="AI context cap">
-            <Input
+            <SettingsNumberInput
               aria-label="AI context message limit"
-              type="number"
               min={DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.min}
               max={DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.max}
               step="1"
               value={draft.aiContextMaxMessages}
-              onChange={(event) => {
+              onValueChange={(value) => {
                 setDraft({
                   ...draft,
-                  aiContextMaxMessages: parseIntegerSettingInput(
-                    event.target.value,
-                    DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.min,
-                    DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.max,
-                    draft.aiContextMaxMessages,
-                  ),
+                  aiContextMaxMessages: value,
                 });
               }}
               className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
@@ -576,22 +536,16 @@ export const DesktopSettingsPanel = ({
             label="Inactive archive"
             detail="Move open sessions to the archive after this many inactive days."
           >
-            <Input
+            <SettingsNumberInput
               aria-label="Inactive session archive delay in days"
-              type="number"
               min={DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.min}
               max={DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.max}
               step="1"
               value={draft.inactiveSessionArchiveDays}
-              onChange={(event) => {
+              onValueChange={(value) => {
                 setDraft({
                   ...draft,
-                  inactiveSessionArchiveDays: parseIntegerSettingInput(
-                    event.target.value,
-                    DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.min,
-                    DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.max,
-                    draft.inactiveSessionArchiveDays,
-                  ),
+                  inactiveSessionArchiveDays: value,
                 });
               }}
               className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
@@ -602,22 +556,16 @@ export const DesktopSettingsPanel = ({
             label="Archived cleanup"
             detail="Permanently delete archived sessions after this many days."
           >
-            <Input
+            <SettingsNumberInput
               aria-label="Archived session deletion delay in days"
-              type="number"
               min={DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.min}
               max={DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.max}
               step="1"
               value={draft.archivedSessionRetentionDays}
-              onChange={(event) => {
+              onValueChange={(value) => {
                 setDraft({
                   ...draft,
-                  archivedSessionRetentionDays: parseIntegerSettingInput(
-                    event.target.value,
-                    DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.min,
-                    DESKTOP_SETTING_BOUNDS.archivedSessionRetentionDays.max,
-                    draft.archivedSessionRetentionDays,
-                  ),
+                  archivedSessionRetentionDays: value,
                 });
               }}
               className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
@@ -626,26 +574,16 @@ export const DesktopSettingsPanel = ({
         </div>
       </SettingsCard>
 
-      <SettingsCard
-        title="Quick Chat"
-        description="Configure the global launcher and its voice-input behavior."
-      >
+      <SettingsCard title="Quick Chat">
         <div className="grid gap-0">
           <SettingPanel label="Quick Chat">
-            <ChoiceButtons
+            <SettingsToggle
               label="Quick Chat status"
-              value={draft.quickVoiceEnabled ? "enabled" : "disabled"}
-              options={[
-                { value: "enabled", label: "Enabled" },
-                { value: "disabled", label: "Disabled" },
-              ]}
+              checked={draft.quickVoiceEnabled}
               disabled={setup.saving}
-              onChange={(value) => {
-                setDraft({
-                  ...draft,
-                  quickVoiceEnabled: value === "enabled",
-                });
-              }}
+              onCheckedChange={(checked) =>
+                setDraft({ ...draft, quickVoiceEnabled: checked })
+              }
             />
           </SettingPanel>
 
@@ -689,24 +627,17 @@ export const DesktopSettingsPanel = ({
             label="Silence timeout"
             detail="Seconds before speech input is submitted."
           >
-            <Input
+            <SettingsNumberInput
               aria-label="Quick Chat silence timeout in seconds"
-              type="number"
               min={DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.min}
               max={DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.max}
               step="0.1"
               value={draft.quickVoiceSilenceSeconds}
               disabled={setup.saving || !draft.quickVoiceEnabled}
-              onChange={(event) => {
+              onValueChange={(value) => {
                 setDraft({
                   ...draft,
-                  quickVoiceSilenceSeconds: parseDecimalSettingInput(
-                    event.target.value,
-                    DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.min,
-                    DESKTOP_SETTING_BOUNDS.quickVoiceSilenceSeconds.max,
-                    draft.quickVoiceSilenceSeconds,
-                    1,
-                  ),
+                  quickVoiceSilenceSeconds: value,
                 });
               }}
               className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
@@ -717,23 +648,17 @@ export const DesktopSettingsPanel = ({
             label="Quick Chat cap"
             detail="Maximum messages kept in Quick Chat context."
           >
-            <Input
+            <SettingsNumberInput
               aria-label="Quick Chat message limit"
-              type="number"
               min={DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.min}
               max={DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.max}
               step="5"
               value={draft.quickVoiceMaxMessages}
               disabled={setup.saving || !draft.quickVoiceEnabled}
-              onChange={(event) => {
+              onValueChange={(value) => {
                 setDraft({
                   ...draft,
-                  quickVoiceMaxMessages: parseIntegerSettingInput(
-                    event.target.value,
-                    DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.min,
-                    DESKTOP_SETTING_BOUNDS.quickVoiceMaxMessages.max,
-                    draft.quickVoiceMaxMessages,
-                  ),
+                  quickVoiceMaxMessages: value,
                 });
               }}
               className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"

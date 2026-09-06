@@ -11,6 +11,7 @@ import type {
 import {
   ChoiceButtons,
   SettingsCard,
+  SettingsAutoSaveStatus,
   SettingsStatus,
   SettingPanel,
   type ChoiceOption,
@@ -72,7 +73,8 @@ export const AppearanceSettingsPanel = ({
   useSettingsNavigationGuard({
     dirty: setup.saving,
     title: "Saving appearance",
-    description: "Wait for the appearance change to finish saving before leaving this section.",
+    description:
+      "Wait for the appearance change to finish saving before leaving this section.",
     canDiscard: false,
     onDiscard: () => undefined,
   });
@@ -93,9 +95,7 @@ export const AppearanceSettingsPanel = ({
   };
 
   return (
-    <SettingsCard
-      title="Interface"
-    >
+    <SettingsCard title="Interface">
       <SettingPanel label="Theme">
         <ChoiceButtons
           label="Theme"
@@ -117,7 +117,11 @@ export const AppearanceSettingsPanel = ({
       </SettingPanel>
 
       <SettingPanel label="Accent">
-        <div role="group" aria-label="Accent color" className="flex flex-wrap gap-2">
+        <div
+          role="group"
+          aria-label="Accent color"
+          className="flex flex-wrap gap-2"
+        >
           {ACCENT_OPTIONS.map((option) => {
             const selected = setup.settings.accent === option.value;
 
@@ -131,8 +135,7 @@ export const AppearanceSettingsPanel = ({
                 onClick={() => savePartial({ accent: option.value })}
                 className={cn(
                   "h-9 rounded-lg border-slate-800 bg-slate-950/80 px-3 text-xs text-slate-300 hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
-                  selected &&
-                    "border-sky-500/35 bg-sky-500/10 text-sky-100",
+                  selected && "border-sky-500/35 bg-sky-500/10 text-sky-100",
                 )}
               >
                 <span
@@ -147,10 +150,7 @@ export const AppearanceSettingsPanel = ({
         </div>
       </SettingPanel>
 
-      <SettingPanel
-        label="Quick Chat bubble"
-        detail="Controls the launcher material and attention treatment."
-      >
+      <SettingPanel label="Quick Chat bubble">
         <ChoiceButtons
           label="Quick Chat bubble style"
           value={setup.settings.quickChatBubbleStyle}
@@ -162,41 +162,12 @@ export const AppearanceSettingsPanel = ({
         />
       </SettingPanel>
 
-      <SettingPanel label="Preview" className="pb-0" contentClassName="max-w-xl">
-        <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-3 shadow-lg shadow-slate-950/20">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-slate-100">
-                Session shell
-              </p>
-              <p className="text-xs text-slate-400">
-                {setup.settings.density === "compact"
-                  ? "Compact workspace"
-                  : "Comfortable workspace"}
-              </p>
-            </div>
-            <span className="rounded-md bg-sky-500/15 px-2 py-1 text-xs font-medium text-sky-100">
-              {setup.settings.theme}
-            </span>
-          </div>
-          <div className="grid gap-2 pt-3">
-            <div className="h-2.5 w-3/4 rounded-full bg-slate-800" />
-            <div className="h-2.5 w-1/2 rounded-full bg-slate-800" />
-            <div className="mt-1 flex gap-2">
-              <div className="h-7 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white">
-                Run
-              </div>
-              <div className="h-7 rounded-lg border border-slate-800 px-3 py-1.5 text-xs text-slate-300">
-                Review
-              </div>
-            </div>
-          </div>
-        </div>
-      </SettingPanel>
-
-      <p role="status" aria-live="polite" className="text-sm text-slate-400">
-        {setup.saving ? "Saving appearance…" : "Changes apply immediately."}
-      </p>
+      <SettingsAutoSaveStatus
+        dirty={false}
+        dirtyText=""
+        cleanText={saveError ? "" : "Appearance saved"}
+        saving={setup.saving}
+      />
       <SettingsStatus
         message={saveError ? { tone: "error", text: saveError } : null}
       />

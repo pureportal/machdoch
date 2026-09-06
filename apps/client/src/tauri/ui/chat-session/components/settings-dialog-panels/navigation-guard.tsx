@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useRef,
@@ -16,8 +17,8 @@ export interface SettingsNavigationGuardState {
 }
 
 type RegisterSettingsNavigationGuard = (
-  guard: SettingsNavigationGuardState | null,
-) => void;
+  guard: SettingsNavigationGuardState,
+) => () => void;
 
 const SettingsNavigationGuardContext =
   createContext<RegisterSettingsNavigationGuard | null>(null);
@@ -27,10 +28,40 @@ export const SettingsNavigationGuardProvider = ({
   onGuardChange,
 }: {
   children: ReactNode;
-  onGuardChange: RegisterSettingsNavigationGuard;
+  onGuardChange: (guard: SettingsNavigationGuardState | null) => void;
 }): JSX.Element => {
+  const guards = useRef(new Map<symbol, SettingsNavigationGuardState>());
+  const registerGuard = useCallback<RegisterSettingsNavigationGuard>(
+    (guard) => {
+      const id = Symbol();
+      const publish = (): void => {
+        const active = [...guards.current.values()];
+        const blocking = active.find(
+          (candidate) => candidate.canDiscard === false,
+        );
+        onGuardChange(
+          active.length === 0
+            ? null
+            : {
+                ...(blocking ?? active[0]),
+                onDiscard: async () => {
+                  for (const candidate of active) await candidate.onDiscard();
+                },
+              },
+        );
+      };
+      guards.current.set(id, guard);
+      publish();
+      return () => {
+        guards.current.delete(id);
+        publish();
+      };
+    },
+    [onGuardChange],
+  );
+
   return (
-    <SettingsNavigationGuardContext.Provider value={onGuardChange}>
+    <SettingsNavigationGuardContext.Provider value={registerGuard}>
       {children}
     </SettingsNavigationGuardContext.Provider>
   );
@@ -61,17 +92,6 @@ export const useSettingsNavigationGuard = ({
       onDiscard: () => onDiscardRef.current(),
     };
 
-    registerGuard(guard);
-
-    return () => {
-      registerGuard(null);
-    };
-  }, [
-    canDiscard,
-    confirmLabel,
-    description,
-    dirty,
-    registerGuard,
-    title,
-  ]);
+    return registerGuard(guard);
+  }, [canDiscard, confirmLabel, description, dirty, registerGuard, title]);
 };
