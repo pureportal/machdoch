@@ -38,6 +38,7 @@ import { useMediaQuery } from "./responsive-layout";
 import { ComposerModelPicker } from "./composer-model-picker";
 import { SessionMemoryDialog } from "./memory-management";
 import type { ProductCommandHandler } from "./product-runtime";
+import { useComposerDraft } from "./use-composer-draft";
 
 type ProductComposer = NonNullable<ProductShell["composer"]>;
 type ProductContextPack = ProductShell["contextPacks"][number];
@@ -165,8 +166,10 @@ export function Composer({
   pending: boolean;
   onCommand: ProductCommandHandler;
 }): React.ReactElement {
-  const [draft, setDraft] = useState(composer.draft);
-  const [draftSessionId, setDraftSessionId] = useState(composer.sessionId);
+  const { draft, updateDraft, submitDraft, error } = useComposerDraft(
+    composer,
+    onCommand,
+  );
   const [sessionMemoryOpen, setSessionMemoryOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const touchInput = useMediaQuery("(pointer: coarse)");
@@ -210,13 +213,6 @@ export function Composer({
   }, []);
 
   useEffect(() => {
-    if (draftSessionId !== composer.sessionId) {
-      setDraftSessionId(composer.sessionId);
-      setDraft(composer.draft);
-    }
-  }, [composer.draft, composer.sessionId, draftSessionId]);
-
-  useEffect(() => {
     setSessionMemoryOpen(false);
   }, [composer.sessionId]);
 
@@ -231,20 +227,6 @@ export function Composer({
 
   const canSubmit = draft.trim().length > 0 && composer.canSend;
 
-  const submit = async (): Promise<void> => {
-    const prompt = draft.trim();
-    if (!prompt || !canSubmit) return;
-    setDraft("");
-    const succeeded = await onCommand({
-      kind: "submit-message",
-      sessionId: session.id,
-      prompt,
-      promptEnhancementMode: composer.promptEnhancementMode,
-      interviewEnabled: composer.interviewEnabled,
-    });
-    if (!succeeded) setDraft((current) => current || prompt);
-  };
-
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (
       event.key === "Enter" &&
@@ -257,7 +239,7 @@ export function Composer({
       !event.altKey
     ) {
       event.preventDefault();
-      void submit();
+      void submitDraft();
     }
   };
 
@@ -536,7 +518,7 @@ export function Composer({
             }
             aria-label="Task composer"
             enterKeyHint={touchInput ? "enter" : "send"}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => updateDraft(event.target.value)}
             onKeyDown={handleKeyDown}
           />
           <button
@@ -546,12 +528,17 @@ export function Composer({
               session.runningTaskId ? "Queue follow-up" : "Send message"
             }
             disabled={!canSubmit || pending}
-            onClick={() => void submit()}
+            onClick={() => void submitDraft()}
           >
             <ArrowUp aria-hidden="true" />
           </button>
         </div>
       </div>
+      {error ? (
+        <p className="m-product-composer-error" role="alert">
+          {error}
+        </p>
+      ) : null}
       {!canSubmit && draft.trim() && composer.sendDisabledReason ? (
         <p className="m-product-composer-error">
           {composer.sendDisabledReason}
