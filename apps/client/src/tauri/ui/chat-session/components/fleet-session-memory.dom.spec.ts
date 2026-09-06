@@ -14,7 +14,7 @@ import {
   within,
 } from "@testing-library/react";
 import { createElement } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const snapshot: ProductSnapshot = {
   enabled: true,
@@ -99,7 +99,22 @@ const snapshot: ProductSnapshot = {
   },
 };
 
-afterEach(() => cleanup());
+beforeEach(() => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((media: string) => ({
+      media,
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  );
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("Fleet session memory", () => {
   it("opens memory from the chat toggle and dispatches forget", async () => {
@@ -134,6 +149,7 @@ describe("Fleet session memory", () => {
           sessionId: "session-1",
           memoryId: "memory-1",
         }),
+        expect.any(AbortSignal),
       ),
     );
   });
