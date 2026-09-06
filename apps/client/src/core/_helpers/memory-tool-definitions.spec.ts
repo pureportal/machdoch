@@ -33,6 +33,7 @@ describe("memory tool definitions", () => {
     );
 
     expect(names).toEqual([
+      "search_memory",
       "remember_session_memory",
       "remember_workspace_memory",
     ]);
@@ -43,19 +44,19 @@ describe("memory tool definitions", () => {
       sessionEnabled: true,
       workspaceEnabled: false,
       globalEnabled: false,
-      expected: ["remember_session_memory"],
+      expected: ["search_memory", "remember_session_memory"],
     },
     {
       sessionEnabled: false,
       workspaceEnabled: true,
       globalEnabled: false,
-      expected: ["remember_workspace_memory"],
+      expected: ["search_memory", "remember_workspace_memory"],
     },
     {
       sessionEnabled: false,
       workspaceEnabled: false,
       globalEnabled: true,
-      expected: ["remember_global_memory"],
+      expected: ["search_memory", "remember_global_memory"],
     },
     {
       sessionEnabled: false,

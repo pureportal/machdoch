@@ -18,7 +18,7 @@ export const MIN_CONTEXT_WINDOW_TOKENS = 1 as const;
 export const MAX_CONTEXT_WINDOW_TOKENS = 10000000 as const;
 export type ContextWindow = (typeof CONTEXT_WINDOW_MODES)[number] | number;
 
-export const VALID_TOOLS = ["filesystem", "shell", "network", "browser", "git", "packages", "run", "mcp", "scheduler", "utilities"] as const;
+export const VALID_TOOLS = ["filesystem", "shell", "network", "browser", "git", "packages", "run", "mcp", "scheduler", "workflows", "utilities"] as const;
 export type ToolName = (typeof VALID_TOOLS)[number];
 
 export const VALID_MODEL_PROVIDERS = ["openai", "anthropic", "google", "langdock", "codex-cli", "claude-cli", "copilot-cli"] as const;

@@ -12,6 +12,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { VALID_MODEL_PROVIDERS } from "./runtime-contract.generated.js";
 import {
   createRalphFlowFingerprint,
   RalphFlowNotFoundError,
@@ -1662,7 +1663,9 @@ const normalizeRalphFlowTarget = (
       ? {
           allowedRoots:
             configuredAllowedRoots.length > 0
-              ? configuredAllowedRoots
+              ? configuredAllowedRoots.map((root) =>
+                  resolve(workspaceRoot, root),
+                )
               : unattended
                 ? [workspaceRoot]
                 : [],
@@ -2306,7 +2309,7 @@ const isRunModeValue = (value: string | undefined): value is RunMode => {
 const isConfiguredProviderValue = (
   value: string | undefined,
 ): value is Exclude<ModelProvider, "unconfigured"> => {
-  return value === "openai" || value === "anthropic" || value === "google";
+  return VALID_MODEL_PROVIDERS.some((provider) => provider === value);
 };
 
 const isMissedRunPolicyValue = (

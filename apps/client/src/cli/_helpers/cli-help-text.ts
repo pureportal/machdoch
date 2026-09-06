@@ -237,7 +237,8 @@ Usage:
   machdoch mcp usage [--json]
   machdoch mcp cleanup [--unused-days <n>] [--apply] [--json]
   machdoch mcp proxy <server-id> [--cwd <path>]
-  machdoch mcp broker [--cwd <path>]`;
+  machdoch mcp broker [--cwd <path>]
+  machdoch mcp serve [--cwd <path>] [--mode ask|machdoch]`;
 
 const PROVIDER_SYNC_HELP = `machdoch provider-sync - delegated CLI-provider integration
 

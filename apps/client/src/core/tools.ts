@@ -195,6 +195,14 @@ const TOOL_REGISTRY: ToolDefinition[] = [
     ],
   },
   {
+    name: "workflows",
+    title: "Workflows",
+    description:
+      "Read, save, validate, and run workspace workflows and inspect their execution history.",
+    riskLevel: "high",
+    keywords: ["workflow", "flow", "ralph", "automation"],
+  },
+  {
     name: "utilities",
     title: "Utilities",
     description:

@@ -99,7 +99,9 @@ export type McpCliAction =
   | "cleanup"
   | "proxy"
   | "broker"
-  | "presence";
+  | "presence"
+  | "serve"
+  | "connect";
 
 export type ProviderSyncCliAction =
   | "plan"

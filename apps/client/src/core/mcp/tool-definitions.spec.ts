@@ -112,7 +112,8 @@ const createConfig = (): McpEffectiveConfig => ({
   userConfigPath: "C:/config/mcp.json",
   workspaceConfigPath: "C:/workspace/.machdoch/mcp/mcp.json",
   userDiscoveryCachePath: "C:/config/mcp-discovery-cache.json",
-  workspaceDiscoveryCachePath: "C:/workspace/.machdoch/mcp/discovery-cache.json",
+  workspaceDiscoveryCachePath:
+    "C:/workspace/.machdoch/mcp/discovery-cache.json",
   servers: [
     {
       id: "github",
@@ -276,10 +277,7 @@ describe("createMcpToolDefinitions", () => {
       throw new Error("Expected MCP catalog meta-tools to be registered.");
     }
 
-    const searchResult = await searchTool.execute(
-      { query: "issue" },
-      context,
-    );
+    const searchResult = await searchTool.execute({ query: "issue" }, context);
     const inspectResult = await inspectTool.execute(
       { serverId: "github", toolName: "create_issue" },
       context,
@@ -573,7 +571,7 @@ describe("createMcpToolDefinitions", () => {
       isError: true,
     });
     expect(missingIdResult.toolResult.output).toContain(
-      "arguments do not match the discovered input schema",
+      "arguments do not match the input schema",
     );
     expect(callToolSpy).not.toHaveBeenCalled();
   });

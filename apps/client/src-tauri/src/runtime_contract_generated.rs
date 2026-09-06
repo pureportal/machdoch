@@ -14,7 +14,7 @@ pub const REASONING_EXECUTION_MODES: [&str; 2] = ["standard", "pro"];
 pub const CONTEXT_WINDOW_MODES: [&str; 2] = ["default", "long"];
 pub const MIN_CONTEXT_WINDOW_TOKENS: u32 = 1;
 pub const MAX_CONTEXT_WINDOW_TOKENS: u32 = 10000000;
-pub const VALID_TOOLS: [&str; 10] = [
+pub const VALID_TOOLS: [&str; 11] = [
     "filesystem",
     "shell",
     "network",
@@ -24,6 +24,7 @@ pub const VALID_TOOLS: [&str; 10] = [
     "run",
     "mcp",
     "scheduler",
+    "workflows",
     "utilities",
 ];
 pub const VALID_MODEL_PROVIDERS: [&str; 7] = [

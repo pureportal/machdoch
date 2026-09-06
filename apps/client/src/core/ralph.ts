@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { assertRalphWorkspaceBoundary } from "./_helpers/assert-ralph-workspace-boundary.helper.js";
 import { Ajv2020, type ErrorObject } from "ajv/dist/2020.js";
 import * as addFormatsModule from "ajv-formats";
 import type { FormatsPlugin } from "ajv-formats";
@@ -1303,6 +1304,7 @@ export interface RalphRunLogger {
 }
 
 export interface RalphRunOptions {
+  workspaceBoundary?: string;
   variableValues?: Record<string, string>;
   conversationContext?: TaskConversationContext;
   onStateChange?: TaskExecutionProgressHandler;
@@ -14064,6 +14066,18 @@ const executeBlock = async (
   context: RalphResultContext,
   options: RalphRunOptions,
 ): Promise<RalphExecutionStepResult> => {
+  if (options.workspaceBoundary) {
+    await assertRalphWorkspaceBoundary(
+      options.workspaceBoundary,
+      createBlockConfig(config, block, context).workspaceRoot,
+      getResolvedBlockAttachments(block, context).map(
+        (attachment) => attachment.value,
+      ),
+      block.type === "UTILITY"
+        ? resolveUtilityConfig(block.utility, context)
+        : undefined,
+    );
+  }
   switch (block.type) {
     case "START":
       return {
@@ -17390,6 +17404,14 @@ export const runRalphFlow = async (
     `ralph-${flow.id}-${randomUUID()}`;
 
   try {
+    if (options.workspaceBoundary) {
+      for (const block of flow.blocks) {
+        await assertRalphWorkspaceBoundary(
+          options.workspaceBoundary,
+          createBlockConfig(config, block).workspaceRoot,
+        );
+      }
+    }
     return await runRalphFlowImpl(flow, config, customizations, {
       ...options,
       leaseOwnerId,

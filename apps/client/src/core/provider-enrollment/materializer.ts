@@ -39,6 +39,7 @@ import { renderIsolatedCopilotState } from "./copilot-state.js";
 import { compareCanonicalStrings, sha256 } from "./digests.js";
 import { projectMcpForProvider } from "./mcp-projector.js";
 import type { MachdochCliLaunch } from "./machdoch-cli-launch.js";
+import type { LocalMcpEndpoint } from "../local-mcp/http.js";
 import { quoteTomlKey, renderCodexMcpToml } from "./toml.js";
 import {
   PROVIDER_ENROLLMENT_MANIFEST_SCHEMA_VERSION,
@@ -86,11 +87,7 @@ interface MaterializeCliEnrollmentParams {
   deliveryPlan: InstructionDeliveryPlan;
   runtimeSystemInstructions: string;
   machdochCliLaunch: MachdochCliLaunch;
-  workspacePresence?: {
-    address: string;
-    token: string;
-    agentId: string;
-  };
+  localMcp?: LocalMcpEndpoint;
 }
 
 interface RenderedEnrollmentFiles {
@@ -1018,9 +1015,7 @@ export const materializeCliEnrollment = async (
       probeMatchingCliDeliveryPlan(params),
       projectMcpForProvider(params.provider, params.workspaceRoot, {
         machdochCliLaunch: params.machdochCliLaunch,
-        ...(params.workspacePresence
-          ? { workspacePresence: params.workspacePresence }
-          : {}),
+        ...(params.localMcp ? { localMcp: params.localMcp } : {}),
       }),
     ]);
     const instructionPayload = renderInstructionTransportPayload(

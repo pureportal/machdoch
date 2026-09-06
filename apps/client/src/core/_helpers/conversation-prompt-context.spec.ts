@@ -24,7 +24,8 @@ const memorySettings = vi.hoisted(() => ({
 }));
 
 vi.mock("./provider-adapters.js", () => providerAdapters);
-vi.mock("../env.js", () => ({
+vi.mock("../env.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../env.js")>()),
   loadUserMemorySettings: vi.fn(async () => memorySettings),
 }));
 

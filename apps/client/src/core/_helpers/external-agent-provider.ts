@@ -64,6 +64,8 @@ import {
 } from "./external-agent-cli-output.js";
 import { recordExternalAgentModelCall } from "../model-usage.js";
 import { getWorkspacePresenceEnrollment } from "./workspace-agent-presence.js";
+import { startLocalMcpHost, type LocalMcpEndpoint } from "../local-mcp/http.js";
+import { upsertMemoryUpdate } from "./agent-runtime-shared.js";
 
 export interface SpawnedAgentResult {
   exitCode: number | null;
@@ -1640,6 +1642,7 @@ const createExternalAgentCommand = (
 const executeExternalAgentCliTask = async (
   params: ExternalAgentExecutionParams,
   provider: AgentCliProvider,
+  localMcp: LocalMcpEndpoint,
 ): Promise<TaskExecutionResult> => {
   const env = await loadRuntimeEnvironment();
   const binary = resolveAgentCliProviderBinary(provider, env);
@@ -1721,7 +1724,7 @@ const executeExternalAgentCliTask = async (
       deliveryPlan: instructionPlan,
       runtimeSystemInstructions,
       machdochCliLaunch: resolveMachdochCliLaunch(),
-      ...(workspacePresence ? { workspacePresence } : {}),
+      localMcp,
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
@@ -2345,5 +2348,50 @@ export const maybeExecuteExternalAgentProviderTask = async (
     return undefined;
   }
 
-  return await executeExternalAgentCliTask(params, params.config.provider);
+  const context = params.preparedConversationContext;
+  const toolState = createExternalAgentLoopState([]);
+  const host = await startLocalMcpHost({
+    config: params.config,
+    memory: context.memory,
+    ...(context.uiControlEnabled && context.uiControl
+      ? { uiControl: context.uiControl }
+      : {}),
+    ...(params.additionalToolDefinitions
+      ? { additionalToolDefinitions: params.additionalToolDefinitions }
+      : {}),
+    ...(params.runId ? { runId: params.runId } : {}),
+    ...(params.signal ? { signal: params.signal } : {}),
+    ...(params.onActionOutput ? { onActionOutput: params.onActionOutput } : {}),
+    onResult: (definition, result) => {
+      params.onStreamActivity?.();
+      if (!toolState.executedTools.includes(definition.backingTool))
+        toolState.executedTools.push(definition.backingTool);
+      toolState.outputSections.push(...result.sections);
+      if (result.memoryUpdate)
+        toolState.memoryUpdates = upsertMemoryUpdate(
+          toolState.memoryUpdates,
+          result.memoryUpdate,
+        );
+    },
+  });
+  let result: TaskExecutionResult;
+  try {
+    result = await executeExternalAgentCliTask(
+      params,
+      params.config.provider,
+      host.endpoint,
+    );
+  } finally {
+    await host.close();
+  }
+  return {
+    ...result,
+    executedTools: [
+      ...new Set([...result.executedTools, ...toolState.executedTools]),
+    ],
+    outputSections: [...result.outputSections, ...toolState.outputSections],
+    ...(toolState.memoryUpdates.length > 0
+      ? { memoryUpdates: toolState.memoryUpdates }
+      : {}),
+  };
 };

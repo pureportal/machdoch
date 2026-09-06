@@ -16,15 +16,14 @@ import {
   type ScheduledRetryPolicy,
   type UpdateScheduledJobInput,
 } from "../scheduler.js";
-import type {
-  ModelProvider,
-  RunMode,
-} from "../runtime-contract.generated.js";
+import type { ModelProvider, RunMode } from "../runtime-contract.generated.js";
+import { VALID_MODEL_PROVIDERS } from "../runtime-contract.generated.js";
 import {
   coerceInteger,
   coerceBoolean,
   coerceString,
   createToolErrorResult,
+  resolveWorkspaceTarget,
   type AgentToolDefinition,
   type AgentToolExecutionResult,
 } from "./agent-tools-shared.js";
@@ -33,7 +32,8 @@ import { limitText } from "./runtime-text.js";
 const MAX_SCHEDULER_JOBS = 100;
 const MAX_SCHEDULER_RUNS = 100;
 const MAX_SCHEDULER_EVENTS = 100;
-const DEFAULT_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+const DEFAULT_TIMEZONE =
+  Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 const SCHEDULE_TYPES = ["cron", "interval", "delay"] as const;
 const TRIGGER_KINDS = [
   "time",
@@ -64,13 +64,9 @@ const TRIGGER_FIRING_MODES = ["event", "state"] as const;
 const EVENT_TRIGGER_KINDS = TRIGGER_KINDS.filter(
   (kind): kind is ScheduledEventTriggerKind => kind !== "time",
 );
-const MISSED_RUN_POLICIES = [
-  "skip",
-  "enqueue-latest",
-  "enqueue-all",
-] as const;
+const MISSED_RUN_POLICIES = ["skip", "enqueue-latest", "enqueue-all"] as const;
 const RUN_MODES = ["ask", "machdoch"] as const;
-const MODEL_PROVIDERS = ["openai", "anthropic", "google", "langdock"] as const;
+const MODEL_PROVIDERS = VALID_MODEL_PROVIDERS;
 const FILTER_OPERATORS = [
   ">",
   ">=",
@@ -226,13 +222,13 @@ const triggerInputSchema = {
         type: "array",
         items: schedulerFilterEntrySchema,
         description:
-          "Optional activation filters over event fields. Example: [{\"path\":\"payload.path\",\"value\":\"invoices/*.pdf\"}] or [{\"path\":\"payload.usedPercent\",\"op\":\">=\",\"value\":90}].",
+          'Optional activation filters over event fields. Example: [{"path":"payload.path","value":"invoices/*.pdf"}] or [{"path":"payload.usedPercent","op":">=","value":90}].',
       },
       recoveryFilters: {
         type: "array",
         items: schedulerFilterEntrySchema,
         description:
-          "Optional recovery filters for stateful threshold triggers. Example: [{\"path\":\"payload.usedPercent\",\"op\":\"<=\",\"value\":80}].",
+          'Optional recovery filters for stateful threshold triggers. Example: [{"path":"payload.usedPercent","op":"<=","value":80}].',
       },
       firingMode: {
         type: "string",
@@ -276,7 +272,7 @@ const triggerInputSchema = {
           },
         },
         description:
-          "Burst cap for noisy triggers, for example {\"maxEvents\":2,\"windowMs\":60000}.",
+          'Burst cap for noisy triggers, for example {"maxEvents":2,"windowMs":60000}.',
       },
     },
     required: ["kind"],
@@ -300,18 +296,14 @@ const schedulerEventInputSchema = {
     },
     source: {
       type: "string",
-      description: "Event source such as ui, cli, ai, watcher, github, or test.",
-    },
-    workspaceRoot: {
-      type: "string",
       description:
-        "Workspace root the event belongs to. Defaults to the active workspace.",
+        "Event source such as ui, cli, ai, watcher, github, or test.",
     },
     payload: {
       type: "array",
       items: schedulerKeyValueEntrySchema,
       description:
-        "Event payload entries. Example: [{\"path\":\"path\",\"value\":\"invoices/june.pdf\"},{\"path\":\"mtime\",\"value\":\"123\"}]. Trigger filters can match fields like payload.path or payload.branch.",
+        'Event payload entries. Example: [{"path":"path","value":"invoices/june.pdf"},{"path":"mtime","value":"123"}]. Trigger filters can match fields like payload.path or payload.branch.',
     },
     dedupeKey: {
       type: "string",
@@ -507,7 +499,7 @@ const schedulerTargetSchema = {
           type: "array",
           items: schedulerKeyValueEntrySchema,
           description:
-            "Optional context-pack variables as key/value entries, for example [{\"path\":\"scope\",\"value\":\"repo\"}].",
+            'Optional context-pack variables as key/value entries, for example [{"path":"scope","value":"repo"}].',
         },
       },
       required: ["name"],
@@ -629,9 +621,7 @@ const coerceEntryPath = (
   );
 };
 
-const coerceEntryValue = (
-  entry: Record<string, unknown>,
-): ParsedEntryValue => {
+const coerceEntryValue = (entry: Record<string, unknown>): ParsedEntryValue => {
   if (
     hasOwnRecordKey(entry, "value") &&
     entry.value !== undefined &&
@@ -904,10 +894,7 @@ const parseTriggerInput = (
   const dedupeKeyTemplate = coerceString(value, "dedupeKeyTemplate");
   const maxEventsPerWindow = isRecord(value.maxEventsPerWindow)
     ? {
-        maxEvents: coercePositiveInteger(
-          value.maxEventsPerWindow,
-          "maxEvents",
-        ),
+        maxEvents: coercePositiveInteger(value.maxEventsPerWindow, "maxEvents"),
         windowMs: coercePositiveInteger(value.maxEventsPerWindow, "windowMs"),
       }
     : undefined;
@@ -1109,7 +1096,10 @@ const parseQueuePolicy = (
 const parseMissedRunPolicy = (
   record: Record<string, unknown>,
 ): ScheduledMissedRunPolicy | undefined => {
-  return normalizeEnum(coerceString(record, "missedRunPolicy"), MISSED_RUN_POLICIES);
+  return normalizeEnum(
+    coerceString(record, "missedRunPolicy"),
+    MISSED_RUN_POLICIES,
+  );
 };
 
 const parseRunMode = (record: Record<string, unknown>): RunMode | undefined => {
@@ -1142,28 +1132,34 @@ const parseRalphFlowTarget = (
     coerceString(value, "executionProfile"),
     ["unattended"] as const,
   );
-  const resumePolicy = normalizeEnum(
-    coerceString(value, "resumePolicy"),
-    ["never", "recoverable"] as const,
-  );
+  const resumePolicy = normalizeEnum(coerceString(value, "resumePolicy"), [
+    "never",
+    "recoverable",
+  ] as const);
   const permissionsValue = value.permissions;
 
   if (!isRecord(permissionsValue) && executionProfile !== "unattended") {
     return "Expected `ralphFlow.permissions` or executionProfile=unattended before creating a scheduled RALPH job.";
   }
 
-  const explicitPermissions = isRecord(permissionsValue) ? permissionsValue : {};
+  const explicitPermissions = isRecord(permissionsValue)
+    ? permissionsValue
+    : {};
 
-  const scope = normalizeEnum(coerceString(value, "scope"), ["workspace", "user"] as const);
-  const runLogScope = normalizeEnum(
-    coerceString(value, "runLogScope"),
-    ["workspace", "user"] as const,
-  );
+  const scope = normalizeEnum(coerceString(value, "scope"), [
+    "workspace",
+    "user",
+  ] as const);
+  const runLogScope = normalizeEnum(coerceString(value, "runLogScope"), [
+    "workspace",
+    "user",
+  ] as const);
   const maxTransitions = coercePositiveInteger(value, "maxTransitions");
   const params = parseStringEntryRecord(value.params) ?? {};
-  const allowedRoots = coerceStringArray(explicitPermissions, "allowedRoots") ?? [
-    workspaceRoot,
-  ];
+  const allowedRoots = coerceStringArray(
+    explicitPermissions,
+    "allowedRoots",
+  ) ?? [workspaceRoot];
   const unattended = executionProfile === "unattended";
 
   return {
@@ -1180,13 +1176,17 @@ const parseRalphFlowTarget = (
       permissions: {
         allowedRoots,
         allowCommands:
-          unattended || (coerceBoolean(explicitPermissions, "allowCommands") ?? false),
+          unattended ||
+          (coerceBoolean(explicitPermissions, "allowCommands") ?? false),
         allowWrites:
-          unattended || (coerceBoolean(explicitPermissions, "allowWrites") ?? false),
+          unattended ||
+          (coerceBoolean(explicitPermissions, "allowWrites") ?? false),
         allowNetwork:
-          unattended || (coerceBoolean(explicitPermissions, "allowNetwork") ?? false),
+          unattended ||
+          (coerceBoolean(explicitPermissions, "allowNetwork") ?? false),
         allowMcpTools:
-          unattended || (coerceBoolean(explicitPermissions, "allowMcpTools") ?? false),
+          unattended ||
+          (coerceBoolean(explicitPermissions, "allowMcpTools") ?? false),
       },
     },
   };
@@ -1197,10 +1197,11 @@ const createTargetInput = (
   workspaceRoot: string,
   options: { requirePrompt: boolean },
 ): CreateScheduledJobInput["target"] | string => {
-  const targetType = normalizeEnum(
-    coerceString(record, "targetType"),
-    ["prompt", "ralph-flow"] as const,
-  ) ?? (isRecord(record.ralphFlow) ? "ralph-flow" : "prompt");
+  const targetType =
+    normalizeEnum(coerceString(record, "targetType"), [
+      "prompt",
+      "ralph-flow",
+    ] as const) ?? (isRecord(record.ralphFlow) ? "ralph-flow" : "prompt");
 
   if (targetType === "ralph-flow") {
     return parseRalphFlowTarget(record, workspaceRoot);
@@ -1239,10 +1240,10 @@ const createUpdateTargetInput = (
   record: Record<string, unknown>,
   workspaceRoot: string,
 ): UpdateScheduledJobInput["target"] | string | undefined => {
-  const targetType = normalizeEnum(
-    coerceString(record, "targetType"),
-    ["prompt", "ralph-flow"] as const,
-  );
+  const targetType = normalizeEnum(coerceString(record, "targetType"), [
+    "prompt",
+    "ralph-flow",
+  ] as const);
 
   if (targetType === "ralph-flow" || isRecord(record.ralphFlow)) {
     return parseRalphFlowTarget(record, workspaceRoot);
@@ -1441,13 +1442,11 @@ const summarizeJob = (job: ScheduledJob): Record<string, unknown> => ({
   schedule: job.schedule ?? null,
   triggers: job.triggers,
   triggerLabel: formatJobTriggers(job),
-  scheduleLabel: job.schedule ? formatSchedule(job.schedule) : "Event triggered",
+  scheduleLabel: job.schedule
+    ? formatSchedule(job.schedule)
+    : "Event triggered",
   nextRunAt: job.nextRunAt ?? null,
-  prompt: job.target.prompt,
-  contextPaths: job.target.contextPaths,
-  imagePaths: job.target.imagePaths,
-  contextPacks: job.target.contextPacks,
-  macros: job.target.macros,
+  target: job.target,
   missedRunPolicy: job.missedRunPolicy,
   retry: job.retry,
   queue: job.queue,
@@ -1587,7 +1586,9 @@ type SchedulerEventList = Awaited<
   ReturnType<DurableSmartScheduler["listEvents"]>
 >;
 
-const summarizeEvent = (event: SchedulerEventList[number]): Record<string, unknown> => ({
+const summarizeEvent = (
+  event: SchedulerEventList[number],
+): Record<string, unknown> => ({
   id: event.id,
   type: event.type,
   kind: event.kind,
@@ -1643,8 +1644,6 @@ const createEventInput = (
   const type = coerceString(args, "type");
   const kind = normalizeEnum(coerceString(args, "kind"), EVENT_TRIGGER_KINDS);
   const source = coerceString(args, "source") ?? "ai";
-  const eventWorkspaceRoot =
-    coerceString(args, "workspaceRoot") ?? workspaceRoot;
   const payload = parseEntryRecord(args.payload, { nestedPaths: true });
   const dedupeKey = coerceString(args, "dedupeKey");
   const occurredAt = coercePositiveInteger(args, "occurredAtEpochMs");
@@ -1657,7 +1656,7 @@ const createEventInput = (
     type,
     ...(kind ? { kind } : {}),
     source,
-    workspaceRoot: eventWorkspaceRoot,
+    workspaceRoot,
     ...(payload ? { payload } : {}),
     ...(dedupeKey ? { dedupeKey } : {}),
     ...(occurredAt !== undefined ? { occurredAt } : {}),
@@ -1665,7 +1664,82 @@ const createEventInput = (
 };
 
 export const createSchedulerToolDefinitions = (): AgentToolDefinition[] => {
-  return [
+  const definitions: AgentToolDefinition[] = [
+    {
+      spec: {
+        name: "trigger_scheduled_job",
+        description:
+          "Queue a saved job to run now. A running scheduler service executes the queued run.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            jobId: { type: "string", minLength: 1 },
+            idempotencyKey: { type: "string", minLength: 1 },
+          },
+          required: ["jobId"],
+        },
+      },
+      backingTool: "scheduler",
+      riskLevel: "medium",
+      effect: "write",
+      execute: async (args, context) => {
+        const jobId = coerceString(args, "jobId");
+        if (!jobId)
+          return createToolErrorResult(
+            "",
+            "trigger_scheduled_job",
+            "Expected `jobId`.",
+          );
+        const queued = await createScheduler(
+          context.workspaceRoot,
+        ).triggerJobNow(jobId, coerceString(args, "idempotencyKey"));
+        return createSchedulerResult(
+          "trigger_scheduled_job",
+          {
+            handle: queued.handle,
+            run: summarizeRun(queued.run),
+            deduplicated: queued.deduplicated,
+          },
+          [],
+          `trigger_scheduled_job(${jobId})`,
+        );
+      },
+    },
+    {
+      spec: {
+        name: "cancel_scheduled_run",
+        description:
+          "Cancel a queued run or request cancellation of a running scheduled job.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: { runId: { type: "string", minLength: 1 } },
+          required: ["runId"],
+        },
+      },
+      backingTool: "scheduler",
+      riskLevel: "medium",
+      effect: "write",
+      execute: async (args, context) => {
+        const runId = coerceString(args, "runId");
+        if (!runId)
+          return createToolErrorResult(
+            "",
+            "cancel_scheduled_run",
+            "Expected `runId`.",
+          );
+        const run = await createScheduler(context.workspaceRoot).cancelRun(
+          runId,
+        );
+        return createSchedulerResult(
+          "cancel_scheduled_run",
+          { run: summarizeRun(run) },
+          [],
+          `cancel_scheduled_run(${runId})`,
+        );
+      },
+    },
     {
       spec: {
         name: "list_scheduled_jobs",
@@ -1911,7 +1985,9 @@ export const createSchedulerToolDefinitions = (): AgentToolDefinition[] => {
           );
         }
 
-        const job = await createScheduler(context.workspaceRoot).upsertJob(input);
+        const job = await createScheduler(context.workspaceRoot).upsertJob(
+          input,
+        );
 
         return createSchedulerResult(
           "create_scheduled_job",
@@ -2011,7 +2087,9 @@ export const createSchedulerToolDefinitions = (): AgentToolDefinition[] => {
           );
         }
 
-        const job = await createScheduler(context.workspaceRoot).pauseJob(jobId);
+        const job = await createScheduler(context.workspaceRoot).pauseJob(
+          jobId,
+        );
 
         return createSchedulerResult(
           "pause_scheduled_job",
@@ -2049,7 +2127,9 @@ export const createSchedulerToolDefinitions = (): AgentToolDefinition[] => {
           );
         }
 
-        const job = await createScheduler(context.workspaceRoot).resumeJob(jobId);
+        const job = await createScheduler(context.workspaceRoot).resumeJob(
+          jobId,
+        );
 
         return createSchedulerResult(
           "resume_scheduled_job",
@@ -2087,7 +2167,9 @@ export const createSchedulerToolDefinitions = (): AgentToolDefinition[] => {
           );
         }
 
-        const job = await createScheduler(context.workspaceRoot).deleteJob(jobId);
+        const job = await createScheduler(context.workspaceRoot).deleteJob(
+          jobId,
+        );
 
         return createSchedulerResult(
           "delete_scheduled_job",
@@ -2098,4 +2180,39 @@ export const createSchedulerToolDefinitions = (): AgentToolDefinition[] => {
       },
     },
   ];
+  return definitions.map((definition) => ({
+    ...definition,
+    execute: async (args, context) => {
+      const permissions =
+        isRecord(args.ralphFlow) && isRecord(args.ralphFlow.permissions)
+          ? args.ralphFlow.permissions
+          : {};
+      const paths = [
+        getWorkspaceSchedulerStatePath(context.workspaceRoot),
+        ...(coerceStringArray(args, "contextPaths") ?? []),
+        ...(coerceStringArray(args, "imagePaths") ?? []),
+        ...(Array.isArray(args.contextPacks)
+          ? args.contextPacks.flatMap((pack) =>
+              isRecord(pack)
+                ? (coerceStringArray(pack, "contextPaths") ?? [])
+                : [],
+            )
+          : []),
+        ...(coerceStringArray(permissions, "allowedRoots") ?? []),
+      ];
+      for (const path of paths) {
+        if (
+          !(await resolveWorkspaceTarget(context.workspaceRoot, path))
+            .insideWorkspace
+        ) {
+          return createToolErrorResult(
+            "",
+            definition.spec.name,
+            "Scheduled jobs must stay inside the active workspace.",
+          );
+        }
+      }
+      return definition.execute(args, context);
+    },
+  }));
 };
