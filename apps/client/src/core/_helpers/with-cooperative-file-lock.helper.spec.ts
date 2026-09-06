@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import {
   mkdir,
   mkdtemp,
@@ -9,7 +10,8 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { promisify } from "node:util";
+import { describe, expect, it, vi } from "vitest";
 import {
   inspectCooperativeFileLock,
   withCooperativeFileLock,
@@ -203,136 +205,214 @@ describe("withCooperativeFileLock", () => {
     }
   });
 
-  it("explains when a recent orphan is not old enough to reclaim", async () => {
+  it.each([0, 84_681, 180_000])(
+    "recovers a dead owner aged %i ms without waiting for the stale threshold",
+    async (ageMs) => {
+      const directory = await mkdtemp(
+        join(tmpdir(), "machdoch-file-lock-orphan-"),
+      );
+      const destination = join(directory, "config.json");
+      const lockPath = `${destination}.machdoch.lock`;
+      const ownerDirectory = join(lockPath, "owner.dead-owner");
+
+      try {
+        await mkdir(ownerDirectory, { recursive: true });
+        await writeFile(
+          join(ownerDirectory, "owner.json"),
+          JSON.stringify({ token: "dead-owner", pid: 2_000_000_000 }),
+          "utf8",
+        );
+        const modified = new Date(Date.now() - ageMs);
+        await utimes(join(ownerDirectory, "owner.json"), modified, modified);
+
+        await expect(
+          withCooperativeFileLock(destination, async () => "refreshed", {
+            timeoutMs: 1_000,
+          }),
+        ).resolves.toBe("refreshed");
+        await expect(
+          inspectCooperativeFileLock(destination),
+        ).resolves.toMatchObject({
+          state: "unlocked",
+        });
+        expect(await readdir(directory)).toEqual([]);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.each(["EPERM", "EACCES", "EINVAL"])(
+    "preserves a lock when the owner probe fails with %s",
+    async (code) => {
+      const directory = await mkdtemp(
+        join(tmpdir(), "machdoch-file-lock-probe-"),
+      );
+      const destination = join(directory, "config.json");
+      const ownerDirectory = join(
+        `${destination}.machdoch.lock`,
+        "owner.uncertain",
+      );
+      const probe = vi.spyOn(process, "kill").mockImplementation(() => {
+        throw Object.assign(new Error("Process probe failed"), { code });
+      });
+
+      try {
+        await mkdir(ownerDirectory, { recursive: true });
+        await writeFile(
+          join(ownerDirectory, "owner.json"),
+          JSON.stringify({
+            token: "uncertain",
+            pid: process.pid,
+          }),
+        );
+        await expect(
+          withCooperativeFileLock(destination, async () => undefined, {
+            timeoutMs: 60,
+            staleLockAgeMs: 1,
+          }),
+        ).rejects.toThrow(`actively owned by PID ${process.pid}`);
+        await expect(stat(ownerDirectory)).resolves.toBeDefined();
+      } finally {
+        probe.mockRestore();
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("releases its lock when the operation fails", async () => {
     const directory = await mkdtemp(
-      join(tmpdir(), "machdoch-file-lock-orphan-"),
+      join(tmpdir(), "machdoch-file-lock-release-"),
     );
     const destination = join(directory, "config.json");
-    const lockPath = `${destination}.machdoch.lock`;
-    const ownerDirectory = join(lockPath, "owner.dead-owner");
 
     try {
-      await mkdir(ownerDirectory, { recursive: true });
-      await writeFile(
-        join(ownerDirectory, "owner.json"),
-        JSON.stringify({ token: "dead-owner", pid: 2_000_000_000 }),
-        "utf8",
-      );
-
       await expect(
-        withCooperativeFileLock(destination, async () => undefined, {
-          timeoutMs: 60,
-          staleLockAgeMs: 5_000,
+        withCooperativeFileLock(destination, async () => {
+          throw new Error("Operation failed");
         }),
-      ).rejects.toThrow(
-        /Owner PID 2000000000 is no longer running.*safe recovery/iu,
-      );
-      await expect(stat(lockPath)).resolves.toBeDefined();
+      ).rejects.toThrow("Operation failed");
+      expect(await readdir(directory)).toEqual([]);
+      await expect(
+        withCooperativeFileLock(destination, async () => "refreshed"),
+      ).resolves.toBe("refreshed");
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
   });
 
-  it("immediately recovers a confirmed-dead owner when requested", async () => {
-    const directory = await mkdtemp(
-      join(tmpdir(), "machdoch-file-lock-dead-owner-"),
-    );
+  it("recovers a lock left by a process exiting inside its operation", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "machdoch-file-lock-exit-"));
     const destination = join(directory, "config.json");
-    const lockPath = `${destination}.machdoch.lock`;
-    const ownerDirectory = join(lockPath, "owner.dead-owner");
+    const lockModuleUrl = new URL(
+      "./with-cooperative-file-lock.helper.ts",
+      import.meta.url,
+    ).href;
 
     try {
-      await mkdir(ownerDirectory, { recursive: true });
-      await writeFile(
-        join(ownerDirectory, "owner.json"),
-        JSON.stringify({ token: "dead-owner", pid: 2_000_000_000 }),
-        "utf8",
+      await promisify(execFile)(
+        process.execPath,
+        [
+          "--experimental-strip-types",
+          "--input-type=module",
+          "--eval",
+          `import { withCooperativeFileLock } from ${JSON.stringify(lockModuleUrl)};
+         await withCooperativeFileLock(process.argv[1], async () => process.exit(0));`,
+          destination,
+        ],
+        { windowsHide: true, timeout: 10_000 },
       );
-
       await expect(
-        withCooperativeFileLock(destination, async () => undefined, {
-          timeoutMs: 2_000,
-          staleLockAgeMs: 5_000,
-          recoverDeadOwnerImmediately: true,
+        inspectCooperativeFileLock(destination),
+      ).resolves.toMatchObject({
+        state: "orphaned",
+        staleAfterMs: 0,
+        owner: { processAlive: false },
+      });
+      await expect(
+        withCooperativeFileLock(destination, async () => "refreshed", {
+          timeoutMs: 1_000,
         }),
-      ).resolves.toBeUndefined();
-      await expect(stat(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+      ).resolves.toBe("refreshed");
+      expect(await readdir(directory)).toEqual([]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
   });
 
-  it("keeps the stale-age grace period for malformed owner metadata", async () => {
+  it("preserves recent incomplete owner metadata", async () => {
     const directory = await mkdtemp(
-      join(tmpdir(), "machdoch-file-lock-malformed-owner-"),
+      join(tmpdir(), "machdoch-file-lock-incomplete-"),
     );
     const destination = join(directory, "config.json");
-    const lockPath = `${destination}.machdoch.lock`;
-    const ownerDirectory = join(lockPath, "owner.malformed-owner");
+    const ownerDirectory = join(
+      `${destination}.machdoch.lock`,
+      "owner.incomplete",
+    );
 
     try {
       await mkdir(ownerDirectory, { recursive: true });
-      await writeFile(join(ownerDirectory, "owner.json"), '{"token":', "utf8");
-
+      await writeFile(join(ownerDirectory, "owner.json"), "");
       await expect(
         withCooperativeFileLock(destination, async () => undefined, {
           timeoutMs: 60,
-          staleLockAgeMs: 5_000,
-          recoverDeadOwnerImmediately: true,
         }),
       ).rejects.toThrow("Owner metadata is not available yet");
-      await expect(stat(lockPath)).resolves.toBeDefined();
+      await expect(stat(ownerDirectory)).resolves.toBeDefined();
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
   });
 
-  it("serializes two contenders recovering the same stale owner", async () => {
-    const directory = await mkdtemp(
-      join(tmpdir(), "machdoch-file-lock-stale-"),
-    );
-    const destination = join(directory, "config.json");
-    const lockPath = `${destination}.machdoch.lock`;
-    const ownerDirectory = join(lockPath, "owner.dead-owner");
-    const ownerPath = join(ownerDirectory, "owner.json");
-    const events: string[] = [];
-    let activeOperations = 0;
-    let maxActiveOperations = 0;
-
-    const runOperation = async (
-      name: string,
-      delayMs: number,
-    ): Promise<void> => {
-      activeOperations += 1;
-      maxActiveOperations = Math.max(maxActiveOperations, activeOperations);
-      events.push(`${name}-start`);
-      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
-      events.push(`${name}-end`);
-      activeOperations -= 1;
-    };
-
-    try {
-      await mkdir(lockPath);
-      await mkdir(ownerDirectory);
-      await writeFile(
-        ownerPath,
-        JSON.stringify({ token: "dead-owner", pid: 2_000_000_000 }),
-        "utf8",
+  it.each([0, 180_000])(
+    "serializes contenders recovering the same dead owner aged %i ms",
+    async (ageMs) => {
+      const directory = await mkdtemp(
+        join(tmpdir(), "machdoch-file-lock-stale-"),
       );
-      const staleTime = new Date(Date.now() - 180_000);
-      await utimes(ownerPath, staleTime, staleTime);
+      const destination = join(directory, "config.json");
+      const lockPath = `${destination}.machdoch.lock`;
+      const ownerDirectory = join(lockPath, "owner.dead-owner");
+      const ownerPath = join(ownerDirectory, "owner.json");
+      const events: string[] = [];
+      let activeOperations = 0;
+      let maxActiveOperations = 0;
 
-      await Promise.all([
-        withCooperativeFileLock(destination, () => runOperation("first", 40)),
-        withCooperativeFileLock(destination, () => runOperation("second", 0)),
-      ]);
+      const runOperation = async (
+        name: string,
+        delayMs: number,
+      ): Promise<void> => {
+        activeOperations += 1;
+        maxActiveOperations = Math.max(maxActiveOperations, activeOperations);
+        events.push(`${name}-start`);
+        await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+        events.push(`${name}-end`);
+        activeOperations -= 1;
+      };
 
-      expect(maxActiveOperations).toBe(1);
-      expect(events).toHaveLength(4);
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
+      try {
+        await mkdir(lockPath);
+        await mkdir(ownerDirectory);
+        await writeFile(
+          ownerPath,
+          JSON.stringify({ token: "dead-owner", pid: 2_000_000_000 }),
+          "utf8",
+        );
+        const staleTime = new Date(Date.now() - ageMs);
+        await utimes(ownerPath, staleTime, staleTime);
+
+        await Promise.all([
+          withCooperativeFileLock(destination, () => runOperation("first", 40)),
+          withCooperativeFileLock(destination, () => runOperation("second", 0)),
+        ]);
+
+        expect(maxActiveOperations).toBe(1);
+        expect(events).toHaveLength(4);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("recovers a stale token directory with truncated owner metadata", async () => {
     const directory = await mkdtemp(
