@@ -261,7 +261,7 @@ const parseOwnershipManifest = (
         candidate.path.length > 32_768 ||
         !isOwnershipProvider(candidate.provider) ||
         (candidate.scope !== "user" && candidate.scope !== "workspace") ||
-        candidate.format !== OWNERSHIP_FORMAT_BY_PROVIDER[candidate.provider] ||
+        typeof candidate.format !== "string" ||
         typeof candidate.managedDigest !== "string" ||
         !SHA256_PATTERN.test(candidate.managedDigest) ||
         typeof candidate.installedFileDigest !== "string" ||
@@ -275,6 +275,11 @@ const parseOwnershipManifest = (
       }
       const provider = candidate.provider;
       const targetFormat = OWNERSHIP_FORMAT_BY_PROVIDER[provider];
+      if (candidate.format !== targetFormat) {
+        throw new Error(
+          `${label} (${candidate.path}) has format ${JSON.stringify(candidate.format)}; ${provider} MCP ownership requires "${targetFormat}". Repair this record before retrying provider sync.`,
+        );
+      }
       if (seenPaths.has(candidate.path)) {
         throw new Error(
           `${path} contains duplicate ownership for ${candidate.path}.`,

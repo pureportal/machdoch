@@ -135,9 +135,11 @@ describe("provider ownership merge", () => {
     };
     expect(Object.hasOwn(parsed.mcpServers, "__proto__")).toBe(true);
     expect(Object.hasOwn(parsed.mcpServers, "constructor")).toBe(true);
-    await expect(inspectManagedTarget(installed.record)).resolves.toMatchObject({
-      managedCurrent: true,
-    });
+    await expect(inspectManagedTarget(installed.record)).resolves.toMatchObject(
+      {
+        managedCurrent: true,
+      },
+    );
   });
 
   it("blocks an unmanaged MCP-name collision without changing the file", async () => {
@@ -484,7 +486,9 @@ describe("provider ownership merge", () => {
       "utf8",
     );
 
-    await expect(loadOwnershipManifest(path)).rejects.toThrow("malformed");
+    await expect(loadOwnershipManifest(path)).rejects.toThrow(
+      `${path} target 0 (${join(root, "AGENTS.md")}) has format "markdown"; codex-cli MCP ownership requires "toml". Repair this record before retrying provider sync.`,
+    );
   });
 
   it("rejects a stale ownership-manifest commit without overwriting external state", async () => {
@@ -542,8 +546,10 @@ describe("provider ownership merge", () => {
       previous: checkpoint.manifest.targets[0]!,
     });
     expect(recovered.record.createdFile).toBe(true);
-    await expect(inspectManagedTarget(recovered.record)).resolves.toMatchObject({
-      managedCurrent: true,
-    });
+    await expect(inspectManagedTarget(recovered.record)).resolves.toMatchObject(
+      {
+        managedCurrent: true,
+      },
+    );
   });
 });
