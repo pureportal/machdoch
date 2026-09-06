@@ -31,22 +31,3 @@ export const clampDecimalSetting = (
 
   return Number(clampedValue.toFixed(decimals));
 };
-
-export const parseIntegerSettingInput = (
-  value: string,
-  min: number,
-  max: number,
-  fallback: number,
-): number => {
-  return clampIntegerSetting(Number(value), min, max, fallback);
-};
-
-export const parseDecimalSettingInput = (
-  value: string,
-  min: number,
-  max: number,
-  fallback: number,
-  decimals: number,
-): number => {
-  return clampDecimalSetting(Number(value), min, max, fallback, decimals);
-};

@@ -1,9 +1,9 @@
+import { SettingsNumberInput } from "./settings-number-input";
 import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import {
   AGENT_LIMIT_BOUNDS,
   DEFAULT_USER_AGENT_LIMITS_SETTINGS,
 } from "../../../../../core/runtime-contract.generated.js";
-import { Input } from "../../../components/ui/input";
 import { useOptionalRegisterCommands } from "../../../commands/command-context";
 import {
   asPaletteCommands,
@@ -34,10 +34,7 @@ import {
 } from "./shared";
 import { useSettingsNavigationGuard } from "./navigation-guard";
 import type { AgentLimitsSettingsControls } from "./types";
-import {
-  clampIntegerSetting,
-  parseIntegerSettingInput,
-} from "./number-settings";
+import { clampIntegerSetting } from "./number-settings";
 
 export interface AgentLimitsSettingsPanelProps {
   setup: AgentLimitsSettingsControls;
@@ -506,23 +503,17 @@ export const AgentLimitsSettingsPanel = ({
           label="Executor turns"
           detail="Model/tool turns inside one executor cycle."
         >
-          <Input
+          <SettingsNumberInput
             aria-label="Executor turn limit"
-            type="number"
             min={AGENT_LIMIT_BOUNDS.executorTurns.min}
             max={AGENT_LIMIT_BOUNDS.executorTurns.max}
             step="1"
             value={draft.executorTurns}
             disabled={setup.saving || draft.infinite}
-            onChange={(event) => {
+            onValueChange={(value) => {
               setDraft({
                 ...draft,
-                executorTurns: parseIntegerSettingInput(
-                  event.target.value,
-                  AGENT_LIMIT_BOUNDS.executorTurns.min,
-                  AGENT_LIMIT_BOUNDS.executorTurns.max,
-                  draft.executorTurns,
-                ),
+                executorTurns: value,
               });
             }}
             className="h-10 max-w-32 rounded-lg border-slate-800 bg-slate-950 text-slate-100 disabled:opacity-50"
@@ -533,23 +524,17 @@ export const AgentLimitsSettingsPanel = ({
           label="Machdoch continuations"
           detail="Executor cycles allowed after review feedback."
         >
-          <Input
+          <SettingsNumberInput
             aria-label="Machdoch continuation limit"
-            type="number"
             min={AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.min}
             max={AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.max}
             step="1"
             value={draft.autopilotExecutorIterations}
             disabled={setup.saving || draft.infinite}
-            onChange={(event) => {
+            onValueChange={(value) => {
               setDraft({
                 ...draft,
-                autopilotExecutorIterations: parseIntegerSettingInput(
-                  event.target.value,
-                  AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.min,
-                  AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.max,
-                  draft.autopilotExecutorIterations,
-                ),
+                autopilotExecutorIterations: value,
               });
             }}
             className="h-10 max-w-32 rounded-lg border-slate-800 bg-slate-950 text-slate-100 disabled:opacity-50"
@@ -688,7 +673,9 @@ export const AgentLimitsSettingsPanel = ({
               : null
         }
       />
-      <SettingsStatus message={setup.message} />
+      <SettingsStatus
+        message={setup.message?.tone === "success" ? null : setup.message}
+      />
     </SettingsCard>
   );
 };

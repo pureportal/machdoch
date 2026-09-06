@@ -1,14 +1,10 @@
 import { MemoryManagementTable } from "@machdoch/product-ui";
 import type { JSX } from "react";
 import { createMemoryManagementEntries } from "../../../components/memory-management-entries";
-import {
-  ChoiceButtons,
-  SettingPanel,
-  SettingsCard,
-  SettingsStatus,
-} from "./shared";
+import { SettingPanel, SettingsCard, SettingsStatus } from "./shared";
 import { useSettingsNavigationGuard } from "./navigation-guard";
 import type { MemorySettingsControls } from "./types";
+import { SettingsToggle } from "./settings-toggle";
 
 export interface MemorySettingsPanelProps {
   setup: MemorySettingsControls;
@@ -28,36 +24,24 @@ export const MemorySettingsPanel = ({
 
   return (
     <SettingsCard title="Memory">
-      <SettingPanel label="Global memory">
-        <ChoiceButtons
+      <SettingPanel label="Use global memory">
+        <SettingsToggle
           label="Global memory status"
-          value={setup.settings.globalEnabled ? "enabled" : "disabled"}
-          options={[
-            { value: "enabled", label: "Enabled" },
-            { value: "disabled", label: "Disabled" },
-          ]}
+          checked={setup.settings.globalEnabled}
           disabled={setup.saving}
-          onChange={(value) => {
-            void setup.onGlobalEnabledChange(value === "enabled");
+          onCheckedChange={(checked) => {
+            void setup.onGlobalEnabledChange(checked);
           }}
         />
       </SettingPanel>
 
       <SettingPanel label="Default workspace memory">
-        <ChoiceButtons
+        <SettingsToggle
           label="Default workspace memory status"
-          value={
-            setup.settings.workspaceDefaultEnabled !== false
-              ? "enabled"
-              : "disabled"
-          }
-          options={[
-            { value: "enabled", label: "Enabled" },
-            { value: "disabled", label: "Disabled" },
-          ]}
+          checked={setup.settings.workspaceDefaultEnabled !== false}
           disabled={setup.saving}
-          onChange={(value) => {
-            void setup.onWorkspaceDefaultEnabledChange?.(value === "enabled");
+          onCheckedChange={(checked) => {
+            void setup.onWorkspaceDefaultEnabledChange?.(checked);
           }}
         />
       </SettingPanel>

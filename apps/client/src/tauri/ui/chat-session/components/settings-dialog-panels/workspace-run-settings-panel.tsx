@@ -3,13 +3,10 @@ import {
   DEFAULT_USER_WORKSPACE_RUN_SETTINGS,
   WORKSPACE_RUN_SETTING_BOUNDS,
 } from "../../../../../core/runtime-contract.generated.js";
-import { Input } from "../../../components/ui/input";
+import { SettingsNumberInput } from "./settings-number-input";
 import type { UserWorkspaceRunSettings } from "../../../runtime";
 import { useSettingsNavigationGuard } from "./navigation-guard";
-import {
-  parseIntegerSettingInput,
-  clampIntegerSetting,
-} from "./number-settings";
+import { clampIntegerSetting } from "./number-settings";
 import {
   SettingPanel,
   SettingsAutoSaveStatus,
@@ -122,125 +119,63 @@ export const WorkspaceRunSettingsPanel = ({
     );
   }, [setup.settings]);
 
-  const updateInteger = (
-    key: keyof UserWorkspaceRunSettings,
-    value: string,
-    bounds: { min: number; max: number },
-  ): void => {
-    setDraft((current) =>
-      normalizeWorkspaceRunSettingsDraft({
-        ...current,
-        [key]: parseIntegerSettingInput(
-          value,
-          bounds.min,
-          bounds.max,
-          current[key],
-        ),
-      }),
-    );
-  };
-
-  const inputClassName =
-    "h-10 max-w-40 rounded-lg border-slate-800 bg-slate-950 text-slate-100 disabled:opacity-50";
+  const fields = [
+    {
+      key: "startupDelayMs",
+      label: "First health check delay (ms)",
+      inputLabel: "Startup delay in milliseconds",
+    },
+    {
+      key: "healthCheckIntervalMs",
+      label: "Health check interval (ms)",
+      inputLabel: "Health check interval in milliseconds",
+    },
+    {
+      key: "healthCheckTimeoutMs",
+      label: "Health check timeout (ms)",
+      inputLabel: "Health check timeout in milliseconds",
+    },
+    {
+      key: "healthCheckFailureThreshold",
+      label: "Health check failure threshold",
+      inputLabel: "Health check failure threshold",
+    },
+    {
+      key: "sequentialReadinessTimeoutMs",
+      label: "Sequential readiness timeout (ms)",
+      inputLabel: "Sequential readiness timeout in milliseconds",
+    },
+  ] as const;
 
   return (
     <SettingsCard title="Workspace Run">
-      <div className="grid gap-1">
-        <SettingPanel label="First health check delay (ms)">
-          <Input
-            aria-label="Startup delay in milliseconds"
-            type="number"
-            step="1"
-            {...WORKSPACE_RUN_SETTING_BOUNDS.startupDelayMs}
-            value={draft.startupDelayMs}
+      {fields.map(({ key, label, inputLabel }) => (
+        <SettingPanel key={key} label={label}>
+          <SettingsNumberInput
+            aria-label={inputLabel}
+            {...WORKSPACE_RUN_SETTING_BOUNDS[key]}
+            max={
+              key === "healthCheckTimeoutMs"
+                ? Math.min(
+                    WORKSPACE_RUN_SETTING_BOUNDS[key].max,
+                    draft.healthCheckIntervalMs,
+                  )
+                : WORKSPACE_RUN_SETTING_BOUNDS[key].max
+            }
+            value={draft[key]}
             disabled={setup.saving}
-            onChange={(event) =>
-              updateInteger(
-                "startupDelayMs",
-                event.target.value,
-                WORKSPACE_RUN_SETTING_BOUNDS.startupDelayMs,
+            onValueChange={(value) =>
+              setDraft((current) =>
+                normalizeWorkspaceRunSettingsDraft({
+                  ...current,
+                  [key]: value,
+                }),
               )
             }
-            className={inputClassName}
+            className="h-10 max-w-40 rounded-lg border-slate-800 bg-slate-950 text-slate-100 disabled:opacity-50"
           />
         </SettingPanel>
-        <SettingPanel label="Health check interval (ms)">
-          <Input
-            aria-label="Health check interval in milliseconds"
-            type="number"
-            step="1"
-            {...WORKSPACE_RUN_SETTING_BOUNDS.healthCheckIntervalMs}
-            value={draft.healthCheckIntervalMs}
-            disabled={setup.saving}
-            onChange={(event) =>
-              updateInteger(
-                "healthCheckIntervalMs",
-                event.target.value,
-                WORKSPACE_RUN_SETTING_BOUNDS.healthCheckIntervalMs,
-              )
-            }
-            className={inputClassName}
-          />
-        </SettingPanel>
-        <SettingPanel label="Health check timeout (ms)">
-          <Input
-            aria-label="Health check timeout in milliseconds"
-            type="number"
-            min={WORKSPACE_RUN_SETTING_BOUNDS.healthCheckTimeoutMs.min}
-            max={Math.min(
-              WORKSPACE_RUN_SETTING_BOUNDS.healthCheckTimeoutMs.max,
-              draft.healthCheckIntervalMs,
-            )}
-            step="1"
-            value={draft.healthCheckTimeoutMs}
-            disabled={setup.saving}
-            onChange={(event) =>
-              updateInteger(
-                "healthCheckTimeoutMs",
-                event.target.value,
-                WORKSPACE_RUN_SETTING_BOUNDS.healthCheckTimeoutMs,
-              )
-            }
-            className={inputClassName}
-          />
-        </SettingPanel>
-        <SettingPanel label="Health check failure threshold">
-          <Input
-            aria-label="Health check failure threshold"
-            type="number"
-            step="1"
-            {...WORKSPACE_RUN_SETTING_BOUNDS.healthCheckFailureThreshold}
-            value={draft.healthCheckFailureThreshold}
-            disabled={setup.saving}
-            onChange={(event) =>
-              updateInteger(
-                "healthCheckFailureThreshold",
-                event.target.value,
-                WORKSPACE_RUN_SETTING_BOUNDS.healthCheckFailureThreshold,
-              )
-            }
-            className={inputClassName}
-          />
-        </SettingPanel>
-        <SettingPanel label="Sequential readiness timeout (ms)">
-          <Input
-            aria-label="Sequential readiness timeout in milliseconds"
-            type="number"
-            step="1"
-            {...WORKSPACE_RUN_SETTING_BOUNDS.sequentialReadinessTimeoutMs}
-            value={draft.sequentialReadinessTimeoutMs}
-            disabled={setup.saving}
-            onChange={(event) =>
-              updateInteger(
-                "sequentialReadinessTimeoutMs",
-                event.target.value,
-                WORKSPACE_RUN_SETTING_BOUNDS.sequentialReadinessTimeoutMs,
-              )
-            }
-            className={inputClassName}
-          />
-        </SettingPanel>
-      </div>
+      ))}
       <SettingsAutoSaveStatus
         dirty={dirty}
         dirtyText="Run timeout changes not saved"
@@ -250,7 +185,9 @@ export const WorkspaceRunSettingsPanel = ({
           await setup.onSave(normalizedDraft);
         }}
       />
-      <SettingsStatus message={setup.message} />
+      <SettingsStatus
+        message={setup.message?.tone === "success" ? null : setup.message}
+      />
     </SettingsCard>
   );
 };

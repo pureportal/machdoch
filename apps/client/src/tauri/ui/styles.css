@@ -1935,10 +1935,6 @@ body {
   line-height: 1.2rem !important;
 }
 
-:root[data-density="compact"] .app-settings-dialog {
-  width: min(900px, calc(100vw - 28px)) !important;
-}
-
 :root[data-density="compact"] .app-settings-dialog [role="tab"],
 :root[data-density="compact"] .app-settings-dialog nav button {
   height: 2rem !important;
