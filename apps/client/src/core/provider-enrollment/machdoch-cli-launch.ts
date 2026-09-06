@@ -2,6 +2,7 @@ import { statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { resolve as resolveImport } from "import-meta-resolve";
 
 export interface MachdochCliLaunch {
   command: string;
@@ -46,15 +47,16 @@ const resolveNodePreloadSpecifier = (
   entry: string,
   asImport: boolean,
 ): string => {
-  if (
-    isAbsolute(specifier) ||
-    /^(?:node|data|file):/u.test(specifier)
-  ) {
+  if (isAbsolute(specifier)) {
+    return asImport ? pathToFileURL(specifier).href : specifier;
+  }
+  if (/^(?:node|data|file):/u.test(specifier)) {
     return specifier;
   }
   try {
-    const resolved = createRequire(entry).resolve(specifier);
-    return asImport ? pathToFileURL(resolved).href : resolved;
+    return asImport
+      ? resolveImport(specifier, pathToFileURL(entry).href)
+      : createRequire(entry).resolve(specifier);
   } catch (error) {
     throw new Error(
       `The Machdoch CLI Node preload module cannot be resolved from ${entry}: ${specifier}`,
@@ -78,7 +80,9 @@ const resolveNodePreloadArguments = (
     if (separatedImport || separatedRequire) {
       const specifier = args[index + 1];
       if (specifier === undefined) {
-        throw new Error(`The Machdoch CLI Node option ${argument} has no value.`);
+        throw new Error(
+          `The Machdoch CLI Node option ${argument} has no value.`,
+        );
       }
       resolved.push(
         argument,

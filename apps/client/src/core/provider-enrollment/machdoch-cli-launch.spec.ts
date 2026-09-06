@@ -91,6 +91,119 @@ describe("Machdoch CLI launch descriptor", () => {
     ).toThrow("has no entry script");
   });
 
+  it.each(["--import", "--loader", "--experimental-loader"])(
+    "resolves import-only package exports for %s in both argument forms",
+    async (flag) => {
+      const { root, runtime, entry, loader } = await createRuntimeFiles();
+      await writeFile(
+        join(root, "node_modules", "fixture-loader", "package.json"),
+        JSON.stringify({ exports: { "./register": { import: "./index.js" } } }),
+      );
+
+      expect(
+        resolveMachdochCliLaunch({
+          execPath: runtime,
+          execArgv: [
+            flag,
+            "fixture-loader/register",
+            `${flag}=fixture-loader/register`,
+          ],
+          argv: [runtime, entry],
+          cwd: root,
+          environment: {},
+        }).args,
+      ).toEqual([
+        flag,
+        pathToFileURL(loader).href,
+        `${flag}=${pathToFileURL(loader).href}`,
+        entry,
+      ]);
+    },
+  );
+
+  it("keeps import and require export conditions distinct", async () => {
+    const { root, runtime, entry, loader } = await createRuntimeFiles();
+    const required = join(
+      root,
+      "node_modules",
+      "fixture-loader",
+      "required.cjs",
+    );
+    await writeFile(required, "module.exports = {};\n");
+    await writeFile(
+      join(root, "node_modules", "fixture-loader", "package.json"),
+      JSON.stringify({
+        exports: { import: "./index.js", require: "./required.cjs" },
+      }),
+    );
+
+    expect(
+      resolveMachdochCliLaunch({
+        execPath: runtime,
+        execArgv: [
+          "--import",
+          "fixture-loader",
+          "-r",
+          "fixture-loader",
+          "--require=fixture-loader",
+        ],
+        argv: [runtime, entry],
+        cwd: root,
+        environment: {},
+      }).args,
+    ).toEqual([
+      "--import",
+      pathToFileURL(loader).href,
+      "-r",
+      required,
+      `--require=${required}`,
+      entry,
+    ]);
+  });
+
+  it("pins relative and absolute imports as file URLs", async () => {
+    const { root, runtime, entry, loader } = await createRuntimeFiles();
+    expect(
+      resolveMachdochCliLaunch({
+        execPath: runtime,
+        execArgv: [
+          "--import",
+          "./node_modules/fixture-loader/index.js",
+          "--import",
+          loader,
+        ],
+        argv: [runtime, entry],
+        cwd: root,
+        environment: {},
+      }).args,
+    ).toEqual([
+      "--import",
+      pathToFileURL(loader).href,
+      "--import",
+      pathToFileURL(loader).href,
+      entry,
+    ]);
+  });
+
+  it("reports unresolved preloads and missing option values", async () => {
+    const { root, runtime, entry } = await createRuntimeFiles();
+    const descriptor = {
+      execPath: runtime,
+      argv: [runtime, entry],
+      cwd: root,
+      environment: {},
+    };
+    expect(() =>
+      resolveMachdochCliLaunch({
+        ...descriptor,
+        execArgv: ["--import", "missing-loader"],
+      }),
+    ).toThrow("cannot be resolved");
+    expect(() =>
+      resolveMachdochCliLaunch({ ...descriptor, execArgv: ["--import"] }),
+    ).toThrow("has no value");
+  });
+
   it("pins a relative user config override to the launch directory", async () => {
     const { root, runtime, entry } = await createRuntimeFiles();
 
