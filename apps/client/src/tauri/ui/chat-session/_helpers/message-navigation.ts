@@ -16,10 +16,17 @@ export interface ConversationMessageViewportBounds {
 
 export type ConversationMessageViewportEdge = "start" | "end" | null;
 
-const isNavigableConversationMessage = (
+export const isNavigableConversationMessage = (
   message: ChatSessionMessage,
 ): boolean => {
-  return message.role !== "agent" || message.source?.kind !== "preview";
+  return (
+    message.role !== "agent" ||
+    (message.source?.kind !== "preview" &&
+      !(
+        message.lifecycle?.kind === "transient" &&
+        message.lifecycle.owner === "prompt-enhancement"
+      ))
+  );
 };
 
 export const getNavigableConversationMessages = (

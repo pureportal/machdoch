@@ -64,6 +64,7 @@ import {
   getNavigableConversationMessages,
   getRenderedMessageLimitForTarget,
   getVisibleConversationMessageId,
+  isNavigableConversationMessage,
 } from "../_helpers/message-navigation";
 import { isRecoveredTaskCrashMessage } from "../_helpers/session-task-continuation";
 import { MessageAttachmentsList } from "./context-attachments";
@@ -353,20 +354,12 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
   voicePlaybackSupported,
   workspaceRoot,
 }: ConversationMessageRowProps): JSX.Element | null {
-  if (message.role === "agent" && message.source?.kind === "preview") {
+  if (!isNavigableConversationMessage(message)) {
     return null;
   }
 
   const isPromptEnhancementPlaceholder =
     isPromptEnhancementPlaceholderMessage(message);
-  const isPromptEnhancementMarker =
-    message.lifecycle?.kind === "transient" &&
-    message.lifecycle.owner === "prompt-enhancement" &&
-    message.role === "agent";
-
-  if (isPromptEnhancementMarker) {
-    return null;
-  }
 
   const renderedContent = getRenderedMessageContent(message);
   const originalPromptContent =
