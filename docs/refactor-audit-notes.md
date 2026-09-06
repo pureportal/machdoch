@@ -68,7 +68,6 @@ There are 87 source or test files over 500 lines. Highest-risk files:
 - `apps/client/src/core/ralph-generation.ts` - 3,214 lines
 - `apps/client/src/core/scheduler.ts` - 3,073 lines after scheduler event-trigger matching extraction
 - `apps/client/src/tauri/ui/chat-session/_helpers/use-chat-session-controller.ts` - 2,707 lines
-- `apps/client/src/tauri/ui/marketplace/mcp-marketplace.tsx` - 2,383 lines
 - `apps/client/src/tauri/ui/chat-session.model.ts` - 2,281 lines
 - `apps/client/src/core/_helpers/utility-tool-definitions.ts` - 2,226 lines
 - `apps/client/src-tauri/src/desktop_task.rs` - 2,163 lines
@@ -108,7 +107,6 @@ Conservative candidates where business logic is embedded in broad modules instea
 - `apps/client/src/cli/_helpers/cli-args.ts`: command definitions, validation sets, help text, aliases, and parsing are mixed.
 - `apps/client/src/tauri/ui/runtime.ts`: UI-facing contract types, Tauri invoke wrappers, runtime config normalization, preview fixture fallback, event listeners, scheduler/Ralph/MCP APIs, and API-shape validation are mixed.
 - `apps/client/src/tauri/ui/chat-session/_helpers/use-chat-session-controller.ts`: React wiring, instruction registry mutations, attachment handling, speech input, session lifecycle, Fleet control, and task submission are mixed.
-- `apps/client/src/tauri/ui/marketplace/mcp-marketplace.tsx`: marketplace loading, filtering, selection, install state, enrichment, and rendering are mixed.
 - `apps/client/src-tauri/src/runtime_snapshot.rs`: config loading, provider availability, runtime serialization, user settings, MCP state, scheduler state, and snapshot construction are mixed.
 
 Refactor action: extract pure domain helpers adjacent to the owning module first. Promote cross-module helpers to `apps/client/src/helpers` only when reused outside the owning feature and behavior is identical.
@@ -140,7 +138,7 @@ There are 140 TypeScript/TSX source files without a direct same-name spec. The m
 - `apps/client/src/core/ralph.ts` and `apps/client/src/core/ralph-generation.ts` rely heavily on `apps/client/src/core/__test__` scenario coverage instead of same-name specs. Keep those scenario tests while extracting smaller helpers with direct specs.
 - `apps/client/src/core/ralph-layout.ts`, `apps/client/src/core/ralph-watches.ts`, `apps/client/src/core/mcp/presets.ts`, and `apps/client/src/core/mcp/types.ts` have no direct same-name specs.
 - `apps/client/src/cli/_helpers/cli-mcp-commands.ts`, `apps/client/src/cli/_helpers/cli-output.ts`, `apps/client/src/cli/_helpers/cli-ralph-commands.ts`, `apps/client/src/cli/_helpers/cli-summary-commands.ts`, and `apps/client/src/cli/_helpers/create-parsed-cli-args.helper.ts` have no direct same-name specs, though broader CLI specs cover some command behavior.
-- UI business/model modules without direct same-name specs include `apps/client/src/tauri/ui/lib/shell-store.ts`, `apps/client/src/tauri/ui/marketplace/mcp-marketplace-cache.ts`, `apps/client/src/tauri/ui/marketplace/mcp-marketplace.tsx`, `apps/client/src/tauri/ui/marketplace/mcp-marketplace-ui.tsx`, and several chat-session hooks under `apps/client/src/tauri/ui/chat-session/_helpers`.
+- UI business/model modules without direct same-name specs include `apps/client/src/tauri/ui/lib/shell-store.ts` and several chat-session hooks under `apps/client/src/tauri/ui/chat-session/_helpers`.
 - Rust source has no Rust unit/integration tests visible under `apps/client/src-tauri/src` for `runtime_snapshot`, `desktop_task`, `ui_control`, or `voice`.
 
 Refactor action: add focused specs when extracting pure helpers from the listed modules. Do not treat broad integration specs as sufficient for small helper behavior unless assertions already cover the exact branch being moved.
@@ -177,6 +175,5 @@ Treat the following as public or cross-process contracts and refactor with contr
 - Ralph persisted JSON formats under `.machdoch/ralph/**`, flow schema/version constants, and `apps/client/src/core/ralph.ts` storage helpers.
 - Scheduler persisted JSON at `.machdoch/scheduler.json` and scheduler schema/version constants in `apps/client/src/core/scheduler.ts`.
 - MCP config/cache types under `apps/client/src/core/mcp/**`.
-- Marketplace cache/enrichment/model shapes under `apps/client/src/tauri/ui/marketplace/**`.
 
 Refactor action: keep exported names, Tauri command names, JSON shapes, and persisted schema defaults stable unless the contract is intentionally updated with generated-contract regeneration and current-schema tests.

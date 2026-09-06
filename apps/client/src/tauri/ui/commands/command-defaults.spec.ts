@@ -26,10 +26,6 @@ const INTENTIONAL_SHARED_BINDINGS = [
   ["media.create.generate", "media.flow.run", "ralph.flow.run"],
   ["media.selection.delete", "ralph.selection.delete"],
   ["media.selection.delete-backspace", "ralph.selection.delete-backspace"],
-  ["marketplace.view.discover", "media.section.create"],
-  ["marketplace.view.installed", "media.section.assets"],
-  ["marketplace.view.registries", "media.section.graph"],
-  ["marketplace.view.advanced", "media.section.activity"],
   ["quick-chat.hide", "quick-voice.hide", "tray.hide"],
 ] as const satisfies readonly (readonly DefaultCommandShortcutId[])[];
 

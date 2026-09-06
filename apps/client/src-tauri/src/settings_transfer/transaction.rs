@@ -26,12 +26,11 @@ use super::{
     categories::{
         appearance_store_key, category_data_json, category_file_entries,
         category_resource_lock_paths, global_context_packs_from_shell_state,
-        has_file_ancestor_collision, marketplace_store_key,
-        provider_enrollment_reconcile_lock_path, ralph_flow_id_from_path, ralph_settings_store_key,
-        relative_path_to_wire, replace_global_context_packs, running_task_message_action_store_key,
-        snapshot_category, store_file, validate_chat_voice_preferences_value,
-        validate_global_ralph_preferences_value, validate_wire_path,
-        verify_unlinked_directory_chain, zeroize_json_value, zeroize_snapshot,
+        has_file_ancestor_collision, provider_enrollment_reconcile_lock_path,
+        ralph_flow_id_from_path, ralph_settings_store_key, relative_path_to_wire,
+        replace_global_context_packs, running_task_message_action_store_key, snapshot_category,
+        store_file, validate_chat_voice_preferences_value, validate_global_ralph_preferences_value,
+        validate_wire_path, verify_unlinked_directory_chain, zeroize_json_value, zeroize_snapshot,
         zeroize_snapshot_availability, MAX_MCP_BYTES, MAX_RALPH_FLOW_BYTES, MAX_TEXT_FILE_BYTES,
         MAX_TOTAL_ITEMS, MAX_USER_CONFIG_BYTES,
     },
@@ -694,22 +693,13 @@ fn capture_backup<R: Runtime>(
         consume_json_backup_budget(&value, &mut remaining_bytes)?;
         store_values.insert(ralph_settings_store_key().to_string(), value);
     }
-    if categories.contains(&SettingsCategoryId::DesktopAppearance)
-        || categories.contains(&SettingsCategoryId::GlobalMcp)
-    {
+    if categories.contains(&SettingsCategoryId::DesktopAppearance) {
         let store = app
             .store(store_file())
             .map_err(|_| "Desktop settings storage is unavailable.".to_string())?;
-        if categories.contains(&SettingsCategoryId::DesktopAppearance) {
-            let value = store.get(appearance_store_key());
-            consume_json_backup_budget(&value, &mut remaining_bytes)?;
-            store_values.insert(appearance_store_key().to_string(), value);
-        }
-        if categories.contains(&SettingsCategoryId::GlobalMcp) {
-            let value = store.get(marketplace_store_key());
-            consume_json_backup_budget(&value, &mut remaining_bytes)?;
-            store_values.insert(marketplace_store_key().to_string(), value);
-        }
+        let value = store.get(appearance_store_key());
+        consume_json_backup_budget(&value, &mut remaining_bytes)?;
+        store_values.insert(appearance_store_key().to_string(), value);
     }
     let mut files = BTreeMap::new();
     for category in categories.iter().copied().filter(|category| {
@@ -798,9 +788,6 @@ fn validate_resource_backup(backup: &ResourceBackup) -> Result<(), String> {
         .contains(&SettingsCategoryId::DesktopAppearance)
     {
         expected_store_keys.insert(appearance_store_key());
-    }
-    if backup.categories.contains(&SettingsCategoryId::GlobalMcp) {
-        expected_store_keys.insert(marketplace_store_key());
     }
     if backup
         .categories
@@ -989,9 +976,6 @@ fn acquire_store_write_leases<R: Runtime>(
     let mut operation_ids = Vec::new();
     if categories.contains(&SettingsCategoryId::DesktopAppearance) {
         operation_ids.push(format!("machdoch:store-write:{}", appearance_store_key()));
-    }
-    if categories.contains(&SettingsCategoryId::GlobalMcp) {
-        operation_ids.push(format!("machdoch:store-write:{}", marketplace_store_key()));
     }
     if categories.contains(&SettingsCategoryId::GlobalContextPacks) {
         operation_ids.push(format!("machdoch:store-write:{SHELL_STATE_STORAGE_KEY}"));
@@ -1415,7 +1399,7 @@ fn apply_file_category(root: &Path, snapshot: &CategorySnapshot) -> Result<(), S
     Ok(())
 }
 
-fn apply_mcp(root: &Path, snapshot: &CategorySnapshot) -> Result<Value, String> {
+fn apply_mcp(root: &Path, snapshot: &CategorySnapshot) -> Result<(), String> {
     let value = category_data_json(snapshot)?;
     let exists = value["exists"]
         .as_bool()
@@ -1428,7 +1412,7 @@ fn apply_mcp(root: &Path, snapshot: &CategorySnapshot) -> Result<Value, String> 
     } else {
         remove_file_if_exists(&path)?;
     }
-    Ok(value["marketplace"].clone())
+    Ok(())
 }
 
 fn apply_global_context_packs<R: Runtime>(
@@ -1538,14 +1522,10 @@ fn apply_global_ralph_preferences<R: Runtime>(
 fn apply_store_values<R: Runtime>(
     app: &AppHandle<R>,
     appearance: Option<Value>,
-    marketplace: Option<Value>,
     running_task_message_action: Option<Value>,
     ralph_preferences: Option<Value>,
 ) -> Result<(), String> {
-    if appearance.is_none()
-        && marketplace.is_none()
-        && running_task_message_action.is_none()
-        && ralph_preferences.is_none()
+    if appearance.is_none() && running_task_message_action.is_none() && ralph_preferences.is_none()
     {
         return Ok(());
     }
@@ -1554,9 +1534,6 @@ fn apply_store_values<R: Runtime>(
         .map_err(|_| "Desktop settings storage is unavailable.".to_string())?;
     if let Some(value) = appearance {
         store.set(appearance_store_key(), value);
-    }
-    if let Some(value) = marketplace {
-        store.set(marketplace_store_key(), value);
     }
     if let Some(value) = running_task_message_action {
         store.set(running_task_message_action_store_key(), value);
@@ -1596,7 +1573,6 @@ fn apply_envelope<R: Runtime>(
     } else {
         None
     };
-    let mut marketplace = None;
     let mut running_task_message_action = None;
     let mut ralph_preferences = None;
     for snapshot in &envelope.categories {
@@ -1608,7 +1584,7 @@ fn apply_envelope<R: Runtime>(
             SettingsCategoryId::ChatVoicePreferences => {
                 running_task_message_action = Some(apply_chat_voice_preferences(app, snapshot)?)
             }
-            SettingsCategoryId::GlobalMcp => marketplace = Some(apply_mcp(root, snapshot)?),
+            SettingsCategoryId::GlobalMcp => apply_mcp(root, snapshot)?,
             SettingsCategoryId::GlobalRalphPreferences => {
                 ralph_preferences = Some(apply_global_ralph_preferences(app, snapshot)?)
             }
@@ -1618,7 +1594,6 @@ fn apply_envelope<R: Runtime>(
     apply_store_values(
         app,
         appearance,
-        marketplace,
         running_task_message_action,
         ralph_preferences,
     )
@@ -2013,6 +1988,75 @@ mod tests {
             "machdoch-settings-transfer-{name}-{}-{unique}",
             std::process::id()
         ))
+    }
+
+    #[test]
+    fn mcp_import_replaces_only_the_global_configuration() {
+        let root = temporary_test_root("mcp-import");
+        let workspace_config = root.join("workspace/.machdoch/mcp/mcp.json");
+        fs::create_dir_all(
+            workspace_config
+                .parent()
+                .expect("workspace config directory"),
+        )
+        .expect("workspace config directory should be created");
+        fs::write(&workspace_config, b"workspace config")
+            .expect("workspace config should be written");
+        fs::write(root.join("mcp.json"), b"previous config")
+            .expect("global config should be written");
+        let config = serde_json::json!({
+            "schemaVersion": 1,
+            "servers": [{
+                "id": "local-tools",
+                "transport": { "type": "stdio", "command": "node", "args": ["server.js"] }
+            }]
+        });
+        for exists in [true, false] {
+            let snapshot = CategorySnapshot {
+                id: SettingsCategoryId::GlobalMcp,
+                schema_version: super::super::contract::CATEGORY_SCHEMA_VERSION,
+                replacement: if exists { "value" } else { "empty" }.to_string(),
+                item_count: u32::from(exists),
+                plaintext_bytes: 0,
+                sha256: String::new(),
+                data: super::super::contract::CategorySnapshotData::Json(serde_json::json!({
+                    "exists": exists,
+                    "config": if exists { config.clone() } else { serde_json::json!({}) }
+                })),
+            };
+
+            apply_mcp(&root, &snapshot).expect("MCP snapshot should apply");
+            assert_eq!(root.join("mcp.json").exists(), exists);
+            if exists {
+                let actual: Value = serde_json::from_slice(
+                    &fs::read(root.join("mcp.json")).expect("global config should be readable"),
+                )
+                .expect("global config should be valid JSON");
+                assert_eq!(actual, config);
+            }
+            assert_eq!(
+                fs::read(&workspace_config).expect("workspace config should remain"),
+                b"workspace config"
+            );
+        }
+        fs::remove_dir_all(&root).expect("test root should be removable");
+    }
+
+    #[test]
+    fn mcp_rollback_contains_only_the_global_config_file() {
+        let mut backup = ResourceBackup {
+            categories: BTreeSet::from([SettingsCategoryId::GlobalMcp]),
+            user_config: None,
+            mcp_config: Some(Some(BASE64.encode(b"{}\n"))),
+            store_values: BTreeMap::new(),
+            files: BTreeMap::new(),
+        };
+        validate_resource_backup(&backup).expect("MCP config alone should form a valid backup");
+
+        backup
+            .store_values
+            .insert("unrelated-key".to_string(), None);
+        assert!(validate_resource_backup(&backup).is_err());
     }
 
     #[test]

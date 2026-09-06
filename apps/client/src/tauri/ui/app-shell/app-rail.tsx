@@ -6,7 +6,6 @@ import {
   FolderGit2,
   MessageSquareText,
   Server,
-  Store,
   TerminalSquare,
   Workflow,
   type LucideIcon,
@@ -192,13 +191,6 @@ export const AppRail = ({
             activity={mediaActivity}
             onClick={() => onSelectApp("media")}
             shortcutId="app.view.media"
-          />
-          <AppRailButton
-            label="Marketplace"
-            icon={Store}
-            active={activeApp === "marketplace"}
-            onClick={() => onSelectApp("marketplace")}
-            shortcutId="app.view.marketplace"
           />
           <AppRailButton
             label="Instructions"

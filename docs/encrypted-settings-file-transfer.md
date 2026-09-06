@@ -45,7 +45,7 @@ The transferable catalog remains the source of truth:
 5. global memory
 6. global prompts
 7. global context packs (workspace-specific packs remain local)
-8. global MCP servers and marketplace registries
+8. global MCP servers
 9. global RALPH preferences
 10. global RALPH flows and their inline guidance
 

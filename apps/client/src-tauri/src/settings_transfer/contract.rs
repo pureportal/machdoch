@@ -98,8 +98,8 @@ impl SettingsCategoryId {
                 sensitive: true,
             },
             Self::GlobalMcp => CategoryMetadata {
-                label: "MCP Servers & Registries",
-                description: "Global MCP configuration and marketplace registry sources.",
+                label: "MCP Servers",
+                description: "Global MCP configuration.",
                 warning: Some("MCP configuration can contain credentials, commands, URLs, and local paths."),
                 default_selected: true,
                 sensitive: true,

@@ -86,7 +86,6 @@ const MAX_CONTEXT_PACK_ATTACHMENT_TEXT_CHARS: usize = 4_096;
 const RALPH_CORE_VALIDATION_TIMEOUT: Duration = Duration::from_secs(60);
 const STORE_FILE: &str = "machdoch-shell-state.json";
 const APPEARANCE_STORAGE_KEY: &str = "machdoch.desktop.appearance-state";
-const MCP_MARKETPLACE_STORAGE_KEY: &str = "machdoch.desktop.mcp-marketplace-state";
 const RUNNING_TASK_MESSAGE_ACTION_STORAGE_KEY: &str =
     "machdoch.desktop.running-task-message-action";
 const RALPH_SETTINGS_STORAGE_KEY: &str = "machdoch.desktop.ralph-settings";
@@ -817,7 +816,7 @@ fn snapshot_category_with_exported_at<R: Runtime>(
         SettingsCategoryId::GlobalMemory => snapshot_global_memory(),
         SettingsCategoryId::GlobalPrompts => snapshot_global_prompts(),
         SettingsCategoryId::GlobalContextPacks => snapshot_global_context_packs(app),
-        SettingsCategoryId::GlobalMcp => global_mcp::snapshot(app),
+        SettingsCategoryId::GlobalMcp => global_mcp::snapshot(),
         SettingsCategoryId::GlobalRalphPreferences => global_ralph::snapshot_preferences(app),
         SettingsCategoryId::GlobalRalphFlows => global_ralph::snapshot_flows(),
     };
@@ -859,7 +858,6 @@ pub(crate) fn category_resource_lock_paths(
     }
     if categories.contains(&SettingsCategoryId::GlobalMcp) {
         paths.push(root.join("mcp.json"));
-        paths.push(root.join(STORE_FILE));
     }
     if categories.contains(&SettingsCategoryId::DesktopAppearance) {
         paths.push(root.join(STORE_FILE));
@@ -1070,15 +1068,8 @@ fn snapshot_semantics(snapshot: &CategorySnapshot) -> Result<(u32, bool), String
                 .and_then(|config| config.get("servers"))
                 .and_then(Value::as_array)
                 .map_or(0, Vec::len);
-            let registries = value["marketplace"]
-                .get("registries")
-                .and_then(Value::as_array)
-                .map_or(0, Vec::len);
             let exists = value["exists"].as_bool().unwrap_or(false);
-            (
-                servers.saturating_add(registries),
-                !exists && registries == 0,
-            )
+            (servers, !exists)
         }
         (SettingsCategoryId::GlobalRalphPreferences, CategorySnapshotData::Json(_)) => {
             (RALPH_PREFERENCE_ITEM_COUNT as usize, false)
@@ -2000,10 +1991,6 @@ pub(crate) fn appearance_store_key() -> &'static str {
     APPEARANCE_STORAGE_KEY
 }
 
-pub(crate) fn marketplace_store_key() -> &'static str {
-    MCP_MARKETPLACE_STORAGE_KEY
-}
-
 pub(crate) fn running_task_message_action_store_key() -> &'static str {
     RUNNING_TASK_MESSAGE_ACTION_STORAGE_KEY
 }
@@ -2146,6 +2133,36 @@ mod tests {
                 .expect_err("a file cannot also be an ancestor directory")
                 .contains("nested below another file")
         );
+    }
+
+    #[test]
+    fn global_mcp_snapshots_preserve_config_and_file_presence() {
+        let config = json!({
+            "schemaVersion": 1,
+            "servers": [{
+                "id": "local-tools",
+                "transport": { "type": "stdio", "command": "node", "args": ["server.js"] }
+            }]
+        });
+        for (exists, config, count) in [
+            (false, json!({}), 0),
+            (true, json!({ "schemaVersion": 1, "servers": [] }), 0),
+            (true, config, 1),
+        ] {
+            let snapshot = create_json_snapshot(
+                SettingsCategoryId::GlobalMcp,
+                json!({ "exists": exists, "config": config }),
+                count,
+                !exists,
+            )
+            .expect("global MCP configuration should produce a snapshot");
+
+            validate_category_snapshot(&snapshot).expect("MCP snapshot should validate");
+            assert_eq!(
+                snapshot_semantics(&snapshot).expect("MCP summary"),
+                (count, !exists)
+            );
+        }
     }
 
     #[test]

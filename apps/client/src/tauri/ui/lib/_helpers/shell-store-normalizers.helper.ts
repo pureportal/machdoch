@@ -17,7 +17,6 @@ export type MainAppId =
   | "chat"
   | "ralph"
   | "media"
-  | "marketplace"
   | "instructions"
   | "workspaces";
 export type RunningTaskMessageAction = "steer" | "stop-and-send" | "queue";
@@ -26,18 +25,6 @@ export interface AppShellState {
   version: 1;
   activeApp: MainAppId;
   lastViewedAt: Record<MainAppId, number>;
-}
-
-export interface McpMarketplaceRegistrySourceState {
-  id: string;
-  title: string;
-  baseUrl: string;
-  enabled: boolean;
-}
-
-export interface McpMarketplaceState {
-  version: 1;
-  registries: McpMarketplaceRegistrySourceState[];
 }
 
 export interface RalphSettings {
@@ -98,7 +85,6 @@ export const DEFAULT_APP_SHELL_STATE = {
     chat: 0,
     ralph: 0,
     media: 0,
-    marketplace: 0,
     instructions: 0,
     workspaces: 0,
   },
@@ -106,11 +92,6 @@ export const DEFAULT_APP_SHELL_STATE = {
 
 export const DEFAULT_RUNNING_TASK_MESSAGE_ACTION =
   "queue" as const satisfies RunningTaskMessageAction;
-
-export const DEFAULT_MCP_MARKETPLACE_STATE = {
-  version: 1,
-  registries: [],
-} as const satisfies McpMarketplaceState;
 
 export const DEFAULT_RALPH_SETTINGS = {
   version: 1,
@@ -180,7 +161,7 @@ const normalizeStringHistory = (value: unknown, limit: number): string[] => {
 const normalizeMainAppId = (value: unknown): MainAppId => {
   return normalizeOneOf(
     value,
-    ["chat", "ralph", "media", "marketplace", "instructions", "workspaces"],
+    ["chat", "ralph", "media", "instructions", "workspaces"],
     "chat",
   );
 };
@@ -218,10 +199,6 @@ export const normalizeAppShellState = (value: unknown): AppShellState => {
         typeof lastViewedAt.media === "number"
           ? lastViewedAt.media
           : DEFAULT_APP_SHELL_STATE.lastViewedAt.media,
-      marketplace:
-        typeof lastViewedAt.marketplace === "number"
-          ? lastViewedAt.marketplace
-          : DEFAULT_APP_SHELL_STATE.lastViewedAt.marketplace,
       instructions:
         typeof lastViewedAt.instructions === "number"
           ? lastViewedAt.instructions
@@ -231,45 +208,6 @@ export const normalizeAppShellState = (value: unknown): AppShellState => {
           ? lastViewedAt.workspaces
           : DEFAULT_APP_SHELL_STATE.lastViewedAt.workspaces,
     },
-  };
-};
-
-const normalizeMarketplaceRegistrySource = (
-  value: unknown,
-): McpMarketplaceRegistrySourceState | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const id = normalizeOptionalString(value.id);
-  const title = normalizeOptionalString(value.title);
-  const baseUrl = normalizeOptionalString(value.baseUrl);
-
-  if (!id || !title || !baseUrl) {
-    return undefined;
-  }
-
-  return {
-    id,
-    title,
-    baseUrl,
-    enabled: value.enabled !== false,
-  };
-};
-
-export const normalizeMcpMarketplaceState = (
-  value: unknown,
-): McpMarketplaceState => {
-  if (!isRecord(value) || value.version !== 1) {
-    return DEFAULT_MCP_MARKETPLACE_STATE;
-  }
-
-  return {
-    version: 1,
-    registries: normalizeArrayItems(
-      value.registries,
-      normalizeMarketplaceRegistrySource,
-    ),
   };
 };
 

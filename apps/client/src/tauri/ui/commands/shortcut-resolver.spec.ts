@@ -427,59 +427,6 @@ describe("shortcut resolution", () => {
     );
   });
 
-  it("reuses section navigation only across mutually exclusive views", () => {
-    const commands = [
-      command(
-        "media.section.create",
-        { kind: "view", ownerId: "media" },
-        {
-          shortcuts: [
-            {
-              chord: getDefaultCommandShortcut("media.section.create"),
-              runtimes: ["tauri"],
-              allowIn: ["document", "text-entry"],
-            },
-          ],
-        },
-      ),
-      command(
-        "marketplace.view.discover",
-        { kind: "view", ownerId: "marketplace" },
-        {
-          shortcuts: [
-            {
-              chord: getDefaultCommandShortcut("marketplace.view.discover"),
-              runtimes: ["tauri"],
-              allowIn: ["document", "text-entry"],
-            },
-          ],
-        },
-      ),
-    ];
-    const sectionEvent = event({
-      key: "1",
-      code: "Digit1",
-      ctrlKey: false,
-      altKey: true,
-    });
-    for (const activeView of ["media", "marketplace"]) {
-      const resolution = resolveShortcut(
-        sectionEvent,
-        commands,
-        createShortcutContext({
-          platform: "windows",
-          runtime: "tauri",
-          activeView,
-          focus: { kind: "text-entry", ownerPath: [] },
-        }),
-      );
-      expect(resolution.type).toBe("command");
-      if (resolution.type === "command") {
-        expect(resolution.command.scope.ownerId).toBe(activeView);
-      }
-    }
-  });
-
   it("reuses Escape only across mutually exclusive auxiliary surfaces", () => {
     const surfaceIds = ["quick-chat", "quick-voice", "tray"] as const;
     const commands = surfaceIds.map((surfaceId) =>

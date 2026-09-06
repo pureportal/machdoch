@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AppearanceSettings,
   AppShellState,
-  McpMarketplaceState,
   OnboardingState,
   RalphSettings,
   RunningTaskMessageAction,
@@ -11,13 +10,11 @@ import type {
 import {
   DEFAULT_APP_SHELL_STATE,
   DEFAULT_APPEARANCE_SETTINGS,
-  DEFAULT_MCP_MARKETPLACE_STATE,
   DEFAULT_RALPH_SETTINGS,
   DEFAULT_RUNNING_TASK_MESSAGE_ACTION,
   DEFAULT_TERMINAL_PROFILE_SETTINGS,
   normalizeAppearanceSettings,
   normalizeAppShellState,
-  normalizeMcpMarketplaceState,
   normalizeRalphSettings,
   normalizeRunningTaskMessageAction,
   normalizeTerminalProfileSettings,
@@ -37,7 +34,6 @@ import {
 export {
   DEFAULT_APP_SHELL_STATE,
   DEFAULT_APPEARANCE_SETTINGS,
-  DEFAULT_MCP_MARKETPLACE_STATE,
   DEFAULT_RALPH_SETTINGS,
   DEFAULT_RUNNING_TASK_MESSAGE_ACTION,
   DEFAULT_TERMINAL_PROFILE_SETTINGS,
@@ -49,8 +45,6 @@ export type {
   AppearanceTheme,
   AppShellState,
   MainAppId,
-  McpMarketplaceRegistrySourceState,
-  McpMarketplaceState,
   OnboardingState,
   QuickChatBubbleStyle,
   RalphFlowLibraryMode,
@@ -83,7 +77,6 @@ const RUNNING_TASK_MESSAGE_ACTION_IMPORT_REVISION_KEY =
 const RALPH_SETTINGS_STORAGE_KEY = "machdoch.desktop.ralph-settings";
 const ONBOARDING_STORAGE_KEY = "machdoch.desktop.onboarding-state";
 const APPEARANCE_STORAGE_KEY = "machdoch.desktop.appearance-state";
-const MCP_MARKETPLACE_STORAGE_KEY = "machdoch.desktop.mcp-marketplace-state";
 const TERMINAL_PROFILE_SETTINGS_STORAGE_KEY =
   "machdoch.desktop.terminal-profile-settings";
 
@@ -646,50 +639,5 @@ export const saveTerminalProfileSettings = async (
       "Failed to persist terminal profile settings to Tauri store",
     localStorageErrorMessage:
       "Failed to persist terminal profile settings to localStorage",
-  });
-};
-
-export const updateMcpMarketplaceStateAtomically = async (
-  update: (state: McpMarketplaceState) => McpMarketplaceState,
-): Promise<McpMarketplaceState> => {
-  return withStoredValueWriteLock(MCP_MARKETPLACE_STORAGE_KEY, async () => {
-    const latest = await loadMcpMarketplaceState();
-    const next = normalizeMcpMarketplaceState(update(latest));
-    await saveRequiredStoredValueUnlocked({
-      storageKey: MCP_MARKETPLACE_STORAGE_KEY,
-      value: next,
-      tauriErrorMessage:
-        "Failed to persist MCP marketplace state to Tauri store",
-      localStorageErrorMessage:
-        "Failed to persist MCP marketplace state to localStorage",
-    });
-    return next;
-  });
-};
-
-export const loadMcpMarketplaceState =
-  async (): Promise<McpMarketplaceState> => {
-    return loadStoredValue<McpMarketplaceState>({
-      storageKey: MCP_MARKETPLACE_STORAGE_KEY,
-      fallback: DEFAULT_MCP_MARKETPLACE_STATE,
-      normalize: normalizeMcpMarketplaceState,
-      tauriErrorMessage:
-        "Failed to load MCP marketplace state from Tauri store",
-      localStorageErrorMessage:
-        "Failed to load MCP marketplace state from localStorage",
-    });
-  };
-
-export const saveMcpMarketplaceState = async (
-  state: McpMarketplaceState,
-): Promise<void> => {
-  const normalizedState = normalizeMcpMarketplaceState(state);
-
-  await saveRequiredStoredValue({
-    storageKey: MCP_MARKETPLACE_STORAGE_KEY,
-    value: normalizedState,
-    tauriErrorMessage: "Failed to persist MCP marketplace state to Tauri store",
-    localStorageErrorMessage:
-      "Failed to persist MCP marketplace state to localStorage",
   });
 };
