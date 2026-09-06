@@ -126,7 +126,7 @@ fn load_observed_owner(path: &Path) -> Option<ObservedFileLockOwner> {
 #[cfg(windows)]
 fn process_is_alive(pid: u32) -> bool {
     use windows::Win32::{
-        Foundation::{CloseHandle, E_ACCESSDENIED},
+        Foundation::{CloseHandle, E_INVALIDARG},
         System::Threading::{GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION},
     };
 
@@ -134,11 +134,11 @@ fn process_is_alive(pid: u32) -> bool {
         match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
             Ok(handle) => {
                 let mut exit_code = 0_u32;
-                let alive = GetExitCodeProcess(handle, &mut exit_code).is_ok() && exit_code == 259;
+                let alive = GetExitCodeProcess(handle, &mut exit_code).is_err() || exit_code == 259;
                 let _ = CloseHandle(handle);
                 alive
             }
-            Err(error) => error.code() == E_ACCESSDENIED,
+            Err(error) => error.code() != E_INVALIDARG,
         }
     }
 }
@@ -312,7 +312,7 @@ fn cleanup_stale_candidates(path: &Path, runtime: &impl LockRuntime) {
     }
 }
 
-fn quarantine_stale_lock(path: &Path, runtime: &impl LockRuntime) -> Result<(), String> {
+fn quarantine_abandoned_lock(path: &Path, runtime: &impl LockRuntime) -> Result<(), String> {
     let Some(observed) = load_observed_owner(path) else {
         if let Ok(entries) = fs::read_dir(path) {
             for entry in entries.flatten() {
@@ -376,22 +376,6 @@ fn quarantine_stale_lock(path: &Path, runtime: &impl LockRuntime) -> Result<(), 
         }
         return Ok(());
     };
-    let metadata = match fs::metadata(owner_path(&observed.path)) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => {
-            return Err(format!(
-                "Failed to inspect configuration lock {}: {error}",
-                path.display()
-            ))
-        }
-    };
-    let modified = metadata.modified().unwrap_or_else(|_| runtime.now());
-    let age = runtime.now().duration_since(modified).unwrap_or_default();
-    if age < STALE_LOCK_AGE {
-        return Ok(());
-    }
-
     if runtime.is_process_alive(observed.owner.pid) {
         return Ok(());
     }
@@ -524,7 +508,7 @@ fn acquire_cooperative_file_lock_with_runtime(
                 Ok(()) => return Ok(()),
                 Err(_error) if candidate.exists() => {
                     if path.exists() {
-                        quarantine_stale_lock(&path, runtime)?;
+                        quarantine_abandoned_lock(&path, runtime)?;
                     }
 
                     if runtime.elapsed(started) >= LOCK_TIMEOUT {
@@ -881,7 +865,7 @@ mod tests {
     }
 
     #[test]
-    fn deterministic_runtime_recovers_a_dead_stale_owner() {
+    fn deterministic_runtime_recovers_a_dead_owner_without_waiting_for_staleness() {
         let (destination, directory) = test_destination();
         let path = lock_path(&destination);
         let owner_directory = path.join("owner.dead");
@@ -901,13 +885,14 @@ mod tests {
             .open(owner_path(&owner_directory))
             .expect("dead owner should open");
         owner_file
-            .set_times(FileTimes::new().set_modified(now - Duration::from_secs(180)))
+            .set_times(FileTimes::new().set_modified(now - Duration::from_millis(84_681)))
             .expect("dead owner timestamp should update");
         drop(owner_file);
         let runtime = TestLockRuntime::new(now, false);
 
         let acquired = acquire_cooperative_file_lock_with_runtime(&destination, &runtime)
-            .expect("dead stale owner should be recovered");
+            .expect("recent dead owner should be recovered");
+        assert!(runtime.elapsed_millis.load(Ordering::SeqCst) < LOCK_TIMEOUT.as_millis() as u64);
         assert_ne!(
             load_observed_owner(&path)
                 .expect("new owner should be observable")
@@ -923,7 +908,7 @@ mod tests {
     }
 
     #[test]
-    fn serializes_two_contenders_recovering_the_same_stale_owner() {
+    fn serializes_two_contenders_recovering_the_same_recent_dead_owner() {
         let (destination, directory) = test_destination();
         let path = lock_path(&destination);
         fs::create_dir(&path).expect("stale lock directory should be created");
@@ -938,15 +923,6 @@ mod tests {
             .expect("stale owner should serialize"),
         )
         .expect("stale owner should write");
-        let owner_file = OpenOptions::new()
-            .write(true)
-            .open(owner_path(&owner_directory))
-            .expect("stale owner should open");
-        owner_file
-            .set_times(FileTimes::new().set_modified(SystemTime::now() - Duration::from_secs(180)))
-            .expect("stale owner timestamp should update");
-        drop(owner_file);
-
         let active = Arc::new(AtomicUsize::new(0));
         let max_active = Arc::new(AtomicUsize::new(0));
         let handles = (0..2)
@@ -977,6 +953,31 @@ mod tests {
         assert!(!path.exists());
         remove_directory_tree(&directory, &SystemLockRuntime)
             .expect("test directory should be removable");
+    }
+
+    #[test]
+    fn preserves_recent_incomplete_owner_metadata() {
+        let (destination, directory) = test_destination();
+        let path = lock_path(&destination);
+        let owner_directory = path.join("owner.incomplete");
+        fs::create_dir_all(&owner_directory).expect("owner directory should be created");
+        fs::write(owner_path(&owner_directory), []).expect("incomplete owner should be written");
+        let runtime = TestLockRuntime::new(SystemTime::now(), false);
+
+        let error = acquire_cooperative_file_lock_with_runtime(&destination, &runtime)
+            .err()
+            .expect("incomplete metadata should retain its grace period");
+
+        assert!(error.contains("Timed out waiting for configuration lock"));
+        assert!(owner_path(&owner_directory).exists());
+        remove_directory_tree(&directory, &SystemLockRuntime)
+            .expect("test directory should be removable");
+    }
+
+    #[test]
+    fn distinguishes_a_running_process_from_a_missing_process() {
+        assert!(process_is_alive(std::process::id()));
+        assert!(!process_is_alive(2_000_000_000));
     }
 
     #[test]

@@ -34,7 +34,6 @@ interface ObservedFileLockOwner extends FileLockOwner {
 export interface CooperativeFileLockOptions {
   timeoutMs?: number;
   staleLockAgeMs?: number;
-  recoverDeadOwnerImmediately?: boolean;
   ownerDescription?: string;
 }
 
@@ -119,7 +118,7 @@ const isProcessAlive = (pid: number): boolean => {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    return getErrorCode(error) === "EPERM";
+    return getErrorCode(error) !== "ESRCH";
   }
 };
 
@@ -246,10 +245,9 @@ const removeCanonicalIfEmpty = async (lockPath: string): Promise<boolean> => {
   }
 };
 
-const quarantineStaleLock = async (
+const quarantineAbandonedLock = async (
   lockPath: string,
   staleLockAgeMs: number,
-  recoverDeadOwnerImmediately: boolean,
 ): Promise<void> => {
   const owner = await loadObservedOwner(lockPath);
   if (!owner) {
@@ -298,15 +296,7 @@ const quarantineStaleLock = async (
     return;
   }
 
-  const metadata = await stat(join(owner.ownerPath, OWNER_FILE_NAME)).catch(
-    () => null,
-  );
-  if (
-    !metadata ||
-    isProcessAlive(owner.pid) ||
-    (!recoverDeadOwnerImmediately &&
-      Date.now() - metadata.mtimeMs < staleLockAgeMs)
-  ) {
+  if (isProcessAlive(owner.pid)) {
     return;
   }
 
@@ -368,12 +358,8 @@ export const inspectCooperativeFileLock = async (
   const processAlive = isProcessAlive(owner.pid);
   return {
     lockPath,
-    state: processAlive
-      ? "active"
-      : ageMs >= staleAfterMs
-        ? "stale"
-        : "orphaned",
-    staleAfterMs,
+    state: processAlive ? "active" : "orphaned",
+    staleAfterMs: processAlive ? staleAfterMs : 0,
     ageMs,
     owner: {
       token: owner.token,
@@ -400,13 +386,10 @@ const formatLockTimeout = (
     );
   }
   if (inspection.state === "orphaned" && owner) {
-    const remainingMs = Math.max(
-      0,
-      inspection.staleAfterMs - (inspection.ageMs ?? 0),
-    );
     return (
       `${prefix} Owner PID ${owner.pid} is no longer running; ` +
-      `the orphaned lock becomes eligible for safe recovery in about ${remainingMs}ms.`
+      "the orphaned lock could not be quarantined. Retry the operation and run " +
+      "`machdoch provider-sync doctor` if it persists."
     );
   }
   if (inspection.state === "stale") {
@@ -506,11 +489,7 @@ export const withCooperativeFileLock = async <T>(
         break;
       } catch (error) {
         if (await targetExists(lockPath)) {
-          await quarantineStaleLock(
-            lockPath,
-            staleLockAgeMs,
-            options.recoverDeadOwnerImmediately === true,
-          );
+          await quarantineAbandonedLock(lockPath, staleLockAgeMs);
         } else if (!(await targetExists(candidatePath))) {
           throw error;
         }

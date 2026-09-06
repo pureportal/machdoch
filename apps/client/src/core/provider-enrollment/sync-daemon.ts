@@ -352,7 +352,6 @@ const loadActiveDaemonRecord = async (): Promise<DaemonRecord | undefined> => {
     async () => await loadRecoverableDaemonRecordUnlocked(),
     {
       ownerDescription: "provider-sync daemon state recovery",
-      recoverDeadOwnerImmediately: true,
     },
   );
 };
@@ -400,7 +399,6 @@ const removeStoppedDaemonRecord = async (
     },
     {
       ownerDescription: "provider-sync stopped daemon recovery",
-      recoverDeadOwnerImmediately: true,
     },
   );
   return removed;
@@ -469,7 +467,6 @@ export const stopProviderSyncDaemon = async (
     },
     {
       ownerDescription: "provider-sync authenticated daemon stop",
-      recoverDeadOwnerImmediately: true,
     },
   );
   if (!requested) return false;
@@ -534,7 +531,6 @@ const acquireDaemon = async (
     },
     {
       ownerDescription: "provider-sync daemon single-instance election",
-      recoverDeadOwnerImmediately: true,
     },
   );
   return {
@@ -560,7 +556,6 @@ const acquireDaemon = async (
         },
         {
           ownerDescription: "provider-sync daemon release",
-          recoverDeadOwnerImmediately: true,
         },
       );
     },

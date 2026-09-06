@@ -144,7 +144,6 @@ const runService = async (args: ParsedCliArgs): Promise<void> => {
       },
       {
         timeoutMs: 100,
-        recoverDeadOwnerImmediately: true,
         ownerDescription: "Fleet CLI service",
       },
     );
