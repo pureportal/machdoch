@@ -1,90 +1,217 @@
 // @vitest-environment jsdom
-/// <reference types="vitest/globals" />
-import { act, cleanup, renderHook } from "@testing-library/react";
-import { useSchedulerActivity } from "./use-scheduler-activity";
 
-const { listSchedulerRuns } = vi.hoisted(() => ({
-  listSchedulerRuns: vi.fn(),
+import { createElement, StrictMode } from "react";
+import { act, cleanup, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useSchedulerActivity } from "./use-scheduler-activity";
+import type { WorkspaceSchedulerActivity } from "./scheduler-activity-runtime";
+
+const { loadSchedulerActivity } = vi.hoisted(() => ({
+  loadSchedulerActivity:
+    vi.fn<
+      (roots: readonly string[]) => Promise<WorkspaceSchedulerActivity[]>
+    >(),
 }));
-vi.mock("../runtime", () => ({ listSchedulerRuns }));
+
+vi.mock("./scheduler-activity-runtime", () => ({ loadSchedulerActivity }));
+
+const running: WorkspaceSchedulerActivity[] = [
+  { workspaceRoot: "first", runs: [{ id: "run-1", status: "running" }] },
+];
 
 beforeEach(() => {
   vi.useFakeTimers();
-  listSchedulerRuns.mockReset().mockResolvedValue({ runs: [] });
+  loadSchedulerActivity.mockReset().mockResolvedValue(running);
+  vi.spyOn(console, "warn").mockImplementation(() => undefined);
 });
+
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
 });
-const flush = async () => {
-  await act(async () => {});
+
+const settle = async (): Promise<void> => {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
 };
 
-it("polls idle workspaces once per minute and does not restart on navigation", async () => {
-  const { rerender } = renderHook(
-    ({ viewed }) => useSchedulerActivity(["a", "a", "b"], viewed),
-    {
-      initialProps: { viewed: false },
-    },
-  );
-  await flush();
-  expect(listSchedulerRuns).toHaveBeenCalledTimes(2);
-  rerender({ viewed: true });
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(59_999);
+describe("scheduler activity polling", () => {
+  it("polls idle workspaces once per minute without restarting on navigation", async () => {
+    loadSchedulerActivity.mockResolvedValue([
+      { workspaceRoot: "first", runs: [] },
+    ]);
+    const { rerender } = renderHook(
+      ({ viewed }) => useSchedulerActivity(["first"], viewed),
+      { initialProps: { viewed: false } },
+    );
+    await settle();
+    rerender({ viewed: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(59_999);
+    });
+    expect(loadSchedulerActivity).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(loadSchedulerActivity).toHaveBeenCalledTimes(2);
   });
-  expect(listSchedulerRuns).toHaveBeenCalledTimes(2);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(1);
-  });
-  expect(listSchedulerRuns).toHaveBeenCalledTimes(4);
-});
 
-it("limits simultaneous CLI launches and stops pending batches on unmount", async () => {
-  let release: (value: { runs: [] }) => void = () => {};
-  const pending = new Promise<{ runs: [] }>((resolve) => {
-    release = resolve;
+  it("reports runs that start and finish between idle polls", async () => {
+    loadSchedulerActivity.mockResolvedValue([
+      { workspaceRoot: "first", runs: [] },
+    ]);
+    const { result } = renderHook(() => useSchedulerActivity(["first"], false));
+    await settle();
+    expect(result.current).toBe("idle");
+    loadSchedulerActivity.mockResolvedValue([
+      {
+        workspaceRoot: "first",
+        runs: [{ id: "quick-run", status: "succeeded" }],
+      },
+    ]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(result.current).toBe("completed");
   });
-  listSchedulerRuns.mockReturnValue(pending);
-  const { unmount } = renderHook(() =>
-    useSchedulerActivity(["a", "b", "c", "d", "e"], false),
-  );
-  expect(listSchedulerRuns).toHaveBeenCalledTimes(2);
-  unmount();
-  release({ runs: [] });
-  await flush();
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(120_000);
-  });
-  expect(listSchedulerRuns).toHaveBeenCalledTimes(2);
-});
 
-it("keeps fast polling while a run is active, including after a failed read", async () => {
-  listSchedulerRuns
-    .mockResolvedValueOnce({ runs: [{ id: "run", status: "running" }] })
-    .mockRejectedValueOnce(new Error("offline"));
-  const { result } = renderHook(() => useSchedulerActivity(["a"], false));
-  await flush();
-  const running = result.current;
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(5_000);
-  });
-  expect(result.current).toEqual(running);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(5_000);
-  });
-  expect(listSchedulerRuns).toHaveBeenCalledTimes(3);
-});
+  it("batches workspaces and does not start more reads while one is pending", async () => {
+    let finish!: (result: WorkspaceSchedulerActivity[]) => void;
+    loadSchedulerActivity.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    renderHook(() => useSchedulerActivity(["second", "first", "first"], false));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
 
-it("reports runs that start and finish between idle polls", async () => {
-  const { result } = renderHook(() => useSchedulerActivity(["a"], false));
-  await flush();
-  expect(result.current).toBe("idle");
-  listSchedulerRuns.mockResolvedValue({
-    runs: [{ id: "quick-run", status: "succeeded" }],
+    expect(loadSchedulerActivity).toHaveBeenCalledExactlyOnceWith([
+      "first",
+      "second",
+    ]);
+    await act(async () => {
+      finish(running);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(loadSchedulerActivity).toHaveBeenCalledTimes(2);
   });
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(60_000);
+
+  it("does not restart polling when opening the scheduler during a read", async () => {
+    let finish!: (result: WorkspaceSchedulerActivity[]) => void;
+    const { result, rerender } = renderHook(
+      ({ viewed }) => useSchedulerActivity(["first"], viewed),
+      { initialProps: { viewed: false } },
+    );
+    await settle();
+    expect(result.current).toBe("running");
+    loadSchedulerActivity.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    rerender({ viewed: true });
+    expect(loadSchedulerActivity).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      finish([{ workspaceRoot: "first", runs: [] }]);
+    });
+    expect(result.current).toBe("idle");
   });
-  expect(result.current).toBe("completed");
+
+  it("keeps the guard across workspace changes and ignores stale results", async () => {
+    let finish!: (result: WorkspaceSchedulerActivity[]) => void;
+    loadSchedulerActivity.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const { result, rerender } = renderHook(
+      ({ roots }) => useSchedulerActivity(roots, false),
+      { initialProps: { roots: ["first"] } },
+    );
+    rerender({ roots: ["second"] });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(loadSchedulerActivity).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finish(running);
+    });
+    expect(result.current).toBe("idle");
+    loadSchedulerActivity.mockResolvedValue([
+      { workspaceRoot: "second", runs: [] },
+    ]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(loadSchedulerActivity).toHaveBeenLastCalledWith(["second"]);
+    expect(result.current).toBe("idle");
+  });
+
+  it("preserves activity through errors and records a later completion", async () => {
+    const { result, rerender } = renderHook(
+      ({ viewed }) => useSchedulerActivity(["first"], viewed),
+      { initialProps: { viewed: false } },
+    );
+    await settle();
+    loadSchedulerActivity.mockRejectedValueOnce(new Error("Read timed out"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(result.current).toBe("running");
+    loadSchedulerActivity.mockResolvedValue([
+      { workspaceRoot: "first", runs: [] },
+    ]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(result.current).toBe("completed");
+    rerender({ viewed: true });
+    expect(result.current).toBe("idle");
+  });
+
+  it("does not treat removing a workspace as a completed run", async () => {
+    const { result, rerender } = renderHook(
+      ({ roots }) => useSchedulerActivity(roots, false),
+      { initialProps: { roots: ["first"] } },
+    );
+    await settle();
+    loadSchedulerActivity.mockResolvedValue([
+      { workspaceRoot: "second", runs: [] },
+    ]);
+    rerender({ roots: ["second"] });
+    await settle();
+    expect(result.current).toBe("idle");
+  });
+
+  it("does not poll without workspaces or after unmounting", async () => {
+    const empty = renderHook(() => useSchedulerActivity([], false));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(loadSchedulerActivity).not.toHaveBeenCalled();
+    empty.unmount();
+    const populated = renderHook(() => useSchedulerActivity(["first"], false));
+    await settle();
+    populated.unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(loadSchedulerActivity).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not duplicate the initial read under StrictMode", async () => {
+    renderHook(() => useSchedulerActivity(["first"], false), {
+      wrapper: ({ children }) => createElement(StrictMode, null, children),
+    });
+    await settle();
+    expect(loadSchedulerActivity).toHaveBeenCalledTimes(1);
+  });
 });
