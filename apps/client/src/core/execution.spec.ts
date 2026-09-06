@@ -2055,7 +2055,7 @@ describe("executeTask", () => {
     expect(callToolSpy).not.toHaveBeenCalled();
     expect(observedToolOutputs).toHaveLength(3);
     expect(observedToolOutputs[0]).toContain(
-      "Expected `arguments` to be a JSON object",
+      "Tool arguments do not match the input schema",
     );
     expect(observedToolOutputs[2]).toContain("Do not retry it unchanged");
   });

@@ -19,7 +19,7 @@ const formatError = (error: ErrorObject): string => {
   return `${location} ${error.message ?? "is invalid"}`;
 };
 
-export const validateMcpToolArguments = (
+export const validateToolArguments = (
   inputSchema: Record<string, unknown>,
   args: Record<string, unknown>,
 ): string | undefined => {
@@ -27,7 +27,7 @@ export const validateMcpToolArguments = (
   try {
     const serialized = JSON.stringify(inputSchema);
     if (Buffer.byteLength(serialized, "utf8") > MAX_SCHEMA_BYTES) {
-      return "The discovered MCP tool input schema exceeds 256 KB.";
+      return "The tool input schema exceeds 256 KB.";
     }
     const key = createHash("sha256").update(serialized).digest("hex");
     const cached = compiledSchemas.get(key);
@@ -41,7 +41,7 @@ export const validateMcpToolArguments = (
       try {
         compiled = validator.compile(inputSchema);
       } catch (error) {
-        compiled = `The discovered MCP tool input schema is invalid: ${error instanceof Error ? error.message : String(error)}`;
+        compiled = `The tool input schema is invalid: ${error instanceof Error ? error.message : String(error)}`;
       } finally {
         // AJV caches by object identity. Discovery reloads produce new objects;
         // keep only our bounded content cache, including failed compilations.
@@ -56,7 +56,7 @@ export const validateMcpToolArguments = (
       validate = compiled;
     }
   } catch (error) {
-    return `The discovered MCP tool input schema is invalid: ${
+    return `The tool input schema is invalid: ${
       error instanceof Error ? error.message : String(error)
     }`;
   }
@@ -66,7 +66,7 @@ export const validateMcpToolArguments = (
   }
 
   const details = (validate.errors ?? []).map(formatError).join("; ");
-  return `MCP tool arguments do not match the discovered input schema${
+  return `Tool arguments do not match the input schema${
     details ? `: ${details}` : "."
   }`;
 };

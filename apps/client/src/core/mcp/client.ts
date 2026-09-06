@@ -86,7 +86,7 @@ import {
   formatMcpOAuthAuthorizationRequiredMessage,
 } from "./oauth-recovery.js";
 import { mcpRunCacheManager } from "./run-cache.js";
-import { validateMcpToolArguments } from "./tool-argument-validation.js";
+import { validateToolArguments } from "../_helpers/tool-argument-validation.js";
 import type {
   McpAuthConfig,
   McpDiscoveredPrompt,
@@ -2390,7 +2390,7 @@ export class McpClientManager {
         `MCP tool \`${server.id}.${toolName}\` was not present in authoritative discovery metadata.`,
       );
     }
-    const argumentValidationError = validateMcpToolArguments(
+    const argumentValidationError = validateToolArguments(
       discoveredTool.inputSchema,
       args,
     );

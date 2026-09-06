@@ -29,7 +29,7 @@ import {
 } from "./config.js";
 import { mcpClientManager } from "./client.js";
 import { mcpRunCacheManager } from "./run-cache.js";
-import { validateMcpToolArguments } from "./tool-argument-validation.js";
+import { validateToolArguments } from "../_helpers/tool-argument-validation.js";
 import type {
   McpDirectToolMapping,
   McpDiscoveryChangeSet,
@@ -75,8 +75,7 @@ const readOptionalRecord = (
 
   return {
     value: {},
-    error:
-      `Expected \`${field}\` to be a JSON object when provided. Pass \`${field}: {}\` for tools with no arguments, or inspect the MCP tool schema before calling it.`,
+    error: `Expected \`${field}\` to be a JSON object when provided. Pass \`${field}: {}\` for tools with no arguments, or inspect the MCP tool schema before calling it.`,
   };
 };
 
@@ -126,7 +125,9 @@ export const createMcpDirectToolName = (
     .update(`${serverId}:${remoteToolName}`)
     .digest("hex")
     .slice(0, 8);
-  const head = base.slice(0, MAX_TOOL_NAME_LENGTH - hash.length - 1).replace(/_+$/u, "");
+  const head = base
+    .slice(0, MAX_TOOL_NAME_LENGTH - hash.length - 1)
+    .replace(/_+$/u, "");
 
   return `${head}_${hash}`;
 };
@@ -211,7 +212,8 @@ const getDirectToolNamespace = (
 ): string | undefined => {
   const directTools = server.exposure?.directTools;
 
-  return isRecord(directTools) && typeof directTools.namespacePrefix === "string"
+  return isRecord(directTools) &&
+    typeof directTools.namespacePrefix === "string"
     ? directTools.namespacePrefix
     : undefined;
 };
@@ -278,10 +280,10 @@ export const createMcpDirectToolMappings = (
         exposedName,
         serverId: server.id,
         remoteName: tool.name,
-        ...(server.toolOverrides?.[tool.name]?.title ?? tool.title
+        ...((server.toolOverrides?.[tool.name]?.title ?? tool.title)
           ? { title: server.toolOverrides?.[tool.name]?.title ?? tool.title }
           : {}),
-        ...(server.toolOverrides?.[tool.name]?.description ?? tool.description
+        ...((server.toolOverrides?.[tool.name]?.description ?? tool.description)
           ? {
               description:
                 server.toolOverrides?.[tool.name]?.description ??
@@ -289,9 +291,15 @@ export const createMcpDirectToolMappings = (
             }
           : {}),
         inputSchema: normalizeJsonSchema(tool.inputSchema),
-        ...(tool.inputSchemaHash ? { inputSchemaHash: tool.inputSchemaHash } : {}),
-        ...(tool.outputSchemaHash ? { outputSchemaHash: tool.outputSchemaHash } : {}),
-        ...(tool.descriptionHash ? { descriptionHash: tool.descriptionHash } : {}),
+        ...(tool.inputSchemaHash
+          ? { inputSchemaHash: tool.inputSchemaHash }
+          : {}),
+        ...(tool.outputSchemaHash
+          ? { outputSchemaHash: tool.outputSchemaHash }
+          : {}),
+        ...(tool.descriptionHash
+          ? { descriptionHash: tool.descriptionHash }
+          : {}),
         ...(tool.definitionHash ? { definitionHash: tool.definitionHash } : {}),
         riskLevel,
         effect,
@@ -428,10 +436,18 @@ const searchCachedTools = (
           ...(tool.title ? { title: tool.title } : {}),
           ...(tool.description ? { description: tool.description } : {}),
           inputSchema: tool.inputSchema,
-          ...(tool.inputSchemaHash ? { inputSchemaHash: tool.inputSchemaHash } : {}),
-          ...(tool.outputSchemaHash ? { outputSchemaHash: tool.outputSchemaHash } : {}),
-          ...(tool.descriptionHash ? { descriptionHash: tool.descriptionHash } : {}),
-          ...(tool.definitionHash ? { definitionHash: tool.definitionHash } : {}),
+          ...(tool.inputSchemaHash
+            ? { inputSchemaHash: tool.inputSchemaHash }
+            : {}),
+          ...(tool.outputSchemaHash
+            ? { outputSchemaHash: tool.outputSchemaHash }
+            : {}),
+          ...(tool.descriptionHash
+            ? { descriptionHash: tool.descriptionHash }
+            : {}),
+          ...(tool.definitionHash
+            ? { definitionHash: tool.definitionHash }
+            : {}),
           annotations: tool.annotations ?? {},
         })),
     )
@@ -458,7 +474,9 @@ const inspectCachedTool = (
   }
 
   const discovery = discoveries[serverId];
-  const tool = discovery?.tools.find((candidate) => candidate.name === toolName);
+  const tool = discovery?.tools.find(
+    (candidate) => candidate.name === toolName,
+  );
 
   if (!discovery || !tool) {
     return formatJson({
@@ -656,7 +674,11 @@ const formatMcpContentItems = (
 
 const formatCallToolOutput = (
   result: unknown,
-): { output: string; content: AgentModelToolResultContent[]; isError: boolean } => {
+): {
+  output: string;
+  content: AgentModelToolResultContent[];
+  isError: boolean;
+} => {
   if (!isRecord(result)) {
     return {
       output: formatJson(result),
@@ -763,8 +785,12 @@ const summarizeDiscovery = (
   return [
     `Server: ${discovery.serverId}`,
     `Transport: ${discovery.transportType}`,
-    discovery.protocolVersion ? `Protocol: ${discovery.protocolVersion}` : undefined,
-    discovery.catalogHash ? `Catalog hash: ${discovery.catalogHash}` : undefined,
+    discovery.protocolVersion
+      ? `Protocol: ${discovery.protocolVersion}`
+      : undefined,
+    discovery.catalogHash
+      ? `Catalog hash: ${discovery.catalogHash}`
+      : undefined,
     discovery.capabilitiesHash
       ? `Capabilities hash: ${discovery.capabilitiesHash}`
       : undefined,
@@ -788,24 +814,29 @@ const summarizeDiscovery = (
     "",
     discovery.tools.length > 0
       ? `Tools:\n${discovery.tools
-          .map(
-            (tool) =>
-              [
-                `- ${tool.name}${tool.description ? `: ${tool.description}` : ""}`,
-                `  inputSchema: ${formatJson(tool.inputSchema)}`,
-              ].join("\n"),
+          .map((tool) =>
+            [
+              `- ${tool.name}${tool.description ? `: ${tool.description}` : ""}`,
+              `  inputSchema: ${formatJson(tool.inputSchema)}`,
+            ].join("\n"),
           )
           .join("\n")}`
       : "Tools: none",
     discovery.resources.length > 0
       ? `\nResources:\n${discovery.resources
           .slice(0, 50)
-          .map((resource) => `- ${resource.uri}${resource.description ? `: ${resource.description}` : ""}`)
+          .map(
+            (resource) =>
+              `- ${resource.uri}${resource.description ? `: ${resource.description}` : ""}`,
+          )
           .join("\n")}`
       : "",
     discovery.prompts.length > 0
       ? `\nPrompts:\n${discovery.prompts
-          .map((prompt) => `- ${prompt.name}${prompt.description ? `: ${prompt.description}` : ""}`)
+          .map(
+            (prompt) =>
+              `- ${prompt.name}${prompt.description ? `: ${prompt.description}` : ""}`,
+          )
           .join("\n")}`
       : "",
   ]
@@ -988,7 +1019,7 @@ const executeMcpCall = async (
       )
     : undefined;
   const argumentValidationError = cachedTool
-    ? validateMcpToolArguments(cachedTool.inputSchema, remoteArguments.value)
+    ? validateToolArguments(cachedTool.inputSchema, remoteArguments.value)
     : undefined;
 
   if (argumentValidationError) {
@@ -1312,7 +1343,8 @@ const createMetaToolDefinitions = (): AgentToolDefinition[] => [
           },
           cursor: {
             type: "string",
-            description: "Optional pagination cursor returned by a previous tasks list.",
+            description:
+              "Optional pagination cursor returned by a previous tasks list.",
           },
         },
       },
@@ -1569,7 +1601,8 @@ const createMetaToolDefinitions = (): AgentToolDefinition[] => [
         properties: {
           runId: {
             type: "string",
-            description: "Optional run id to clear. Omit to clear all run cache entries.",
+            description:
+              "Optional run id to clear. Omit to clear all run cache entries.",
           },
         },
       },
@@ -1749,14 +1782,15 @@ const createMetaToolDefinitions = (): AgentToolDefinition[] => [
       }
 
       try {
-        const { discovery, cachePath, changes } = await mcpClientManager.discoverServerById(
-          context.workspaceRoot,
-          serverId,
-          {
-            persist: true,
-            ...createMcpOperationOptions(context),
-          },
-        );
+        const { discovery, cachePath, changes } =
+          await mcpClientManager.discoverServerById(
+            context.workspaceRoot,
+            serverId,
+            {
+              persist: true,
+              ...createMcpOperationOptions(context),
+            },
+          );
         const output = summarizeDiscovery(discovery, cachePath, changes);
 
         return createSuccessfulResult(
@@ -1845,8 +1879,7 @@ const createMetaToolDefinitions = (): AgentToolDefinition[] => [
   {
     spec: {
       name: "mcp_read_resource",
-      description:
-        "Read a resource URI from an enabled MCP server.",
+      description: "Read a resource URI from an enabled MCP server.",
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -1904,8 +1937,7 @@ const createMetaToolDefinitions = (): AgentToolDefinition[] => [
   {
     spec: {
       name: "mcp_get_prompt",
-      description:
-        "Fetch and render a prompt from an enabled MCP server.",
+      description: "Fetch and render a prompt from an enabled MCP server.",
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -1988,7 +2020,7 @@ const createDirectToolDefinition = (
     effect: mapping.effect,
     isReadOnlyInPlanMode: () => mapping.readOnlyInAskMode,
     execute: async (args, context) => {
-      const argumentValidationError = validateMcpToolArguments(
+      const argumentValidationError = validateToolArguments(
         mapping.inputSchema,
         args,
       );
@@ -2028,7 +2060,9 @@ const createDirectToolDefinition = (
             callId: randomUUID(),
             name: mapping.exposedName,
             output: limitText(formatted.output, MCP_OUTPUT_MAX_CHARS),
-            ...(formatted.content.length > 0 ? { content: formatted.content } : {}),
+            ...(formatted.content.length > 0
+              ? { content: formatted.content }
+              : {}),
             ...(formatted.isError ? { isError: true } : {}),
           },
         };
@@ -2069,7 +2103,9 @@ export const assertMcpServerEnabled = async (
   const server = getEnabledMcpServer(config, serverId);
 
   if (!server) {
-    throw new Error(`MCP server \`${serverId}\` is not configured or not enabled.`);
+    throw new Error(
+      `MCP server \`${serverId}\` is not configured or not enabled.`,
+    );
   }
 
   return server;

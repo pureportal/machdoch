@@ -1293,7 +1293,7 @@ describe("McpClientManager lifecycle", () => {
       manager.callTool(workspaceRoot, "test", "get_issue", {
         quotedTask: "get CLOUD-999",
       }),
-    ).rejects.toThrow("do not match the discovered input schema");
+    ).rejects.toThrow("do not match the input schema");
     expect(callTool).not.toHaveBeenCalled();
   });
 

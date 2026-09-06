@@ -11,7 +11,9 @@ import { createSchedulerToolDefinitions } from "./scheduler-tool-definitions.ts"
 const workspacesToClean: string[] = [];
 
 const createWorkspace = async (): Promise<string> => {
-  const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-scheduler-tools-"));
+  const workspaceRoot = await mkdtemp(
+    join(tmpdir(), "machdoch-scheduler-tools-"),
+  );
   workspacesToClean.push(workspaceRoot);
   return workspaceRoot;
 };
@@ -126,8 +128,8 @@ describe("createSchedulerToolDefinitions", () => {
       expression: "0 9 * * 1",
       timezone: "Europe/Berlin",
     });
-    expect(createdJob.prompt).toContain("Recycle Bin safely");
-    expect(createdJob.prompt).toContain("Do not delete arbitrary files");
+    expect(createdJob.target.prompt).toContain("Recycle Bin safely");
+    expect(createdJob.target.prompt).toContain("Do not delete arbitrary files");
     expect(createdJob.dedupeKey).toBe("clean-windows-recycle-bin");
 
     const listResult = await listTool.execute(
@@ -293,7 +295,9 @@ describe("createSchedulerToolDefinitions", () => {
       op: ">=",
       value: 90,
     });
-    expect(createdJob.triggers[0].recoveryFilters["payload.usedPercent"]).toEqual({
+    expect(
+      createdJob.triggers[0].recoveryFilters["payload.usedPercent"],
+    ).toEqual({
       op: "<=",
       value: 80,
     });

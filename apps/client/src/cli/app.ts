@@ -34,7 +34,9 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
     (args.command === "mcp" &&
       (args.mcp?.action === "proxy" ||
         args.mcp?.action === "broker" ||
-        args.mcp?.action === "presence"));
+        args.mcp?.action === "presence" ||
+        args.mcp?.action === "serve" ||
+        args.mcp?.action === "connect"));
   const isSideEffectFreeRalphValidation =
     args.command === "ralph" && args.ralph?.action === "validate-json";
   if (
@@ -133,6 +135,18 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
       return;
     }
     case "mcp": {
+      if (args.mcp?.action === "connect") {
+        const { runLocalMcpStdioConnection } =
+          await import("../core/local-mcp/stdio.js");
+        await runLocalMcpStdioConnection();
+        return;
+      }
+      if (args.mcp?.action === "serve") {
+        const { runLocalMcpStdioServer } =
+          await import("../core/local-mcp/stdio.js");
+        await runLocalMcpStdioServer(args.workspaceRoot, args.mode);
+        return;
+      }
       const { printMcpSummary } =
         await import("./_helpers/cli-mcp-commands.js");
       await printMcpSummary(args);

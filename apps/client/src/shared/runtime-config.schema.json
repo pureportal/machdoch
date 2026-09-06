@@ -71,6 +71,7 @@
         "run",
         "mcp",
         "scheduler",
+        "workflows",
         "utilities"
       ]
     },

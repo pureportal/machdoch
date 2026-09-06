@@ -34,40 +34,41 @@ const createLaunch = (root: string, source = false): MachdochCliLaunch => ({
 });
 
 describe("MCP projector", () => {
-  it("adds the run-scoped read-only workspace presence server", async () => {
-    const root = await mkdtemp(join(tmpdir(), "machdoch-projector-presence-"));
-    roots.push(root);
-    process.env.MACHDOCH_USER_CONFIG_DIR = join(root, "user");
-    const launch = createLaunch(root);
+  it.each(["codex-cli", "claude-cli", "copilot-cli"] as const)(
+    "adds the parent runtime MCP server for %s",
+    async (provider) => {
+      const root = await mkdtemp(
+        join(tmpdir(), "machdoch-projector-presence-"),
+      );
+      roots.push(root);
+      process.env.MACHDOCH_USER_CONFIG_DIR = join(root, "user");
+      const launch = createLaunch(root);
 
-    const projection = await projectMcpForProvider("codex-cli", root, {
-      machdochCliLaunch: launch,
-      workspacePresence: {
-        address: "127.0.0.1:43125",
-        token: "presence-token",
-        agentId: "agent-id",
-      },
-    });
-
-    expect(
-      projection.servers.find(
-        (server) => server.canonicalId === "machdoch-workspace-presence",
-      ),
-    ).toMatchObject({
-      route: "cli-native-mcp",
-      capabilities: ["tools"],
-      providerConfig: {
-        command: launch.command,
-        args: [...launch.args, "mcp", "presence", "--cwd", root],
-        cwd: launch.cwd,
-        env: {
-          MACHDOCH_RUN_CONTROL_ADDRESS: "127.0.0.1:43125",
-          MACHDOCH_WORKSPACE_PRESENCE_TOKEN: "presence-token",
-          MACHDOCH_WORKSPACE_AGENT_ID: "agent-id",
+      const projection = await projectMcpForProvider(provider, root, {
+        machdochCliLaunch: launch,
+        localMcp: {
+          url: "http://127.0.0.1:43125/mcp",
+          token: "runtime-token",
         },
-      },
-    });
-  });
+      });
+
+      expect(
+        projection.servers.find((server) => server.canonicalId === "machdoch"),
+      ).toMatchObject({
+        route: "cli-native-mcp",
+        capabilities: ["tools"],
+        providerConfig: {
+          command: launch.command,
+          args: [...launch.args, "mcp", "connect"],
+          cwd: launch.cwd,
+          env: {
+            MACHDOCH_LOCAL_MCP_URL: "http://127.0.0.1:43125/mcp",
+            MACHDOCH_LOCAL_MCP_TOKEN: "runtime-token",
+          },
+        },
+      });
+    },
+  );
 
   it("uses direct native entries first and a named stdio proxy for field loss", async () => {
     const root = await mkdtemp(join(tmpdir(), "machdoch-projector-"));

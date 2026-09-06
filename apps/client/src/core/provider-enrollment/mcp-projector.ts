@@ -26,16 +26,13 @@ import type {
   McpProjection,
   McpUncoveredServer,
 } from "./types.js";
+import type { LocalMcpEndpoint } from "../local-mcp/http.js";
 
 export interface McpProjectionOptions {
   persistent?: boolean;
   scope?: "user" | "workspace";
   machdochCliLaunch?: MachdochCliLaunch;
-  workspacePresence?: {
-    address: string;
-    token: string;
-    agentId: string;
-  };
+  localMcp?: LocalMcpEndpoint;
 }
 
 const ENVIRONMENT_TEMPLATE_PATTERN = /\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}/gu;
@@ -306,31 +303,30 @@ const createProxyConfig = (
   };
 };
 
-const createWorkspacePresenceProjection = (
+const createLocalMcpProjection = (
   provider: AgentCliProvider,
   workspaceRoot: string,
   launch: MachdochCliLaunch,
-  presence: NonNullable<McpProjectionOptions["workspacePresence"]>,
+  endpoint: LocalMcpEndpoint,
 ): McpProjectedServer => {
-  const canonicalId = "machdoch-workspace-presence";
+  const canonicalId = "machdoch";
   const server: McpEffectiveServerConfig = {
     id: canonicalId,
     enabled: true,
     transport: {
       type: "stdio",
       command: launch.command,
-      args: [...launch.args, "mcp", "presence", "--cwd", workspaceRoot],
+      args: [...launch.args, "mcp", "connect"],
       cwd: launch.cwd,
       env: {
         ...launch.environment,
-        MACHDOCH_RUN_CONTROL_ADDRESS: presence.address,
-        MACHDOCH_WORKSPACE_PRESENCE_TOKEN: presence.token,
-        MACHDOCH_WORKSPACE_AGENT_ID: presence.agentId,
+        MACHDOCH_LOCAL_MCP_URL: endpoint.url,
+        MACHDOCH_LOCAL_MCP_TOKEN: endpoint.token,
       },
     },
     securityProfile: "weak",
-    timeoutMs: 5_000,
-    maxTotalTimeoutMs: 5_000,
+    timeoutMs: 30_000,
+    maxTotalTimeoutMs: 3_600_000,
     idleShutdownMs: 900_000,
     maxResponseChars: 60_000,
     cache: { enabled: false, ttlMs: 0, forceRefresh: false },
@@ -340,11 +336,16 @@ const createWorkspacePresenceProjection = (
     sources: ["override"],
   };
   return {
-    id: createProjectedServerId(provider, canonicalId, false),
+    id: canonicalId,
     canonicalId,
     digest: digestJson({ canonicalId, workspaceRoot }),
     route: "cli-native-mcp",
-    providerConfig: mapNativeServer(provider, server),
+    providerConfig: {
+      ...mapNativeServer(provider, server),
+      ...(provider === "copilot-cli"
+        ? { timeout: server.maxTotalTimeoutMs }
+        : {}),
+    },
     capabilities: ["tools"],
     warnings: [],
   };
@@ -551,6 +552,14 @@ export const projectMcpForProvider = async (
   );
   const projectedServers: McpProjectedServer[] = [];
   const uncoveredServers: McpUncoveredServer[] = [];
+  if (
+    options.localMcp &&
+    enabledServers.some((server) => server.id === "machdoch")
+  ) {
+    throw new Error(
+      "The MCP server id `machdoch` is reserved for the parent runtime. Rename the configured server.",
+    );
+  }
   const warnings: string[] = [];
   const environment = await resolveProjectionEnvironment(enabledServers);
   let machdochCliLaunch: MachdochCliLaunch | undefined;
@@ -634,16 +643,16 @@ export const projectMcpForProvider = async (
     });
   }
 
-  if (options.workspacePresence) {
+  if (options.localMcp) {
     machdochCliLaunch ??= options.machdochCliLaunch
       ? assertMachdochCliLaunch(options.machdochCliLaunch)
       : resolveMachdochCliLaunch();
     projectedServers.push(
-      createWorkspacePresenceProjection(
+      createLocalMcpProjection(
         provider,
         workspaceRoot,
         machdochCliLaunch,
-        options.workspacePresence,
+        options.localMcp,
       ),
     );
   }
@@ -654,7 +663,7 @@ export const projectMcpForProvider = async (
     effectiveConfigDigest: digestJson({
       defaults: effectiveConfig.defaults,
       servers: enabledServers,
-      workspacePresence: options.workspacePresence !== undefined,
+      localMcp: options.localMcp !== undefined,
     }),
     catalogDigest: digestJson([
       ...projectedServers.map((server) => ({

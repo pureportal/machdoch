@@ -1,4 +1,4 @@
-import { rememberUserGlobalMemory } from "../env.js";
+import { loadUserMemorySettings, rememberUserGlobalMemory } from "../env.js";
 import {
   MAX_GLOBAL_MEMORY_ENTRIES,
   MAX_SESSION_MEMORY_ENTRIES,
@@ -9,10 +9,16 @@ import {
   type ConversationMemoryMetadata,
 } from "../memory.js";
 import type { ConversationMemoryKind } from "../types.js";
-import { rememberWorkspaceMemory } from "../workspace-memory.js";
+import { retrieveConversationMemory } from "../memory-retrieval.js";
+import {
+  getWorkspaceMemoryPath,
+  loadWorkspaceMemory,
+  rememberWorkspaceMemory,
+} from "../workspace-memory.js";
 import {
   coerceString,
   createToolErrorResult,
+  resolveWorkspaceTarget,
   type AgentToolDefinition,
   type ConversationMemoryRuntime,
 } from "./agent-tools-shared.js";
@@ -127,6 +133,82 @@ export const createMemoryToolDefinitions = (
   memory: ConversationMemoryRuntime,
 ): AgentToolDefinition[] => {
   const toolDefinitions: AgentToolDefinition[] = [];
+  const scopes = [
+    ...(memory.sessionEnabled ? ["session"] : []),
+    ...(memory.workspaceEnabled ? ["workspace"] : []),
+    ...(memory.globalEnabled ? ["global"] : []),
+  ];
+  if (scopes.length > 0) {
+    toolDefinitions.push({
+      spec: {
+        name: "search_memory",
+        description: "Search saved memory. Omit the query to list entries.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            query: { type: "string" },
+            scope: { type: "string", enum: scopes },
+            limit: { type: "integer", minimum: 1, maximum: 50 },
+          },
+        },
+      },
+      backingTool: "filesystem",
+      riskLevel: "low",
+      effect: "read",
+      execute: async (args, context) => {
+        if (
+          context.memory.workspaceEnabled &&
+          !(
+            await resolveWorkspaceTarget(
+              context.workspaceRoot,
+              getWorkspaceMemoryPath(context.workspaceRoot),
+            )
+          ).insideWorkspace
+        ) {
+          return createToolErrorResult(
+            "",
+            "search_memory",
+            "Memory storage is outside the active workspace.",
+          );
+        }
+        if (context.memory.workspaceEnabled)
+          context.memory.workspaceEntries = await loadWorkspaceMemory(
+            context.workspaceRoot,
+          );
+        if (context.memory.globalEnabled)
+          context.memory.globalEntries = (
+            await loadUserMemorySettings()
+          ).entries;
+        const entries = [
+          ...(context.memory.sessionEnabled
+            ? context.memory.sessionEntries
+            : []),
+          ...(context.memory.workspaceEnabled
+            ? (context.memory.workspaceEntries ?? [])
+            : []),
+          ...(context.memory.globalEnabled ? context.memory.globalEntries : []),
+        ].filter((entry) => !args.scope || entry.scope === args.scope);
+        const query = coerceString(args, "query");
+        const limit = typeof args.limit === "number" ? args.limit : 20;
+        const selected = query
+          ? retrieveConversationMemory(query, entries, {
+              maxEntries: limit,
+              maxCharacters: 30_000,
+            }).entries
+          : entries.slice(0, limit);
+        return {
+          toolResult: {
+            callId: "",
+            name: "search_memory",
+            output: JSON.stringify(selected, null, 2),
+          },
+          sections: [],
+          traceLines: [`search_memory -> ${selected.length}`],
+        };
+      },
+    });
+  }
 
   if (memory.sessionEnabled) {
     toolDefinitions.push({
@@ -209,6 +291,20 @@ export const createMemoryToolDefinitions = (
           return createInvalidMemoryResult("remember_workspace_memory");
         }
 
+        if (
+          !(
+            await resolveWorkspaceTarget(
+              context.workspaceRoot,
+              getWorkspaceMemoryPath(context.workspaceRoot),
+            )
+          ).insideWorkspace
+        ) {
+          return createToolErrorResult(
+            "",
+            "remember_workspace_memory",
+            "Memory storage is outside the active workspace.",
+          );
+        }
         const rememberedEntry = await rememberWorkspaceMemory(
           context.workspaceRoot,
           fact,

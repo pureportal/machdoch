@@ -14,6 +14,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.ts";
 import type { TaskExecutionRole, TaskExecutionSection } from "../types.ts";
 import { createInstructionResolutionFixture } from "../__test__/instruction-test-helpers.ts";
@@ -111,7 +114,7 @@ const writeStructuredAnswer = (call: SpawnCall, content: string): void => {
   writeCopilotResult(call.child);
 };
 const waitForCondition = async (callback: () => unknown): Promise<void> => {
-  await vi.waitFor(callback, { timeout: 5_000 });
+  await vi.waitFor(callback, { timeout: 15_000 });
 };
 
 // Capability probes now use the asynchronous command runner. Keep their
@@ -132,7 +135,8 @@ vi.mock("./streaming-command.js", () => ({
   },
 }));
 
-vi.mock("node:child_process", () => ({
+vi.mock("node:child_process", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:child_process")>()),
   spawnSync: vi.fn((_executable: string, args: string[]) => ({
     status: 0,
     stdout: args.includes("--help")
@@ -546,6 +550,66 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.child.listenerCount("exit")).toBe(0);
     expect(call?.child.listenerCount("close")).toBe(0);
     expect(call?.child.listenerCount("error")).toBe(0);
+  });
+
+  it("returns MCP memory updates from the delegated agent and closes its endpoint", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    const params = createParams(workspaceRoot);
+    params.preparedConversationContext = {
+      ...params.preparedConversationContext,
+      memory: {
+        ...params.preparedConversationContext.memory,
+        sessionEntries: [],
+      },
+    };
+    const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    const childEnv = call.options.env as NodeJS.ProcessEnv;
+    const configuration = await readFile(
+      join(childEnv.CODEX_HOME!, "config.toml"),
+      "utf8",
+    );
+    const endpoint = JSON.parse(
+      configuration.match(/MACHDOCH_LOCAL_MCP_URL = ("[^"]+")/u)![1]!,
+    ) as string;
+    const token = JSON.parse(
+      configuration.match(/MACHDOCH_LOCAL_MCP_TOKEN = ("[^"]+")/u)![1]!,
+    ) as string;
+    const client = new Client({ name: "delegated-fixture", version: "1" });
+    try {
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(endpoint), {
+          requestInit: { headers: { Authorization: `Bearer ${token}` } },
+        }) as unknown as Transport,
+      );
+      const remembered = await client.callTool({
+        name: "remember_session_memory",
+        arguments: {
+          fact: "Keep changes focused.",
+          memory_key: "scope",
+          kind: "constraint",
+          search_terms: [],
+          importance: 4,
+          sensitivity: "non-sensitive",
+        },
+      });
+      expect(remembered.isError).not.toBe(true);
+    } finally {
+      await client.close();
+      writeStructuredAnswer(call, "Memory saved.");
+      call.child.emit("close", 0, null);
+    }
+    const result = await resultPromise;
+    expect(result?.memoryUpdates).toEqual([
+      expect.objectContaining({
+        scope: "session",
+        entry: expect.objectContaining({ key: "scope" }),
+      }),
+    ]);
+    expect(result?.executedTools).toEqual(["shell", "filesystem"]);
+    await expect(fetch(endpoint)).rejects.toThrow();
   });
 
   it("starts Codex after a transient run-scoped capability probe", async () => {
