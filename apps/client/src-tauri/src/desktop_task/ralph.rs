@@ -39,6 +39,13 @@ const RALPH_GRACEFUL_STOP_TIMEOUT_MS: u64 = 30_000;
 const RALPH_RESPONSE_CAPTURE_LIMIT_BYTES: usize = 128 * 1024 * 1024;
 static NEXT_RALPH_CANCEL_REQUEST_ID: AtomicU64 = AtomicU64::new(0);
 
+fn ralph_command_timeout_ms(action: &str) -> u64 {
+    match action {
+        "snapshot" | "list" | "runs" => 30_000,
+        _ => RALPH_COMMAND_TIMEOUT_MS,
+    }
+}
+
 fn create_ralph_cancel_path() -> PathBuf {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -183,6 +190,7 @@ pub(super) fn execute_ralph_command(
         .map(String::as_str)
         .unwrap_or("ralph")
         .to_string();
+    let timeout_ms = ralph_command_timeout_ms(&progress_task);
     let mut cli_args = vec![
         "--json".to_string(),
         "--cwd".to_string(),
@@ -210,14 +218,20 @@ pub(super) fn execute_ralph_command(
             return Err(error);
         }
     };
-    let media_bridge = match RalphMediaBridge::create() {
-        Ok(bridge) => bridge,
-        Err(error) => {
-            cleanup_temporary_files(&payload_paths);
-            return Err(error);
+    let media_bridge = if progress_task == "snapshot" {
+        None
+    } else {
+        match RalphMediaBridge::create() {
+            Ok(bridge) => Some(bridge),
+            Err(error) => {
+                cleanup_temporary_files(&payload_paths);
+                return Err(error);
+            }
         }
     };
-    media_bridge.configure_command(&mut cli_command.command);
+    if let Some(bridge) = &media_bridge {
+        bridge.configure_command(&mut cli_command.command);
+    }
     cli_command
         .command
         .env(RALPH_CANCEL_PATH_ENV, &cancellation_path);
@@ -308,8 +322,10 @@ pub(super) fn execute_ralph_command(
                 ));
             }
             Ok(None) => {
-                if let Err(error) =
-                    media_bridge.service_pending_request(&app_handle, &workspace_path)
+                if let Err(error) = media_bridge
+                    .as_ref()
+                    .map(|bridge| bridge.service_pending_request(&app_handle, &workspace_path))
+                    .transpose()
                 {
                     request_ralph_cli_stop(
                         &mut child,
@@ -369,7 +385,7 @@ pub(super) fn execute_ralph_command(
                     ));
                 }
 
-                if started_at.elapsed() >= Duration::from_millis(RALPH_COMMAND_TIMEOUT_MS) {
+                if started_at.elapsed() >= Duration::from_millis(timeout_ms) {
                     emit_progress_event(
                         &progress_app_handle,
                         &progress_window_label,
@@ -403,7 +419,7 @@ pub(super) fn execute_ralph_command(
 
                     return Err(format!(
                         "The Ralph CLI exceeded the desktop Ralph timeout of {} and was stopped. {}",
-                        format_timeout_duration(RALPH_COMMAND_TIMEOUT_MS),
+                        format_timeout_duration(timeout_ms),
                         failure_tail
                     ));
                 }
@@ -485,13 +501,26 @@ mod tests {
 
     use super::{
         create_ralph_cancel_path, finish_ralph_command_response, normalize_ralph_flow_scope,
-        parse_ralph_command_response, read_ralph_stdout, read_ralph_stdout_with_limit,
-        request_ralph_cli_stop, RALPH_CANCEL_PATH_ENV,
+        parse_ralph_command_response, ralph_command_timeout_ms, read_ralph_stdout,
+        read_ralph_stdout_with_limit, request_ralph_cli_stop, RALPH_CANCEL_PATH_ENV,
     };
     use crate::child_process::{ChildCleanupKind, SupervisedChild};
     use crate::desktop_task::process::SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES;
 
     const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_RALPH_LIFECYCLE_TEST_MODE";
+
+    #[test]
+    fn ralph_status_queries_do_not_share_the_execution_timeout() {
+        for action in ["snapshot", "list", "runs"] {
+            assert_eq!(ralph_command_timeout_ms(action), 30_000);
+        }
+        for action in ["run", "resume", "create", "interview", "save", "delete"] {
+            assert_eq!(
+                ralph_command_timeout_ms(action),
+                crate::desktop_task::RALPH_COMMAND_TIMEOUT_MS
+            );
+        }
+    }
 
     #[test]
     fn ralph_lifecycle_test_entrypoint() {

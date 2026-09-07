@@ -63,6 +63,7 @@ export type SchedulerCliAction =
 
 export type RalphCliAction =
   | "list"
+  | "snapshot"
   | "show"
   | "validate"
   | "validate-json"
