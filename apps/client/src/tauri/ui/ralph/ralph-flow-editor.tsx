@@ -9401,7 +9401,7 @@ export const RalphFlowEditor = ({
 
   return (
     <section className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-slate-950 text-slate-100">
-      <header className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-800 bg-slate-950/95 px-3 py-2 text-left">
+      <header className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-950/95 px-3 py-2 text-left">
         <h1 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-white">
           <Workflow className="h-4 w-4 shrink-0 text-emerald-300" />
           <span className="truncate">Ralph Flow Editor</span>
@@ -9411,7 +9411,7 @@ export const RalphFlowEditor = ({
             </span>
           ) : null}
         </h1>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <nav
             aria-label="Ralph editor mode"
             className="grid shrink-0 grid-cols-4 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1"
@@ -13210,10 +13210,6 @@ export const RalphFlowEditor = ({
                               <div className="text-sm font-semibold text-white">
                                 Run readiness
                               </div>
-                              <div className="text-xs leading-5 text-slate-400">
-                                Confirm the target, runtime, and required inputs
-                                before starting.
-                              </div>
                             </div>
                             <div
                               className={cn(
@@ -13295,7 +13291,7 @@ export const RalphFlowEditor = ({
                                 <div className="mt-1 text-xs text-slate-400">
                                   {setupVariables.length > 0
                                     ? `${setupVariables.length} variable${setupVariables.length === 1 ? "" : "s"} discovered from this flow.`
-                                    : "This flow can start without additional inputs."}
+                                    : "No inputs required."}
                                 </div>
                               </div>
                               {requiredMissingVariables.length > 0 ? (
@@ -13315,23 +13311,18 @@ export const RalphFlowEditor = ({
                                     : undefined;
 
                                   return (
-                                    <label
+                                    <div
                                       key={variable.name}
                                       className="grid content-start gap-2 rounded-lg border border-slate-800 bg-slate-900/35 p-3 text-sm text-slate-200"
                                     >
                                       <span className="flex min-w-0 items-center justify-between gap-3">
                                         <span className="flex min-w-0 items-center gap-2">
-                                          <span className="truncate font-medium">
+                                          <span className="min-w-0 break-words font-medium [overflow-wrap:anywhere]">
                                             {variable.name}
                                           </span>
                                           {variable.required ? (
                                             <span className="rounded border border-amber-400/30 bg-amber-500/10 px-1.5 py-0.5 text-[0.62rem] font-semibold text-amber-100">
                                               required
-                                            </span>
-                                          ) : null}
-                                          {variable.default !== undefined ? (
-                                            <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[0.62rem] text-slate-400">
-                                              default
                                             </span>
                                           ) : null}
                                         </span>
@@ -13360,21 +13351,27 @@ export const RalphFlowEditor = ({
                                           {variableError}
                                         </span>
                                       ) : null}
-                                      {variable.default !== undefined ? (
+                                      {variable.default !== undefined &&
+                                      getRalphVariableValue(
+                                        variable,
+                                        variableValues,
+                                      ) !==
+                                        getRalphVariableValue(variable, {}) ? (
                                         <button
                                           type="button"
+                                          aria-label={`Reset ${variable.name} to default`}
                                           onClick={() =>
                                             updateSetupVariableValue(
                                               variable.name,
                                               variable.default ?? "",
                                             )
                                           }
-                                          className="justify-self-start text-[0.68rem] font-medium text-slate-500 hover:text-slate-200"
+                                          className="justify-self-start rounded text-xs font-medium text-slate-400 outline-none hover:text-slate-200 focus-visible:ring-2 focus-visible:ring-sky-400"
                                         >
                                           Reset to default
                                         </button>
                                       ) : null}
-                                    </label>
+                                    </div>
                                   );
                                 })}
                               </div>

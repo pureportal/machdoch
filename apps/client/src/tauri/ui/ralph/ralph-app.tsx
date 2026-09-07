@@ -839,6 +839,7 @@ export const RalphApp = ({
           <Button
             type="button"
             variant="ghost"
+            aria-label="Ralph settings"
             aria-expanded={showAdvanced}
             onClick={() => setShowAdvanced((current) => !current)}
             className={cn(

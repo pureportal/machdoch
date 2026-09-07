@@ -67,7 +67,7 @@ export const RalphFlowEditorToolbar = ({
   const redoShortcut = useOptionalCommandShortcut("ralph.flow.redo");
   const layoutShortcut = useOptionalCommandShortcut("ralph.flow.clean-layout");
   return (
-    <div className="flex min-w-0 items-center justify-between gap-2 border-b border-slate-800 bg-slate-950/80 px-3 py-2">
+    <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-slate-800 bg-slate-950/80 px-3 py-2">
       <div className="flex min-w-0 items-center gap-2">
         <Route className="h-4 w-4 shrink-0 text-sky-300" />
         <span className="hidden truncate text-sm font-semibold text-white min-[1450px]:inline">
@@ -86,7 +86,7 @@ export const RalphFlowEditorToolbar = ({
           </span>
         ) : null}
       </div>
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="flex min-w-0 flex-wrap items-center gap-1">
         <div className="flex items-center gap-0.5 rounded-lg border border-slate-800 bg-slate-900/45 p-1">
           <Tooltip>
             <TooltipTrigger asChild>
@@ -159,7 +159,7 @@ export const RalphFlowEditorToolbar = ({
             </Tooltip>
           ) : null}
         </div>
-        <div className="flex items-center gap-0.5 rounded-lg border border-slate-800 bg-slate-900/45 p-1">
+        <div className="flex max-w-full min-w-0 flex-wrap items-center gap-0.5 rounded-lg border border-slate-800 bg-slate-900/45 p-1">
           <span className="hidden px-1 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-slate-500 2xl:inline">
             Add
           </span>
