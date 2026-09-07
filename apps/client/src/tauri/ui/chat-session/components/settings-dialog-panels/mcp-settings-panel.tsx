@@ -28,7 +28,8 @@ import {
 } from "../../../components/ui/submit-shortcut";
 import { Textarea } from "../../../components/ui/textarea";
 import { cn } from "../../../lib/utils";
-import { ProviderSyncControl, SettingsCard, SettingsStatus } from "./shared";
+import { SettingsCard, SettingsStatus } from "./shared";
+import { ProviderSyncControl } from "./provider-sync-control";
 import { useSettingsNavigationGuard } from "./navigation-guard";
 import type { McpSettingsControls } from "./types";
 
@@ -357,16 +358,25 @@ const createTransport = (
   type: TransportType,
   current: ServerRecord | undefined = {},
 ): ServerRecord => {
+  const fields =
+    type === "stdio"
+      ? ["command", "args", "cwd", "env", "inheritEnvironment", "stderr"]
+      : type === "streamable-http"
+        ? ["url", "headers", "sessionId"]
+        : ["url", "headers"];
+  const retained = Object.fromEntries(
+    Object.entries(current).filter(([key]) => fields.includes(key)),
+  );
   if (type === "stdio") {
     return {
-      ...current,
+      ...retained,
       type,
       command: getString(current, "command"),
     };
   }
 
   return {
-    ...current,
+    ...retained,
     type,
     url: getString(current, "url"),
   };

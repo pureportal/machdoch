@@ -174,11 +174,15 @@ describe("provider sync Refresh", () => {
       for (const [output] of stdout.mock.calls) {
         expect(JSON.parse(String(output))).toMatchObject({
           enabled: true,
+          daemon: {
+            running: watch,
+            ...(watch ? { pid: child.pid } : {}),
+          },
           targets: expect.arrayContaining([
             {
               provider: "codex-cli",
               scope: "user",
-              state: "awaiting-provider-refresh",
+              state: "filesystem-current",
               targetPaths: [targetPath],
               updatedAt: expect.any(String),
               warnings: [],

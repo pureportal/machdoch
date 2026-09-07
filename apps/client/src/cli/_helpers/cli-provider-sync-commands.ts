@@ -36,9 +36,7 @@ const printJson = (value: unknown): void => {
   writeStdoutLine(JSON.stringify(value, null, 2));
 };
 
-const startDaemon = async (
-  workspaceRoot: string,
-): Promise<number | undefined> => {
+const startDaemon = async (workspaceRoot: string): Promise<number> => {
   await stopProviderSyncDaemon({ onlyIfRuntimeMismatch: true });
   const existing = await getCurrentProviderSyncDaemonPid();
   if (existing) return existing;
@@ -90,13 +88,24 @@ const printStatusLines = (
   if (status.lastReconciledAt) {
     writeStdoutLine(`last reconciled: ${status.lastReconciledAt}`);
   }
+  if (status.error) {
+    writeStdoutLine(`sync failed: ${status.error}`);
+  }
   for (const target of status.targets) {
     writeStdoutLine(
-      `- ${target.provider} ${target.scope}: ${target.state}${target.bundleDigest ? ` bundle=${target.bundleDigest}` : ""}`,
+      `- ${target.provider} ${target.scope}: ${target.state === "filesystem-current" ? "Settings synced" : target.state}${target.bundleDigest ? ` bundle=${target.bundleDigest}` : ""}`,
     );
     for (const warning of target.warnings)
       writeStdoutLine(`  warning: ${warning}`);
     if (target.error) writeStdoutLine(`  error: ${target.error}`);
+  }
+  if (
+    status.enabled &&
+    status.targets.some((target) => target.state === "filesystem-current")
+  ) {
+    writeStdoutLine(
+      "Existing provider runs keep their MCP settings. Start a new run to use changes.",
+    );
   }
 };
 
@@ -196,20 +205,17 @@ export const printProviderSyncSummary = async (
       }
       const result = {
         ...status,
+        daemon: {
+          ...status.daemon,
+          ...(daemonPid ? { running: true, pid: daemonPid } : {}),
+          ...(autostartPath ? { autostartInstalled: true, autostartPath } : {}),
+        },
         daemonStartPid: daemonPid ?? null,
         autostartPath: autostartPath ?? null,
         ...(uninstallWarnings.length > 0 ? { uninstallWarnings } : {}),
       };
       if (args.json) printJson(result);
-      else
-        printStatusLines({
-          ...status,
-          daemon: {
-            ...status.daemon,
-            running: daemonPid !== undefined || status.daemon.running,
-            ...(daemonPid ? { pid: daemonPid } : {}),
-          },
-        });
+      else printStatusLines(result);
       return;
     }
     case "disable": {
@@ -225,26 +231,36 @@ export const printProviderSyncSummary = async (
     case "refresh": {
       const config = await loadProviderEnrollmentConfig();
       await stopProviderSyncDaemon({ onlyIfRuntimeMismatch: true });
+      let autostartPath: string | undefined;
       if (
         config.enabled &&
         config.persistentSync.enabled &&
         config.persistentSync.daemonAtLogin
       ) {
-        await installProviderSyncAutostart(args.workspaceRoot);
+        autostartPath = await installProviderSyncAutostart(args.workspaceRoot);
       }
       if (await getCurrentProviderSyncDaemonPid()) {
         await requestProviderSyncRefresh();
       }
       const status = await reconcileProviderSync(args.workspaceRoot);
+      let daemonPid: number | undefined;
       if (
         config.enabled &&
         config.persistentSync.enabled &&
         config.persistentSync.watch
       ) {
-        await startDaemon(args.workspaceRoot);
+        daemonPid = await startDaemon(args.workspaceRoot);
       }
-      if (args.json) printJson(status);
-      else printStatusLines(status);
+      const result = {
+        ...status,
+        daemon: {
+          ...status.daemon,
+          ...(daemonPid ? { running: true, pid: daemonPid } : {}),
+          ...(autostartPath ? { autostartInstalled: true, autostartPath } : {}),
+        },
+      };
+      if (args.json) printJson(result);
+      else printStatusLines(result);
       return;
     }
     case "doctor": {

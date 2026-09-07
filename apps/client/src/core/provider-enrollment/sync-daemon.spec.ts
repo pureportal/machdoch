@@ -448,8 +448,13 @@ describe("provider sync daemon", () => {
         stat(getProviderSyncStatusPath(successfulWorkspaceRoot)),
       ).resolves.toBeDefined();
       await expect(
-        stat(getProviderSyncStatusPath(failingWorkspaceRoot)),
-      ).rejects.toMatchObject({ code: "ENOENT" });
+        readFile(getProviderSyncStatusPath(failingWorkspaceRoot), "utf8").then(
+          JSON.parse,
+        ),
+      ).resolves.toMatchObject({
+        targets: [],
+        error: expect.stringContaining("Failed to remove"),
+      });
     } finally {
       controller.abort();
       await daemon;

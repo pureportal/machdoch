@@ -1138,7 +1138,6 @@ export interface ProviderSyncTargetStatus {
     | "planning"
     | "writing"
     | "filesystem-current"
-    | "awaiting-provider-refresh"
     | "provider-current"
     | "degraded";
   targetPaths: string[];
@@ -1158,7 +1157,9 @@ export interface ProviderSyncStatus {
     autostartPath?: string;
   };
   workspaceRoot: string;
+  lastAttemptedAt?: string;
   lastReconciledAt?: string;
+  error?: string;
   targets: ProviderSyncTargetStatus[];
 }
 
