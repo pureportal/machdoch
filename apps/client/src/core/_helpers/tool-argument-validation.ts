@@ -1,15 +1,22 @@
-import {
-  Ajv2020,
-  type ErrorObject,
-  type ValidateFunction,
-} from "ajv/dist/2020.js";
+import { Ajv, type ErrorObject, type ValidateFunction } from "ajv";
+import { Ajv2019 } from "ajv/dist/2019.js";
+import { Ajv2020 } from "ajv/dist/2020.js";
 import { createHash } from "node:crypto";
 
-const validator = new Ajv2020({
+const validatorOptions = {
   allErrors: false,
   strict: false,
   validateFormats: false,
-});
+};
+const DEFAULT_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema";
+const validators = new Map<string, Ajv>([
+  ["http://json-schema.org/draft-07/schema", new Ajv(validatorOptions)],
+  [
+    "https://json-schema.org/draft/2019-09/schema",
+    new Ajv2019(validatorOptions),
+  ],
+  [DEFAULT_SCHEMA_DIALECT, new Ajv2020(validatorOptions)],
+]);
 const MAX_CACHED_SCHEMAS = 128;
 const MAX_SCHEMA_BYTES = 256 * 1024;
 const compiledSchemas = new Map<string, ValidateFunction | string>();
@@ -38,14 +45,23 @@ export const validateToolArguments = (
       validate = cached;
     } else {
       let compiled: ValidateFunction | string;
+      let validator: Ajv | undefined;
       try {
+        const dialect = inputSchema.$schema;
+        if (dialect !== undefined && typeof dialect !== "string") {
+          throw new Error("$schema must be a string.");
+        }
+        validator = validators.get(
+          dialect?.replace(/#$/u, "") ?? DEFAULT_SCHEMA_DIALECT,
+        );
+        if (!validator) {
+          throw new Error(`Unsupported JSON Schema dialect: ${dialect}`);
+        }
         compiled = validator.compile(inputSchema);
       } catch (error) {
         compiled = `The tool input schema is invalid: ${error instanceof Error ? error.message : String(error)}`;
       } finally {
-        // AJV caches by object identity. Discovery reloads produce new objects;
-        // keep only our bounded content cache, including failed compilations.
-        validator.removeSchema(inputSchema);
+        validator?.removeSchema(inputSchema);
       }
       compiledSchemas.set(key, compiled);
       if (compiledSchemas.size > MAX_CACHED_SCHEMAS) {
