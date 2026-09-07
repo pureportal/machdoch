@@ -1259,43 +1259,59 @@ describe("McpClientManager lifecycle", () => {
     expect(callToolStream).toHaveBeenCalledTimes(1);
   });
 
-  it("blocks malformed tool arguments against authoritative discovery metadata", async () => {
-    const workspaceRoot = await createWorkspace();
-    const callTool = vi.fn(async () => ({ content: [] }));
-    const manager = new McpClientManager({
-      createClient: () => createClient({ callTool } as Partial<Client>),
-      createTransport,
-      loadRuntimeEnvironment: async () => ({}),
-    });
+  it.each([
+    undefined,
+    "http://json-schema.org/draft-07/schema#",
+    "https://json-schema.org/draft/2019-09/schema",
+    "https://json-schema.org/draft/2020-12/schema",
+  ])(
+    "validates tool arguments against authoritative metadata with dialect %s",
+    async ($schema) => {
+      const workspaceRoot = await createWorkspace();
+      const callTool = vi.fn(async () => ({ content: [] }));
+      const manager = new McpClientManager({
+        createClient: () => createClient({ callTool } as Partial<Client>),
+        createTransport,
+        loadRuntimeEnvironment: async () => ({}),
+      });
 
-    await writeWorkspaceMcpConfig(workspaceRoot);
-    await saveWorkspaceMcpDiscovery(workspaceRoot, {
-      serverId: "test",
-      discoveredAt: "2026-06-13T00:00:00.000Z",
-      transportType: "stdio",
-      tools: [
-        {
-          name: "get_issue",
-          inputSchema: {
-            type: "object",
-            required: ["id"],
-            properties: { id: { type: "string", minLength: 1 } },
-            additionalProperties: false,
+      await writeWorkspaceMcpConfig(workspaceRoot);
+      await saveWorkspaceMcpDiscovery(workspaceRoot, {
+        serverId: "test",
+        discoveredAt: "2026-06-13T00:00:00.000Z",
+        transportType: "stdio",
+        tools: [
+          {
+            name: "get_issue",
+            inputSchema: {
+              ...($schema ? { $schema } : {}),
+              type: "object",
+              required: ["id"],
+              properties: { id: { type: "string", minLength: 1 } },
+              additionalProperties: false,
+            },
           },
-        },
-      ],
-      resources: [],
-      resourceTemplates: [],
-      prompts: [],
-    });
+        ],
+        resources: [],
+        resourceTemplates: [],
+        prompts: [],
+      });
 
-    await expect(
-      manager.callTool(workspaceRoot, "test", "get_issue", {
-        quotedTask: "get CLOUD-999",
-      }),
-    ).rejects.toThrow("do not match the input schema");
-    expect(callTool).not.toHaveBeenCalled();
-  });
+      await expect(
+        manager.callTool(workspaceRoot, "test", "get_issue", {
+          quotedTask: "get CLOUD-999",
+        }),
+      ).rejects.toThrow("do not match the input schema");
+      expect(callTool).not.toHaveBeenCalled();
+
+      await expect(
+        manager.callTool(workspaceRoot, "test", "get_issue", {
+          id: "CLOUD-999",
+        }),
+      ).resolves.toMatchObject({ content: [] });
+      expect(callTool).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("uses a proxy-resolved server snapshot instead of reloading workspace overrides", async () => {
     const workspaceRoot = await createWorkspace();
