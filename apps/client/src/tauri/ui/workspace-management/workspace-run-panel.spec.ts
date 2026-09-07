@@ -104,22 +104,11 @@ describe("WorkspaceRunPanel", () => {
     const panel = render(
       createElement(WorkspaceRunPanel, {
         workspaceRoot: "C:/workspace",
-        view: "summary",
+        view: "output",
       }),
     );
 
     await screen.findByText("Running");
-    expect(screen.queryByRole("log")).toBeNull();
-    expect(
-      screen.queryByRole("textbox", { name: "Run configuration JSON" }),
-    ).toBeNull();
-
-    panel.rerender(
-      createElement(WorkspaceRunPanel, {
-        workspaceRoot: "C:/workspace",
-        view: "output",
-      }),
-    );
     expect(screen.getByRole("log", { name: "Server output" })).toBeTruthy();
     expect(
       screen.queryByRole("textbox", { name: "Run configuration JSON" }),
@@ -161,7 +150,7 @@ describe("WorkspaceRunPanel", () => {
     panel.rerender(
       createElement(WorkspaceRunPanel, {
         workspaceRoot: "C:/workspace",
-        view: "summary",
+        view: "configuration",
         onConfigurationRequired,
       }),
     );

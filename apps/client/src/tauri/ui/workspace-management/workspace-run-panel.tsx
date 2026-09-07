@@ -65,11 +65,7 @@ const STATE_TONE_CLASS = {
 } as const;
 const RUN_RECONCILIATION_IDLE_MS = 10_000;
 
-export type WorkspaceRunPanelView =
-  | "all"
-  | "summary"
-  | "output"
-  | "configuration";
+export type WorkspaceRunPanelView = "all" | "output" | "configuration";
 
 const errorMessage = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause);

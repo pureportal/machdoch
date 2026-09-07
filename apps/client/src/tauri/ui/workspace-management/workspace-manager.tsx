@@ -1565,7 +1565,7 @@ export const WorkspaceManager = ({
             onClick={() => void addWorkspace()}
           >
             <Plus className="size-4" />
-            Workspace
+            Add workspace
           </Button>
           <Button
             type="button"
@@ -1598,7 +1598,7 @@ export const WorkspaceManager = ({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 min-w-0 flex-1 grid-rows-[10rem_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)] xl:grid-rows-1">
+      <div className="grid min-h-0 min-w-0 flex-1 grid-rows-[10rem_minmax(0,1fr)] lg:grid-cols-[16rem_minmax(0,1fr)] lg:grid-rows-1 xl:grid-cols-[20rem_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-r border-slate-900">
           <div className="border-b border-slate-900 p-4">
             <SearchField
@@ -1611,7 +1611,11 @@ export const WorkspaceManager = ({
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {workspaceSetup.loading && workspaces.length === 0 ? (
-              <div className="grid h-32 place-items-center">
+              <div
+                role="status"
+                aria-label="Loading workspaces"
+                className="grid h-32 place-items-center"
+              >
                 <LoaderCircle className="size-5 animate-spin text-slate-500" />
               </div>
             ) : filteredWorkspaces.length === 0 ? (
@@ -1628,10 +1632,15 @@ export const WorkspaceManager = ({
                     type="button"
                     size="sm"
                     disabled={workspaceSetup.loading}
-                    onClick={() => void addWorkspace()}
+                    onClick={() => {
+                      if (workspaces.length > 0) setQuery("");
+                      else void addWorkspace();
+                    }}
                   >
-                    <Plus className="size-4" />
-                    Workspace
+                    {workspaces.length === 0 ? (
+                      <Plus className="size-4" />
+                    ) : null}
+                    {workspaces.length === 0 ? "Add workspace" : "Clear search"}
                   </Button>
                 }
               />
@@ -1768,20 +1777,25 @@ export const WorkspaceManager = ({
                 className="space-y-4 outline-none"
                 tabIndex={0}
               >
-                <WorkspaceRunPanel
-                  workspaceRoot={selectedWorkspace.root}
-                  view={
-                    workspaceSection === "output"
-                      ? "output"
-                      : workspaceSection === "configuration"
+                <div
+                  hidden={
+                    workspaceSection !== "output" &&
+                    workspaceSection !== "configuration"
+                  }
+                >
+                  <WorkspaceRunPanel
+                    workspaceRoot={selectedWorkspace.root}
+                    view={
+                      workspaceSection === "configuration"
                         ? "configuration"
-                        : "summary"
-                  }
-                  onDocumentDirtyChange={setWorkspaceRunDirty}
-                  onConfigurationRequired={() =>
-                    setWorkspaceSection("configuration")
-                  }
-                />
+                        : "output"
+                    }
+                    onDocumentDirtyChange={setWorkspaceRunDirty}
+                    onConfigurationRequired={() =>
+                      setWorkspaceSection("configuration")
+                    }
+                  />
+                </div>
 
                 <div hidden={workspaceSection !== "files"}>
                   <WorkspaceTools
