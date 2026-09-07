@@ -31,17 +31,6 @@ export interface WorkspaceSettingsPanelProps {
   setup: WorkspaceSettingsControls;
 }
 
-const getDefaultModeDetail = ({
-  workspaceRoot,
-  workspaceLabel,
-}: WorkspaceSettingsControls): string => {
-  if (!workspaceRoot) {
-    return "Select a workspace before writing .machdoch/config.json.";
-  }
-
-  return `Saves to ${workspaceLabel} workspace config.`;
-};
-
 const getEffectiveModeNotice = ({
   defaultMode,
   effectiveMode,
@@ -227,7 +216,7 @@ export const WorkspaceSettingsPanel = ({
         />
       </SettingPanel>
 
-      <SettingPanel label="Default mode" detail={getDefaultModeDetail(setup)}>
+      <SettingPanel label="Default mode">
         <ChoiceButtons
           label="Default workspace mode"
           value={setup.defaultMode}
@@ -251,10 +240,7 @@ export const WorkspaceSettingsPanel = ({
         </p>
       ) : null}
 
-      <SettingPanel
-        label="Reasoning effort"
-        detail={getDefaultModeDetail(setup)}
-      >
+      <SettingPanel label="Reasoning effort">
         <ChoiceButtons
           label="Default workspace reasoning mode"
           value={defaultReasoning}
@@ -375,17 +361,17 @@ export const WorkspaceSettingsPanel = ({
         </p>
       ) : null}
 
-      <p
-        role="status"
-        aria-live="polite"
-        className="border-t border-slate-800 pt-4 text-sm leading-6 text-slate-400"
-      >
-        {!setup.workspaceRoot
-          ? "Select a workspace to change these defaults."
-          : setup.saving
-            ? "Saving workspace defaults…"
-            : "Workspace defaults are up to date."}
-      </p>
+      {!setup.workspaceRoot || setup.saving ? (
+        <p
+          role="status"
+          aria-live="polite"
+          className="border-t border-slate-800 pt-4 text-sm leading-6 text-slate-400"
+        >
+          {!setup.workspaceRoot
+            ? "Select a workspace to change these defaults."
+            : "Saving workspace defaults…"}
+        </p>
+      ) : null}
 
       <SettingsStatus message={setup.message} />
     </SettingsCard>
