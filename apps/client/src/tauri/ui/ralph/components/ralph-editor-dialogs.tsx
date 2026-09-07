@@ -143,7 +143,7 @@ export const RalphStarterFlowDialog = ({
                         {getStarterFlowEmoji(starterFlow)}
                       </span>
                       <div className="min-w-0">
-                        <h3 className="truncate text-sm font-semibold text-white">
+                        <h3 className="break-words text-sm font-semibold text-white">
                           {starterFlow.name}
                         </h3>
                         <div className="mt-1 text-xs text-slate-600">
@@ -201,10 +201,6 @@ export const RalphStarterFlowDialog = ({
 
         <DialogFooter className="items-center justify-between border-t border-slate-800 bg-slate-950 px-5 py-3 sm:flex-row">
           <div className="grid gap-1 text-xs">
-            <span className="text-slate-500">
-              Starter flows stay bundled; imported flows are saved as editable
-              copies.
-            </span>
             {errorMessage ? (
               <span role="alert" className="text-red-300">
                 {errorMessage}

@@ -221,7 +221,11 @@ export const RalphFlowLibraryPanel = ({
             </Button>
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1">
+        <div
+          role="group"
+          aria-label="Flow library scope"
+          className="grid grid-cols-[1.4fr_1fr_0.7fr] gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1"
+        >
           {RALPH_FLOW_LIBRARY_MODES.map((mode) => (
             <button
               key={mode}
@@ -229,7 +233,7 @@ export const RalphFlowLibraryPanel = ({
               aria-pressed={flowLibraryMode === mode}
               onClick={() => onFlowLibraryModeChange?.(mode)}
               className={cn(
-                "h-7 min-w-0 rounded-md px-2 text-xs font-semibold",
+                "h-8 min-w-0 rounded-md px-1 text-xs font-semibold outline-none focus-visible:ring-2 focus-visible:ring-sky-400",
                 flowLibraryMode === mode
                   ? mode === "user"
                     ? "bg-sky-500/20 text-sky-100"
@@ -239,9 +243,7 @@ export const RalphFlowLibraryPanel = ({
                   : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
               )}
             >
-              <span className="block truncate">
-                {RALPH_FLOW_LIBRARY_LABELS[mode]}
-              </span>
+              <span className="block">{RALPH_FLOW_LIBRARY_LABELS[mode]}</span>
             </button>
           ))}
         </div>
