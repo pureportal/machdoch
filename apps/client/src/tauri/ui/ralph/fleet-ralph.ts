@@ -7,8 +7,7 @@ import {
 } from "../model-catalog";
 import { getReasoningModesForProvider } from "../reasoning-options";
 import {
-  listRalphFlows,
-  listRalphRuns,
+  loadRalphSnapshot,
   loadActiveDesktopTasks,
   resumeRalphRun,
   runRalphFlow,
@@ -78,9 +77,7 @@ const createRunSnapshot = (
     ...(task ? { taskId: task.id } : {}),
     cancellable: Boolean(task),
     recoverable:
-      !task &&
-      RECOVERABLE_STATUSES.has(run.status) &&
-      run.recoverable,
+      !task && RECOVERABLE_STATUSES.has(run.status) && run.recoverable,
   };
 };
 
@@ -161,30 +158,17 @@ export const loadFleetRalphSnapshot = async (
 ): Promise<FleetShellRalphSnapshot> => {
   const normalizedWorkspace =
     normalizeWorkspaceForTaskComparison(workspaceRoot);
-  const [flowResults, runResults, activeTasks] = await Promise.all([
-    Promise.all(
-      (["workspace", "user"] as const).map(async (scope) => ({
-        scope,
-        result: await listRalphFlows(workspaceRoot, scope),
-      })),
-    ),
-    Promise.all(
-      (["workspace", "user"] as const).map(async (scope) => ({
-        scope,
-        result: await listRalphRuns(workspaceRoot, undefined, scope),
-      })),
-    ),
-    loadActiveDesktopTasks(),
-  ]);
+  const { scopes } = await loadRalphSnapshot(workspaceRoot);
+  const activeTasks = await loadActiveDesktopTasks();
   const unmatchedTasks = (activeTasks ?? []).filter(
     (task) =>
       task.kind === "ralph" &&
       normalizeWorkspaceForTaskComparison(task.workspaceRoot) ===
         normalizedWorkspace,
   );
-  const flows = flowResults
-    .flatMap(({ result, scope }) =>
-      result.flows.map((flow) => ({
+  const flows = scopes
+    .flatMap(({ flows, scope }) =>
+      flows.map((flow) => ({
         id: flow.id,
         ...(flow.alias ? { alias: flow.alias } : {}),
         name: flow.name,
@@ -197,8 +181,8 @@ export const loadFleetRalphSnapshot = async (
       })),
     )
     .sort((left, right) => left.name.localeCompare(right.name));
-  const runs = runResults.flatMap(({ result, scope }) =>
-    result.runs.map((run) =>
+  const runs = scopes.flatMap(({ runs, scope }) =>
+    runs.map((run) =>
       createRunSnapshot(
         run,
         scope,

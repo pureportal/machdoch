@@ -166,6 +166,7 @@ export const INSTRUCTION_ACTIONS: ReadonlySet<InstructionCliAction> = new Set([
 ]);
 export const RALPH_ACTIONS: ReadonlySet<RalphCliAction> = new Set([
   "list",
+  "snapshot",
   "show",
   "validate",
   "validate-json",

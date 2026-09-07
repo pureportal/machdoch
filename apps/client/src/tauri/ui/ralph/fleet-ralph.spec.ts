@@ -4,8 +4,7 @@ import type { ProviderModelCatalogSnapshot } from "../model-catalog";
 import type { FleetControlCommandEvent } from "../runtime";
 
 const runtime = vi.hoisted(() => ({
-  listRalphFlows: vi.fn(),
-  listRalphRuns: vi.fn(),
+  loadRalphSnapshot: vi.fn(),
   loadActiveDesktopTasks: vi.fn(),
   resumeRalphRun: vi.fn(),
   runRalphFlow: vi.fn(),
@@ -84,22 +83,13 @@ const modelCatalog: ProviderModelCatalogSnapshot = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  runtime.listRalphFlows.mockImplementation(
-    async (_workspace: string, scope: "workspace" | "user") => ({
-      scope,
-      flows: scope === "workspace" ? [flow] : [],
-    }),
-  );
-  runtime.listRalphRuns.mockImplementation(
-    async (
-      _workspace: string,
-      _flowId: undefined,
-      scope: "workspace" | "user",
-    ) => ({
-      scope,
-      runs: [],
-    }),
-  );
+  runtime.loadRalphSnapshot.mockResolvedValue({
+    workspaceRoot: "C:/repo",
+    scopes: [
+      { scope: "workspace", flows: [flow], runs: [] },
+      { scope: "user", flows: [], runs: [] },
+    ],
+  });
   runtime.loadActiveDesktopTasks.mockResolvedValue([]);
   runtime.runRalphFlow.mockResolvedValue({});
   runtime.resumeRalphRun.mockResolvedValue({});
@@ -107,24 +97,22 @@ beforeEach(() => {
 
 describe("loadFleetRalphSnapshot", () => {
   it("matches active tasks once and gives active resumes precedence over stale run state", async () => {
-    runtime.listRalphRuns.mockImplementation(
-      async (
-        _workspace: string,
-        _flowId: undefined,
-        scope: "workspace" | "user",
-      ) => ({
-        scope,
-        runs:
-          scope === "workspace"
-            ? [
-                run("run-one", "running", "2026-01-01T00:00:02.000Z"),
-                run("run-two", "running", "2026-01-01T00:00:04.000Z"),
-                run("run-crashed", "crashed", "2026-01-01T00:00:01.000Z"),
-                run("run-partial", "partial", "2026-01-01T00:00:00.000Z"),
-              ]
-            : [],
-      }),
-    );
+    runtime.loadRalphSnapshot.mockResolvedValue({
+      workspaceRoot: "C:/repo",
+      scopes: [
+        {
+          scope: "workspace",
+          flows: [flow],
+          runs: [
+            run("run-one", "running", "2026-01-01T00:00:02.000Z"),
+            run("run-two", "running", "2026-01-01T00:00:04.000Z"),
+            run("run-crashed", "crashed", "2026-01-01T00:00:01.000Z"),
+            run("run-partial", "partial", "2026-01-01T00:00:00.000Z"),
+          ],
+        },
+        { scope: "user", flows: [], runs: [] },
+      ],
+    });
     runtime.loadActiveDesktopTasks.mockResolvedValue([
       {
         id: "task-two",
@@ -151,6 +139,9 @@ describe("loadFleetRalphSnapshot", () => {
 
     const snapshot = await loadFleetRalphSnapshot("C:/Repo");
 
+    expect(runtime.loadRalphSnapshot).toHaveBeenCalledExactlyOnceWith(
+      "C:/Repo",
+    );
     expect(snapshot.runs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -205,6 +196,61 @@ describe("loadFleetRalphSnapshot", () => {
         status: "running",
       }),
     );
+  });
+
+  it("keeps user and workspace flows with identical ids distinct", async () => {
+    runtime.loadRalphSnapshot.mockResolvedValue({
+      workspaceRoot: "C:/repo",
+      scopes: [
+        { scope: "workspace", flows: [flow], runs: [] },
+        {
+          scope: "user",
+          flows: [{ ...flow, name: "User release" }],
+          runs: [run("user-run", "crashed", "2026-01-01T00:00:01.000Z")],
+        },
+      ],
+    });
+    runtime.loadActiveDesktopTasks.mockResolvedValue([
+      {
+        id: "user-task",
+        kind: "ralph",
+        workspaceRoot: "C:/repo",
+        arguments: ["run", "release", "--scope", "user"],
+        startedAt: 10,
+      },
+    ]);
+
+    const snapshot = await loadFleetRalphSnapshot("C:/repo");
+
+    expect(snapshot.flows).toHaveLength(2);
+    expect(snapshot.runs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "user-run",
+          scope: "user",
+          recoverable: true,
+        }),
+        expect.objectContaining({
+          taskId: "user-task",
+          scope: "user",
+          flowName: "User release",
+          cancellable: true,
+        }),
+      ]),
+    );
+  });
+
+  it("propagates snapshot failures without starting additional queries", async () => {
+    runtime.loadRalphSnapshot.mockRejectedValueOnce(
+      new Error("Read timed out"),
+    );
+
+    await expect(loadFleetRalphSnapshot("C:/repo")).rejects.toThrow(
+      "Read timed out",
+    );
+
+    expect(runtime.loadRalphSnapshot).toHaveBeenCalledTimes(1);
+    expect(runtime.loadActiveDesktopTasks).not.toHaveBeenCalled();
   });
 });
 

@@ -59,6 +59,7 @@ import type {
   RalphRunSummary,
   RalphValidationResult,
 } from "../../core/ralph.js";
+import type { RalphSnapshot } from "../../core/ralph-snapshot.js";
 import {
   AGENT_LIMIT_BOUNDS,
   DEFAULT_USER_AGENT_LIMITS_SETTINGS,
@@ -5870,6 +5871,15 @@ const createRalphRestoreArguments = (
     "--revision",
     revisionId,
   ];
+};
+
+export const loadRalphSnapshot = async (
+  workspaceRoot: string,
+): Promise<RalphSnapshot> => {
+  return runRalphCommand(workspaceRoot, ["snapshot"], () => ({
+    workspaceRoot: normalizeRalphCommandWorkspace(workspaceRoot),
+    scopes: [],
+  }));
 };
 
 export const listRalphFlows = async (
