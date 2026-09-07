@@ -152,7 +152,7 @@ describe("provider sync coordinator", () => {
       expect.objectContaining({
         provider: "copilot-cli",
         scope: "user",
-        state: "awaiting-provider-refresh",
+        state: "filesystem-current",
       }),
     );
     expect(Object.keys(copilotConfig.mcpServers)).toEqual([
@@ -357,7 +357,7 @@ describe("provider sync coordinator", () => {
             expect.objectContaining({
               provider,
               scope,
-              state: "awaiting-provider-refresh",
+              state: "filesystem-current",
             }),
           ),
         ),
@@ -573,7 +573,7 @@ describe("provider sync coordinator", () => {
         expect.objectContaining({
           provider: "codex-cli",
           scope: "user",
-          state: "awaiting-provider-refresh",
+          state: "filesystem-current",
         }),
       );
       const reconciledContent = await readFile(targetPath, "utf8");
@@ -1031,7 +1031,7 @@ describe("provider sync coordinator", () => {
         expect.objectContaining({
           provider: "codex-cli",
           scope: "workspace",
-          state: "awaiting-provider-refresh",
+          state: "filesystem-current",
         }),
       ]),
     );

@@ -5,6 +5,7 @@ import {
   coerceMcpConfigOverride,
   createMcpConfigFromPreset,
   loadMcpConfig,
+  loadMcpConfigSync,
   saveUserMcpOAuthState,
 } from "./config.ts";
 
@@ -35,6 +36,66 @@ afterEach(async () => {
 });
 
 describe("loadMcpConfig", () => {
+  it.each(["streamable-http", "sse"] as const)(
+    "uses an explicit %s transport despite leftover stdio fields",
+    async (type) => {
+      const workspaceRoot = await createWorkspace();
+      const configDirectory = join(workspaceRoot, ".machdoch", "mcp");
+      await mkdir(configDirectory, { recursive: true });
+      await writeFile(
+        join(configDirectory, "mcp.json"),
+        JSON.stringify({
+          schemaVersion: 1,
+          servers: [
+            {
+              id: "blockbench",
+              enabled: true,
+              command: "npx",
+              args: ["mcp-add"],
+              transport: {
+                type,
+                url: "http://localhost:32123/bb-mcp",
+                command: "npx",
+                args: ["mcp-add"],
+                cwd: "obsolete-directory",
+                env: { STDIO_ONLY: "true" },
+                inheritEnvironment: true,
+                stderr: "pipe",
+              },
+            },
+          ],
+        }),
+      );
+      for (const config of [
+        await loadMcpConfig(workspaceRoot),
+        loadMcpConfigSync(workspaceRoot),
+      ]) {
+        expect(
+          config.servers.find((server) => server.id === "blockbench")
+            ?.transport,
+        ).toEqual({
+          type,
+          url: "http://localhost:32123/bb-mcp",
+        });
+      }
+    },
+  );
+
+  it("rejects an incomplete explicit transport instead of using a leftover command", () => {
+    expect(() =>
+      coerceMcpConfigOverride({
+        servers: [
+          {
+            id: "blockbench",
+            command: "npx",
+            args: ["mcp-add"],
+            transport: { type: "streamable-http", url: "" },
+          },
+        ],
+      }),
+    ).toThrow("URL");
+  });
+
   it("merges presets, user config, workspace config, and child overrides", async () => {
     const workspaceRoot = await createWorkspace();
     const userConfigDir = join(workspaceRoot, ".user-config");

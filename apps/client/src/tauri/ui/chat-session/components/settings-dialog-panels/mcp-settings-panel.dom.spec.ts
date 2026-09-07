@@ -18,6 +18,7 @@ afterEach(cleanup);
 
 const renderSettings = (servers: Record<string, unknown>[] = []) => {
   const raw = JSON.stringify({ schemaVersion: 1, servers });
+  const onSave = vi.fn<(draft: string) => void>();
   const Panel = () => {
     const [draft, setDraft] = useState(raw);
     const setup: McpSettingsControls = {
@@ -41,7 +42,7 @@ const renderSettings = (servers: Record<string, unknown>[] = []) => {
       oauthBusy: false,
       message: null,
       onDraftChange: setDraft,
-      onSave: vi.fn(),
+      onSave: () => onSave(draft),
       onPresetInsert: vi.fn(),
       onDiscoveryServerIdChange: vi.fn(),
       onDiscoverServer: vi.fn(),
@@ -54,12 +55,50 @@ const renderSettings = (servers: Record<string, unknown>[] = []) => {
     };
     return createElement(McpSettingsPanel, { setup, showProviderSync: false });
   };
-  return render(
+  const result = render(
     createElement(TooltipProvider, { children: createElement(Panel) }),
   );
+  return { ...result, onSave };
 };
 
 describe("MCP settings interactions", () => {
+  it("removes stdio fields when switching to HTTP and saving", () => {
+    const { onSave } = renderSettings([
+      {
+        id: "blockbench",
+        transport: {
+          type: "stdio",
+          command: "npx",
+          args: ["mcp-add"],
+          cwd: "old-directory",
+          env: { STDIO_ONLY: "true" },
+          inheritEnvironment: true,
+          stderr: "pipe",
+        },
+      },
+    ]);
+    fireEvent.change(screen.getByRole("combobox", { name: "Transport" }), {
+      target: { value: "streamable-http" },
+    });
+    fireEvent.change(screen.getByLabelText("URL", { exact: true }), {
+      target: { value: "http://localhost:32123/bb-mcp" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(onSave).toHaveBeenCalledTimes(1);
+    const saved = JSON.parse(onSave.mock.calls[0]![0]);
+    expect(saved.servers[0].transport).toEqual({
+      type: "streamable-http",
+      url: "http://localhost:32123/bb-mcp",
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Transport" }), {
+      target: { value: "stdio" },
+    });
+    expect(
+      (screen.getByLabelText("Command", { exact: true }) as HTMLInputElement)
+        .value,
+    ).toBe("");
+  });
+
   it("shows transport validation after interaction and clears it when corrected", () => {
     renderSettings();
     fireEvent.click(screen.getByRole("button", { name: "Add custom" }));

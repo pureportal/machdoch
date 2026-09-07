@@ -17,6 +17,7 @@ import { printProviderSyncSummary } from "./cli-provider-sync-commands.js";
 vi.mock("../../core/provider-enrollment/sync-daemon.js", () => ({
   getCurrentProviderSyncDaemonPid: vi.fn().mockResolvedValue(undefined),
   getProviderSyncDaemonPid: vi.fn().mockResolvedValue(undefined),
+  loadProviderSyncDaemonDiagnostic: vi.fn().mockResolvedValue(undefined),
   requestProviderSyncRefresh: vi.fn(),
   runProviderSyncDaemon: vi.fn(),
   stopProviderSyncDaemon: vi.fn().mockResolvedValue(false),
@@ -163,12 +164,12 @@ describe("provider sync enablement", () => {
         {
           provider: "codex-cli",
           scope: "user",
-          state: "awaiting-provider-refresh",
+          state: "filesystem-current",
         },
         {
           provider: "codex-cli",
           scope: "workspace",
-          state: "awaiting-provider-refresh",
+          state: "filesystem-current",
         },
       ],
     });

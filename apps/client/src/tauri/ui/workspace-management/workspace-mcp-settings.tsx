@@ -224,7 +224,13 @@ export const WorkspaceMcpSettings = ({
           : draftRef.current;
       draftRef.current = nextDraft;
       setDraft(nextDraft);
-      setMessage({ tone: "success", text: "Workspace MCP config saved." });
+      discoveryRequestIdRef.current += 1;
+      setDiscoveryBusy(false);
+      setDiscoveryOutput(null);
+      setMessage({
+        tone: "success",
+        text: "MCP settings saved. Start a new provider run to use changes.",
+      });
     } catch (error) {
       if (saveRequestIdRef.current !== requestId) {
         return;

@@ -32,8 +32,7 @@ vi.mock("../../core/provider-enrollment/config.js", () => ({
 }));
 
 vi.mock("../../core/provider-enrollment/sync-daemon.js", () => ({
-  getCurrentProviderSyncDaemonPid:
-    mocks.getCurrentProviderSyncDaemonPid,
+  getCurrentProviderSyncDaemonPid: mocks.getCurrentProviderSyncDaemonPid,
   getProviderSyncDaemonPid: mocks.getProviderSyncDaemonPid,
   requestProviderSyncRefresh: mocks.requestProviderSyncRefresh,
   runProviderSyncDaemon: mocks.runProviderSyncDaemon,
@@ -234,9 +233,7 @@ describe("automatic provider sync", () => {
       createDaemonChild(new Error("runtime unavailable")),
     );
 
-    await expect(
-      ensureAutomaticProviderSync("C:\\workspace"),
-    ).rejects.toThrow(
+    await expect(ensureAutomaticProviderSync("C:\\workspace")).rejects.toThrow(
       "could not launch the provider-sync daemon with C:\\Machdoch Runtime\\node.exe: runtime unavailable",
     );
   });
@@ -269,4 +266,95 @@ describe("automatic provider sync", () => {
       mocks.setPersistentProviderSyncEnabled.mock.invocationCallOrder[0],
     ).toBeLessThan(mocks.reconcileProviderSync.mock.invocationCallOrder[0]!);
   });
+
+  it("reports completed sync separately from settings in existing provider runs", async () => {
+    const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    mocks.loadProviderSyncStatus.mockResolvedValue({
+      schemaVersion: 1,
+      enabled: true,
+      daemon: { running: false, autostartInstalled: false },
+      workspaceRoot: "C:\\workspace",
+      targets: [
+        {
+          provider: "codex-cli",
+          scope: "user",
+          state: "filesystem-current",
+          targetPaths: [],
+          updatedAt: new Date().toISOString(),
+          warnings: [],
+        },
+      ],
+    });
+    await printProviderSyncSummary({
+      command: "provider-sync",
+      workspaceRoot: "C:\\workspace",
+      json: false,
+      providerSync: { action: "status" },
+    } as ParsedCliArgs);
+    const output = stdout.mock.calls.map(([line]) => String(line)).join("");
+    expect(output).toContain("codex-cli user: Settings synced");
+    expect(output).toContain("Start a new run to use changes.");
+    expect(output).not.toContain("awaiting-provider-refresh");
+    expect(output).not.toContain("provider-current");
+  });
+
+  it("prints a recorded synchronization failure", async () => {
+    const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    mocks.loadProviderSyncStatus.mockResolvedValue({
+      schemaVersion: 1,
+      enabled: true,
+      daemon: { running: false, autostartInstalled: false },
+      workspaceRoot: "C:\\workspace",
+      lastAttemptedAt: new Date().toISOString(),
+      error: "Could not write MCP settings.",
+      targets: [],
+    });
+    await printProviderSyncSummary({
+      command: "provider-sync",
+      workspaceRoot: "C:\\workspace",
+      json: false,
+      providerSync: { action: "status" },
+    } as ParsedCliArgs);
+    const output = stdout.mock.calls.map(([line]) => String(line)).join("");
+    expect(output).toContain("sync failed: Could not write MCP settings.");
+    expect(output).not.toContain("Settings synced");
+    expect(output).not.toContain("Start a new run");
+  });
+
+  it.each(["enable", "refresh"] as const)(
+    "returns the daemon and autostart started by %s",
+    async (action) => {
+      const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+      const config = createConfig(true);
+      config.persistentSync.daemonAtLogin = true;
+      mocks.loadProviderEnrollmentConfig.mockResolvedValue(config);
+      mocks.setPersistentProviderSyncEnabled.mockResolvedValue(config);
+      mocks.installProviderSyncAutostart.mockResolvedValue(
+        "C:\\startup\\provider-sync.cmd",
+      );
+      mocks.reconcileProviderSync.mockResolvedValue({
+        schemaVersion: 1,
+        enabled: true,
+        daemon: { running: false, autostartInstalled: false },
+        workspaceRoot: "C:\\workspace",
+        targets: [],
+      });
+
+      await printProviderSyncSummary({
+        command: "provider-sync",
+        workspaceRoot: "C:\\workspace",
+        json: true,
+        providerSync: { action },
+      } as ParsedCliArgs);
+
+      expect(JSON.parse(String(stdout.mock.calls[0]![0]))).toMatchObject({
+        daemon: {
+          running: true,
+          pid: 4322,
+          autostartInstalled: true,
+          autostartPath: "C:\\startup\\provider-sync.cmd",
+        },
+      });
+    },
+  );
 });

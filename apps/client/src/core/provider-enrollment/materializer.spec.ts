@@ -97,6 +97,11 @@ import {
 import type { FrozenInstructionSet } from "../instruction-system/index.js";
 import type { ProviderProbeResult } from "./types.js";
 import { inventoryNativeInstructions } from "../instruction-system/native-inventory.js";
+import {
+  getProviderCoverageLedgerPath,
+  loadProviderSyncStatus,
+  reconcileProviderSync,
+} from "./sync-coordinator.js";
 
 const roots: string[] = [];
 const runtimeSystemInstructions = "Fixture run-scoped system instructions.";
@@ -283,6 +288,123 @@ afterEach(async () => {
 });
 
 describe("CLI provider enrollment materializer", () => {
+  it("keeps an existing Codex run's configuration while a new run receives synced HTTP changes", async () => {
+    const root = await createRoot();
+    const workspaceRoot = join(root, "workspace");
+    const userConfigRoot = join(root, "user-config");
+    await mkdir(workspaceRoot);
+    await mkdir(userConfigRoot);
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+    await writeFile(
+      join(userConfigRoot, "user-config.json"),
+      JSON.stringify({
+        agentCliPaths: { "codex-cli": process.execPath },
+        providerEnrollment: {
+          schemaVersion: 1,
+          enabled: true,
+          persistentSync: { enabled: true, watch: false, daemonAtLogin: false },
+          providers: {
+            "codex-cli": { enabled: true },
+            "claude-cli": { enabled: false },
+            "copilot-cli": { enabled: false },
+          },
+        },
+      }),
+    );
+    const configPath = join(userConfigRoot, "mcp.json");
+    const oldTransport = { type: "stdio", command: "npx", args: ["mcp-add"] };
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        servers: [{ id: "blockbench", enabled: true, transport: oldTransport }],
+      }),
+    );
+    const resolution = createInstructionResolutionFixture({
+      providerId: "codex-cli",
+      surface: "cli",
+    });
+    const params = {
+      provider: "codex-cli" as const,
+      executable: process.execPath,
+      workspaceRoot,
+      resolution,
+      deliveryPlan: createProbedPlan(resolution),
+    };
+    const existing = await materializeCliEnrollment({
+      ...params,
+      runId: "before-transport-change",
+    });
+    try {
+      const existingPath = join(existing.env.CODEX_HOME!, "config.toml");
+      const existingConfig = await readFile(existingPath, "utf8");
+      expect(existingConfig).toContain("mcp-add");
+      await writeFile(
+        configPath,
+        JSON.stringify({
+          schemaVersion: 1,
+          servers: [
+            {
+              id: "blockbench",
+              enabled: true,
+              transport: {
+                ...oldTransport,
+                type: "streamable-http",
+                url: "http://localhost:32123/bb-mcp",
+              },
+            },
+          ],
+        }),
+      );
+      const synced = await reconcileProviderSync(workspaceRoot);
+      expect(
+        synced.targets.every((target) => target.state === "filesystem-current"),
+      ).toBe(true);
+      const next = await materializeCliEnrollment({
+        ...params,
+        runId: "after-transport-change",
+      });
+      try {
+        expect(await readFile(existingPath, "utf8")).toBe(existingConfig);
+        const nextConfig = await readFile(
+          join(next.env.CODEX_HOME!, "config.toml"),
+          "utf8",
+        );
+        expect(nextConfig).toContain('url = "http://localhost:32123/bb-mcp"');
+        expect(nextConfig).not.toContain("mcp-add");
+        expect(nextConfig).not.toContain("command =");
+        expect(next.manifest.mcp).toBeDefined();
+        expect(next.manifest.mcp?.effectiveConfigDigest).not.toBe(
+          existing.manifest.mcp?.effectiveConfigDigest,
+        );
+        expect(next.manifest.coverage).toContainEqual(
+          expect.objectContaining({
+            entityId: "mcp-server:blockbench",
+            refreshState: "filesystem-current",
+            route: "cli-native-mcp",
+          }),
+        );
+        expect((await loadProviderSyncStatus(workspaceRoot)).targets).toEqual(
+          synced.targets,
+        );
+        const ledger = JSON.parse(
+          await readFile(getProviderCoverageLedgerPath(workspaceRoot), "utf8"),
+        );
+        expect(ledger.entries.length).toBeGreaterThan(0);
+        expect(
+          ledger.entries.every(
+            (entry: { refreshState: string }) =>
+              entry.refreshState === "filesystem-current",
+          ),
+        ).toBe(true);
+      } finally {
+        await next.dispose();
+      }
+    } finally {
+      await existing.dispose();
+    }
+  });
+
   it("throttles automatic temporary-directory scans while allowing explicit cleanup", async () => {
     const now = Date.now() + 10 * 60_000;
     const clock = vi.spyOn(Date, "now").mockReturnValue(now);

@@ -491,27 +491,29 @@ const coerceTransport = (value: unknown): McpTransportConfig | undefined => {
     return undefined;
   }
 
-  if (value.type === "stdio" || typeof value.command === "string") {
-    return coerceStdioTransport(value);
+  const type =
+    value.type ??
+    (typeof value.command === "string"
+      ? "stdio"
+      : typeof value.url === "string"
+        ? "streamable-http"
+        : undefined);
+  if (type === undefined) return undefined;
+
+  if (type === "stdio") {
+    const transport = coerceStdioTransport(value);
+    if (!transport) throw new Error("MCP stdio transport requires a command.");
+    return transport;
   }
 
-  if (
-    value.type === "sse" ||
-    value.type === "http+sse" ||
-    value.type === "legacy-sse"
-  ) {
-    return coerceSseTransport(value);
+  if (type === "streamable-http" || type === "http" || type === "sse") {
+    const transport =
+      type === "sse" ? coerceSseTransport(value) : coerceHttpTransport(value);
+    if (!transport) throw new Error("MCP remote transport requires a URL.");
+    return transport;
   }
 
-  if (
-    value.type === "streamable-http" ||
-    value.type === "http" ||
-    typeof value.url === "string"
-  ) {
-    return coerceHttpTransport(value);
-  }
-
-  return undefined;
+  throw new Error(`Unknown MCP transport type: ${String(type)}.`);
 };
 
 const coerceToolOverrides = (
@@ -1023,14 +1025,12 @@ const coerceServerOverride = (
     return undefined;
   }
 
-  const transport =
-    coerceTransport(value.transport) ??
-    coerceTransport({
-      ...value,
-      ...(isRecord(value.requestInit)
-        ? { requestInit: value.requestInit }
-        : {}),
-    });
+  const transport = coerceTransport(
+    value.transport === undefined ? value : value.transport,
+  );
+  if (value.transport !== undefined && !transport) {
+    throw new Error(`MCP server \`${id}\` requires a valid transport.`);
+  }
   const exposure = coerceExposure(value.exposure);
   const auth = coerceAuth(value.auth);
   const roots = coerceRoots(value.roots);

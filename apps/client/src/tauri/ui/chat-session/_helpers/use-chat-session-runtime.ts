@@ -2041,9 +2041,12 @@ export const useChatSessionRuntime = (
           : mcpConfigDraftRef.current;
       mcpConfigDraftRef.current = nextDraft;
       setMcpConfigDraft(nextDraft);
+      mcpDiscoveryRequestIdRef.current += 1;
+      setMcpDiscoveryBusy(false);
+      setMcpDiscoveryOutput(null);
       setMcpConfigMessage({
         tone: "success",
-        text: "Global MCP config saved.",
+        text: "MCP settings saved. Start a new provider run to use changes.",
       });
     } catch (error) {
       if (mcpConfigSaveRequestIdRef.current !== requestId) {

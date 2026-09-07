@@ -373,7 +373,7 @@ const createCoverageEntries = (
   scope: "user" | "workspace",
   projection: Awaited<ReturnType<typeof projectMcpForProvider>>,
 ): EnrollmentCoverageEntry[] => {
-  const refreshState = "awaiting-provider-refresh" as const;
+  const refreshState = "filesystem-current" as const;
   return [
     ...projection.servers.flatMap((server): EnrollmentCoverageEntry[] => {
       const serverEntry: EnrollmentCoverageEntry = {
@@ -540,9 +540,7 @@ const reconcileProviderScope = async (
       status: {
         provider,
         scope,
-        state: coverageSummary.complete
-          ? "awaiting-provider-refresh"
-          : "degraded",
+        state: coverageSummary.complete ? "filesystem-current" : "degraded",
         targetPaths: [paths.mcpPath],
         updatedAt: new Date().toISOString(),
         warnings,
@@ -785,10 +783,12 @@ export const reconcileProviderSync = async (
   return await withCooperativeFileLock(
     getReconcileLockTarget(),
     async () => {
+      const lastAttemptedAt = new Date().toISOString();
       let lastError: unknown;
       for (let attempt = 0; attempt < 3; attempt += 1) {
         try {
           const output = await reconcileOnce(workspaceRoot);
+          output.status.lastAttemptedAt = lastAttemptedAt;
           await saveOwnershipManifest(
             getProviderSyncOwnershipPath(),
             output.ownership,
@@ -817,9 +817,23 @@ export const reconcileProviderSync = async (
           }
         }
       }
-      throw lastError instanceof Error
-        ? lastError
-        : new Error(String(lastError));
+      const syncError =
+        lastError instanceof Error ? lastError : new Error(String(lastError));
+      try {
+        const previousStatus = await loadProviderSyncStatus(workspaceRoot);
+        await writeJsonAtomically(getProviderSyncStatusPath(workspaceRoot), {
+          ...previousStatus,
+          lastAttemptedAt,
+          error: syncError.message,
+          targets: [],
+        } satisfies ProviderSyncStatus);
+      } catch (statusError) {
+        throw new AggregateError(
+          [syncError, statusError],
+          `${syncError.message} Could not save sync failure: ${statusError instanceof Error ? statusError.message : String(statusError)}`,
+        );
+      }
+      throw syncError;
     },
     {
       timeoutMs: RECONCILE_LOCK_TIMEOUT_MS,
@@ -833,24 +847,55 @@ export const loadProviderSyncStatus = async (
 ): Promise<ProviderSyncStatus> => {
   const config = await loadProviderEnrollmentConfig();
   const enabled = config.enabled && config.persistentSync.enabled;
+  const { loadProviderSyncDaemonDiagnostic } = await import("./sync-daemon.js");
+  const [daemon, diagnostic] = await Promise.all([
+    buildDaemonStatus(),
+    loadProviderSyncDaemonDiagnostic(),
+  ]);
+  const statusPath = getProviderSyncStatusPath(workspaceRoot);
+  let savedStatus: ProviderSyncStatus | undefined;
   try {
-    const status = JSON.parse(
-      await readFile(getProviderSyncStatusPath(workspaceRoot), "utf8"),
+    savedStatus = JSON.parse(
+      await readFile(statusPath, "utf8"),
     ) as ProviderSyncStatus;
-    return {
-      ...status,
-      enabled,
-      daemon: await buildDaemonStatus(),
-    };
-  } catch {
-    return {
-      schemaVersion: PROVIDER_ENROLLMENT_SCHEMA_VERSION,
-      enabled,
-      daemon: await buildDaemonStatus(),
-      workspaceRoot,
-      targets: [],
-    };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw new Error(
+        `Could not read MCP sync status at ${statusPath}: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
   }
+  const status: ProviderSyncStatus = {
+    schemaVersion: PROVIDER_ENROLLMENT_SCHEMA_VERSION,
+    workspaceRoot,
+    targets: [],
+    ...savedStatus,
+    enabled,
+    daemon,
+  };
+  const lastStatusAt = Math.max(
+    status.lastAttemptedAt ? Date.parse(status.lastAttemptedAt) : 0,
+    status.lastReconciledAt ? Date.parse(status.lastReconciledAt) : 0,
+  );
+  if (diagnostic && Date.parse(diagnostic.runStartedAt) >= lastStatusAt) {
+    const workspaceIdentity = getWorkspaceRootIdentityKey(workspaceRoot);
+    const result = diagnostic.workspaceResults.find(
+      (candidate) =>
+        getWorkspaceRootIdentityKey(candidate.workspaceRoot) ===
+        workspaceIdentity,
+    );
+    const error = result?.error ?? diagnostic.error;
+    if (error) {
+      return {
+        ...status,
+        lastAttemptedAt: diagnostic.runStartedAt,
+        error,
+        targets: [],
+      };
+    }
+  }
+  return status;
 };
 
 export const uninstallProviderSyncTargets = async (): Promise<string[]> => {
@@ -1013,22 +1058,16 @@ export const doctorProviderSync = async (
     (target) =>
       target.exists && (!target.syntaxValid || !target.managedCurrent),
   );
-  const workspaceRootIdentity = getWorkspaceRootIdentityKey(workspaceRoot);
-  const daemonWorkspaceResult = daemonDiagnostic?.workspaceResults.find(
-    (result) =>
-      getWorkspaceRootIdentityKey(result.workspaceRoot) ===
-      workspaceRootIdentity,
-  );
   return {
     healthy:
+      (!status.enabled || status.lastReconciledAt !== undefined) &&
+      status.error === undefined &&
       status.targets.every((target) => target.state !== "degraded") &&
       uncovered.length === 0 &&
       missingTargets.length === 0 &&
       driftedTargets.length === 0 &&
       reconcileLock.state !== "orphaned" &&
-      reconcileLock.state !== "stale" &&
-      daemonDiagnostic?.error === undefined &&
-      daemonWorkspaceResult?.outcome !== "error",
+      reconcileLock.state !== "stale",
     status,
     probes,
     ownership: {

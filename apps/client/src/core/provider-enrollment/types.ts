@@ -26,7 +26,6 @@ export type EnrollmentFidelity =
 export type EnrollmentRefreshState =
   | "request-current"
   | "filesystem-current"
-  | "awaiting-provider-refresh"
   | "provider-current"
   | "degraded";
 export type EnrollmentDeliveryRoute =
@@ -242,7 +241,6 @@ export type ProviderSyncTargetState =
   | "planning"
   | "writing"
   | "filesystem-current"
-  | "awaiting-provider-refresh"
   | "provider-current"
   | "degraded";
 
@@ -267,6 +265,8 @@ export interface ProviderSyncStatus {
     autostartPath?: string;
   };
   workspaceRoot: string;
+  lastAttemptedAt?: string;
   lastReconciledAt?: string;
+  error?: string;
   targets: ProviderSyncTargetStatus[];
 }
