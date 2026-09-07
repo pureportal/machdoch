@@ -71,7 +71,7 @@ export const WorkspaceDetailNavigation = ({
   <div
     role="tablist"
     aria-label="Workspace sections"
-    className="flex min-w-0 overflow-x-auto rounded-lg border border-slate-800 bg-slate-900/30 px-1"
+    className="sticky top-0 z-20 flex min-w-0 overflow-x-auto rounded-lg border border-slate-800 bg-slate-950 px-1"
   >
     {WORKSPACE_DETAIL_SECTIONS.map(({ value, label, icon: Icon }) => {
       const active = activeSection === value;
