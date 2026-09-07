@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  ChevronDown,
   Database,
   ExternalLink,
   KeyRound,
@@ -7,10 +8,10 @@ import {
   RefreshCw,
   Save,
   Search,
-  Server,
   Trash2,
 } from "lucide-react";
-import { useMemo, useState, type JSX, type ReactNode } from "react";
+import { useId, useMemo, useState, type JSX, type ReactNode } from "react";
+import { Tabs as TabsPrimitive } from "radix-ui";
 import { Button } from "../../../components/ui/button";
 import {
   Dialog,
@@ -546,7 +547,7 @@ const Field = ({
   children: JSX.Element;
 }): JSX.Element => {
   return (
-    <label className="grid gap-1.5 text-xs font-medium text-slate-400">
+    <label className="grid content-start gap-1.5 text-xs font-medium text-slate-400">
       <span className="text-slate-300">{label}</span>
       {children}
       {detail ? (
@@ -660,6 +661,8 @@ export const McpSettingsPanel = ({
   const [selectedTab, setSelectedTab] = useState<ServerTab>("setup");
   const [oauthCallbackDraft, setOauthCallbackDraft] = useState("");
   const [customDialogOpen, setCustomDialogOpen] = useState(false);
+  const [customTransportTouched, setCustomTransportTouched] = useState(false);
+  const customTransportErrorId = useId();
   const [customDraft, setCustomDraft] = useState<CustomServerDraft>(() =>
     createEmptyCustomServerDraft([]),
   );
@@ -789,6 +792,7 @@ export const McpSettingsPanel = ({
 
   const openCustomServerDialog = (): void => {
     setCustomDraft(createEmptyCustomServerDraft(parsed.servers));
+    setCustomTransportTouched(false);
     setCustomDialogOpen(true);
   };
 
@@ -905,12 +909,13 @@ export const McpSettingsPanel = ({
                 <Field label="Transport">
                   <select
                     value={customDraft.transportType}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      setCustomTransportTouched(false);
                       setCustomDraft((current) => ({
                         ...current,
                         transportType: event.target.value as TransportType,
-                      }))
-                    }
+                      }));
+                    }}
                     className={SELECT_CLASS}
                   >
                     <option value="stdio">stdio</option>
@@ -923,6 +928,16 @@ export const McpSettingsPanel = ({
                     <Input
                       value={customDraft.command}
                       placeholder="npx"
+                      required
+                      aria-invalid={
+                        customTransportTouched && !customTransportReady
+                      }
+                      aria-describedby={
+                        customTransportTouched && !customTransportReady
+                          ? customTransportErrorId
+                          : undefined
+                      }
+                      onBlur={() => setCustomTransportTouched(true)}
                       onChange={(event) =>
                         setCustomDraft((current) => ({
                           ...current,
@@ -937,6 +952,17 @@ export const McpSettingsPanel = ({
                     <Input
                       value={customDraft.url}
                       placeholder="https://example.com/mcp"
+                      type="url"
+                      required
+                      aria-invalid={
+                        customTransportTouched && !customTransportReady
+                      }
+                      aria-describedby={
+                        customTransportTouched && !customTransportReady
+                          ? customTransportErrorId
+                          : undefined
+                      }
+                      onBlur={() => setCustomTransportTouched(true)}
                       onChange={(event) =>
                         setCustomDraft((current) => ({
                           ...current,
@@ -953,8 +979,12 @@ export const McpSettingsPanel = ({
                   A server with this ID already exists.
                 </p>
               ) : null}
-              {!customTransportReady ? (
-                <p className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+              {customTransportTouched && !customTransportReady ? (
+                <p
+                  id={customTransportErrorId}
+                  role="alert"
+                  className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-200"
+                >
                   {customDraft.transportType === "stdio"
                     ? "Enter a command before adding the server."
                     : "Enter a valid HTTP or HTTPS URL before adding the server."}
@@ -1156,23 +1186,25 @@ export const McpSettingsPanel = ({
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-1 rounded-lg border border-slate-800 bg-slate-950/80 p-1">
+        <TabsPrimitive.List
+          aria-label="MCP server sections"
+          className="flex flex-wrap gap-1 rounded-lg border border-slate-800 bg-slate-950/80 p-1"
+        >
           {SERVER_TABS.map((tab) => (
-            <Button
-              key={tab.value}
-              type="button"
-              variant="ghost"
-              aria-pressed={selectedTab === tab.value}
-              onClick={() => setSelectedTab(tab.value)}
-              className={cn(
-                "h-8 rounded-md px-3 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100",
-                selectedTab === tab.value && "bg-sky-500/15 text-sky-100",
-              )}
-            >
-              {tab.label}
-            </Button>
+            <TabsPrimitive.Trigger key={tab.value} value={tab.value} asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                className={cn(
+                  "h-8 rounded-md px-3 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100",
+                  selectedTab === tab.value && "bg-sky-500/15 text-sky-100",
+                )}
+              >
+                {tab.label}
+              </Button>
+            </TabsPrimitive.Trigger>
           ))}
-        </div>
+        </TabsPrimitive.List>
       </div>
     );
   };
@@ -2025,19 +2057,25 @@ export const McpSettingsPanel = ({
   };
 
   return (
-    <SettingsCard
-      title="MCP servers"
-      description="Configure servers, credentials, discovery, and tools."
-    >
+    <SettingsCard title="MCP servers">
       <SubmitShortcut asChild>
         <div className="grid gap-4 py-4">
           {showProviderSync ? (
-            <PanelBlock title="Automatic provider enrollment">
-              <ProviderSyncControl
-                workspaceRoot={setup.workspaceRoot}
-                showDiagnostics
-              />
-            </PanelBlock>
+            <details className="group rounded-lg border border-slate-800">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-3 py-3 text-sm font-medium text-slate-200 outline-none hover:bg-slate-900 focus-visible:ring-2 focus-visible:ring-sky-400 [&::-webkit-details-marker]:hidden">
+                Provider sync
+                <ChevronDown
+                  aria-hidden="true"
+                  className="size-4 text-slate-400 transition-transform group-open:rotate-180"
+                />
+              </summary>
+              <div className="px-3 pb-3">
+                <ProviderSyncControl
+                  workspaceRoot={setup.workspaceRoot}
+                  showDiagnostics
+                />
+              </div>
+            </details>
           ) : null}
 
           <div className="sticky top-0 z-10 -mx-2 grid gap-3 border-b border-slate-800 bg-slate-950/95 px-2 py-3 shadow-sm shadow-black/20">
@@ -2090,13 +2128,22 @@ export const McpSettingsPanel = ({
           </div>
 
           {parsed.error ? (
-            <p className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+            <p
+              role="alert"
+              className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-200"
+            >
               {parsed.error}
             </p>
           ) : (
             <>
-              <div className="grid gap-4">
-                <section className="grid gap-3">
+              <div
+                className={cn(
+                  "grid min-w-0 items-start gap-4",
+                  selectedServer &&
+                    "@min-[50rem]/settings-card:grid-cols-[14rem_minmax(0,1fr)]",
+                )}
+              >
+                <section className="grid min-w-0 content-start gap-3">
                   <div className="text-sm font-semibold text-slate-200">
                     Installed servers
                   </div>
@@ -2104,9 +2151,20 @@ export const McpSettingsPanel = ({
                 </section>
 
                 {selectedServer ? (
-                  <section className="min-w-0 overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60">
+                  <TabsPrimitive.Root
+                    value={selectedTab}
+                    onValueChange={(value) =>
+                      setSelectedTab(value as ServerTab)
+                    }
+                    className="min-w-0 overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60"
+                  >
                     {renderSelectedHeader()}
-                    <div className="grid gap-4 p-4">{renderSelectedTab()}</div>
+                    <TabsPrimitive.Content
+                      value={selectedTab}
+                      className="grid min-w-0 gap-4 p-4 outline-none"
+                    >
+                      {renderSelectedTab()}
+                    </TabsPrimitive.Content>
                     <div className="flex justify-end border-t border-slate-800 px-4 py-3">
                       <Button
                         type="button"
@@ -2119,17 +2177,8 @@ export const McpSettingsPanel = ({
                         Remove
                       </Button>
                     </div>
-                  </section>
-                ) : (
-                  <section className="grid min-h-64 place-items-center rounded-lg border border-dashed border-slate-800 bg-slate-950/50 p-8 text-center">
-                    <div className="grid gap-2">
-                      <Server className="mx-auto h-8 w-8 text-slate-600" />
-                      <p className="text-sm text-slate-500">
-                        Add a preset or custom server to start configuring MCP.
-                      </p>
-                    </div>
-                  </section>
-                )}
+                  </TabsPrimitive.Root>
+                ) : null}
               </div>
             </>
           )}
