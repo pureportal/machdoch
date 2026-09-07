@@ -535,6 +535,7 @@ export interface UserDesktopSettings {
   assistantBubbleHideWhenFullscreen: boolean;
   assistantBubbleTemporarilyHideSeconds: number;
   aiContextMaxMessages: number;
+  chatIdleTimeoutMinutes: number;
   inactiveSessionArchiveDays: number;
   archivedSessionRetentionDays: number;
   quickVoiceEnabled: boolean;

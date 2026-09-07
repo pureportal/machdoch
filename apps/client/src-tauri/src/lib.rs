@@ -232,6 +232,7 @@ pub fn run() {
             desktop_shell::sync_chat_completion_indicator,
             desktop_shell::file_manager::take_file_manager_invocations,
             desktop_task::cancel_desktop_task,
+            desktop_task::reset_desktop_task_timeout,
             desktop_task::acknowledge_recent_desktop_task_results,
             desktop_task::get_active_desktop_task_ids,
             desktop_task::get_active_desktop_tasks,

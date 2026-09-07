@@ -191,6 +191,7 @@ fn merge_typed_user_config(original: Value, typed: &UserConfigFile) -> Result<Va
             "assistantBubbleHideWhenFullscreen",
             "assistantBubbleTemporarilyHideSeconds",
             "aiContextMaxMessages",
+            "chatIdleTimeoutMinutes",
             "inactiveSessionArchiveDays",
             "archivedSessionRetentionDays",
             "quickVoiceEnabled",

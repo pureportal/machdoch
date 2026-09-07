@@ -28,6 +28,7 @@ mod progress;
 mod ralph;
 mod ralph_media_bridge;
 mod registry;
+mod timeout;
 
 use attachment_paths::resolve_attached_path;
 use attachments::{
@@ -66,7 +67,6 @@ pub fn cleanup_stale_task_context_files() {
     payload_files::cleanup_stale_instruction_payload_files();
 }
 
-const DESKTOP_TASK_IDLE_TIMEOUT_MS: u64 = 20 * 60 * 1_000;
 const AUXILIARY_CLI_COMMAND_TIMEOUT_MS: u64 = 20 * 60 * 1_000;
 const RALPH_COMMAND_TIMEOUT_MS: u64 = 12 * 60 * 60 * 1_000;
 const DESKTOP_TASK_WAIT_POLL_MS: u64 = 250;
@@ -295,6 +295,24 @@ pub async fn cancel_desktop_task(
 }
 
 #[tauri::command]
+pub async fn reset_desktop_task_timeout(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, DesktopTaskCancelMap>,
+    task_id: String,
+    idle_timeout_minutes: Option<u32>,
+) -> Result<(), String> {
+    let timeout = registry::active_task_timeout(&state, &task_id)?;
+    timeout.reset(idle_timeout_minutes, |snapshot| {
+        progress::emit_timeout_progress_event(
+            &app_handle,
+            &timeout.window_label,
+            &task_id,
+            snapshot,
+        );
+    })
+}
+
+#[tauri::command]
 pub async fn get_active_desktop_task_ids(
     state: tauri::State<'_, DesktopTaskCancelMap>,
 ) -> Result<Vec<String>, String> {
@@ -352,6 +370,11 @@ pub async fn run_desktop_task(
     mut request: DesktopTaskRunRequest,
 ) -> Result<DesktopTaskRunResponse, DesktopTaskRunError> {
     let window_label = window.label().to_string();
+    let task_timeout = Arc::new(timeout::DesktopTaskTimeout::new(
+        window_label.clone(),
+        crate::runtime_snapshot::load_chat_idle_timeout_minutes()
+            .map_err(DesktopTaskRunError::runtime)?,
+    ));
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let termination_state = Arc::new(AtomicU8::new(DESKTOP_TASK_TERMINATION_NONE));
     let task_id = normalize_task_id(request.task_id.as_deref());
@@ -374,6 +397,7 @@ pub async fn run_desktop_task(
         let claim = register_active_task(
             &state,
             ActiveDesktopTaskRegistration {
+                timeout: Some(task_timeout.clone()),
                 task_id: id.clone(),
                 cancel_flag: cancel_flag.clone(),
                 kind: task_kind.clone(),
@@ -420,13 +444,16 @@ pub async fn run_desktop_task(
     let command_termination_state = termination_state.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         let _sleep_inhibition = sleep_inhibition;
-        execute_desktop_task(
+        let result = execute_desktop_task(
             app_handle,
             window_label,
             request,
             cancel_flag,
             command_termination_state,
-        )
+            task_timeout.clone(),
+        );
+        task_timeout.finish()?;
+        result
     })
     .await
     .map_err(|error| format!("The desktop task bridge stopped unexpectedly. {error}"))
@@ -720,6 +747,7 @@ pub async fn run_ralph_command(
         let claim = register_active_task(
             &state,
             ActiveDesktopTaskRegistration {
+                timeout: None,
                 task_id: id.clone(),
                 cancel_flag: cancel_flag.clone(),
                 kind: "ralph".to_string(),

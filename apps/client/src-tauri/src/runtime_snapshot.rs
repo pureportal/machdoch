@@ -26,8 +26,8 @@ use collect::{
 };
 use desktop_settings_commands::save_user_desktop_settings_value;
 pub(crate) use desktop_settings_commands::{
-    load_user_desktop_admin_preference, load_user_desktop_launch_preferences,
-    load_user_desktop_settings,
+    load_chat_idle_timeout_minutes, load_user_desktop_admin_preference,
+    load_user_desktop_launch_preferences, load_user_desktop_settings,
 };
 pub(crate) use env::load_global_env;
 pub use mcp_config::McpConfigWriteLock;

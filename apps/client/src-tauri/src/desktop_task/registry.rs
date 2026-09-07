@@ -6,6 +6,7 @@ use std::{
 
 use serde::Serialize;
 
+use super::timeout::DesktopTaskTimeout;
 use super::{DesktopTaskRunError, DesktopTaskRunResponse};
 
 const MAX_PENDING_CANCEL_IDS: usize = 256;
@@ -36,6 +37,7 @@ impl Default for DesktopTaskCancelMap {
 }
 
 struct ActiveDesktopTask {
+    timeout: Option<Arc<DesktopTaskTimeout>>,
     cancel_flag: Arc<AtomicBool>,
     kind: String,
     session_id: Option<String>,
@@ -46,6 +48,7 @@ struct ActiveDesktopTask {
 }
 
 pub(super) struct ActiveDesktopTaskRegistration {
+    pub(super) timeout: Option<Arc<DesktopTaskTimeout>>,
     pub(super) task_id: String,
     pub(super) cancel_flag: Arc<AtomicBool>,
     pub(super) kind: String,
@@ -192,6 +195,22 @@ pub fn request_desktop_task_cancel(state: &DesktopTaskCancelMap, task_id: &str) 
             remember_pending_cancel(&mut cancel_state, task_id.as_str());
         }
     }
+}
+
+pub(super) fn active_task_timeout(
+    state: &DesktopTaskCancelMap,
+    task_id: &str,
+) -> Result<Arc<DesktopTaskTimeout>, String> {
+    let tasks = state
+        .0
+        .lock()
+        .map_err(|_| "The active chat runs are unavailable.")?;
+    tasks
+        .active
+        .get(task_id)
+        .filter(|task| !task.cancel_flag.load(Ordering::SeqCst))
+        .and_then(|task| task.timeout.clone())
+        .ok_or_else(|| "This chat run is no longer active.".to_string())
 }
 
 pub fn request_all_desktop_task_cancels(state: &DesktopTaskCancelMap) -> usize {
@@ -362,6 +381,7 @@ pub(super) fn register_active_task(
     cancel_state.active.insert(
         registration.task_id,
         ActiveDesktopTask {
+            timeout: registration.timeout,
             cancel_flag: registration.cancel_flag,
             kind: registration.kind,
             session_id: registration.session_id,
@@ -516,6 +536,7 @@ mod tests {
         cancel_state.active.insert(
             active_task_id,
             ActiveDesktopTask {
+                timeout: None,
                 cancel_flag: Arc::new(AtomicBool::new(false)),
                 kind: "desktop".to_string(),
                 session_id: None,
@@ -543,6 +564,7 @@ mod tests {
     fn task_ids_are_claimed_only_once() {
         let state = DesktopTaskCancelMap::default();
         let registration = || ActiveDesktopTaskRegistration {
+            timeout: None,
             task_id: "shared-task".to_string(),
             cancel_flag: Arc::new(AtomicBool::new(false)),
             kind: "desktop".to_string(),
@@ -567,6 +589,7 @@ mod tests {
     fn operation_key_has_exactly_one_active_owner() {
         let state = DesktopTaskCancelMap::default();
         let registration = |task_id: &str| ActiveDesktopTaskRegistration {
+            timeout: None,
             task_id: task_id.to_string(),
             cancel_flag: Arc::new(AtomicBool::new(false)),
             kind: "desktop".to_string(),
@@ -601,6 +624,7 @@ mod tests {
         register_active_task(
             &state,
             ActiveDesktopTaskRegistration {
+                timeout: None,
                 task_id: "enhancement-1".to_string(),
                 cancel_flag: Arc::new(AtomicBool::new(false)),
                 kind: "prompt-enhancement".to_string(),

@@ -166,6 +166,12 @@ const DESKTOP_CONFIG_SETTINGS = {
     description: "Maximum recent messages included in desktop AI context.",
     ...DESKTOP_SETTING_BOUNDS.aiContextMaxMessages,
   },
+  "chat-idle-timeout-minutes": {
+    key: "chatIdleTimeoutMinutes",
+    type: "integer",
+    description: "Minutes without progress before a desktop chat stops.",
+    ...DESKTOP_SETTING_BOUNDS.chatIdleTimeoutMinutes,
+  },
   "inactive-session-archive-days": {
     key: "inactiveSessionArchiveDays",
     type: "integer",
