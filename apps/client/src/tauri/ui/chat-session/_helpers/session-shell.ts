@@ -211,6 +211,8 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
       "cache",
       "archive",
       "quick chat",
+      "chat timeout",
+      "inactivity",
     ],
   },
   {

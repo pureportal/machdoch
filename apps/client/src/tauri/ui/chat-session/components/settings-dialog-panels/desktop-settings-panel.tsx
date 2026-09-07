@@ -74,6 +74,12 @@ export const normalizeDesktopSettingsDraft = (
       DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.max,
       DEFAULT_USER_DESKTOP_SETTINGS.aiContextMaxMessages,
     ),
+    chatIdleTimeoutMinutes: clampIntegerSetting(
+      settings.chatIdleTimeoutMinutes,
+      DESKTOP_SETTING_BOUNDS.chatIdleTimeoutMinutes.min,
+      DESKTOP_SETTING_BOUNDS.chatIdleTimeoutMinutes.max,
+      DEFAULT_USER_DESKTOP_SETTINGS.chatIdleTimeoutMinutes,
+    ),
     inactiveSessionArchiveDays: clampIntegerSetting(
       settings.inactiveSessionArchiveDays,
       DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.min,
@@ -119,6 +125,7 @@ export const hasDesktopSettingsDraftChanges = (
     left.assistantBubbleTemporarilyHideSeconds !==
       right.assistantBubbleTemporarilyHideSeconds ||
     left.aiContextMaxMessages !== right.aiContextMaxMessages ||
+    left.chatIdleTimeoutMinutes !== right.chatIdleTimeoutMinutes ||
     left.inactiveSessionArchiveDays !== right.inactiveSessionArchiveDays ||
     left.archivedSessionRetentionDays !== right.archivedSessionRetentionDays ||
     left.quickVoiceEnabled !== right.quickVoiceEnabled ||
@@ -527,6 +534,21 @@ export const DesktopSettingsPanel = ({
                   ...draft,
                   aiContextMaxMessages: value,
                 });
+              }}
+              className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
+            />
+          </SettingPanel>
+
+          <SettingPanel label="Chat inactivity timeout (minutes)">
+            <SettingsNumberInput
+              aria-label="Chat inactivity timeout in minutes"
+              min={DESKTOP_SETTING_BOUNDS.chatIdleTimeoutMinutes.min}
+              max={DESKTOP_SETTING_BOUNDS.chatIdleTimeoutMinutes.max}
+              step="1"
+              value={draft.chatIdleTimeoutMinutes}
+              disabled={setup.saving}
+              onValueChange={(value) => {
+                setDraft({ ...draft, chatIdleTimeoutMinutes: value });
               }}
               className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
             />

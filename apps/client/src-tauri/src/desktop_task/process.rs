@@ -10,7 +10,13 @@ use std::{
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
-use super::{payload::cleanup_temporary_file, progress::emit_progress_from_stderr_line};
+use super::{
+    payload::cleanup_temporary_file,
+    progress::{
+        emit_progress_event, emit_progress_from_stderr_line, parse_structured_progress_line,
+    },
+    timeout::DesktopTaskTimeout,
+};
 
 #[cfg(target_os = "windows")]
 const DETACHED_PROCESS: u32 = 0x00000008;
@@ -145,8 +151,7 @@ pub(super) fn desktop_task_activity_elapsed(activity: &DesktopTaskActivity) -> D
 
 fn read_stderr_lines(
     stderr: impl Read,
-    activity: &DesktopTaskActivity,
-    mut handle_progress_line: impl FnMut(&str) -> bool,
+    mut handle_progress_line: impl FnMut(&str) -> Result<bool, String>,
 ) -> Result<Vec<String>, String> {
     let mut stderr_lines = Vec::new();
     let mut retained_bytes = 0_usize;
@@ -173,9 +178,8 @@ fn read_stderr_lines(
                     &mut diagnostics_truncated,
                     &current_line,
                     current_line_truncated,
-                    activity,
                     &mut handle_progress_line,
-                );
+                )?;
                 current_line.clear();
                 current_line_truncated = false;
             } else if current_line.len() < SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES {
@@ -193,9 +197,8 @@ fn read_stderr_lines(
             &mut diagnostics_truncated,
             &current_line,
             current_line_truncated,
-            activity,
             &mut handle_progress_line,
-        );
+        )?;
     }
 
     Ok(stderr_lines)
@@ -207,20 +210,18 @@ fn process_stderr_line(
     diagnostics_truncated: &mut bool,
     raw_line: &[u8],
     line_truncated: bool,
-    activity: &DesktopTaskActivity,
-    handle_progress_line: &mut impl FnMut(&str) -> bool,
-) {
+    handle_progress_line: &mut impl FnMut(&str) -> Result<bool, String>,
+) -> Result<(), String> {
     let raw_line = raw_line.strip_suffix(b"\r").unwrap_or(raw_line);
     let line = String::from_utf8_lossy(raw_line);
     let trimmed_line = line.trim();
 
     if trimmed_line.is_empty() && !line_truncated {
-        return;
+        return Ok(());
     }
 
-    if !line_truncated && handle_progress_line(trimmed_line) {
-        mark_desktop_task_activity(activity);
-        return;
+    if !line_truncated && handle_progress_line(trimmed_line)? {
+        return Ok(());
     }
 
     push_bounded_stderr_line(
@@ -230,6 +231,7 @@ fn process_stderr_line(
         trimmed_line,
         line_truncated,
     );
+    Ok(())
 }
 
 fn push_bounded_stderr_line(
@@ -285,8 +287,35 @@ pub(super) fn read_stderr(
     task_id: Option<String>,
     activity: DesktopTaskActivity,
 ) -> Result<Vec<String>, String> {
-    read_stderr_lines(stderr, &activity, |trimmed_line| {
-        emit_progress_from_stderr_line(&app_handle, &window_label, task_id.as_deref(), trimmed_line)
+    read_stderr_lines(stderr, |trimmed_line| {
+        let is_progress = emit_progress_from_stderr_line(
+            &app_handle,
+            &window_label,
+            task_id.as_deref(),
+            trimmed_line,
+        );
+        if is_progress {
+            mark_desktop_task_activity(&activity);
+        }
+        Ok(is_progress)
+    })
+}
+
+pub(super) fn read_stderr_with_timeout(
+    stderr: impl Read,
+    app_handle: tauri::AppHandle,
+    window_label: String,
+    task_id: Option<String>,
+    timeout: Arc<DesktopTaskTimeout>,
+) -> Result<Vec<String>, String> {
+    read_stderr_lines(stderr, |line| {
+        let Some(progress) = parse_structured_progress_line(line) else {
+            return Ok(false);
+        };
+        timeout.record_progress(progress, |progress| {
+            emit_progress_event(&app_handle, &window_label, task_id.as_deref(), progress);
+        })?;
+        Ok(true)
     })
 }
 
@@ -463,8 +492,13 @@ mod tests {
 
         let stderr_lines = read_stderr_lines(
             Cursor::new("ordinary stderr\nmachdoch-progress: {\"state\":\"running\"}\n"),
-            &activity,
-            |line| line.starts_with("machdoch-progress: "),
+            |line| {
+                let is_progress = super::parse_structured_progress_line(line).is_some();
+                if is_progress {
+                    mark_desktop_task_activity(&activity);
+                }
+                Ok(is_progress)
+            },
         )
         .expect("stderr should be read");
 
@@ -508,11 +542,9 @@ mod tests {
 
     #[test]
     fn stderr_reader_caps_non_progress_diagnostics() {
-        let activity = create_desktop_task_activity();
         let stderr_lines = read_stderr_lines(
             Cursor::new(vec![b'e'; SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES + 128]),
-            &activity,
-            |_| false,
+            |_| Ok(false),
         )
         .expect("stderr should be read");
         let stderr_text = stderr_lines.join("\n");

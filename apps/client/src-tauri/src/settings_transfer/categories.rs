@@ -18,6 +18,7 @@ use crate::runtime_contract_generated::{
     DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_ENABLED,
     DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_HIDE_WHEN_FULLSCREEN,
     DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
+    DEFAULT_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
     DEFAULT_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES,
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS, DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
@@ -27,11 +28,13 @@ use crate::runtime_contract_generated::{
     MAX_CONFIGURED_EXECUTOR_TURNS, MAX_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
     MAX_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
     MAX_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
+    MAX_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
     MAX_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     MAX_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES, MAX_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
     MIN_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
     MIN_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
     MIN_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
+    MIN_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
     MIN_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     MIN_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES, MIN_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
     REASONING_MODES, RUN_MODES, USER_API_PROVIDERS, USER_REVIEW_MODEL_MODES,
@@ -349,6 +352,7 @@ fn snapshot_desktop_appearance<R: Runtime>(app: &AppHandle<R>) -> Result<Categor
             "assistantBubbleHideWhenFullscreen": bool_or(desktop.get("assistantBubbleHideWhenFullscreen"), DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_HIDE_WHEN_FULLSCREEN),
             "assistantBubbleTemporarilyHideSeconds": u64_clamped(desktop.get("assistantBubbleTemporarilyHideSeconds"), u64::from(DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS), u64::from(MIN_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS), u64::from(MAX_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS)),
             "aiContextMaxMessages": u64_clamped(desktop.get("aiContextMaxMessages"), u64::from(DEFAULT_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES), u64::from(MIN_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES), u64::from(MAX_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES)),
+            "chatIdleTimeoutMinutes": u64_clamped(desktop.get("chatIdleTimeoutMinutes"), u64::from(DEFAULT_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES), u64::from(MIN_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES), u64::from(MAX_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES)),
             "inactiveSessionArchiveDays": u64_clamped(desktop.get("inactiveSessionArchiveDays"), u64::from(DEFAULT_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS), u64::from(MIN_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS), u64::from(MAX_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS)),
             "archivedSessionRetentionDays": u64_clamped(desktop.get("archivedSessionRetentionDays"), u64::from(DEFAULT_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS), u64::from(MIN_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS), u64::from(MAX_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS)),
             "quickVoiceSilenceSeconds": f64_clamped(desktop.get("quickVoiceSilenceSeconds"), DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS, MIN_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS, MAX_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS),
@@ -1339,6 +1343,7 @@ fn validate_desktop_appearance_value(value: &Value) -> Result<(), String> {
             "assistantBubbleHideWhenFullscreen",
             "assistantBubbleTemporarilyHideSeconds",
             "aiContextMaxMessages",
+            "chatIdleTimeoutMinutes",
             "inactiveSessionArchiveDays",
             "archivedSessionRetentionDays",
             "quickVoiceSilenceSeconds",
@@ -1364,6 +1369,14 @@ fn validate_desktop_appearance_value(value: &Value) -> Result<(), String> {
             .contains(
                 &desktop
                     .get("aiContextMaxMessages")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0),
+            )
+        || !(u64::from(MIN_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES)
+            ..=u64::from(MAX_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES))
+            .contains(
+                &desktop
+                    .get("chatIdleTimeoutMinutes")
                     .and_then(Value::as_u64)
                     .unwrap_or(0),
             )

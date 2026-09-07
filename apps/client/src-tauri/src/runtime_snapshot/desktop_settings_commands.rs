@@ -20,9 +20,11 @@ use crate::runtime_contract_generated::{
     DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_HIDE_WHEN_FULLSCREEN,
     DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
     DEFAULT_DESKTOP_SETTING_AUTOSTART_MINIMIZED, DEFAULT_DESKTOP_SETTING_AUTOSTART_TO_TRAY,
+    DEFAULT_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
     DEFAULT_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_ENABLED, DEFAULT_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES,
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
+    MAX_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES, MIN_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
 };
 
 pub(crate) fn load_user_desktop_launch_preferences() -> Result<UserDesktopLaunchPreferences, String>
@@ -48,6 +50,18 @@ pub(crate) fn load_user_desktop_admin_preference() -> Result<bool, String> {
         .desktop
         .always_run_as_administrator
         .unwrap_or(DEFAULT_DESKTOP_SETTING_ALWAYS_RUN_AS_ADMINISTRATOR))
+}
+
+pub(crate) fn load_chat_idle_timeout_minutes() -> Result<u32, String> {
+    let (config, _) = load_user_config_file()?;
+    Ok(config
+        .desktop
+        .chat_idle_timeout_minutes
+        .unwrap_or(DEFAULT_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES)
+        .clamp(
+            MIN_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
+            MAX_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
+        ))
 }
 
 pub(crate) fn load_user_desktop_settings<R: tauri::Runtime, M: tauri::Manager<R>>(
@@ -88,6 +102,14 @@ pub(crate) fn load_user_desktop_settings<R: tauri::Runtime, M: tauri::Manager<R>
                 .ai_context_max_messages
                 .unwrap_or(DEFAULT_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES),
         ),
+        chat_idle_timeout_minutes: config
+            .desktop
+            .chat_idle_timeout_minutes
+            .unwrap_or(DEFAULT_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES)
+            .clamp(
+                MIN_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
+                MAX_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
+            ),
         inactive_session_archive_days: clamp_inactive_session_archive_days(
             config
                 .desktop
@@ -139,6 +161,8 @@ pub(super) fn save_user_desktop_settings_value<R: tauri::Runtime, M: tauri::Mana
         config.desktop.assistant_bubble_temporarily_hide_seconds =
             Some(normalized_settings.assistant_bubble_temporarily_hide_seconds);
         config.desktop.ai_context_max_messages = Some(normalized_settings.ai_context_max_messages);
+        config.desktop.chat_idle_timeout_minutes =
+            Some(normalized_settings.chat_idle_timeout_minutes);
         config.desktop.inactive_session_archive_days =
             Some(normalized_settings.inactive_session_archive_days);
         config.desktop.archived_session_retention_days =

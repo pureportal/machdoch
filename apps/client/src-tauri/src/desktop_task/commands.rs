@@ -21,14 +21,11 @@ use super::{
         build_cli_args, cleanup_temporary_file, enrich_ui_control_conversation_context,
         write_conversation_context_file, CliCommandOptions,
     },
-    process::{
-        create_desktop_task_activity, desktop_task_activity_elapsed, join_cli_output_and_cleanup,
-        read_stderr, read_stdout,
-    },
+    process::{join_cli_output_and_cleanup, read_stderr_with_timeout, read_stdout},
     progress::{create_bridge_progress, create_bridge_warning_progress, emit_progress_event},
     DesktopMediaAssetReference, DesktopTaskRunRequest, DesktopTaskRunResponse,
-    DESKTOP_TASK_IDLE_TIMEOUT_MS, DESKTOP_TASK_TERMINATION_CANCELLED,
-    DESKTOP_TASK_TERMINATION_IDLE_TIMEOUT, DESKTOP_TASK_WAIT_POLL_MS,
+    DESKTOP_TASK_TERMINATION_CANCELLED, DESKTOP_TASK_TERMINATION_IDLE_TIMEOUT,
+    DESKTOP_TASK_WAIT_POLL_MS,
 };
 
 fn parse_desktop_task_response(stdout: &str) -> Result<DesktopTaskRunResponse, String> {
@@ -188,6 +185,7 @@ pub(super) fn execute_desktop_task(
     request: DesktopTaskRunRequest,
     cancel_flag: Arc<AtomicBool>,
     termination_state: Arc<AtomicU8>,
+    task_timeout: Arc<super::timeout::DesktopTaskTimeout>,
 ) -> Result<DesktopTaskRunResponse, String> {
     let DesktopTaskRunRequest {
         workspace_root,
@@ -266,6 +264,7 @@ pub(super) fn execute_desktop_task(
 
     cli_command
         .command
+        .env("MACHDOCH_DESKTOP_MANAGES_TASK_TIMEOUT", "true")
         .env(
             "MACHDOCH_DESKTOP_HOST_ELEVATED",
             if crate::desktop_shell::current_process_has_administrator_rights() {
@@ -342,13 +341,12 @@ pub(super) fn execute_desktop_task(
     let progress_task_id = task_id.clone();
     let storage_task_id = task_id.clone();
 
-    let activity = create_desktop_task_activity();
-    let stderr_activity = activity.clone();
+    let stderr_timeout = task_timeout.clone();
     let task_input = normalized_task.as_bytes().to_vec();
     let input_worker = thread::spawn(move || write_cli_task(stdin, &task_input));
     let stdout_worker = thread::spawn(move || read_stdout(stdout));
     let stderr_worker = thread::spawn(move || {
-        read_stderr(stderr, app_handle, window_label, task_id, stderr_activity)
+        read_stderr_with_timeout(stderr, app_handle, window_label, task_id, stderr_timeout)
     });
 
     let status = loop {
@@ -393,9 +391,7 @@ pub(super) fn execute_desktop_task(
                     return Err(format!("The task was cancelled. {}", failure_tail));
                 }
 
-                if desktop_task_activity_elapsed(&activity)
-                    >= Duration::from_millis(DESKTOP_TASK_IDLE_TIMEOUT_MS)
-                {
+                if let Some(idle_timeout_ms) = task_timeout.expire_if_idle()? {
                     termination_state
                         .store(DESKTOP_TASK_TERMINATION_IDLE_TIMEOUT, Ordering::SeqCst);
                     emit_progress_event(
@@ -423,7 +419,7 @@ pub(super) fn execute_desktop_task(
                     let failure_tail = format_command_failure(&io.stderr, &io.stdout);
                     return Err(format!(
                         "The shared CLI produced no structured progress for {} and was stopped. {}",
-                        format_timeout_duration(DESKTOP_TASK_IDLE_TIMEOUT_MS),
+                        format_timeout_duration(idle_timeout_ms),
                         failure_tail
                     ));
                 }

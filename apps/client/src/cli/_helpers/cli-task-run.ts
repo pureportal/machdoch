@@ -399,6 +399,9 @@ export const printTaskPreview = async (
         ? { deterministicAction: args.deterministicAction }
         : {}),
       ...(args.skipFileChangeDetection ? { captureFileChanges: false } : {}),
+      ...(process.env.MACHDOCH_DESKTOP_MANAGES_TASK_TIMEOUT === "true"
+        ? { idleTimeoutMs: null }
+        : {}),
     },
   );
   const detachCancellationHandlers = attachCancellationHandlers(controller, {

@@ -3036,6 +3036,12 @@ const normalizeUserDesktopSettings = (
       DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.max,
       DEFAULT_USER_DESKTOP_SETTINGS.aiContextMaxMessages,
     ),
+    chatIdleTimeoutMinutes: clampIntegerSetting(
+      settings.chatIdleTimeoutMinutes,
+      DESKTOP_SETTING_BOUNDS.chatIdleTimeoutMinutes.min,
+      DESKTOP_SETTING_BOUNDS.chatIdleTimeoutMinutes.max,
+      DEFAULT_USER_DESKTOP_SETTINGS.chatIdleTimeoutMinutes,
+    ),
     inactiveSessionArchiveDays: clampIntegerSetting(
       settings.inactiveSessionArchiveDays,
       DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.min,
@@ -4240,6 +4246,20 @@ export const cancelDesktopTask = async (taskId: string): Promise<void> => {
   if (canInvokeTauriCommands()) {
     return await tauriCore.invoke("cancel_desktop_task", { taskId });
   }
+};
+
+export const resetDesktopTaskTimeout = async (
+  taskId: string,
+  idleTimeoutMinutes?: number,
+): Promise<void> => {
+  if (!canInvokeTauriCommands()) {
+    throw new Error("Chat timeout controls require the desktop app.");
+  }
+
+  await tauriCore.invoke("reset_desktop_task_timeout", {
+    taskId,
+    idleTimeoutMinutes,
+  });
 };
 
 const normalizeFleetConnectionStatus = (

@@ -126,6 +126,31 @@ describe("CLI configuration catalog", () => {
     expect(stored.enabled).toBe(false);
   });
 
+  it("persists, validates, and restores the default desktop chat timeout", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+    const setting = "desktop.chat-idle-timeout-minutes";
+    await expect(
+      saveConfigSetting(workspaceRoot, setting, "45"),
+    ).resolves.toMatchObject({ value: 45 });
+    expect(
+      (await loadCliConfigEntries(workspaceRoot)).find(
+        (entry) => entry.setting === setting,
+      ),
+    ).toMatchObject({ value: 45, source: "saved" });
+    for (const value of ["0", "1.5", "1441"]) {
+      await expect(
+        saveConfigSetting(workspaceRoot, setting, value),
+      ).rejects.toThrow();
+    }
+    await clearConfigSetting(workspaceRoot, setting);
+    expect(
+      (await loadCliConfigEntries(workspaceRoot)).find(
+        (entry) => entry.setting === setting,
+      ),
+    ).toMatchObject({ value: 20 });
+  });
+
   it("persists, reports, validates, and resets Workspace Run timeouts", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();

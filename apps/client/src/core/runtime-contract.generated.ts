@@ -145,6 +145,7 @@ export const DEFAULT_USER_DESKTOP_SETTINGS = {
   "assistantBubbleHideWhenFullscreen": true,
   "assistantBubbleTemporarilyHideSeconds": 6,
   "aiContextMaxMessages": 60,
+  "chatIdleTimeoutMinutes": 20,
   "inactiveSessionArchiveDays": 7,
   "archivedSessionRetentionDays": 7,
   "quickVoiceEnabled": true,
@@ -160,6 +161,10 @@ export const DESKTOP_SETTING_BOUNDS = {
   "aiContextMaxMessages": {
     "min": 1,
     "max": 200
+  },
+  "chatIdleTimeoutMinutes": {
+    "min": 1,
+    "max": 1440
   },
   "inactiveSessionArchiveDays": {
     "min": 1,
@@ -476,6 +481,7 @@ export interface UserDesktopSettings {
   assistantBubbleHideWhenFullscreen: boolean;
   assistantBubbleTemporarilyHideSeconds: number;
   aiContextMaxMessages: number;
+  chatIdleTimeoutMinutes: number;
   inactiveSessionArchiveDays: number;
   archivedSessionRetentionDays: number;
   quickVoiceEnabled: boolean;

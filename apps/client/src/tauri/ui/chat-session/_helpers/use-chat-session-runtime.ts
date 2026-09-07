@@ -230,6 +230,7 @@ const createEmptyUserDesktopSettings = (): UserDesktopSettings => {
     assistantBubbleTemporarilyHideSeconds: 6,
     aiContextMaxMessages: 60,
     inactiveSessionArchiveDays: 7,
+    chatIdleTimeoutMinutes: 20,
     archivedSessionRetentionDays: 7,
     quickVoiceEnabled: true,
     quickVoiceShortcut: "CommandOrControl+Alt+V",

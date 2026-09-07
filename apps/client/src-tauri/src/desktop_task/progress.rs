@@ -153,3 +153,22 @@ mod tests {
         assert_eq!(progress["timelineEvent"]["label"], "Run configuration");
     }
 }
+
+pub(super) fn emit_timeout_progress_event(
+    app_handle: &tauri::AppHandle,
+    window_label: &str,
+    task_id: &str,
+    timeout: Value,
+) {
+    let mut progress = create_bridge_progress("", None, "executing", "", true);
+    progress["timeout"] = timeout;
+    let _ = app_handle.emit_to(
+        window_label,
+        DESKTOP_TASK_PROGRESS_EVENT,
+        DesktopTaskProgressEvent {
+            task_id: task_id.to_string(),
+            progress,
+            timestamp: create_progress_timestamp(),
+        },
+    );
+}

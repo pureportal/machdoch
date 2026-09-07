@@ -1215,6 +1215,7 @@ fn apply_desktop(
         "assistantBubbleHideWhenFullscreen",
         "assistantBubbleTemporarilyHideSeconds",
         "aiContextMaxMessages",
+        "chatIdleTimeoutMinutes",
         "inactiveSessionArchiveDays",
         "archivedSessionRetentionDays",
         "quickVoiceSilenceSeconds",

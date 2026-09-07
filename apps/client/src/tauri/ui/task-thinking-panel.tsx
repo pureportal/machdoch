@@ -22,6 +22,8 @@ import {
   useState,
   type JSX,
 } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import { TaskTimeoutControls } from "./task-timeout-controls";
 import { createTaskTimeoutIndicator } from "./_helpers/task-timeout-indicator.helper";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { cn } from "./lib/utils";
@@ -388,10 +390,12 @@ const getLiveActivityLabel = (stream: VisibleModelStream): string => {
 
 export interface TaskThinkingPanelProps {
   thinking: TaskThinkingTrace;
+  taskId?: string;
 }
 
 export const TaskThinkingPanel = ({
   thinking,
+  taskId,
 }: TaskThinkingPanelProps): JSX.Element => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const shouldFollowLatestRef = useRef(true);
@@ -564,7 +568,7 @@ export const TaskThinkingPanel = ({
               />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                 <div
                   className={cn(
                     "min-w-0",
@@ -595,27 +599,40 @@ export const TaskThinkingPanel = ({
                     </div>
                   )}
                 </div>
-                <button
-                  type="button"
-                  aria-expanded={!isCollapsed}
-                  aria-label={
-                    isCollapsed
-                      ? "Expand execution details"
-                      : "Collapse execution details"
-                  }
-                  onClick={() => setIsCollapsed((value) => !value)}
-                  className={cn(
-                    "app-thinking-toggle inline-flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-950/70 font-medium text-slate-300 transition-colors hover:bg-slate-900 hover:text-slate-100",
-                    isCollapsed
-                      ? "h-5 px-2 text-[10px]"
-                      : "h-7 px-2.5 text-[11px]",
-                  )}
-                >
-                  <ToggleIcon
-                    className={cn(isCollapsed ? "h-2.5 w-2.5" : "h-3.5 w-3.5")}
-                  />
-                  {isCollapsed ? "Details" : "Hide details"}
-                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  {isRunning &&
+                  taskId &&
+                  thinking.timeout?.idleTimeoutMs &&
+                  isTauri() ? (
+                    <TaskTimeoutControls
+                      taskId={taskId}
+                      idleTimeoutMs={thinking.timeout.idleTimeoutMs}
+                    />
+                  ) : null}
+                  <button
+                    type="button"
+                    aria-expanded={!isCollapsed}
+                    aria-label={
+                      isCollapsed
+                        ? "Expand execution details"
+                        : "Collapse execution details"
+                    }
+                    onClick={() => setIsCollapsed((value) => !value)}
+                    className={cn(
+                      "app-thinking-toggle inline-flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-950/70 font-medium text-slate-300 transition-colors hover:bg-slate-900 hover:text-slate-100",
+                      isCollapsed
+                        ? "h-5 px-2 text-[10px]"
+                        : "h-7 px-2.5 text-[11px]",
+                    )}
+                  >
+                    <ToggleIcon
+                      className={cn(
+                        isCollapsed ? "h-2.5 w-2.5" : "h-3.5 w-3.5",
+                      )}
+                    />
+                    {isCollapsed ? "Details" : "Hide details"}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

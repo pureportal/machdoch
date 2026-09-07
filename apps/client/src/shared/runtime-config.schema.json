@@ -661,6 +661,11 @@
           "minimum": 1,
           "maximum": 200
         },
+        "chatIdleTimeoutMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1440
+        },
         "inactiveSessionArchiveDays": {
           "type": "integer",
           "minimum": 1,
@@ -701,6 +706,7 @@
         "assistantBubbleHideWhenFullscreen",
         "assistantBubbleTemporarilyHideSeconds",
         "aiContextMaxMessages",
+        "chatIdleTimeoutMinutes",
         "inactiveSessionArchiveDays",
         "archivedSessionRetentionDays",
         "quickVoiceEnabled",
@@ -744,6 +750,12 @@
           "minimum": 1,
           "maximum": 200,
           "default": 60
+        },
+        "chatIdleTimeoutMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1440,
+          "default": 20
         },
         "inactiveSessionArchiveDays": {
           "type": "integer",

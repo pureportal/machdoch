@@ -457,7 +457,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
         >
           {thinkingTrace ? (
             <div className="app-thinking-wrapper w-full min-w-0 max-w-full pt-1 lg:max-w-4xl">
-              <TaskThinkingPanel thinking={thinkingTrace} />
+              <TaskThinkingPanel thinking={thinkingTrace} taskId={message.taskId} />
             </div>
           ) : null}
 
