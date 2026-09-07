@@ -271,7 +271,14 @@ class WorkspaceTerminalSession {
   }
 
   fit(focus: boolean): void {
-    if (this.disposed || !this.terminal.element?.isConnected) return;
+    const element = this.terminal.element;
+    if (
+      this.disposed ||
+      !element?.isConnected ||
+      element.clientWidth === 0 ||
+      element.clientHeight === 0
+    )
+      return;
     try {
       this.fitAddon.fit();
       if (focus) this.terminal.focus();

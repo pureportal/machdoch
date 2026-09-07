@@ -56,10 +56,14 @@ const profileSettingsMocks = vi.hoisted(() => ({
 }));
 
 const xtermState = vi.hoisted(() => ({
+  fit: vi.fn(),
   writes: [] as Array<string | Uint8Array>,
   autoProcessWrites: true,
   elements: [] as Array<{
     parentElement: unknown;
+    isConnected: boolean;
+    clientWidth: number;
+    clientHeight: number;
     remove: ReturnType<typeof vi.fn>;
   }>,
   instances: [] as Array<{
@@ -89,7 +93,7 @@ vi.mock("../lib/shell-store", () => ({
 
 vi.mock("@xterm/addon-fit", () => ({
   FitAddon: class {
-    fit(): void {}
+    fit = xtermState.fit;
   },
 }));
 
@@ -124,6 +128,9 @@ vi.mock("@xterm/xterm", () => ({
     open(container: HTMLDivElement): void {
       const element = {
         parentElement: container as unknown,
+        isConnected: true,
+        clientWidth: 800,
+        clientHeight: 240,
         remove: vi.fn(() => {
           element.parentElement = null;
         }),
@@ -277,6 +284,36 @@ describe("WorkspaceTerminalStore shell startup", () => {
     expect(xtermState.elements).toHaveLength(1);
     expect(xtermState.elements[0]?.remove).toHaveBeenCalledOnce();
     expect(xtermState.elements[0]?.parentElement).toBeNull();
+  });
+
+  it("preserves terminal dimensions while its workspace tab is hidden", async () => {
+    runtimeMocks.startWorkspaceTerminal.mockResolvedValue({
+      sessionId: "terminal-session",
+      shellId: "windows-powershell",
+      processId: 42,
+    });
+    const store = new WorkspaceTerminalStore("C:\\Workspace");
+    await store.initialize();
+    store.mountTerminal(
+      store.getSnapshot().activeTerminalId!,
+      {} as HTMLDivElement,
+    );
+    const element = xtermState.elements[0]!;
+
+    element.clientWidth = 0;
+    store.fitActiveTerminal();
+    element.clientWidth = 800;
+    element.clientHeight = 0;
+    store.fitActiveTerminal();
+    expect(xtermState.fit).not.toHaveBeenCalled();
+
+    element.clientHeight = 240;
+    store.fitActiveTerminal();
+    expect(xtermState.fit).toHaveBeenCalledOnce();
+
+    element.isConnected = false;
+    store.fitActiveTerminal();
+    expect(xtermState.fit).toHaveBeenCalledOnce();
   });
 
   it("starts the persisted visible default and hides other launch profiles", async () => {
