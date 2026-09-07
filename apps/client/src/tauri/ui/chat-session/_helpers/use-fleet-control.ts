@@ -56,7 +56,6 @@ import {
   type FleetShellMediaSnapshot,
   type FleetShellProviderStatusSnapshot,
   type FleetShellRuntimeCapabilitySnapshot,
-  type FleetShellRalphSnapshot,
   type FleetShellSchedulerJobSnapshot,
   type FleetShellSchedulerRunSnapshot,
   type FleetShellSchedulerSnapshot,
@@ -72,10 +71,10 @@ import {
 } from "../../media/fleet-media";
 import {
   executeFleetRalphCommand,
-  loadFleetRalphSnapshot,
   resolveFleetRalphCommandRuntime,
   type FleetRalphCommandRuntime,
 } from "../../ralph/fleet-ralph";
+import { useFleetRalph } from "../../ralph/use-fleet-ralph";
 import {
   getCatalogModelsForProvider,
   getModelLabelForProvider,
@@ -101,15 +100,8 @@ interface FleetSchedulerState {
   error: string | null;
 }
 
-interface FleetRalphState {
-  snapshot: FleetShellRalphSnapshot | null;
-  loading: boolean;
-  error: string | null;
-}
-
 const STATUS_REFRESH_MS = 15_000;
 const SCHEDULER_REFRESH_MS = 60_000;
-const RALPH_REFRESH_MS = 5_000;
 const MEDIA_REFRESH_MS = 3_000;
 const SNAPSHOT_PUBLISH_DELAY_MS = 250;
 const PENDING_COMMAND_POLL_MS = 15_000;
@@ -663,11 +655,10 @@ export const useFleetControl = (options: {
     loading: false,
     error: null,
   });
-  const [ralphState, setRalphState] = useState<FleetRalphState>({
-    snapshot: null,
-    loading: false,
-    error: null,
-  });
+  const { ralphState, setRalphState, refreshRalph } = useFleetRalph(
+    options.activeSession.workspace,
+    isPrimaryController && fleetEnabled,
+  );
   const [mediaSnapshot, setMediaSnapshot] =
     useState<FleetShellMediaSnapshot | null>(null);
   const [providerModelCatalog, setProviderModelCatalog] =
@@ -678,7 +669,6 @@ export const useFleetControl = (options: {
   >(async () => undefined);
   const lastPublishedSnapshotRef = useRef<string>("");
   const schedulerRefreshSequenceRef = useRef(0);
-  const ralphRefreshSequenceRef = useRef(0);
   const mediaRefreshSequenceRef = useRef(0);
   const schedulerWorkspaceRef = useRef(options.activeSession.workspace);
   const ralphWorkspaceRef = useRef(options.activeSession.workspace);
@@ -882,72 +872,6 @@ export const useFleetControl = (options: {
       }
     }
   }, [configuredMediaProviderIds]);
-
-  const refreshRalph = useCallback(async (): Promise<void> => {
-    const workspaceRoot = options.activeSession.workspace;
-    const refreshSequence = ralphRefreshSequenceRef.current + 1;
-    ralphRefreshSequenceRef.current = refreshSequence;
-
-    if (!workspaceRoot) {
-      setRalphState({
-        snapshot: {
-          loading: false,
-          flows: [],
-          runs: [],
-          updatedAt: Date.now(),
-        },
-        loading: false,
-        error: null,
-      });
-      return;
-    }
-
-    setRalphState((current) => ({
-      ...current,
-      loading: true,
-      error: null,
-    }));
-
-    try {
-      const snapshot = await loadFleetRalphSnapshot(workspaceRoot);
-      if (
-        refreshSequence !== ralphRefreshSequenceRef.current ||
-        ralphWorkspaceRef.current !== workspaceRoot
-      ) {
-        return;
-      }
-      setRalphState({ snapshot, loading: false, error: null });
-    } catch (error) {
-      if (
-        refreshSequence !== ralphRefreshSequenceRef.current ||
-        ralphWorkspaceRef.current !== workspaceRoot
-      ) {
-        return;
-      }
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      setRalphState((current) => ({
-        snapshot:
-          current.snapshot?.workspaceRoot === workspaceRoot
-            ? {
-                ...current.snapshot,
-                loading: false,
-                error: errorMessage,
-                updatedAt: Date.now(),
-              }
-            : {
-                workspaceRoot,
-                loading: false,
-                error: errorMessage,
-                flows: [],
-                runs: [],
-                updatedAt: Date.now(),
-              },
-        loading: false,
-        error: errorMessage,
-      }));
-    }
-  }, [options.activeSession.workspace]);
 
   const createShellSnapshot = useCallback((): FleetControlShellSnapshot => {
     const schedulerSnapshot = schedulerState.snapshot
@@ -1340,7 +1264,7 @@ export const useFleetControl = (options: {
         if (isCurrentWorkspace()) void refreshRalph();
       }, 250);
     },
-    [refreshRalph],
+    [refreshRalph, setRalphState],
   );
 
   const handleCommand = useCallback(
@@ -1910,24 +1834,6 @@ export const useFleetControl = (options: {
       return;
     }
 
-    void refreshRalph();
-    const refreshInterval = window.setInterval(() => {
-      if (document.visibilityState === "visible") {
-        void refreshRalph();
-      }
-    }, RALPH_REFRESH_MS);
-
-    return () => {
-      window.clearInterval(refreshInterval);
-      ralphRefreshSequenceRef.current += 1;
-    };
-  }, [isPrimaryController, refreshRalph, fleetPublishingEnabled]);
-
-  useEffect(() => {
-    if (!isPrimaryController || !fleetPublishingEnabled) {
-      return;
-    }
-
     void refreshMedia();
     const refreshInterval = window.setInterval(() => {
       if (document.visibilityState === "visible") {
@@ -2023,7 +1929,6 @@ export const useFleetControl = (options: {
     return () => {
       fleetControlMountedRef.current = false;
       schedulerRefreshSequenceRef.current += 1;
-      ralphRefreshSequenceRef.current += 1;
       mediaRefreshSequenceRef.current += 1;
       snapshotPublishAttemptSequenceRef.current += 1;
       if (snapshotPublishRetryTimerRef.current !== null) {
