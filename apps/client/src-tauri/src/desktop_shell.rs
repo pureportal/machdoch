@@ -21,7 +21,11 @@ pub(crate) use file_manager::{
     handle_secondary_instance, parse_invocation_args, FileManagerInvocation,
     FileManagerInvocationState,
 };
-pub(crate) use shortcut::{sync_quick_voice_shortcut, validate_quick_voice_shortcut};
+#[cfg(test)]
+pub(crate) use shortcut::sync_shortcut_registration;
+pub(crate) use shortcut::{
+    sync_quick_voice_shortcut, sync_quick_voice_shortcut_with_settings, validate_quick_voice_shortcut,
+};
 pub(crate) use startup::{
     apply_startup_mode, current_process_has_administrator_rights,
     hide_console_window_for_background_ui_launch, relaunch_as_administrator_if_configured,
