@@ -329,9 +329,13 @@ export const createRalphRunSummaryFromRecord = (
   record: RalphRunRecord,
   path: string,
 ): RalphRunSummary => {
+  const workspaceRoot = record.checkpoint?.repositoryContext?.workspaceRoot;
   return {
     id: record.id,
     path,
+    ...(typeof workspaceRoot === "string" && workspaceRoot.trim()
+      ? { workspaceRoot }
+      : {}),
     createdAt: record.createdAt,
     ...(record.finishedAt ? { finishedAt: record.finishedAt } : {}),
     flowId: record.flowId,

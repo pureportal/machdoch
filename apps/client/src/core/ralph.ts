@@ -1543,6 +1543,7 @@ export interface RalphRunRecordWriteResult {
 export interface RalphRunSummary {
   id: string;
   path: string;
+  workspaceRoot?: string;
   createdAt: string;
   finishedAt?: string;
   flowId: string;
@@ -1919,54 +1920,59 @@ export const listRalphFlows = async (
 
     const entries = await readdir(directory, { withFileTypes: true });
 
-    for (const entry of entries) {
-      if (
-        !entry.isFile() ||
-        entry.name.startsWith(".") ||
-        extname(entry.name) !== FLOW_FILE_EXTENSION
-      ) {
-        continue;
-      }
+    const pendingEntries = entries.values();
+    await Promise.all(
+      Array.from({ length: Math.min(entries.length, 8) }, async () => {
+        for (const entry of pendingEntries) {
+          if (
+            !entry.isFile() ||
+            entry.name.startsWith(".") ||
+            extname(entry.name) !== FLOW_FILE_EXTENSION
+          ) {
+            continue;
+          }
 
-      const path = join(directory, entry.name);
+          const path = join(directory, entry.name);
 
-      try {
-        const flow = parseRalphFlowJson(await readFile(path, "utf8"));
-        const variables = discoverRalphFlowVariables(flow);
-        const alias = normalizeOptionalString(flow.alias);
-        summaries.push({
-          id:
-            normalizeOptionalString(flow.id) ??
-            basename(entry.name, FLOW_FILE_EXTENSION),
-          ...(alias ? { alias } : {}),
-          name:
-            normalizeOptionalString(flow.name) ??
-            basename(entry.name, FLOW_FILE_EXTENSION),
-          ...(includeScope ? { scope } : {}),
-          path,
-          ...(flow.description ? { description: flow.description } : {}),
-          ...(flow.source ? { source: flow.source } : {}),
-          blockCount: flow.blocks.length,
-          edgeCount: flow.edges.length,
-          variableCount: variables.length,
-          variables,
-          ...(flow.settings?.maxTransitions
-            ? { maxTransitions: flow.settings.maxTransitions }
-            : {}),
-        });
-      } catch {
-        summaries.push({
-          id: basename(entry.name, FLOW_FILE_EXTENSION),
-          name: basename(entry.name, FLOW_FILE_EXTENSION),
-          ...(includeScope ? { scope } : {}),
-          path,
-          blockCount: 0,
-          edgeCount: 0,
-          variableCount: 0,
-          variables: [],
-        });
-      }
-    }
+          try {
+            const flow = parseRalphFlowJson(await readFile(path, "utf8"));
+            const variables = discoverRalphFlowVariables(flow);
+            const alias = normalizeOptionalString(flow.alias);
+            summaries.push({
+              id:
+                normalizeOptionalString(flow.id) ??
+                basename(entry.name, FLOW_FILE_EXTENSION),
+              ...(alias ? { alias } : {}),
+              name:
+                normalizeOptionalString(flow.name) ??
+                basename(entry.name, FLOW_FILE_EXTENSION),
+              ...(includeScope ? { scope } : {}),
+              path,
+              ...(flow.description ? { description: flow.description } : {}),
+              ...(flow.source ? { source: flow.source } : {}),
+              blockCount: flow.blocks.length,
+              edgeCount: flow.edges.length,
+              variableCount: variables.length,
+              variables,
+              ...(flow.settings?.maxTransitions
+                ? { maxTransitions: flow.settings.maxTransitions }
+                : {}),
+            });
+          } catch {
+            summaries.push({
+              id: basename(entry.name, FLOW_FILE_EXTENSION),
+              name: basename(entry.name, FLOW_FILE_EXTENSION),
+              ...(includeScope ? { scope } : {}),
+              path,
+              blockCount: 0,
+              edgeCount: 0,
+              variableCount: 0,
+              variables: [],
+            });
+          }
+        }
+      }),
+    );
   }
 
   return summaries.sort((left, right) =>
@@ -3168,6 +3174,7 @@ export const listRalphRunRecords = async (
     flowId?: string;
     limit?: number;
     scope?: RalphFlowScope;
+    includeActive?: boolean;
   } = {},
 ): Promise<RalphRunSummary[]> => {
   const runDirectory = getRalphRunDirectory(
@@ -3185,88 +3192,97 @@ export const listRalphRunRecords = async (
     ? normalizeFlowId(options.flowId)
     : undefined;
 
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      const directory = join(runDirectory, entry.name);
-      const path = join(directory, "run.json");
+  const pendingEntries = entries.values();
+  await Promise.all(
+    Array.from({ length: Math.min(entries.length, 8) }, async () => {
+      for (const entry of pendingEntries) {
+        if (entry.isDirectory()) {
+          const directory = join(runDirectory, entry.name);
+          const path = join(directory, "run.json");
 
-      if (!existsSync(path)) {
-        const partialSummary = await createPartialRalphRunSummary(
-          directory,
-          entry.name,
-        );
+          if (!existsSync(path)) {
+            const partialSummary = await createPartialRalphRunSummary(
+              directory,
+              entry.name,
+            );
 
-        if (
-          partialSummary &&
-          (!normalizedFlowId ||
-            normalizeFlowId(partialSummary.flowId) === normalizedFlowId)
-        ) {
-          summaries.push(partialSummary);
+            if (
+              partialSummary &&
+              (!normalizedFlowId ||
+                normalizeFlowId(partialSummary.flowId) === normalizedFlowId)
+            ) {
+              summaries.push(partialSummary);
+            }
+
+            continue;
+          }
+
+          const record = await readRalphRunRecordFile(path);
+
+          if (!record) {
+            const partialSummary = await createPartialRalphRunSummary(
+              directory,
+              entry.name,
+            );
+
+            if (
+              partialSummary &&
+              (!normalizedFlowId ||
+                normalizeFlowId(partialSummary.flowId) === normalizedFlowId)
+            ) {
+              summaries.push(partialSummary);
+            }
+
+            continue;
+          }
+
+          if (
+            normalizedFlowId &&
+            normalizeFlowId(record.flowId) !== normalizedFlowId
+          ) {
+            continue;
+          }
+
+          summaries.push(
+            await createLiveAwareRalphRunSummary(record, path, directory),
+          );
+          continue;
         }
 
-        continue;
-      }
+        const path =
+          entry.isFile() && entry.name.endsWith(".json")
+            ? join(runDirectory, entry.name)
+            : undefined;
 
-      const record = await readRalphRunRecordFile(path);
-
-      if (!record) {
-        const partialSummary = await createPartialRalphRunSummary(
-          directory,
-          entry.name,
-        );
-
-        if (
-          partialSummary &&
-          (!normalizedFlowId ||
-            normalizeFlowId(partialSummary.flowId) === normalizedFlowId)
-        ) {
-          summaries.push(partialSummary);
+        if (!path || !existsSync(path)) {
+          continue;
         }
 
-        continue;
+        const record = await readRalphRunRecordFile(path);
+
+        if (!record) {
+          continue;
+        }
+
+        if (
+          normalizedFlowId &&
+          normalizeFlowId(record.flowId) !== normalizedFlowId
+        ) {
+          continue;
+        }
+
+        summaries.push(await createLiveAwareRalphRunSummary(record, path));
       }
-
-      if (
-        normalizedFlowId &&
-        normalizeFlowId(record.flowId) !== normalizedFlowId
-      ) {
-        continue;
-      }
-
-      summaries.push(
-        await createLiveAwareRalphRunSummary(record, path, directory),
-      );
-      continue;
-    }
-
-    const path =
-      entry.isFile() && entry.name.endsWith(".json")
-        ? join(runDirectory, entry.name)
-        : undefined;
-
-    if (!path || !existsSync(path)) {
-      continue;
-    }
-
-    const record = await readRalphRunRecordFile(path);
-
-    if (!record) {
-      continue;
-    }
-
-    if (
-      normalizedFlowId &&
-      normalizeFlowId(record.flowId) !== normalizedFlowId
-    ) {
-      continue;
-    }
-
-    summaries.push(await createLiveAwareRalphRunSummary(record, path));
-  }
+    }),
+  );
 
   return summaries
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-    .slice(0, options.limit ?? 50);
+    .filter(
+      (run, index) =>
+        index < (options.limit ?? 50) ||
+        (options.includeActive && run.status === "running"),
+    );
 };
 
 export const readRalphRunLog = async (

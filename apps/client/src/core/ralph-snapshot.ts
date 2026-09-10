@@ -17,13 +17,17 @@ export interface RalphSnapshot {
 
 export const loadRalphSnapshot = async (
   workspaceRoot: string,
+  options: { scope?: RalphFlowScope | "all" } = {},
 ): Promise<RalphSnapshot> => ({
   workspaceRoot,
   scopes: await Promise.all(
-    (["workspace", "user"] as const).map(async (scope) => {
+    (options.scope && options.scope !== "all"
+      ? [options.scope]
+      : (["workspace", "user"] as const)
+    ).map(async (scope) => {
       const [flows, runs] = await Promise.all([
         listRalphFlows(workspaceRoot, { scope }),
-        listRalphRunRecords(workspaceRoot, { scope }),
+        listRalphRunRecords(workspaceRoot, { scope, includeActive: true }),
       ]);
       return { scope, flows, runs };
     }),
