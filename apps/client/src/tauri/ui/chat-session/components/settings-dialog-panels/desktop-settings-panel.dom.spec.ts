@@ -28,7 +28,7 @@ describe("desktop chat timeout settings", () => {
       }),
     );
     const input = screen.getByRole("spinbutton", {
-      name: "Chat inactivity timeout in minutes",
+      name: "Default inactivity timeout (minutes)",
     }) as HTMLInputElement;
     expect(input.value).toBe("20");
     fireEvent.change(input, { target: { value: "35" } });

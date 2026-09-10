@@ -189,9 +189,9 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
   },
   {
     id: "desktop",
-    label: "Desktop & startup",
+    label: "Desktop & chats",
     group: "App",
-    description: "Startup, shortcuts, and local data.",
+    description: "Startup, chats, and local data.",
     keywords: [
       "administrator",
       "sign in",
@@ -212,7 +212,9 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
       "archive",
       "quick chat",
       "chat timeout",
+      "default",
       "inactivity",
+      "minutes",
     ],
   },
   {
