@@ -246,7 +246,7 @@ fn agent_cli_command_timeout_stops_descendant_and_joins_pipe_readers() {
         &executable,
         args.as_slice(),
         &env_values,
-        Duration::from_millis(1_500),
+        Duration::from_secs(10),
     ) {
         Ok(_) => panic!("hanging command should time out"),
         Err(error) => error,

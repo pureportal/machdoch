@@ -2142,6 +2142,12 @@ mod tests {
             for index in 0..600 {
                 println!("line-{index}");
             }
+            let marker = marker.as_ref().expect("fast-output mode needs a marker");
+            let deadline = Instant::now() + Duration::from_secs(15);
+            while !marker.exists() {
+                assert!(Instant::now() < deadline, "stdout was not acknowledged");
+                thread::sleep(Duration::from_millis(10));
+            }
             eprintln!("fast-stderr");
         }
         if mode == "descendant" {
@@ -2286,6 +2292,7 @@ mod tests {
     fn keeps_fast_output_bounded_and_publishes_it_while_running() {
         let _process_test = serialize_child_process_test();
         let workspace = temporary_workspace("fast-output");
+        let stdout_drained = workspace.join("stdout-drained");
         let manager = Arc::new(RunManager::default());
         let events = Arc::new(Mutex::new(Vec::<RunLogBatch>::new()));
         let event_output = events.clone();
@@ -2298,13 +2305,24 @@ mod tests {
             ".",
             RunRestartPolicy::default(),
             None,
-            None,
+            Some(&stdout_drained),
         );
         save_test_document(&manager, &workspace, "server", vec![task]);
 
         manager
             .start(workspace.to_string_lossy().as_ref(), None)
             .expect("task should start");
+        wait_for_status(
+            &manager,
+            &workspace,
+            "server",
+            Duration::from_secs(10),
+            |status| {
+                status.state == RunLifecycleState::Running
+                    && status.logs.iter().any(|entry| entry.line == "line-599")
+            },
+        );
+        fs::write(&stdout_drained, b"").expect("stdout should be acknowledged");
         let status = wait_for_status(
             &manager,
             &workspace,
