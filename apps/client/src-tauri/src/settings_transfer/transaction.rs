@@ -1087,8 +1087,6 @@ pub(crate) fn prepare_transaction<R: Runtime>(
     let persistence = (|| {
         let backup_raw = write_private_json(&transaction_root.join(BACKUP_FILE), &backup)?;
         let backup_sha256 = sha256_hex(&backup_raw);
-        let _payload_raw =
-            write_private_json(&transaction_root.join(PAYLOAD_FILE), guarded_envelope)?;
         let journal = TransactionJournal {
             version: JOURNAL_VERSION,
             transaction_id: transaction_id.clone(),
@@ -1993,6 +1991,10 @@ pub(crate) fn discard_prepared_transaction<R: Runtime>(
 #[cfg(test)]
 #[path = "transaction_recovery_tests.rs"]
 mod persisted_recovery_tests;
+
+#[cfg(test)]
+#[path = "transaction_payload_tests.rs"]
+mod payload_tests;
 
 #[cfg(test)]
 mod tests {
