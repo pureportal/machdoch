@@ -172,6 +172,9 @@ export function Composer({
   );
   const [sessionMemoryOpen, setSessionMemoryOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const submissionInFlight = useRef(false);
+  const composing = useRef(false);
   const touchInput = useMediaQuery("(pointer: coarse)");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
@@ -225,12 +228,26 @@ export function Composer({
     textarea.style.height = `${Math.min(textarea.scrollHeight, 240)}px`;
   }, [draft]);
 
-  const canSubmit = draft.trim().length > 0 && composer.canSend;
+  const canSubmit =
+    draft.trim().length > 0 && composer.canSend && !pending && !submitting;
+
+  const submit = async (): Promise<void> => {
+    if (!canSubmit || submissionInFlight.current) return;
+    submissionInFlight.current = true;
+    setSubmitting(true);
+    try {
+      await submitDraft();
+    } finally {
+      submissionInFlight.current = false;
+      setSubmitting(false);
+    }
+  };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (
       event.key === "Enter" &&
       !touchInput &&
+      !composing.current &&
       !event.nativeEvent.isComposing &&
       event.nativeEvent.keyCode !== 229 &&
       !event.shiftKey &&
@@ -239,7 +256,7 @@ export function Composer({
       !event.altKey
     ) {
       event.preventDefault();
-      void submitDraft();
+      void submit();
     }
   };
 
@@ -519,6 +536,12 @@ export function Composer({
             aria-label="Task composer"
             enterKeyHint={touchInput ? "enter" : "send"}
             onChange={(event) => updateDraft(event.target.value)}
+            onCompositionStart={() => {
+              composing.current = true;
+            }}
+            onCompositionEnd={() => {
+              composing.current = false;
+            }}
             onKeyDown={handleKeyDown}
           />
           <button
@@ -527,8 +550,8 @@ export function Composer({
             aria-label={
               session.runningTaskId ? "Queue follow-up" : "Send message"
             }
-            disabled={!canSubmit || pending}
-            onClick={() => void submitDraft()}
+            disabled={!canSubmit}
+            onClick={() => void submit()}
           >
             <ArrowUp aria-hidden="true" />
           </button>
@@ -539,7 +562,7 @@ export function Composer({
           {error}
         </p>
       ) : null}
-      {!canSubmit && draft.trim() && composer.sendDisabledReason ? (
+      {!composer.canSend && draft.trim() && composer.sendDisabledReason ? (
         <p className="m-product-composer-error">
           {composer.sendDisabledReason}
         </p>
