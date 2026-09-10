@@ -1,0 +1,4124 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "command/create-project/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "create-project",
+        "name": "repo",
+        "initializeGit": false
+      }
+    },
+    {
+      "id": "command/create-project/missing-name",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-project",
+        "initializeGit": false
+      }
+    },
+    {
+      "id": "command/create-project/missing-initializeGit",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-project",
+        "name": "repo"
+      }
+    },
+    {
+      "id": "command/create-project/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-project",
+        "name": "repo",
+        "initializeGit": false,
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/clone-project/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "clone-project",
+        "name": "repo",
+        "repository": "https://example.com/repo.git",
+        "shallow": false
+      }
+    },
+    {
+      "id": "command/clone-project/missing-name",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "clone-project",
+        "repository": "https://example.com/repo.git",
+        "shallow": false
+      }
+    },
+    {
+      "id": "command/clone-project/missing-repository",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "clone-project",
+        "name": "repo",
+        "shallow": false
+      }
+    },
+    {
+      "id": "command/clone-project/missing-shallow",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "clone-project",
+        "name": "repo",
+        "repository": "https://example.com/repo.git"
+      }
+    },
+    {
+      "id": "command/clone-project/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "clone-project",
+        "name": "repo",
+        "repository": "https://example.com/repo.git",
+        "shallow": false,
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/import-project/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "import-project",
+        "name": "repo"
+      }
+    },
+    {
+      "id": "command/import-project/missing-name",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "import-project"
+      }
+    },
+    {
+      "id": "command/import-project/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "import-project",
+        "name": "repo",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/cancel-project-operation/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "cancel-project-operation",
+        "projectId": "project-1"
+      }
+    },
+    {
+      "id": "command/cancel-project-operation/missing-projectId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "cancel-project-operation"
+      }
+    },
+    {
+      "id": "command/cancel-project-operation/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "cancel-project-operation",
+        "projectId": "project-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/retry-project-operation/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "retry-project-operation",
+        "projectId": "project-1"
+      }
+    },
+    {
+      "id": "command/retry-project-operation/missing-projectId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "retry-project-operation"
+      }
+    },
+    {
+      "id": "command/retry-project-operation/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "retry-project-operation",
+        "projectId": "project-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/forget-project/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "forget-project",
+        "projectId": "project-1"
+      }
+    },
+    {
+      "id": "command/forget-project/missing-projectId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "forget-project"
+      }
+    },
+    {
+      "id": "command/forget-project/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "forget-project",
+        "projectId": "project-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/cancel/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "cancel",
+        "taskId": "task-1"
+      }
+    },
+    {
+      "id": "command/cancel/missing-taskId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "cancel"
+      }
+    },
+    {
+      "id": "command/cancel/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "cancel",
+        "taskId": "task-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/retry/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "retry",
+        "taskId": "task-1"
+      }
+    },
+    {
+      "id": "command/retry/missing-taskId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "retry"
+      }
+    },
+    {
+      "id": "command/retry/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "retry",
+        "taskId": "task-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/continue/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "continue",
+        "taskId": "task-1"
+      }
+    },
+    {
+      "id": "command/continue/missing-taskId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "continue"
+      }
+    },
+    {
+      "id": "command/continue/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "continue",
+        "taskId": "task-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/cancel-prompt-enhancement/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "cancel-prompt-enhancement",
+        "taskId": "task-1"
+      }
+    },
+    {
+      "id": "command/cancel-prompt-enhancement/missing-taskId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "cancel-prompt-enhancement"
+      }
+    },
+    {
+      "id": "command/cancel-prompt-enhancement/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "cancel-prompt-enhancement",
+        "taskId": "task-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/create-session/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "create-session"
+      }
+    },
+    {
+      "id": "command/create-session/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/stop-speaking/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "stop-speaking"
+      }
+    },
+    {
+      "id": "command/stop-speaking/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "stop-speaking",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/submit-message/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Review this change.",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false
+      }
+    },
+    {
+      "id": "command/submit-message/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "submit-message",
+        "prompt": "Review this change.",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false
+      }
+    },
+    {
+      "id": "command/submit-message/missing-prompt",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false
+      }
+    },
+    {
+      "id": "command/submit-message/missing-promptEnhancementMode",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Review this change.",
+        "interviewEnabled": false
+      }
+    },
+    {
+      "id": "command/submit-message/missing-interviewEnabled",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Review this change.",
+        "promptEnhancementMode": "off"
+      }
+    },
+    {
+      "id": "command/submit-message/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Review this change.",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/rename-session/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "rename-session",
+        "sessionId": "session-1",
+        "title": "Review"
+      }
+    },
+    {
+      "id": "command/rename-session/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "rename-session",
+        "title": "Review"
+      }
+    },
+    {
+      "id": "command/rename-session/missing-title",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "rename-session",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/rename-session/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "rename-session",
+        "sessionId": "session-1",
+        "title": "Review",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/tag-session/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "tag-session",
+        "sessionId": "session-1",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    {
+      "id": "command/tag-session/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "tag-session",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    {
+      "id": "command/tag-session/missing-tags",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "tag-session",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/tag-session/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "tag-session",
+        "sessionId": "session-1",
+        "tags": [
+          "review"
+        ],
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/update-draft/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "update-draft",
+        "sessionId": "session-1",
+        "prompt": "Review this change."
+      }
+    },
+    {
+      "id": "command/update-draft/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "update-draft",
+        "prompt": "Review this change."
+      }
+    },
+    {
+      "id": "command/update-draft/missing-prompt",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "update-draft",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/update-draft/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "update-draft",
+        "sessionId": "session-1",
+        "prompt": "Review this change.",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/set-session-model/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "set-session-model",
+        "sessionId": "session-1",
+        "provider": "openai",
+        "model": "gpt-5.6"
+      }
+    },
+    {
+      "id": "command/set-session-model/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-session-model",
+        "provider": "openai",
+        "model": "gpt-5.6"
+      }
+    },
+    {
+      "id": "command/set-session-model/missing-provider",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-session-model",
+        "sessionId": "session-1",
+        "model": "gpt-5.6"
+      }
+    },
+    {
+      "id": "command/set-session-model/missing-model",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-session-model",
+        "sessionId": "session-1",
+        "provider": "openai"
+      }
+    },
+    {
+      "id": "command/set-session-model/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-session-model",
+        "sessionId": "session-1",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/set-session-mode/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "set-session-mode",
+        "sessionId": "session-1",
+        "mode": "ask"
+      }
+    },
+    {
+      "id": "command/set-session-mode/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-session-mode",
+        "mode": "ask"
+      }
+    },
+    {
+      "id": "command/set-session-mode/missing-mode",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-session-mode",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/set-session-mode/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-session-mode",
+        "sessionId": "session-1",
+        "mode": "ask",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/set-session-reasoning/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "set-session-reasoning",
+        "sessionId": "session-1",
+        "reasoning": "high"
+      }
+    },
+    {
+      "id": "command/set-session-reasoning/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-session-reasoning",
+        "reasoning": "high"
+      }
+    },
+    {
+      "id": "command/set-session-reasoning/missing-reasoning",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-session-reasoning",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/set-session-reasoning/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-session-reasoning",
+        "sessionId": "session-1",
+        "reasoning": "high",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/set-session-workspace/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "set-session-workspace",
+        "sessionId": "session-1",
+        "workspace": "C:\\workspace"
+      }
+    },
+    {
+      "id": "command/set-session-workspace/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-session-workspace",
+        "workspace": "C:\\workspace"
+      }
+    },
+    {
+      "id": "command/set-session-workspace/missing-workspace",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-session-workspace",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/set-session-workspace/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-session-workspace",
+        "sessionId": "session-1",
+        "workspace": "C:\\workspace",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/set-prompt-enhancement-mode/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "set-prompt-enhancement-mode",
+        "sessionId": "session-1",
+        "promptEnhancementMode": "off"
+      }
+    },
+    {
+      "id": "command/set-prompt-enhancement-mode/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-prompt-enhancement-mode",
+        "promptEnhancementMode": "off"
+      }
+    },
+    {
+      "id": "command/set-prompt-enhancement-mode/missing-promptEnhancementMode",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-prompt-enhancement-mode",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/set-prompt-enhancement-mode/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-prompt-enhancement-mode",
+        "sessionId": "session-1",
+        "promptEnhancementMode": "off",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/forget-session-memory/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "forget-session-memory",
+        "sessionId": "session-1",
+        "memoryId": "memory-1"
+      }
+    },
+    {
+      "id": "command/forget-session-memory/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "forget-session-memory",
+        "memoryId": "memory-1"
+      }
+    },
+    {
+      "id": "command/forget-session-memory/missing-memoryId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "forget-session-memory",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/forget-session-memory/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "forget-session-memory",
+        "sessionId": "session-1",
+        "memoryId": "memory-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/remove-attachment/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "remove-attachment",
+        "sessionId": "session-1",
+        "attachmentId": "attachment-1"
+      }
+    },
+    {
+      "id": "command/remove-attachment/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "remove-attachment",
+        "attachmentId": "attachment-1"
+      }
+    },
+    {
+      "id": "command/remove-attachment/missing-attachmentId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "remove-attachment",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/remove-attachment/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "remove-attachment",
+        "sessionId": "session-1",
+        "attachmentId": "attachment-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/apply-context-pack/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "apply-context-pack",
+        "sessionId": "session-1",
+        "contextPackId": "pack-1"
+      }
+    },
+    {
+      "id": "command/apply-context-pack/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "apply-context-pack",
+        "contextPackId": "pack-1"
+      }
+    },
+    {
+      "id": "command/apply-context-pack/missing-contextPackId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "apply-context-pack",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/apply-context-pack/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "apply-context-pack",
+        "sessionId": "session-1",
+        "contextPackId": "pack-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/delete-context-pack/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "delete-context-pack",
+        "contextPackId": "pack-1"
+      }
+    },
+    {
+      "id": "command/delete-context-pack/missing-contextPackId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "delete-context-pack"
+      }
+    },
+    {
+      "id": "command/delete-context-pack/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "delete-context-pack",
+        "contextPackId": "pack-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/save-message-context-pack/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "save-message-context-pack",
+        "sessionId": "session-1",
+        "messageId": "message-1"
+      }
+    },
+    {
+      "id": "command/save-message-context-pack/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "save-message-context-pack",
+        "messageId": "message-1"
+      }
+    },
+    {
+      "id": "command/save-message-context-pack/missing-messageId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "save-message-context-pack",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/save-message-context-pack/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "save-message-context-pack",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/speak-message/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "speak-message",
+        "sessionId": "session-1",
+        "messageId": "message-1"
+      }
+    },
+    {
+      "id": "command/speak-message/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "speak-message",
+        "messageId": "message-1"
+      }
+    },
+    {
+      "id": "command/speak-message/missing-messageId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "speak-message",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/speak-message/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "speak-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/ralph-run/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "ralph-run",
+        "workspace": "C:\\workspace",
+        "scope": "workspace",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "reasoning": "high",
+        "flowId": "flow-1",
+        "parameters": {
+          "environment": "production"
+        }
+      }
+    },
+    {
+      "id": "command/ralph-run/missing-workspace",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-run",
+        "scope": "workspace",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "reasoning": "high",
+        "flowId": "flow-1",
+        "parameters": {
+          "environment": "production"
+        }
+      }
+    },
+    {
+      "id": "command/ralph-run/missing-scope",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-run",
+        "workspace": "C:\\workspace",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "reasoning": "high",
+        "flowId": "flow-1",
+        "parameters": {
+          "environment": "production"
+        }
+      }
+    },
+    {
+      "id": "command/ralph-run/missing-provider",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-run",
+        "workspace": "C:\\workspace",
+        "scope": "workspace",
+        "model": "gpt-5.6",
+        "reasoning": "high",
+        "flowId": "flow-1",
+        "parameters": {
+          "environment": "production"
+        }
+      }
+    },
+    {
+      "id": "command/ralph-run/missing-model",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-run",
+        "workspace": "C:\\workspace",
+        "scope": "workspace",
+        "provider": "openai",
+        "reasoning": "high",
+        "flowId": "flow-1",
+        "parameters": {
+          "environment": "production"
+        }
+      }
+    },
+    {
+      "id": "command/ralph-run/missing-reasoning",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-run",
+        "workspace": "C:\\workspace",
+        "scope": "workspace",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "flowId": "flow-1",
+        "parameters": {
+          "environment": "production"
+        }
+      }
+    },
+    {
+      "id": "command/ralph-run/missing-flowId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-run",
+        "workspace": "C:\\workspace",
+        "scope": "workspace",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "reasoning": "high",
+        "parameters": {
+          "environment": "production"
+        }
+      }
+    },
+    {
+      "id": "command/ralph-run/missing-parameters",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-run",
+        "workspace": "C:\\workspace",
+        "scope": "workspace",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "reasoning": "high",
+        "flowId": "flow-1"
+      }
+    },
+    {
+      "id": "command/ralph-run/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-run",
+        "workspace": "C:\\workspace",
+        "scope": "workspace",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "reasoning": "high",
+        "flowId": "flow-1",
+        "parameters": {
+          "environment": "production"
+        },
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/ralph-resume-run/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "ralph-resume-run",
+        "workspace": "C:\\workspace",
+        "scope": "workspace",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "reasoning": "high",
+        "runId": "run-1"
+      }
+    },
+    {
+      "id": "command/ralph-resume-run/missing-workspace",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-resume-run",
+        "scope": "workspace",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "reasoning": "high",
+        "runId": "run-1"
+      }
+    },
+    {
+      "id": "command/ralph-resume-run/missing-scope",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-resume-run",
+        "workspace": "C:\\workspace",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "reasoning": "high",
+        "runId": "run-1"
+      }
+    },
+    {
+      "id": "command/ralph-resume-run/missing-provider",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-resume-run",
+        "workspace": "C:\\workspace",
+        "scope": "workspace",
+        "model": "gpt-5.6",
+        "reasoning": "high",
+        "runId": "run-1"
+      }
+    },
+    {
+      "id": "command/ralph-resume-run/missing-model",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-resume-run",
+        "workspace": "C:\\workspace",
+        "scope": "workspace",
+        "provider": "openai",
+        "reasoning": "high",
+        "runId": "run-1"
+      }
+    },
+    {
+      "id": "command/ralph-resume-run/missing-reasoning",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-resume-run",
+        "workspace": "C:\\workspace",
+        "scope": "workspace",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "runId": "run-1"
+      }
+    },
+    {
+      "id": "command/ralph-resume-run/missing-runId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-resume-run",
+        "workspace": "C:\\workspace",
+        "scope": "workspace",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "reasoning": "high"
+      }
+    },
+    {
+      "id": "command/ralph-resume-run/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-resume-run",
+        "workspace": "C:\\workspace",
+        "scope": "workspace",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "reasoning": "high",
+        "runId": "run-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/generate-media/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "generate-media",
+        "prompt": "Review this change.",
+        "target": "image",
+        "modelId": "openai:gpt-image-2",
+        "aspectRatio": "1:1",
+        "outputCount": 1,
+        "outputFormat": "png",
+        "transparentBackground": false
+      }
+    },
+    {
+      "id": "command/generate-media/missing-prompt",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "generate-media",
+        "target": "image",
+        "modelId": "openai:gpt-image-2",
+        "aspectRatio": "1:1",
+        "outputCount": 1,
+        "outputFormat": "png",
+        "transparentBackground": false
+      }
+    },
+    {
+      "id": "command/generate-media/missing-target",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "generate-media",
+        "prompt": "Review this change.",
+        "modelId": "openai:gpt-image-2",
+        "aspectRatio": "1:1",
+        "outputCount": 1,
+        "outputFormat": "png",
+        "transparentBackground": false
+      }
+    },
+    {
+      "id": "command/generate-media/missing-modelId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "generate-media",
+        "prompt": "Review this change.",
+        "target": "image",
+        "aspectRatio": "1:1",
+        "outputCount": 1,
+        "outputFormat": "png",
+        "transparentBackground": false
+      }
+    },
+    {
+      "id": "command/generate-media/missing-aspectRatio",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "generate-media",
+        "prompt": "Review this change.",
+        "target": "image",
+        "modelId": "openai:gpt-image-2",
+        "outputCount": 1,
+        "outputFormat": "png",
+        "transparentBackground": false
+      }
+    },
+    {
+      "id": "command/generate-media/missing-outputCount",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "generate-media",
+        "prompt": "Review this change.",
+        "target": "image",
+        "modelId": "openai:gpt-image-2",
+        "aspectRatio": "1:1",
+        "outputFormat": "png",
+        "transparentBackground": false
+      }
+    },
+    {
+      "id": "command/generate-media/missing-outputFormat",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "generate-media",
+        "prompt": "Review this change.",
+        "target": "image",
+        "modelId": "openai:gpt-image-2",
+        "aspectRatio": "1:1",
+        "outputCount": 1,
+        "transparentBackground": false
+      }
+    },
+    {
+      "id": "command/generate-media/missing-transparentBackground",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "generate-media",
+        "prompt": "Review this change.",
+        "target": "image",
+        "modelId": "openai:gpt-image-2",
+        "aspectRatio": "1:1",
+        "outputCount": 1,
+        "outputFormat": "png"
+      }
+    },
+    {
+      "id": "command/generate-media/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "generate-media",
+        "prompt": "Review this change.",
+        "target": "image",
+        "modelId": "openai:gpt-image-2",
+        "aspectRatio": "1:1",
+        "outputCount": 1,
+        "outputFormat": "png",
+        "transparentBackground": false,
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/cancel-media-run/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "cancel-media-run",
+        "runId": "run-1"
+      }
+    },
+    {
+      "id": "command/cancel-media-run/missing-runId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "cancel-media-run"
+      }
+    },
+    {
+      "id": "command/cancel-media-run/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "cancel-media-run",
+        "runId": "run-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/activate-session/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "activate-session",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/activate-session/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "activate-session"
+      }
+    },
+    {
+      "id": "command/activate-session/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "activate-session",
+        "sessionId": "session-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/archive-session/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "archive-session",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/archive-session/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "archive-session"
+      }
+    },
+    {
+      "id": "command/archive-session/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "archive-session",
+        "sessionId": "session-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/pin-session/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "pin-session",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/pin-session/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "pin-session"
+      }
+    },
+    {
+      "id": "command/pin-session/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "pin-session",
+        "sessionId": "session-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/duplicate-session/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "duplicate-session",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/duplicate-session/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "duplicate-session"
+      }
+    },
+    {
+      "id": "command/duplicate-session/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "duplicate-session",
+        "sessionId": "session-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/branch-session/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "branch-session",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/branch-session/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "branch-session"
+      }
+    },
+    {
+      "id": "command/branch-session/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "branch-session",
+        "sessionId": "session-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/delete-session/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "delete-session",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/delete-session/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "delete-session"
+      }
+    },
+    {
+      "id": "command/delete-session/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "delete-session",
+        "sessionId": "session-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/clear-session-history/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "clear-session-history",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/clear-session-history/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "clear-session-history"
+      }
+    },
+    {
+      "id": "command/clear-session-history/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "clear-session-history",
+        "sessionId": "session-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/clear-session-mode/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "clear-session-mode",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/clear-session-mode/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "clear-session-mode"
+      }
+    },
+    {
+      "id": "command/clear-session-mode/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "clear-session-mode",
+        "sessionId": "session-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/clear-session-reasoning/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "clear-session-reasoning",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/clear-session-reasoning/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "clear-session-reasoning"
+      }
+    },
+    {
+      "id": "command/clear-session-reasoning/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "clear-session-reasoning",
+        "sessionId": "session-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/clear-attachments/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "clear-attachments",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/clear-attachments/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "clear-attachments"
+      }
+    },
+    {
+      "id": "command/clear-attachments/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "clear-attachments",
+        "sessionId": "session-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/clear-session-workspace/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "clear-session-workspace",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/clear-session-workspace/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "clear-session-workspace"
+      }
+    },
+    {
+      "id": "command/clear-session-workspace/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "clear-session-workspace",
+        "sessionId": "session-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/set-interview/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "set-interview",
+        "sessionId": "session-1",
+        "enabled": false
+      }
+    },
+    {
+      "id": "command/set-interview/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-interview",
+        "enabled": false
+      }
+    },
+    {
+      "id": "command/set-interview/missing-enabled",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-interview",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/set-interview/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-interview",
+        "sessionId": "session-1",
+        "enabled": false,
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/set-session-memory/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "set-session-memory",
+        "sessionId": "session-1",
+        "enabled": false
+      }
+    },
+    {
+      "id": "command/set-session-memory/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-session-memory",
+        "enabled": false
+      }
+    },
+    {
+      "id": "command/set-session-memory/missing-enabled",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-session-memory",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/set-session-memory/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-session-memory",
+        "sessionId": "session-1",
+        "enabled": false,
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/set-global-memory/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "set-global-memory",
+        "sessionId": "session-1",
+        "enabled": false
+      }
+    },
+    {
+      "id": "command/set-global-memory/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-global-memory",
+        "enabled": false
+      }
+    },
+    {
+      "id": "command/set-global-memory/missing-enabled",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-global-memory",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/set-global-memory/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-global-memory",
+        "sessionId": "session-1",
+        "enabled": false,
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/set-workspace-memory/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "set-workspace-memory",
+        "sessionId": "session-1",
+        "enabled": false
+      }
+    },
+    {
+      "id": "command/set-workspace-memory/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-workspace-memory",
+        "enabled": false
+      }
+    },
+    {
+      "id": "command/set-workspace-memory/missing-enabled",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-workspace-memory",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/set-workspace-memory/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-workspace-memory",
+        "sessionId": "session-1",
+        "enabled": false,
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/set-ui-control/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "set-ui-control",
+        "sessionId": "session-1",
+        "enabled": false
+      }
+    },
+    {
+      "id": "command/set-ui-control/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-ui-control",
+        "enabled": false
+      }
+    },
+    {
+      "id": "command/set-ui-control/missing-enabled",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-ui-control",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/set-ui-control/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-ui-control",
+        "sessionId": "session-1",
+        "enabled": false,
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/scheduler-trigger/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "scheduler-trigger",
+        "workspace": "C:\\workspace",
+        "jobId": "job-1"
+      }
+    },
+    {
+      "id": "command/scheduler-trigger/missing-workspace",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "scheduler-trigger",
+        "jobId": "job-1"
+      }
+    },
+    {
+      "id": "command/scheduler-trigger/missing-jobId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "scheduler-trigger",
+        "workspace": "C:\\workspace"
+      }
+    },
+    {
+      "id": "command/scheduler-trigger/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "scheduler-trigger",
+        "workspace": "C:\\workspace",
+        "jobId": "job-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/scheduler-pause/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "scheduler-pause",
+        "workspace": "C:\\workspace",
+        "jobId": "job-1"
+      }
+    },
+    {
+      "id": "command/scheduler-pause/missing-workspace",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "scheduler-pause",
+        "jobId": "job-1"
+      }
+    },
+    {
+      "id": "command/scheduler-pause/missing-jobId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "scheduler-pause",
+        "workspace": "C:\\workspace"
+      }
+    },
+    {
+      "id": "command/scheduler-pause/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "scheduler-pause",
+        "workspace": "C:\\workspace",
+        "jobId": "job-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/scheduler-resume/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "scheduler-resume",
+        "workspace": "C:\\workspace",
+        "jobId": "job-1"
+      }
+    },
+    {
+      "id": "command/scheduler-resume/missing-workspace",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "scheduler-resume",
+        "jobId": "job-1"
+      }
+    },
+    {
+      "id": "command/scheduler-resume/missing-jobId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "scheduler-resume",
+        "workspace": "C:\\workspace"
+      }
+    },
+    {
+      "id": "command/scheduler-resume/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "scheduler-resume",
+        "workspace": "C:\\workspace",
+        "jobId": "job-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/scheduler-delete/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "scheduler-delete",
+        "workspace": "C:\\workspace",
+        "jobId": "job-1"
+      }
+    },
+    {
+      "id": "command/scheduler-delete/missing-workspace",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "scheduler-delete",
+        "jobId": "job-1"
+      }
+    },
+    {
+      "id": "command/scheduler-delete/missing-jobId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "scheduler-delete",
+        "workspace": "C:\\workspace"
+      }
+    },
+    {
+      "id": "command/scheduler-delete/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "scheduler-delete",
+        "workspace": "C:\\workspace",
+        "jobId": "job-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/scheduler-retry-run/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "scheduler-retry-run",
+        "workspace": "C:\\workspace",
+        "runId": "run-1"
+      }
+    },
+    {
+      "id": "command/scheduler-retry-run/missing-workspace",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "scheduler-retry-run",
+        "runId": "run-1"
+      }
+    },
+    {
+      "id": "command/scheduler-retry-run/missing-runId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "scheduler-retry-run",
+        "workspace": "C:\\workspace"
+      }
+    },
+    {
+      "id": "command/scheduler-retry-run/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "scheduler-retry-run",
+        "workspace": "C:\\workspace",
+        "runId": "run-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/scheduler-cancel-run/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "scheduler-cancel-run",
+        "workspace": "C:\\workspace",
+        "runId": "run-1"
+      }
+    },
+    {
+      "id": "command/scheduler-cancel-run/missing-workspace",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "scheduler-cancel-run",
+        "runId": "run-1"
+      }
+    },
+    {
+      "id": "command/scheduler-cancel-run/missing-runId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "scheduler-cancel-run",
+        "workspace": "C:\\workspace"
+      }
+    },
+    {
+      "id": "command/scheduler-cancel-run/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "scheduler-cancel-run",
+        "workspace": "C:\\workspace",
+        "runId": "run-1",
+        "unexpected": true
+      }
+    },
+    {
+      "id": "command/ralph-run/user-scope",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "ralph-run",
+        "workspace": "C:\\workspace",
+        "scope": "user",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "reasoning": "high",
+        "flowId": "flow-1",
+        "parameters": {
+          "environment": "production"
+        },
+        "maxTransitions": 1000000
+      }
+    },
+    {
+      "id": "command/ralph-run/invalid-scope",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-run",
+        "workspace": "C:\\workspace",
+        "scope": "global",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "reasoning": "high",
+        "flowId": "flow-1",
+        "parameters": {
+          "environment": "production"
+        }
+      }
+    },
+    {
+      "id": "command/ralph-run/zero-transitions",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-run",
+        "workspace": "C:\\workspace",
+        "scope": "workspace",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "reasoning": "high",
+        "flowId": "flow-1",
+        "parameters": {
+          "environment": "production"
+        },
+        "maxTransitions": 0
+      }
+    },
+    {
+      "id": "command/ralph-run/excess-transitions",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-run",
+        "workspace": "C:\\workspace",
+        "scope": "workspace",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "reasoning": "high",
+        "flowId": "flow-1",
+        "parameters": {
+          "environment": "production"
+        },
+        "maxTransitions": 1000001
+      }
+    },
+    {
+      "id": "command/ralph-run/blank-parameter",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-run",
+        "workspace": "C:\\workspace",
+        "scope": "workspace",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "reasoning": "high",
+        "flowId": "flow-1",
+        "parameters": {
+          " ": "x"
+        }
+      }
+    },
+    {
+      "id": "command/ralph-run/duplicate-trimmed-parameters",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-run",
+        "workspace": "C:\\workspace",
+        "scope": "workspace",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "reasoning": "high",
+        "flowId": "flow-1",
+        "parameters": {
+          " key": "a",
+          "key": "b"
+        }
+      }
+    },
+    {
+      "id": "command/ralph-run/null-parameters",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-run",
+        "workspace": "C:\\workspace",
+        "scope": "workspace",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "reasoning": "high",
+        "flowId": "flow-1",
+        "parameters": null
+      }
+    },
+    {
+      "id": "command/ralph-run/unknown-reasoning",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "ralph-run",
+        "workspace": "C:\\workspace",
+        "scope": "workspace",
+        "provider": "openai",
+        "model": "gpt-5.6",
+        "reasoning": "unknown",
+        "flowId": "flow-1",
+        "parameters": {
+          "environment": "production"
+        }
+      }
+    },
+    {
+      "id": "command/generate-media/jpeg",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "generate-media",
+        "prompt": "Review this change.",
+        "target": "image",
+        "modelId": "openai:gpt-image-2",
+        "aspectRatio": "1:1",
+        "outputCount": 1,
+        "outputFormat": "jpeg",
+        "transparentBackground": false
+      }
+    },
+    {
+      "id": "command/generate-media/webp",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "generate-media",
+        "prompt": "Review this change.",
+        "target": "image",
+        "modelId": "openai:gpt-image-2",
+        "aspectRatio": "1:1",
+        "outputCount": 1,
+        "outputFormat": "webp",
+        "transparentBackground": false
+      }
+    },
+    {
+      "id": "command/generate-media/svg",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "generate-media",
+        "prompt": "Review this change.",
+        "target": "svg",
+        "modelId": "openai:gpt-image-2",
+        "aspectRatio": "1:1",
+        "outputCount": 1,
+        "outputFormat": "svg",
+        "transparentBackground": false
+      }
+    },
+    {
+      "id": "command/generate-media/image-svg",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "generate-media",
+        "prompt": "Review this change.",
+        "target": "image",
+        "modelId": "openai:gpt-image-2",
+        "aspectRatio": "1:1",
+        "outputCount": 1,
+        "outputFormat": "svg",
+        "transparentBackground": false
+      }
+    },
+    {
+      "id": "command/generate-media/svg-png",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "generate-media",
+        "prompt": "Review this change.",
+        "target": "svg",
+        "modelId": "openai:gpt-image-2",
+        "aspectRatio": "1:1",
+        "outputCount": 1,
+        "outputFormat": "png",
+        "transparentBackground": false
+      }
+    },
+    {
+      "id": "command/generate-media/zero-count",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "generate-media",
+        "prompt": "Review this change.",
+        "target": "image",
+        "modelId": "openai:gpt-image-2",
+        "aspectRatio": "1:1",
+        "outputCount": 0,
+        "outputFormat": "png",
+        "transparentBackground": false
+      }
+    },
+    {
+      "id": "command/generate-media/max-count",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "generate-media",
+        "prompt": "Review this change.",
+        "target": "image",
+        "modelId": "openai:gpt-image-2",
+        "aspectRatio": "1:1",
+        "outputCount": 8,
+        "outputFormat": "png",
+        "transparentBackground": false
+      }
+    },
+    {
+      "id": "command/generate-media/excess-count",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "generate-media",
+        "prompt": "Review this change.",
+        "target": "image",
+        "modelId": "openai:gpt-image-2",
+        "aspectRatio": "1:1",
+        "outputCount": 9,
+        "outputFormat": "png",
+        "transparentBackground": false
+      }
+    },
+    {
+      "id": "command/generate-media/fractional-count",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "generate-media",
+        "prompt": "Review this change.",
+        "target": "image",
+        "modelId": "openai:gpt-image-2",
+        "aspectRatio": "1:1",
+        "outputCount": 1.5,
+        "outputFormat": "png",
+        "transparentBackground": false
+      }
+    },
+    {
+      "id": "command/generate-media/unknown-target",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "generate-media",
+        "prompt": "Review this change.",
+        "target": "video",
+        "modelId": "openai:gpt-image-2",
+        "aspectRatio": "1:1",
+        "outputCount": 1,
+        "outputFormat": "png",
+        "transparentBackground": false
+      }
+    },
+    {
+      "id": "command/generate-media/unknown-ratio",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "generate-media",
+        "prompt": "Review this change.",
+        "target": "image",
+        "modelId": "openai:gpt-image-2",
+        "aspectRatio": "3:7",
+        "outputCount": 1,
+        "outputFormat": "png",
+        "transparentBackground": false
+      }
+    },
+    {
+      "id": "command/update-draft/empty",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "update-draft",
+        "sessionId": "session-1",
+        "prompt": ""
+      }
+    },
+    {
+      "id": "command/submit-message/blank-prompt",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": " ",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false
+      }
+    },
+    {
+      "id": "command/scheduler-trigger/blank-workspace",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "scheduler-trigger",
+        "workspace": " ",
+        "jobId": "job-1"
+      }
+    },
+    {
+      "id": "command/unknown-kind",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "future-command"
+      }
+    },
+    {
+      "id": "command/missing-kind",
+      "target": "command",
+      "accepted": false,
+      "payload": {}
+    },
+    {
+      "id": "command/null",
+      "target": "command",
+      "accepted": false,
+      "payload": null
+    },
+    {
+      "id": "settings/complete",
+      "target": "managed-settings",
+      "accepted": true,
+      "payload": {
+        "schemaVersion": 2,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        }
+      }
+    },
+    {
+      "id": "settings/unassigned",
+      "target": "managed-settings",
+      "accepted": true,
+      "payload": {
+        "schemaVersion": 2,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": null
+      }
+    },
+    {
+      "id": "settings/missing-schemaVersion",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        }
+      }
+    },
+    {
+      "id": "settings/missing-managerId",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 2,
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        }
+      }
+    },
+    {
+      "id": "settings/missing-profile",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 2,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3"
+      }
+    },
+    {
+      "id": "settings/wrong-version",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 1,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        }
+      }
+    },
+    {
+      "id": "settings/invalid-manager",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 2,
+        "managerId": "invalid",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        }
+      }
+    },
+    {
+      "id": "settings/invalid-profile-id",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 2,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "invalid",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        }
+      }
+    },
+    {
+      "id": "settings/zero-revision",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 2,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 0,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        }
+      }
+    },
+    {
+      "id": "settings/unsafe-revision",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 2,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 9007199254740992,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        }
+      }
+    },
+    {
+      "id": "settings/blank-name",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 2,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": " ",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        }
+      }
+    },
+    {
+      "id": "settings/invalid-instruction-id",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 2,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "invalid",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        }
+      }
+    },
+    {
+      "id": "settings/model-without-provider",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 2,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": null,
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        }
+      }
+    },
+    {
+      "id": "settings/invalid-secret",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 2,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ]
+          },
+          "secrets": {
+            "openai": ""
+          }
+        }
+      }
+    },
+    {
+      "id": "settings/unknown-field",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 2,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        },
+        "unexpected": true
+      }
+    },
+    {
+      "id": "settings/duplicate-instructions",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 2,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              },
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        }
+      }
+    },
+    {
+      "id": "settings/max-safe-revision",
+      "target": "managed-settings",
+      "accepted": true,
+      "payload": {
+        "schemaVersion": 2,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 9007199254740991,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        }
+      }
+    },
+    {
+      "id": "settings/missing-document",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 2,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "secrets": {
+            "openai": "secret"
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/empty",
+      "target": "snapshot",
+      "accepted": true,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/missing-enabled",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/missing-serverTime",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "eventId": 0,
+            "sessions": [],
+            "commands": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/missing-eventId",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "sessions": [],
+            "commands": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/missing-sessions",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "commands": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/missing-commands",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/null",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": null
+        }
+      }
+    },
+    {
+      "id": "snapshot/wrong-enabled-type",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": "true",
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/negative-time",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": -1,
+            "eventId": 0,
+            "sessions": [],
+            "commands": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/fractional-event",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0.5,
+            "sessions": [],
+            "commands": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/sessions-not-array",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": {},
+            "commands": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/commands-not-array",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": {}
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/unknown-snapshot-field",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "extra": true
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/unknown-response-kind",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "unknown",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/unknown-envelope-field",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": []
+          }
+        },
+        "extra": true
+      }
+    },
+    {
+      "id": "snapshot/missing-payload",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot"
+        }
+      }
+    },
+    {
+      "id": "snapshot/gateway-budget-below",
+      "target": "snapshot",
+      "accepted": true,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "task-1",
+                "task": "task",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0,
+                "logs": [],
+                "timeline": []
+              }
+            ],
+            "commands": []
+          }
+        }
+      },
+      "gatewayBytes": 4194303
+    },
+    {
+      "id": "snapshot/gateway-budget-at",
+      "target": "snapshot",
+      "accepted": true,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "task-1",
+                "task": "task",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0,
+                "logs": [],
+                "timeline": []
+              }
+            ],
+            "commands": []
+          }
+        }
+      },
+      "gatewayBytes": 4194304
+    },
+    {
+      "id": "snapshot/gateway-budget-above",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "task-1",
+                "task": "task",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0,
+                "logs": [],
+                "timeline": []
+              }
+            ],
+            "commands": []
+          }
+        }
+      },
+      "gatewayBytes": 4194305
+    }
+  ]
+}

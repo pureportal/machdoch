@@ -4,6 +4,8 @@ use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::{error::Error, fmt};
 
+mod snapshot;
+
 pub const GATEWAY_PROTOCOL_VERSION: u32 = 4;
 pub const PRODUCT_CAPABILITY: &str = "product.v4";
 pub const PRODUCT_SNAPSHOT_VERSION: u32 = 5;
@@ -66,6 +68,7 @@ pub struct FleetManagedSettingsDelivery {
 struct RawFleetManagedSettingsDelivery {
     schema_version: u8,
     manager_id: String,
+    #[serde(deserialize_with = "Option::deserialize")]
     profile: Option<FleetManagedSettingsProfile>,
 }
 
@@ -738,6 +741,7 @@ pub enum HostResponse {
     },
     PreviewTunnelReady,
     ProductSnapshot {
+        #[serde(deserialize_with = "snapshot::deserialize_product_snapshot")]
         snapshot: Value,
     },
     CommandAccepted {
@@ -2448,11 +2452,40 @@ mod tests {
     }
 
     fn snapshot_response_with_chunk_size(chunk_size: usize) -> HostMessage {
+        let mut remaining = chunk_size;
+        let logs: Vec<Value> = (0..=MAX_GATEWAY_MESSAGE_BYTES / 12_000)
+            .map(|_| {
+                let length = remaining.min(12_000);
+                remaining -= length;
+                serde_json::json!({
+                    "createdAt": 0,
+                    "stream": "stdout",
+                    "chunk": "x".repeat(length),
+                })
+            })
+            .collect();
+        assert_eq!(remaining, 0);
         HostMessage::Response {
             request_id: "request-1".to_string(),
             response: HostResponse::ProductSnapshot {
                 snapshot: serde_json::json!({
-                    "payload": "x".repeat(chunk_size),
+                    "enabled": true,
+                    "serverTime": 0,
+                    "eventId": 0,
+                    "sessions": [{
+                        "taskId": "task-1",
+                        "task": "task",
+                        "mode": "mode",
+                        "state": "state",
+                        "message": "message",
+                        "cancellable": true,
+                        "startedAt": 0,
+                        "updatedAt": 0,
+                        "progressCount": 0,
+                        "logs": logs,
+                        "timeline": [],
+                    }],
+                    "commands": [],
                 }),
             },
         }
