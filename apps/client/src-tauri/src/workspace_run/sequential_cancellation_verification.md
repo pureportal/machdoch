@@ -151,3 +151,40 @@ can freeze the completed identical regression harness, baseline, commands,
 synchronization points, and shutdown bounds before production edits. Implementation,
 controlled behavioral verification, broad comparison, and strict review remain
 outstanding. Task state and unrelated source files were left untouched.
+
+## Validation repair: supplied 13-failure candidate, 2026-09-10
+
+Reconciled at HEAD `8a35f9823f460206b8eb62c5a8604b41c0d149b2`.
+The manager SHA-256 remains
+`5cd20d01d14189a15521315f4cf216d76509bbac1b4023699acbc63a8577e49c`,
+identical to the preserved baseline. Commit
+`ff8a91666dc2bca780fc53d6bcddfc69972d2ed1` contains only the existing
+fast-output acknowledgement test changes in this file. There is no lifecycle
+implementation or deterministic cancellation harness delta to identify. Source
+inspection confirms the separate cancellation check and child registration, and
+the stop waiter still checks only child supervisors.
+
+Local Windows verification, without production or test source edits:
+
+- `cargo test workspace_run`: exit 0; 62 passed, 0 failed, 0 ignored,
+  658 filtered out. Both `sequential_composite_continues_after_a_successful_rapid_exit`
+  and `stop_terminates_descendant_processes` passed. Test execution took 22.13 seconds.
+- `cargo test --all-targets`: waited for the shared build-directory lock and was
+  interrupted before test execution; command session exit 1. This is an interrupted
+  observation, not a test failure or a completed broad verification result.
+- Scoped `git diff --check` passed before this documentation update.
+
+Full command output is retained alongside the existing checkpoint as
+`repair-current-workspace-run.log` and `repair-current-all-targets.log`.
+These observations do not establish equivalent baseline/candidate conditions or
+explain the previously supplied failures. No assertions or timeout bounds were
+weakened. The supplied absent-file recovery DONE validation is unrelated.
+
+Available tool metadata exposes no engine baseline/harness freeze capability.
+The required pre-production freeze is still absent, so implementation remains
+blocked. Resume with the engine-frozen baseline, completed identical controlled
+harness, commands, synchronization points, and bounds described above; execute
+the race cases on baseline and candidate and complete broad verification when
+the build lock is available. Strict lifecycle review, process cleanup evidence,
+restart isolation, and non-Windows behavior remain unverified. No task state was
+modified.
