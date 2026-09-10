@@ -10,6 +10,8 @@ describe("Settings search", () => {
     ["  ACCENT   color ", "appearance"],
     ["retention", "desktop"],
     ["quick chat shortcut", "desktop"],
+    ["default inactivity timeout", "desktop"],
+    ["chat timeout", "desktop"],
     ["Recraft key", "providers"],
   ])("finds %s", (query, expected) => {
     const results = SETTINGS_SECTIONS.filter((section) =>

@@ -64,13 +64,13 @@ export const TaskTimeoutControls = ({
           variant="ghost"
           size="sm"
           aria-label="Adjust chat timeout"
-          className="h-7 gap-1.5 px-2 text-[11px]"
+          className="h-7 gap-1.5 px-2 text-[11px] hover:bg-(--app-hover) focus-visible:ring-sky-500/35"
         >
           <Clock3 className="h-3.5 w-3.5" />
           Timeout
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-64">
+      <PopoverContent align="end" aria-label="Chat timeout" className="w-72">
         <form
           className="grid gap-3"
           onSubmit={(event) => {
@@ -78,27 +78,35 @@ export const TaskTimeoutControls = ({
             if (valid && !saving) void resetTimeout(duration);
           }}
         >
-          <label htmlFor={inputId} className="text-sm font-medium">
-            Inactivity (minutes)
-          </label>
-          <Input
-            id={inputId}
-            type="number"
-            min={bounds.min}
-            max={bounds.max}
-            step="1"
-            required
-            aria-invalid={!valid || undefined}
-            aria-describedby={errorMessage ? `${inputId}-error` : undefined}
-            value={minutes}
-            disabled={saving}
-            onChange={(event) => {
-              setMinutes(event.target.value);
-              setError(null);
-            }}
-          />
+          <div className="grid gap-2">
+            <label htmlFor={inputId} className="text-sm font-medium">
+              Inactivity (minutes)
+            </label>
+            <Input
+              id={inputId}
+              type="number"
+              min={bounds.min}
+              max={bounds.max}
+              step="1"
+              required
+              aria-invalid={!valid || undefined}
+              aria-describedby={errorMessage ? `${inputId}-error` : undefined}
+              value={minutes}
+              disabled={saving}
+              onChange={(event) => {
+                setMinutes(event.target.value);
+                setError(null);
+              }}
+              className="border-(--app-border-strong) bg-(--app-bg) text-(--app-text) focus-visible:border-sky-500 focus-visible:ring-sky-500/35 aria-invalid:border-rose-400"
+            />
+          </div>
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" size="sm" disabled={saving || !valid}>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={saving || !valid}
+              className="bg-sky-500 text-white hover:bg-sky-600 focus-visible:ring-sky-500/35"
+            >
               Apply and reset
             </Button>
             <Button
@@ -107,6 +115,7 @@ export const TaskTimeoutControls = ({
               size="sm"
               disabled={saving}
               onClick={() => void resetTimeout()}
+              className="border-(--app-border-strong) bg-(--app-surface) text-(--app-text) hover:bg-(--app-hover) focus-visible:ring-sky-500/35"
             >
               <RotateCcw className="h-3.5 w-3.5" />
               Reset timer

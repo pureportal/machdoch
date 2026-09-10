@@ -403,6 +403,23 @@ export const DesktopSettingsPanel = ({
         </div>
       ) : null}
 
+      <SettingsCard title="Chat timeout">
+        <SettingPanel label="Default inactivity timeout (minutes)">
+          <SettingsNumberInput
+            aria-label="Default inactivity timeout (minutes)"
+            min={DESKTOP_SETTING_BOUNDS.chatIdleTimeoutMinutes.min}
+            max={DESKTOP_SETTING_BOUNDS.chatIdleTimeoutMinutes.max}
+            step="1"
+            value={draft.chatIdleTimeoutMinutes}
+            disabled={setup.saving}
+            onValueChange={(value) => {
+              setDraft({ ...draft, chatIdleTimeoutMinutes: value });
+            }}
+            className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
+          />
+        </SettingPanel>
+      </SettingsCard>
+
       <SettingsCard title="Startup">
         <div className="grid gap-0">
           <SettingPanel label="Launch on sign-in">
@@ -534,21 +551,6 @@ export const DesktopSettingsPanel = ({
                   ...draft,
                   aiContextMaxMessages: value,
                 });
-              }}
-              className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
-            />
-          </SettingPanel>
-
-          <SettingPanel label="Chat inactivity timeout (minutes)">
-            <SettingsNumberInput
-              aria-label="Chat inactivity timeout in minutes"
-              min={DESKTOP_SETTING_BOUNDS.chatIdleTimeoutMinutes.min}
-              max={DESKTOP_SETTING_BOUNDS.chatIdleTimeoutMinutes.max}
-              step="1"
-              value={draft.chatIdleTimeoutMinutes}
-              disabled={setup.saving}
-              onValueChange={(value) => {
-                setDraft({ ...draft, chatIdleTimeoutMinutes: value });
               }}
               className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
             />
