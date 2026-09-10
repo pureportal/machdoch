@@ -30,9 +30,23 @@ pub(super) const CREATE_NO_WINDOW: u32 = 0x08000000;
 pub(super) const SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES: usize = 1024 * 1024;
 pub(super) const SUBPROCESS_OUTPUT_TRUNCATED_MARKER: &str =
     "[output truncated after capture limit]";
+const DESKTOP_TASK_RESPONSE_CAPTURE_LIMIT_BYTES: usize = 128 * 1024 * 1024;
 
 pub(super) fn read_stdout(stdout: impl Read) -> Result<String, String> {
-    read_bounded_stream_text(stdout, "stdout")
+    read_stdout_with_limit(stdout, DESKTOP_TASK_RESPONSE_CAPTURE_LIMIT_BYTES)
+}
+
+fn read_stdout_with_limit(stdout: impl Read, capture_limit_bytes: usize) -> Result<String, String> {
+    let output = read_bounded_stream_text_with_limit(stdout, "stdout", capture_limit_bytes)?;
+
+    if output.ends_with(SUBPROCESS_OUTPUT_TRUNCATED_MARKER) {
+        return Err(
+            "The task response is too large to display. Check the workspace before retrying."
+                .to_string(),
+        );
+    }
+
+    Ok(output)
 }
 
 pub(super) fn read_bounded_stream_text(
@@ -432,8 +446,9 @@ mod tests {
 
     use super::{
         create_desktop_task_activity, desktop_task_activity_elapsed, join_cli_output_and_cleanup,
-        mark_desktop_task_activity, read_bounded_stream_text_with_limit, read_stderr_lines,
-        read_stdout, SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES, SUBPROCESS_OUTPUT_TRUNCATED_MARKER,
+        mark_desktop_task_activity, read_bounded_stream_text, read_bounded_stream_text_with_limit,
+        read_stderr_lines, read_stdout_with_limit, SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
+        SUBPROCESS_OUTPUT_TRUNCATED_MARKER,
     };
     use crate::desktop_task::payload::write_conversation_context_file;
 
@@ -507,16 +522,52 @@ mod tests {
     }
 
     #[test]
-    fn stdout_reader_caps_retained_output_and_marks_truncation() {
-        let output = read_stdout(Cursor::new(vec![
-            b'x';
-            SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES + 128
-        ]))
+    fn diagnostic_reader_caps_retained_output_and_marks_truncation() {
+        let output = read_bounded_stream_text(
+            Cursor::new(vec![b'x'; SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES + 128]),
+            "stdout",
+        )
         .expect("stdout should be read");
 
         assert!(output.len() < SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES + 256);
         assert!(output.contains(SUBPROCESS_OUTPUT_TRUNCATED_MARKER));
         assert!(std::str::from_utf8(output.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn task_stdout_accepts_a_complete_response_at_the_byte_limit() {
+        let response = serde_json::to_string(&json!({
+            "execution": {
+                "summary": "Completed 🦊",
+                "response": { "markdown": SUBPROCESS_OUTPUT_TRUNCATED_MARKER }
+            }
+        }))
+        .expect("fixture should serialize");
+
+        let output = read_stdout_with_limit(Cursor::new(&response), response.len())
+            .expect("the exact byte limit should be accepted");
+
+        assert_eq!(output, response);
+    }
+
+    #[test]
+    fn task_stdout_rejects_overflow_and_drains_the_stream() {
+        let response = format!(
+            r#"{{"execution":{{"summary":"private task result 🦊{}"}}}}"#,
+            "x".repeat(32 * 1024)
+        );
+
+        for limit in [0, 32, response.len() - 1] {
+            let mut stream = Cursor::new(response.as_bytes());
+            let error = read_stdout_with_limit(&mut stream, limit)
+                .expect_err("an oversized response must not reach the JSON parser");
+
+            assert_eq!(stream.position(), response.len() as u64);
+            assert_eq!(
+                error,
+                "The task response is too large to display. Check the workspace before retrying."
+            );
+        }
     }
 
     #[test]
