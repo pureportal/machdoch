@@ -67,12 +67,25 @@ struct FileBackupEntry {
     base64_content: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(
+    tag = "state",
+    content = "base64Content",
+    rename_all = "camelCase",
+    deny_unknown_fields
+)]
+enum ConfigFileBackup {
+    Unselected,
+    Absent,
+    Present(String),
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ResourceBackup {
     categories: BTreeSet<SettingsCategoryId>,
-    user_config: Option<Option<String>>,
-    mcp_config: Option<Option<String>>,
+    user_config: ConfigFileBackup,
+    mcp_config: ConfigFileBackup,
     store_values: BTreeMap<String, Option<Value>>,
     files: BTreeMap<SettingsCategoryId, Vec<FileBackupEntry>>,
 }
@@ -80,10 +93,10 @@ struct ResourceBackup {
 impl Drop for ResourceBackup {
     fn drop(&mut self) {
         for value in [&mut self.user_config, &mut self.mcp_config] {
-            if let Some(Some(value)) = value {
+            if let ConfigFileBackup::Present(value) = value {
                 value.zeroize();
             }
-            *value = None;
+            *value = ConfigFileBackup::Unselected;
         }
         for (mut key, value) in std::mem::take(&mut self.store_values) {
             key.zeroize();
@@ -387,12 +400,12 @@ impl IncomingPayloadStage {
     }
 }
 
-fn read_optional_file(
+fn read_config_file_backup(
     path: &Path,
     root: &Path,
     maximum_bytes: u64,
     remaining_bytes: &mut u64,
-) -> Result<Option<String>, String> {
+) -> Result<ConfigFileBackup, String> {
     match fs::symlink_metadata(path) {
         Ok(metadata) => {
             verify_existing_regular_file(path, root)?;
@@ -415,9 +428,9 @@ fn read_optional_file(
                 return Err("A receiver settings resource exceeds the rollback limit.".to_string());
             }
             consume_backup_budget(remaining_bytes, bytes.len() as u64)?;
-            Ok(Some(BASE64.encode(bytes)))
+            Ok(ConfigFileBackup::Present(BASE64.encode(bytes)))
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(ConfigFileBackup::Absent),
         Err(_) => Err("A settings resource could not be inspected for backup.".to_string()),
     }
 }
@@ -643,25 +656,27 @@ fn capture_backup<R: Runtime>(
     let mut remaining_bytes = MAX_RECOVERY_RAW_BYTES;
     let user_config = uses_user_config(categories)
         .then(|| {
-            read_optional_file(
+            read_config_file_backup(
                 &root.join("user-config.json"),
                 root,
                 MAX_USER_CONFIG_BYTES,
                 &mut remaining_bytes,
             )
         })
-        .transpose()?;
+        .transpose()?
+        .unwrap_or(ConfigFileBackup::Unselected);
     let mcp_config = categories
         .contains(&SettingsCategoryId::GlobalMcp)
         .then(|| {
-            read_optional_file(
+            read_config_file_backup(
                 &root.join("mcp.json"),
                 root,
                 MAX_MCP_BYTES,
                 &mut remaining_bytes,
             )
         })
-        .transpose()?;
+        .transpose()?
+        .unwrap_or(ConfigFileBackup::Unselected);
     let mut store_values = BTreeMap::new();
     if categories.contains(&SettingsCategoryId::GlobalContextPacks) {
         let shell_state = crate::shell_state::load_shell_state_for_settings_transfer(app)?;
@@ -770,15 +785,17 @@ fn validate_backup_file_path(
 fn validate_resource_backup(backup: &ResourceBackup) -> Result<(), String> {
     if backup.categories.is_empty()
         || backup.categories.len() > SettingsCategoryId::ALL.len()
-        || backup.user_config.is_some() != uses_user_config(&backup.categories)
-        || backup.mcp_config.is_some() != backup.categories.contains(&SettingsCategoryId::GlobalMcp)
+        || matches!(backup.user_config, ConfigFileBackup::Unselected)
+            == uses_user_config(&backup.categories)
+        || matches!(backup.mcp_config, ConfigFileBackup::Unselected)
+            == backup.categories.contains(&SettingsCategoryId::GlobalMcp)
     {
         return Err("Settings rollback metadata is inconsistent.".to_string());
     }
-    if let Some(Some(value)) = &backup.user_config {
+    if let ConfigFileBackup::Present(value) = &backup.user_config {
         validate_encoded_backup(value, MAX_USER_CONFIG_BYTES)?;
     }
-    if let Some(Some(value)) = &backup.mcp_config {
+    if let ConfigFileBackup::Present(value) = &backup.mcp_config {
         validate_encoded_backup(value, MAX_MCP_BYTES)?;
     }
 
@@ -1600,9 +1617,9 @@ fn apply_envelope<R: Runtime>(
     )
 }
 
-fn restore_optional_file(root: &Path, path: &Path, backup: &Option<String>) -> Result<(), String> {
+fn restore_config_file(root: &Path, path: &Path, backup: &ConfigFileBackup) -> Result<(), String> {
     match backup {
-        Some(encoded) => {
+        ConfigFileBackup::Present(encoded) => {
             let bytes = Zeroizing::new(
                 BASE64
                     .decode(encoded)
@@ -1610,7 +1627,8 @@ fn restore_optional_file(root: &Path, path: &Path, backup: &Option<String>) -> R
             );
             write_settings_file(root, path, &bytes)
         }
-        None => remove_file_if_exists(path),
+        ConfigFileBackup::Absent => remove_file_if_exists(path),
+        ConfigFileBackup::Unselected => Ok(()),
     }
 }
 
@@ -1620,12 +1638,8 @@ fn restore_backup<R: Runtime>(
     backup: &ResourceBackup,
 ) -> Result<(), String> {
     validate_resource_backup(backup)?;
-    if let Some(user_config) = &backup.user_config {
-        restore_optional_file(root, &root.join("user-config.json"), user_config)?;
-    }
-    if let Some(mcp_config) = &backup.mcp_config {
-        restore_optional_file(root, &root.join("mcp.json"), mcp_config)?;
-    }
+    restore_config_file(root, &root.join("user-config.json"), &backup.user_config)?;
+    restore_config_file(root, &root.join("mcp.json"), &backup.mcp_config)?;
     for (category, entries) in &backup.files {
         for path in managed_files_for_category(root, *category)? {
             remove_file_if_exists(&path)?;
@@ -1977,10 +1991,14 @@ pub(crate) fn discard_prepared_transaction<R: Runtime>(
 }
 
 #[cfg(test)]
+#[path = "transaction_recovery_tests.rs"]
+mod persisted_recovery_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
-    fn temporary_test_root(name: &str) -> PathBuf {
+    pub(super) fn temporary_test_root(name: &str) -> PathBuf {
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .expect("test clock should follow the Unix epoch")
@@ -2047,8 +2065,8 @@ mod tests {
     fn mcp_rollback_contains_only_the_global_config_file() {
         let mut backup = ResourceBackup {
             categories: BTreeSet::from([SettingsCategoryId::GlobalMcp]),
-            user_config: None,
-            mcp_config: Some(Some(BASE64.encode(b"{}\n"))),
+            user_config: ConfigFileBackup::Unselected,
+            mcp_config: ConfigFileBackup::Present(BASE64.encode(b"{}\n")),
             store_values: BTreeMap::new(),
             files: BTreeMap::new(),
         };
@@ -2152,14 +2170,14 @@ mod tests {
             .expect("incoming settings should be written");
         let encoded = BASE64.encode(previous);
 
-        restore_optional_file(&root, &path, &Some(encoded))
+        restore_config_file(&root, &path, &ConfigFileBackup::Present(encoded))
             .expect("rollback should restore the previous file");
         assert_eq!(
             fs::read(&path).expect("restored file should be readable"),
             previous
         );
 
-        restore_optional_file(&root, &path, &None)
+        restore_config_file(&root, &path, &ConfigFileBackup::Absent)
             .expect("rollback should restore previous absence");
         assert!(!path.exists());
         fs::remove_dir_all(&root).expect("test root should be removable");
@@ -2231,8 +2249,8 @@ mod tests {
     fn backup_fingerprint_is_deterministic_and_scope_closed() {
         let backup = ResourceBackup {
             categories: BTreeSet::from([SettingsCategoryId::ApiKeys]),
-            user_config: Some(Some(BASE64.encode(b"{}\n"))),
-            mcp_config: None,
+            user_config: ConfigFileBackup::Present(BASE64.encode(b"{}\n")),
+            mcp_config: ConfigFileBackup::Unselected,
             store_values: BTreeMap::new(),
             files: BTreeMap::new(),
         };
@@ -2260,8 +2278,8 @@ mod tests {
     fn recovery_backup_cannot_target_unselected_files_or_store_keys() {
         let mut backup = ResourceBackup {
             categories: BTreeSet::from([SettingsCategoryId::GlobalPrompts]),
-            user_config: None,
-            mcp_config: None,
+            user_config: ConfigFileBackup::Unselected,
+            mcp_config: ConfigFileBackup::Unselected,
             store_values: BTreeMap::new(),
             files: BTreeMap::from([(
                 SettingsCategoryId::GlobalPrompts,
@@ -2294,8 +2312,8 @@ mod tests {
     fn recovery_backup_rejects_a_file_used_as_an_ancestor_directory() {
         let backup = ResourceBackup {
             categories: BTreeSet::from([SettingsCategoryId::GlobalPrompts]),
-            user_config: None,
-            mcp_config: None,
+            user_config: ConfigFileBackup::Unselected,
+            mcp_config: ConfigFileBackup::Unselected,
             store_values: BTreeMap::new(),
             files: BTreeMap::from([(
                 SettingsCategoryId::GlobalPrompts,
