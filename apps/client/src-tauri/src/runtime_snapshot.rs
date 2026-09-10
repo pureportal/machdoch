@@ -4,6 +4,7 @@ use std::{collections::HashMap, sync::OnceLock};
 use crate::runtime_contract_generated::{REASONING_MODES, VALID_MODEL_PROVIDERS};
 mod collect;
 mod desktop_settings_commands;
+mod desktop_settings_update;
 mod env;
 mod env_commands;
 mod env_paths;
@@ -284,18 +285,12 @@ pub async fn save_user_desktop_settings(
     app: tauri::AppHandle,
     settings: UserDesktopSettings,
 ) -> Result<UserDesktopSettings, String> {
-    let previous_settings = load_user_desktop_settings(&app)?;
-
-    save_user_desktop_settings_value(&app, &settings)?;
-
-    if let Err(error) = crate::desktop_shell::sync_quick_voice_shortcut(&app) {
-        let _ = save_user_desktop_settings_value(&app, &previous_settings);
-        let _ = crate::desktop_shell::sync_quick_voice_shortcut(&app);
-
-        return Err(format!(
-            "The Quick Voice shortcut could not be updated, so the desktop settings were restored: {error}"
-        ));
-    }
+    desktop_settings_update::save_desktop_settings_with_shortcut(
+        &settings,
+        || load_user_desktop_settings(&app),
+        |settings| save_user_desktop_settings_value(&app, settings).map(|_| ()),
+        |settings| crate::desktop_shell::sync_quick_voice_shortcut_with_settings(&app, settings),
+    )?;
 
     if let Err(error) = crate::desktop_shell::sync_assistant_bubble_window(&app) {
         eprintln!(
