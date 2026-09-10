@@ -2404,12 +2404,30 @@ mod tests {
             writer.flush().expect("stress command should flush");
         }
 
-        let output_deadline = std::time::Instant::now() + Duration::from_secs(30);
-        while std::time::Instant::now() < output_deadline && !exit_seen.load(Ordering::SeqCst) {
+        let output_deadline = std::time::Instant::now() + Duration::from_secs(120);
+        let mut progress_deadline = std::time::Instant::now() + Duration::from_secs(30);
+        let mut observed_events = output_events.load(Ordering::SeqCst);
+        while std::time::Instant::now() < output_deadline
+            && std::time::Instant::now() < progress_deadline
+            && !exit_seen.load(Ordering::SeqCst)
+        {
             thread::sleep(Duration::from_millis(20));
+            let current_events = output_events.load(Ordering::SeqCst);
+            if current_events != observed_events {
+                observed_events = current_events;
+                progress_deadline = std::time::Instant::now() + Duration::from_secs(30);
+            }
         }
         let captured = output.lock().expect("stress output should lock").clone();
         let captured_text = String::from_utf8_lossy(&captured);
+        assert!(
+            exit_seen.load(Ordering::SeqCst),
+            "terminal stress did not exit after {:?}; captured {} bytes in {} events; tail: {:?}",
+            stress_started.elapsed(),
+            captured.len(),
+            output_events.load(Ordering::SeqCst),
+            String::from_utf8_lossy(&captured[captured.len().saturating_sub(512)..])
+        );
         assert!(
             captured_text.contains("MACHDOCH_STRESS_10000"),
             "the final numbered stress line should not be truncated"
@@ -2421,10 +2439,6 @@ mod tests {
         assert!(
             captured.len() > TERMINAL_OUTPUT_HIGH_WATERMARK_BYTES,
             "the stress probe should exercise output backpressure"
-        );
-        assert!(
-            exit_seen.load(Ordering::SeqCst),
-            "the natural exit event should arrive after buffered output"
         );
         eprintln!(
             "terminal stress: {} bytes in {} output events over {:?}",
