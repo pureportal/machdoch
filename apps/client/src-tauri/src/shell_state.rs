@@ -8,7 +8,7 @@ use serde_json::{json, Map, Value};
 use tauri::{path::BaseDirectory, AppHandle, Manager, Runtime};
 use tokio::sync::Mutex;
 
-use crate::atomic_file::{write_file_atomic, AtomicWriteOptions};
+use crate::atomic_file::{write_file_atomic, AtomicFileDurabilityError, AtomicWriteOptions};
 use crate::cooperative_file_lock::with_cooperative_file_lock;
 
 const SNAPSHOT_FILE: &str = "machdoch-shell-state.snapshot.json";
@@ -81,6 +81,23 @@ pub struct ShellStateCompareAndSwapResponse {
 struct SnapshotCommit {
     committed: bool,
     snapshot: ShellStateSnapshot,
+    persistence: SnapshotPersistence,
+}
+
+enum SnapshotPersistence {
+    Complete,
+    Incomplete(String),
+}
+
+impl SnapshotPersistence {
+    fn into_result(self, revision: u64) -> Result<(), String> {
+        match self {
+            Self::Complete => Ok(()),
+            Self::Incomplete(error) => Err(format!(
+                "The shell-state snapshot was saved at revision {revision}, but persistence is incomplete: {error}"
+            )),
+        }
+    }
 }
 
 fn commit_snapshot_with_lock(
@@ -88,7 +105,7 @@ fn commit_snapshot_with_lock(
     expected_revision: u64,
     prepare_requested: impl FnOnce(&Value) -> Value,
     load: impl FnOnce() -> Result<ShellStateSnapshot, String>,
-    persist: impl FnOnce(&ShellStateSnapshot) -> Result<(), String>,
+    persist: impl FnOnce(&ShellStateSnapshot) -> Result<SnapshotPersistence, String>,
 ) -> Result<SnapshotCommit, String> {
     with_cooperative_file_lock(path, || {
         // The on-disk snapshot is authoritative across processes. A process
@@ -99,6 +116,7 @@ fn commit_snapshot_with_lock(
             return Ok(SnapshotCommit {
                 committed: false,
                 snapshot: current,
+                persistence: SnapshotPersistence::Complete,
             });
         }
 
@@ -108,10 +126,11 @@ fn commit_snapshot_with_lock(
             state: prepare_next_state(&current.state, requested, next_revision),
             revision: next_revision,
         };
-        persist(&snapshot)?;
+        let persistence = persist(&snapshot)?;
         Ok(SnapshotCommit {
             committed: true,
             snapshot,
+            persistence,
         })
     })
 }
@@ -581,8 +600,15 @@ fn persist_snapshot_revision<R: Runtime>(
     revision: u64,
 ) -> Result<(), String> {
     let revision_path = snapshot_revision_path(app_handle)?;
+    persist_snapshot_revision_at_path(&revision_path, revision)
+}
+
+fn persist_snapshot_revision_at_path(
+    revision_path: &std::path::Path,
+    revision: u64,
+) -> Result<(), String> {
     write_file_atomic(
-        &revision_path,
+        revision_path,
         revision.to_string().as_bytes(),
         AtomicWriteOptions::with_unix_mode(0o600),
     )
@@ -634,7 +660,13 @@ fn load_snapshot<R: Runtime>(
     fallback: Value,
 ) -> Result<ShellStateSnapshot, String> {
     let snapshot_path = snapshot_path(app_handle)?;
+    load_snapshot_at_path(&snapshot_path, fallback)
+}
 
+fn load_snapshot_at_path(
+    snapshot_path: &std::path::Path,
+    fallback: Value,
+) -> Result<ShellStateSnapshot, String> {
     if snapshot_path.exists() {
         let raw = fs::read_to_string(&snapshot_path).map_err(|error| {
             format!(
@@ -659,10 +691,34 @@ fn load_snapshot<R: Runtime>(
 
 fn persist_snapshot<R: Runtime>(
     app_handle: &AppHandle<R>,
-    snapshot: &ShellStateSnapshot,
-) -> Result<(), String> {
+    cache: &mut Option<ShellStateSnapshot>,
+    snapshot: ShellStateSnapshot,
+) -> Result<u64, String> {
     let snapshot_path = snapshot_path(app_handle)?;
+    let revision_path = snapshot_revision_path(app_handle)?;
+    persist_snapshot_and_cache_at_paths(&snapshot_path, &revision_path, cache, snapshot)
+}
 
+fn persist_snapshot_and_cache_at_paths(
+    snapshot_path: &std::path::Path,
+    revision_path: &std::path::Path,
+    cache: &mut Option<ShellStateSnapshot>,
+    snapshot: ShellStateSnapshot,
+) -> Result<u64, String> {
+    let persistence = with_cooperative_file_lock(snapshot_path, || {
+        persist_snapshot_at_paths(snapshot_path, revision_path, &snapshot)
+    })?;
+    let revision = snapshot.revision;
+    *cache = Some(snapshot);
+    persistence.into_result(revision)?;
+    Ok(revision)
+}
+
+fn persist_snapshot_at_paths(
+    snapshot_path: &std::path::Path,
+    revision_path: &std::path::Path,
+    snapshot: &ShellStateSnapshot,
+) -> Result<SnapshotPersistence, String> {
     if let Some(parent) = snapshot_path.parent() {
         fs::create_dir_all(parent).map_err(|error| {
             format!(
@@ -676,20 +732,32 @@ fn persist_snapshot<R: Runtime>(
         .map_err(|error| format!("Failed to serialize the shell-state snapshot: {error}"))?;
     let raw = format!("{serialized}\n");
 
-    write_file_atomic(
+    let write_result = write_file_atomic(
         &snapshot_path,
         raw.as_bytes(),
         AtomicWriteOptions::with_unix_mode(0o600),
-    )
-    .map_err(|error| {
-        format!(
+    );
+    if let Err(error) = write_result {
+        let replaced = error
+            .get_ref()
+            .is_some_and(|source| source.is::<AtomicFileDurabilityError>());
+        let message = format!(
             "Failed to persist the shell-state snapshot {}: {error}",
             snapshot_path.display()
-        )
-    })?;
+        );
+        return if replaced {
+            Ok(SnapshotPersistence::Incomplete(message))
+        } else {
+            Err(message)
+        };
+    }
 
-    persist_snapshot_revision(app_handle, snapshot.revision)?;
-    Ok(())
+    Ok(
+        match persist_snapshot_revision_at_path(revision_path, snapshot.revision) {
+            Ok(()) => SnapshotPersistence::Complete,
+            Err(error) => SnapshotPersistence::Incomplete(error),
+        },
+    )
 }
 
 /// Reads the authoritative shell state from a settings-transfer worker thread.
@@ -737,10 +805,7 @@ pub(crate) fn replace_context_packs_for_settings_transfer<R: Runtime>(
         state: prepare_context_pack_replacement(&current.state, context_packs, revision)?,
         revision,
     };
-    let path = snapshot_path(app_handle)?;
-    with_cooperative_file_lock(&path, || persist_snapshot(app_handle, &snapshot))?;
-    *cache = Some(snapshot);
-    Ok(revision)
+    persist_snapshot(app_handle, &mut cache, snapshot)
 }
 
 pub(crate) fn replace_chat_voice_preferences_for_settings_transfer<R: Runtime>(
@@ -755,10 +820,7 @@ pub(crate) fn replace_chat_voice_preferences_for_settings_transfer<R: Runtime>(
         state: prepare_chat_voice_preference_replacement(&current.state, preferences, revision)?,
         revision,
     };
-    let path = snapshot_path(app_handle)?;
-    with_cooperative_file_lock(&path, || persist_snapshot(app_handle, &snapshot))?;
-    *cache = Some(snapshot);
-    Ok(revision)
+    persist_snapshot(app_handle, &mut cache, snapshot)
 }
 
 pub(crate) fn restore_chat_voice_owned_fields_for_settings_transfer<R: Runtime>(
@@ -773,10 +835,7 @@ pub(crate) fn restore_chat_voice_owned_fields_for_settings_transfer<R: Runtime>(
         state: prepare_chat_voice_owned_fields_restore(&current.state, backup, revision)?,
         revision,
     };
-    let path = snapshot_path(app_handle)?;
-    with_cooperative_file_lock(&path, || persist_snapshot(app_handle, &snapshot))?;
-    *cache = Some(snapshot);
-    Ok(revision)
+    persist_snapshot(app_handle, &mut cache, snapshot)
 }
 
 #[tauri::command]
@@ -853,6 +912,23 @@ async fn commit_state_change(
     expected_revision: u64,
     prepare_requested: impl FnOnce(&Value) -> Value + Send + 'static,
 ) -> Result<ShellStateCompareAndSwapResponse, String> {
+    commit_state_change_at_paths(
+        snapshot_path(app_handle)?,
+        snapshot_revision_path(app_handle)?,
+        cache,
+        expected_revision,
+        prepare_requested,
+    )
+    .await
+}
+
+async fn commit_state_change_at_paths(
+    path: std::path::PathBuf,
+    revision_path: std::path::PathBuf,
+    cache: &mut Option<ShellStateSnapshot>,
+    expected_revision: u64,
+    prepare_requested: impl FnOnce(&Value) -> Value + Send + 'static,
+) -> Result<ShellStateCompareAndSwapResponse, String> {
     // Before the first snapshot is persisted, the cache may contain the
     // frontend fallback returned by load_shell_state_snapshot. Preserve that
     // state as the no-file fallback.
@@ -860,21 +936,20 @@ async fn commit_state_change(
         .as_ref()
         .map(|snapshot| snapshot.state.clone())
         .unwrap_or(Value::Null);
-    let app_handle_for_io = app_handle.clone();
     let committed = run_snapshot_io(move || {
-        let path = snapshot_path(&app_handle_for_io)?;
         commit_snapshot_with_lock(
             &path,
             expected_revision,
             prepare_requested,
-            || load_snapshot(&app_handle_for_io, fallback),
-            |snapshot| persist_snapshot(&app_handle_for_io, snapshot),
+            || load_snapshot_at_path(&path, fallback),
+            |snapshot| persist_snapshot_at_paths(&path, &revision_path, snapshot),
         )
     })
     .await?;
     let revision = committed.snapshot.revision;
     let state = (!committed.committed).then(|| committed.snapshot.state.clone());
     *cache = Some(committed.snapshot);
+    committed.persistence.into_result(revision)?;
 
     Ok(ShellStateCompareAndSwapResponse {
         committed: committed.committed,
@@ -882,6 +957,10 @@ async fn commit_state_change(
         revision,
     })
 }
+
+#[cfg(test)]
+#[path = "shell_state_persistence_tests.rs"]
+mod persistence_tests;
 
 #[cfg(test)]
 mod tests {
@@ -896,21 +975,26 @@ mod tests {
         collections::BTreeMap,
         fs,
         path::PathBuf,
-        sync::{Arc, Barrier},
+        sync::{
+            atomic::{AtomicU64, Ordering},
+            Arc, Barrier,
+        },
         thread,
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    fn temporary_snapshot_path(name: &str) -> (PathBuf, PathBuf) {
+    pub(super) fn temporary_snapshot_path(name: &str) -> (PathBuf, PathBuf) {
+        static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+        let sequence = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("test clock should follow the Unix epoch")
             .as_nanos();
         let directory = std::env::temp_dir().join(format!(
-            "machdoch-shell-state-{name}-{}-{unique}",
+            "machdoch-shell-state-{name}-{}-{unique}-{sequence}",
             std::process::id()
         ));
-        fs::create_dir_all(&directory).expect("test directory should be created");
+        fs::create_dir(&directory).expect("test directory should be created exclusively");
         (directory.join("snapshot.json"), directory)
     }
 
@@ -971,7 +1055,10 @@ mod tests {
                         })
                     },
                     || load_test_snapshot(&path),
-                    |snapshot| persist_test_snapshot(&path, snapshot),
+                    |snapshot| {
+                        persist_test_snapshot(&path, snapshot)?;
+                        Ok(super::SnapshotPersistence::Complete)
+                    },
                 )
             })
         });
@@ -1042,7 +1129,10 @@ mod tests {
             0,
             |current| apply_shell_state_patch(current, patch),
             || Ok(fallback),
-            |snapshot| persist_test_snapshot(&path, snapshot),
+            |snapshot| {
+                persist_test_snapshot(&path, snapshot)?;
+                Ok(super::SnapshotPersistence::Complete)
+            },
         )
         .expect("first patch should commit against the loaded fallback");
 
