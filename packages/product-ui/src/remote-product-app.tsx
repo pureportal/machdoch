@@ -1,12 +1,18 @@
 "use client";
 
 import type { ProductCommand, ProductSnapshot } from "@machdoch/fleet-protocol";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProductRuntime } from "./product-runtime";
 import { ProductShell } from "./product-shell";
 import { SnapshotRefreshCoordinator } from "./snapshot-refresh-coordinator";
 
 const snapshotRefreshIntervalMs = 1_500;
+
+interface RuntimeLifecycle {
+  binding: { runtime: ProductRuntime };
+  controller: AbortController;
+  refreshCoordinator: SnapshotRefreshCoordinator<ProductSnapshot>;
+}
 
 export function RemoteProductApp({
   instanceName,
@@ -19,33 +25,33 @@ export function RemoteProductApp({
   const [error, setError] = useState<string | null>(null);
   const [commandError, setCommandError] = useState<string | null>(null);
   const [pendingCommands, setPendingCommands] = useState(0);
-  const mountedRef = useRef(true);
-  const runtimeControllerRef = useRef<AbortController | null>(null);
-  const refreshCoordinatorRef =
-    useRef<SnapshotRefreshCoordinator<ProductSnapshot> | null>(null);
+  const runtimeBinding = useMemo(() => ({ runtime }), [runtime]);
+  const lifecycleRef = useRef<RuntimeLifecycle | null>(null);
 
-  const refresh = useCallback(
-    (signal?: AbortSignal): Promise<void> =>
-      refreshCoordinatorRef.current?.request(signal) ?? Promise.resolve(),
-    [],
-  );
+  const refresh = useCallback((): Promise<void> => {
+    const lifecycle = lifecycleRef.current;
+    if (!lifecycle || lifecycle.binding !== runtimeBinding) {
+      return Promise.resolve();
+    }
+    return lifecycle.refreshCoordinator.request(lifecycle.controller.signal);
+  }, [runtimeBinding]);
 
   useEffect(() => {
-    mountedRef.current = true;
     setSnapshot(null);
     setError(null);
     setCommandError(null);
     setPendingCommands(0);
+    const controller = new AbortController();
     const refreshCoordinator = new SnapshotRefreshCoordinator({
-      fetchSnapshot: (signal) => runtime.getSnapshot(signal),
+      fetchSnapshot: (signal) => runtimeBinding.runtime.getSnapshot(signal),
       onSnapshot: (nextSnapshot) => {
-        if (mountedRef.current) {
+        if (!controller.signal.aborted) {
           setSnapshot(nextSnapshot);
           setError(null);
         }
       },
       onError: (reason) => {
-        if (mountedRef.current) {
+        if (!controller.signal.aborted) {
           setError(
             reason instanceof Error
               ? reason.message
@@ -54,10 +60,9 @@ export function RemoteProductApp({
         }
       },
     });
-    refreshCoordinatorRef.current = refreshCoordinator;
-    const controller = new AbortController();
-    runtimeControllerRef.current = controller;
-    void refresh(controller.signal);
+    const lifecycle = { binding: runtimeBinding, controller, refreshCoordinator };
+    lifecycleRef.current = lifecycle;
+    void refreshCoordinator.request(controller.signal);
     const interval = window.setInterval(() => {
       if (document.visibilityState === "visible") {
         void refreshCoordinator.poll(controller.signal);
@@ -70,25 +75,27 @@ export function RemoteProductApp({
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
-      mountedRef.current = false;
       controller.abort();
-      if (runtimeControllerRef.current === controller)
-        runtimeControllerRef.current = null;
       refreshCoordinator.dispose();
-      if (refreshCoordinatorRef.current === refreshCoordinator) {
-        refreshCoordinatorRef.current = null;
+      if (lifecycleRef.current === lifecycle) {
+        lifecycleRef.current = null;
       }
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [refresh, runtime]);
+  }, [runtimeBinding]);
 
   const execute = useCallback(
     async (command: ProductCommand): Promise<boolean> => {
-      const controller = runtimeControllerRef.current;
-      if (!controller || controller.signal.aborted) return false;
+      const lifecycle = lifecycleRef.current;
+      if (
+        !lifecycle ||
+        lifecycle.binding !== runtimeBinding ||
+        lifecycle.controller.signal.aborted
+      ) return false;
+      const { controller, refreshCoordinator } = lifecycle;
       const isCurrent = (): boolean =>
-        runtimeControllerRef.current === controller &&
+        lifecycleRef.current === lifecycle &&
         !controller.signal.aborted;
       const request = {
         ...command,
@@ -97,9 +104,9 @@ export function RemoteProductApp({
       setPendingCommands((current) => current + 1);
       setCommandError(null);
       try {
-        await runtime.execute(request, controller.signal);
+        await runtimeBinding.runtime.execute(request, controller.signal);
         if (!isCurrent()) return false;
-        await refresh();
+        await refreshCoordinator.request(controller.signal);
         return isCurrent();
       } catch (reason) {
         if (isCurrent()) {
@@ -114,7 +121,7 @@ export function RemoteProductApp({
         }
       }
     },
-    [refresh, runtime],
+    [runtimeBinding],
   );
 
   return (
@@ -127,7 +134,7 @@ export function RemoteProductApp({
       onDismissCommandError={() => setCommandError(null)}
       pendingCommands={pendingCommands}
       onCommand={execute}
-      onRefresh={() => refresh()}
+      onRefresh={refresh}
     />
   );
 }
