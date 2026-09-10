@@ -1,5 +1,6 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
+  ArrowLeft,
   Check,
   ChevronDown,
   LoaderCircle,
@@ -59,6 +60,9 @@ import {
 } from "../runtime";
 import { subscribeToSettingsImport } from "../settings-transfer";
 import { RalphFlowEditor } from "./ralph-flow-editor";
+import { RalphOverview } from "./components/ralph-overview";
+import type { RalphOverviewSelection } from "./ralph-overview-model";
+import { useRalphOverview } from "./use-ralph-overview";
 
 interface RuntimeModelPickerProps {
   icon: LucideIcon;
@@ -433,6 +437,16 @@ export const RalphApp = ({
   const [shellStateLoaded, setShellStateLoaded] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [editorDirty, setEditorDirty] = useState(false);
+  const [view, setView] = useState<"overview" | "editor">("overview");
+  const [editorSelection, setEditorSelection] = useState<
+    (RalphOverviewSelection & { revision: number }) | null
+  >(null);
+  const overview = useRalphOverview(
+    settings.workspaceRoot
+      ? [settings.workspaceRoot, ...recentWorkspaces]
+      : recentWorkspaces,
+    isActive && view === "overview" && settingsLoaded && shellStateLoaded,
+  );
   const settingsRef = useRef(settings);
   const settingsEditRevisionRef = useRef(0);
   const dirtySettingsFieldsRef = useRef(new Set<keyof RalphSettings>());
@@ -702,15 +716,11 @@ export const RalphApp = ({
     await broadcastShellStateChanged();
   };
 
-  const applyWorkspaceSelection = (workspace: string): void => {
+  const applyWorkspaceSelection = (workspace: string): boolean => {
     const normalizedWorkspace = workspace.trim();
 
-    if (
-      !normalizedWorkspace ||
-      normalizedWorkspace === settingsRef.current.workspaceRoot
-    ) {
-      return;
-    }
+    if (!normalizedWorkspace) return false;
+    if (normalizedWorkspace === settingsRef.current.workspaceRoot) return true;
 
     if (
       editorDirty &&
@@ -718,7 +728,7 @@ export const RalphApp = ({
         "The selected Ralph flow has unsaved changes. Discard them and switch workspaces?",
       )
     ) {
-      return;
+      return false;
     }
 
     updateSettings({ workspaceRoot: normalizedWorkspace });
@@ -729,6 +739,26 @@ export const RalphApp = ({
     void persistRecentWorkspace(normalizedWorkspace).catch((error) => {
       console.error("Failed to save Ralph workspace history", error);
     });
+    return true;
+  };
+
+  const openOverviewSelection = (selection: RalphOverviewSelection): void => {
+    if (
+      selection.workspaceRoot === settingsRef.current.workspaceRoot &&
+      editorDirty &&
+      !window.confirm(
+        "The selected Ralph flow has unsaved changes. Discard them and open this flow?",
+      )
+    )
+      return;
+    if (!applyWorkspaceSelection(selection.workspaceRoot)) return;
+    updateSettings({ flowLibraryMode: selection.scope });
+    setEditorDirty(false);
+    setEditorSelection((current) => ({
+      ...selection,
+      revision: (current?.revision ?? 0) + 1,
+    }));
+    setView("editor");
   };
 
   const removeWorkspaceFromHistory = (workspace: string): void => {
@@ -752,7 +782,37 @@ export const RalphApp = ({
 
   return (
     <section className="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-slate-950">
-      <header className="grid gap-2 border-b border-slate-800 bg-slate-950/95 px-3 py-2 shadow-[0_10px_30px_rgba(2,6,23,0.18)]">
+      {view === "overview" ? (
+        <div className="row-span-2 min-h-0 min-w-0">
+          <RalphOverview
+            {...overview}
+            workspaceRoot={settings.workspaceRoot}
+            onOpen={openOverviewSelection}
+            onRefresh={overview.refresh}
+            onChooseWorkspace={() => void chooseWorkspace()}
+            onReturnToEditor={
+              editorSelection ? () => setView("editor") : undefined
+            }
+          />
+        </div>
+      ) : null}
+      <header
+        hidden={view !== "editor"}
+        className={cn(
+          "grid gap-2 border-b border-slate-800 bg-slate-950/95 px-3 py-2 shadow-[0_10px_30px_rgba(2,6,23,0.18)]",
+          view !== "editor" && "hidden",
+        )}
+      >
+        <div>
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-8 text-xs text-slate-300"
+            onClick={() => setView("overview")}
+          >
+            <ArrowLeft className="h-3.5 w-3.5" /> All workspaces
+          </Button>
+        </div>
         <div className="grid min-w-0 grid-cols-[minmax(13rem,1fr)_minmax(0,max-content)_minmax(0,max-content)_auto] items-end gap-2">
           <div className="grid min-w-0 gap-1">
             <span className="flex min-w-0 items-center gap-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
@@ -914,31 +974,44 @@ export const RalphApp = ({
         ) : null}
       </header>
 
-      <div className="relative min-h-0 min-w-0 overflow-hidden">
-        <RalphFlowEditor
-          key={settings.workspaceRoot ?? "no-workspace"}
-          workspaceRoot={settings.workspaceRoot}
-          isActive={isActive}
-          onDirtyChange={setEditorDirty}
-          flowLibraryMode={settings.flowLibraryMode}
-          onFlowLibraryModeChange={(flowLibraryMode) =>
-            updateSettings({ flowLibraryMode })
-          }
-          runMode="machdoch"
-          generationProvider={settings.generationProvider}
-          generationModel={settings.generationModel}
-          generationReasoning={generationReasoning}
-          runProvider={settings.runProvider}
-          runModel={settings.runModel}
-          runReasoning={runReasoning}
-          defaultMaxTransitions={settings.defaultMaxTransitions}
-          providerOptions={providerChoices}
-          generationPromptHistory={settings.generationPromptHistory}
-          onGenerationPromptHistoryChange={(generationPromptHistory) =>
-            updateSettings({ generationPromptHistory })
-          }
-          onOpenMediaRun={onOpenMediaRun}
-        />
+      <div
+        className={cn(
+          "relative min-h-0 min-w-0 overflow-hidden",
+          view !== "editor" && "hidden",
+        )}
+        hidden={view !== "editor"}
+      >
+        {editorSelection ? (
+          <RalphFlowEditor
+            key={`${settings.workspaceRoot ?? "no-workspace"}:${editorSelection.revision}`}
+            initialSelection={
+              editorSelection.workspaceRoot === settings.workspaceRoot
+                ? editorSelection
+                : undefined
+            }
+            workspaceRoot={settings.workspaceRoot}
+            isActive={isActive && view === "editor"}
+            onDirtyChange={setEditorDirty}
+            flowLibraryMode={settings.flowLibraryMode}
+            onFlowLibraryModeChange={(flowLibraryMode) =>
+              updateSettings({ flowLibraryMode })
+            }
+            runMode="machdoch"
+            generationProvider={settings.generationProvider}
+            generationModel={settings.generationModel}
+            generationReasoning={generationReasoning}
+            runProvider={settings.runProvider}
+            runModel={settings.runModel}
+            runReasoning={runReasoning}
+            defaultMaxTransitions={settings.defaultMaxTransitions}
+            providerOptions={providerChoices}
+            generationPromptHistory={settings.generationPromptHistory}
+            onGenerationPromptHistoryChange={(generationPromptHistory) =>
+              updateSettings({ generationPromptHistory })
+            }
+            onOpenMediaRun={onOpenMediaRun}
+          />
+        ) : null}
       </div>
     </section>
   );

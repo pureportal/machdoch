@@ -73,6 +73,7 @@ describe("runCli agent resource lifecycle", () => {
 
     expect(mocks.loadRalphSnapshot).toHaveBeenCalledExactlyOnceWith(
       process.cwd(),
+      {},
     );
     expect(mocks.writeStdoutLine).toHaveBeenCalledExactlyOnceWith(
       JSON.stringify(snapshot),
@@ -96,6 +97,22 @@ describe("runCli agent resource lifecycle", () => {
     expect(mocks.closeAll).not.toHaveBeenCalled();
     expect(mocks.closeAllBrowserSessions).not.toHaveBeenCalled();
   });
+
+  it.each(["workspace", "user"])(
+    "restricts snapshot reads to the requested %s scope",
+    async (scope) => {
+      mocks.loadRalphSnapshot.mockResolvedValue({
+        workspaceRoot: process.cwd(),
+        scopes: [],
+      });
+      await runCli(["--json", "ralph", "snapshot", "--scope", scope]);
+      expect(mocks.loadRalphSnapshot).toHaveBeenCalledExactlyOnceWith(
+        process.cwd(),
+        { scope },
+      );
+      expect(mocks.ensureAutomaticProviderSync).not.toHaveBeenCalled();
+    },
+  );
 
   it("closes agent resources when a one-shot task fails", async () => {
     const error = new Error("task failed");

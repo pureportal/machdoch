@@ -453,6 +453,12 @@ const RalphShortcutHelpRow = ({
 
 export interface RalphFlowEditorProps {
   workspaceRoot: string | null;
+  initialSelection?: {
+    flowId?: string;
+    scope: RalphFlowScope;
+    runId?: string;
+    running?: boolean;
+  };
   initialPrompt?: string;
   isActive?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
@@ -529,6 +535,7 @@ interface RalphAttachmentMutationContext {
 
 export const RalphFlowEditor = ({
   workspaceRoot,
+  initialSelection,
   initialPrompt = "",
   isActive = true,
   onDirtyChange,
@@ -549,9 +556,9 @@ export const RalphFlowEditor = ({
 }: RalphFlowEditorProps): JSX.Element => {
   const [flows, setFlows] = useState<RalphFlowSummary[]>([]);
   const [revisions, setRevisions] = useState<RalphFlowRevisionSummary[]>([]);
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedId, setSelectedId] = useState(initialSelection?.flowId ?? "");
   const [selectedScope, setSelectedScope] = useState<RalphFlowScope>(
-    DEFAULT_RALPH_FLOW_SCOPE,
+    initialSelection?.scope ?? DEFAULT_RALPH_FLOW_SCOPE,
   );
   const [draftFlow, setDraftFlow] = useState<RalphFlow | null>(null);
   const [draftFlowScope, setDraftFlowScope] = useState<RalphFlowScope>(
@@ -574,7 +581,9 @@ export const RalphFlowEditor = ({
   >(null);
   const [aiPromptDraftBeforeHistory, setAiPromptDraftBeforeHistory] =
     useState("");
-  const [editorMode, setEditorMode] = useState<RalphEditorMode>("design");
+  const [editorMode, setEditorMode] = useState<RalphEditorMode>(
+    initialSelection?.running || initialSelection?.runId ? "run" : "design",
+  );
   const [flowListOpen, setFlowListOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [inspectorWidth, setInspectorWidth] = useState(loadRalphInspectorWidth);
@@ -629,7 +638,7 @@ export const RalphFlowEditor = ({
   const [runDetailError, setRunDetailError] = useState<string | null>(null);
   const [runLogLoading, setRunLogLoading] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [flowsLoading, setFlowsLoading] = useState(false);
+  const [flowsLoading, setFlowsLoading] = useState(Boolean(workspaceRoot));
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [revisionsLoading, setRevisionsLoading] = useState(false);
   const [mediaFlowHeads, setMediaFlowHeads] = useState<MediaFlowHead[]>([]);
@@ -684,6 +693,7 @@ export const RalphFlowEditor = ({
   const flowDetailsRequestRef = useRef(0);
   const revisionsRequestRef = useRef(0);
   const runHistoryRequestRef = useRef(0);
+  const runHistorySelectionRef = useRef<string | null>(null);
   const runViewRequestRef = useRef(0);
   const saveRequestRef = useRef(0);
   const restoreRequestRef = useRef(0);
@@ -702,6 +712,7 @@ export const RalphFlowEditor = ({
   const utilityJsonDirtyRef = useRef(false);
   const mediaFlowCatalogRequestRef = useRef(0);
   const initialPromptAppliedRef = useRef(false);
+  const initialRunOpenedRef = useRef(false);
   workspaceRootRef.current = workspaceRoot;
   isActiveRef.current = isActive;
   lastRunRef.current = lastRun;
@@ -2285,12 +2296,14 @@ export const RalphFlowEditor = ({
           return { id: currentId, scope: currentScope };
         }
 
-        const currentFlowStillVisible = loadedFlows.find((flow) =>
-          hasFlowSelection(flow, currentId, currentScope),
+        const currentFlowStillVisible = loadedFlows.find(
+          (flow) =>
+            getFlowSummaryScope(flow) === currentScope &&
+            (flow.id === currentId || flow.alias === currentId),
         );
 
         if (currentFlowStillVisible) {
-          return { id: currentId, scope: currentScope };
+          return { id: currentFlowStillVisible.id, scope: currentScope };
         }
 
         if (loadedFlows[0]) {
@@ -2897,9 +2910,14 @@ export const RalphFlowEditor = ({
   }, [isActive, selectedFlowUnsaved, selectedId, selectedScope, workspaceRoot]);
 
   useEffect(() => {
-    runViewRequestRef.current += 1;
+    if (!isActive) {
+      runHistoryRequestRef.current += 1;
+      return;
+    }
 
-    if (!isActive || !workspaceRoot || !selectedId || selectedFlowUnsaved) {
+    if (!workspaceRoot || !selectedId || selectedFlowUnsaved) {
+      runViewRequestRef.current += 1;
+      runHistorySelectionRef.current = null;
       runHistoryRequestRef.current += 1;
       setRunHistory([]);
       setRunHistoryLoading(false);
@@ -2912,14 +2930,53 @@ export const RalphFlowEditor = ({
       return;
     }
 
-    setSelectedRunId(null);
-    setSelectedRunDetail(null);
-    setRunDetailError(null);
-    setSelectedRunLog(null);
-    setRunDetailLoading(false);
-    setRunLogLoading(false);
+    const selection = JSON.stringify([
+      workspaceRoot,
+      selectedScope,
+      selectedId,
+    ]);
+    if (runHistorySelectionRef.current !== selection) {
+      runViewRequestRef.current += 1;
+      runHistorySelectionRef.current = selection;
+      setSelectedRunId(null);
+      setSelectedRunDetail(null);
+      setRunDetailError(null);
+      setSelectedRunLog(null);
+      setRunDetailLoading(false);
+      setRunLogLoading(false);
+    }
     void refreshRunHistory(selectedId, selectedScope);
   }, [isActive, selectedFlowUnsaved, selectedId, selectedScope, workspaceRoot]);
+
+  useEffect(() => {
+    if (
+      !isActive ||
+      !initialSelection?.runId ||
+      initialRunOpenedRef.current ||
+      flowsLoading ||
+      detailsLoading
+    )
+      return;
+    if (
+      initialSelection.flowId &&
+      flows.some(
+        (flow) =>
+          flow.id === initialSelection.flowId &&
+          getFlowSummaryScope(flow) === initialSelection.scope,
+      ) &&
+      draftFlow?.id !== initialSelection.flowId
+    )
+      return;
+    initialRunOpenedRef.current = true;
+    void openRunDetail(initialSelection.runId, initialSelection.scope);
+  }, [
+    isActive,
+    draftFlow?.id,
+    initialSelection,
+    flowsLoading,
+    detailsLoading,
+    flows,
+  ]);
 
   useEffect(() => {
     if (!isActive || !hasDraftFlow) {
@@ -2977,7 +3034,8 @@ export const RalphFlowEditor = ({
     const requestId = flowDetailsRequestRef.current + 1;
     flowDetailsRequestRef.current = requestId;
 
-    if (!isActive || !workspaceRoot || !selectedId) {
+    if (!isActive) return;
+    if (!workspaceRoot || !selectedId) {
       setDetailsLoading(false);
       replaceDraftFlow(null, selectedScope);
       replaceSavedSnapshot("");

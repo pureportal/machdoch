@@ -5896,11 +5896,16 @@ const createRalphRestoreArguments = (
 
 export const loadRalphSnapshot = async (
   workspaceRoot: string,
+  scope?: RalphFlowScope,
 ): Promise<RalphSnapshot> => {
-  return runRalphCommand(workspaceRoot, ["snapshot"], () => ({
-    workspaceRoot: normalizeRalphCommandWorkspace(workspaceRoot),
-    scopes: [],
-  }));
+  return runRalphCommand(
+    workspaceRoot,
+    ["snapshot", ...(scope ? ["--scope", scope] : [])],
+    () => ({
+      workspaceRoot: normalizeRalphCommandWorkspace(workspaceRoot),
+      scopes: [],
+    }),
+  );
 };
 
 export const listRalphFlows = async (

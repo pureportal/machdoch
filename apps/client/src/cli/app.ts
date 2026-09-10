@@ -181,7 +181,11 @@ export const runCli = async (argv: string[]): Promise<void> => {
   if (args.command === "ralph" && args.ralph?.action === "snapshot") {
     const { loadRalphSnapshot } = await import("../core/ralph-snapshot.js");
     writeStdoutLine(
-      JSON.stringify(await loadRalphSnapshot(args.workspaceRoot)),
+      JSON.stringify(
+        await loadRalphSnapshot(args.workspaceRoot, {
+          ...(args.ralph.scope ? { scope: args.ralph.scope } : {}),
+        }),
+      ),
     );
     return;
   }

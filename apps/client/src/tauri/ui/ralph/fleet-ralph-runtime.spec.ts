@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadFleetRalphSnapshot } from "./fleet-ralph";
+import { loadRalphSnapshot } from "../runtime";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 
@@ -13,6 +14,16 @@ beforeEach(() => {
 });
 
 describe("Fleet Ralph desktop queries", () => {
+  it("passes the overview scope through to the snapshot command", async () => {
+    invoke.mockResolvedValue({ workspaceRoot: "C:/repo", scopes: [] });
+    await loadRalphSnapshot("C:/repo", "workspace");
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("run_ralph_command", {
+      request: {
+        workspaceRoot: "C:/repo",
+        arguments: ["snapshot", "--scope", "workspace"],
+      },
+    });
+  });
   it("loads both scopes with one CLI request and then reads active tasks natively", async () => {
     invoke.mockImplementation(async (command: string) => {
       if (command === "get_active_desktop_tasks") return [];
