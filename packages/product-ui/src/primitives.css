@@ -177,10 +177,21 @@
   z-index: 100;
   display: grid;
   inset: 0;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
   place-items: center;
+  border: 0;
   background: color-mix(in srgb, var(--app-slate-950) 72%, transparent);
   padding: 20px;
   backdrop-filter: blur(5px);
+}
+
+.m-memory-dialog-overlay::backdrop {
+  background: transparent;
 }
 
 .m-memory-dialog {
