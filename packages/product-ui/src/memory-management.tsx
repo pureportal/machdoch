@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { useEffect, useId, useRef } from "react";
+import { useId, useLayoutEffect, useRef } from "react";
 import { formatTimestampDateTime } from "./format";
 
 export interface MemoryManagementEntry {
@@ -104,39 +104,68 @@ export function SessionMemoryDialog({
   onClose,
 }: SessionMemoryDialogProps): React.ReactElement | null {
   const titleId = useId();
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    if (!open || !dialog) return;
 
     const previouslyFocused = document.activeElement;
+    dialog.showModal();
     closeButtonRef.current?.focus();
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") onClose();
+      if (event.key !== "Tab") return;
+
+      const controls = Array.from(
+        dialog.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"),
+      ).filter(
+        (control) =>
+          control.tabIndex >= 0 && control.getClientRects().length > 0,
+      );
+      const first = controls[0];
+      const last = controls.at(-1);
+      const active = document.activeElement;
+      const activeIndex = controls.findIndex((control) => control === active);
+
+      if (
+        activeIndex === -1 ||
+        (event.shiftKey ? active === first : active === last)
+      ) {
+        event.preventDefault();
+        (event.shiftKey ? (last ?? dialog) : (first ?? dialog)).focus();
+      }
     };
     document.addEventListener("keydown", handleKeyDown);
 
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
-      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
+      dialog.close();
+      if (
+        previouslyFocused instanceof HTMLElement &&
+        previouslyFocused.isConnected
+      ) {
+        previouslyFocused.focus();
+      }
     };
-  }, [onClose, open]);
+  }, [open]);
 
   if (!open) return null;
 
   return (
-    <div
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={titleId}
       className="m-memory-dialog-overlay"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className="m-memory-dialog"
-      >
+      <section className="m-memory-dialog">
         <header className="m-memory-dialog-header">
           <h2 id={titleId}>Session memory</h2>
           <div className="m-memory-dialog-actions">
@@ -171,6 +200,6 @@ export function SessionMemoryDialog({
           onForget={onForget}
         />
       </section>
-    </div>
+    </dialog>
   );
 }
