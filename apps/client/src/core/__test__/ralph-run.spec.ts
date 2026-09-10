@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   realpath,
   rm,
@@ -13,10 +14,12 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeTask } from "../execution.js";
 import { mcpClientManager } from "../mcp/client.js";
 import { RalphRunStore } from "../_helpers/ralph-run-store.helper.js";
+import { RALPH_VALIDATOR_JSON_SCHEMA } from "../_helpers/parse-ralph-validator-json-result.helper.js";
+import type { RalphJsonAttemptFailure } from "../_helpers/ralph-json-attempt-diagnostics.helper.js";
 import {
   acquireRalphFileMutationLock,
   compareRalphRepositorySnapshots,
@@ -49,6 +52,15 @@ vi.mock("../mcp/client.js", () => ({
 }));
 
 const GIT_SCOPE_GUARD_TEST_TIMEOUT_MS = 90_000;
+
+const getJsonParseDiagnostic = (text: string): string => {
+  try {
+    JSON.parse(text);
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  throw new Error("Expected a malformed JSON fixture.");
+};
 
 describe("runRalphFlow", () => {
   beforeEach(() => {
@@ -1450,13 +1462,14 @@ describe("runRalphFlow", () => {
   });
 
   it("runs prompt maxIterations in one conversation context", async () => {
+    const firstResponse = "First response.".repeat(2_000);
     vi.mocked(executeTask)
       .mockResolvedValueOnce(
         createExecutionResult({
           summary: "First pass.",
           control: { kind: "ralph-iteration", decision: "CONTINUE" },
           response: {
-            markdown: "First response.",
+            markdown: firstResponse,
             highlights: [],
             relatedFiles: [],
             verification: [],
@@ -1525,7 +1538,7 @@ describe("runRalphFlow", () => {
       },
       {
         role: "assistant",
-        content: "First response.",
+        content: firstResponse,
       },
       {
         role: "user",
@@ -3162,6 +3175,624 @@ describe("runRalphFlow", () => {
         ["task-5", "completed", undefined],
       ]);
       expect(executeTask).not.toHaveBeenCalled();
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it.each(
+    (["PROMPT_JSON", "VALIDATOR_JSON"] as const).flatMap((type) =>
+      [15_999, 16_000, 16_001, 32_000].map((length) => ({ type, length })),
+    ),
+  )(
+    "preserves complete $type values at $length response characters",
+    async ({ type, length }) => {
+      const workspace = await mkdtemp(join(tmpdir(), "ralph-json-length-"));
+      const value = {
+        decision: "CONTINUE",
+        confidence: 0.9,
+        summary: "More work remains.",
+        evidence: [""],
+        remainingWork: ["Finish the task."],
+      };
+      value.evidence = ["x".repeat(length - JSON.stringify(value).length)];
+      const responseText = JSON.stringify(value);
+      expect(responseText).toHaveLength(length);
+      vi.mocked(executeTask).mockResolvedValueOnce(
+        createExecutionResult({
+          response: {
+            markdown: responseText,
+            highlights: [],
+            relatedFiles: [],
+            verification: [],
+            followUps: [],
+          },
+        }),
+      );
+
+      try {
+        const result = await runRalphFlow(
+          createFlow({
+            blocks: [
+              { id: "start", type: "START", title: "Start" },
+              {
+                id: "json",
+                type: "UTILITY",
+                title: "JSON",
+                utility: {
+                  type,
+                  prompt: "Return the next decision.",
+                  outputPath: "decision.json",
+                  maxAttempts: 1,
+                },
+              },
+              { id: "success", type: "END", title: "Success" },
+            ],
+            edges: [
+              {
+                id: "start-json",
+                from: "start",
+                fromOutput: "SUCCESS",
+                to: "json",
+              },
+              {
+                id: "json-success",
+                from: "json",
+                fromOutput: type === "PROMPT_JSON" ? "SUCCESS" : "CONTINUE",
+                to: "success",
+              },
+            ],
+          }),
+          { ...runtimeConfig, workspaceRoot: workspace },
+          customizations,
+          { maxTransitions: 5 },
+        );
+
+        expect(result.status).toBe("completed");
+        expect(executeTask).toHaveBeenCalledTimes(1);
+        const jsonResult = result.blockResults.find(
+          (entry) => entry.blockId === "json",
+        );
+        expect(jsonResult?.data).toMatchObject({ output: value });
+        expect(
+          JSON.parse(await readFile(join(workspace, "decision.json"), "utf8")),
+        ).toEqual(value);
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("parses complete interview JSON above the presentation limit", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "ralph-interview-json-length-"),
+    );
+    const summary = "a".repeat(32_000);
+    vi.mocked(executeTask).mockResolvedValueOnce(
+      createExecutionResult({
+        response: {
+          markdown: JSON.stringify({ complete: true, summary }),
+          highlights: [],
+          relatedFiles: [],
+          verification: [],
+          followUps: [],
+        },
+      }),
+    );
+
+    try {
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "interview",
+              type: "INTERVIEW",
+              title: "Interview",
+              prompt: "Summarize the requirements.",
+            },
+            { id: "success", type: "END", title: "Success" },
+          ],
+          edges: [
+            {
+              id: "start-interview",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "interview",
+            },
+            {
+              id: "interview-success",
+              from: "interview",
+              fromOutput: "DONE",
+              to: "success",
+            },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 5 },
+      );
+
+      expect(result.status).toBe("completed");
+      expect(executeTask).toHaveBeenCalledTimes(1);
+      expect(
+        result.blockResults.find((entry) => entry.blockId === "interview")?.data,
+      ).toMatchObject({ summary });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it.each(
+    (["PROMPT_JSON", "VALIDATOR_JSON"] as const).flatMap((type) =>
+      (["repaired", "parse-exhausted", "schema-exhausted"] as const).map(
+        (outcome) => ({ type, outcome }),
+      ),
+    ),
+  )(
+    "retains every failed $type attempt when $outcome",
+    async ({ type, outcome }) => {
+      const workspace = await mkdtemp(join(tmpdir(), "ralph-json-diagnostics-"));
+      const secret = "configured-json-response-secret";
+      vi.stubEnv("OPENAI_API_KEY", secret);
+      const malformed = `{"evidence":"${secret}${"é".repeat(40_000)}", "confidence":}`;
+      const validValue = {
+        decision: "CONTINUE",
+        confidence: 0.9,
+        summary: "More work remains.",
+        evidence: ["A task remains."],
+        remainingWork: ["Finish the task."],
+      };
+      const schemaInvalid = JSON.stringify({
+        ...validValue,
+        confidence: "unknown",
+        evidence: [secret + "x".repeat(40_000)],
+      });
+      const responseTexts =
+        outcome === "repaired"
+          ? [malformed, schemaInvalid, JSON.stringify(validValue)]
+          : outcome === "parse-exhausted"
+            ? [malformed, '{"secondAttempt":']
+            : [malformed, schemaInvalid];
+      const finalOutput =
+        outcome === "repaired"
+          ? type === "PROMPT_JSON"
+            ? "SUCCESS"
+            : "CONTINUE"
+          : outcome === "parse-exhausted"
+            ? "ERROR"
+            : "INVALID";
+      const flow = createFlow({
+        blocks: [
+          { id: "start", type: "START", title: "Start" },
+          {
+            id: "json",
+            type: "UTILITY",
+            title: "JSON",
+            utility: {
+              type,
+              prompt: "Return the next decision.",
+              maxAttempts: responseTexts.length,
+              ...(type === "PROMPT_JSON"
+                ? { schema: RALPH_VALIDATOR_JSON_SCHEMA }
+                : {}),
+            },
+          },
+          { id: "handled", type: "END", title: "Handled" },
+        ],
+        edges: [
+          { id: "start-json", from: "start", fromOutput: "SUCCESS", to: "json" },
+          {
+            id: "json-handled",
+            from: "json",
+            fromOutput: finalOutput,
+            to: "handled",
+          },
+        ],
+      });
+
+      try {
+        const logger = await createRalphRunLogger(workspace, flow, {
+          runId: "json-diagnostics",
+        });
+        vi.mocked(executeTask).mockImplementation(async () => {
+          const attempt = vi.mocked(executeTask).mock.calls.length;
+          if (attempt > 1) {
+            expect(
+              await readdir(join(logger.paths!.directory, "json-attempts")),
+            ).toHaveLength(attempt - 1);
+          }
+          return createExecutionResult({
+            response: {
+              markdown: responseTexts[attempt - 1]!,
+              highlights: [],
+              relatedFiles: [],
+              verification: [],
+              followUps: [],
+            },
+          });
+        });
+        const result = await runRalphFlow(
+          flow,
+          { ...runtimeConfig, workspaceRoot: workspace },
+          customizations,
+          { logger, runId: logger.runId, maxTransitions: 5 },
+        );
+        const jsonResult = result.blockResults.find(
+          (entry) => entry.blockId === "json",
+        );
+        const failures = (
+          jsonResult!.data as { jsonAttemptFailures: RalphJsonAttemptFailure[] }
+        ).jsonAttemptFailures;
+
+        expect(result.status).toBe("completed");
+        expect(executeTask).toHaveBeenCalledTimes(responseTexts.length);
+        expect(jsonResult?.output).toBe(finalOutput);
+        expect(failures).toHaveLength(2);
+        expect(
+          new Set(failures.map((failure) => failure.evidencePath)).size,
+        ).toBe(2);
+        expect(failures[0]).toMatchObject({
+          attempt: 1,
+          stage: "parse",
+          errors: [getJsonParseDiagnostic(malformed)],
+          responseChars: malformed.length,
+          responseBytes: Buffer.byteLength(malformed, "utf8"),
+          responseRedacted: true,
+        });
+        expect(vi.mocked(executeTask).mock.calls[1]?.[0]).toContain(
+          getJsonParseDiagnostic(malformed),
+        );
+        if (outcome === "repaired") {
+          expect(vi.mocked(executeTask).mock.calls[2]?.[0]).toContain(
+            "$/confidence expected number, got string.",
+          );
+          expect(jsonResult?.data).toMatchObject({
+            output: validValue,
+            attempts: 3,
+          });
+        } else if (outcome === "parse-exhausted") {
+          expect(jsonResult?.error).toBe(
+            getJsonParseDiagnostic(responseTexts[1]!),
+          );
+        } else {
+          expect(jsonResult?.data).toMatchObject({
+            validation: { valid: false },
+          });
+        }
+        expect(failures[1]).toMatchObject({
+          attempt: 2,
+          stage: outcome === "parse-exhausted" ? "parse" : "schema",
+          errors:
+            outcome === "parse-exhausted"
+              ? [getJsonParseDiagnostic(responseTexts[1]!)]
+              : ["$/confidence expected number, got string."],
+        });
+        for (const [index, failure] of failures.entries()) {
+          expect(failure.persistenceError).toBeUndefined();
+          expect(failure.evidencePath).toContain(
+            join(logger.paths!.directory, "json-attempts"),
+          );
+          const savedText = await readFile(failure.evidencePath!, "utf8");
+          expect(savedText).not.toContain(secret);
+          const saved = JSON.parse(savedText);
+          expect(saved).toMatchObject({
+            runId: logger.runId,
+            operationId: jsonResult?.operationId,
+            blockId: "json",
+            blockType: "UTILITY",
+            provider: runtimeConfig.provider,
+            model: runtimeConfig.model,
+            attempt: index + 1,
+            stage: failure.stage,
+            errors: failure.errors,
+            responseText: responseTexts[index]!.replaceAll(secret, "[redacted]"),
+          });
+          if (process.platform !== "win32") {
+            expect((await stat(failure.evidencePath!)).mode & 0o777).toBe(0o600);
+          }
+        }
+        const recordText = await readFile(logger.paths!.recordPath, "utf8");
+        const traceText = await readFile(logger.paths!.traceJsonlPath, "utf8");
+        expect(recordText).not.toContain(secret);
+        expect(traceText).not.toContain(secret);
+        const record = JSON.parse(recordText) as RalphRunRecord;
+        expect(
+          record.blockResults.find((entry) => entry.blockId === "json")?.data,
+        ).toMatchObject({ jsonAttemptFailures: failures });
+        const history = await readRalphExecutionHistoryResults(logger.paths);
+        expect(
+          history.find((entry) => entry.blockId === "json")?.data,
+        ).toMatchObject({ jsonAttemptFailures: failures });
+        const traceFailures = traceText
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line))
+          .filter((entry) => entry.message === "JSON attempt failed.");
+        expect(traceFailures.map((entry) => entry.details)).toEqual(
+          failures.map((failure) => ({
+            operationId: jsonResult?.operationId,
+            ...failure,
+          })),
+        );
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("reports evidence write failures without replacing parse diagnostics or changing repair attempts", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-json-evidence-write-"));
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "json",
+          type: "UTILITY",
+          title: "JSON",
+          utility: {
+            type: "PROMPT_JSON",
+            prompt: "Return JSON.",
+            maxAttempts: 2,
+          },
+        },
+        { id: "success", type: "END", title: "Success" },
+      ],
+      edges: [
+        { id: "start-json", from: "start", fromOutput: "SUCCESS", to: "json" },
+        {
+          id: "json-success",
+          from: "json",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
+      ],
+    });
+    const malformed = '{"count":}';
+    for (const summary of [malformed, '{"count":1}']) {
+      const result = createExecutionResult({ summary });
+      delete result.response;
+      vi.mocked(executeTask).mockResolvedValueOnce(result);
+    }
+
+    try {
+      const logger = await createRalphRunLogger(workspace, flow, {
+        runId: "json-evidence-write",
+      });
+      await writeFile(
+        join(logger.paths!.directory, "json-attempts"),
+        "blocked",
+        "utf8",
+      );
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { logger, runId: logger.runId, maxTransitions: 5 },
+      );
+      const jsonResult = result.blockResults.find(
+        (entry) => entry.blockId === "json",
+      );
+      const failures = (
+        jsonResult!.data as { jsonAttemptFailures: RalphJsonAttemptFailure[] }
+      ).jsonAttemptFailures;
+
+      expect(result.status).toBe("completed");
+      expect(executeTask).toHaveBeenCalledTimes(2);
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toMatchObject({
+        attempt: 1,
+        stage: "parse",
+        errors: [getJsonParseDiagnostic(malformed)],
+        persistenceError: expect.any(String),
+      });
+      expect(failures[0]?.evidencePath).toBeUndefined();
+      expect(vi.mocked(executeTask).mock.calls[1]?.[0]).toContain(
+        getJsonParseDiagnostic(malformed),
+      );
+      expect(jsonResult?.data).toMatchObject({
+        output: { count: 1 },
+        attempts: 2,
+      });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("retains distinct JSON responses across configured block retries", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-json-block-retries-"));
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "json",
+          type: "UTILITY",
+          title: "JSON",
+          settings: { retry: { mode: "finite", maxRetries: 2, delaySeconds: 0 } },
+          utility: {
+            type: "PROMPT_JSON",
+            prompt: "Return JSON.",
+            maxAttempts: 2,
+          },
+        },
+        { id: "handled", type: "END", title: "Handled", outcome: "blocked" },
+      ],
+      edges: [
+        { id: "start-json", from: "start", fromOutput: "SUCCESS", to: "json" },
+        { id: "json-handled", from: "json", fromOutput: "ERROR", to: "handled" },
+      ],
+    });
+    const responses = Array.from(
+      { length: 6 },
+      (_, index) => `{"attempt":${index + 1},`,
+    );
+    for (const response of responses) {
+      const result = createExecutionResult();
+      result.response!.markdown = response;
+      vi.mocked(executeTask).mockResolvedValueOnce(result);
+    }
+    try {
+      const logger = await createRalphRunLogger(workspace, flow, {
+        runId: "json-block-retries",
+      });
+      const result = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { logger, runId: logger.runId, maxTransitions: 10 },
+      );
+      expect(executeTask).toHaveBeenCalledTimes(6);
+      expect(result.status, result.summary).toBe("blocked");
+      expect(
+        result.events.filter((event) => event.type === "retry"),
+      ).toHaveLength(2);
+      const directory = join(logger.paths!.directory, "json-attempts");
+      const files = await readdir(directory);
+      expect(files).toHaveLength(6);
+      const evidence = await Promise.all(
+        files.map(async (file) =>
+          JSON.parse(await readFile(join(directory, file), "utf8")),
+        ),
+      );
+      expect(evidence.map((entry) => entry.responseText)).toEqual(
+        expect.arrayContaining(responses),
+      );
+      expect(
+        evidence.map((entry) => entry.attempt).sort((left, right) => left - right),
+      ).toEqual([1, 1, 1, 2, 2, 2]);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { responseText: "", diagnostic: "No JSON content found." },
+    {
+      responseText: '```json\n{"count":}\n```',
+      diagnostic: getJsonParseDiagnostic('{"count":}'),
+    },
+  ])(
+    "retains parse diagnostics and evidence for response $responseText",
+    async ({ responseText, diagnostic }) => {
+      const workspace = await mkdtemp(join(tmpdir(), "ralph-json-parse-error-"));
+      const response = createExecutionResult();
+      response.response!.markdown = responseText;
+      vi.mocked(executeTask).mockResolvedValueOnce(response);
+      try {
+        const result = await runRalphFlow(
+          createFlow({
+            blocks: [
+              { id: "start", type: "START", title: "Start" },
+              {
+                id: "json",
+                type: "UTILITY",
+                title: "JSON",
+                utility: {
+                  type: "PROMPT_JSON",
+                  prompt: "Return JSON.",
+                  maxAttempts: 1,
+                },
+              },
+              { id: "handled", type: "END", title: "Handled" },
+            ],
+            edges: [
+              {
+                id: "start-json",
+                from: "start",
+                fromOutput: "SUCCESS",
+                to: "json",
+              },
+              {
+                id: "json-handled",
+                from: "json",
+                fromOutput: "ERROR",
+                to: "handled",
+              },
+            ],
+          }),
+          { ...runtimeConfig, workspaceRoot: workspace },
+          customizations,
+          { maxTransitions: 5 },
+        );
+        const jsonResult = result.blockResults.find(
+          (entry) => entry.blockId === "json",
+        );
+        expect(jsonResult?.error).toBe(diagnostic);
+        const failures = (
+          jsonResult!.data as { jsonAttemptFailures: RalphJsonAttemptFailure[] }
+        ).jsonAttemptFailures;
+        expect(failures).toHaveLength(1);
+        const evidence = JSON.parse(
+          await readFile(failures[0]!.evidencePath!, "utf8"),
+        );
+        expect(evidence).toMatchObject({ errors: [diagnostic], responseText });
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("retains failed interview JSON evidence and its original parse diagnostic", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "ralph-interview-json-error-"),
+    );
+    const responseText = '{"complete":';
+    const response = createExecutionResult();
+    response.response!.markdown = responseText;
+    vi.mocked(executeTask).mockResolvedValueOnce(response);
+    try {
+      const result = await runRalphFlow(
+        createFlow({
+          blocks: [
+            { id: "start", type: "START", title: "Start" },
+            {
+              id: "interview",
+              type: "INTERVIEW",
+              title: "Interview",
+              prompt: "Summarize the requirements.",
+            },
+            { id: "handled", type: "END", title: "Handled" },
+          ],
+          edges: [
+            {
+              id: "start-interview",
+              from: "start",
+              fromOutput: "SUCCESS",
+              to: "interview",
+            },
+            {
+              id: "interview-handled",
+              from: "interview",
+              fromOutput: "ERROR",
+              to: "handled",
+            },
+          ],
+        }),
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { maxTransitions: 5 },
+      );
+      const interviewResult = result.blockResults.find(
+        (entry) => entry.blockId === "interview",
+      );
+      expect(interviewResult?.error).toContain(
+        getJsonParseDiagnostic(responseText),
+      );
+      const failures = (
+        interviewResult!.data as {
+          jsonAttemptFailures: RalphJsonAttemptFailure[];
+        }
+      ).jsonAttemptFailures;
+      expect(failures).toHaveLength(1);
+      const evidence = JSON.parse(
+        await readFile(failures[0]!.evidencePath!, "utf8"),
+      );
+      expect(evidence).toMatchObject({
+        blockId: "interview",
+        blockType: "INTERVIEW",
+        stage: "parse",
+        responseText,
+      });
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
