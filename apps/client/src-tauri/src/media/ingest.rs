@@ -501,6 +501,10 @@ fn promote_to_cas(paths: &MediaRuntimePaths, staged: &StagedImage) -> MediaResul
 }
 
 #[cfg(test)]
+#[path = "import_integrity_tests.rs"]
+mod import_integrity_tests;
+
+#[cfg(test)]
 mod tests {
     use std::io::Cursor;
 
