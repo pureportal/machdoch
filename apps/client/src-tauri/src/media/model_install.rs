@@ -1536,6 +1536,10 @@ pub(crate) async fn execute(paths: &MediaRuntimePaths, job_id: &str) -> MediaRes
 }
 
 #[cfg(test)]
+#[path = "model_install_cancellation_tests.rs"]
+mod cancellation_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
