@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeMap,
     fs,
+    io::{self, Read},
     path::{Component, Path, PathBuf},
 };
 
@@ -165,20 +166,29 @@ pub fn configuration_path(workspace_root: &Path) -> PathBuf {
 
 pub fn load_document(workspace_root: &Path) -> Result<RunConfigurationDocument, String> {
     let path = configuration_path(workspace_root);
-    if !path.exists() {
-        return Ok(RunConfigurationDocument::default());
-    }
-    let size = fs::metadata(&path)
-        .map_err(|error| format!("Failed to inspect {}: {error}", path.display()))?
-        .len();
-    if size > MAX_CONFIGURATION_DOCUMENT_BYTES {
+    let file = match fs::File::open(&path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(RunConfigurationDocument::default());
+        }
+        Err(error) => return Err(format!("Failed to read {}: {error}", path.display())),
+    };
+    read_document(file, &path)
+}
+
+fn read_document(reader: impl Read, path: &Path) -> Result<RunConfigurationDocument, String> {
+    let mut bytes = Vec::new();
+    reader
+        .take(MAX_CONFIGURATION_DOCUMENT_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("Failed to read {}: {error}", path.display()))?;
+    if bytes.len() as u64 > MAX_CONFIGURATION_DOCUMENT_BYTES {
         return Err(format!(
             "Run configuration {} exceeds the 1 MB limit.",
             path.display()
         ));
     }
-
-    let raw = fs::read_to_string(&path)
+    let raw = String::from_utf8(bytes)
         .map_err(|error| format!("Failed to read {}: {error}", path.display()))?;
     let document = deserialize_document(&raw).map_err(|error| match error {
         DeserializeDocumentError::Json(error) => {
@@ -202,17 +212,14 @@ pub fn save_document(
             fs::create_dir_all(parent)
                 .map_err(|error| format!("Failed to create {}: {error}", parent.display()))?;
         }
-        let serialized = serde_json::to_string_pretty(document)
+        let mut serialized = serde_json::to_string_pretty(document)
             .map_err(|error| format!("Failed to serialize run configurations: {error}"))?;
+        serialized.push('\n');
         if serialized.len() as u64 > MAX_CONFIGURATION_DOCUMENT_BYTES {
             return Err("Run configuration exceeds the 1 MB limit.".to_string());
         }
-        write_file_atomic(
-            &path,
-            format!("{serialized}\n").as_bytes(),
-            AtomicWriteOptions::default(),
-        )
-        .map_err(|error| format!("Failed to write {}: {error}", path.display()))
+        write_file_atomic(&path, serialized.as_bytes(), AtomicWriteOptions::default())
+            .map_err(|error| format!("Failed to write {}: {error}", path.display()))
     })?;
     Ok(path)
 }
@@ -283,20 +290,27 @@ fn validate_working_directories(
 }
 
 #[cfg(test)]
+#[path = "persistence_byte_budget_tests.rs"]
+mod byte_budget_tests;
+
+#[cfg(test)]
 mod tests {
     use std::{
         collections::BTreeMap,
         env, fs,
+        sync::atomic::{AtomicU64, Ordering},
         time::{SystemTime, UNIX_EPOCH},
     };
 
     use super::*;
     use crate::workspace_run::model::{RunRestartPolicy, RUN_SCHEMA_VERSION};
 
-    fn temporary_workspace(name: &str) -> PathBuf {
+    pub(super) fn temporary_workspace(name: &str) -> PathBuf {
+        static NEXT_WORKSPACE_ID: AtomicU64 = AtomicU64::new(0);
         let path = env::temp_dir().join(format!(
-            "machdoch-run-persistence-{}-{}-{name}",
+            "machdoch-run-persistence-{}-{}-{}-{name}",
             std::process::id(),
+            NEXT_WORKSPACE_ID.fetch_add(1, Ordering::Relaxed),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
