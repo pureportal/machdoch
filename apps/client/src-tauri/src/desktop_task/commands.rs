@@ -16,7 +16,7 @@ use crate::{
 };
 
 use super::{
-    diagnostics::{format_command_failure, format_diagnostic_snippet, format_timeout_duration},
+    diagnostics::{format_command_failure, format_timeout_duration},
     payload::{
         build_cli_args, cleanup_temporary_file, enrich_ui_control_conversation_context,
         write_conversation_context_file, CliCommandOptions,
@@ -31,12 +31,8 @@ use super::{
 fn parse_desktop_task_response(stdout: &str) -> Result<DesktopTaskRunResponse, String> {
     let trimmed_stdout = stdout.trim();
 
-    serde_json::from_str::<DesktopTaskRunResponse>(trimmed_stdout).map_err(|error| {
-        format!(
-            "Failed to parse the shared CLI JSON response: {error}. Output: {}",
-            format_diagnostic_snippet(trimmed_stdout)
-        )
-    })
+    serde_json::from_str::<DesktopTaskRunResponse>(trimmed_stdout)
+        .map_err(|error| format!("Failed to parse the shared CLI JSON response: {error}."))
 }
 
 fn is_expected_cancelled_desktop_task_response(
@@ -490,7 +486,7 @@ pub(super) fn execute_desktop_task(
 mod tests {
     use std::{
         env, fs,
-        io::{self, Read},
+        io::{self, Cursor, Read},
         process::{Command, Stdio},
         thread,
     };
@@ -502,8 +498,8 @@ mod tests {
         parse_desktop_task_response, stop_shared_cli_after_wait_error, write_cli_task,
     };
     use crate::child_process::SupervisedChild;
-    use crate::desktop_task::diagnostics::COMMAND_DIAGNOSTIC_TRUNCATED_MARKER;
     use crate::desktop_task::payload::write_conversation_context_file;
+    use crate::desktop_task::process::{read_stdout, SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES};
 
     const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_DESKTOP_TASK_WAIT_ERROR_TEST_CHILD_MODE";
 
@@ -593,13 +589,52 @@ mod tests {
     }
 
     #[test]
-    fn desktop_task_parse_error_uses_bounded_output_snippet() {
-        let error = parse_desktop_task_response(&"not-json".repeat(20 * 1024))
-            .expect_err("invalid JSON should fail");
+    fn desktop_task_parse_error_does_not_expose_the_response() {
+        for response in [
+            "not-json".repeat(20 * 1024),
+            r#"{"execution":{"task":"private task","metadata":{"instruction":"private instruction"}},"#.to_string(),
+        ] {
+            let error = parse_desktop_task_response(&response)
+                .expect_err("invalid JSON should fail");
 
-        assert!(error.contains("Failed to parse the shared CLI JSON response"));
-        assert!(error.contains(COMMAND_DIAGNOSTIC_TRUNCATED_MARKER));
-        assert!(error.len() < 18 * 1024);
+            assert!(error.contains("Failed to parse the shared CLI JSON response"));
+            assert!(error.contains("line"));
+            assert!(!error.contains("not-json"));
+            assert!(!error.contains("private task"));
+            assert!(!error.contains("private instruction"));
+            assert!(!error.contains("Output:"));
+            assert!(error.len() < 256);
+        }
+    }
+
+    #[test]
+    fn desktop_task_handoff_preserves_large_responses() {
+        for status in ["executed", "planned", "cancelled", "blocked", "unsupported"] {
+            let execution = json!({
+                "status": status,
+                "summary": "Task result",
+                "metadata": { "provider": "codex-cli" },
+                "transitions": (0..40_000)
+                    .map(|index| json!({ "sequence": index, "message": "Progress 🦊" }))
+                    .collect::<Vec<_>>(),
+                "fileChanges": { "files": [{ "path": "src/example.ts" }] }
+            });
+            let preview = json!({ "task": "Review the result" });
+            let serialized = serde_json::to_string_pretty(&json!({
+                "execution": execution,
+                "preview": preview
+            }))
+            .expect("fixture should serialize");
+            assert!(serialized.len() > SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES);
+
+            let stdout = read_stdout(Cursor::new(&serialized)).expect("response should be read");
+            let response = parse_desktop_task_response(&stdout)
+                .expect("the complete task response should survive the desktop handoff");
+
+            assert_eq!(stdout, serialized);
+            assert_eq!(response.execution, execution);
+            assert_eq!(response.preview, Some(preview));
+        }
     }
 
     #[test]
