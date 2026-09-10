@@ -17,6 +17,25 @@ use windows::{
     Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH},
 };
 
+#[derive(Debug)]
+pub(crate) struct AtomicFileDurabilityError(io::Error);
+
+impl std::fmt::Display for AtomicFileDurabilityError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "destination replaced but directory durability failed: {}",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for AtomicFileDurabilityError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct AtomicWriteOptions {
     #[cfg(unix)]
@@ -67,7 +86,11 @@ impl AtomicFileOperations for SystemAtomicFileOperations {
     }
 
     fn replace(&mut self, source: &Path, destination: &Path) -> io::Result<()> {
-        replace_file(source, destination)
+        replace_file(source, destination)?;
+        #[cfg(all(test, not(unix)))]
+        durability_faults::check(destination)
+            .map_err(|error| io::Error::new(error.kind(), AtomicFileDurabilityError(error)))?;
+        Ok(())
     }
 
     fn remove(&mut self, path: &Path) -> io::Result<()> {
@@ -111,7 +134,13 @@ fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
     #[cfg(unix)]
     {
         let parent = destination.parent().unwrap_or_else(|| Path::new("."));
-        File::open(parent)?.sync_all()?;
+        File::open(parent)
+            .and_then(|directory| {
+                #[cfg(test)]
+                durability_faults::check(destination)?;
+                directory.sync_all()
+            })
+            .map_err(|error| io::Error::new(error.kind(), AtomicFileDurabilityError(error)))?;
     }
     Ok(())
 }
@@ -249,6 +278,39 @@ fn write_temporary_file_with_operations(
     operations.sync_all(temporary_file)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+pub(crate) mod durability_faults {
+    use super::*;
+    use std::{
+        collections::HashSet,
+        sync::{LazyLock, Mutex},
+    };
+
+    static PATHS: LazyLock<Mutex<HashSet<PathBuf>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
+
+    pub(crate) struct Failure(PathBuf);
+
+    impl Failure {
+        pub(crate) fn at(path: &Path) -> Self {
+            assert!(PATHS.lock().unwrap().insert(path.to_path_buf()));
+            Self(path.to_path_buf())
+        }
+    }
+
+    impl Drop for Failure {
+        fn drop(&mut self) {
+            PATHS.lock().unwrap().remove(&self.0);
+        }
+    }
+
+    pub(super) fn check(path: &Path) -> io::Result<()> {
+        if PATHS.lock().unwrap().contains(path) {
+            return Err(io::Error::other("injected directory sync failure"));
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
