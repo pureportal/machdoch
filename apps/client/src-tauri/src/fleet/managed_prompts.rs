@@ -5,7 +5,7 @@ use std::{
 };
 
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
 use machdoch_fleet_protocol::FleetManagedPrompt;
 
@@ -87,11 +87,19 @@ fn synchronize_locked(
             })?;
         }
     }
+    let desired_files = desired
+        .keys()
+        .map(|relative_path| {
+            let path = manager_root.join(relative_path);
+            managed_file_identity(&path)
+        })
+        .collect::<Result<HashSet<_>, _>>()?;
     for relative_path in existing {
-        if desired.contains_key(&relative_path) {
+        let path = manager_root.join(relative_path);
+        let identity = managed_file_identity(&path)?;
+        if desired_files.contains(&identity) {
             continue;
         }
-        let path = manager_root.join(relative_path);
         fs::remove_file(&path).map_err(|error| {
             format!(
                 "Failed to remove managed prompt {}: {error}",
@@ -100,6 +108,51 @@ fn synchronize_locked(
         })?;
     }
     remove_empty_directories(manager_root, manager_root)
+}
+
+#[cfg(unix)]
+fn managed_file_identity(path: &Path) -> Result<(u64, u64, std::ffi::OsString), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Managed prompt parent is invalid.".to_string())?;
+    let name = path
+        .file_name()
+        .ok_or_else(|| "Managed prompt filename is invalid.".to_string())?;
+    let parent_metadata = fs::metadata(parent)
+        .map_err(|error| format!("Failed to inspect {}: {error}", parent.display()))?;
+    let metadata = fs::metadata(path)
+        .map_err(|error| format!("Failed to inspect {}: {error}", path.display()))?;
+    let mut stored_name = None;
+    for entry in fs::read_dir(parent)
+        .map_err(|error| format!("Failed to read {}: {error}", parent.display()))?
+    {
+        let entry = entry
+            .map_err(|error| format!("Failed to read managed prompt directory entry: {error}"))?;
+        let entry_name = entry.file_name();
+        if entry_name == name {
+            stored_name = Some(entry_name);
+            break;
+        }
+        if entry_name
+            .as_encoded_bytes()
+            .eq_ignore_ascii_case(name.as_encoded_bytes())
+        {
+            let entry_metadata = entry.metadata().map_err(|error| {
+                format!("Failed to inspect {}: {error}", entry.path().display())
+            })?;
+            if entry_metadata.dev() == metadata.dev() && entry_metadata.ino() == metadata.ino() {
+                stored_name = Some(entry_name);
+            }
+        }
+    }
+    let stored_name = stored_name
+        .ok_or_else(|| format!("Failed to resolve managed prompt entry {}.", path.display()))?;
+    Ok((parent_metadata.dev(), parent_metadata.ino(), stored_name))
+}
+
+#[cfg(windows)]
+fn managed_file_identity(path: &Path) -> Result<PathBuf, String> {
+    fs::canonicalize(path).map_err(|error| format!("Failed to resolve {}: {error}", path.display()))
 }
 
 fn validate_prompts(prompts: &[FleetManagedPrompt]) -> Result<BTreeMap<PathBuf, &[u8]>, String> {
@@ -300,67 +353,5 @@ fn valid_uuid(value: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    use super::*;
-
-    const MANAGER_ID: &str = "manager_MDEyMzQ1Njc4OTAxMjM0NTY3";
-
-    #[test]
-    fn synchronizes_exact_owned_set_without_changing_local_prompts() {
-        let root = temporary_directory("exact");
-        fs::create_dir_all(&root).expect("root should be created");
-        fs::write(root.join("local.prompt.md"), "local").expect("local prompt should be written");
-        synchronize_at(&root, MANAGER_ID, &[prompt("reviews/one.prompt.md", "one")])
-            .expect("first synchronization should succeed");
-        synchronize_at(&root, MANAGER_ID, &[prompt("two.prompt.md", "two")])
-            .expect("second synchronization should succeed");
-
-        assert_eq!(
-            fs::read_to_string(root.join("local.prompt.md")).expect("local prompt should remain"),
-            "local"
-        );
-        let managed = root.join(".fleet-managed").join(MANAGER_ID);
-        assert!(!managed.join("reviews/one.prompt.md").exists());
-        assert_eq!(
-            fs::read_to_string(managed.join("two.prompt.md")).expect("managed prompt should exist"),
-            "two"
-        );
-        fs::remove_dir_all(root).expect("test directory should be removed");
-    }
-
-    #[test]
-    fn rejects_paths_outside_the_managed_root() {
-        let root = temporary_directory("traversal");
-        fs::create_dir_all(&root).expect("root should be created");
-        let result = synchronize_at(&root, MANAGER_ID, &[prompt("../outside.prompt.md", "bad")]);
-
-        assert!(result.is_err());
-        assert!(!root
-            .parent()
-            .expect("root should have a parent")
-            .join("outside.prompt.md")
-            .exists());
-        fs::remove_dir_all(root).expect("test directory should be removed");
-    }
-
-    fn prompt(relative_path: &str, content: &str) -> FleetManagedPrompt {
-        FleetManagedPrompt {
-            id: "123e4567-e89b-12d3-a456-426614174000".to_string(),
-            relative_path: relative_path.to_string(),
-            content: content.to_string(),
-        }
-    }
-
-    fn temporary_directory(label: &str) -> PathBuf {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock should be valid")
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "machdoch-managed-prompts-{label}-{}-{nonce}",
-            std::process::id()
-        ))
-    }
-}
+#[path = "managed_prompts_tests.rs"]
+mod tests;
