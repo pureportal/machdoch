@@ -5,7 +5,7 @@ export const extractRalphInterviewJsonObject = (text: string): unknown => {
 
   try {
     return JSON.parse(candidate) as unknown;
-  } catch {
+  } catch (error) {
     const start = candidate.indexOf("{");
     const end = candidate.lastIndexOf("}");
 
@@ -13,6 +13,9 @@ export const extractRalphInterviewJsonObject = (text: string): unknown => {
       return JSON.parse(candidate.slice(start, end + 1)) as unknown;
     }
 
-    throw new Error("Interview AI response did not contain valid JSON.");
+    throw new SyntaxError(
+      `Interview AI response did not contain valid JSON. ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
   }
 };

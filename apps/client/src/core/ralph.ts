@@ -182,8 +182,13 @@ import {
 } from "./_helpers/ralph-placeholders.helper.js";
 import {
   getRalphResultMarkdown as getResultMarkdown,
+  getRalphResultText as getResultText,
   truncateRalphResultText as truncateResultText,
 } from "./_helpers/ralph-result-text.helper.js";
+import {
+  recordRalphJsonAttemptFailure,
+  type RalphJsonAttemptFailure,
+} from "./_helpers/ralph-json-attempt-diagnostics.helper.js";
 import {
   parseRalphValidatorJsonResult,
   RALPH_VALIDATOR_JSON_SCHEMA,
@@ -216,6 +221,7 @@ import {
   capLogText,
   createRalphLogLine,
   formatRalphSimpleMarkdownEntry,
+  redactLogText,
   sanitizeTraceValue,
 } from "./_helpers/format-ralph-run-log-entry.helper.js";
 import {
@@ -4361,7 +4367,7 @@ const executePromptBlock = async (
     conversationContext.history.push({ role: "user", content: task });
     conversationContext.history.push({
       role: "assistant",
-      content: getResultMarkdown(result),
+      content: getResultText(result),
     });
 
     if (result.status !== "executed") {
@@ -4960,14 +4966,32 @@ const executeInterviewBlock = async (
   }
 
   let generation: RalphInterviewGeneration;
+  let generationStage: RalphJsonAttemptFailure["stage"] = "parse";
   try {
-    generation = normalizeRalphInterviewGeneration(
-      extractRalphInterviewJsonObject(getResultMarkdown(result)),
-      block,
-    );
+    const json = extractRalphInterviewJsonObject(getResultText(result));
+    generationStage = "schema";
+    generation = normalizeRalphInterviewGeneration(json, block);
   } catch (error) {
+    const failure = await recordRalphJsonAttemptFailure({
+      runId: context.runId,
+      runDirectory: options.logger?.paths?.directory ?? context.artifactRoot,
+      operationId: context.currentOperationId,
+      block,
+      config: blockConfig,
+      attempt: state.turn + 1,
+      stage: generationStage,
+      errors: [error instanceof Error ? error.message : String(error)],
+      responseText: getResultText(result),
+      logger: options.logger,
+    });
     return withRalphBlockProgress(
-      createRalphBlockExecutionErrorResult(block, error),
+      {
+        ...createRalphBlockExecutionErrorResult(
+          block,
+          failure.errors.join("\n"),
+        ),
+        data: { jsonAttemptFailures: [failure] },
+      },
       executionOptions.ralphProgressEvents,
     );
   }
@@ -12694,10 +12718,11 @@ const parseJsonFromText = (text: string): unknown => {
     throw new SyntaxError("No JSON content found.");
   }
 
+  let originalError: unknown;
   try {
     return parseStrictJsonText(trimmed);
-  } catch {
-    // Continue with fenced and embedded JSON extraction.
+  } catch (error) {
+    originalError = error;
   }
 
   const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/iu);
@@ -12723,7 +12748,7 @@ const parseJsonFromText = (text: string): unknown => {
     }
   }
 
-  throw new SyntaxError("Could not extract JSON from model response.");
+  throw originalError;
 };
 
 const jsonSchemaAllowsNull = (schema: unknown): boolean => {
@@ -12846,6 +12871,43 @@ const executePromptJsonUtilityBlock = async (
   let lastValidation: JsonSchemaValidationResult | undefined;
   let repairFeedback: string | undefined;
   const progressEvents: RalphRunRecordBlockProgressEvent[] = [];
+  const jsonAttemptFailures: RalphJsonAttemptFailure[] = [];
+  const finish = (
+    result: RalphBlockExecutionResult,
+  ): RalphBlockExecutionResult =>
+    withRalphBlockProgress(
+      jsonAttemptFailures.length > 0
+        ? {
+            ...result,
+            data: {
+              ...(isRecord(result.data) ? result.data : {}),
+              jsonAttemptFailures,
+            },
+          }
+        : result,
+      progressEvents,
+    );
+  const recordFailure = async (
+    attempt: number,
+    stage: RalphJsonAttemptFailure["stage"],
+    errors: string[],
+    responseText: string,
+  ): Promise<RalphJsonAttemptFailure> => {
+    const failure = await recordRalphJsonAttemptFailure({
+      runId: context.runId,
+      runDirectory: options.logger?.paths?.directory ?? context.artifactRoot,
+      operationId: context.currentOperationId,
+      block,
+      config,
+      attempt,
+      stage,
+      errors,
+      responseText,
+      logger: options.logger,
+    });
+    jsonAttemptFailures.push(failure);
+    return failure;
+  };
   const runArtifactOwnership = context.artifactRoot
     ? {
         artifactRoot: context.artifactRoot,
@@ -12883,6 +12945,7 @@ const executePromptJsonUtilityBlock = async (
     logBlockInput(options.logger, flow, block, config, task, attempt);
 
     let json: unknown;
+    let responseText: string | undefined;
     let validation: JsonSchemaValidationResult;
     try {
       const result = await executeTask(
@@ -12895,45 +12958,60 @@ const executePromptJsonUtilityBlock = async (
         progressEvents,
         taskExecutionOptions.ralphProgressEvents,
       );
-      lastText = getResultMarkdown(result);
-
       if (result.status !== "executed") {
-        return withRalphBlockProgress(
+        return finish(
           createUtilityResult(
             block,
             "ERROR",
             result.summary || `${block.title} did not execute.`,
             { result },
           ),
-          progressEvents,
         );
       }
 
+      responseText = getResultText(result);
+      lastText = responseText;
       const parsedJson = parseJsonFromText(lastText);
       json = taskExecutionOptions.structuredOutput?.strict
         ? normalizeStrictStructuredOutputValue(parsedJson, utility.schema)
         : parsedJson;
       validation = validateUtilityJsonValue(json, utility.schema);
-      lastValidation = validation;
-
-      if (!validation.valid) {
-        repairFeedback = validation.errors.join("\n");
-        continue;
-      }
     } catch (error) {
       appendRalphBlockProgressEvents(
         progressEvents,
         taskExecutionOptions.ralphProgressEvents,
       );
 
+      repairFeedback = error instanceof Error ? error.message : String(error);
+      if (responseText !== undefined) {
+        const failure = await recordFailure(
+          attempt,
+          "parse",
+          [repairFeedback],
+          responseText,
+        );
+        repairFeedback = failure.errors.join("\n");
+      }
+
       if (attempt >= maxAttempts) {
-        return withRalphBlockProgress(
-          createRalphBlockExecutionErrorResult(block, error, attempt),
-          progressEvents,
+        return finish(
+          createRalphBlockExecutionErrorResult(block, repairFeedback, attempt),
         );
       }
 
-      repairFeedback = error instanceof Error ? error.message : String(error);
+      continue;
+    }
+
+    lastValidation = validation;
+    if (!validation.valid) {
+      const failure = await recordFailure(
+        attempt,
+        "schema",
+        validation.errors,
+        responseText,
+      );
+      lastValidation = { ...validation, errors: failure.errors };
+      repairFeedback = failure.errors.join("\n");
       continue;
     }
 
@@ -12947,54 +13025,49 @@ const executePromptJsonUtilityBlock = async (
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return withRalphBlockProgress(
-        {
-          ...createUtilityResult(
-            block,
-            "ERROR",
-            `${block.title} produced schema-valid JSON but could not persist its artifact: ${message}`,
-            {
-              output: json,
-              validation,
-              attempts: attempt,
-              persistence: {
-                status: "failed",
-                path: utility.outputPath,
-                error: message,
-              },
+      return finish({
+        ...createUtilityResult(
+          block,
+          "ERROR",
+          `${block.title} produced schema-valid JSON but could not persist its artifact: ${message}`,
+          {
+            output: json,
+            validation,
+            attempts: attempt,
+            persistence: {
+              status: "failed",
+              path: utility.outputPath,
+              error: message,
             },
-          ),
-          failure: { kind: "persistence", retryable: false },
-        },
-        progressEvents,
-      );
+          },
+        ),
+        failure: { kind: "persistence", retryable: false },
+      });
     }
 
-    return withRalphBlockProgress(
+    return finish(
       createUtilityResult(block, "SUCCESS", `${block.title} produced JSON.`, {
         output: json,
         validation,
         attempts: attempt,
         ...(outputPath ? { outputPath } : {}),
       }),
-      progressEvents,
     );
   }
 
-  return withRalphBlockProgress(
+  return finish(
     createUtilityResult(
       block,
       "INVALID",
       `${block.title} did not produce schema-valid JSON.`,
       {
-        raw: lastText,
+        raw: truncateResultText(redactLogText(lastText)),
         validation: lastValidation ?? {
           valid: false,
           errors: ["No JSON parsed."],
         },
       },
     ),
-    progressEvents,
   );
 };
 
@@ -13039,7 +13112,7 @@ const executeValidatorJsonUtilityBlock = async (
         block,
         "INVALID",
         `${block.title} did not return a valid validator decision.`,
-        { output },
+        data,
       ),
       promptResult.progress ?? [],
     );
@@ -13052,6 +13125,7 @@ const executeValidatorJsonUtilityBlock = async (
     decision,
     output.summary,
     {
+      ...data,
       output,
       decision,
       confidence: output.confidence,

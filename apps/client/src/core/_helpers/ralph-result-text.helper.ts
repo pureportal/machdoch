@@ -14,10 +14,14 @@ export const truncateRalphResultText = (value: string): string => {
   return `${value.slice(0, leadingCharacters)}${marker}${value.slice(-trailingCharacters)}`;
 };
 
+export const getRalphResultText = (
+  result: TaskExecutionResult | undefined,
+): string => {
+  return result?.response?.markdown ?? result?.summary ?? result?.reason ?? "";
+};
+
 export const getRalphResultMarkdown = (
   result: TaskExecutionResult | undefined,
 ): string => {
-  return truncateRalphResultText(
-    result?.response?.markdown ?? result?.summary ?? result?.reason ?? "",
-  );
+  return truncateRalphResultText(getRalphResultText(result));
 };

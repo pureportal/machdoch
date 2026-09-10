@@ -38,7 +38,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
-const redactLogText = (value: string): string => {
+export const redactLogText = (value: string): string => {
   let redacted = value;
 
   for (const key of SECRET_ENV_KEYS) {
