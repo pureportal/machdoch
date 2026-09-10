@@ -44,7 +44,7 @@ export function MediaStudio({
 }): React.ReactElement {
   const [section, setSection] = useState<RemoteMediaSection>("generate");
   const [draft, setDraft] = useState<MediaDraft>(() => draftFromMedia(media));
-  const generationKey = JSON.stringify(media.generation);
+  const generationKey = JSON.stringify(draftFromMedia(media));
   const lastGenerationKeyRef = useRef(generationKey);
   const [confirming, setConfirming] = useState(false);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
