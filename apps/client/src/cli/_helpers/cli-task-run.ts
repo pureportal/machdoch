@@ -1,11 +1,10 @@
 import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import process from "node:process";
-import { createInterface } from "node:readline/promises";
 import { CliUsageError } from "./cli-error.js";
+import { parseConversationContext } from "./cli-chat-sessions.js";
 import { loadRuntimeConfig } from "../../core/config.js";
 import { discoverCustomizations } from "../../core/customizations.js";
-import { loadUserMemorySettings } from "../../core/env.js";
 import { createTaskExecutionController } from "../../core/execution.js";
 import {
   createImageInputUnsupportedModelMessage,
@@ -14,28 +13,15 @@ import {
   modelSupportsImageInput,
   providerSupportsImageInputMediaType,
 } from "../../core/model-capabilities.js";
-import {
-  MAX_SESSION_MEMORY_ENTRIES,
-  mergeConversationMemoryEntries,
-} from "../../core/memory.js";
 import { previewTaskRun } from "../../core/task-runner.js";
 import type {
-  ConversationHistoryEntry,
   AgentModelImageInput,
-  ConversationMemoryEntry,
   TaskConversationContext,
   TaskExecutionResult,
   TaskRunPreview,
 } from "../../core/types.js";
-import type {
-  RuntimeConfig,
-  RunMode,
-} from "../../core/runtime-contract.generated.js";
+import type { RuntimeConfig } from "../../core/runtime-contract.generated.js";
 import type { ParsedCliArgs } from "./cli-args.js";
-import {
-  createCliStartupSummaryLines,
-  loadDesktopShellSummary,
-} from "./cli-startup-summary.js";
 import {
   attachCancellationHandlers,
   createActionFeedbackProgressReporter,
@@ -58,24 +44,12 @@ interface CliContextPathEntry {
   kind: CliContextPathKind;
 }
 
-export interface InteractiveChatSessionState {
-  history: ConversationHistoryEntry[];
-  workspace?: TaskConversationContext["workspace"];
-  workspaceRun?: TaskConversationContext["workspaceRun"];
-  sessionMemory: ConversationMemoryEntry[];
-  sessionMemoryEnabled: boolean;
-  globalMemoryEnabled?: boolean;
-  globalMemory?: ConversationMemoryEntry[];
-  uiControlEnabled?: boolean;
-  uiControl?: TaskConversationContext["uiControl"];
-}
-
 const loadConversationContextFromFile = async (
   filePath: string,
 ): Promise<TaskConversationContext> => {
   const raw = await readFile(filePath, "utf8");
 
-  return JSON.parse(raw) as TaskConversationContext;
+  return parseConversationContext(JSON.parse(raw) as unknown);
 };
 
 const classifyContextPath = async (
@@ -254,6 +228,12 @@ export const resolveConversationContext = async (
 
   return {
     history: baseContext?.history ?? [],
+    ...(baseContext?.sessionId !== undefined
+      ? { sessionId: baseContext.sessionId }
+      : {}),
+    ...(baseContext?.workspaceMemoryEnabled !== undefined
+      ? { workspaceMemoryEnabled: baseContext.workspaceMemoryEnabled }
+      : {}),
     ...(baseContext?.workspace !== undefined
       ? { workspace: baseContext.workspace }
       : {}),
@@ -284,43 +264,6 @@ export const resolveConversationContext = async (
     ...(args.globalMemoryEnabled !== undefined
       ? { globalMemoryEnabled: args.globalMemoryEnabled }
       : {}),
-  };
-};
-
-export const createInteractiveChatSessionState = (
-  baseContext: TaskConversationContext | undefined,
-  fallbackGlobalMemoryEnabled: boolean,
-): InteractiveChatSessionState & {
-  effectiveGlobalMemoryEnabled: boolean;
-} => {
-  const sessionState: InteractiveChatSessionState = {
-    history: baseContext?.history ?? [],
-    ...(baseContext?.workspace !== undefined
-      ? { workspace: baseContext.workspace }
-      : {}),
-    ...(baseContext?.workspaceRun !== undefined
-      ? { workspaceRun: baseContext.workspaceRun }
-      : {}),
-    sessionMemory: baseContext?.sessionMemory ?? [],
-    sessionMemoryEnabled: baseContext?.sessionMemoryEnabled ?? true,
-    ...(baseContext?.globalMemoryEnabled !== undefined
-      ? { globalMemoryEnabled: baseContext.globalMemoryEnabled }
-      : {}),
-    ...(baseContext?.globalMemory !== undefined
-      ? { globalMemory: baseContext.globalMemory }
-      : {}),
-    ...(baseContext?.uiControlEnabled !== undefined
-      ? { uiControlEnabled: baseContext.uiControlEnabled }
-      : {}),
-    ...(baseContext?.uiControl !== undefined
-      ? { uiControl: baseContext.uiControl }
-      : {}),
-  };
-
-  return {
-    ...sessionState,
-    effectiveGlobalMemoryEnabled:
-      sessionState.globalMemoryEnabled ?? fallbackGlobalMemoryEnabled,
   };
 };
 
@@ -443,332 +386,4 @@ export const printTaskPreview = async (
 
   printExecutionSummary(execution);
   return { execution };
-};
-
-const printInteractiveChatHelp = (): void => {
-  writeStdoutLine("interactive commands:");
-  writeStdoutLine("  /help  Show this help");
-  writeStdoutLine("  /paste [mode]  Paste a multiline task; finish with /end");
-  writeStdoutLine("  /exit  Leave interactive mode");
-  writeStdoutLine("  /quit  Leave interactive mode");
-};
-
-export const PASTE_TERMINATOR = "/end";
-
-const VALID_PASTE_MODES: ReadonlySet<RunMode> = new Set(["ask", "machdoch"]);
-
-export interface ParsedInteractivePasteCommand {
-  recognized: boolean;
-  mode?: RunMode;
-  error?: string;
-}
-
-interface InteractiveQuestionHandle {
-  question(query: string): Promise<string>;
-  on?(event: "line" | "close", listener: (...args: unknown[]) => void): unknown;
-  off?(
-    event: "line" | "close",
-    listener: (...args: unknown[]) => void,
-  ): unknown;
-  removeListener?(
-    event: "line" | "close",
-    listener: (...args: unknown[]) => void,
-  ): unknown;
-  once?(event: "close", listener: (...args: unknown[]) => void): unknown;
-  getPrompt?(): string;
-  setPrompt?(prompt: string): void;
-  prompt?(preserveCursor?: boolean): void;
-}
-
-export const parseInteractivePasteCommand = (
-  command: string,
-): ParsedInteractivePasteCommand => {
-  const normalizedCommand = command.trim();
-
-  if (
-    normalizedCommand !== "/paste" &&
-    !normalizedCommand.startsWith("/paste ")
-  ) {
-    return { recognized: false };
-  }
-
-  const rawMode = normalizedCommand.slice("/paste".length).trim();
-
-  if (rawMode.length === 0) {
-    return { recognized: true };
-  }
-
-  if (VALID_PASTE_MODES.has(rawMode as RunMode)) {
-    return { recognized: true, mode: rawMode as RunMode };
-  }
-
-  return {
-    recognized: true,
-    error: "Usage: /paste [ask|machdoch]",
-  };
-};
-
-export const normalizePastedTask = (lines: string[]): string | undefined => {
-  const task = lines.join("\n").trim();
-
-  return task.length > 0 ? task : undefined;
-};
-
-const supportsInteractiveLineEvents = (
-  interfaceHandle: InteractiveQuestionHandle,
-): boolean => {
-  return (
-    typeof interfaceHandle.on === "function" &&
-    typeof (interfaceHandle.off ?? interfaceHandle.removeListener) ===
-      "function"
-  );
-};
-
-export const readPastedTask = async (
-  interfaceHandle: InteractiveQuestionHandle,
-  options: {
-    writeLine: (line?: string) => void;
-    terminator?: string;
-  },
-): Promise<string | undefined> => {
-  const terminator = options.terminator ?? PASTE_TERMINATOR;
-  const lines: string[] = [];
-
-  options.writeLine(
-    `Paste task text. Finish with a line containing only ${terminator}.`,
-  );
-
-  if (supportsInteractiveLineEvents(interfaceHandle)) {
-    const previousPrompt = interfaceHandle.getPrompt?.();
-    interfaceHandle.setPrompt?.("paste> ");
-
-    return await new Promise((resolve) => {
-      const removeListener =
-        interfaceHandle.off?.bind(interfaceHandle) ??
-        interfaceHandle.removeListener?.bind(interfaceHandle);
-
-      const cleanup = (): void => {
-        removeListener?.("line", handleLine);
-        removeListener?.("close", handleClose);
-
-        if (previousPrompt !== undefined) {
-          interfaceHandle.setPrompt?.(previousPrompt);
-        }
-      };
-
-      const finish = (task: string | undefined): void => {
-        cleanup();
-        resolve(task);
-      };
-
-      const handleClose = (): void => {
-        finish(undefined);
-      };
-
-      const handleLine = (lineValue: unknown): void => {
-        const line = typeof lineValue === "string" ? lineValue : "";
-
-        if (line.trim() === terminator) {
-          finish(normalizePastedTask(lines));
-          return;
-        }
-
-        lines.push(line);
-        interfaceHandle.prompt?.();
-      };
-
-      interfaceHandle.on?.("line", handleLine);
-      interfaceHandle.once?.("close", handleClose);
-      interfaceHandle.prompt?.();
-    });
-  }
-
-  while (true) {
-    const line = await interfaceHandle.question("paste> ");
-
-    if (line.trim() === terminator) {
-      return normalizePastedTask(lines);
-    }
-
-    lines.push(line);
-  }
-};
-
-export const runInteractiveChat = async (
-  args: ParsedCliArgs,
-): Promise<void> => {
-  if (args.json) {
-    fail("Interactive chat mode does not support --json.");
-  }
-
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    fail(
-      "Interactive chat requires a terminal. Use `machdoch run <task>` for non-interactive shells and scripts.",
-    );
-  }
-
-  const config = await loadRuntimeConfig(
-    args.workspaceRoot,
-    args.mode,
-    args.model,
-    args.runtimeProvider,
-    args.agentLimits,
-    args.reasoning,
-  );
-  const shellSummary = await loadDesktopShellSummary();
-  const memorySettings = await loadUserMemorySettings();
-  const baseConversationContext = await resolveConversationContext(args);
-  const sessionState = createInteractiveChatSessionState(
-    baseConversationContext,
-    memorySettings.globalEnabled,
-  );
-
-  writeStdoutLine(
-    `machdoch chat (${config.mode}, ${config.model}, reasoning ${config.reasoning})`,
-  );
-  for (const line of createCliStartupSummaryLines(config, shellSummary)) {
-    writeStdoutLine(line);
-  }
-  writeStdoutLine(
-    "Type a task and press Enter. Use /paste for multiline tasks, /help for commands, /exit to quit.",
-  );
-  writeStdoutLine();
-
-  const interfaceHandle = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  try {
-    const createCurrentConversationContext = (): TaskConversationContext => ({
-      history: sessionState.history,
-      ...(sessionState.workspace !== undefined
-        ? { workspace: sessionState.workspace }
-        : {}),
-      ...(sessionState.workspaceRun !== undefined
-        ? { workspaceRun: sessionState.workspaceRun }
-        : {}),
-      sessionMemory: sessionState.sessionMemory,
-      sessionMemoryEnabled: sessionState.sessionMemoryEnabled,
-      ...(sessionState.globalMemoryEnabled !== undefined
-        ? { globalMemoryEnabled: sessionState.globalMemoryEnabled }
-        : {}),
-      ...(sessionState.globalMemory !== undefined
-        ? { globalMemory: sessionState.globalMemory }
-        : {}),
-      ...(sessionState.uiControlEnabled !== undefined
-        ? { uiControlEnabled: sessionState.uiControlEnabled }
-        : {}),
-      ...(sessionState.uiControl !== undefined
-        ? { uiControl: sessionState.uiControl }
-        : {}),
-    });
-
-    const executeChatTask = async (
-      nextTask: string,
-      modeOverride = args.mode,
-    ): Promise<void> => {
-      const { execution } = await printTaskPreview(
-        {
-          ...args,
-          command: "run",
-          task: nextTask,
-          ...(modeOverride ? { mode: modeOverride } : {}),
-        },
-        {
-          conversationContext: createCurrentConversationContext(),
-          showActionFeedback: true,
-        },
-      );
-
-      const assistantContent =
-        execution.response?.markdown.trim() || execution.summary.trim();
-
-      sessionState.history = [
-        ...sessionState.history,
-        {
-          role: "user" as const,
-          content: nextTask,
-          createdAt: Date.now(),
-        },
-        {
-          role: "assistant" as const,
-          content: assistantContent,
-          createdAt: Date.now(),
-        },
-      ].slice(-60);
-
-      const sessionMemoryUpdates =
-        execution.memoryUpdates
-          ?.filter((update) => update.scope === "session")
-          .map((update) => update.entry) ?? [];
-
-      if (sessionMemoryUpdates.length > 0) {
-        sessionState.sessionMemory = mergeConversationMemoryEntries(
-          sessionState.sessionMemory,
-          sessionMemoryUpdates,
-          MAX_SESSION_MEMORY_ENTRIES,
-        );
-      }
-    };
-
-    const initialTask = args.task?.trim();
-
-    if (initialTask) {
-      await executeChatTask(initialTask);
-      writeStdoutLine();
-    }
-
-    while (true) {
-      const nextTask = (await interfaceHandle.question("machdoch> ")).trim();
-
-      if (nextTask.length === 0) {
-        continue;
-      }
-
-      if (
-        nextTask === "/exit" ||
-        nextTask === "exit" ||
-        nextTask === "/quit" ||
-        nextTask === "quit"
-      ) {
-        break;
-      }
-
-      if (nextTask === "/help") {
-        printInteractiveChatHelp();
-        writeStdoutLine();
-        continue;
-      }
-
-      const pasteCommand = parseInteractivePasteCommand(nextTask);
-
-      if (pasteCommand.recognized) {
-        if (pasteCommand.error) {
-          writeStdoutLine(pasteCommand.error);
-          writeStdoutLine();
-          continue;
-        }
-
-        const pastedTask = await readPastedTask(interfaceHandle, {
-          writeLine: writeStdoutLine,
-        });
-
-        if (!pastedTask) {
-          writeStdoutLine("Paste cancelled: no task text was provided.");
-          writeStdoutLine();
-          continue;
-        }
-
-        await executeChatTask(pastedTask, pasteCommand.mode ?? args.mode);
-        writeStdoutLine();
-        continue;
-      }
-
-      await executeChatTask(nextTask);
-      writeStdoutLine();
-    }
-  } finally {
-    interfaceHandle.close();
-  }
 };

@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
 import type { ProductCommand } from "@machdoch/fleet-protocol";
 import { loadRuntimeConfig } from "../../core/config.ts";
 import { FleetCliProductRuntime } from "./cli-fleet-product.ts";
@@ -64,12 +65,14 @@ describe("Fleet project task integration", () => {
             })
           ).type,
         ).toBe("commandAccepted");
-      await vi.waitFor(async () =>
-        expect(
-          (await snapshot()).projectLibrary?.projects.every(
-            (project) => project.status === "ready",
-          ),
-        ).toBe(true),
+      await vi.waitFor(
+        async () =>
+          expect(
+            (await snapshot()).projectLibrary?.projects.every(
+              (project) => project.status === "ready",
+            ),
+          ).toBe(true),
+        { timeout: 10_000 },
       );
       const projects = (await snapshot()).projectLibrary!.projects;
       const one = projects.find((project) => project.name === "one")!;

@@ -876,7 +876,11 @@ export const parseCliArgs = (
     fail("--infinite cannot be combined with finite loop limit overrides.");
   }
 
-  if (rawTask && positionals.length > 0) {
+  if (
+    rawTask &&
+    positionals.length > 0 &&
+    !(positionals.length === 1 && ["run", "chat"].includes(positionals[0]!))
+  ) {
     fail("Use either positional task text or --task, not both.");
   }
 
@@ -884,7 +888,7 @@ export const parseCliArgs = (
     deterministicAction &&
     !(
       (quickRunRequested && rawTask) ||
-      (positionals[0] === "run" && positionals.length > 1)
+      (positionals[0] === "run" && (positionals.length > 1 || rawTask))
     )
   ) {
     fail(
@@ -2407,11 +2411,21 @@ export const parseCliArgs = (
 
     const [rawAction, ...extraPositionals] = rest;
     const action = normalizeOptionalString(rawAction) ?? "list";
-    if (action !== "list") {
-      fail("Unknown memory command. Expected `machdoch memory list`.");
+    if (action !== "list" && action !== "forget") {
+      fail(
+        "Unknown memory command. Use `machdoch memory list` or `machdoch memory forget <workspace|global> <id>`.",
+      );
     }
-    if (extraPositionals.length > 0) {
+    if (action === "list" && extraPositionals.length > 0) {
       fail("Usage: machdoch memory [list] [--json]");
+    }
+    if (
+      action === "forget" &&
+      (extraPositionals.length !== 2 ||
+        !["workspace", "global"].includes(extraPositionals[0] ?? "") ||
+        !extraPositionals[1]?.trim())
+    ) {
+      fail("Usage: machdoch memory forget <workspace|global> <id>");
     }
     if (
       rawModel ||
@@ -2431,12 +2445,21 @@ export const parseCliArgs = (
       );
     }
 
-    return createParsedArgs({
+    return {
       json,
       verbose,
       workspaceRoot,
       command: "memory",
-    });
+      ...(action === "forget"
+        ? {
+            memory: {
+              action,
+              scope: extraPositionals[0] as "workspace" | "global",
+              id: extraPositionals[1]!,
+            },
+          }
+        : {}),
+    };
   }
 
   if (first === "inspect" || first === "tools") {
@@ -2543,6 +2566,16 @@ export const parseCliArgs = (
           ...(configValue ? { value: configValue } : {}),
         },
       },
+    );
+  }
+
+  if (first === "chat") {
+    if (quickRunRequested)
+      fail("Use `machdoch run <task>` for a one-shot task.");
+    const task = rawTask ?? rest.join(" ").trim();
+    return createParsedArgs(
+      { ...sharedOptions, command: "chat" },
+      task ? { task } : undefined,
     );
   }
 

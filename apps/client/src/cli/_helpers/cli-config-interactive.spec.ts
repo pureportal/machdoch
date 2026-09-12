@@ -1,4 +1,4 @@
-import { vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   moveMenuSelection,
   runInteractiveConfig,
@@ -18,6 +18,42 @@ describe("moveMenuSelection", () => {
 });
 
 describe("runInteractiveConfig", () => {
+  it("keeps the editor open after an invalid setting and allows correction", async () => {
+    const selections = [
+      "Workspace",
+      "workspace.mode",
+      "ask",
+      "workspace.mode",
+      "machdoch",
+      "__back",
+      "__done",
+    ];
+    const prompter: InteractiveConfigPrompter = {
+      select: vi.fn(async () => selections.shift()),
+      input: vi.fn(async () => undefined),
+      status: vi.fn(),
+      close: vi.fn(),
+    };
+    const definition = CLI_CONFIG_SETTING_DEFINITIONS.find(
+      (entry) => entry.setting === "workspace.mode",
+    )!;
+    const saveSetting = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Cannot save here."))
+      .mockResolvedValue({});
+    await runInteractiveConfig("C:/workspace", {
+      prompter,
+      loadEntries: async () => [
+        { ...definition, value: "machdoch", source: "default" },
+      ],
+      saveSetting,
+    });
+    expect(saveSetting).toHaveBeenCalledTimes(2);
+    expect(prompter.status).toHaveBeenCalledWith("Cannot save here.", "error");
+    expect(prompter.status).toHaveBeenCalledWith("workspace.mode updated.");
+    expect(prompter.close).toHaveBeenCalledWith("Configuration complete.");
+  });
+
   it("navigates categories and persists a selected value", async () => {
     const selections = [
       "Workspace",

@@ -1,4 +1,5 @@
 import { CliUsageError } from "./cli-error.js";
+import { CHAT_HELP as INTERACTIVE_CHAT_HELP } from "./cli-interactive-commands.js";
 
 const ROOT_HELP = `machdoch - local-first AI agent for terminal and desktop
 
@@ -13,7 +14,7 @@ Core commands:
   chat           Start an interactive terminal session
   interview      Refine a task through structured questions
   config         Inspect or change user and workspace settings
-  memory         List durable workspace and global memory facts
+  memory         Inspect and remove saved memory facts
   inspect        List discovered prompts and skills
   tools          List available tool areas and model-facing functions
 
@@ -75,6 +76,7 @@ const CHAT_HELP = `machdoch chat - interactive terminal conversation
 
 Usage:
   machdoch
+  machdoch chat [initial task]
   machdoch <initial task>
   machdoch --task <initial task>
 
@@ -82,9 +84,12 @@ Chat accepts the same model, mode, context, image, and memory overrides as
 machdoch run. It requires an interactive terminal and does not support --json.
 
 Interactive commands:
-  /help                 Show chat commands
-  /paste [ask|machdoch] Paste multiline task text; finish with /end
-  /exit, /quit          Leave interactive chat`;
+${INTERACTIVE_CHAT_HELP}
+
+Tab completes commands; arrow keys recall input. Ctrl+C cancels a draft or
+running task. Ctrl+D exits. Use // to send task text beginning with /.
+Conversations are saved locally; /sessions resumes them. /export writes context
+for --conversation-context-file. Attachments apply to the next successful task.`;
 
 const CONFIG_HELP = `machdoch config - inspect and change configuration
 
@@ -145,6 +150,7 @@ const MEMORY_HELP = `machdoch memory - inspect durable memory
 
 Usage:
   machdoch memory [list] [--json]
+  machdoch memory forget <workspace|global> <id> [--json]
 
 Lists saved facts for the active workspace and global scope.
 Use \`machdoch config set memory.global on|off\` to change whether global memory

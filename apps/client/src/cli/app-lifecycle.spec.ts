@@ -34,9 +34,12 @@ vi.mock("./_helpers/cli-provider-sync-commands.js", () => ({
   ensureAutomaticProviderSync: mocks.ensureAutomaticProviderSync,
 }));
 
+vi.mock("./_helpers/cli-chat.js", () => ({
+  runInteractiveChat: mocks.runInteractiveChat,
+}));
+
 vi.mock("./_helpers/cli-task-run.js", () => ({
   printTaskPreview: mocks.printTaskPreview,
-  runInteractiveChat: mocks.runInteractiveChat,
 }));
 
 vi.mock("./_helpers/cli-interview-commands.js", () => ({

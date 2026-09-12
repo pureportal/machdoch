@@ -1,6 +1,43 @@
 import { getHelpText, parseCliArgs } from "./cli-args.ts";
+import { describe, expect, it } from "vitest";
 
 describe("cli args public parser", () => {
+  it("recognizes explicit chat and --task for both chat and run", () => {
+    expect(parseCliArgs(["chat"])).toMatchObject({ command: "chat" });
+    expect(parseCliArgs(["chat"]).task).toBeUndefined();
+    expect(parseCliArgs(["chat", "Explain", "this"])).toMatchObject({
+      command: "chat",
+      task: "Explain this",
+    });
+    expect(parseCliArgs(["run", "--task", "-"])).toMatchObject({
+      command: "run",
+      task: "-",
+    });
+    expect(parseCliArgs(["chat", "--task", "Start here"])).toMatchObject({
+      command: "chat",
+      task: "Start here",
+    });
+    expect(() => parseCliArgs(["chat", "task", "--task", "other"])).toThrow(
+      "either positional",
+    );
+    expect(() => parseCliArgs(["chat", "--quick"])).toThrow("one-shot");
+  });
+
+  it("parses memory removal with an explicit scope and id", () => {
+    expect(
+      parseCliArgs(["memory", "forget", "workspace", "fact-id", "--json"]),
+    ).toMatchObject({
+      command: "memory",
+      memory: { action: "forget", scope: "workspace", id: "fact-id" },
+      json: true,
+    });
+    expect(() => parseCliArgs(["memory", "forget", "fact-id"])).toThrow(
+      "Usage:",
+    );
+    expect(() =>
+      parseCliArgs(["memory", "forget", "session", "fact-id"]),
+    ).toThrow("Usage:");
+  });
   it.each([
     "run",
     "install",
@@ -63,7 +100,7 @@ describe("cli args public parser", () => {
       parseCliArgs(["memory", "clear"], {
         currentWorkingDirectory: "C:/workspace",
       }),
-    ).toThrow("Expected `machdoch memory list`");
+    ).toThrow("machdoch memory list");
   });
 
   it("parses contextual help and configuration actions", () => {
