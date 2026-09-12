@@ -5,7 +5,7 @@ import {
 } from "../../chat-session.model";
 import {
   canStartQueuedMessageDispatch,
-  createFailedQueuedMessageRecovery,
+  createConflictedQueuedMessageRecovery,
   createQueuedMessageDispatchAttempt,
   createQueuedMessageRetry,
 } from "./queued-message-lifecycle";
@@ -17,7 +17,6 @@ const createQueuedMessage = (
   id: "queued-1",
   sessionId: "session-1",
   task: "Original request",
-  dispatchPolicy: "after-success",
   contentUpdatedAt: 10,
   attachmentsUpdatedAt: 10,
   attachmentTombstones: {},
@@ -86,7 +85,7 @@ describe("queued message lifecycle", () => {
     });
     expect(firstAttempt.message.promptEnhancementRequest).toBeUndefined();
 
-    const failedRecovery = createFailedQueuedMessageRecovery(
+    const failedRecovery = createConflictedQueuedMessageRecovery(
       firstAttempt.message,
       "queued-recovery",
       "active-task",
@@ -161,8 +160,8 @@ describe("queued message lifecycle", () => {
     expect(submitted?.queuedSessionMessages).toEqual([]);
   });
 
-  it("turns execution conflicts into a terminal manual-retry state", () => {
-    const recovery = createFailedQueuedMessageRecovery(
+  it("returns execution conflicts to the automatic queue", () => {
+    const recovery = createConflictedQueuedMessageRecovery(
       createQueuedMessage({ status: "dispatching" }),
       "queued-recovery",
       "active-task",
@@ -172,9 +171,7 @@ describe("queued message lifecycle", () => {
     expect(recovery).toMatchObject({
       id: "queued-recovery",
       blockedByTaskId: "active-task",
-      status: "failed",
-      failureMessage:
-        "Task could not start because another task became active.",
+      status: "queued",
     });
   });
 });

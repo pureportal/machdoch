@@ -47,6 +47,10 @@ import {
 } from "./task-thinking.model";
 import { normalizeChatSessionOptionalString } from "./chat-session/_helpers/normalize-chat-session-optional-string.helper";
 import { createWorkspaceRootKey } from "./workspace-management/workspace-management-model";
+import {
+  normalizeExecutionAttempt,
+  type ExecutionAttempt,
+} from "./chat-session/_helpers/execution-attempt";
 
 export type ChatSessionMessageSource =
   | { kind: "preview"; preview: TaskRunPreview }
@@ -160,6 +164,7 @@ export interface ChatSessionMessageSettings {
 }
 
 export interface ChatSessionMessage {
+  executionAttempt?: ExecutionAttempt;
   id: string;
   taskId?: string;
   role: "user" | "agent";
@@ -326,7 +331,6 @@ export interface ChatSessionQueuedMessage {
   promptHistoryContent?: string;
   promptEnhancement?: ChatSessionMessagePromptEnhancement;
   promptEnhancementRequest?: ChatSessionQueuedPromptEnhancementRequest;
-  dispatchPolicy: "after-success" | "after-terminal";
   blockedByTaskId?: string;
   contentUpdatedAt: number;
   attachmentsUpdatedAt: number;
@@ -398,6 +402,7 @@ const RUN_MODES: RunMode[] = ["ask", "machdoch"];
 const STORED_REASONING_MODES: ReasoningMode[] = [...REASONING_MODES];
 const RUNTIME_PROVIDERS: RuntimeProvider[] = [...RUNNABLE_PROVIDER_ORDER];
 const TASK_EXECUTION_STATUSES: TaskExecutionStatus[] = [
+  "failed",
   "planned",
   "executed",
   "blocked",
@@ -2606,6 +2611,7 @@ const normalizeSessionMessages = (
       source,
     );
     const outcome = normalizeMessageOutcome(entry.outcome);
+    const executionAttempt = normalizeExecutionAttempt(entry.executionAttempt);
     const preferredMessageId = normalizeString(
       entry.id,
       `${sessionId}-message-${index}`,
@@ -2632,6 +2638,7 @@ const normalizeSessionMessages = (
       ...(source ? { source } : {}),
       ...(lifecycle ? { lifecycle } : {}),
       ...(outcome ? { outcome } : {}),
+      ...(executionAttempt ? { executionAttempt } : {}),
     };
 
     messages.push(message);
@@ -2823,10 +2830,6 @@ const normalizeQueuedSessionMessages = (
     const promptEnhancementRequest = normalizeQueuedPromptEnhancementRequest(
       entry.promptEnhancementRequest,
     );
-    const dispatchPolicy =
-      entry.dispatchPolicy === "after-terminal"
-        ? "after-terminal"
-        : "after-success";
     const blockedByTaskId = normalizeString(entry.blockedByTaskId).trim();
     const createdAt = normalizeFiniteNumber(entry.createdAt, index);
     const updatedAt = Math.max(
@@ -2887,7 +2890,6 @@ const normalizeQueuedSessionMessages = (
       ...(promptHistoryContent ? { promptHistoryContent } : {}),
       ...(promptEnhancement ? { promptEnhancement } : {}),
       ...(promptEnhancementRequest ? { promptEnhancementRequest } : {}),
-      dispatchPolicy,
       ...(blockedByTaskId ? { blockedByTaskId } : {}),
       contentUpdatedAt,
       attachmentsUpdatedAt,
@@ -3172,6 +3174,7 @@ const getExecutionTaskOutcomeStatus = (
   status: TaskExecutionStatus,
 ): ChatSessionTaskOutcomeStatus => {
   const outcomeByExecutionStatus = {
+    failed: "failed",
     planned: "succeeded",
     executed: "succeeded",
     blocked: "blocked",
@@ -3729,7 +3732,21 @@ const recoverInterruptedSessionTasks = (
       message.source.thinking.status === "running";
 
     if (!isStaleRunningThinkingMessage) {
-      nextMessages.push(message);
+      nextMessages.push(
+        interruptedTaskIds.has(taskId) &&
+          message.role === "user" &&
+          !message.executionAttempt
+          ? {
+              ...message,
+              executionAttempt: {
+                rootTaskId: taskId,
+                task: message.content,
+                retryNumber: 0,
+                retryLimit: 0,
+              },
+            }
+          : message,
+      );
     }
 
     if (

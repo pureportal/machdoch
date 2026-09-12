@@ -301,6 +301,8 @@ export interface WorkspaceCompatibilityConfig {
 }
 
 export interface RuntimeAgentLimitOverrides {
+  automaticRetries?: boolean;
+  retryAttempts?: number;
   infinite?: boolean;
   executorTurns?: number;
   autopilotExecutorIterations?: number;
@@ -495,6 +497,8 @@ export interface UserConfigFile {
 }
 
 export interface UserAgentLimitsSettings {
+  automaticRetries: boolean;
+  retryAttempts: number;
   infinite: boolean;
   executorTurns: number;
   autopilotExecutorIterations: number;
@@ -627,6 +631,9 @@ pub const DEFAULT_USER_REVIEW_MODEL_MODE: &str = ${JSON.stringify(defaultReviewM
 pub const DEFAULT_USER_INTERNAL_TASK_MODEL_REASONING: &str = ${JSON.stringify(defaultInternalTaskModelSettings.reasoning ?? "default")};
 
 pub const DEFAULT_USER_AGENT_LIMITS_INFINITE: bool = ${defaultAgentLimits.infinite};
+pub const DEFAULT_AUTOMATIC_RETRIES: bool = ${defaultAgentLimits.automaticRetries};
+pub const DEFAULT_RETRY_ATTEMPTS: u32 = ${defaultAgentLimits.retryAttempts};
+pub const MAX_RETRY_ATTEMPTS: u32 = ${agentLimitBounds.retryAttempts.max};
 pub const DEFAULT_MAX_EXECUTOR_TURNS: u32 = ${defaultAgentLimits.executorTurns};
 pub const DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS: u32 = ${defaultAgentLimits.autopilotExecutorIterations};
 pub const MAX_CONFIGURED_EXECUTOR_TURNS: u32 = ${agentLimitBounds.executorTurns.max};

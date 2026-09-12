@@ -20,7 +20,6 @@ describe("QueuedMessagesPanel", () => {
             content: "Run the next task.",
             attachments: [],
             status: "queued",
-            canSendNow: false,
             createdAt: 1,
           },
           {
@@ -29,7 +28,6 @@ describe("QueuedMessagesPanel", () => {
             attachments: [],
             status: "enhancing",
             promptEnhancementMode: "simple",
-            canSendNow: false,
             createdAt: 2,
           },
           {
@@ -37,7 +35,6 @@ describe("QueuedMessagesPanel", () => {
             content: "Dispatch this request.",
             attachments: [],
             status: "dispatching",
-            canSendNow: false,
             createdAt: 3,
           },
           {
@@ -46,7 +43,6 @@ describe("QueuedMessagesPanel", () => {
             attachments: [],
             status: "failed",
             failureMessage: "Enhancement failed.",
-            canSendNow: false,
             createdAt: 4,
           },
         ],
@@ -82,7 +78,6 @@ describe("QueuedMessagesPanel", () => {
               },
             ],
             status: "dispatching",
-            canSendNow: false,
             createdAt: 1,
           },
           {
@@ -90,7 +85,6 @@ describe("QueuedMessagesPanel", () => {
             content: "Keep this order stable.",
             attachments: [],
             status: "queued",
-            canSendNow: false,
             createdAt: 2,
           },
         ],
@@ -146,7 +140,6 @@ describe("QueuedMessagesPanel", () => {
             content: "Improve this request.",
             attachments: [],
             status: "enhancing",
-            canSendNow: false,
             createdAt: 1,
           },
         ],

@@ -8,6 +8,7 @@ mod desktop_task;
 mod embedded_runtime_inputs;
 mod fleet;
 mod fleet_control;
+mod idle_shutdown;
 mod launcher;
 mod media;
 mod runtime_contract_generated;
@@ -159,6 +160,7 @@ pub fn run() {
         .manage(fleet::FleetConnectionState::default())
         .manage(fleet_control::FleetControlState::default())
         .manage(media::MediaRuntimeState::default())
+        .manage(idle_shutdown::IdleShutdownState::default())
         .manage(shell_state::ShellStateStoreLock::default())
         .manage(sleep_inhibition::SystemSleepInhibitor::default())
         .manage(settings_transfer::SettingsFileTransferState::default())
@@ -168,6 +170,9 @@ pub fn run() {
         .manage(workspace_run::WorkspaceRunState::default())
         .manage(workspace_tools::WorkspaceTerminalState::default())
         .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                idle_shutdown::clear_window_work(window.app_handle(), window.label());
+            }
             desktop_shell::handle_window_event(window, event);
         })
         .setup(move |app| {
@@ -221,6 +226,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
+            idle_shutdown::supports_idle_shutdown,
+            idle_shutdown::get_shutdown_when_idle,
+            idle_shutdown::set_window_pending_media_work,
+            idle_shutdown::set_window_pending_chat_work,
+            idle_shutdown::set_shutdown_when_idle,
+            idle_shutdown::has_pending_shutdown_work,
+            idle_shutdown::shutdown_if_idle,
             desktop_shell::detect_fullscreen_window_on_monitor,
             desktop_shell::clear_webview_cache,
             desktop_shell::ensure_assistant_window,

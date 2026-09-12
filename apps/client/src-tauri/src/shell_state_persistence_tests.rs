@@ -1,6 +1,6 @@
 use super::{
     commit_state_change_at_paths, load_snapshot_at_path, persist_snapshot_at_paths,
-    ShellStateCompareAndSwapResponse, ShellStateSnapshot,
+    with_unchanged_snapshot_file, ShellStateCompareAndSwapResponse, ShellStateSnapshot,
 };
 use serde_json::{json, Value};
 use std::{fs, path::PathBuf};
@@ -60,6 +60,35 @@ impl Drop for Storage {
     fn drop(&mut self) {
         fs::remove_dir_all(&self.directory).expect("isolated test storage should be removed");
     }
+}
+
+#[tokio::test]
+async fn shutdown_rejects_a_stale_cache_after_another_writer_queues_work() {
+    let storage = Storage::new("shutdown-stale-cache");
+    let mut shutdown_cache = Some(storage.load());
+    let mut writer_cache = None;
+    storage.patch(&mut writer_cache, 7, "queued").await.unwrap();
+    let stopped = with_unchanged_snapshot_file(&storage.snapshot, &mut shutdown_cache, 7, |_| {
+        panic!("Shutdown must not run against a stale snapshot")
+    })
+    .unwrap();
+    assert!(!stopped);
+    assert_eq!(shutdown_cache.unwrap().revision, 8);
+}
+
+#[test]
+fn shutdown_holds_the_file_lock_through_the_final_check_and_action() {
+    let storage = Storage::new("shutdown-file-lock");
+    let mut cache = None;
+    let lock_path = PathBuf::from(format!("{}.machdoch.lock", storage.snapshot.display()));
+    let stopped = with_unchanged_snapshot_file(&storage.snapshot, &mut cache, 7, |state| {
+        assert!(lock_path.is_dir());
+        assert_eq!(state["preserved"], "original");
+        Ok(true)
+    })
+    .unwrap();
+    assert!(stopped);
+    assert!(!lock_path.exists());
 }
 
 async fn directory_sync_failure_case(warm_cache: bool) {

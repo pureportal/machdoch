@@ -52,11 +52,11 @@ use paths::resolve_workspace_relative_path;
 use process::open_path_in_system_shell;
 use progress::create_progress_timestamp;
 use ralph::{execute_ralph_command, resolve_ralph_flow_path_for_open};
+pub(crate) use registry::active_task_ids;
 use registry::{
-    acknowledge_completed_task_results, active_task_ids, active_task_summaries,
-    completed_desktop_task_result, finish_active_task, normalize_task_id,
-    recent_completed_task_results, register_active_task, remember_completed_task_result,
-    ActiveDesktopTaskClaim, ActiveDesktopTaskRegistration,
+    acknowledge_completed_task_results, active_task_summaries, completed_desktop_task_result,
+    finish_active_task, normalize_task_id, recent_completed_task_results, register_active_task,
+    remember_completed_task_result, ActiveDesktopTaskClaim, ActiveDesktopTaskRegistration,
 };
 pub use registry::{
     request_all_desktop_task_cancels, request_desktop_task_cancel, ActiveDesktopTaskSummary,

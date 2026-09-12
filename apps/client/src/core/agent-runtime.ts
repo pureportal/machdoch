@@ -59,6 +59,7 @@ import {
   canonicalDigest,
   compareCanonicalStrings,
   createInstructionDeliveryReceipt,
+  InstructionSystemError,
   utf8ByteLength,
   type FrozenInstructionSet,
   type InstructionDeliveryPlan,
@@ -2471,7 +2472,11 @@ export const maybeExecuteModelDrivenTask = async (
       {
         task: params.task,
         mode: params.config.mode,
-        status: "blocked",
+        status:
+          error instanceof InstructionSystemError &&
+          error.code !== "DELIVERY_INDETERMINATE"
+            ? "blocked"
+            : "failed",
         summary,
         executedTools: [],
         outputSections: [

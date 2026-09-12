@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, vi } from "vitest";
 import { createSession } from "../../chat-session.model";
 import { RUN_MODE_META } from "../_helpers/session-shell";
 import { SessionComposer, type SessionComposerProps } from "./session-composer";
@@ -13,6 +13,27 @@ const noop = (): void => {};
 const noopAsync = async (): Promise<void> => {};
 
 afterEach(() => cleanup());
+
+beforeAll(() => {
+  Object.defineProperties(HTMLDialogElement.prototype, {
+    showModal: {
+      configurable: true,
+      value(this: HTMLDialogElement) {
+        this.setAttribute("open", "");
+      },
+    },
+    close: {
+      configurable: true,
+      value(this: HTMLDialogElement) {
+        this.removeAttribute("open");
+      },
+    },
+  });
+});
+afterAll(() => {
+  Reflect.deleteProperty(HTMLDialogElement.prototype, "showModal");
+  Reflect.deleteProperty(HTMLDialogElement.prototype, "close");
+});
 
 const createProps = (
   overrides: Partial<SessionComposerProps> = {},
@@ -100,7 +121,6 @@ const createProps = (
   onQueuedMessageReorder: noop,
   onQueuedMessageRemove: noop,
   onQueuedMessageRetry: noop,
-  onQueuedMessageSend: noop,
   onQueuedMessageSelectContextAttachments: noopAsync,
   onQueuedMessageRemoveContextAttachment: noop,
   onQueuedMessageClearContextAttachments: noop,

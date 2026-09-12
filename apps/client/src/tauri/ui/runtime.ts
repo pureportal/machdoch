@@ -2944,6 +2944,13 @@ const normalizeUserAgentLimitsSettings = (
   settings: UserAgentLimitsSettings,
 ): UserAgentLimitsSettings => {
   return {
+    automaticRetries: settings.automaticRetries,
+    retryAttempts: clampIntegerSetting(
+      settings.retryAttempts,
+      AGENT_LIMIT_BOUNDS.retryAttempts.min,
+      AGENT_LIMIT_BOUNDS.retryAttempts.max,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.retryAttempts,
+    ),
     infinite: settings.infinite === true,
     executorTurns: clampIntegerSetting(
       settings.executorTurns,

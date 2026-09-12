@@ -74,6 +74,25 @@ pub(crate) struct MediaRuntimeState {
     local_diffusers_status: Mutex<Option<provider_local_diffusers::LocalDiffusersRuntimeStatus>>,
 }
 
+pub(crate) fn has_pending_shutdown_work(app: &AppHandle) -> MediaResult<bool> {
+    let state = app.state::<MediaRuntimeState>();
+    if !state
+        .active_runs
+        .lock()
+        .map_err(|_| "Media worker state is unavailable.")?
+        .is_empty()
+        || !state
+            .active_model_installs
+            .lock()
+            .map_err(|_| "Media installer state is unavailable.")?
+            .is_empty()
+    {
+        return Ok(true);
+    }
+    let paths = MediaRuntimePaths::resolve(app)?;
+    database::has_pending_work(&paths)
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct RalphMediaResolvedInputBinding {
@@ -3141,6 +3160,7 @@ pub(crate) fn ensure_ralph_media_flow_run(
     workspace_root: &Path,
     mut request: RalphMediaFlowRunRequest,
 ) -> MediaResult<RalphMediaRunDetail> {
+    let _sleep_inhibition = inhibit_system_sleep_for_media_work(&app)?;
     request.run_id = required_text("runId", &request.run_id, 128)?;
     request.flow_id = required_text("flowId", &request.flow_id, 128)?;
     request.revision_id = required_text("revisionId", &request.revision_id, 128)?;
@@ -3810,6 +3830,7 @@ pub(crate) fn media_enqueue_fixture_run(
         "media_enqueue_fixture_run",
         (|| {
             request.validate()?;
+            let _sleep_inhibition = inhibit_system_sleep_for_media_work(&app)?;
             let paths = MediaRuntimePaths::resolve(&app)?;
             database::ensure_initialized(&paths)?;
             database::enqueue_fixture_run(&paths, &request)?;
@@ -4567,6 +4588,7 @@ pub(crate) fn media_enqueue_mock_remote_run(
         "media_enqueue_mock_remote_run",
         (|| {
             request.validate()?;
+            let _sleep_inhibition = inhibit_system_sleep_for_media_work(&app)?;
             let paths = MediaRuntimePaths::resolve(&app)?;
             database::ensure_initialized(&paths)?;
             provider_mock::enqueue(&paths, &request)?;

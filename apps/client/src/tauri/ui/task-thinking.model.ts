@@ -42,6 +42,7 @@ const THINKING_STATE_TONES: Record<TaskExecutionState, TaskPanelTone> = {
 };
 
 const TERMINAL_EXECUTION_STATE_BY_STATUS = {
+  failed: "blocked",
   planned: "planned",
   executed: "completed",
   blocked: "blocked",

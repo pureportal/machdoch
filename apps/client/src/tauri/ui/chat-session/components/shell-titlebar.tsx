@@ -1,4 +1,4 @@
-import { TerminalSquare } from "lucide-react";
+import { Power, TerminalSquare } from "lucide-react";
 import type { JSX, MouseEventHandler } from "react";
 import {
   ControlTooltip,
@@ -15,6 +15,13 @@ import {
 import type { RuntimeProviderAvailability } from "../../runtime";
 
 export interface ShellTitlebarProps {
+  shutdownWhenIdle: {
+    enabled: boolean;
+    available: boolean;
+    changing: boolean;
+    error: string | null;
+    toggle: () => Promise<void>;
+  };
   providerStatuses: RuntimeProviderAvailability[];
   onMinimizeWindow: MouseEventHandler<HTMLButtonElement>;
   onToggleMaximizeWindow: MouseEventHandler<HTMLButtonElement>;
@@ -22,6 +29,7 @@ export interface ShellTitlebarProps {
 }
 
 export const ShellTitlebar = ({
+  shutdownWhenIdle,
   providerStatuses,
   onMinimizeWindow,
   onToggleMaximizeWindow,
@@ -89,6 +97,42 @@ export const ShellTitlebar = ({
           );
         })}
         <div className="mx-2 h-4 w-px bg-slate-800" />
+        {shutdownWhenIdle.available ? (
+          <ControlTooltip
+            content={
+              shutdownWhenIdle.enabled
+                ? "Cancel shutdown when work finishes"
+                : "Shut down PC when work finishes; forces apps to close"
+            }
+            side="bottom"
+          >
+            <button
+              type="button"
+              aria-label="Shut down PC when work finishes"
+              aria-pressed={shutdownWhenIdle.enabled}
+              disabled={shutdownWhenIdle.changing}
+              onClick={() => void shutdownWhenIdle.toggle()}
+              className={cn(
+                "pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-lg transition-colors disabled:opacity-50",
+                shutdownWhenIdle.enabled
+                  ? "bg-amber-400/20 text-amber-300 ring-1 ring-amber-400/40 hover:bg-amber-400/30"
+                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-100",
+              )}
+              data-tauri-no-drag
+            >
+              <Power aria-hidden="true" className="size-3.5" />
+            </button>
+          </ControlTooltip>
+        ) : null}
+        {shutdownWhenIdle.error ? (
+          <span
+            role="alert"
+            className="max-w-64 truncate text-xs text-rose-300"
+            title={shutdownWhenIdle.error}
+          >
+            {shutdownWhenIdle.error}
+          </span>
+        ) : null}
         <ControlTooltip content="Minimize" side="bottom">
           <button
             type="button"

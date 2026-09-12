@@ -47,6 +47,7 @@ export const ExecutionInsightRow = ({
   const canContinueTask =
     !!onContinueTask &&
     (execution.status === "executed" ||
+      execution.status === "failed" ||
       execution.status === "blocked" ||
       execution.status === "cancelled");
 

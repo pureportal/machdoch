@@ -151,7 +151,6 @@ export interface SessionComposerProps {
   onQueuedMessageReorder: (messageId: string, targetIndex: number) => void;
   onQueuedMessageRemove: (messageId: string) => void;
   onQueuedMessageRetry: (messageId: string) => void;
-  onQueuedMessageSend: (messageId: string) => void;
   onQueuedMessageSelectContextAttachments: (
     messageId: string,
     selectionKind: AttachmentSelectionKind,
@@ -249,7 +248,6 @@ export const SessionComposer = ({
   onQueuedMessageReorder,
   onQueuedMessageRemove,
   onQueuedMessageRetry,
-  onQueuedMessageSend,
   onQueuedMessageSelectContextAttachments,
   onQueuedMessagePasteContextImages,
   onQueuedMessageRemoveContextAttachment,
@@ -568,7 +566,6 @@ export const SessionComposer = ({
         onQueuedMessageReorder={onQueuedMessageReorder}
         onQueuedMessageRemove={onQueuedMessageRemove}
         onQueuedMessageRetry={onQueuedMessageRetry}
-        onQueuedMessageSend={onQueuedMessageSend}
         onQueuedMessageSelectContextAttachments={
           onQueuedMessageSelectContextAttachments
         }

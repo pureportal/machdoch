@@ -514,6 +514,7 @@ async function synchronizeAgentLimits(
 ): Promise<UserAgentLimitsSettings | null> {
   const managed = document.agentLimits;
   const next: UserAgentLimitsSettings = {
+    ...current,
     infinite: managed.infinite ?? current.infinite,
     executorTurns: managed.executorTurns ?? current.executorTurns,
     autopilotExecutorIterations:

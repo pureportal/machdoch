@@ -85,6 +85,13 @@ export const normalizeAgentLimitsDraft = (
   settings: UserAgentLimitsSettings,
 ): UserAgentLimitsSettings => {
   return {
+    automaticRetries: settings.automaticRetries,
+    retryAttempts: clampIntegerSetting(
+      settings.retryAttempts,
+      AGENT_LIMIT_BOUNDS.retryAttempts.min,
+      AGENT_LIMIT_BOUNDS.retryAttempts.max,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.retryAttempts,
+    ),
     infinite: settings.infinite,
     executorTurns: clampIntegerSetting(
       settings.executorTurns,
@@ -107,6 +114,8 @@ export const hasAgentLimitsDraftChanges = (
 ): boolean => {
   return (
     left.infinite !== right.infinite ||
+    left.automaticRetries !== right.automaticRetries ||
+    left.retryAttempts !== right.retryAttempts ||
     left.executorTurns !== right.executorTurns ||
     left.autopilotExecutorIterations !== right.autopilotExecutorIterations
   );
@@ -478,6 +487,39 @@ export const AgentLimitsSettingsPanel = ({
   return (
     <SettingsCard title="Agent execution">
       <div className="grid gap-0">
+        <SettingPanel label="Automatic retries">
+          <ChoiceButtons
+            label="Automatic retries"
+            value={draft.automaticRetries ? "on" : "off"}
+            options={[
+              { value: "on", label: "On" },
+              { value: "off", label: "Off" },
+            ]}
+            disabled={setup.saving}
+            onChange={(value) =>
+              setDraft({ ...draft, automaticRetries: value === "on" })
+            }
+          />
+        </SettingPanel>
+        {draft.automaticRetries ? (
+          <SettingPanel
+            label="Retry attempts"
+            detail="After the initial execution."
+          >
+            <SettingsNumberInput
+              aria-label="Retry attempts"
+              min={AGENT_LIMIT_BOUNDS.retryAttempts.min}
+              max={AGENT_LIMIT_BOUNDS.retryAttempts.max}
+              step="1"
+              value={draft.retryAttempts}
+              disabled={setup.saving}
+              onValueChange={(retryAttempts) =>
+                setDraft({ ...draft, retryAttempts })
+              }
+              className="h-10 max-w-32 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
+            />
+          </SettingPanel>
+        ) : null}
         <SettingPanel
           label="Limit mode"
           detail="The inactivity safety timeout still applies."

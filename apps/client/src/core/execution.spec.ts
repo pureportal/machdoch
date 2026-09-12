@@ -2100,7 +2100,7 @@ describe("executeTask", () => {
     expect(streamProgressCallbacks).toBeGreaterThan(0);
   });
 
-  it("surfaces provider failure details in blocked model-driven results", async () => {
+  it("surfaces provider failure details in failed model-driven results", async () => {
     const workspaceRoot = await createWorkspace();
     const progress: TaskExecutionProgress[] = [];
     const providerError = Object.assign(
@@ -2137,7 +2137,7 @@ describe("executeTask", () => {
       },
     );
 
-    expect(result.status).toBe("blocked");
+    expect(result.status).toBe("failed");
     expect(result.summary).toContain("provider langdock with model gpt-5-mini");
     expect(result.summary).toContain("400 No body");
     expect(progress.at(-1)?.message).toBe(result.summary);

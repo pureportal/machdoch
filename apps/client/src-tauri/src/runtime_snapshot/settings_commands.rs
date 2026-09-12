@@ -385,6 +385,8 @@ pub(super) fn save_user_agent_limits_settings_value(
 
     update_user_config_file(|config| {
         config.agent_limits.infinite = Some(normalized_settings.infinite);
+        config.agent_limits.automatic_retries = Some(normalized_settings.automatic_retries);
+        config.agent_limits.retry_attempts = Some(normalized_settings.retry_attempts);
         config.agent_limits.executor_turns = Some(normalized_settings.executor_turns);
         config.agent_limits.autopilot_executor_iterations =
             Some(normalized_settings.autopilot_executor_iterations);

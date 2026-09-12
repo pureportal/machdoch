@@ -29,6 +29,7 @@ import {
   type RuntimeSnapshot,
 } from "../../runtime";
 import { getDesktopTaskRunFailure } from "../../desktop-task-error";
+import type { ExecutionAttempt } from "./execution-retry";
 import {
   appendThinkingProgress,
   appendTerminalExecutionToThinkingTrace,
@@ -83,6 +84,7 @@ import type {
 } from "./use-desktop-task-progress";
 
 const TERMINAL_PROGRESS_STATE_BY_STATUS = {
+  failed: "blocked",
   planned: "planned",
   executed: "completed",
   blocked: "blocked",
@@ -219,6 +221,8 @@ const createTerminalThinkingProgress = (
 };
 
 export interface SubmitTaskToSessionOptions {
+  taskId?: string;
+  executionAttempt?: ExecutionAttempt;
   sessionSnapshot: ChatSessionRecord;
   task: string;
   contextAttachments: ChatSessionContextAttachment[];
@@ -384,6 +388,7 @@ export const useSessionTaskSubmission = (options: {
     | "refreshWorkspaceRuntimeSnapshot"
     | "runtimeSnapshot"
     | "userMemorySettings"
+    | "userAgentLimitsSettings"
   >;
   voice: Pick<ChatSessionVoiceController, "stopSpeaking">;
   uiControlAvailability: RuntimeSnapshot["uiControl"] | undefined;
@@ -486,6 +491,7 @@ export const useSessionTaskSubmission = (options: {
         : (currentSession ?? submittedSessionSnapshot);
       const hasActiveTaskForSession = [
         ...currentOptions.activeDesktopTasksRef.current.values(),
+        ...currentOptions.unsettledDesktopTasksRef.current.values(),
       ].includes(sessionId);
 
       if (
@@ -528,7 +534,15 @@ export const useSessionTaskSubmission = (options: {
       const mediaAssetReferences =
         getImageAttachmentMediaReferences(contextAttachments);
       const isQuickTaskSessionSnapshot = isQuickVoiceSession(sessionSnapshot);
-      const taskId = crypto.randomUUID();
+      const taskId = submitOptions.taskId ?? crypto.randomUUID();
+      const executionAttempt: ExecutionAttempt =
+        submitOptions.executionAttempt ?? {
+          rootTaskId: taskId,
+          task: normalizedTask,
+          retryNumber: 0,
+          retryLimit:
+            currentOptions.runtime.userAgentLimitsSettings.retryAttempts,
+        };
       const taskStartedAt = Date.now();
       const userMessageContextAttachments = contextAttachments.map(
         (attachment) => ({ ...attachment }),
@@ -537,6 +551,7 @@ export const useSessionTaskSubmission = (options: {
         submitOptions.messageSettings ??
         createSessionMessageSettings(sessionSnapshot);
       const userMessage: ChatSessionMessage = {
+        executionAttempt,
         id: `${taskId}-user`,
         taskId,
         role: "user",
@@ -735,6 +750,13 @@ export const useSessionTaskSubmission = (options: {
         const fallbackMessageId = terminalFallbackMessageId;
         terminalFallbackMessageId = null;
         const reason = error instanceof Error ? error.message : String(error);
+        const failure = getDesktopTaskRunFailure(error);
+        const status: ChatSessionTaskOutcome["status"] =
+          failure?.kind === "cancelled"
+            ? "cancelled"
+            : failure?.kind === "timed-out"
+              ? "timed-out"
+              : "failed";
 
         currentOptions.state.updateSessionById(sessionId, (session) => {
           let changed = false;
@@ -748,7 +770,7 @@ export const useSessionTaskSubmission = (options: {
             return {
               ...messageWithoutSource,
               content: formatTaskExecutionError(error),
-              outcome: { status: "failed" as const, reason },
+              outcome: { status, reason },
             };
           });
 
@@ -904,6 +926,8 @@ export const useSessionTaskSubmission = (options: {
               updatedAt: Date.now(),
             };
           });
+
+          if (submitOptions.executionAttempt?.retryNumber) return;
 
           const queuedPrompt = createQueuedMessagePromptAfterOperationConflict(
             {
@@ -1223,20 +1247,22 @@ export const useSessionTaskSubmission = (options: {
       currentOptions.unsettledDesktopTasksRef.current.set(taskId, sessionId);
       submitOptions.onTaskStarted?.(taskId);
 
-      const taskRunPromise = runDesktopTask(sessionWorkspace, executionTask, {
-        conversationContext: taskConversationContext,
-        ...(imagePaths.length > 0 ? { imagePaths } : {}),
-        ...(mediaAssetReferences.length > 0 ? { mediaAssetReferences } : {}),
-        model: sessionSnapshot.model,
-        provider: sessionSnapshot.provider,
-        ...(sessionSnapshotReasoning
-          ? { reasoning: sessionSnapshotReasoning }
-          : {}),
-        ...(sessionMode ? { mode: sessionMode } : {}),
-        sessionId,
-        taskId,
-        operationKind: "chat-run",
-      });
+      const taskRunPromise = currentOptions.state.flushPersistence().then(() =>
+        runDesktopTask(sessionWorkspace, executionTask, {
+          conversationContext: taskConversationContext,
+          ...(imagePaths.length > 0 ? { imagePaths } : {}),
+          ...(mediaAssetReferences.length > 0 ? { mediaAssetReferences } : {}),
+          model: sessionSnapshot.model,
+          provider: sessionSnapshot.provider,
+          ...(sessionSnapshotReasoning
+            ? { reasoning: sessionSnapshotReasoning }
+            : {}),
+          ...(sessionMode ? { mode: sessionMode } : {}),
+          sessionId,
+          taskId,
+          operationKind: "chat-run",
+        }),
+      );
 
       void taskRunPromise
         .then((taskRun) => {
@@ -1527,6 +1553,7 @@ export const useSessionTaskSubmission = (options: {
 
       if (
         execution.status !== "blocked" &&
+        execution.status !== "failed" &&
         execution.status !== "cancelled" &&
         execution.status !== "unsupported"
       ) {
@@ -1597,6 +1624,7 @@ export const useSessionTaskSubmission = (options: {
       if (
         execution.status !== "executed" &&
         execution.status !== "blocked" &&
+        execution.status !== "failed" &&
         execution.status !== "cancelled"
       ) {
         return;

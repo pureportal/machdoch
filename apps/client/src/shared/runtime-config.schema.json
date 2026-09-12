@@ -150,6 +150,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "automaticRetries": { "type": "boolean" },
+        "retryAttempts": { "type": "integer", "minimum": 0, "maximum": 20 },
         "infinite": {
           "type": "boolean",
           "default": false
@@ -548,8 +550,24 @@
     "UserAgentLimitsSettings": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["infinite", "executorTurns", "autopilotExecutorIterations"],
+      "required": [
+        "infinite",
+        "executorTurns",
+        "autopilotExecutorIterations",
+        "automaticRetries",
+        "retryAttempts"
+      ],
       "properties": {
+        "automaticRetries": {
+          "type": "boolean",
+          "default": true
+        },
+        "retryAttempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20,
+          "default": 2
+        },
         "infinite": {
           "type": "boolean",
           "default": false

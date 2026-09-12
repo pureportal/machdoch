@@ -8,6 +8,7 @@ import {
   type SetStateAction,
 } from "react";
 import { getProviderLabel, type RuntimeProvider } from "../../model-catalog";
+import { DEFAULT_USER_AGENT_LIMITS_SETTINGS } from "../../../../core/runtime-contract.generated.js";
 import { isMcpConfigConflictError } from "../../mcp-config-error";
 import type { ConversationMemoryEntry } from "../../../../core/types.js";
 import { DEFAULT_USER_WORKSPACE_RUN_SETTINGS } from "../../../../core/runtime-contract.generated.js";
@@ -119,6 +120,7 @@ export interface ChatSessionRuntimeController {
   workspaceRunSetupSaving: boolean;
   workspaceRunSetupMessage: SettingsStatusMessage | null;
   userAgentLimitsSettings: UserAgentLimitsSettings;
+  userAgentLimitsSettingsLoaded: boolean;
   userReviewModelSettings: UserReviewModelSettings;
   agentLimitsSetupSaving: boolean;
   agentLimitsSetupMessage: SettingsStatusMessage | null;
@@ -240,11 +242,7 @@ const createEmptyUserDesktopSettings = (): UserDesktopSettings => {
 };
 
 const createEmptyUserAgentLimitsSettings = (): UserAgentLimitsSettings => {
-  return {
-    infinite: false,
-    executorTurns: 64,
-    autopilotExecutorIterations: 16,
-  };
+  return { ...DEFAULT_USER_AGENT_LIMITS_SETTINGS };
 };
 
 const createEmptyUserReviewModelSettings = (): UserReviewModelSettings => {
@@ -422,6 +420,8 @@ export const useChatSessionRuntime = (
     useState<SettingsStatusMessage | null>(null);
   const [userAgentLimitsSettings, setUserAgentLimitsSettings] =
     useState<UserAgentLimitsSettings>(createEmptyUserAgentLimitsSettings());
+  const [userAgentLimitsSettingsLoaded, setUserAgentLimitsSettingsLoaded] =
+    useState(false);
   const [userReviewModelSettings, setUserReviewModelSettings] =
     useState<UserReviewModelSettings>(createEmptyUserReviewModelSettings());
   const [agentLimitsSetupSaving, setAgentLimitsSetupSaving] = useState(false);
@@ -529,6 +529,7 @@ export const useChatSessionRuntime = (
 
   const applyLoadedUserAgentLimitsSettings = useCallback(
     (settings: UserAgentLimitsSettings): void => {
+      setUserAgentLimitsSettingsLoaded(true);
       setUserAgentLimitsSettings({
         ...createEmptyUserAgentLimitsSettings(),
         ...settings,
@@ -842,20 +843,24 @@ export const useChatSessionRuntime = (
   useEffect(() => {
     let cancelled = false;
 
-    void loadUserAgentLimitsSettings()
-      .then((settings) => {
-        if (!cancelled) {
-          applyLoadedUserAgentLimitsSettings(settings);
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          console.error("Failed to load user agent limit settings", error);
-        }
-      });
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const loadSettings = (): void => {
+      void loadUserAgentLimitsSettings()
+        .then((settings) => {
+          if (!cancelled) applyLoadedUserAgentLimitsSettings(settings);
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            console.error("Failed to load user agent limit settings", error);
+            retryTimer = setTimeout(loadSettings, 2_000);
+          }
+        });
+    };
+    loadSettings();
 
     return () => {
       cancelled = true;
+      clearTimeout(retryTimer);
     };
   }, [applyLoadedUserAgentLimitsSettings]);
 
@@ -2596,6 +2601,7 @@ export const useChatSessionRuntime = (
     workspaceRunSetupSaving,
     workspaceRunSetupMessage,
     userAgentLimitsSettings,
+    userAgentLimitsSettingsLoaded,
     userReviewModelSettings,
     agentLimitsSetupSaving,
     agentLimitsSetupMessage,

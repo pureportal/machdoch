@@ -52,6 +52,33 @@ pub struct ShellStateSnapshot {
     revision: u64,
 }
 
+pub(crate) fn with_unchanged_snapshot(
+    app: &AppHandle,
+    expected_revision: u64,
+    action: impl FnOnce(&Value) -> Result<bool, String>,
+) -> Result<bool, String> {
+    let state = app.state::<ShellStateStoreLock>();
+    let mut cache = state.0.blocking_lock();
+    let path = snapshot_path(app)?;
+    with_unchanged_snapshot_file(&path, &mut cache, expected_revision, action)
+}
+
+fn with_unchanged_snapshot_file(
+    path: &std::path::Path,
+    cache: &mut Option<ShellStateSnapshot>,
+    expected_revision: u64,
+    action: impl FnOnce(&Value) -> Result<bool, String>,
+) -> Result<bool, String> {
+    with_cooperative_file_lock(path, || {
+        let snapshot = load_snapshot_at_path(path, Value::Null)?;
+        *cache = Some(snapshot.clone());
+        if snapshot.revision != expected_revision {
+            return Ok(false);
+        }
+        action(&snapshot.state)
+    })
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShellStateCompareAndSwapRequest {

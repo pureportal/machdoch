@@ -1,7 +1,6 @@
 import {
   getActiveChatOperationIds,
   getSessionOverviewStatus,
-  getSessionTaskOutcome,
   type ChatSessionContextAttachment,
   type ChatSessionQueuedMessage,
   type ChatSessionRecord,
@@ -10,7 +9,6 @@ import {
   createQueuedMessageDispatchPrompt,
   type QueuedMessageDispatchPrompt,
 } from "./prompt-enhancement";
-import { shouldDispatchQueuedFollowUp } from "./queued-follow-up-policy";
 import { areContextAttachmentRecordsEqual } from "./session-context-attachments";
 
 const areQueuedMessageAttachmentsEqual = (
@@ -42,11 +40,7 @@ export const canDispatchQueuedMessage = (
     return true;
   }
 
-  return shouldDispatchQueuedFollowUp(
-    message.dispatchPolicy,
-    getSessionTaskOutcome(session, message.blockedByTaskId),
-    getActiveChatOperationIds(session).includes(message.blockedByTaskId),
-  );
+  return !getActiveChatOperationIds(session).includes(message.blockedByTaskId);
 };
 
 export const canStartQueuedMessageDispatch = (
@@ -124,7 +118,7 @@ export const createQueuedMessageDispatchAttempt = (
   return { message: nextMessage, prompt };
 };
 
-export const createFailedQueuedMessageRecovery = (
+export const createConflictedQueuedMessageRecovery = (
   message: ChatSessionQueuedMessage,
   id: string,
   activeTaskId: string,
@@ -135,9 +129,8 @@ export const createFailedQueuedMessageRecovery = (
     id,
     blockedByTaskId: activeTaskId,
     blockerUpdatedAt: updatedAt,
-    status: "failed",
+    status: "queued",
     statusUpdatedAt: updatedAt,
-    failureMessage: "Task could not start because another task became active.",
     updatedAt,
   };
 };

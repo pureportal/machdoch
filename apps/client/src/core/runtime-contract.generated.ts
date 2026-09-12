@@ -87,11 +87,17 @@ export const WEB_SEARCH_ENV_KEY_BY_PROVIDER = {
 } as const satisfies Record<UserWebSearchProvider, string>;
 
 export const DEFAULT_USER_AGENT_LIMITS_SETTINGS = {
+  "automaticRetries": true,
+  "retryAttempts": 2,
   "infinite": false,
   "executorTurns": 64,
   "autopilotExecutorIterations": 16
 } as const satisfies UserAgentLimitsSettings;
 export const AGENT_LIMIT_BOUNDS = {
+  "retryAttempts": {
+    "min": 0,
+    "max": 20
+  },
   "executorTurns": {
     "min": 1,
     "max": 1000
@@ -247,6 +253,8 @@ export interface WorkspaceCompatibilityConfig {
 }
 
 export interface RuntimeAgentLimitOverrides {
+  automaticRetries?: boolean;
+  retryAttempts?: number;
   infinite?: boolean;
   executorTurns?: number;
   autopilotExecutorIterations?: number;
@@ -441,6 +449,8 @@ export interface UserConfigFile {
 }
 
 export interface UserAgentLimitsSettings {
+  automaticRetries: boolean;
+  retryAttempts: number;
   infinite: boolean;
   executorTurns: number;
   autopilotExecutorIterations: number;

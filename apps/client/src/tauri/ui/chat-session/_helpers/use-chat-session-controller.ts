@@ -1,5 +1,8 @@
 ﻿import { isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { reconcileRecoveredTaskResults } from "./recovered-task-result";
+import { useAutomaticChatWork } from "./use-automatic-chat-work";
+import { useShutdownWhenIdle } from "../../app-shell/use-shutdown-when-idle";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MediaAssetReference } from "../../../../core/media/contracts.js";
 import {
@@ -17,7 +20,6 @@ import type {
 import type {
   AgentModelImageMediaType,
   TaskExecutionProgress,
-  TaskExecutionResult,
 } from "../../../../core/types.js";
 import { scheduleAppNotificationDismiss } from "../../components/ui/notification-lifecycle";
 import {
@@ -32,7 +34,6 @@ import {
   getActiveChatOperationIds,
   getActivePromptEnhancementEditMessageId,
   getLatestRunningTaskId,
-  getSessionTaskOutcome,
   getSessionOverviewStatus,
   getSessionTitle,
   isMediaAssetContextAttachment,
@@ -75,10 +76,7 @@ import {
   runInternalDesktopTask,
   runInternalTaskInterview,
 } from "../../internal-task-model";
-import {
-  DesktopTaskRunProtocolError,
-  getDesktopTaskRunFailure,
-} from "../../desktop-task-error";
+import { getDesktopTaskRunFailure } from "../../desktop-task-error";
 import {
   createDefaultRalphInputValues,
   validateRalphInputFieldValues,
@@ -108,7 +106,6 @@ import {
   type InstructionMutationInput,
   type InstructionMutationResult,
   type InstructionRegistryResult,
-  type DesktopTaskRunResponse,
   type FileManagerInvocationRoute,
   type RecentDesktopTaskResult,
   type TaskInterviewResult,
@@ -168,7 +165,7 @@ import {
 import {
   canDispatchQueuedMessage,
   canStartQueuedMessageDispatch,
-  createFailedQueuedMessageRecovery,
+  createConflictedQueuedMessageRecovery,
   createQueuedMessageDispatchAttempt,
   createQueuedMessageRetry,
   isQueuedPromptEnhancementInputCurrent,
@@ -208,7 +205,6 @@ import {
 import {
   createExecutionFromTerminalProgress,
   createExecutionMessageContent,
-  formatTaskExecutionError,
   isRecoveredTaskCrashMessage,
 } from "./session-task-continuation";
 import {
@@ -647,32 +643,6 @@ type InactiveDesktopTaskObservation = {
 type InactiveDesktopTaskRecoveryRoute = {
   sessionId: string;
   expiresAt: number;
-};
-
-const TERMINAL_PROGRESS_STATE_BY_STATUS = {
-  planned: "planned",
-  executed: "completed",
-  blocked: "blocked",
-  cancelled: "cancelled",
-  unsupported: "unsupported",
-} satisfies Record<
-  TaskExecutionResult["status"],
-  TaskExecutionProgress["state"]
->;
-
-const createTerminalThinkingProgressFromExecution = (
-  execution: TaskExecutionResult,
-): TaskExecutionProgress => {
-  return {
-    task: execution.task,
-    mode: execution.mode,
-    state: TERMINAL_PROGRESS_STATE_BY_STATUS[execution.status],
-    message: execution.summary,
-    executedTools: execution.executedTools,
-    outputSections: execution.outputSections,
-    cancellable: false,
-    ...(execution.reason ? { reason: execution.reason } : {}),
-  };
 };
 
 const getInstructionCommandErrorMessage = (
@@ -1800,128 +1770,16 @@ export const useChatSessionController = (
       let didApplyResult = false;
 
       state.applyShellState((prev) => {
-        const timestamp =
-          Number.isFinite(result.finishedAt) && result.finishedAt > 0
-            ? result.finishedAt
-            : Date.now();
-        const sessions = prev.sessions.map((session) => {
-          if (getLatestRunningTaskId(session) !== taskId) {
-            return session;
-          }
-
-          const hasTerminalMessage = session.messages.some((message) => {
-            return (
-              getMessageTaskId(message) === taskId &&
-              message.role === "agent" &&
-              message.source?.kind === "execution"
-            );
-          });
-
-          if (hasTerminalMessage) {
-            return session;
-          }
-
-          const messagesWithoutRecoveredCrash = session.messages.filter(
-            (message) =>
-              getMessageTaskId(message) !== taskId ||
-              !isRecoveredTaskCrashMessage(message),
-          );
-
-          if (result.outcome.status === "failed") {
-            const failure = getDesktopTaskRunFailure(result.outcome.failure);
-            const failureError = failure
-              ? new DesktopTaskRunProtocolError(failure)
-              : new Error("Desktop task returned malformed failure state.");
-            const outcomeStatus =
-              failure?.kind === "cancelled"
-                ? "cancelled"
-                : failure?.kind === "timed-out"
-                  ? "timed-out"
-                  : "failed";
-            didApplyResult = true;
-            return applySessionMessageLimit({
-              ...session,
-              updatedAt: timestamp,
-              messages: [
-                ...messagesWithoutRecoveredCrash,
-                {
-                  id: `${taskId}-agent`,
-                  taskId,
-                  role: "agent",
-                  content: formatTaskExecutionError(failureError),
-                  createdAt: timestamp,
-                  outcome: {
-                    status: outcomeStatus,
-                    reason: failureError.message,
-                  },
-                },
-              ],
-            });
-          }
-
-          const execution = (result.outcome.response as DesktopTaskRunResponse)
-            .execution;
-          if (!execution) {
-            return session;
-          }
-          didApplyResult = true;
-          const terminalProgress =
-            createTerminalThinkingProgressFromExecution(execution);
-          const nextMessages = messagesWithoutRecoveredCrash.map((message) => {
-            if (
-              getMessageTaskId(message) !== taskId ||
-              message.role !== "agent" ||
-              message.source?.kind !== "thinking"
-            ) {
-              return message;
-            }
-
-            return {
-              ...message,
-              source: {
-                kind: "thinking" as const,
-                thinking: appendThinkingProgress(
-                  message.source.thinking,
-                  terminalProgress,
-                  timestamp,
-                ),
-              },
-            };
-          });
-
-          return applySessionMessageLimit({
-            ...session,
-            updatedAt: timestamp,
-            messages: [
-              ...nextMessages,
-              {
-                id: `${taskId}-execution`,
-                taskId,
-                role: "agent",
-                content: createExecutionMessageContent(execution),
-                createdAt: timestamp,
-                source: {
-                  kind: "execution",
-                  execution,
-                },
-                outcome: createTaskOutcomeFromExecution(execution),
-              },
-            ],
-          });
-        });
-
-        if (!didApplyResult) {
-          return prev;
-        }
-
-        return {
-          ...prev,
-          sessions,
-        };
+        const next = reconcileRecoveredTaskResults(prev, [result]);
+        didApplyResult = next !== prev;
+        return didApplyResult
+          ? { ...next, sessions: next.sessions.map(applySessionMessageLimit) }
+          : prev;
       });
 
       if (didApplyResult) {
         activeDesktopTasksRef.current.delete(taskId);
+        unsettledDesktopTasksRef.current.delete(taskId);
         ignoredDesktopTaskIdsRef.current.delete(taskId);
         inactiveDesktopTaskObservationsRef.current.delete(taskId);
         inactiveDesktopTaskRecoveryRoutesRef.current.delete(taskId);
@@ -2407,7 +2265,7 @@ export const useChatSessionController = (
           currentInactiveRunningTaskIds,
         );
 
-        if (disposed) {
+        if (disposed || completedResults === null) {
           return;
         }
 
@@ -2518,6 +2376,7 @@ export const useChatSessionController = (
 
             activeDesktopTasksRef.current.delete(taskId);
             inactiveDesktopTaskObservationsRef.current.delete(taskId);
+            unsettledDesktopTasksRef.current.delete(taskId);
 
             if (session) {
               inactiveDesktopTaskRecoveryRoutesRef.current.set(taskId, {
@@ -5464,7 +5323,6 @@ export const useChatSessionController = (
         promptHistoryContent?: string;
         promptEnhancement?: ChatSessionMessagePromptEnhancement;
         promptEnhancementRequest?: ChatSessionQueuedPromptEnhancementRequest;
-        dispatchPolicy?: ChatSessionQueuedMessage["dispatchPolicy"];
         blockedByTaskId?: string;
         contextAttachments: ChatSessionContextAttachment[];
         composerClearGuard?: ComposerClearGuard;
@@ -5517,7 +5375,6 @@ export const useChatSessionController = (
         ...(input?.promptEnhancementRequest
           ? { promptEnhancementRequest: input.promptEnhancementRequest }
           : {}),
-        dispatchPolicy: input?.dispatchPolicy ?? "after-success",
         ...(blockedByTaskId ? { blockedByTaskId } : {}),
         contextAttachments,
         contentUpdatedAt: now,
@@ -5561,7 +5418,7 @@ export const useChatSessionController = (
 
       if (queuedMessageRecovery) {
         const updatedAt = Date.now();
-        const recoveredQueuedMessage = createFailedQueuedMessageRecovery(
+        const recoveredQueuedMessage = createConflictedQueuedMessageRecovery(
           {
             ...queuedMessageRecovery,
             contextAttachments: queuedSubmission.contextAttachments.map(
@@ -5718,7 +5575,6 @@ export const useChatSessionController = (
         task,
         visibleMessageContent: task,
         promptHistoryContent: task,
-        dispatchPolicy: "after-success",
         blockedByTaskId: targetTaskId,
         contextAttachments,
         contentUpdatedAt: now,
@@ -5773,7 +5629,9 @@ export const useChatSessionController = (
     (session: ChatSessionRecord): void => {
       const nextQueuedMessage = queuedSessionMessages.find(
         (message) =>
-          message.sessionId === session.id && message.task.trim().length > 0,
+          message.sessionId === session.id &&
+          message.status !== "failed" &&
+          message.task.trim().length > 0,
       );
 
       if (
@@ -5808,6 +5666,7 @@ export const useChatSessionController = (
               shellStateRef.current.queuedSessionMessages.find(
                 (message) =>
                   message.sessionId === session.id &&
+                  message.status !== "failed" &&
                   message.task.trim().length > 0,
               );
 
@@ -5879,7 +5738,7 @@ export const useChatSessionController = (
                     failedQueuedMessage.id,
                     error instanceof PromptEnhancementCancellationError,
                   );
-                  await completeCrossWindowOperation(lease);
+                  await releaseCrossWindowOperation(lease);
                 } else {
                   await releaseCrossWindowOperation(lease);
                 }
@@ -5896,6 +5755,7 @@ export const useChatSessionController = (
               shellStateRef.current.queuedSessionMessages.find(
                 (message) =>
                   message.sessionId === session.id &&
+                  message.status !== "failed" &&
                   message.task.trim().length > 0,
               );
 
@@ -5960,18 +5820,14 @@ export const useChatSessionController = (
             );
 
             if (!canStartDispatch) {
-              updateQueuedMessageStatus(
-                dispatchAttempt.message.id,
-                "failed",
-                "Task could not start.",
-              );
+              updateQueuedMessageStatus(dispatchAttempt.message.id, "queued");
               if (promptEnhancementTaskId) {
                 failQueuedPromptEnhancementFollowers(
                   refreshedSession.id,
                   promptEnhancementTaskId,
                 );
               }
-              await completeCrossWindowOperation(lease);
+              await releaseCrossWindowOperation(lease);
               return;
             }
 
@@ -5983,6 +5839,7 @@ export const useChatSessionController = (
 
             const didSubmit = taskSubmission.submitTaskToSession({
               sessionSnapshot: latestSession,
+              taskId: `queued-${queuedMessageToSubmit.id}`,
               task: dispatchPrompt.task,
               contextAttachments: queuedMessageToSubmit.contextAttachments,
               clearDraft: false,
@@ -6030,10 +5887,11 @@ export const useChatSessionController = (
                   ? "Task could not start."
                   : "The target session no longer exists.",
               );
-              await completeCrossWindowOperation(lease);
+              await releaseCrossWindowOperation(lease);
               return;
             }
 
+            await state.flushPersistence();
             await completeCrossWindowOperation(lease);
           } catch (error) {
             updateQueuedMessageStatus(
@@ -6047,7 +5905,7 @@ export const useChatSessionController = (
                 promptEnhancementTaskId,
               );
             }
-            await completeCrossWindowOperation(lease);
+            await releaseCrossWindowOperation(lease);
             throw error;
           }
         })
@@ -6073,23 +5931,26 @@ export const useChatSessionController = (
     ],
   );
 
-  useEffect(() => {
-    if (queuedSessionMessages.length === 0) {
-      return;
-    }
+  useAutomaticChatWork({
+    ready: state.hasHydrated && runtime.userAgentLimitsSettingsLoaded,
+    state,
+    settings: runtime.userAgentLimitsSettings,
+    getUnsettledTaskId: getUnsettledDesktopTaskIdForSession,
+    dispatchQueued: dispatchNextQueuedMessageForSession,
+    submit: taskSubmission.submitTaskToSession,
+  });
 
-    for (const session of state.shellState.sessions) {
-      if (getSessionOverviewStatus(session) === "running") {
-        continue;
-      }
-
-      dispatchNextQueuedMessageForSession(session);
-    }
-  }, [
-    dispatchNextQueuedMessageForSession,
-    queuedSessionMessages.length,
-    state.shellState.sessions,
-  ]);
+  const shutdownWhenIdle = useShutdownWhenIdle({
+    ready: state.hasHydrated && runtime.userAgentLimitsSettingsLoaded,
+    state: state.shellState,
+    settings: runtime.userAgentLimitsSettings,
+    hasUnsettledWork: () =>
+      unsettledDesktopTasksRef.current.size > 0 ||
+      activeDesktopTasksRef.current.size > 0 ||
+      dispatchingQueuedMessageIds.size > 0 ||
+      activePromptEnhancementInputsRef.current.size > 0,
+    flush: state.flushPersistence,
+  });
 
   const handleQueuedMessageChange = useCallback(
     (messageId: string, content: string): void => {
@@ -6200,26 +6061,6 @@ export const useChatSessionController = (
           ? current.filter((entry) => entry.id !== messageId)
           : current;
       });
-    },
-    [updateQueuedSessionMessages],
-  );
-
-  const handleQueuedMessageSend = useCallback(
-    (messageId: string): void => {
-      updateQueuedSessionMessages((current) =>
-        current.map((message) =>
-          message.id === messageId && message.status === "queued"
-            ? (() => {
-                const updatedAt = Date.now();
-                return {
-                  ...setQueuedMessageStatus(message, "queued", updatedAt),
-                  dispatchPolicy: "after-terminal",
-                  blockerUpdatedAt: updatedAt,
-                };
-              })()
-            : message,
-        ),
-      );
     },
     [updateQueuedSessionMessages],
   );
@@ -7894,7 +7735,6 @@ export const useChatSessionController = (
                 ...(promptEnhancementRequest
                   ? { promptEnhancementRequest }
                   : {}),
-                dispatchPolicy: "after-terminal",
                 contextAttachments: submission.contextAttachments,
                 composerClearGuard: submission.composerClearGuard,
               });
@@ -8319,6 +8159,7 @@ export const useChatSessionController = (
     hasRunningSession,
     activeChatOperationIds,
     titlebar: {
+      shutdownWhenIdle,
       providerStatuses: providerChooserState.activeProviderStats,
       onMinimizeWindow: windowControls.onMinimizeWindow,
       onToggleMaximizeWindow: windowControls.onToggleMaximizeWindow,
@@ -8533,13 +8374,6 @@ export const useChatSessionController = (
         ? "queue"
         : runningTaskMessageAction,
       queuedMessages: activeSessionQueuedMessages.map((message) => {
-        const blockerOutcome = message.blockedByTaskId
-          ? getSessionTaskOutcome(state.activeSession, message.blockedByTaskId)
-          : null;
-        const blockerActive = message.blockedByTaskId
-          ? activeChatOperationIds.includes(message.blockedByTaskId)
-          : false;
-
         return {
           id: message.id,
           content: message.visibleMessageContent ?? message.task,
@@ -8553,10 +8387,6 @@ export const useChatSessionController = (
           ...(message.failureMessage
             ? { failureMessage: message.failureMessage }
             : {}),
-          canSendNow:
-            message.dispatchPolicy === "after-success" &&
-            !blockerActive &&
-            blockerOutcome?.status !== "succeeded",
           createdAt: message.createdAt,
         };
       }),
@@ -8611,7 +8441,6 @@ export const useChatSessionController = (
       onQueuedMessageReorder: handleQueuedMessageReorder,
       onQueuedMessageRemove: handleQueuedMessageRemove,
       onQueuedMessageRetry: handleQueuedMessageRetry,
-      onQueuedMessageSend: handleQueuedMessageSend,
       onQueuedMessageSelectContextAttachments:
         handleSelectQueuedMessageAttachments,
       onQueuedMessagePasteContextImages: handlePasteQueuedMessageImages,

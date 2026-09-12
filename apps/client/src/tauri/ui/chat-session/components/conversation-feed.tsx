@@ -426,306 +426,324 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
         </div>
       ) : null}
 
-      <div
-        className={cn(
-          "app-message-row flex min-w-0 gap-4",
-          message.role === "user" ? "flex-row-reverse" : "flex-row",
-        )}
-      >
-        <Avatar
-          className={cn(
-            "app-message-avatar mt-1 h-10 w-10 shrink-0 border",
-            message.role === "agent"
-              ? "border-sky-500/20 bg-sky-500/10"
-              : "border-emerald-500/20 bg-emerald-500/20",
-          )}
+      {message.role === "user" &&
+      message.executionAttempt &&
+      message.executionAttempt.retryNumber > 0 ? (
+        <div
+          role="status"
+          className="flex items-center gap-2 px-2 text-xs text-amber-300"
         >
-          <div className="flex h-full w-full items-center justify-center">
-            {message.role === "agent" ? (
-              <Bot className="h-5 w-5 text-sky-300" />
-            ) : (
-              <User className="h-5 w-5 text-emerald-100" />
-            )}
-          </div>
-        </Avatar>
-
+          <RotateCcw aria-hidden="true" className="size-3.5" />
+          <span>
+            Retry {message.executionAttempt.retryNumber} of{" "}
+            {message.executionAttempt.retryLimit} · Previous execution failed
+          </span>
+        </div>
+      ) : (
         <div
           className={cn(
-            "app-message-stack flex min-w-0 flex-1 flex-col gap-3",
-            message.role === "user" ? "items-end" : "items-start",
+            "app-message-row flex min-w-0 gap-4",
+            message.role === "user" ? "flex-row-reverse" : "flex-row",
           )}
         >
-          {thinkingTrace ? (
-            <div className="app-thinking-wrapper w-full min-w-0 max-w-full pt-1 lg:max-w-4xl">
-              <TaskThinkingPanel thinking={thinkingTrace} taskId={message.taskId} />
-            </div>
-          ) : null}
-
-          {shouldRenderBubble ? (
-            <div
-              className={cn(
-                "app-message-bubble relative max-w-[90%] min-w-0 overflow-hidden rounded-[1.75rem] px-5 py-4 text-sm leading-7 shadow-lg wrap-break-word",
-                message.role === "user"
-                  ? "app-user-message-bubble rounded-tr-md bg-slate-800 text-slate-100 shadow-slate-950/20"
-                  : "app-agent-message-bubble rounded-tl-sm border border-slate-800 bg-slate-900/80 pr-14 text-slate-300 shadow-slate-950/30",
-                message.role === "user" && originalPromptContent && "pr-14",
-                isEditing && "w-full pr-5",
-                isActiveEditing &&
-                  "border border-sky-400/60 bg-sky-500/10 shadow-sky-950/35 ring-2 ring-sky-400/20",
-              )}
-              onContextMenu={
-                isEditing
-                  ? undefined
-                  : (event) =>
-                      onOpenMessageContextMenu(
-                        event,
-                        message,
-                        renderedContent,
-                        canSaveMessageAsContextPack,
-                      )
-              }
-            >
-              {message.role === "agent" &&
-              voicePlaybackSupported &&
-              renderedContent.trim().length > 0 ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={
-                    isSpeakingMessage
-                      ? "Stop reading aloud"
-                      : "Read response aloud"
-                  }
-                  tooltip={
-                    isSpeakingMessage
-                      ? "Stop reading aloud"
-                      : "Read response aloud"
-                  }
-                  onClick={() => {
-                    if (isSpeakingMessage) {
-                      onStopSpeaking();
-                      return;
-                    }
-
-                    onSpeakMessage(message);
-                  }}
-                  className={cn(
-                    "app-message-voice-button absolute top-3 right-3 h-7 w-7 rounded-full border border-slate-800 bg-slate-950/70 text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                    isSpeakingMessage &&
-                      "border-rose-500/30 text-rose-200 hover:text-rose-100",
-                  )}
-                >
-                  {isSpeakingMessage ? (
-                    <Square className="h-3.5 w-3.5" />
-                  ) : (
-                    <Volume2 className="h-3.5 w-3.5 text-sky-300" />
-                  )}
-                </Button>
-              ) : null}
-
-              {message.role === "user" &&
-              originalPromptContent &&
-              !isEditing ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={
-                    isOriginalPromptExpanded
-                      ? "Hide original prompt"
-                      : "View original prompt"
-                  }
-                  aria-expanded={isOriginalPromptExpanded}
-                  aria-controls={originalPromptPanelId}
-                  tooltip={
-                    isOriginalPromptExpanded
-                      ? "Hide original prompt"
-                      : "View original prompt"
-                  }
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onToggleOriginalPrompt(message.id);
-                  }}
-                  className="app-message-original-prompt-button absolute top-3 right-3 h-7 w-7 rounded-full border border-emerald-500/25 bg-slate-950/55 text-emerald-100 hover:bg-slate-900 hover:text-white"
-                >
-                  <History className="h-3.5 w-3.5" />
-                </Button>
-              ) : null}
-
-              {isActiveEditing && !isEditing ? (
-                <span className="mb-2 inline-flex rounded-full border border-sky-300/30 bg-sky-400/10 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-sky-100">
-                  Editing
-                </span>
-              ) : null}
-
-              {isEditing ? (
-                <SubmitShortcut asChild>
-                  <form
-                    className="grid gap-3"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      onEditMessage?.(message);
-                    }}
-                  >
-                    <Textarea
-                      autoFocus
-                      aria-label="Edit message"
-                      value={editContent}
-                      onChange={(event) =>
-                        onEditContentChange(event.target.value)
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === "Escape") {
-                          event.preventDefault();
-                          onCancelEditing();
-                          return;
-                        }
-                      }}
-                      className="max-h-80 min-h-24 resize-none border-slate-600 bg-slate-950/50 text-slate-100 focus-visible:border-sky-400/60 focus-visible:ring-sky-400/20"
-                    />
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={onCancelEditing}
-                        className="h-8 rounded-full px-3 text-xs text-slate-300"
-                      >
-                        <X className="mr-1.5 h-3.5 w-3.5" />
-                        Cancel
-                      </Button>
-                      <Button
-                        type="submit"
-                        size="sm"
-                        disabled={!editContent.trim()}
-                        {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                        className="rounded-full bg-sky-600 text-xs text-white hover:bg-sky-500"
-                      >
-                        <Check className="mr-1.5 h-3.5 w-3.5" />
-                        Save and submit
-                      </Button>
-                    </div>
-                  </form>
-                </SubmitShortcut>
+          <Avatar
+            className={cn(
+              "app-message-avatar mt-1 h-10 w-10 shrink-0 border",
+              message.role === "agent"
+                ? "border-sky-500/20 bg-sky-500/10"
+                : "border-emerald-500/20 bg-emerald-500/20",
+            )}
+          >
+            <div className="flex h-full w-full items-center justify-center">
+              {message.role === "agent" ? (
+                <Bot className="h-5 w-5 text-sky-300" />
               ) : (
+                <User className="h-5 w-5 text-emerald-100" />
+              )}
+            </div>
+          </Avatar>
+
+          <div
+            className={cn(
+              "app-message-stack flex min-w-0 flex-1 flex-col gap-3",
+              message.role === "user" ? "items-end" : "items-start",
+            )}
+          >
+            {thinkingTrace ? (
+              <div className="app-thinking-wrapper w-full min-w-0 max-w-full pt-1 lg:max-w-4xl">
+                <TaskThinkingPanel
+                  thinking={thinkingTrace}
+                  taskId={message.taskId}
+                />
+              </div>
+            ) : null}
+
+            {shouldRenderBubble ? (
+              <div
+                className={cn(
+                  "app-message-bubble relative max-w-[90%] min-w-0 overflow-hidden rounded-[1.75rem] px-5 py-4 text-sm leading-7 shadow-lg wrap-break-word",
+                  message.role === "user"
+                    ? "app-user-message-bubble rounded-tr-md bg-slate-800 text-slate-100 shadow-slate-950/20"
+                    : "app-agent-message-bubble rounded-tl-sm border border-slate-800 bg-slate-900/80 pr-14 text-slate-300 shadow-slate-950/30",
+                  message.role === "user" && originalPromptContent && "pr-14",
+                  isEditing && "w-full pr-5",
+                  isActiveEditing &&
+                    "border border-sky-400/60 bg-sky-500/10 shadow-sky-950/35 ring-2 ring-sky-400/20",
+                )}
+                onContextMenu={
+                  isEditing
+                    ? undefined
+                    : (event) =>
+                        onOpenMessageContextMenu(
+                          event,
+                          message,
+                          renderedContent,
+                          canSaveMessageAsContextPack,
+                        )
+                }
+              >
+                {message.role === "agent" &&
+                voicePlaybackSupported &&
+                renderedContent.trim().length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={
+                      isSpeakingMessage
+                        ? "Stop reading aloud"
+                        : "Read response aloud"
+                    }
+                    tooltip={
+                      isSpeakingMessage
+                        ? "Stop reading aloud"
+                        : "Read response aloud"
+                    }
+                    onClick={() => {
+                      if (isSpeakingMessage) {
+                        onStopSpeaking();
+                        return;
+                      }
+
+                      onSpeakMessage(message);
+                    }}
+                    className={cn(
+                      "app-message-voice-button absolute top-3 right-3 h-7 w-7 rounded-full border border-slate-800 bg-slate-950/70 text-slate-300 hover:bg-slate-900 hover:text-slate-100",
+                      isSpeakingMessage &&
+                        "border-rose-500/30 text-rose-200 hover:text-rose-100",
+                    )}
+                  >
+                    {isSpeakingMessage ? (
+                      <Square className="h-3.5 w-3.5" />
+                    ) : (
+                      <Volume2 className="h-3.5 w-3.5 text-sky-300" />
+                    )}
+                  </Button>
+                ) : null}
+
+                {message.role === "user" &&
+                originalPromptContent &&
+                !isEditing ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={
+                      isOriginalPromptExpanded
+                        ? "Hide original prompt"
+                        : "View original prompt"
+                    }
+                    aria-expanded={isOriginalPromptExpanded}
+                    aria-controls={originalPromptPanelId}
+                    tooltip={
+                      isOriginalPromptExpanded
+                        ? "Hide original prompt"
+                        : "View original prompt"
+                    }
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onToggleOriginalPrompt(message.id);
+                    }}
+                    className="app-message-original-prompt-button absolute top-3 right-3 h-7 w-7 rounded-full border border-emerald-500/25 bg-slate-950/55 text-emerald-100 hover:bg-slate-900 hover:text-white"
+                  >
+                    <History className="h-3.5 w-3.5" />
+                  </Button>
+                ) : null}
+
+                {isActiveEditing && !isEditing ? (
+                  <span className="mb-2 inline-flex rounded-full border border-sky-300/30 bg-sky-400/10 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-sky-100">
+                    Editing
+                  </span>
+                ) : null}
+
+                {isEditing ? (
+                  <SubmitShortcut asChild>
+                    <form
+                      className="grid gap-3"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        onEditMessage?.(message);
+                      }}
+                    >
+                      <Textarea
+                        autoFocus
+                        aria-label="Edit message"
+                        value={editContent}
+                        onChange={(event) =>
+                          onEditContentChange(event.target.value)
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            onCancelEditing();
+                            return;
+                          }
+                        }}
+                        className="max-h-80 min-h-24 resize-none border-slate-600 bg-slate-950/50 text-slate-100 focus-visible:border-sky-400/60 focus-visible:ring-sky-400/20"
+                      />
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={onCancelEditing}
+                          className="h-8 rounded-full px-3 text-xs text-slate-300"
+                        >
+                          <X className="mr-1.5 h-3.5 w-3.5" />
+                          Cancel
+                        </Button>
+                        <Button
+                          type="submit"
+                          size="sm"
+                          disabled={!editContent.trim()}
+                          {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                          className="rounded-full bg-sky-600 text-xs text-white hover:bg-sky-500"
+                        >
+                          <Check className="mr-1.5 h-3.5 w-3.5" />
+                          Save and submit
+                        </Button>
+                      </div>
+                    </form>
+                  </SubmitShortcut>
+                ) : (
+                  <MarkdownContent
+                    content={renderedContent}
+                    workspaceRoot={workspaceRoot}
+                    onOpenWorkspaceFile={onOpenWorkspaceFile}
+                    className={
+                      message.role === "user"
+                        ? "app-user-message-text"
+                        : undefined
+                    }
+                  />
+                )}
+
+                {isPromptEnhancementPlaceholder || isPromptEnhancing ? (
+                  <PromptEnhancementPending
+                    onCancel={onCancelPromptEnhancement}
+                    className="mt-3"
+                  />
+                ) : null}
+              </div>
+            ) : null}
+
+            {originalPromptContent && isOriginalPromptExpanded && !isEditing ? (
+              <div
+                id={originalPromptPanelId}
+                className="app-original-prompt-panel max-w-[90%] min-w-0 rounded-2xl border border-emerald-500/20 bg-slate-950/80 px-4 py-3 text-sm leading-6 text-slate-300 shadow-lg shadow-slate-950/20 wrap-break-word"
+              >
+                <div className="mb-2 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-emerald-200/80">
+                  Original prompt
+                </div>
                 <MarkdownContent
-                  content={renderedContent}
+                  content={originalPromptContent}
                   workspaceRoot={workspaceRoot}
                   onOpenWorkspaceFile={onOpenWorkspaceFile}
-                  className={
-                    message.role === "user"
-                      ? "app-user-message-text"
-                      : undefined
-                  }
                 />
-              )}
-
-              {isPromptEnhancementPlaceholder || isPromptEnhancing ? (
-                <PromptEnhancementPending
-                  onCancel={onCancelPromptEnhancement}
-                  className="mt-3"
-                />
-              ) : null}
-            </div>
-          ) : null}
-
-          {originalPromptContent && isOriginalPromptExpanded && !isEditing ? (
-            <div
-              id={originalPromptPanelId}
-              className="app-original-prompt-panel max-w-[90%] min-w-0 rounded-2xl border border-emerald-500/20 bg-slate-950/80 px-4 py-3 text-sm leading-6 text-slate-300 shadow-lg shadow-slate-950/20 wrap-break-word"
-            >
-              <div className="mb-2 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-emerald-200/80">
-                Original prompt
               </div>
-              <MarkdownContent
-                content={originalPromptContent}
-                workspaceRoot={workspaceRoot}
+            ) : null}
+
+            {messageAttachments.length > 0 ? (
+              <MessageAttachmentsList
+                attachments={messageAttachments}
+                onOpen={onOpenAttachment}
+                align={message.role === "user" ? "end" : "start"}
+              />
+            ) : null}
+
+            {message.role === "user" &&
+            !message.taskAction &&
+            onEditMessage &&
+            !isEditing ? (
+              <div className="app-message-actions flex max-w-[90%] items-center justify-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onEditMessage(message)}
+                  className="h-7 rounded-full px-2.5 text-xs text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                >
+                  <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                  Edit
+                </Button>
+              </div>
+            ) : null}
+
+            {showInlineRetry ? (
+              <div className="app-message-actions flex max-w-[90%] items-center">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={retryMessage}
+                  className="h-7 rounded-full px-2.5 text-xs text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                >
+                  <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                  Retry
+                </Button>
+              </div>
+            ) : null}
+
+            {message.source?.kind === "execution" ? (
+              <ExecutionInsightRow
+                execution={message.source.execution}
+                onRetryTask={canRetryMessage ? retryMessage : undefined}
+                onContinueTask={
+                  canContinueMessage ? () => onContinueTask(message) : undefined
+                }
                 onOpenWorkspaceFile={onOpenWorkspaceFile}
               />
-            </div>
-          ) : null}
+            ) : null}
 
-          {messageAttachments.length > 0 ? (
-            <MessageAttachmentsList
-              attachments={messageAttachments}
-              onOpen={onOpenAttachment}
-              align={message.role === "user" ? "end" : "start"}
-            />
-          ) : null}
-
-          {message.role === "user" &&
-          !message.taskAction &&
-          onEditMessage &&
-          !isEditing ? (
-            <div className="app-message-actions flex max-w-[90%] items-center justify-end">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => onEditMessage(message)}
-                className="h-7 rounded-full px-2.5 text-xs text-slate-400 hover:bg-slate-800 hover:text-slate-100"
-              >
-                <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                Edit
-              </Button>
-            </div>
-          ) : null}
-
-          {showInlineRetry ? (
-            <div className="app-message-actions flex max-w-[90%] items-center">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={retryMessage}
-                className="h-7 rounded-full px-2.5 text-xs text-slate-400 hover:bg-slate-800 hover:text-slate-100"
-              >
-                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-                Retry
-              </Button>
-            </div>
-          ) : null}
-
-          {message.source?.kind === "execution" ? (
-            <ExecutionInsightRow
-              execution={message.source.execution}
-              onRetryTask={canRetryMessage ? retryMessage : undefined}
-              onContinueTask={
-                canContinueMessage ? () => onContinueTask(message) : undefined
-              }
-              onOpenWorkspaceFile={onOpenWorkspaceFile}
-            />
-          ) : null}
-
-          {showCrashRecoveryActions ? (
-            <div className="app-message-actions flex max-w-[90%] min-w-0 flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={retryMessage}
-                className="h-8 rounded-full border-amber-500/30 bg-amber-500/10 px-3 text-xs text-amber-100 hover:bg-amber-500/15 hover:text-white"
-              >
-                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-                Retry
-              </Button>
-              {canContinueMessage ? (
+            {showCrashRecoveryActions ? (
+              <div className="app-message-actions flex max-w-[90%] min-w-0 flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => onContinueTask(message)}
-                  className="h-8 rounded-full border-emerald-500/30 bg-emerald-500/10 px-3 text-xs text-emerald-100 hover:bg-emerald-500/15 hover:text-white"
+                  onClick={retryMessage}
+                  className="h-8 rounded-full border-amber-500/30 bg-amber-500/10 px-3 text-xs text-amber-100 hover:bg-amber-500/15 hover:text-white"
                 >
-                  <Play className="mr-1.5 h-3.5 w-3.5" />
-                  Continue
+                  <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                  Retry
                 </Button>
-              ) : null}
-            </div>
-          ) : null}
+                {canContinueMessage ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onContinueTask(message)}
+                    className="h-8 rounded-full border-emerald-500/30 bg-emerald-500/10 px-3 text-xs text-emerald-100 hover:bg-emerald-500/15 hover:text-white"
+                  >
+                    <Play className="mr-1.5 h-3.5 w-3.5" />
+                    Continue
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 });

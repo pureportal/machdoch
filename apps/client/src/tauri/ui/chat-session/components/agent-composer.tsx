@@ -121,7 +121,6 @@ export interface AgentComposerProps {
   onQueuedMessageReorder?: (messageId: string, targetIndex: number) => void;
   onQueuedMessageRemove?: (messageId: string) => void;
   onQueuedMessageRetry?: (messageId: string) => void;
-  onQueuedMessageSend?: (messageId: string) => void;
   onQueuedMessageSelectContextAttachments?: (
     messageId: string,
     selectionKind: AttachmentSelectionKind,
@@ -435,7 +434,6 @@ export const AgentComposer = ({
   onQueuedMessageReorder,
   onQueuedMessageRemove,
   onQueuedMessageRetry,
-  onQueuedMessageSend,
   onQueuedMessageSelectContextAttachments,
   onQueuedMessagePasteContextImages,
   onQueuedMessageRemoveContextAttachment,
@@ -1146,7 +1144,6 @@ export const AgentComposer = ({
       onMessageReorder={onQueuedMessageReorder}
       onMessageRemove={onQueuedMessageRemove}
       onMessageRetry={onQueuedMessageRetry}
-      onMessageSend={onQueuedMessageSend}
       onMessageSelectAttachments={onQueuedMessageSelectContextAttachments}
       onMessagePasteImages={onQueuedMessagePasteContextImages}
       onMessageRemoveAttachment={onQueuedMessageRemoveContextAttachment}
