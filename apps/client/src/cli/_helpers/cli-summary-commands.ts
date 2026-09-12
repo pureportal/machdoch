@@ -5,13 +5,18 @@ import {
 import { discoverCustomizations } from "../../core/customizations.js";
 import {
   loadUserMemorySettings,
+  forgetUserGlobalMemory,
   saveUserApiKey,
   saveUserGlobalMemoryEnabled,
 } from "../../core/env.js";
 import { createToolDefinitions } from "../../core/_helpers/agent-tools.js";
 import type { ToolName } from "../../core/runtime-contract.generated.js";
 import { getToolRegistry } from "../../core/tools.js";
-import { loadWorkspaceMemory } from "../../core/workspace-memory.js";
+import {
+  forgetWorkspaceMemory,
+  loadWorkspaceMemory,
+} from "../../core/workspace-memory.js";
+import { CliUsageError } from "./cli-error.js";
 import type { ParsedCliArgs } from "./cli-args.js";
 import { writeStdoutLine } from "./cli-io.js";
 import { createDiscoveryOptions } from "./cli-output.js";
@@ -158,6 +163,23 @@ export const printToolSummary = async (args: ParsedCliArgs): Promise<void> => {
 export const printMemorySummary = async (
   args: ParsedCliArgs,
 ): Promise<void> => {
+  if (args.memory?.action === "forget") {
+    const { scope, id } = args.memory;
+    const removed =
+      scope === "workspace"
+        ? await forgetWorkspaceMemory(args.workspaceRoot, id)
+        : await forgetUserGlobalMemory(id);
+    if (!removed)
+      throw new CliUsageError(
+        "Memory fact not found. Run `machdoch memory list` to find its id.",
+      );
+    writeStdoutLine(
+      args.json
+        ? JSON.stringify({ scope, id, removed })
+        : "Memory fact removed.",
+    );
+    return;
+  }
   const settings = await loadUserMemorySettings();
   const workspaceEntries = await loadWorkspaceMemory(args.workspaceRoot);
 

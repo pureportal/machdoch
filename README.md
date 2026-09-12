@@ -446,7 +446,22 @@ Start a continuing terminal chat:
 machdoch --cli --cwd .
 ```
 
-Inside terminal chat, use `/help`, `/paste` for multiline input ending with `/end`, and `/exit` or `/quit` to leave.
+Inside terminal chat, use `/help` or the searchable `/commands` menu. Tab completes commands; arrow keys recall input.
+
+| Command | Action |
+| --- | --- |
+| `/model`, `/mode`, `/reasoning` | Choose session settings. |
+| `/new [workspace]`, `/sessions [search]` | Start or resume a CLI conversation. |
+| `/history [search]`, `/export <file>` | Review messages or export conversation context. |
+| `/attach <path>`, `/image <path>`, `/detach` | Manage attachments for the next task. |
+| `/memory [session\|workspace\|global]`, `/forget <scope> <id>` | Inspect memory or remove a fact. |
+| `/config`, `/ralph`, `/scheduler`, `/instructions`, `/mcp`, `/fleet` | Use management commands without leaving chat. |
+| `/paste [ask\|machdoch]` | Enter multiline text; `/end` sends and `/cancel` discards. |
+| `/retry`, `/exit` | Retry the last task or exit. |
+
+Ctrl+C cancels a draft or task; Ctrl+D exits. Bracketed multiline paste waits for Enter before sending. Prefix task text with `//` when it starts with `/`.
+
+CLI conversations are saved in `cli-sessions` beside the user configuration. They are separate from desktop sessions. Exports can seed either `machdoch chat --conversation-context-file <file>` or `machdoch run --conversation-context-file <file> <task>`. Existing export files are never overwritten.
 
 ### Run Fleet without the desktop UI
 

@@ -321,6 +321,7 @@ export interface ParsedCliArgs {
   helpTopic?: string;
   task?: string;
   config?: ConfigCliOptions;
+  memory?: { action: "forget"; scope: "workspace" | "global"; id: string };
   interview?: TaskInterviewCliOptions;
   ralph?: RalphCliOptions;
   scheduler?: SchedulerCliOptions;

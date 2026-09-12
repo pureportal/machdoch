@@ -94,7 +94,7 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
       return;
     }
     case "chat": {
-      const { runInteractiveChat } = await import("./_helpers/cli-task-run.js");
+      const { runInteractiveChat } = await import("./_helpers/cli-chat.js");
       await runInteractiveChat(args);
       return;
     }
