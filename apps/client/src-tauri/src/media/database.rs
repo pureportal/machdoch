@@ -4272,6 +4272,16 @@ pub(crate) fn list_runs(paths: &MediaRuntimePaths, limit: u32) -> MediaResult<Ve
     Ok(runs)
 }
 
+pub(crate) fn has_pending_work(paths: &MediaRuntimePaths) -> MediaResult<bool> {
+    open(paths)?
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM runs WHERE status NOT IN ('completed', 'failed', 'canceled'))",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("Failed to inspect pending media work: {error}"))
+}
+
 pub(crate) fn list_run_page(
     paths: &MediaRuntimePaths,
     offset: u32,
@@ -6391,6 +6401,47 @@ mod tests {
                 review: None,
             }],
         }
+    }
+
+    #[test]
+    fn shutdown_checks_all_media_work_including_older_queued_runs() {
+        let paths = test_paths("shutdown-work");
+        initialize(&paths).unwrap();
+        assert!(!has_pending_work(&paths).unwrap());
+        enqueue_fixture_run(&paths, &request("pending")).unwrap();
+        for index in 0..101 {
+            let id = format!("finished-{index}");
+            enqueue_fixture_run(&paths, &request(&id)).unwrap();
+            open(&paths)
+                .unwrap()
+                .execute(
+                    "UPDATE runs SET status = 'completed' WHERE id = ?1",
+                    params![id],
+                )
+                .unwrap();
+        }
+        assert!(has_pending_work(&paths).unwrap());
+        for status in [
+            "running",
+            "canceling",
+            "queued",
+            "needs-review",
+            "waiting-for-review",
+        ] {
+            open(&paths)
+                .unwrap()
+                .execute(
+                    "UPDATE runs SET status = ?1 WHERE id = 'pending'",
+                    params![status],
+                )
+                .unwrap();
+            assert!(has_pending_work(&paths).unwrap());
+        }
+        open(&paths)
+            .unwrap()
+            .execute("UPDATE runs SET status = 'failed' WHERE id = 'pending'", [])
+            .unwrap();
+        assert!(!has_pending_work(&paths).unwrap());
     }
 
     fn openai_request(run_id: &str) -> GenerateMediaImagesRequest {

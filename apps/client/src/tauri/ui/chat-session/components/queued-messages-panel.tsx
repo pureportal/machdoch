@@ -5,16 +5,12 @@ import {
   ListOrdered,
   LoaderCircle,
   RotateCcw,
-  SendHorizontal,
   X,
 } from "lucide-react";
 import { useState, type ClipboardEvent, type DragEvent, type JSX } from "react";
 import type { ChatSessionContextAttachment } from "../../chat-session.model";
 import { Button } from "../../components/ui/button";
-import {
-  SUBMIT_SHORTCUT_ACTION_PROPS,
-  SubmitShortcut,
-} from "../../components/ui/submit-shortcut";
+import { SubmitShortcut } from "../../components/ui/submit-shortcut";
 import { Textarea } from "../../components/ui/textarea";
 import { ControlTooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
@@ -34,7 +30,6 @@ export interface QueuedMessagePanelMessage {
   promptEnhancementMode?: "simple" | "web-search";
   status: "queued" | "enhancing" | "dispatching" | "failed";
   failureMessage?: string;
-  canSendNow: boolean;
   createdAt: number;
 }
 
@@ -48,7 +43,6 @@ export interface QueuedMessagesPanelProps {
   onMessageReorder?: (messageId: string, targetIndex: number) => void;
   onMessageRemove?: (messageId: string) => void;
   onMessageRetry?: (messageId: string) => void;
-  onMessageSend?: (messageId: string) => void;
   onMessageSelectAttachments?: (
     messageId: string,
     selectionKind: AttachmentSelectionKind,
@@ -115,7 +109,6 @@ export const QueuedMessagesPanel = ({
   onMessageReorder,
   onMessageRemove,
   onMessageRetry,
-  onMessageSend,
   onMessageSelectAttachments,
   onMessagePasteImages,
   onMessageRemoveAttachment,
@@ -326,21 +319,6 @@ export const QueuedMessagesPanel = ({
                 </div>
 
                 <div className="flex items-center gap-1 sm:flex-col sm:justify-start">
-                  {message.canSendNow ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon-xs"
-                      aria-label={`Send queued message ${index + 1} now`}
-                      tooltip="Send now"
-                      disabled={isInProgress || message.status === "failed"}
-                      onClick={() => onMessageSend?.(message.id)}
-                      {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                      className="border-sky-400/30 bg-sky-400/10 text-sky-100 hover:bg-sky-400/20 hover:text-white"
-                    >
-                      <SendHorizontal className="h-3 w-3" />
-                    </Button>
-                  ) : null}
                   <ControlTooltip content="Drag to reorder">
                     <button
                       type="button"

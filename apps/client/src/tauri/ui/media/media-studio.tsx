@@ -1,3 +1,8 @@
+import {
+  enqueueMediaGeneration,
+  mediaGenerationQueue as generationQueue,
+} from "./media-generation-service";
+import { useMediaGenerationPreparation } from "./use-media-generation-preparation";
 import { MediaStudioNavigation } from "@machdoch/product-ui";
 import {
   open as openDialog,
@@ -128,7 +133,6 @@ import {
   saveMediaStudioState,
 } from "./media-studio-store";
 import {
-  MediaGenerationQueue,
   type MediaGenerationQueueJob,
   type MediaGenerationRecipeSnapshot,
 } from "./media-generation-queue";
@@ -196,11 +200,6 @@ const isExecutableLocalVideoModelId = (
   modelId: string,
 ): modelId is GenerateMediaVideoRequest["modelId"] =>
   EXECUTABLE_LOCAL_VIDEO_MODEL_IDS.has(modelId);
-
-const generationQueue = new MediaGenerationQueue({
-  readRunDetail: getMediaRunDetail,
-  cancelRun: cancelMediaRun,
-});
 
 const createIdentityImageOutputBranch = (
   format: MediaImageOutputBranch["format"],
@@ -682,9 +681,12 @@ export const MediaStudio = ({
   const [selectedRunRecipe, setSelectedRunRecipe] =
     useState<MediaGenerationRecipeSnapshot | null>(null);
   const [flowRunOverlayId, setFlowRunOverlayId] = useState<string | null>(null);
-  const [generationPending, setGenerationPending] = useState(false);
-  const [localFlowPending, setLocalFlowPending] = useState(false);
-  const [remoteEditPending, setRemoteEditPending] = useState(false);
+  const [generationPending, setGenerationPending] =
+    useMediaGenerationPreparation();
+  const [localFlowPending, setLocalFlowPending] =
+    useMediaGenerationPreparation();
+  const [remoteEditPending, setRemoteEditPending] =
+    useMediaGenerationPreparation();
   const generationJobs = useSyncExternalStore(
     generationQueue.subscribe,
     generationQueue.getSnapshot,
@@ -2821,14 +2823,17 @@ export const MediaStudio = ({
       })),
       steps: submittedPlan.steps.map((step) => ({ ...step })),
     };
-    setLocalFlowPending(true);
+    const preparation = setLocalFlowPending(true);
     setRuntimeError(null);
     setFlowRevisionNotice(null);
-    void persistFlowRevision(
-      submittedFlow,
-      submittedLayout,
-      "Pinned automatically for local utility execution",
-    )
+    void preparation
+      .then(() =>
+        persistFlowRevision(
+          submittedFlow,
+          submittedLayout,
+          "Pinned automatically for local utility execution",
+        ),
+      )
       .then((revisionResult) => {
         if (!revisionResult) {
           return null;
@@ -2848,7 +2853,7 @@ export const MediaStudio = ({
         setSelectedRun(null);
         setFlowRunOverlayId(request.runId);
         const imageSettings = readMediaFlowImageSettings(submittedFlow);
-        generationQueue.enqueue({
+        enqueueMediaGeneration({
           runId,
           recipe: {
             schemaVersion: 1,
@@ -2914,14 +2919,17 @@ export const MediaStudio = ({
       );
       return;
     }
-    setLocalFlowPending(true);
+    const preparation = setLocalFlowPending(true);
     setRuntimeError(null);
     setFlowRevisionNotice(null);
-    void persistFlowRevision(
-      submittedFlow,
-      submittedLayout,
-      "Pinned automatically for local diffusion execution",
-    )
+    void preparation
+      .then(() =>
+        persistFlowRevision(
+          submittedFlow,
+          submittedLayout,
+          "Pinned automatically for local diffusion execution",
+        ),
+      )
       .then((revisionResult) => {
         if (!revisionResult) return null;
         const pinnedFlow = revisionResult.revision.flow;
@@ -3028,7 +3036,7 @@ export const MediaStudio = ({
         setSelectedRunId(runId);
         setSelectedRun(null);
         setFlowRunOverlayId(runId);
-        generationQueue.enqueue({
+        enqueueMediaGeneration({
           runId,
           recipe: {
             schemaVersion: 1,
@@ -3123,7 +3131,7 @@ export const MediaStudio = ({
       const persistRevision = basicExecution
         ? persistBasicFlowRevision
         : persistFlowRevision;
-      setLocalFlowPending(true);
+      const preparation = setLocalFlowPending(true);
       setRuntimeError(null);
       if (basicExecution) {
         ++selectedRunDetailSequence.current;
@@ -3132,11 +3140,14 @@ export const MediaStudio = ({
         setSelectedRun(null);
       }
       updateNotice(null);
-      void persistRevision(
-        submittedFlow,
-        submittedLayout,
-        "Pinned automatically for local video execution",
-      )
+      void preparation
+        .then(() =>
+          persistRevision(
+            submittedFlow,
+            submittedLayout,
+            "Pinned automatically for local video execution",
+          ),
+        )
         .then(async (revisionResult) => {
           if (
             !revisionResult ||
@@ -3174,7 +3185,7 @@ export const MediaStudio = ({
           setSelectedRun(null);
           updateOverlay(queueRunId);
           let activeNativeRunId = queueRunId;
-          generationQueue.enqueue({
+          enqueueMediaGeneration({
             runId: queueRunId,
             recipe: recipeSnapshot,
             execute: async () => {
@@ -3419,14 +3430,17 @@ export const MediaStudio = ({
       })),
       steps: submittedPlan.steps.map((step) => ({ ...step })),
     };
-    setRemoteEditPending(true);
+    const preparation = setRemoteEditPending(true);
     setRuntimeError(null);
     setFlowRevisionNotice(null);
-    void persistFlowRevision(
-      submittedFlow,
-      submittedLayout,
-      "Pinned automatically for confirmed remote image edit",
-    )
+    void preparation
+      .then(() =>
+        persistFlowRevision(
+          submittedFlow,
+          submittedLayout,
+          "Pinned automatically for confirmed remote image edit",
+        ),
+      )
       .then((revisionResult) => {
         if (!revisionResult) {
           return null;
@@ -3447,7 +3461,7 @@ export const MediaStudio = ({
         setSelectedRun(null);
         setFlowRunOverlayId(request.runId);
         const imageSettings = readMediaFlowImageSettings(submittedFlow);
-        generationQueue.enqueue({
+        enqueueMediaGeneration({
           runId,
           recipe: {
             schemaVersion: 1,
@@ -3583,17 +3597,20 @@ export const MediaStudio = ({
     ) {
       return;
     }
-    setGenerationPending(true);
+    const preparation = setGenerationPending(true);
     setRuntimeError(null);
     ++selectedRunDetailSequence.current;
     selectedRunIdRef.current = null;
     setSelectedRunId(null);
     setSelectedRun(null);
-    void persistBasicFlowRevision(
-      submittedFlow,
-      submittedLayout,
-      "Pinned automatically for direct generation",
-    )
+    void preparation
+      .then(() =>
+        persistBasicFlowRevision(
+          submittedFlow,
+          submittedLayout,
+          "Pinned automatically for direct generation",
+        ),
+      )
       .then((revisionResult) => {
         if (!revisionResult) {
           return null;
@@ -3663,7 +3680,7 @@ export const MediaStudio = ({
             allowRemoteUpload: model.target === "remote" && hasReferences,
             planSnapshot: submittedPlanSnapshot,
           } satisfies GenerateMediaSvgRequest;
-          generationQueue.enqueue({
+          enqueueMediaGeneration({
             runId,
             recipe: recipeSnapshot,
             execute: () => generateMediaSvg(request),
@@ -3685,7 +3702,7 @@ export const MediaStudio = ({
             planSnapshot: submittedPlanSnapshot,
             allowRemoteUpload: true,
           };
-          generationQueue.enqueue({
+          enqueueMediaGeneration({
             runId,
             recipe: recipeSnapshot,
             execute: () =>
@@ -3766,7 +3783,7 @@ export const MediaStudio = ({
           outputBranches: compileMediaImageOutputBranches(submittedFlow),
           planSnapshot: submittedPlanSnapshot,
         } satisfies GenerateMediaImagesRequest;
-        generationQueue.enqueue({
+        enqueueMediaGeneration({
           runId,
           recipe: recipeSnapshot,
           execute: () => generateMediaImages(request),

@@ -432,6 +432,7 @@ export type TaskExecutionState =
 export type TaskExecutionStatus =
   | "planned"
   | "executed"
+  | "failed"
   | "blocked"
   | "cancelled"
   | "unsupported";

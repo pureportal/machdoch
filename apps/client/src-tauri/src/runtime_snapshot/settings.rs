@@ -102,6 +102,13 @@ pub(super) fn normalize_user_agent_limits_settings(
     settings: &UserAgentLimitsConfigFile,
 ) -> UserAgentLimitsSettings {
     UserAgentLimitsSettings {
+        automatic_retries: settings
+            .automatic_retries
+            .unwrap_or(crate::runtime_contract_generated::DEFAULT_AUTOMATIC_RETRIES),
+        retry_attempts: settings
+            .retry_attempts
+            .unwrap_or(crate::runtime_contract_generated::DEFAULT_RETRY_ATTEMPTS)
+            .min(crate::runtime_contract_generated::MAX_RETRY_ATTEMPTS),
         infinite: settings
             .infinite
             .unwrap_or(DEFAULT_USER_AGENT_LIMITS_INFINITE),
@@ -120,11 +127,42 @@ pub(super) fn normalize_user_agent_limits_settings_input(
     settings: &UserAgentLimitsSettings,
 ) -> UserAgentLimitsSettings {
     UserAgentLimitsSettings {
+        automatic_retries: settings.automatic_retries,
+        retry_attempts: settings
+            .retry_attempts
+            .min(crate::runtime_contract_generated::MAX_RETRY_ATTEMPTS),
         infinite: settings.infinite,
         executor_turns: clamp_executor_turn_limit(settings.executor_turns),
         autopilot_executor_iterations: clamp_autopilot_iteration_limit(
             settings.autopilot_executor_iterations,
         ),
+    }
+}
+
+#[cfg(test)]
+mod retry_settings_tests {
+    use super::*;
+
+    #[test]
+    fn retry_settings_use_global_defaults_and_bound_retry_count() {
+        let defaults = normalize_user_agent_limits_settings(&UserAgentLimitsConfigFile::default());
+        assert!(defaults.automatic_retries);
+        assert_eq!(defaults.retry_attempts, 2);
+        let disabled = normalize_user_agent_limits_settings(&UserAgentLimitsConfigFile {
+            automatic_retries: Some(false),
+            retry_attempts: Some(0),
+            ..Default::default()
+        });
+        assert!(!disabled.automatic_retries);
+        assert_eq!(disabled.retry_attempts, 0);
+        let bounded = normalize_user_agent_limits_settings(&UserAgentLimitsConfigFile {
+            retry_attempts: Some(u32::MAX),
+            ..Default::default()
+        });
+        assert_eq!(
+            bounded.retry_attempts,
+            crate::runtime_contract_generated::MAX_RETRY_ATTEMPTS
+        );
     }
 }
 

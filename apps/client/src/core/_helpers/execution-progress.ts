@@ -1,7 +1,4 @@
-import type {
-  TaskExecutionState,
-  TaskExecutionStatus,
-} from "../types.js";
+import type { TaskExecutionState, TaskExecutionStatus } from "../types.js";
 
 type TerminalTaskExecutionState = Extract<
   TaskExecutionState,
@@ -23,6 +20,7 @@ export const isTerminalTaskExecutionState = (
 };
 
 export const TASK_EXECUTION_STATUS_TO_TERMINAL_STATE = {
+  failed: "blocked",
   planned: "planned",
   executed: "completed",
   blocked: "blocked",

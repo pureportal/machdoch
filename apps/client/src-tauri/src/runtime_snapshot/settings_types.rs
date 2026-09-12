@@ -63,6 +63,8 @@ pub struct UserInternalTaskModelSettings {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserAgentLimitsSettings {
+    pub(crate) automatic_retries: bool,
+    pub(crate) retry_attempts: u32,
     pub(super) infinite: bool,
     pub(super) executor_turns: u32,
     pub(super) autopilot_executor_iterations: u32,
@@ -209,6 +211,8 @@ pub(super) struct UserDesktopConfigFile {
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct UserAgentLimitsConfigFile {
+    pub(super) automatic_retries: Option<bool>,
+    pub(super) retry_attempts: Option<u32>,
     pub(super) infinite: Option<bool>,
     pub(super) executor_turns: Option<u32>,
     pub(super) autopilot_executor_iterations: Option<u32>,

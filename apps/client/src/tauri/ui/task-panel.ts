@@ -56,6 +56,7 @@ const createStatusTone = (
     case "executed":
       return "success";
     case "blocked":
+    case "failed":
       return "danger";
     case "cancelled":
       return "neutral";
@@ -157,7 +158,12 @@ const createPreviewModel = (preview: TaskRunPreview): TaskPanelModel => {
   const sections = [
     createPromptSection(preview),
     createToolPlanSection(preview),
-    createOptionalListSection("warnings", "Warnings", preview.warnings, "warning"),
+    createOptionalListSection(
+      "warnings",
+      "Warnings",
+      preview.warnings,
+      "warning",
+    ),
     createOptionalListSection("notes", "Notes", preview.notes, "info"),
     createPlanSection(preview),
   ].filter((section): section is TaskPanelSection => section !== undefined);

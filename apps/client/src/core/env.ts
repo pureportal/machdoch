@@ -19,6 +19,8 @@ import {
 } from "./_helpers/agent-runtime-types.js";
 import {
   AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER,
+  AGENT_LIMIT_BOUNDS,
+  DEFAULT_USER_AGENT_LIMITS_SETTINGS,
   DEFAULT_USER_INTERNAL_TASK_MODEL_SETTINGS,
   DEFAULT_USER_REVIEW_MODEL_SETTINGS,
   DEFAULT_USER_WORKSPACE_RUN_SETTINGS,
@@ -119,6 +121,14 @@ const normalizeUserAgentLimitsSettings = (
   settings: RuntimeAgentLimitOverrides | undefined,
 ): UserAgentLimitsSettings => {
   return {
+    automaticRetries:
+      settings?.automaticRetries ??
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.automaticRetries,
+    retryAttempts: normalizeBoundedIntegerSetting(
+      settings?.retryAttempts,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.retryAttempts,
+      AGENT_LIMIT_BOUNDS.retryAttempts,
+    ),
     infinite: settings?.infinite === true,
     executorTurns: normalizePositiveIntegerSetting(
       settings?.executorTurns,
@@ -786,8 +796,7 @@ export const loadUserMemorySettings = async (): Promise<{
 
   return {
     globalEnabled: config.memory?.globalEnabled === true,
-    workspaceDefaultEnabled:
-      config.memory?.workspaceDefaultEnabled !== false,
+    workspaceDefaultEnabled: config.memory?.workspaceDefaultEnabled !== false,
     entries: normalizeConversationMemoryEntries(
       config.memory?.entries,
       "global",

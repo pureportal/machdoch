@@ -8,7 +8,6 @@ const createQueuedMessage = (
   id,
   sessionId: "session-1",
   task: `Task ${id}`,
-  dispatchPolicy: "after-success",
   contentUpdatedAt: 10,
   attachmentsUpdatedAt: 10,
   attachmentTombstones: {},

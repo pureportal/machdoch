@@ -16,6 +16,8 @@ export const createFallbackExecutionMarkdown = (
       return `**Plan ready.** ${summary}`;
     case "executed":
       return `**Done.** ${summary}`;
+    case "failed":
+      return `**Failed.** ${summary}`;
     case "blocked":
       return `**Blocked.** ${summary}`;
     case "cancelled":
@@ -148,6 +150,7 @@ const createExecutionThinkingTone = (
     case "executed":
       return "success";
     case "blocked":
+    case "failed":
       return "danger";
     case "cancelled":
     case "unsupported":
@@ -164,6 +167,8 @@ const createExecutionThinkingLabel = (
       return "Plan ready";
     case "executed":
       return "Completed";
+    case "failed":
+      return "Failed";
     case "blocked":
       return "Blocked";
     case "cancelled":

@@ -38,7 +38,12 @@ import {
   type ShellStateCompareAndSwapResult,
   type ShellStatePatch,
 } from "../../lib/shell-store";
-import { loadActiveDesktopTaskIds, loadDesktopLaunchId } from "../../runtime";
+import {
+  loadActiveDesktopTaskIds,
+  loadDesktopLaunchId,
+  loadRecentDesktopTaskResults,
+} from "../../runtime";
+import { reconcileRecoveredTaskResults } from "./recovered-task-result";
 import {
   type SessionScopeFilter,
   type SessionStatusFilterSelection,
@@ -1832,7 +1837,6 @@ const mergeQueuedMessageVersionForPersistence = (
       localMessage.attachmentsUpdatedAt,
       latestMessage.attachmentsUpdatedAt,
     ),
-    dispatchPolicy: blockerMessage.dispatchPolicy,
     blockerUpdatedAt: blockerMessage.blockerUpdatedAt,
     orderRank: orderMessage.orderRank,
     orderUpdatedAt: orderMessage.orderUpdatedAt,
@@ -2854,17 +2858,39 @@ export const useChatSessionShellState = (
       loadDesktopLaunchId(),
       loadActiveDesktopTaskIds(),
     ])
-      .then(([snapshot, launchId, activeDesktopTaskIds]) => {
+      .then(async ([snapshot, launchId, activeDesktopTaskIds]) => {
         if (cancelled) {
           return;
         }
 
-        didHydrate = true;
-
         const value = snapshot.state;
         const normalizedShellState = normalizeShellState(value);
+        if (
+          canUseTauriStore() &&
+          (!launchId || activeDesktopTaskIds === null)
+        ) {
+          throw new Error(
+            "Active tasks could not be checked before restart recovery.",
+          );
+        }
+        const interruptedIds = normalizedShellState.sessions
+          .map(getLatestRunningTaskId)
+          .filter(
+            (id): id is string =>
+              id !== null && !activeDesktopTaskIds?.includes(id),
+          );
+        const completed = interruptedIds.length
+          ? await loadRecentDesktopTaskResults(interruptedIds)
+          : [];
+        if (canUseTauriStore() && completed === null) {
+          throw new Error(
+            "Completed tasks could not be checked before restart recovery.",
+          );
+        }
+        if (cancelled) return;
+        didHydrate = true;
         const recoveredShellState = recoverInterruptedTasksForLaunch(
-          normalizedShellState,
+          reconcileRecoveredTaskResults(normalizedShellState, completed ?? []),
           launchId,
           Date.now(),
           activeDesktopTaskIds ?? undefined,

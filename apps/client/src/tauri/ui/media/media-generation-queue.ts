@@ -72,6 +72,8 @@ const ACTIVE_STATUSES: ReadonlySet<MediaRuntimeRunStatus> = new Set([
   "queued",
   "running",
   "canceling",
+  "needs-review",
+  "waiting-for-review",
 ]);
 
 const deepFreeze = <T>(value: T): T => {
@@ -107,6 +109,7 @@ export class MediaGenerationQueue {
   private readonly historyLimit: number;
   private readonly listeners = new Set<() => void>();
   private readonly tasks = new Map<string, MediaGenerationQueueTask>();
+  private readonly observedRunIds = new Set<string>();
   private jobs: readonly MediaGenerationQueueJob[] = Object.freeze([]);
   private activeJobId: string | null = null;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -126,6 +129,14 @@ export class MediaGenerationQueue {
   };
 
   readonly getSnapshot = (): readonly MediaGenerationQueueJob[] => this.jobs;
+
+  hasPendingWork(): boolean {
+    return (
+      this.activeJobId !== null ||
+      this.tasks.size > 0 ||
+      this.jobs.some((job) => ACTIVE_STATUSES.has(job.status))
+    );
+  }
 
   enqueue(input: EnqueueMediaGenerationInput): MediaGenerationQueueJob {
     if (this.jobs.some((job) => job.runId === input.runId)) {
@@ -239,18 +250,13 @@ export class MediaGenerationQueue {
       }
     } catch (error: unknown) {
       const current = this.getJob(next.id);
-      if (current?.status === "canceling" || current?.status === "canceled") {
-        this.patchJob(next.id, {
-          status: "canceled",
-          completedAt: this.now().toISOString(),
-          currentStep: "Canceled",
-        });
+      if (current?.status === "canceled") {
         return;
       }
       const detail = await this.readDetailAfterFailure(next.runId);
       if (detail) {
         this.applyDetail(next.id, detail);
-      } else {
+      } else if (!this.observedRunIds.has(next.id)) {
         const failure = normalizeMediaError(error, "media_generation_queue");
         this.patchJob(next.id, {
           status: "failed",
@@ -260,11 +266,17 @@ export class MediaGenerationQueue {
           failure,
         });
       }
+      if (ACTIVE_STATUSES.has(this.getJob(next.id)?.status ?? "failed")) {
+        this.stopPolling();
+        await this.waitForTerminal(next.id);
+      }
     } finally {
       this.stopPolling();
       this.tasks.delete(next.id);
+      this.observedRunIds.delete(next.id);
       this.activeJobId = null;
       void this.pump();
+      for (const listener of this.listeners) listener();
     }
   }
 
@@ -281,6 +293,8 @@ export class MediaGenerationQueue {
       }
       try {
         const detail = await this.readRunDetail(jobId);
+        if (this.pollSequence !== pollSequence || this.activeJobId !== jobId)
+          return;
         this.applyDetail(jobId, detail);
       } catch {
         if (this.pollSequence !== pollSequence || this.activeJobId !== jobId) {
@@ -300,7 +314,6 @@ export class MediaGenerationQueue {
         "Generation returned before completion and cannot be monitored.",
       );
     }
-    let consecutiveReadFailures = 0;
     while (
       this.activeJobId === jobId &&
       ACTIVE_STATUSES.has(this.getJob(jobId)?.status ?? "failed")
@@ -314,14 +327,12 @@ export class MediaGenerationQueue {
       if (this.activeJobId !== jobId) return;
       try {
         this.applyDetail(jobId, await this.readRunDetail(jobId));
-      } catch {
-        consecutiveReadFailures += 1;
-        if (consecutiveReadFailures >= 8) {
-          throw new Error("Generation status became unavailable.");
-        }
-        continue;
+      } catch (error: unknown) {
+        this.patchJob(jobId, {
+          currentStep: "Checking generation status",
+          error: errorMessage(error),
+        });
       }
-      consecutiveReadFailures = 0;
     }
   }
 
@@ -345,6 +356,7 @@ export class MediaGenerationQueue {
   private applyDetail(jobId: string, detail: MediaRunDetail): void {
     const current = this.getJob(jobId);
     if (!current) return;
+    this.observedRunIds.add(jobId);
     if (
       isTerminalStatus(current.status) &&
       ACTIVE_STATUSES.has(detail.status)

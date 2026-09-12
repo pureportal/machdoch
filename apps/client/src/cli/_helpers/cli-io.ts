@@ -34,6 +34,8 @@ const createStatusFallbackLine = (execution: TaskExecutionResult): string => {
       return execution.summary;
     case "blocked":
       return `Blocked: ${execution.summary}`;
+    case "failed":
+      return `Failed: ${execution.summary}`;
     case "cancelled":
       return `Cancelled: ${execution.summary}`;
     case "unsupported":

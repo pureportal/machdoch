@@ -24,6 +24,27 @@ const renderFeed = (messages: ChatSessionMessage[], overrides = {}): string =>
   );
 
 describe("ConversationFeed message states", () => {
+  it("shows a concise retry indicator without exposing the recovery prompt", () => {
+    const markup = renderFeed([
+      {
+        id: "retry-user",
+        taskId: "task-retry-1",
+        role: "user",
+        content: "Internal recovery prompt",
+        executionAttempt: {
+          rootTaskId: "task",
+          task: "Original objective",
+          retryNumber: 1,
+          retryLimit: 2,
+        },
+      },
+    ]);
+    expect(markup).toContain('role="status"');
+    expect(markup).toContain("Retry 1 of 2");
+    expect(markup).toContain("Previous execution failed");
+    expect(markup).not.toContain("Internal recovery prompt");
+  });
+
   it("selects the edited message and dims the remaining conversation", () => {
     const markup = renderFeed(
       [

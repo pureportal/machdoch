@@ -96,9 +96,11 @@ describe("MediaGenerationQueue", () => {
     await vi.waitFor(() => expect(order).toEqual(["image"]));
     expect(queue.getSnapshot()[0]?.recipe.prompt).toBe("Original image prompt");
     expect(queue.getSnapshot()[1]?.status).toBe("queued");
+    expect(queue.hasPendingWork()).toBe(true);
 
     first.resolve(detail("image-run"));
     await vi.waitFor(() => expect(order).toEqual(["image", "video"]));
+    expect(queue.hasPendingWork()).toBe(true);
     second.resolve(detail("video-run"));
     await vi.waitFor(() =>
       expect(queue.getSnapshot().map((job) => job.status)).toEqual([
@@ -106,6 +108,7 @@ describe("MediaGenerationQueue", () => {
         "completed",
       ]),
     );
+    expect(queue.hasPendingWork()).toBe(false);
   });
 
   it("holds the serial slot when submission returns a queued run", async () => {
@@ -141,13 +144,16 @@ describe("MediaGenerationQueue", () => {
     await vi.waitFor(() => expect(order).toEqual(["image", "video"]));
   });
 
-  it("fails unavailable queued work and continues the queue", async () => {
+  it("keeps shutdown and the next job blocked through prolonged status outages", async () => {
     const order: string[] = [];
+    let finished = false;
+    const readRunDetail = vi.fn(async () => {
+      if (finished) return detail("missing-run");
+      throw new Error("Run record unavailable");
+    });
     const queue = new MediaGenerationQueue({
       pollIntervalMs: 1,
-      readRunDetail: async () => {
-        throw new Error("Run record unavailable");
-      },
+      readRunDetail,
     });
     queue.enqueue({
       runId: "missing-run",
@@ -166,11 +172,89 @@ describe("MediaGenerationQueue", () => {
       },
     });
 
-    await vi.waitFor(() => expect(order).toEqual(["missing", "next"]));
+    await vi.waitFor(() =>
+      expect(readRunDetail.mock.calls.length).toBeGreaterThan(8),
+    );
+    expect(order).toEqual(["missing"]);
+    expect(queue.hasPendingWork()).toBe(true);
     expect(queue.getSnapshot()[0]).toMatchObject({
-      status: "failed",
-      error: "Generation status became unavailable.",
+      status: "running",
+      error: "Run record unavailable",
     });
+    finished = true;
+    await vi.waitFor(() => expect(queue.hasPendingWork()).toBe(false));
+    expect(order).toEqual(["missing", "next"]);
+  });
+
+  it.each([
+    "running",
+    "queued",
+    "canceling",
+    "needs-review",
+    "waiting-for-review",
+  ] as const)(
+    "waits for a %s provider run after its execution call rejects",
+    async (status) => {
+      let finished = false;
+      const readRunDetail = vi.fn(async () =>
+        detail("image-run", finished ? "completed" : status),
+      );
+      const next = vi.fn(async () => detail("next-run"));
+      const queue = new MediaGenerationQueue({
+        pollIntervalMs: 1,
+        readRunDetail,
+      });
+      queue.enqueue({
+        runId: "image-run",
+        recipe: recipe("image", "Image"),
+        execute: async () => {
+          throw new Error("Connection lost after submission");
+        },
+      });
+      queue.enqueue({
+        runId: "next-run",
+        recipe: recipe("image", "Next"),
+        execute: next,
+      });
+      await vi.waitFor(() =>
+        expect(readRunDetail.mock.calls.length).toBeGreaterThan(2),
+      );
+      expect(queue.hasPendingWork()).toBe(true);
+      expect(next).not.toHaveBeenCalled();
+      finished = true;
+      await vi.waitFor(() => expect(queue.hasPendingWork()).toBe(false));
+      expect(next).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("retains a previously observed run when execution and status retrieval both fail", async () => {
+    const execution = deferred<MediaRunDetail>();
+    let unavailable = false;
+    let finished = false;
+    const readRunDetail = vi.fn(async () => {
+      if (unavailable) throw new Error("Disconnected");
+      return detail("image-run", finished ? "completed" : "running");
+    });
+    const queue = new MediaGenerationQueue({
+      pollIntervalMs: 1,
+      readRunDetail,
+    });
+    queue.enqueue({
+      runId: "image-run",
+      recipe: recipe("image", "Image"),
+      execute: () => execution.promise,
+    });
+    await vi.waitFor(() => expect(readRunDetail).toHaveBeenCalled());
+    unavailable = true;
+    execution.reject(new Error("Disconnected"));
+    await vi.waitFor(() =>
+      expect(readRunDetail.mock.calls.length).toBeGreaterThan(10),
+    );
+    expect(queue.hasPendingWork()).toBe(true);
+    expect(queue.getSnapshot()[0]?.status).toBe("running");
+    unavailable = false;
+    finished = true;
+    await vi.waitFor(() => expect(queue.hasPendingWork()).toBe(false));
   });
 
   it("cancels queued work without starting or retaining its executor", async () => {

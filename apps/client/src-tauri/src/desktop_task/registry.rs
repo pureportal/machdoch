@@ -232,7 +232,7 @@ pub(super) fn normalize_task_id(task_id: Option<&str>) -> Option<String> {
         .map(str::to_string)
 }
 
-pub(super) fn active_task_ids(state: &DesktopTaskCancelMap) -> Result<Vec<String>, String> {
+pub(crate) fn active_task_ids(state: &DesktopTaskCancelMap) -> Result<Vec<String>, String> {
     let cancel_state = state.0.lock().map_err(|_| {
         "Unable to inspect active desktop tasks because the task registry lock is unavailable."
             .to_string()

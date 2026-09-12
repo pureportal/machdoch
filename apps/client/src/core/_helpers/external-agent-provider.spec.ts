@@ -704,7 +704,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     call.child.emit("close", 0, null);
 
     await expect(resultPromise).resolves.toMatchObject({
-      status: "blocked",
+      status: "failed",
       summary: expect.stringContaining("valid Machdoch control record"),
     });
   });
@@ -1043,7 +1043,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       }
 
       await expect(resultPromise).resolves.toMatchObject({
-        status: "blocked",
+        status: "failed",
         metadata: {
           providerShutdownRecoveryKind: "child-exit-close-timeout",
           providerChildExitObservedBeforeRecovery: true,
@@ -1090,7 +1090,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
       const result = await resultPromise;
       expect(result).toMatchObject({
-        status: "blocked",
+        status: "failed",
         metadata: {
           providerShutdownRecovered: true,
           providerShutdownRecoveryKind: "child-exit-close-timeout",
@@ -1717,7 +1717,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
   });
 
-  it("returns a blocked result when codex exec exits nonzero", async () => {
+  it("returns a failed result when codex exec exits nonzero", async () => {
     const workspaceRoot = await createWorkspace();
 
     process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
@@ -1734,7 +1734,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     const result = await resultPromise;
 
-    expect(result?.status).toBe("blocked");
+    expect(result?.status).toBe("failed");
     expect(result?.reason).toContain("authentication failed");
   });
 
@@ -1769,7 +1769,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       call.child.emit("close", 1, null);
       const result = await resultPromise;
 
-      expect(result?.status).toBe("blocked");
+      expect(result?.status).toBe("failed");
       expect(result?.metadata).not.toHaveProperty("providerShutdownRecovered");
       expect(result?.reason).toContain("Too many concurrent requests");
     } finally {
@@ -1964,7 +1964,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     const result = await resultPromise;
 
-    expect(result?.status).toBe("blocked");
+    expect(result?.status).toBe("failed");
     expect(result?.reason).toBe(
       "Codex CLI quota exceeded: Quota exceeded. Check your plan and billing details.",
     );
@@ -2000,7 +2000,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     const result = await resultPromise;
 
-    expect(result?.status).toBe("blocked");
+    expect(result?.status).toBe("failed");
     expect(result?.reason).toBe(
       "Codex CLI failed: The following tools cannot be used with reasoning.effort minimal: image_gen, web_search.",
     );
@@ -2255,7 +2255,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     spawnCalls[0]?.child.emit("close", 1, null);
 
     await expect(resultPromise).resolves.toMatchObject({
-      status: "blocked",
+      status: "failed",
     });
     expect(spawnCalls).toHaveLength(1);
   });
@@ -2696,7 +2696,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
   });
 
-  it("passes explicit copilot models and reports nonzero results as blocked", async () => {
+  it("passes explicit copilot models and reports nonzero results as failed", async () => {
     const workspaceRoot = await createWorkspace();
 
     process.env.MACHDOCH_COPILOT_CLI_PATH = process.execPath;
@@ -2719,12 +2719,12 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     const result = await resultPromise;
 
-    expect(result?.status).toBe("blocked");
+    expect(result?.status).toBe("failed");
     expect(result?.summary).toContain("Copilot CLI execution failed");
     expect(result?.reason).toContain("Copilot authentication required");
   });
 
-  it("reports rejected Copilot task completion as blocked", async () => {
+  it("reports rejected Copilot task completion as failed", async () => {
     const workspaceRoot = await createWorkspace();
 
     process.env.MACHDOCH_COPILOT_CLI_PATH = process.execPath;
@@ -2749,7 +2749,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     const result = await resultPromise;
 
-    expect(result?.status).toBe("blocked");
+    expect(result?.status).toBe("failed");
     expect(result?.reason).toContain("More implementation work is required.");
   });
 
@@ -2793,7 +2793,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       }
 
       await expect(resultPromise).resolves.toMatchObject({
-        status: "blocked",
+        status: "failed",
         metadata: {
           providerShutdownRecoveryKind: "child-exit-close-timeout",
           providerChildExitObservedBeforeRecovery: true,

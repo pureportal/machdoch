@@ -30,6 +30,7 @@ export interface TaskTimelineItem {
 }
 
 const executionStatusLabels: Record<TaskExecutionStatus, string> = {
+  failed: "Failed",
   planned: "Plan ready",
   executed: "Executed",
   blocked: "Blocked",
@@ -38,6 +39,7 @@ const executionStatusLabels: Record<TaskExecutionStatus, string> = {
 };
 
 const executionStatusTones: Record<TaskExecutionStatus, TaskPanelTone> = {
+  failed: "danger",
   planned: "info",
   executed: "success",
   blocked: "danger",

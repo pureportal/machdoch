@@ -2206,7 +2206,7 @@ const executeExternalAgentCliTask = async (
       {
         task: params.task,
         mode: params.config.mode,
-        status: "blocked",
+        status: "failed",
         summary: `${providerLabel} execution failed before completing the task.`,
         executedTools: ["shell"],
         metadata: instructionMetadata,
@@ -2256,7 +2256,7 @@ const executeExternalAgentCliTask = async (
       {
         task: params.task,
         mode: params.config.mode,
-        status: "blocked",
+        status: "failed",
         summary: reason,
         executedTools: ["shell"],
         metadata: instructionMetadata,

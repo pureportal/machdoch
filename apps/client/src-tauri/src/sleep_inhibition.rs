@@ -103,6 +103,25 @@ impl SystemSleepInhibitor {
         self.core.shutdown();
     }
 
+    pub(crate) fn finish_if_idle(
+        &self,
+        finish: impl FnOnce() -> Result<bool, String>,
+    ) -> Result<bool, String> {
+        let mut state = self
+            .core
+            .state
+            .lock()
+            .map_err(|_| "Work activity is unavailable.")?;
+        if state.shutting_down || state.active_count > 0 {
+            return Ok(false);
+        }
+        if !finish()? {
+            return Ok(false);
+        }
+        state.shutting_down = true;
+        Ok(true)
+    }
+
     #[cfg(test)]
     fn active_count(&self) -> usize {
         self.core
@@ -369,6 +388,75 @@ mod tests {
 
     fn test_inhibitor(state: &Arc<TestBackendState>) -> SystemSleepInhibitor {
         SystemSleepInhibitor::new(Box::new(TestBackend(Arc::clone(state))))
+    }
+
+    #[test]
+    fn idle_shutdown_waits_for_all_work_and_prevents_new_work_after_commit() {
+        let state = Arc::new(TestBackendState::default());
+        let inhibitor = test_inhibitor(&state);
+        let chat = inhibitor.acquire().unwrap();
+        let image = inhibitor.acquire().unwrap();
+        let calls = AtomicUsize::new(0);
+        let shutdown = || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok(true)
+        };
+        assert!(!inhibitor.finish_if_idle(shutdown).unwrap());
+        drop(chat);
+        assert!(!inhibitor.finish_if_idle(shutdown).unwrap());
+        drop(image);
+        assert!(inhibitor.finish_if_idle(shutdown).unwrap());
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(inhibitor.acquire().is_err());
+        assert!(!inhibitor.finish_if_idle(shutdown).unwrap());
+    }
+
+    #[test]
+    fn shutdown_commit_serializes_with_new_queue_admission() {
+        use std::{sync::mpsc, thread, time::Duration};
+
+        for commit in [false, true] {
+            let state = Arc::new(TestBackendState::default());
+            let inhibitor = test_inhibitor(&state);
+            let (checking, checked) = mpsc::channel();
+            let (finish, finishing) = mpsc::channel();
+            let (starting, started) = mpsc::channel();
+            let (admitted, admission) = mpsc::channel();
+            thread::scope(|scope| {
+                let inhibitor = &inhibitor;
+                let shutdown = scope.spawn(move || {
+                    inhibitor.finish_if_idle(|| {
+                        checking.send(()).unwrap();
+                        finishing.recv().unwrap();
+                        Ok(commit)
+                    })
+                });
+                checked.recv().unwrap();
+                scope.spawn(move || {
+                    starting.send(()).unwrap();
+                    admitted.send(inhibitor.acquire().is_ok()).unwrap();
+                });
+                started.recv().unwrap();
+                assert!(admission.recv_timeout(Duration::from_millis(25)).is_err());
+                finish.send(()).unwrap();
+                assert_eq!(shutdown.join().unwrap().unwrap(), commit);
+                assert_eq!(admission.recv().unwrap(), !commit);
+            });
+        }
+    }
+
+    #[test]
+    fn failed_or_stale_shutdown_checks_keep_work_enabled() {
+        let state = Arc::new(TestBackendState::default());
+        let inhibitor = test_inhibitor(&state);
+        assert!(!inhibitor.finish_if_idle(|| Ok(false)).unwrap());
+        assert!(inhibitor
+            .finish_if_idle(|| Err("Cannot inspect work".to_string()))
+            .is_err());
+        assert!(inhibitor
+            .finish_if_idle(|| Err("Shutdown failed".to_string()))
+            .is_err());
+        assert!(inhibitor.acquire().is_ok());
     }
 
     #[test]

@@ -13,7 +13,6 @@ const createQueuedMessage = (
   id: "queued-1",
   sessionId: "session-1",
   task: "Review the change.",
-  dispatchPolicy: "after-success",
   contentUpdatedAt: 10,
   attachmentsUpdatedAt: 10,
   attachmentTombstones: {},
