@@ -6,10 +6,12 @@ import {
   Layers3,
   ListChecks,
   Plus,
-  Square,
 } from "lucide-react";
 import { useState } from "react";
-import { formatDuration, formatRelativeTime } from "./format";
+import { Tabs } from "radix-ui";
+import { formatRelativeTime } from "./format";
+import { InspectorContextPacks } from "./inspector-context-packs";
+import { InspectorTasks } from "./inspector-tasks";
 import type { ProductCommandHandler } from "./product-runtime";
 
 type InspectorTab =
@@ -23,76 +25,98 @@ export function Inspector({
   snapshot,
   shell,
   activeSessionId,
+  pending,
   onCommand,
+  onRefresh,
 }: {
   snapshot: ProductSnapshot;
   shell: ProductShell;
   activeSessionId: string | undefined;
+  pending: boolean;
   onCommand: ProductCommandHandler;
+  onRefresh: () => Promise<void>;
 }): React.ReactElement {
   const [tab, setTab] = useState<InspectorTab>("tasks");
+  const [navigationError, setNavigationError] = useState<string | null>(null);
+  const navigate: ProductCommandHandler = async (command) => {
+    if (pending) return false;
+    setNavigationError(null);
+    const accepted = await onCommand(command);
+    if (!accepted) setNavigationError("Chat could not be opened. Try again.");
+    return accepted;
+  };
   return (
-    <aside className="m-product-inspector" aria-label="Activity">
-      <div className="m-product-inspector-tabs" role="tablist">
-        <Tab
-          active={tab === "tasks"}
-          label="Tasks"
-          icon={<ListChecks />}
-          onClick={() => setTab("tasks")}
-        />
-        <Tab
-          active={tab === "scheduler"}
-          label="Scheduler"
-          icon={<CalendarClock />}
-          onClick={() => setTab("scheduler")}
-        />
-        <Tab
-          active={tab === "context"}
-          label="Context"
-          icon={<Layers3 />}
-          onClick={() => setTab("context")}
-        />
-        <Tab
-          active={tab === "workspaces"}
-          label="Workspaces"
-          icon={<FolderKanban />}
-          onClick={() => setTab("workspaces")}
-        />
-        <Tab
-          active={tab === "instructions"}
-          label="Instructions"
-          icon={<BookOpenText />}
-          onClick={() => setTab("instructions")}
-        />
-      </div>
-      <div className="m-product-inspector-content">
-        {tab === "tasks" ? (
-          <Tasks snapshot={snapshot} onCommand={onCommand} />
-        ) : null}
-        {tab === "scheduler" ? (
-          <Scheduler shell={shell} onCommand={onCommand} />
-        ) : null}
-        {tab === "context" ? (
-          <ContextPacks
-            shell={shell}
-            activeSessionId={activeSessionId}
-            onCommand={onCommand}
+    <Tabs.Root
+      asChild
+      value={tab}
+      onValueChange={(value) => setTab(value as InspectorTab)}
+    >
+      <aside className="m-product-inspector" aria-label="Activity">
+        <Tabs.List
+          className="m-product-inspector-tabs"
+          aria-label="Activity views"
+        >
+          <Tab value="tasks" label="Tasks" icon={<ListChecks />} />
+          <Tab value="scheduler" label="Scheduler" icon={<CalendarClock />} />
+          <Tab value="context" label="Context" icon={<Layers3 />} />
+          <Tab value="workspaces" label="Workspaces" icon={<FolderKanban />} />
+          <Tab
+            value="instructions"
+            label="Instructions"
+            icon={<BookOpenText />}
           />
-        ) : null}
-        {tab === "workspaces" ? (
-          <Workspaces shell={shell} onCommand={onCommand} />
-        ) : null}
-        {tab === "instructions" ? <Instructions shell={shell} /> : null}
-      </div>
-    </aside>
+        </Tabs.List>
+        <Tabs.Content value={tab} className="m-product-inspector-content">
+          {navigationError ? (
+            <p role="alert" className="m-product-inline-error">
+              {navigationError}
+            </p>
+          ) : null}
+          {tab === "tasks" ? (
+            <InspectorTasks
+              snapshot={snapshot}
+              pending={pending}
+              onCommand={onCommand}
+              onOpenChat={(sessionId) =>
+                navigate({ kind: "activate-session", sessionId })
+              }
+            />
+          ) : null}
+          {tab === "scheduler" ? (
+            <Scheduler
+              shell={shell}
+              pending={pending}
+              onCommand={onCommand}
+              onRefresh={onRefresh}
+            />
+          ) : null}
+          {tab === "context" ? (
+            <InspectorContextPacks
+              shell={shell}
+              activeSessionId={activeSessionId}
+              pending={pending}
+              onCommand={onCommand}
+            />
+          ) : null}
+          {tab === "workspaces" ? (
+            <Workspaces shell={shell} pending={pending} onCommand={navigate} />
+          ) : null}
+          {tab === "instructions" ? (
+            <Instructions shell={shell} onRefresh={onRefresh} />
+          ) : null}
+        </Tabs.Content>
+      </aside>
+    </Tabs.Root>
   );
 }
 
 function Workspaces({
   shell,
+  pending,
   onCommand,
 }: {
   shell: ProductShell;
+  pending: boolean;
   onCommand: ProductCommandHandler;
 }): React.ReactElement {
   if (!shell.workspaces.length) {
@@ -109,6 +133,7 @@ function Workspaces({
           <p title={workspace.root}>{workspace.root}</p>
           <button
             type="button"
+            disabled={pending}
             onClick={() =>
               void onCommand({
                 kind: "create-session",
@@ -125,19 +150,29 @@ function Workspaces({
   );
 }
 
-function Instructions({ shell }: { shell: ProductShell }): React.ReactElement {
+function Instructions({
+  shell,
+  onRefresh,
+}: {
+  shell: ProductShell;
+  onRefresh: () => Promise<void>;
+}): React.ReactElement {
   const instructions = shell.instructions;
   if (
     !instructions ||
-    (!instructions.loading && !instructions.profiles.length)
+    (!instructions.error &&
+      !instructions.loading &&
+      !instructions.profiles.length)
   ) {
     return <p className="m-product-empty-small">No instructions</p>;
   }
   return (
     <div className="m-product-card-list">
       {instructions.error ? (
-        <p role="alert" className="m-product-inline-error">
-          {instructions.error}
+        <InspectorError error={instructions.error} onRefresh={onRefresh} />
+      ) : instructions.loading ? (
+        <p role="status" className="m-product-empty-small">
+          Loading instructions…
         </p>
       ) : null}
       {instructions.profiles.map((profile) => (
@@ -158,88 +193,60 @@ function Instructions({ shell }: { shell: ProductShell }): React.ReactElement {
 }
 
 function Tab({
-  active,
+  value,
   icon,
   label,
-  onClick,
 }: {
-  active: boolean;
+  value: InspectorTab;
   icon: React.ReactNode;
   label: string;
-  onClick: () => void;
 }): React.ReactElement {
   return (
-    <button
+    <Tabs.Trigger
       type="button"
-      role="tab"
-      aria-selected={active}
-      data-active={active}
-      onClick={onClick}
+      value={value}
+      onFocus={(event) =>
+        event.currentTarget.scrollIntoView({
+          block: "nearest",
+          inline: "nearest",
+        })
+      }
     >
       {icon}
       <span>{label}</span>
-    </button>
-  );
-}
-
-function Tasks({
-  snapshot,
-  onCommand,
-}: {
-  snapshot: ProductSnapshot;
-  onCommand: ProductCommandHandler;
-}): React.ReactElement {
-  if (snapshot.sessions.length === 0) {
-    return <p className="m-product-empty-small">No tasks</p>;
-  }
-  return (
-    <div className="m-product-card-list">
-      {snapshot.sessions.map((task) => (
-        <article key={task.taskId} className="m-product-card">
-          <div className="m-product-card-heading">
-            <strong>{task.task}</strong>
-            <span data-state={task.state}>{task.state}</span>
-          </div>
-          <p>{task.message}</p>
-          <div className="m-product-card-meta">
-            <span>{task.mode}</span>
-            <span>{formatDuration(task.startedAt, task.updatedAt)}</span>
-          </div>
-          {task.cancellable ? (
-            <button
-              type="button"
-              className="m-product-secondary-button"
-              onClick={() =>
-                void onCommand({ kind: "cancel", taskId: task.taskId })
-              }
-            >
-              <Square aria-hidden="true" />
-              Cancel
-            </button>
-          ) : null}
-        </article>
-      ))}
-    </div>
+    </Tabs.Trigger>
   );
 }
 
 function Scheduler({
   shell,
+  pending,
   onCommand,
+  onRefresh,
 }: {
   shell: ProductShell;
+  pending: boolean;
   onCommand: ProductCommandHandler;
+  onRefresh: () => Promise<void>;
 }): React.ReactElement {
   const scheduler = shell.scheduler;
-  if (!scheduler || (!scheduler.jobs.length && !scheduler.runs.length)) {
+  if (
+    !scheduler ||
+    (!scheduler.error &&
+      !scheduler.loading &&
+      !scheduler.jobs.length &&
+      !scheduler.runs.length)
+  ) {
     return <p className="m-product-empty-small">No scheduled work</p>;
   }
   const workspace = scheduler.workspaceRoot;
   return (
     <div className="m-product-card-list">
       {scheduler.error ? (
-        <p role="alert" className="m-product-inline-error">
-          {scheduler.error}
+        <InspectorError error={scheduler.error} onRefresh={onRefresh} />
+      ) : scheduler.loading ? (
+        <p role="status" className="m-product-empty-small">
+          Loading scheduled work…
         </p>
       ) : null}
       {scheduler.jobs.map((job) => (
@@ -256,6 +263,9 @@ function Scheduler({
             <div className="m-product-card-actions">
               <button
                 type="button"
+                disabled={
+                  pending || scheduler.loading || Boolean(scheduler.error)
+                }
                 onClick={() =>
                   void onCommand({
                     kind: "scheduler-trigger",
@@ -268,6 +278,9 @@ function Scheduler({
               </button>
               <button
                 type="button"
+                disabled={
+                  pending || scheduler.loading || Boolean(scheduler.error)
+                }
                 onClick={() =>
                   void onCommand({
                     kind:
@@ -296,6 +309,9 @@ function Scheduler({
           ["failed", "cancelled", "timed_out"].includes(run.status) ? (
             <button
               type="button"
+              disabled={
+                pending || scheduler.loading || Boolean(scheduler.error)
+              }
               onClick={() =>
                 void onCommand({
                   kind: "scheduler-retry-run",
@@ -310,6 +326,9 @@ function Scheduler({
           {workspace && ["queued", "running"].includes(run.status) ? (
             <button
               type="button"
+              disabled={
+                pending || scheduler.loading || Boolean(scheduler.error)
+              }
               onClick={() =>
                 void onCommand({
                   kind: "scheduler-cancel-run",
@@ -327,61 +346,28 @@ function Scheduler({
   );
 }
 
-function ContextPacks({
-  shell,
-  activeSessionId,
-  onCommand,
+function InspectorError({
+  error,
+  onRefresh,
 }: {
-  shell: ProductShell;
-  activeSessionId: string | undefined;
-  onCommand: ProductCommandHandler;
+  error: string;
+  onRefresh: () => Promise<void>;
 }): React.ReactElement {
-  if (shell.contextPacks.length === 0) {
-    return <p className="m-product-empty-small">No context packs</p>;
-  }
+  const [pending, setPending] = useState(false);
   return (
-    <div className="m-product-card-list">
-      {shell.contextPacks.map((pack) => (
-        <article key={pack.id} className="m-product-card">
-          <div className="m-product-card-heading">
-            <strong>{pack.name}</strong>
-            {pack.scopeLabel ? <span>{pack.scopeLabel}</span> : null}
-          </div>
-          {pack.instructionsPreview || pack.promptPreview ? (
-            <p>{pack.instructionsPreview || pack.promptPreview}</p>
-          ) : null}
-          <div className="m-product-card-actions">
-            {activeSessionId ? (
-              <button
-                type="button"
-                disabled={pack.matched}
-                onClick={() =>
-                  void onCommand({
-                    kind: "apply-context-pack",
-                    sessionId: activeSessionId,
-                    contextPackId: pack.id,
-                  })
-                }
-              >
-                {pack.matched ? "Applied" : "Apply"}
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => {
-                if (window.confirm(`Delete “${pack.name}”?`)) {
-                  void onCommand({
-                    kind: "delete-context-pack",
-                    contextPackId: pack.id,
-                  });
-                }
-              }}
-            >
-              Delete
-            </button>
-          </div>
-        </article>
-      ))}
+    <div role="alert" className="m-product-inspector-error">
+      <p className="m-product-inline-error">{error}</p>
+      <button
+        type="button"
+        className="m-product-secondary-button"
+        disabled={pending}
+        onClick={() => {
+          setPending(true);
+          void onRefresh().finally(() => setPending(false));
+        }}
+      >
+        Retry
+      </button>
     </div>
   );
 }

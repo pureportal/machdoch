@@ -1,6 +1,7 @@
 import type { ProductSession } from "@machdoch/fleet-protocol";
 import {
   Archive,
+  ArchiveRestore,
   Copy,
   GitBranch,
   PencilLine,
@@ -11,46 +12,71 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { DropdownMenu } from "radix-ui";
 import type { ProductCommandHandler } from "./product-runtime";
+import { ProductModal } from "./product-modal";
 
 export function SessionHeader({
   session,
+  pending,
   onCommand,
 }: {
   session: ProductSession;
+  pending: boolean;
   onCommand: ProductCommandHandler;
 }): React.ReactElement {
   const [title, setTitle] = useState(session.title);
   const [renaming, setRenaming] = useState(false);
   const [tagDraft, setTagDraft] = useState(session.tags.join(", "));
   const [editingTags, setEditingTags] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const tagsRef = useRef<HTMLInputElement>(null);
-  const pendingEdit = useRef<"title" | "tags" | null>(null);
+  const pendingEdit = useRef<"title" | "tags" | "delete" | null>(null);
   const cancelTagEdit = useRef(false);
+  const cancelTitleEdit = useRef(false);
+  const savingEdit = useRef(false);
   const sessionTags = session.tags.join(", ");
+  const archiveLabel =
+    session.archivedAt !== undefined ? "Restore session" : "Archive session";
+  const ArchiveIcon =
+    session.archivedAt !== undefined ? ArchiveRestore : Archive;
 
   useEffect(() => {
-    setTitle(session.title);
-    setRenaming(false);
-    setTagDraft(sessionTags);
-  }, [session.id, session.title, sessionTags]);
+    if (!renaming) setTitle(session.title);
+  }, [session.title, renaming]);
+  useEffect(() => {
+    if (!editingTags) setTagDraft(sessionTags);
+  }, [sessionTags, editingTags]);
 
   const saveTitle = (): void => {
+    if (pending || savingEdit.current) return;
     const nextTitle = title.trim();
-    setRenaming(false);
-    if (!session.canRename || !nextTitle || nextTitle === session.title) {
+    if (
+      cancelTitleEdit.current ||
+      !session.canRename ||
+      !nextTitle ||
+      nextTitle === session.title
+    ) {
+      cancelTitleEdit.current = false;
       setTitle(session.title);
+      setRenaming(false);
       return;
     }
+    savingEdit.current = true;
     void onCommand({
       kind: "rename-session",
       sessionId: session.id,
       title: nextTitle,
+    }).then((saved) => {
+      savingEdit.current = false;
+      if (saved) setRenaming(false);
     });
   };
 
   const saveTags = (): void => {
+    if (pending || savingEdit.current) return;
     const nextTags = [
       ...new Set(
         tagDraft
@@ -60,11 +86,18 @@ export function SessionHeader({
       ),
     ].slice(0, 24);
     setTagDraft(nextTags.join(", "));
-    if (nextTags.join("\u0000") === session.tags.join("\u0000")) return;
+    if (nextTags.join("\u0000") === session.tags.join("\u0000")) {
+      setEditingTags(false);
+      return;
+    }
+    savingEdit.current = true;
     void onCommand({
       kind: "tag-session",
       sessionId: session.id,
       tags: nextTags,
+    }).then((saved) => {
+      savingEdit.current = false;
+      if (saved) setEditingTags(false);
     });
   };
 
@@ -80,18 +113,25 @@ export function SessionHeader({
             autoFocus
             className="m-product-session-title-input"
             value={title}
+            readOnly={pending}
             aria-label="Session title"
             onChange={(event) => setTitle(event.target.value)}
             onBlur={saveTitle}
             onKeyDown={(event) => {
+              if (
+                event.nativeEvent.isComposing ||
+                event.nativeEvent.keyCode === 229
+              )
+                return;
+              if (pending || savingEdit.current) return;
               if (event.key === "Enter") {
                 event.preventDefault();
-                saveTitle();
+                event.currentTarget.blur();
               }
               if (event.key === "Escape") {
                 event.preventDefault();
-                setTitle(session.title);
-                setRenaming(false);
+                cancelTitleEdit.current = true;
+                event.currentTarget.blur();
               }
             }}
           />
@@ -104,19 +144,26 @@ export function SessionHeader({
           ref={tagsRef}
           className="m-product-session-tags-input"
           value={tagDraft}
+          readOnly={pending}
           aria-label="Session tags"
           placeholder="Tags"
+          onFocus={() => setEditingTags(true)}
           onChange={(event) => setTagDraft(event.target.value)}
           onBlur={() => {
             if (!cancelTagEdit.current) saveTags();
+            else setEditingTags(false);
             cancelTagEdit.current = false;
-            setEditingTags(false);
           }}
           onKeyDown={(event) => {
+            if (
+              event.nativeEvent.isComposing ||
+              event.nativeEvent.keyCode === 229
+            )
+              return;
+            if (pending || savingEdit.current) return;
             if (event.key === "Enter") {
               event.preventDefault();
-              saveTags();
-              setEditingTags(false);
+              event.currentTarget.blur();
             }
             if (event.key === "Escape") {
               event.preventDefault();
@@ -133,6 +180,7 @@ export function SessionHeader({
               type="button"
               className="m-product-icon-button m-product-session-menu-toggle"
               aria-label="Session actions"
+              disabled={pending}
             >
               <MoreHorizontal aria-hidden="true" />
             </button>
@@ -152,6 +200,12 @@ export function SessionHeader({
                 if (!target) return;
                 event.preventDefault();
                 pendingEdit.current = null;
+                if (target === "delete") {
+                  menuTriggerRef.current?.focus();
+                  setDeleteError(null);
+                  setDeleteOpen(true);
+                  return;
+                }
                 if (target === "title") setRenaming(true);
                 else setEditingTags(true);
                 requestAnimationFrame(() =>
@@ -161,6 +215,7 @@ export function SessionHeader({
             >
               {session.canRename ? (
                 <DropdownMenu.Item
+                  disabled={pending}
                   onSelect={() => {
                     pendingEdit.current = "title";
                   }}
@@ -170,6 +225,7 @@ export function SessionHeader({
                 </DropdownMenu.Item>
               ) : null}
               <DropdownMenu.Item
+                disabled={pending}
                 onSelect={() => {
                   pendingEdit.current = "tags";
                 }}
@@ -178,6 +234,7 @@ export function SessionHeader({
               </DropdownMenu.Item>
               {session.canPin ? (
                 <DropdownMenu.Item
+                  disabled={pending}
                   onSelect={() =>
                     void onCommand({
                       kind: "pin-session",
@@ -193,6 +250,7 @@ export function SessionHeader({
               ) : null}
               {session.canDuplicate ? (
                 <DropdownMenu.Item
+                  disabled={pending}
                   onSelect={() =>
                     void onCommand({
                       kind: "duplicate-session",
@@ -206,6 +264,7 @@ export function SessionHeader({
               ) : null}
               {session.canBranch ? (
                 <DropdownMenu.Item
+                  disabled={pending}
                   onSelect={() =>
                     void onCommand({
                       kind: "branch-session",
@@ -219,6 +278,7 @@ export function SessionHeader({
               ) : null}
               {session.canArchive ? (
                 <DropdownMenu.Item
+                  disabled={pending}
                   onSelect={() =>
                     void onCommand({
                       kind: "archive-session",
@@ -226,19 +286,16 @@ export function SessionHeader({
                     })
                   }
                 >
-                  <Archive />
-                  Archive session
+                  <ArchiveIcon />
+                  {archiveLabel}
                 </DropdownMenu.Item>
               ) : null}
               {session.canDelete ? (
                 <DropdownMenu.Item
+                  disabled={pending}
                   data-destructive="true"
                   onSelect={() => {
-                    if (window.confirm(`Delete "${session.title}"?`))
-                      void onCommand({
-                        kind: "delete-session",
-                        sessionId: session.id,
-                      });
+                    pendingEdit.current = "delete";
                   }}
                 >
                   <Trash2 />
@@ -253,6 +310,7 @@ export function SessionHeader({
             type="button"
             className="m-product-icon-button"
             aria-label="Rename session"
+            disabled={pending}
             onClick={() => setRenaming(true)}
           >
             <PencilLine aria-hidden="true" />
@@ -263,6 +321,7 @@ export function SessionHeader({
             type="button"
             className="m-product-icon-button"
             data-active={session.pinnedAt !== undefined}
+            disabled={pending}
             aria-label={
               session.pinnedAt !== undefined ? "Unpin session" : "Pin session"
             }
@@ -278,6 +337,7 @@ export function SessionHeader({
             type="button"
             className="m-product-icon-button"
             aria-label="Duplicate session"
+            disabled={pending}
             onClick={() =>
               void onCommand({
                 kind: "duplicate-session",
@@ -293,6 +353,7 @@ export function SessionHeader({
             type="button"
             className="m-product-icon-button"
             aria-label="Branch session"
+            disabled={pending}
             onClick={() =>
               void onCommand({ kind: "branch-session", sessionId: session.id })
             }
@@ -304,7 +365,8 @@ export function SessionHeader({
           <button
             type="button"
             className="m-product-icon-button"
-            aria-label="Archive session"
+            aria-label={archiveLabel}
+            disabled={pending}
             onClick={() =>
               void onCommand({
                 kind: "archive-session",
@@ -312,7 +374,7 @@ export function SessionHeader({
               })
             }
           >
-            <Archive aria-hidden="true" />
+            <ArchiveIcon aria-hidden="true" />
           </button>
         ) : null}
         {session.canDelete ? (
@@ -320,19 +382,63 @@ export function SessionHeader({
             type="button"
             className="m-product-icon-button m-product-danger-button"
             aria-label="Delete session"
+            disabled={pending}
             onClick={() => {
-              if (window.confirm(`Delete “${session.title}”?`)) {
-                void onCommand({
-                  kind: "delete-session",
-                  sessionId: session.id,
-                });
-              }
+              setDeleteError(null);
+              setDeleteOpen(true);
             }}
           >
             <Trash2 aria-hidden="true" />
           </button>
         ) : null}
       </div>
+      {deleteOpen ? (
+        <ProductModal
+          title={`Delete ${session.title}?`}
+          description="This deletes all messages in the session."
+          dismissible={!deleting}
+          onClose={() => setDeleteOpen(false)}
+        >
+          {deleteError ? (
+            <p className="m-product-inline-error" role="alert">
+              {deleteError}
+            </p>
+          ) : null}
+          <div>
+            <button
+              type="button"
+              className="m-product-secondary-button"
+              disabled={deleting}
+              onClick={() => setDeleteOpen(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="m-product-secondary-button m-product-danger-button"
+              disabled={pending || deleting}
+              onClick={() => {
+                setDeleting(true);
+                setDeleteError(null);
+                void onCommand({
+                  kind: "delete-session",
+                  sessionId: session.id,
+                })
+                  .then((deleted) => {
+                    if (deleted) setDeleteOpen(false);
+                    else
+                      setDeleteError(
+                        "Session could not be deleted. Try again.",
+                      );
+                  })
+                  .finally(() => setDeleting(false));
+              }}
+            >
+              Delete session
+            </button>
+          </div>
+        </ProductModal>
+      ) : null}
     </header>
   );
 }

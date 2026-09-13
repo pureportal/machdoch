@@ -4,31 +4,31 @@ import {
   Bot,
   ChevronDown,
   LoaderCircle,
-  RotateCcw,
-  Save,
-  Square,
   User,
-  Volume2,
   WandSparkles,
 } from "lucide-react";
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { formatRelativeTime, formatTimestampDateTime } from "./format";
 import { ProductMarkdown } from "./markdown";
+import { MessageActions } from "./message-actions";
 import { PromptEnhancementIndicator } from "./prompt-enhancement";
 import type { ProductCommandHandler } from "./product-runtime";
 
 export function Conversation({
   messages,
   sessionId,
+  pending,
   onCommand,
 }: {
   messages: ProductMessage[];
   sessionId: string;
+  pending: boolean;
   onCommand: ProductCommandHandler;
 }): React.ReactElement {
   const conversationRef = useRef<HTMLDivElement>(null);
   const followingNewestRef = useRef(true);
   const previousSessionIdRef = useRef(sessionId);
+  const [showLatest, setShowLatest] = useState(false);
 
   useLayoutEffect(() => {
     const conversation = conversationRef.current;
@@ -36,6 +36,7 @@ export function Conversation({
     if (previousSessionIdRef.current !== sessionId) {
       previousSessionIdRef.current = sessionId;
       followingNewestRef.current = true;
+      setShowLatest(false);
     }
     if (followingNewestRef.current) {
       conversation.scrollTop = conversation.scrollHeight;
@@ -43,36 +44,55 @@ export function Conversation({
   }, [messages, sessionId]);
 
   return (
-    <div
-      ref={conversationRef}
-      className="m-product-conversation"
-      aria-live="polite"
-      onScroll={(event) => {
-        const conversation = event.currentTarget;
-        const distanceFromNewest =
-          conversation.scrollHeight -
-          conversation.scrollTop -
-          conversation.clientHeight;
-        followingNewestRef.current = distanceFromNewest <= 64;
-      }}
-    >
-      {messages.length === 0 ? (
-        <div className="m-product-empty">
-          <div className="m-product-empty-icon">
-            <WandSparkles aria-hidden="true" />
+    <div className="m-product-conversation-wrap">
+      <div
+        ref={conversationRef}
+        className="m-product-conversation"
+        aria-live="polite"
+        onScroll={(event) => {
+          const conversation = event.currentTarget;
+          const distanceFromNewest =
+            conversation.scrollHeight -
+            conversation.scrollTop -
+            conversation.clientHeight;
+          followingNewestRef.current = distanceFromNewest <= 64;
+          setShowLatest(!followingNewestRef.current);
+        }}
+      >
+        {messages.length === 0 ? (
+          <div className="m-product-empty">
+            <div className="m-product-empty-icon">
+              <WandSparkles aria-hidden="true" />
+            </div>
+            <h2>Ready to automate</h2>
           </div>
-          <h2>Ready to automate</h2>
-        </div>
-      ) : (
-        messages.map((message) => (
-          <Message
-            key={message.id}
-            message={message}
-            sessionId={sessionId}
-            onCommand={onCommand}
-          />
-        ))
-      )}
+        ) : (
+          messages.map((message) => (
+            <Message
+              key={message.id}
+              message={message}
+              sessionId={sessionId}
+              pending={pending}
+              onCommand={onCommand}
+            />
+          ))
+        )}
+      </div>
+      {showLatest ? (
+        <button
+          type="button"
+          className="m-product-latest m-product-secondary-button"
+          onClick={() => {
+            const conversation = conversationRef.current;
+            if (conversation)
+              conversation.scrollTop = conversation.scrollHeight;
+            followingNewestRef.current = true;
+            setShowLatest(false);
+          }}
+        >
+          <ChevronDown aria-hidden="true" /> Latest message
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -80,10 +100,12 @@ export function Conversation({
 function Message({
   message,
   sessionId,
+  pending,
   onCommand,
 }: {
   message: ProductMessage;
   sessionId: string;
+  pending: boolean;
   onCommand: ProductCommandHandler;
 }): React.ReactElement {
   const isUser = message.role === "user";
@@ -115,6 +137,7 @@ function Message({
             ) : null}
             {isPromptEnhancement ? (
               <PromptEnhancementIndicator
+                disabled={pending}
                 {...(message.taskId
                   ? {
                       onCancel: () =>
@@ -143,6 +166,7 @@ function Message({
         <MessageActions
           message={message}
           sessionId={sessionId}
+          pending={pending}
           onCommand={onCommand}
         />
       </div>
@@ -197,88 +221,5 @@ function ExecutionActivity({
         ) : null}
       </div>
     </details>
-  );
-}
-
-function MessageActions({
-  message,
-  sessionId,
-  onCommand,
-}: {
-  message: ProductMessage;
-  sessionId: string;
-  onCommand: ProductCommandHandler;
-}): React.ReactElement | null {
-  const hasTaskActions = message.taskId !== undefined;
-  const hasActions =
-    (hasTaskActions &&
-      (message.actions.canRetry || message.actions.canContinue)) ||
-    message.actions.canSaveAsContextPack ||
-    message.actions.canSpeak ||
-    message.actions.isSpeaking;
-  if (!hasActions) return null;
-
-  return (
-    <div className="m-product-message-actions">
-      {message.actions.canRetry && message.taskId ? (
-        <button
-          type="button"
-          onClick={() =>
-            void onCommand({ kind: "retry", taskId: message.taskId! })
-          }
-        >
-          <RotateCcw aria-hidden="true" />
-          Retry
-        </button>
-      ) : null}
-      {message.actions.canContinue && message.taskId ? (
-        <button
-          type="button"
-          onClick={() =>
-            void onCommand({ kind: "continue", taskId: message.taskId! })
-          }
-        >
-          Continue
-        </button>
-      ) : null}
-      {message.actions.canSaveAsContextPack ? (
-        <button
-          type="button"
-          onClick={() =>
-            void onCommand({
-              kind: "save-message-context-pack",
-              sessionId,
-              messageId: message.id,
-            })
-          }
-        >
-          <Save aria-hidden="true" />
-          Save context
-        </button>
-      ) : null}
-      {message.actions.isSpeaking ? (
-        <button
-          type="button"
-          onClick={() => void onCommand({ kind: "stop-speaking" })}
-        >
-          <Square aria-hidden="true" />
-          Stop
-        </button>
-      ) : message.actions.canSpeak ? (
-        <button
-          type="button"
-          onClick={() =>
-            void onCommand({
-              kind: "speak-message",
-              sessionId,
-              messageId: message.id,
-            })
-          }
-        >
-          <Volume2 aria-hidden="true" />
-          Speak
-        </button>
-      ) : null}
-    </div>
   );
 }

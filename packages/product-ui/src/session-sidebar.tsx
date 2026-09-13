@@ -50,17 +50,32 @@ export function SessionSidebar({
   activeSessionId,
   sessions,
   workspace,
+  pending,
   onCommand,
 }: {
   activeSessionId: string | undefined;
   sessions: ProductSession[];
   workspace: string | undefined;
+  pending: boolean;
   onCommand: ProductCommandHandler;
 }): React.ReactElement {
   const [query, setQuery] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [scope, setScope] = useState<SessionScope>("all");
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const normalizedQuery = query.trim().toLocaleLowerCase();
+  const execute: ProductCommandHandler = async (command) => {
+    if (pending) return false;
+    setError(null);
+    const accepted = await onCommand(command);
+    if (!accepted)
+      setError(
+        command.kind === "create-session"
+          ? "Session could not be created. Try again."
+          : "Session could not be opened. Try again.",
+      );
+    return accepted;
+  };
   const availableStatusFilters = useMemo(() => {
     const statuses = new Set(sessions.map((session) => session.status));
     return sessionStatusFilters.filter((filter) => statuses.has(filter.id));
@@ -97,8 +112,9 @@ export function SessionSidebar({
         <button
           className="m-product-primary-button"
           type="button"
+          disabled={pending}
           onClick={() =>
-            void onCommand({
+            void execute({
               kind: "create-session",
               ...(workspace ? { workspace } : {}),
             })
@@ -117,6 +133,11 @@ export function SessionSidebar({
           onChange={(event) => setQuery(event.target.value)}
         />
       </label>
+      {error ? (
+        <p className="m-product-inline-error" role="alert">
+          {error}
+        </p>
+      ) : null}
       <div className="m-product-session-filter-strip">
         <div className="m-product-session-filter-group">
           {sessionScopeFilters.map((filter) => {
@@ -179,8 +200,10 @@ export function SessionSidebar({
               type="button"
               className="m-product-session-item"
               data-active={session.id === activeSessionId}
+              aria-current={session.id === activeSessionId ? "page" : undefined}
+              disabled={pending}
               onClick={() =>
-                void onCommand({
+                void execute({
                   kind: "activate-session",
                   sessionId: session.id,
                 })
@@ -212,7 +235,24 @@ export function SessionSidebar({
           );
         })}
         {filteredSessions.length === 0 ? (
-          <p className="m-product-empty-small">No sessions</p>
+          <div className="m-product-empty-small">
+            <p role="status">
+              {sessions.length ? "No matching sessions" : "No sessions"}
+            </p>
+            {query || scope !== "all" || selectedStatuses.length ? (
+              <button
+                type="button"
+                className="m-product-secondary-button"
+                onClick={() => {
+                  setQuery("");
+                  setScope("all");
+                  setSelectedStatuses([]);
+                }}
+              >
+                Clear filters
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </aside>

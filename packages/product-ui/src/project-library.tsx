@@ -91,7 +91,7 @@ export function ProjectLibrary({
     if (await execute(command)) setMode(null);
     else
       setFormError(
-        "The host could not accept this project. Check the connection message and the folder or repository details, then try again.",
+        "Project could not be added. Check the details and try again.",
       );
   };
   const filtered = library.projects.filter((project) =>
@@ -108,7 +108,6 @@ export function ProjectLibrary({
       <div className="m-project-heading">
         <div>
           <h1>Projects</h1>
-          <p>Create a project, then open a task for your agent.</p>
         </div>
         <div className="m-project-actions">
           <button
@@ -138,7 +137,7 @@ export function ProjectLibrary({
         </div>
       </div>
       <div className="m-project-root">
-        <span>Workspace root on this host</span>
+        <span>Workspace folder</span>
         <code>{library.root}</code>
         <small>
           {library.projects.length} / {library.maximumProjects} projects
@@ -158,16 +157,7 @@ export function ProjectLibrary({
       {filtered.length === 0 ? (
         <div className="m-project-empty">
           <FolderPlus aria-hidden="true" />
-          <h2>
-            {query
-              ? "No matching projects"
-              : "Your server is ready for projects"}
-          </h2>
-          <p>
-            {query
-              ? "Try another name or repository."
-              : "Clone a Git repository, start with an empty folder, or import a folder already inside the workspace root."}
-          </p>
+          <h2>{query ? "No matching projects" : "No projects"}</h2>
         </div>
       ) : null}
       <div className="m-project-list">
@@ -333,12 +323,13 @@ export function ProjectLibrary({
       <Dialog.Root
         open={mode !== null}
         onOpenChange={(open) => {
-          if (!open) setMode(null);
+          if (!open && !busy.current) setMode(null);
         }}
       >
         <Dialog.Overlay className="m-project-dialog-overlay" />
         <Dialog.Content
           className="m-project-dialog"
+          {...(mode === "empty" ? { "aria-describedby": undefined } : {})}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             if (focusReturn.current?.isConnected) focusReturn.current.focus();
@@ -351,16 +342,17 @@ export function ProjectLibrary({
                 ? "Create an empty project"
                 : "Import an existing folder"}
           </Dialog.Title>
-          <Dialog.Description>
-            {mode === "clone"
-              ? "Cloning continues on the host when you leave this page."
-              : mode === "empty"
-                ? "A new folder for your agent to work in."
-                : "Register a folder directly inside the workspace root. Its files stay unchanged."}
-          </Dialog.Description>
+          {mode !== "empty" ? (
+            <Dialog.Description>
+              {mode === "clone"
+                ? "Cloning continues on the host when you leave this page."
+                : "Choose a folder inside the workspace folder. Its files stay unchanged."}
+            </Dialog.Description>
+          ) : null}
           <Dialog.Close
             className="m-product-icon-button m-project-dialog-close"
             aria-label="Close project form"
+            disabled={submitting}
           >
             <X aria-hidden="true" />
           </Dialog.Close>

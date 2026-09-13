@@ -6,6 +6,7 @@ import type {
 
 export interface ProductRuntime {
   servicesHref?: string;
+  settingsHref?: string;
   getSnapshot(signal?: AbortSignal): Promise<ProductSnapshot>;
   execute(
     command: ProductCommand,

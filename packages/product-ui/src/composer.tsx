@@ -3,15 +3,12 @@ import {
   ArrowUp,
   Brain,
   BrainCircuit,
-  Check,
   ChevronsUp,
   ChevronDown,
   CircleDashed,
   CircleOff,
-  Folder,
   FolderHeart,
   Infinity as InfinityIcon,
-  Layers3,
   MessageSquare,
   Monitor,
   Paperclip,
@@ -22,10 +19,10 @@ import {
   SignalZero,
   SlidersHorizontal,
   Sparkles,
+  Square,
   Tally5,
   WandSparkles,
   X,
-  type LucideIcon,
 } from "lucide-react";
 import {
   useCallback,
@@ -36,32 +33,22 @@ import {
 } from "react";
 import { useMediaQuery } from "./responsive-layout";
 import { ComposerModelPicker } from "./composer-model-picker";
+import {
+  ContextPackMenu,
+  OptionMenu,
+  WorkspaceMenu,
+  type OptionMenuItem,
+} from "./composer-menus";
 import { SessionMemoryDialog } from "./memory-management";
 import type { ProductCommandHandler } from "./product-runtime";
-import { useComposerDraft } from "./use-composer-draft";
+import {
+  useComposerDraft,
+  type ComposerDraftStore,
+} from "./use-composer-draft";
 
 type ProductComposer = NonNullable<ProductShell["composer"]>;
 type ProductContextPack = ProductShell["contextPacks"][number];
 type ProductWorkspace = ProductShell["workspaces"][number];
-type ControlTone =
-  | "neutral"
-  | "teal"
-  | "cyan"
-  | "sky"
-  | "amber"
-  | "fuchsia"
-  | "rose"
-  | "violet";
-
-interface OptionMenuItem {
-  value: string;
-  label: string;
-  description: string;
-  icon: LucideIcon;
-  tone: ControlTone;
-  disabled?: boolean;
-}
-
 const WORKSPACE_DEFAULT_VALUE = "workspace-default";
 
 const REASONING_OPTIONS: Record<
@@ -155,6 +142,8 @@ export function Composer({
   contextPacks,
   workspaces,
   webSearchAvailable,
+  canCancel,
+  drafts,
   pending,
   onCommand,
 }: {
@@ -163,58 +152,27 @@ export function Composer({
   contextPacks: ProductContextPack[];
   workspaces: ProductWorkspace[];
   webSearchAvailable: boolean;
+  canCancel: boolean;
+  drafts: ComposerDraftStore;
   pending: boolean;
   onCommand: ProductCommandHandler;
 }): React.ReactElement {
-  const { draft, updateDraft, submitDraft, error } = useComposerDraft(
-    composer,
-    onCommand,
-  );
+  const {
+    draft,
+    updateDraft,
+    submitDraft,
+    submitting,
+    error,
+    failedSubmission,
+    restoreFailedSubmission,
+    discardFailedSubmission,
+  } = useComposerDraft(composer, onCommand, drafts);
   const [sessionMemoryOpen, setSessionMemoryOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const submissionInFlight = useRef(false);
   const composing = useRef(false);
   const touchInput = useMediaQuery("(pointer: coarse)");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const composerRef = useRef<HTMLDivElement>(null);
   const closeSessionMemory = useCallback(() => setSessionMemoryOpen(false), []);
-  useEffect(() => {
-    const root = composerRef.current;
-    if (!root) return;
-    const closeMenus = (event: Event): void => {
-      for (const details of root.querySelectorAll<HTMLDetailsElement>(
-        "details[open]",
-      )) {
-        if (event instanceof KeyboardEvent && event.key === "Escape") {
-          event.preventDefault();
-          details.open = false;
-          details.querySelector("summary")?.focus();
-        } else if (
-          event.type === "pointerdown" &&
-          event.target instanceof Node &&
-          !details.contains(event.target)
-        )
-          details.open = false;
-        else if (
-          event.type === "toggle" &&
-          event.target instanceof HTMLDetailsElement &&
-          event.target.open &&
-          event.target !== details
-        )
-          details.open = false;
-      }
-    };
-    document.addEventListener("pointerdown", closeMenus);
-    document.addEventListener("keydown", closeMenus);
-    root.addEventListener("toggle", closeMenus, true);
-    return () => {
-      document.removeEventListener("pointerdown", closeMenus);
-      document.removeEventListener("keydown", closeMenus);
-      root.removeEventListener("toggle", closeMenus, true);
-    };
-  }, []);
-
   useEffect(() => {
     setSessionMemoryOpen(false);
   }, [composer.sessionId]);
@@ -229,24 +187,20 @@ export function Composer({
   }, [draft]);
 
   const canSubmit =
-    draft.trim().length > 0 && composer.canSend && !pending && !submitting;
+    draft.trim().length > 0 &&
+    composer.canSend &&
+    !pending &&
+    !submitting &&
+    failedSubmission === null;
 
-  const submit = async (): Promise<void> => {
-    if (!canSubmit || submissionInFlight.current) return;
-    submissionInFlight.current = true;
-    setSubmitting(true);
-    try {
-      await submitDraft();
-    } finally {
-      submissionInFlight.current = false;
-      setSubmitting(false);
-    }
+  const submit = (): void => {
+    if (canSubmit) void submitDraft();
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (
       event.key === "Enter" &&
-      !touchInput &&
+      !window.matchMedia("(pointer: coarse)").matches &&
       !composing.current &&
       !event.nativeEvent.isComposing &&
       event.nativeEvent.keyCode !== 229 &&
@@ -256,7 +210,7 @@ export function Composer({
       !event.altKey
     ) {
       event.preventDefault();
-      void submit();
+      submit();
     }
   };
 
@@ -269,12 +223,10 @@ export function Composer({
       icon: defaultReasoning.icon,
       tone: defaultReasoning.tone,
     },
-    ...composer.reasoningOptions
-      .filter((value) => value !== "default")
-      .map((value) => ({
-        value,
-        ...REASONING_OPTIONS[value],
-      })),
+    ...composer.reasoningOptions.map((value) => ({
+      value,
+      ...REASONING_OPTIONS[value],
+    })),
   ];
   const reasoning = REASONING_OPTIONS[composer.reasoning];
   const mode = MODE_OPTION_BY_VALUE[composer.mode];
@@ -311,13 +263,43 @@ export function Composer({
     ) ?? offEnhancement;
 
   return (
-    <div ref={composerRef} className="m-product-composer-wrap">
+    <div className="m-product-composer-wrap">
+      {failedSubmission !== null ? (
+        <div className="m-product-unsent-message" role="alert">
+          <details>
+            <summary>Message not sent</summary>
+            <pre tabIndex={0}>{failedSubmission}</pre>
+          </details>
+          <div className="m-product-card-actions">
+            <button
+              type="button"
+              onClick={() => {
+                restoreFailedSubmission();
+                textareaRef.current?.focus();
+              }}
+            >
+              Add to draft
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                discardFailedSubmission();
+                textareaRef.current?.focus();
+              }}
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      ) : null}
       <div className="m-product-composer app-agent-composer">
-        <div
+        <fieldset
           className="m-product-composer-toolbar app-composer-toolbar"
           data-options-open={optionsOpen}
+          disabled={pending}
         >
           <ComposerModelPicker
+            disabled={pending}
             providers={composer.modelCatalog.map((provider) => ({
               id: provider.provider,
               label: provider.label,
@@ -350,6 +332,7 @@ export function Composer({
             <span>Options</span>
           </button>
           <OptionMenu
+            disabled={pending}
             label="Reasoning mode"
             activeValue={session.reasoning ?? WORKSPACE_DEFAULT_VALUE}
             activeLabel={reasoning.label}
@@ -373,6 +356,7 @@ export function Composer({
             }
           />
           <OptionMenu
+            disabled={pending}
             label="Execution mode"
             activeValue={session.mode ?? WORKSPACE_DEFAULT_VALUE}
             activeLabel={mode.label}
@@ -401,6 +385,7 @@ export function Composer({
             }
           />
           <OptionMenu
+            disabled={pending}
             label="Prompt enhancement"
             activeValue={composer.promptEnhancementMode}
             activeLabel={enhancement.label}
@@ -419,11 +404,13 @@ export function Composer({
             }
           />
           <WorkspaceMenu
+            disabled={pending}
             session={session}
             workspaces={workspaces}
             onCommand={onCommand}
           />
           <ContextPackMenu
+            disabled={pending}
             sessionId={session.id}
             contextPacks={contextPacks}
             onCommand={onCommand}
@@ -501,7 +488,7 @@ export function Composer({
               })
             }
           />
-        </div>
+        </fieldset>
         {composer.attachments.length > 0 ? (
           <div className="m-product-composer-attachments">
             {composer.attachments.map((attachment) => (
@@ -511,6 +498,7 @@ export function Composer({
                 <button
                   type="button"
                   aria-label={`Remove ${attachment.name}`}
+                  disabled={pending}
                   onClick={() =>
                     void onCommand({
                       kind: "remove-attachment",
@@ -544,6 +532,22 @@ export function Composer({
             }}
             onKeyDown={handleKeyDown}
           />
+          {session.runningTaskId && canCancel ? (
+            <button
+              className="m-product-send m-product-danger-button"
+              type="button"
+              aria-label="Stop task"
+              disabled={pending}
+              onClick={() =>
+                void onCommand({
+                  kind: "cancel",
+                  taskId: session.runningTaskId!,
+                })
+              }
+            >
+              <Square aria-hidden="true" />
+            </button>
+          ) : null}
           <button
             className="m-product-send app-composer-send-button"
             type="button"
@@ -551,13 +555,13 @@ export function Composer({
               session.runningTaskId ? "Queue follow-up" : "Send message"
             }
             disabled={!canSubmit}
-            onClick={() => void submit()}
+            onClick={submit}
           >
             <ArrowUp aria-hidden="true" />
           </button>
         </div>
       </div>
-      {error ? (
+      {error && failedSubmission === null ? (
         <p className="m-product-composer-error" role="alert">
           {error}
         </p>
@@ -597,168 +601,6 @@ export function Composer({
         onClose={closeSessionMemory}
       />
     </div>
-  );
-}
-
-function OptionMenu({
-  label,
-  activeValue,
-  activeLabel,
-  activeIcon: ActiveIcon,
-  activeTone,
-  options,
-  onSelect,
-}: {
-  label: string;
-  activeValue: string;
-  activeLabel: string;
-  activeIcon: LucideIcon;
-  activeTone: ControlTone;
-  options: OptionMenuItem[];
-  onSelect: (value: string) => void;
-}): React.ReactElement {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
-  return (
-    <details className="m-product-option-menu" ref={detailsRef}>
-      <summary
-        aria-label={`${label}: ${activeLabel}`}
-        title={`${label}: ${activeLabel}`}
-        data-tone={activeTone}
-      >
-        <ActiveIcon aria-hidden="true" />
-      </summary>
-      <div className="m-product-option-popover">
-        <strong>{label}</strong>
-        <div>
-          {options.map((option) => {
-            const Icon = option.icon;
-            const selected = option.value === activeValue;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                data-active={selected}
-                data-tone={option.tone}
-                disabled={option.disabled}
-                aria-label={`Choose ${option.label}`}
-                onClick={() => {
-                  onSelect(option.value);
-                  if (detailsRef.current) detailsRef.current.open = false;
-                }}
-              >
-                <span>
-                  <Icon aria-hidden="true" />
-                </span>
-                <span>
-                  <strong>{option.label}</strong>
-                  <small>{option.description}</small>
-                </span>
-                {selected ? <Check aria-hidden="true" /> : null}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </details>
-  );
-}
-
-function WorkspaceMenu({
-  session,
-  workspaces,
-  onCommand,
-}: {
-  session: ProductSession;
-  workspaces: ProductWorkspace[];
-  onCommand: ProductCommandHandler;
-}): React.ReactElement {
-  const current = workspaces.find(
-    (workspace) => workspace.root === session.workspace,
-  );
-  return (
-    <details className="m-product-menu">
-      <summary title={session.workspace}>
-        <Folder aria-hidden="true" />
-        <span>{current?.label ?? "Not Set"}</span>
-        <ChevronDown aria-hidden="true" />
-      </summary>
-      <div className="m-product-menu-popover">
-        {workspaces.map((workspace) => (
-          <button
-            type="button"
-            key={workspace.root}
-            data-active={workspace.root === session.workspace}
-            onClick={() =>
-              void onCommand({
-                kind: "set-session-workspace",
-                sessionId: session.id,
-                workspace: workspace.root,
-              })
-            }
-          >
-            <span>{workspace.label}</span>
-            <small>{workspace.sessionCount}</small>
-          </button>
-        ))}
-        {session.workspace ? (
-          <button
-            type="button"
-            onClick={() =>
-              void onCommand({
-                kind: "clear-session-workspace",
-                sessionId: session.id,
-              })
-            }
-          >
-            No workspace
-          </button>
-        ) : null}
-      </div>
-    </details>
-  );
-}
-
-function ContextPackMenu({
-  sessionId,
-  contextPacks,
-  onCommand,
-}: {
-  sessionId: string;
-  contextPacks: ProductContextPack[];
-  onCommand: ProductCommandHandler;
-}): React.ReactElement {
-  return (
-    <details className="m-product-menu">
-      <summary>
-        <Layers3 aria-hidden="true" />
-        <span>Packs</span>
-        <ChevronDown aria-hidden="true" />
-      </summary>
-      <div className="m-product-menu-popover">
-        {contextPacks.length ? (
-          contextPacks.map((pack) => (
-            <button
-              type="button"
-              key={pack.id}
-              data-active={pack.matched}
-              disabled={pack.matched}
-              onClick={() =>
-                void onCommand({
-                  kind: "apply-context-pack",
-                  sessionId,
-                  contextPackId: pack.id,
-                })
-              }
-            >
-              <span>{pack.name}</span>
-              {pack.scopeLabel ? <small>{pack.scopeLabel}</small> : null}
-            </button>
-          ))
-        ) : (
-          <span className="m-product-menu-empty">No packs</span>
-        )}
-      </div>
-    </details>
   );
 }
 

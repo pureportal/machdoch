@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProductRuntime } from "./product-runtime";
 import { ProductShell } from "./product-shell";
 import { SnapshotRefreshCoordinator } from "./snapshot-refresh-coordinator";
+import { createComposerDraftStore } from "./use-composer-draft";
 
 const snapshotRefreshIntervalMs = 1_500;
 
@@ -12,6 +13,7 @@ interface RuntimeLifecycle {
   binding: { runtime: ProductRuntime };
   controller: AbortController;
   refreshCoordinator: SnapshotRefreshCoordinator<ProductSnapshot>;
+  disconnected: boolean;
 }
 
 export function RemoteProductApp({
@@ -26,6 +28,7 @@ export function RemoteProductApp({
   const [commandError, setCommandError] = useState<string | null>(null);
   const [pendingCommands, setPendingCommands] = useState(0);
   const runtimeBinding = useMemo(() => ({ runtime }), [runtime]);
+  const drafts = useMemo(() => createComposerDraftStore(), [runtime]);
   const lifecycleRef = useRef<RuntimeLifecycle | null>(null);
 
   const refresh = useCallback((): Promise<void> => {
@@ -48,10 +51,12 @@ export function RemoteProductApp({
         if (!controller.signal.aborted) {
           setSnapshot(nextSnapshot);
           setError(null);
+          lifecycle.disconnected = false;
         }
       },
       onError: (reason) => {
         if (!controller.signal.aborted) {
+          lifecycle.disconnected = true;
           setError(
             reason instanceof Error
               ? reason.message
@@ -60,7 +65,12 @@ export function RemoteProductApp({
         }
       },
     });
-    const lifecycle = { binding: runtimeBinding, controller, refreshCoordinator };
+    const lifecycle = {
+      binding: runtimeBinding,
+      controller,
+      refreshCoordinator,
+      disconnected: false,
+    };
     lifecycleRef.current = lifecycle;
     void refreshCoordinator.request(controller.signal);
     const interval = window.setInterval(() => {
@@ -91,18 +101,22 @@ export function RemoteProductApp({
       if (
         !lifecycle ||
         lifecycle.binding !== runtimeBinding ||
-        lifecycle.controller.signal.aborted
-      ) return false;
+        lifecycle.controller.signal.aborted ||
+        lifecycle.disconnected
+      )
+        return false;
       const { controller, refreshCoordinator } = lifecycle;
       const isCurrent = (): boolean =>
-        lifecycleRef.current === lifecycle &&
-        !controller.signal.aborted;
+        lifecycleRef.current === lifecycle && !controller.signal.aborted;
       const request = {
         ...command,
         commandId: command.commandId ?? crypto.randomUUID(),
       } as ProductCommand;
-      setPendingCommands((current) => current + 1);
-      setCommandError(null);
+      const foreground = command.kind !== "update-draft";
+      if (foreground) {
+        setPendingCommands((current) => current + 1);
+        setCommandError(null);
+      }
       try {
         await runtimeBinding.runtime.execute(request, controller.signal);
         if (!isCurrent()) return false;
@@ -116,7 +130,7 @@ export function RemoteProductApp({
         }
         return false;
       } finally {
-        if (isCurrent()) {
+        if (isCurrent() && foreground) {
           setPendingCommands((current) => Math.max(0, current - 1));
         }
       }
@@ -126,7 +140,9 @@ export function RemoteProductApp({
 
   return (
     <ProductShell
+      drafts={drafts}
       servicesHref={runtime.servicesHref}
+      settingsHref={runtime.settingsHref}
       instanceName={instanceName}
       snapshot={snapshot}
       error={error}

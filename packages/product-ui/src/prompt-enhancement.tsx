@@ -3,9 +3,11 @@ import { LoaderCircle, WandSparkles, X } from "lucide-react";
 export function PromptEnhancementIndicator({
   className,
   onCancel,
+  disabled = false,
 }: {
   className?: string;
   onCancel?: () => void;
+  disabled?: boolean;
 }): React.ReactElement {
   return (
     <div
@@ -26,6 +28,7 @@ export function PromptEnhancementIndicator({
       {onCancel ? (
         <button
           type="button"
+          disabled={disabled}
           className="m-prompt-enhancement-cancel"
           aria-label="Cancel enhancement"
           title="Cancel enhancement"
