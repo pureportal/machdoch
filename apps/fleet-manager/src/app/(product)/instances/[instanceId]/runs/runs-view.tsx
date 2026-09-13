@@ -15,11 +15,11 @@ import {
   runDocumentSchema,
   runSnapshotSchema,
   type RunCommand,
-  type RunDocument,
   type RunSnapshot,
 } from "@machdoch/fleet-protocol";
 import { api, jsonBody } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { RunConfiguration } from "./run-configuration";
 
 type Preview = {
   id: string;
@@ -52,12 +52,15 @@ export function RunsView({
     Array<{ path: string; label: string }>
   >([]);
   const [workspace, setWorkspace] = useState("");
+  const [workspaceLoading, setWorkspaceLoading] = useState(true);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+  const [workspaceAttempt, setWorkspaceAttempt] = useState(0);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [data, setData] = useState<StatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [editor, setEditor] = useState<string | null>(null);
-  const [editRevision, setEditRevision] = useState("");
+  const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [command, setCommand] = useState("");
   const [directory, setDirectory] = useState(".");
@@ -73,8 +76,11 @@ export function RunsView({
 
   useEffect(() => {
     const controller = new AbortController();
+    setWorkspaceLoading(true);
+    setWorkspaceError(null);
     void api<unknown>(`${base}/product/snapshot`, { signal: controller.signal })
       .then((payload) => {
+        if (controller.signal.aborted) return;
         const product = productSnapshotSchema.parse(payload);
         const options = (product.shell?.workspaces ?? []).map((entry) => ({
           path: entry.root,
@@ -92,17 +98,20 @@ export function RunsView({
       })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted)
-          setError(
+          setWorkspaceError(
             reason instanceof Error
               ? reason.message
               : "Could not load projects.",
           );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setWorkspaceLoading(false);
       });
     return () => controller.abort();
-  }, [base]);
+  }, [base, workspaceAttempt]);
 
   const refresh = useCallback(
-    async (signal?: AbortSignal): Promise<void> => {
+    async (signal?: AbortSignal): Promise<RunSnapshot | undefined> => {
       if (!workspace) return;
       const version = ++refreshVersion.current;
       const result = await api<StatusResponse>(
@@ -116,6 +125,8 @@ export function RunsView({
         version === refreshVersion.current
       ) {
         setData({ ...result, snapshot });
+        setStatusError(null);
+        return snapshot;
       }
     },
     [base, workspace],
@@ -127,8 +138,9 @@ export function RunsView({
     selection.current = workspace;
     openLogs.current.clear();
     setData(null);
-    setEditor(null);
+    setEditing(false);
     setError(null);
+    setStatusError(null);
     setNotice(null);
     setBackend("");
     let running = false;
@@ -144,7 +156,7 @@ export function RunsView({
         await refresh(controller.signal);
       } catch (reason) {
         if (!controller.signal.aborted)
-          setError(
+          setStatusError(
             reason instanceof Error
               ? reason.message
               : "Service status is unavailable.",
@@ -179,7 +191,16 @@ export function RunsView({
     try {
       await operation(controller.signal);
       if (controller.signal.aborted) return false;
-      await refresh(controller.signal);
+      try {
+        await refresh(controller.signal);
+      } catch (reason) {
+        if (!controller.signal.aborted)
+          setStatusError(
+            reason instanceof Error
+              ? reason.message
+              : "Service status is unavailable.",
+          );
+      }
       return !controller.signal.aborted;
     } catch (reason) {
       if (!controller.signal.aborted)
@@ -192,16 +213,18 @@ export function RunsView({
       if (!controller.signal.aborted) setPending(false);
     }
   };
-  const execute = async (value: RunCommand): Promise<boolean> =>
-    await perform(async (signal) => {
+  const execute = async (value: RunCommand): Promise<boolean> => {
+    if (commandsBlocked) return false;
+    return await perform(async (signal) => {
       await api(`${base}/runs?workspace=${encodeURIComponent(workspace)}`, {
         method: "POST",
         body: jsonBody(value),
         signal,
       });
     });
+  };
   const save = async (
-    document: RunDocument,
+    document: unknown,
     revision: string,
   ): Promise<boolean> => {
     const parsed = runDocumentSchema.safeParse(document);
@@ -258,7 +281,7 @@ export function RunsView({
     configurationId: string,
     targetPort: number,
   ): Promise<void> => {
-    if (busy.current) return;
+    if (busy.current || commandsBlocked) return;
     const targetName = `machdoch-preview-${crypto.randomUUID()}`;
     const popup = window.open("about:blank", targetName);
     if (!popup) {
@@ -293,15 +316,19 @@ export function RunsView({
     });
     if (!ok) popup.close();
   };
-  const editingBlocked =
+  const commandsBlocked =
     pending ||
-    Boolean(
-      data?.snapshot.statuses.some((s) =>
-        ["running", "starting", "restarting", "stopping", "unhealthy"].includes(
-          s.state,
-        ),
+    workspaceLoading ||
+    !data ||
+    Boolean(workspaceError || statusError);
+  const servicesRunning = Boolean(
+    data?.snapshot.statuses.some((s) =>
+      ["running", "starting", "restarting", "stopping", "unhealthy"].includes(
+        s.state,
       ),
-    );
+    ),
+  );
+  const editingBlocked = commandsBlocked || servicesRunning;
   const endpoints =
     data?.snapshot.document.configurations.flatMap((c) =>
       c.kind === "task"
@@ -311,6 +338,13 @@ export function RunsView({
           }))
         : [],
     ) ?? [];
+  const visibleError =
+    workspaceError ?? statusError ?? (editing ? null : error);
+  const retry = (): void => {
+    if (!workspace || workspaceError)
+      setWorkspaceAttempt((attempt) => attempt + 1);
+    else void perform(async () => {});
+  };
 
   return (
     <main className="h-dvh overflow-y-auto p-3 sm:p-6">
@@ -321,7 +355,7 @@ export function RunsView({
               className="inline-flex min-h-11 items-center gap-2 text-sm"
               href={`/instances/${encodeURIComponent(instanceId)}`}
             >
-              <ArrowLeft size={16} /> Back to projects
+              <ArrowLeft size={16} /> Back to instance
             </Link>
             <h1 className="text-2xl font-semibold">Services & previews</h1>
             <p className="break-all text-sm text-muted-foreground">
@@ -331,39 +365,43 @@ export function RunsView({
           <Button
             className="min-h-11"
             variant="outline"
-            disabled={pending || !workspace}
-            onClick={() =>
-              void perform(async (signal) => {
-                await refresh(signal);
-              })
-            }
+            disabled={pending || workspaceLoading}
+            onClick={retry}
           >
             <RefreshCw /> Refresh
           </Button>
         </header>
-        <label className="grid min-w-0 gap-2 text-sm font-medium">
-          Project
-          <select
-            className={inputClass}
-            value={workspace}
-            disabled={pending || editor !== null}
-            onChange={(event) => setWorkspace(event.target.value)}
-          >
-            {workspaces.map((option) => (
-              <option key={option.path} value={option.path}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        {error ? (
+        {workspaces.length > 0 ? (
+          <label className="grid min-w-0 gap-2 text-sm font-medium">
+            Project
+            <select
+              className={inputClass}
+              value={workspace}
+              disabled={pending || editing}
+              onChange={(event) => setWorkspace(event.target.value)}
+            >
+              {workspaces.map((option) => (
+                <option key={option.path} value={option.path}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {visibleError ? (
           <div
             role="alert"
             className="flex min-w-0 flex-wrap items-center gap-3 rounded-lg border border-destructive p-3 text-sm"
           >
-            <p className="min-w-0 flex-1 [overflow-wrap:anywhere]">{error}</p>
-            <Button variant="outline" onClick={() => setError(null)}>
-              Dismiss
+            <p className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+              {visibleError}
+            </p>
+            <Button
+              variant="outline"
+              disabled={pending || workspaceLoading}
+              onClick={retry}
+            >
+              Retry
             </Button>
           </div>
         ) : null}
@@ -404,13 +442,6 @@ export function RunsView({
                 </div>
               ))}
             </div>
-            {!data.previewsEnabled ? (
-              <p className="rounded-lg border p-3 text-sm">
-                Private previews need a wildcard HTTPS domain. Configure{" "}
-                <code>previews.baseUrl</code> on Fleet Manager; service controls
-                already work.
-              </p>
-            ) : null}
             <section className="grid gap-3" aria-label="Project services">
               {data.snapshot.document.configurations.length === 0 ? (
                 <div className={cardClass}>
@@ -456,7 +487,7 @@ export function RunsView({
                         <Button
                           className="min-h-11"
                           variant="outline"
-                          disabled={pending || running}
+                          disabled={commandsBlocked || running}
                           onClick={() =>
                             void execute({
                               action: "start",
@@ -470,7 +501,7 @@ export function RunsView({
                         <Button
                           className="min-h-11"
                           variant="outline"
-                          disabled={pending || !running}
+                          disabled={commandsBlocked || !running}
                           onClick={() =>
                             void execute({
                               action: "stop",
@@ -484,7 +515,9 @@ export function RunsView({
                         <Button
                           className="min-h-11"
                           variant="outline"
-                          disabled={pending || status.state === "stopping"}
+                          disabled={
+                            commandsBlocked || status.state === "stopping"
+                          }
                           onClick={() =>
                             void execute({
                               action: "restart",
@@ -513,8 +546,13 @@ export function RunsView({
                           <Button
                             key={p}
                             className="min-h-11"
+                            title={
+                              !data.previewsEnabled
+                                ? "Previews are not configured."
+                                : undefined
+                            }
                             disabled={
-                              pending ||
+                              commandsBlocked ||
                               !status.pid ||
                               !data.previewsEnabled ||
                               !["running", "unhealthy"].includes(status.state)
@@ -625,7 +663,7 @@ export function RunsView({
                       <Button
                         className="min-h-11"
                         variant="outline"
-                        disabled={pending}
+                        disabled={commandsBlocked}
                         onClick={() =>
                           void perform(async (signal) => {
                             await api(
@@ -658,6 +696,7 @@ export function RunsView({
                     Name
                     <input
                       required
+                      disabled={pending}
                       maxLength={120}
                       className={inputClass}
                       value={name}
@@ -669,6 +708,7 @@ export function RunsView({
                     Working directory
                     <input
                       required
+                      disabled={pending}
                       className={inputClass}
                       value={directory}
                       onChange={(e) => setDirectory(e.target.value)}
@@ -680,6 +720,7 @@ export function RunsView({
                   Command
                   <input
                     required
+                    disabled={pending}
                     maxLength={8000}
                     className={inputClass}
                     value={command}
@@ -691,6 +732,7 @@ export function RunsView({
                   HTTP port (optional for workers and one-off commands)
                   <input
                     type="number"
+                    disabled={pending}
                     min={1024}
                     max={65535}
                     className={inputClass}
@@ -710,89 +752,40 @@ export function RunsView({
                 >
                   Save service
                 </Button>
-                {editingBlocked && !pending ? (
+                {servicesRunning && !pending ? (
                   <p className="text-sm">
                     Stop project services to change their configuration.
                   </p>
                 ) : null}
               </form>
             </details>
-            <section className={cardClass}>
-              <h2 className="font-medium">Run configuration</h2>
-              <p className="my-2 text-sm text-muted-foreground">
-                Edit commands, environment, health checks, restart policies, and
-                parallel or sequential groups. Stored environment values are
-                redacted and preserved when unchanged.
-              </p>
-              {editor === null ? (
-                <Button
-                  className="min-h-11"
-                  variant="outline"
-                  disabled={editingBlocked}
-                  onClick={() => {
-                    setEditor(JSON.stringify(data.snapshot.document, null, 2));
-                    setEditRevision(data.snapshot.revision);
-                  }}
-                >
-                  Edit run.json
-                </Button>
-              ) : (
-                <form
-                  className="grid gap-3"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    let parsed: RunDocument;
-                    try {
-                      parsed = runDocumentSchema.parse(JSON.parse(editor));
-                    } catch (reason) {
-                      setError(
-                        reason instanceof Error
-                          ? reason.message
-                          : "Invalid run configuration.",
-                      );
-                      return;
-                    }
-                    void save(parsed, editRevision).then((ok) => {
-                      if (ok) setEditor(null);
-                    });
-                  }}
-                >
-                  <label className="grid gap-2 text-sm">
-                    run.json
-                    <textarea
-                      className={`${inputClass} min-h-80 font-mono text-sm`}
-                      spellCheck={false}
-                      value={editor}
-                      onChange={(e) => setEditor(e.target.value)}
-                    />
-                  </label>
-                  <div className="flex gap-2">
-                    <Button
-                      className="min-h-11"
-                      disabled={editingBlocked}
-                      type="submit"
-                    >
-                      Save configuration
-                    </Button>
-                    <Button
-                      className="min-h-11"
-                      variant="outline"
-                      disabled={pending}
-                      onClick={() => setEditor(null)}
-                      type="button"
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </form>
-              )}
-            </section>
+            <RunConfiguration
+              key={workspace}
+              snapshot={data.snapshot}
+              pending={pending}
+              blocked={editingBlocked}
+              servicesRunning={servicesRunning}
+              error={error}
+              onSave={save}
+              onReload={async () => {
+                const snapshot = await refresh(active.current?.signal);
+                if (!snapshot)
+                  throw new Error(
+                    "Configuration could not be loaded. Try again.",
+                  );
+                return snapshot;
+              }}
+              onEditingChange={setEditing}
+              onClearError={() => setError(null)}
+            />
           </>
-        ) : (
+        ) : !visibleError ? (
           <p role="status" className="text-sm text-muted-foreground">
-            {error ? "Service status unavailable." : "Loading services…"}
+            {!workspaceLoading && !workspace
+              ? "No projects."
+              : "Loading services…"}
           </p>
-        )}
+        ) : null}
       </div>
     </main>
   );
