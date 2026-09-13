@@ -24,7 +24,10 @@ export function DashboardNavigation({
 }): React.ReactElement {
   const pathname = usePathname();
   return (
-    <nav className="grid grid-cols-4 gap-1 px-3 py-2 lg:grid-cols-1 lg:px-2">
+    <nav
+      aria-label="Fleet Manager"
+      className="grid auto-cols-fr grid-flow-col gap-1 px-3 py-2 lg:grid-flow-row lg:grid-cols-1 lg:px-2"
+    >
       {items
         .filter((item) => !item.settingsOnly || settingsEnabled)
         .map((item) => {
