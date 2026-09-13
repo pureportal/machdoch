@@ -16,6 +16,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  devIndicators: false,
   experimental: {
     workerThreads: true,
   },
