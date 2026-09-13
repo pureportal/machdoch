@@ -8,8 +8,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
-import { useDialogFocusLifecycle } from "./dialog-focus-lifecycle";
+import { useCallback, useState } from "react";
+import { ProductModal } from "./product-modal";
 import { formatTimestamp } from "./format";
 import type { ProductCommandHandler } from "./product-runtime";
 
@@ -26,19 +26,14 @@ export function Scheduler({
 }): React.ReactElement {
   const [view, setView] = useState<"jobs" | "runs">("jobs");
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
-  const deleteDialogCloseButtonRef = useRef<HTMLButtonElement>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const deletingJob =
     scheduler.jobs.find((job) => job.id === deletingJobId) ?? null;
   const workspaceRoot = scheduler.workspaceRoot;
-  const closeDeleteDialog = useCallback(
-    (): void => setDeletingJobId(null),
-    [],
-  );
-  useDialogFocusLifecycle(
-    Boolean(deletingJob && workspaceRoot),
-    closeDeleteDialog,
-    deleteDialogCloseButtonRef,
-  );
+  const closeDeleteDialog = useCallback((): void => {
+    setDeletingJobId(null);
+    setDeleteError(null);
+  }, []);
   return (
     <section className="m-scheduler">
       <header className="m-feature-header">
@@ -137,7 +132,13 @@ export function Scheduler({
               ))}
             </div>
           ) : (
-            <div className="m-product-empty-small">No jobs</div>
+            <div className="m-product-empty-small" role="status">
+              {scheduler.loading
+                ? "Loading jobs…"
+                : scheduler.error
+                  ? "Jobs unavailable"
+                  : "No jobs"}
+            </div>
           )
         ) : scheduler.runs.length ? (
           <div className="m-scheduler-run-list">
@@ -186,55 +187,65 @@ export function Scheduler({
             })}
           </div>
         ) : (
-          <div className="m-product-empty-small">No runs</div>
+          <div className="m-product-empty-small" role="status">
+            {scheduler.loading
+              ? "Loading runs…"
+              : scheduler.error
+                ? "Runs unavailable"
+                : "No runs"}
+          </div>
         )}
       </div>
       {deletingJob && workspaceRoot ? (
-        <div className="m-media-modal-backdrop" role="presentation">
-          <div
-            className="m-media-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="m-scheduler-delete-title"
+        <ProductModal
+          title={`Delete ${deletingJob.name}?`}
+          description="Future runs will stop."
+          dismissible={!pending}
+          onClose={closeDeleteDialog}
+        >
+          {deleteError ? (
+            <p role="alert" className="m-product-inline-error">
+              {deleteError}
+            </p>
+          ) : null}
+          <button
+            type="button"
+            className="m-media-modal-close"
+            aria-label="Close"
+            disabled={pending}
+            onClick={closeDeleteDialog}
           >
+            <X aria-hidden="true" />
+          </button>
+          <div>
             <button
               type="button"
-              className="m-media-modal-close"
-              aria-label="Close"
-              ref={deleteDialogCloseButtonRef}
+              className="m-product-secondary-button"
+              disabled={pending}
               onClick={closeDeleteDialog}
             >
-              <X aria-hidden="true" />
+              Cancel
             </button>
-            <h2 id="m-scheduler-delete-title">Delete {deletingJob.name}?</h2>
-            <p>Future runs will stop.</p>
-            <div>
-              <button
-                type="button"
-                className="m-product-secondary-button"
-                onClick={closeDeleteDialog}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="m-product-secondary-button m-product-danger-button"
-                disabled={pending}
-                onClick={() => {
-                  void onCommand({
-                    kind: "scheduler-delete",
-                    workspace: workspaceRoot,
-                    jobId: deletingJob.id,
-                  }).then((deleted) => {
-                    if (deleted) closeDeleteDialog();
-                  });
-                }}
-              >
-                <Trash2 aria-hidden="true" /> Delete
-              </button>
-            </div>
+            <button
+              type="button"
+              className="m-product-secondary-button m-product-danger-button"
+              disabled={pending}
+              onClick={() => {
+                setDeleteError(null);
+                void onCommand({
+                  kind: "scheduler-delete",
+                  workspace: workspaceRoot,
+                  jobId: deletingJob.id,
+                }).then((deleted) => {
+                  if (deleted) closeDeleteDialog();
+                  else setDeleteError("Job could not be deleted. Try again.");
+                });
+              }}
+            >
+              <Trash2 aria-hidden="true" /> Delete
+            </button>
           </div>
-        </div>
+        </ProductModal>
       ) : null}
     </section>
   );

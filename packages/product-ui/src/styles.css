@@ -2386,6 +2386,8 @@
   place-items: center;
   background: rgb(0 0 0 / 68%);
   padding: 16px;
+  overflow: auto;
+  overscroll-behavior: contain;
   backdrop-filter: blur(6px);
 }
 
@@ -2393,6 +2395,8 @@
 .m-media-asset-dialog {
   position: relative;
   width: min(430px, 100%);
+  max-height: calc(min(100dvh, var(--m-viewport-height, 100dvh)) - 32px);
+  overflow-y: auto;
   border: 1px solid var(--m-border-strong);
   border-radius: 22px;
   background: var(--m-panel-raised);
@@ -2401,9 +2405,10 @@
 }
 
 .m-media-modal h2 {
-  margin: 0 34px 8px 0;
+  margin: 0 44px 8px 0;
   color: var(--m-text);
   font-size: 18px;
+  overflow-wrap: anywhere;
 }
 
 .m-media-modal p {
@@ -2416,6 +2421,7 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .m-media-modal-close {
@@ -2423,14 +2429,18 @@
   top: 14px;
   right: 14px;
   display: grid;
-  width: 30px;
-  height: 30px;
+  width: 44px;
+  height: 44px;
   place-items: center;
   border: 0;
   border-radius: 10px;
   background: transparent;
   color: var(--m-text-muted);
   cursor: pointer;
+}
+
+.m-media-modal button {
+  min-height: 44px;
 }
 
 .m-media-modal-close svg {
@@ -2440,7 +2450,6 @@
 .m-media-asset-dialog {
   display: grid;
   width: min(720px, 100%);
-  max-height: calc(100dvh - 32px);
   gap: 14px;
 }
 

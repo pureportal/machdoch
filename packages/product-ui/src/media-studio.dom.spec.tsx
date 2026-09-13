@@ -38,18 +38,37 @@ function harness(initial = mediaSnapshot()) {
     <MediaStudio media={media} pending={false} onCommand={onCommand} />
   );
   const view = render(element(initial));
-  return { show: (media: ProductMedia) => view.rerender(element(media)), onCommand };
+  return {
+    show: (media: ProductMedia) => view.rerender(element(media)),
+    onCommand,
+  };
 }
 
 function displayedDraft() {
   return {
-    prompt: screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Prompt" }).value,
-    target: screen.getByRole("button", { name: "SVG" }).getAttribute("aria-pressed") === "true" ? "svg" : "image",
-    modelId: screen.getByRole<HTMLSelectElement>("combobox", { name: "Model" }).value,
-    aspectRatio: screen.getByRole<HTMLSelectElement>("combobox", { name: "Aspect ratio" }).value,
-    outputCount: Number(screen.getByRole<HTMLSelectElement>("combobox", { name: "Outputs" }).value),
-    outputFormat: screen.queryByRole<HTMLSelectElement>("combobox", { name: "Format" })?.value ?? "svg",
-    transparentBackground: screen.getByRole<HTMLInputElement>("checkbox", { name: "Transparent background" }).checked,
+    prompt: screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Prompt" })
+      .value,
+    target:
+      screen
+        .getByRole("button", { name: "SVG" })
+        .getAttribute("aria-pressed") === "true"
+        ? "svg"
+        : "image",
+    modelId: screen.getByRole<HTMLSelectElement>("combobox", { name: "Model" })
+      .value,
+    aspectRatio: screen.getByRole<HTMLSelectElement>("combobox", {
+      name: "Aspect ratio",
+    }).value,
+    outputCount: Number(
+      screen.getByRole<HTMLSelectElement>("combobox", { name: "Outputs" })
+        .value,
+    ),
+    outputFormat:
+      screen.queryByRole<HTMLSelectElement>("combobox", { name: "Format" })
+        ?.value ?? "svg",
+    transparentBackground: screen.getByRole<HTMLInputElement>("checkbox", {
+      name: "Transparent background",
+    }).checked,
   };
 }
 
@@ -57,13 +76,23 @@ function editDraft(target: "image" | "svg" = "image") {
   fireEvent.change(screen.getByRole("textbox", { name: "Prompt" }), {
     target: { value: "Unsent prompt\nwith details" },
   });
-  fireEvent.click(screen.getByRole("button", { name: target === "svg" ? "SVG" : "Image" }));
-  const controls: [string, string][] = [["Model", "second"], ["Aspect ratio", "16:9"], ["Outputs", "4"]];
+  fireEvent.click(
+    screen.getByRole("button", { name: target === "svg" ? "SVG" : "Image" }),
+  );
+  const controls: [string, string][] = [
+    ["Model", "second"],
+    ["Aspect ratio", "16:9"],
+    ["Outputs", "4"],
+  ];
   if (target === "image") controls.push(["Format", "webp"]);
   for (const [name, value] of controls) {
-    fireEvent.change(screen.getByRole("combobox", { name }), { target: { value } });
+    fireEvent.change(screen.getByRole("combobox", { name }), {
+      target: { value },
+    });
   }
-  fireEvent.click(screen.getByRole("checkbox", { name: "Transparent background" }));
+  fireEvent.click(
+    screen.getByRole("checkbox", { name: "Transparent background" }),
+  );
   const expected = {
     prompt: "Unsent prompt\nwith details",
     target,
@@ -80,6 +109,41 @@ function editDraft(target: "image" | "svg" = "image") {
 afterEach(cleanup);
 
 describe("media generation snapshot reconciliation", () => {
+  it("allows a new request after an asynchronous generation error when a model is ready", () => {
+    const initial = mediaSnapshot();
+    const view = harness({
+      ...initial,
+      error: "The previous generation failed.",
+    });
+    const generate = screen.getByRole<HTMLButtonElement>("button", {
+      name: "Generate",
+    });
+    expect(generate.disabled).toBe(false);
+    fireEvent.click(generate);
+    expect(view.onCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "generate-media",
+        prompt: initial.generation.prompt,
+      }),
+    );
+  });
+
+  it.each(["Assets", "Activity"])(
+    "keeps %s load failures distinct from an empty collection",
+    (name) => {
+      const initial = { ...mediaSnapshot(), loading: true };
+      const view = harness(initial);
+      fireEvent.click(screen.getByRole("button", { name }));
+      expect(screen.getByRole("status").textContent).toBe("Loading media…");
+      expect(screen.queryByText(/^No assets$|^No activity$/)).toBeNull();
+      view.show({ ...initial, loading: false, error: "Media unavailable" });
+      expect(screen.getByRole("alert").textContent).toBe("Media unavailable");
+      expect(screen.queryByText(/^No assets$|^No activity$/)).toBeNull();
+      view.show({ ...initial, loading: false });
+      expect(screen.getByText(/^No assets$|^No activity$/)).toBeTruthy();
+    },
+  );
+
   it("populates all initial inputs", () => {
     const initial = mediaSnapshot();
     harness(initial);
@@ -87,18 +151,44 @@ describe("media generation snapshot reconciliation", () => {
     expect(displayedDraft()).toEqual(inputs);
   });
 
-  it.each((["image", "svg"] as const).flatMap((target) => [
-    { target, available: true, metadata: { available: false }, transition: "available to unavailable" },
-    { target, available: false, metadata: { available: true }, transition: "unavailable to available" },
-    { target, available: false, metadata: { available: false, unavailableReason: "Provider reconnecting" }, transition: "reason only" },
-  ]))("preserves every edited $target field across $transition", ({ target, available, metadata }) => {
-    const initial = mediaSnapshot();
-    initial.generation.available = available;
-    const view = harness(initial);
-    const expected = editDraft(target);
-    view.show({ ...initial, generation: { ...initial.generation, ...metadata } });
-    expect(displayedDraft()).toEqual(expected);
-  });
+  it.each(
+    (["image", "svg"] as const).flatMap((target) => [
+      {
+        target,
+        available: true,
+        metadata: { available: false },
+        transition: "available to unavailable",
+      },
+      {
+        target,
+        available: false,
+        metadata: { available: true },
+        transition: "unavailable to available",
+      },
+      {
+        target,
+        available: false,
+        metadata: {
+          available: false,
+          unavailableReason: "Provider reconnecting",
+        },
+        transition: "reason only",
+      },
+    ]),
+  )(
+    "preserves every edited $target field across $transition",
+    ({ target, available, metadata }) => {
+      const initial = mediaSnapshot();
+      initial.generation.available = available;
+      const view = harness(initial);
+      const expected = editDraft(target);
+      view.show({
+        ...initial,
+        generation: { ...initial.generation, ...metadata },
+      });
+      expect(displayedDraft()).toEqual(expected);
+    },
+  );
 
   it("preserves edits across repeated equivalent snapshots", () => {
     const initial = mediaSnapshot();
@@ -114,18 +204,41 @@ describe("media generation snapshot reconciliation", () => {
     const initial = mediaSnapshot();
     const view = harness(initial);
     const expected = editDraft();
-    for (const unavailableReason of ["Provider disconnected", "Provider reconnecting"]) {
-      view.show({ ...initial, models: [], generation: { ...initial.generation, available: false, unavailableReason } });
-      expect(screen.getByRole<HTMLButtonElement>("button", { name: "Generate" }).disabled).toBe(true);
-      expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Model" }).disabled).toBe(true);
+    for (const unavailableReason of [
+      "Provider disconnected",
+      "Provider reconnecting",
+    ]) {
+      view.show({
+        ...initial,
+        models: [],
+        generation: {
+          ...initial.generation,
+          available: false,
+          unavailableReason,
+        },
+      });
+      expect(
+        screen.getByRole<HTMLButtonElement>("button", { name: "Generate" })
+          .disabled,
+      ).toBe(true);
+      expect(
+        screen.getByRole<HTMLSelectElement>("combobox", { name: "Model" })
+          .disabled,
+      ).toBe(true);
       expect(screen.getByText(unavailableReason)).toBeTruthy();
       expect(displayedDraft()).toEqual({ ...expected, modelId: "" });
     }
     expect(screen.queryByText("Provider disconnected")).toBeNull();
     view.show(structuredClone(initial));
     expect(displayedDraft()).toEqual(expected);
-    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Generate" }).disabled).toBe(false);
-    expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Model" }).disabled).toBe(false);
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Generate" })
+        .disabled,
+    ).toBe(false);
+    expect(
+      screen.getByRole<HTMLSelectElement>("combobox", { name: "Model" })
+        .disabled,
+    ).toBe(false);
     expect(screen.queryByText("Provider reconnecting")).toBeNull();
   });
 
@@ -141,21 +254,40 @@ describe("media generation snapshot reconciliation", () => {
     const initial = mediaSnapshot();
     const view = harness(initial);
     editDraft();
-    const next = { ...initial, generation: { ...initial.generation, ...change } };
+    const next = {
+      ...initial,
+      generation: { ...initial.generation, ...change },
+    };
     view.show(next);
     const { available: _available, ...inputs } = next.generation;
     expect(displayedDraft()).toEqual(inputs);
   });
 
-  it.each(["image", "svg"] as const)("submits the displayed %s draft after metadata changes", (target) => {
-    const initial = mediaSnapshot();
-    const view = harness(initial);
-    const expected = editDraft(target);
-    view.show({ ...initial, generation: { ...initial.generation, available: false, unavailableReason: "Reconnecting" } });
-    view.show(structuredClone(initial));
-    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
-    expect(view.onCommand).toHaveBeenCalledTimes(1);
-    expect(view.onCommand).toHaveBeenCalledWith({ kind: "generate-media", ...expected });
-    expect(view.onCommand).toHaveBeenCalledWith({ kind: "generate-media", ...displayedDraft() });
-  });
+  it.each(["image", "svg"] as const)(
+    "submits the displayed %s draft after metadata changes",
+    (target) => {
+      const initial = mediaSnapshot();
+      const view = harness(initial);
+      const expected = editDraft(target);
+      view.show({
+        ...initial,
+        generation: {
+          ...initial.generation,
+          available: false,
+          unavailableReason: "Reconnecting",
+        },
+      });
+      view.show(structuredClone(initial));
+      fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+      expect(view.onCommand).toHaveBeenCalledTimes(1);
+      expect(view.onCommand).toHaveBeenCalledWith({
+        kind: "generate-media",
+        ...expected,
+      });
+      expect(view.onCommand).toHaveBeenCalledWith({
+        kind: "generate-media",
+        ...displayedDraft(),
+      });
+    },
+  );
 });

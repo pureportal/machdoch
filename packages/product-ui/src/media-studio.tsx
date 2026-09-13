@@ -8,7 +8,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useDialogFocusLifecycle } from "./dialog-focus-lifecycle";
+import { ProductModal } from "./product-modal";
 import { formatBytes, formatTimestamp } from "./format";
 import { MediaStudioNavigation } from "./media-studio-navigation";
 import type { ProductCommandHandler } from "./product-runtime";
@@ -48,8 +48,6 @@ export function MediaStudio({
   const lastGenerationKeyRef = useRef(generationKey);
   const [confirming, setConfirming] = useState(false);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
-  const confirmationCloseButtonRef = useRef<HTMLButtonElement>(null);
-  const assetCloseButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (generationKey === lastGenerationKeyRef.current) return;
@@ -65,23 +63,10 @@ export function MediaStudio({
     models.find((model) => model.id === draft.modelId) ?? models[0] ?? null;
   const selectedAsset =
     media.assets.find((asset) => asset.id === selectedAssetId) ?? null;
-  const closeConfirmation = useCallback(
-    (): void => setConfirming(false),
-    [],
-  );
+  const closeConfirmation = useCallback((): void => setConfirming(false), []);
   const closeAssetDialog = useCallback(
     (): void => setSelectedAssetId(null),
     [],
-  );
-  useDialogFocusLifecycle(
-    confirming && selectedModel !== null,
-    closeConfirmation,
-    confirmationCloseButtonRef,
-  );
-  useDialogFocusLifecycle(
-    selectedAsset !== null,
-    closeAssetDialog,
-    assetCloseButtonRef,
   );
   const unavailableReason = models.length
     ? null
@@ -90,7 +75,6 @@ export function MediaStudio({
       : `No ready model supports ${draft.target === "svg" ? "SVG" : "images"}.`;
   const canGenerate =
     !media.loading &&
-    !media.error &&
     !media.busy &&
     !pending &&
     draft.prompt.trim().length > 0 &&
@@ -135,6 +119,10 @@ export function MediaStudio({
           <div className="m-media-error" role="alert">
             {media.error}
           </div>
+        ) : media.loading ? (
+          <p className="m-product-empty-small" role="status">
+            Loading media…
+          </p>
         ) : null}
         {section === "generate" ? (
           <div className="m-media-create">
@@ -333,9 +321,9 @@ export function MediaStudio({
                   </button>
                 ))}
               </div>
-            ) : (
+            ) : !media.loading && !media.error ? (
               <div className="m-product-empty-small">No assets</div>
-            )}
+            ) : null}
           </div>
         ) : null}
         {section === "runs" ? (
@@ -384,86 +372,78 @@ export function MediaStudio({
                   </article>
                 ))}
               </div>
-            ) : (
+            ) : !media.loading && !media.error ? (
               <div className="m-product-empty-small">No activity</div>
-            )}
+            ) : null}
           </div>
         ) : null}
       </section>
       {confirming && selectedModel ? (
-        <div className="m-media-modal-backdrop" role="presentation">
-          <div
-            className="m-media-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="m-media-confirm-title"
+        <ProductModal
+          title={`Generate with ${selectedModel.label}?`}
+          description={
+            selectedModel.costHint ?? "This request may incur provider charges."
+          }
+          dismissible={!pending}
+          onClose={closeConfirmation}
+        >
+          <button
+            type="button"
+            className="m-media-modal-close"
+            aria-label="Close"
+            disabled={pending}
+            onClick={closeConfirmation}
           >
+            <X aria-hidden="true" />
+          </button>
+          <div>
             <button
               type="button"
-              className="m-media-modal-close"
-              aria-label="Close"
-              ref={confirmationCloseButtonRef}
+              className="m-product-secondary-button"
+              disabled={pending}
               onClick={closeConfirmation}
             >
-              <X aria-hidden="true" />
+              Cancel
             </button>
-            <h2 id="m-media-confirm-title">
-              Generate with {selectedModel.label}?
-            </h2>
-            <p>
-              {selectedModel.costHint ??
-                "This request may incur provider charges."}
-            </p>
-            <div>
-              <button
-                type="button"
-                className="m-product-secondary-button"
-                onClick={closeConfirmation}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="m-product-primary-button"
-                onClick={() => void generate()}
-              >
-                <Play aria-hidden="true" /> Generate
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-      {selectedAsset ? (
-        <div className="m-media-modal-backdrop" role="presentation">
-          <div
-            className="m-media-asset-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Asset preview"
-          >
             <button
               type="button"
-              className="m-media-modal-close"
-              aria-label="Close"
-              ref={assetCloseButtonRef}
-              onClick={closeAssetDialog}
+              className="m-product-primary-button"
+              disabled={!canGenerate}
+              onClick={() => void generate()}
             >
-              <X aria-hidden="true" />
+              <Play aria-hidden="true" /> Generate
             </button>
-            {selectedAsset.previewDataUrl ? (
-              <img src={selectedAsset.previewDataUrl} alt="" />
-            ) : (
-              <ImageIcon aria-hidden="true" />
-            )}
-            <div>
-              <strong>{selectedAsset.kind}</strong>
-              <span>
-                {selectedAsset.width} x {selectedAsset.height} /{" "}
-                {formatBytes(selectedAsset.byteSize)}
-              </span>
-            </div>
           </div>
-        </div>
+        </ProductModal>
+      ) : null}
+      {selectedAsset ? (
+        <ProductModal
+          className="m-media-asset-dialog"
+          title="Asset preview"
+          titleHidden
+          onClose={closeAssetDialog}
+        >
+          <button
+            type="button"
+            className="m-media-modal-close"
+            aria-label="Close"
+            onClick={closeAssetDialog}
+          >
+            <X aria-hidden="true" />
+          </button>
+          {selectedAsset.previewDataUrl ? (
+            <img src={selectedAsset.previewDataUrl} alt="" />
+          ) : (
+            <ImageIcon aria-hidden="true" />
+          )}
+          <div>
+            <strong>{selectedAsset.kind}</strong>
+            <span>
+              {selectedAsset.width} x {selectedAsset.height} /{" "}
+              {formatBytes(selectedAsset.byteSize)}
+            </span>
+          </div>
+        </ProductModal>
       ) : null}
     </div>
   );
