@@ -12,8 +12,11 @@ export const DialogClose = DialogPrimitive.Close;
 export function DialogContent({
   className,
   children,
+  closeDisabled = false,
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Content>): React.ReactElement {
+}: React.ComponentProps<typeof DialogPrimitive.Content> & {
+  closeDisabled?: boolean;
+}): React.ReactElement {
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm" />
@@ -25,7 +28,10 @@ export function DialogContent({
         {...props}
       >
         {children}
-        <DialogPrimitive.Close className="absolute right-2 top-2 grid size-11 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
+        <DialogPrimitive.Close
+          disabled={closeDisabled}
+          className="absolute right-2 top-2 grid size-11 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+        >
           <X className="size-4" />
           <span className="sr-only">Close</span>
         </DialogPrimitive.Close>

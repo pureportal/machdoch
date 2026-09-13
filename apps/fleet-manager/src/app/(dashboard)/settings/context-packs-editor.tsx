@@ -5,13 +5,7 @@ import { useState } from "react";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogFooter,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { SettingsFormDialog } from "./settings-form-dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -56,7 +50,7 @@ export function ContextPacksEditor({
   );
   return (
     <div className="grid gap-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-medium">Context packs</h3>
         <Button size="sm" onClick={() => setEditing("new")}>
           <Plus />
@@ -148,177 +142,153 @@ function ContextPackDialog({
   onOpenChange: (open: boolean) => void;
   onSubmit: (pack: ManagedContextPack) => Promise<void>;
 }): React.ReactElement {
-  const [pending, setPending] = useState(false);
   const pack = editing === "new" ? null : editing;
   const [provider, setProvider] = useState(pack?.provider ?? "");
   return (
-    <Dialog open={editing !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogTitle>
-          {pack ? "Edit context pack" : "New context pack"}
-        </DialogTitle>
-        <form
-          className="grid gap-5"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const form = new FormData(event.currentTarget);
-            setPending(true);
-            void onSubmit({
-              id: pack?.id ?? crypto.randomUUID(),
-              name: String(form.get("name")),
-              instructions: String(form.get("instructions")),
-              prompt: String(form.get("prompt")),
-              provider: optionalValue(String(form.get("provider"))),
-              model: optionalValue(String(form.get("model"))),
-              mode: optionalValue(String(form.get("mode"))),
-              reasoning: optionalValue(String(form.get("reasoning"))),
-              variables: parseVariables(String(form.get("variables"))),
-              triggerPhrases: splitList(String(form.get("triggerPhrases"))),
-              pathPatterns: splitList(String(form.get("pathPatterns"))),
-              promptEnhancementMode: optionalValue(
-                String(form.get("promptEnhancementMode")),
-              ) as ManagedContextPack["promptEnhancementMode"],
-              interviewEnabled: optionalBoolean(form, "interviewEnabled"),
-              sessionMemoryEnabled: optionalBoolean(
-                form,
-                "sessionMemoryEnabled",
-              ),
-              useGlobalMemory: optionalBoolean(form, "useGlobalMemory"),
-              uiControlEnabled: optionalBoolean(form, "uiControlEnabled"),
-            })
-              .catch(() => undefined)
-              .finally(() => setPending(false));
-          }}
+    <SettingsFormDialog
+      open={editing !== null}
+      onOpenChange={onOpenChange}
+      title={pack ? "Edit context pack" : "New context pack"}
+      submitLabel="Save context pack"
+      onSubmit={(form) =>
+        onSubmit({
+          id: pack?.id ?? crypto.randomUUID(),
+          name: String(form.get("name")),
+          instructions: String(form.get("instructions")),
+          prompt: String(form.get("prompt")),
+          provider: optionalValue(String(form.get("provider"))),
+          model: optionalValue(String(form.get("model") ?? "")),
+          mode: optionalValue(String(form.get("mode"))),
+          reasoning: optionalValue(String(form.get("reasoning"))),
+          variables: parseVariables(String(form.get("variables"))),
+          triggerPhrases: splitList(String(form.get("triggerPhrases"))),
+          pathPatterns: splitList(String(form.get("pathPatterns"))),
+          promptEnhancementMode: optionalValue(
+            String(form.get("promptEnhancementMode")),
+          ) as ManagedContextPack["promptEnhancementMode"],
+          interviewEnabled: optionalBoolean(form, "interviewEnabled"),
+          sessionMemoryEnabled: optionalBoolean(form, "sessionMemoryEnabled"),
+          useGlobalMemory: optionalBoolean(form, "useGlobalMemory"),
+          uiControlEnabled: optionalBoolean(form, "uiControlEnabled"),
+        })
+      }
+    >
+      <Field label="Name" htmlFor="pack-name">
+        <Input
+          id="pack-name"
+          name="name"
+          defaultValue={pack?.name ?? ""}
+          required
+        />
+      </Field>
+      <div className="grid gap-5 md:grid-cols-2">
+        <Field label="Instructions" htmlFor="pack-instructions">
+          <Textarea
+            id="pack-instructions"
+            name="instructions"
+            className="min-h-36"
+            defaultValue={pack?.instructions ?? ""}
+          />
+        </Field>
+        <Field label="Prompt" htmlFor="pack-prompt">
+          <Textarea
+            id="pack-prompt"
+            name="prompt"
+            className="min-h-36"
+            defaultValue={pack?.prompt ?? ""}
+          />
+        </Field>
+      </div>
+      <div className="grid gap-5 md:grid-cols-2">
+        <Field label="Provider" htmlFor="pack-provider">
+          <Select
+            id="pack-provider"
+            name="provider"
+            value={provider}
+            onChange={(event) => setProvider(event.target.value)}
+          >
+            <option value="">Not set</option>
+            {providers.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Model" htmlFor="pack-model">
+          <Input
+            id="pack-model"
+            name="model"
+            defaultValue={pack?.model ?? ""}
+            disabled={!provider}
+            required={Boolean(provider)}
+          />
+        </Field>
+        <OptionField
+          label="Mode"
+          name="mode"
+          value={pack?.mode ?? null}
+          options={["ask", "machdoch"]}
+        />
+        <OptionField
+          label="Reasoning"
+          name="reasoning"
+          value={pack?.reasoning ?? null}
+          options={reasoning}
+        />
+      </div>
+      <div className="grid gap-5 md:grid-cols-3">
+        <Field
+          label="Variables"
+          htmlFor="pack-variables"
+          hint="One per line: NAME or NAME=default."
         >
-          <Field label="Name" htmlFor="pack-name">
-            <Input
-              id="pack-name"
-              name="name"
-              defaultValue={pack?.name ?? ""}
-              required
-              autoFocus
-            />
-          </Field>
-          <div className="grid gap-5 md:grid-cols-2">
-            <Field label="Instructions" htmlFor="pack-instructions">
-              <Textarea
-                id="pack-instructions"
-                name="instructions"
-                className="min-h-36"
-                defaultValue={pack?.instructions ?? ""}
-              />
-            </Field>
-            <Field label="Prompt" htmlFor="pack-prompt">
-              <Textarea
-                id="pack-prompt"
-                name="prompt"
-                className="min-h-36"
-                defaultValue={pack?.prompt ?? ""}
-              />
-            </Field>
-          </div>
-          <div className="grid gap-5 md:grid-cols-2">
-            <Field label="Provider" htmlFor="pack-provider">
-              <Select
-                id="pack-provider"
-                name="provider"
-                value={provider}
-                onChange={(event) => setProvider(event.target.value)}
-              >
-                <option value="">Not set</option>
-                {providers.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Model" htmlFor="pack-model">
-              <Input
-                id="pack-model"
-                name="model"
-                defaultValue={pack?.model ?? ""}
-                disabled={!provider}
-                required={Boolean(provider)}
-              />
-            </Field>
-            <OptionField
-              label="Mode"
-              name="mode"
-              value={pack?.mode ?? null}
-              options={["ask", "machdoch"]}
-            />
-            <OptionField
-              label="Reasoning"
-              name="reasoning"
-              value={pack?.reasoning ?? null}
-              options={reasoning}
-            />
-          </div>
-          <div className="grid gap-5 md:grid-cols-3">
-            <Field
-              label="Variables"
-              htmlFor="pack-variables"
-              hint="One per line: NAME or NAME=default."
-            >
-              <Textarea
-                id="pack-variables"
-                name="variables"
-                defaultValue={formatVariables(pack?.variables ?? [])}
-              />
-            </Field>
-            <ListField
-              label="Trigger phrases"
-              name="triggerPhrases"
-              value={pack?.triggerPhrases ?? []}
-            />
-            <ListField
-              label="Path patterns"
-              name="pathPatterns"
-              value={pack?.pathPatterns ?? []}
-            />
-          </div>
-          <div className="grid gap-5 md:grid-cols-3">
-            <OptionField
-              label="Prompt enhancement"
-              name="promptEnhancementMode"
-              value={pack?.promptEnhancementMode ?? null}
-              options={["off", "simple", "web-search"]}
-            />
-            <BooleanOptionField
-              label="Interview"
-              name="interviewEnabled"
-              value={pack?.interviewEnabled ?? null}
-            />
-            <BooleanOptionField
-              label="Session memory"
-              name="sessionMemoryEnabled"
-              value={pack?.sessionMemoryEnabled ?? null}
-            />
-            <BooleanOptionField
-              label="Global memory"
-              name="useGlobalMemory"
-              value={pack?.useGlobalMemory ?? null}
-            />
-            <BooleanOptionField
-              label="UI control"
-              name="uiControlEnabled"
-              value={pack?.uiControlEnabled ?? null}
-            />
-          </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="outline">
-                Cancel
-              </Button>
-            </DialogClose>
-            <Button type="submit" disabled={pending}>
-              {pending ? "Saving…" : "Save context pack"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+          <Textarea
+            id="pack-variables"
+            name="variables"
+            defaultValue={formatVariables(pack?.variables ?? [])}
+          />
+        </Field>
+        <ListField
+          label="Trigger phrases"
+          name="triggerPhrases"
+          value={pack?.triggerPhrases ?? []}
+        />
+        <ListField
+          label="Path patterns"
+          name="pathPatterns"
+          value={pack?.pathPatterns ?? []}
+        />
+      </div>
+      <div className="grid gap-5 md:grid-cols-3">
+        <OptionField
+          label="Prompt enhancement"
+          name="promptEnhancementMode"
+          value={pack?.promptEnhancementMode ?? null}
+          options={["off", "simple", "web-search"]}
+        />
+        <BooleanOptionField
+          label="Interview"
+          name="interviewEnabled"
+          value={pack?.interviewEnabled ?? null}
+        />
+        <BooleanOptionField
+          label="Session memory"
+          name="sessionMemoryEnabled"
+          value={pack?.sessionMemoryEnabled ?? null}
+        />
+        <BooleanOptionField
+          label="Global memory"
+          name="useGlobalMemory"
+          value={pack?.useGlobalMemory ?? null}
+        />
+        <BooleanOptionField
+          label="UI control"
+          name="uiControlEnabled"
+          value={pack?.uiControlEnabled ?? null}
+        />
+      </div>
+    </SettingsFormDialog>
   );
 }
 
