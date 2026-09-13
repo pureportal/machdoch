@@ -49,6 +49,8 @@
     "typecheck:ui": "pnpm --filter @machdoch/client typecheck:ui",
     "verify": "pnpm run check && pnpm run typecheck && pnpm run test && pnpm run build",
     "verify:fleet-ui": "node scripts/verify-fleet-ui.mjs",
+    "verify:fleet-review": "node --import @oxc-node/core/register scripts/verify-fleet-review.mjs",
+    "verify:fleet-settings": "node --import @oxc-node/core/register scripts/verify-fleet-settings.mjs",
     "verify:responsive-ui": "node scripts/verify-responsive-ui.mjs",
     "verify:fleet-projects": "oxnode scripts/verify-fleet-projects.ts",
     "verify:fleet-previews": "oxnode scripts/verify-fleet-previews.ts",
@@ -70,6 +72,7 @@
     "oxfmt": "^0.60.0",
     "oxlint": "^1.75.0",
     "oxlint-tsgolint": "^7.0.2001",
+    "playwright-core": "1.60.0",
     "puppeteer-core": "^25.9.0",
     "typescript": "^7.0.2"
   },
