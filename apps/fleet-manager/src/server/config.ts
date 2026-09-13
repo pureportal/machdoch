@@ -101,7 +101,7 @@ export function loadConfig(
   const result = configSchema.safeParse(source);
   if (!result.success) {
     throw new Error(
-      `Invalid Fleet Manager configuration: ${z.prettifyError(result.error)}`,
+      `Invalid Fleet Manager configuration at ${absoluteConfigPath}: ${z.prettifyError(result.error)}`,
     );
   }
   const config = result.data;
