@@ -29,6 +29,7 @@ export function EnrollmentView(): React.ReactElement {
   const [error, setError] = useState("");
   const [grants, setGrants] = useState<AvailableGrant[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [revoking, setRevoking] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const inventoryRequest = useRef(0);
@@ -45,6 +46,7 @@ export function EnrollmentView(): React.ReactElement {
       );
       if (signal.aborted || requestId !== inventoryRequest.current) return;
       setGrants(result.grants);
+      setLoadError("");
       setGrant((current) =>
         current &&
         result.grants.some((item) => item.grantId === current.grantId)
@@ -53,7 +55,7 @@ export function EnrollmentView(): React.ReactElement {
       );
     } catch (reason) {
       if (!signal.aborted && requestId === inventoryRequest.current) {
-        setError(
+        setLoadError(
           reason instanceof Error
             ? reason.message
             : "Keys could not be loaded.",
@@ -202,28 +204,35 @@ export function EnrollmentView(): React.ReactElement {
         </CardContent>
       </Card>
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
           <CardTitle>Unused enrollment keys</CardTitle>
           <Button
             variant="outline"
             disabled={loading || pending || revoking !== null}
-            onClick={() => {
-              setError("");
-              void reload();
-            }}
+            onClick={() => void reload()}
           >
-            Refresh
+            {loadError ? "Retry" : "Refresh"}
           </Button>
         </CardHeader>
         <CardContent className="grid gap-4">
+          {loadError ? (
+            <p
+              role="alert"
+              className="text-sm text-destructive [overflow-wrap:anywhere]"
+            >
+              {loadError}
+            </p>
+          ) : null}
           <p className="text-sm text-muted-foreground">
             Revoke a key to prevent it from enrolling another instance. Existing
             instances keep their access. Key values are shown only when created.
           </p>
           {grants.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {loading ? "Loading keys…" : "No unused keys."}
-            </p>
+            !loadError ? (
+              <p role="status" className="text-sm text-muted-foreground">
+                {loading ? "Loading keys…" : "No unused keys."}
+              </p>
+            ) : null
           ) : (
             grants.map((item) => (
               <div
