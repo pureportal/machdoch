@@ -32,6 +32,7 @@ export interface ComposerModelPickerProps {
   activeModel: string;
   activeModelLabel: string;
   loading: boolean;
+  disabled?: boolean;
   onOpenChange?: (open: boolean) => void;
   onSelect: (provider: string, model: string) => void;
 }
@@ -89,6 +90,7 @@ export function ComposerModelPicker({
   activeModel,
   activeModelLabel,
   loading,
+  disabled = false,
   onOpenChange,
   onSelect,
 }: ComposerModelPickerProps): React.ReactElement {
@@ -103,6 +105,10 @@ export function ComposerModelPicker({
   useEffect(() => {
     setVisibleProviderId(activeProvider);
   }, [activeProvider]);
+
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
 
   useEffect(() => {
     onOpenChange?.(open);
@@ -148,6 +154,7 @@ export function ComposerModelPicker({
   }, [search, selectedProvider]);
 
   const setPickerOpen = (nextOpen: boolean): void => {
+    if (nextOpen && disabled) return;
     setOpen(nextOpen);
     if (nextOpen) {
       setVisibleProviderId(activeProvider);
@@ -155,12 +162,15 @@ export function ComposerModelPicker({
     }
   };
   const selectModel = (provider: string, model: string): void => {
+    if (disabled) return;
     onSelect(provider, model);
     setPickerOpen(false);
   };
   const handleSearchKeyDown = (
     event: KeyboardEvent<HTMLInputElement>,
   ): void => {
+    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)
+      return;
     if (event.key !== "Enter" || !search.trim() || !selectedProvider) return;
     const bestMatch = visibleModels[0];
     if (!bestMatch) return;
@@ -192,7 +202,7 @@ export function ComposerModelPicker({
             aria-expanded={open}
             aria-controls={open ? popoverId : undefined}
             aria-haspopup="dialog"
-            disabled={providers.length === 0}
+            disabled={disabled || providers.length === 0}
           >
             <Bot aria-hidden="true" />
             <span>
