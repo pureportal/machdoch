@@ -1,6 +1,7 @@
 import { Check, Clipboard } from "lucide-react";
 import {
   isValidElement,
+  memo,
   useEffect,
   useRef,
   useState,
@@ -44,7 +45,7 @@ export function MarkdownRenderer({
   );
 }
 
-export function ProductMarkdown({
+export const ProductMarkdown = memo(function ProductMarkdown({
   content,
   className,
 }: {
@@ -94,7 +95,7 @@ export function ProductMarkdown({
       />
     </div>
   );
-}
+});
 
 function CopyableCodeBlock({
   children,
@@ -102,6 +103,7 @@ function CopyableCodeBlock({
   children?: ReactNode;
 }): React.ReactElement {
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   const resetTimer = useRef<number | null>(null);
   const text = getNodeText(children).replace(/\n$/u, "");
 
@@ -115,11 +117,16 @@ function CopyableCodeBlock({
   );
 
   const copy = async (): Promise<void> => {
-    if (!navigator.clipboard?.writeText) return;
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
+    setCopied(false);
+    setCopyFailed(false);
     if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
-    resetTimer.current = window.setTimeout(() => setCopied(false), 1_500);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      resetTimer.current = window.setTimeout(() => setCopied(false), 1_500);
+    } catch {
+      setCopyFailed(true);
+    }
   };
 
   return (
@@ -138,6 +145,11 @@ function CopyableCodeBlock({
           <Clipboard aria-hidden="true" />
         )}
       </button>
+      {copyFailed ? (
+        <p role="alert" className="m-product-inline-error">
+          Could not copy. Try again or select the code to copy it.
+        </p>
+      ) : null}
     </div>
   );
 }
