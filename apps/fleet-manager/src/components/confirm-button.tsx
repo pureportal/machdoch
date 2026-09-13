@@ -21,6 +21,7 @@ export function ConfirmButton({
   actionLabel,
   onConfirm,
   destructive = true,
+  onCloseAutoFocus,
 }: {
   trigger: React.ReactElement;
   title: string;
@@ -28,6 +29,7 @@ export function ConfirmButton({
   actionLabel: string;
   onConfirm: () => void | Promise<void>;
   destructive?: boolean;
+  onCloseAutoFocus?: (event: Event) => void;
 }): React.ReactElement {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
@@ -42,7 +44,7 @@ export function ConfirmButton({
       }}
     >
       <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
-      <AlertDialogContent>
+      <AlertDialogContent onCloseAutoFocus={onCloseAutoFocus}>
         <AlertDialogTitle>{title}</AlertDialogTitle>
         <AlertDialogDescription>{description}</AlertDialogDescription>
         {error ? (

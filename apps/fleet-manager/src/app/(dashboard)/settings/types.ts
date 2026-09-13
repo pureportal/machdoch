@@ -133,15 +133,6 @@ export interface SettingsProfileVersion {
   createdAt: number;
 }
 
-export type SettingsTab =
-  | "general"
-  | "instructions"
-  | "packs"
-  | "prompts"
-  | "secrets"
-  | "instances"
-  | "history";
-
 export function splitList(value: string): string[] {
   return value
     .split(",")

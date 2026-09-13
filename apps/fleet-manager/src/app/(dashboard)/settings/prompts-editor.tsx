@@ -5,13 +5,7 @@ import { useState } from "react";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogFooter,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { SettingsFormDialog } from "./settings-form-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type {
@@ -31,7 +25,7 @@ export function PromptsEditor({
 
   return (
     <div className="grid gap-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-medium">Prompts</h3>
         <Button size="sm" onClick={() => setEditing("new")}>
           <Plus />
@@ -119,58 +113,39 @@ function PromptDialog({
   onOpenChange: (open: boolean) => void;
   onSubmit: (prompt: ManagedPrompt) => Promise<void>;
 }): React.ReactElement {
-  const [pending, setPending] = useState(false);
   const prompt = editing === "new" ? null : editing;
   return (
-    <Dialog open={editing !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
-        <DialogTitle>{prompt ? "Edit prompt" : "New prompt"}</DialogTitle>
-        <form
-          className="grid gap-5"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const form = new FormData(event.currentTarget);
-            setPending(true);
-            void onSubmit({
-              id: prompt?.id ?? crypto.randomUUID(),
-              relativePath: String(form.get("relativePath")),
-              content: String(form.get("content")),
-            })
-              .catch(() => undefined)
-              .finally(() => setPending(false));
-          }}
-        >
-          <Field label="Path" htmlFor="prompt-path">
-            <Input
-              id="prompt-path"
-              name="relativePath"
-              defaultValue={prompt?.relativePath ?? ""}
-              placeholder="review.prompt.md"
-              required
-              autoFocus
-            />
-          </Field>
-          <Field label="Content" htmlFor="prompt-content">
-            <Textarea
-              id="prompt-content"
-              name="content"
-              className="min-h-72 font-mono text-xs"
-              defaultValue={prompt?.content ?? ""}
-              required
-            />
-          </Field>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="outline">
-                Cancel
-              </Button>
-            </DialogClose>
-            <Button type="submit" disabled={pending}>
-              {pending ? "Saving…" : "Save prompt"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <SettingsFormDialog
+      open={editing !== null}
+      onOpenChange={onOpenChange}
+      title={prompt ? "Edit prompt" : "New prompt"}
+      submitLabel="Save prompt"
+      onSubmit={(form) =>
+        onSubmit({
+          id: prompt?.id ?? crypto.randomUUID(),
+          relativePath: String(form.get("relativePath")),
+          content: String(form.get("content")),
+        })
+      }
+    >
+      <Field label="Path" htmlFor="prompt-path">
+        <Input
+          id="prompt-path"
+          name="relativePath"
+          defaultValue={prompt?.relativePath ?? ""}
+          placeholder="review.prompt.md"
+          required
+        />
+      </Field>
+      <Field label="Content" htmlFor="prompt-content">
+        <Textarea
+          id="prompt-content"
+          name="content"
+          className="min-h-72 font-mono text-xs"
+          defaultValue={prompt?.content ?? ""}
+          required
+        />
+      </Field>
+    </SettingsFormDialog>
   );
 }

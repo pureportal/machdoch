@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import type { ManagedSettingsDocument, SettingsProfile } from "./types";
+import { settingsError } from "./use-settings-profiles";
 
 const providerOptions = [
   "openai",
@@ -41,14 +42,15 @@ export function ProfileGeneral({
   ) => Promise<void>;
 }): React.ReactElement {
   const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
   const defaults = profile.document.defaults;
   const [provider, setProvider] = useState(defaults.provider ?? "");
   const limits = profile.document.agentLimits;
   return (
     <form
-      className="grid gap-8"
       onSubmit={(event) => {
         event.preventDefault();
+        if (pending) return;
         const form = new FormData(event.currentTarget);
         const document = structuredClone(profile.document);
         document.defaults = {
@@ -73,123 +75,131 @@ export function ProfileGeneral({
           ),
         };
         setPending(true);
+        setError("");
         void onSave(document, "Updated profile", {
           name: String(form.get("name")),
           description: String(form.get("description")),
         })
-          .catch(() => undefined)
+          .catch((reason: unknown) => setError(settingsError(reason)))
           .finally(() => setPending(false));
       }}
     >
-      <div className="grid gap-5">
-        <h3 className="font-medium">Profile</h3>
-        <div className="grid gap-5 md:grid-cols-2">
-          <Field label="Name" htmlFor="settings-profile-name">
-            <Input
-              id="settings-profile-name"
-              name="name"
-              defaultValue={profile.name}
-              required
-            />
-          </Field>
-          <Field label="Description" htmlFor="settings-profile-description">
-            <Input
-              id="settings-profile-description"
-              name="description"
-              defaultValue={profile.description}
-            />
-          </Field>
+      <fieldset disabled={pending} className="grid min-w-0 gap-8">
+        <div className="grid gap-5">
+          <h3 className="font-medium">Profile</h3>
+          <div className="grid gap-5 md:grid-cols-2">
+            <Field label="Name" htmlFor="settings-profile-name">
+              <Input
+                id="settings-profile-name"
+                name="name"
+                defaultValue={profile.name}
+                required
+              />
+            </Field>
+            <Field label="Description" htmlFor="settings-profile-description">
+              <Input
+                id="settings-profile-description"
+                name="description"
+                defaultValue={profile.description}
+              />
+            </Field>
+          </div>
         </div>
-      </div>
-      <div className="grid gap-5">
-        <h3 className="font-medium">Defaults</h3>
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          <Field label="Provider" htmlFor="provider">
-            <Select
-              id="provider"
-              name="provider"
-              value={provider}
-              onChange={(event) => setProvider(event.target.value)}
-            >
-              <option value="">Not set</option>
-              {providerOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Model" htmlFor="model">
-            <Input
-              id="model"
-              name="model"
-              defaultValue={defaults.model ?? ""}
-              disabled={!provider}
+        <div className="grid gap-5">
+          <h3 className="font-medium">Defaults</h3>
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            <Field label="Provider" htmlFor="provider">
+              <Select
+                id="provider"
+                name="provider"
+                value={provider}
+                onChange={(event) => setProvider(event.target.value)}
+              >
+                <option value="">Not set</option>
+                {providerOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Model" htmlFor="model">
+              <Input
+                id="model"
+                name="model"
+                defaultValue={defaults.model ?? ""}
+                disabled={!provider}
+              />
+            </Field>
+            <SelectField
+              label="Mode"
+              name="mode"
+              value={defaults.mode}
+              options={["ask", "machdoch"]}
             />
-          </Field>
-          <SelectField
-            label="Mode"
-            name="mode"
-            value={defaults.mode}
-            options={["ask", "machdoch"]}
-          />
-          <SelectField
-            label="Reasoning"
-            name="reasoning"
-            value={defaults.reasoning}
-            options={reasoningOptions}
-          />
-          <SelectField
-            label="Web search"
-            name="webSearchProvider"
-            value={defaults.webSearchProvider}
-            options={["none", "perplexity", "tavily", "serper"]}
-          />
-          <SelectField
-            label="Theme"
-            name="theme"
-            value={defaults.theme}
-            options={["dark", "light"]}
-          />
-          <SelectField
-            label="Density"
-            name="density"
-            value={defaults.density}
-            options={["comfortable", "compact"]}
-          />
-          <SelectField
-            label="Accent"
-            name="accent"
-            value={defaults.accent}
-            options={["sky", "emerald", "violet", "amber"]}
-          />
+            <SelectField
+              label="Reasoning"
+              name="reasoning"
+              value={defaults.reasoning}
+              options={reasoningOptions}
+            />
+            <SelectField
+              label="Web search"
+              name="webSearchProvider"
+              value={defaults.webSearchProvider}
+              options={["none", "perplexity", "tavily", "serper"]}
+            />
+            <SelectField
+              label="Theme"
+              name="theme"
+              value={defaults.theme}
+              options={["dark", "light"]}
+            />
+            <SelectField
+              label="Density"
+              name="density"
+              value={defaults.density}
+              options={["comfortable", "compact"]}
+            />
+            <SelectField
+              label="Accent"
+              name="accent"
+              value={defaults.accent}
+              options={["sky", "emerald", "violet", "amber"]}
+            />
+          </div>
         </div>
-      </div>
-      <div className="grid gap-5">
-        <h3 className="font-medium">Agent limits</h3>
-        <div className="grid gap-5 md:grid-cols-3">
-          <SelectField
-            label="Infinite mode"
-            name="infinite"
-            value={limits.infinite === null ? null : String(limits.infinite)}
-            options={["true", "false"]}
-            labels={{ true: "Enabled", false: "Disabled" }}
-          />
-          <NumberField
-            label="Executor turns"
-            name="executorTurns"
-            value={limits.executorTurns}
-          />
-          <NumberField
-            label="Autopilot iterations"
-            name="autopilotExecutorIterations"
-            value={limits.autopilotExecutorIterations}
-          />
+        <div className="grid gap-5">
+          <h3 className="font-medium">Agent limits</h3>
+          <div className="grid gap-5 md:grid-cols-3">
+            <SelectField
+              label="Infinite mode"
+              name="infinite"
+              value={limits.infinite === null ? null : String(limits.infinite)}
+              options={["true", "false"]}
+              labels={{ true: "Enabled", false: "Disabled" }}
+            />
+            <NumberField
+              label="Executor turns"
+              name="executorTurns"
+              value={limits.executorTurns}
+            />
+            <NumberField
+              label="Autopilot iterations"
+              name="autopilotExecutorIterations"
+              value={limits.autopilotExecutorIterations}
+            />
+          </div>
         </div>
-      </div>
-      <Button type="submit" className="w-fit" disabled={pending}>
-        {pending ? "Saving…" : "Save profile"}
-      </Button>
+        {error ? (
+          <p role="alert" className="break-words text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
+        <Button type="submit" className="w-fit" disabled={pending}>
+          {pending ? "Saving…" : "Save profile"}
+        </Button>
+      </fieldset>
     </form>
   );
 }

@@ -5,13 +5,7 @@ import { useState } from "react";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogFooter,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { SettingsFormDialog } from "./settings-form-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type {
@@ -33,7 +27,7 @@ export function InstructionsEditor({
   );
   return (
     <div className="grid gap-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-medium">Instructions</h3>
         <Button size="sm" onClick={() => setEditing("new")}>
           <Plus />
@@ -127,86 +121,65 @@ function InstructionDialog({
   onOpenChange: (open: boolean) => void;
   onSubmit: (instruction: ManagedInstruction) => Promise<void>;
 }): React.ReactElement {
-  const [pending, setPending] = useState(false);
   const instruction = editing === "new" ? null : editing;
   return (
-    <Dialog open={editing !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
-        <DialogTitle>
-          {instruction ? "Edit instruction" : "New instruction"}
-        </DialogTitle>
-        <form
-          className="grid gap-5"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const form = new FormData(event.currentTarget);
-            setPending(true);
-            void onSubmit({
-              id: instruction?.id ?? crypto.randomUUID(),
-              name: String(form.get("name")),
-              body: String(form.get("body")),
-              enabled: form.get("enabled") === "on",
-              global: form.get("global") === "on",
-              tags: splitList(String(form.get("tags"))),
-            })
-              .catch(() => undefined)
-              .finally(() => setPending(false));
-          }}
-        >
-          <Field label="Name" htmlFor="instruction-name">
-            <Input
-              id="instruction-name"
-              name="name"
-              defaultValue={instruction?.name ?? ""}
-              required
-              autoFocus
-            />
-          </Field>
-          <Field label="Content" htmlFor="instruction-body">
-            <Textarea
-              id="instruction-body"
-              name="body"
-              className="min-h-64 font-mono text-xs"
-              defaultValue={instruction?.body ?? ""}
-              required
-            />
-          </Field>
-          <Field
-            label="Tags"
-            htmlFor="instruction-tags"
-            hint="Separate tags with commas."
-          >
-            <Input
-              id="instruction-tags"
-              name="tags"
-              defaultValue={instruction?.tags.join(", ") ?? ""}
-            />
-          </Field>
-          <div className="flex flex-wrap gap-5">
-            <Checkbox
-              name="enabled"
-              label="Enabled"
-              defaultChecked={instruction?.enabled ?? true}
-            />
-            <Checkbox
-              name="global"
-              label="Global"
-              defaultChecked={instruction?.global ?? false}
-            />
-          </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="outline">
-                Cancel
-              </Button>
-            </DialogClose>
-            <Button type="submit" disabled={pending}>
-              {pending ? "Saving…" : "Save instruction"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <SettingsFormDialog
+      open={editing !== null}
+      onOpenChange={onOpenChange}
+      title={instruction ? "Edit instruction" : "New instruction"}
+      submitLabel="Save instruction"
+      onSubmit={(form) =>
+        onSubmit({
+          id: instruction?.id ?? crypto.randomUUID(),
+          name: String(form.get("name")),
+          body: String(form.get("body")),
+          enabled: form.get("enabled") === "on",
+          global: form.get("global") === "on",
+          tags: splitList(String(form.get("tags"))),
+        })
+      }
+    >
+      <Field label="Name" htmlFor="instruction-name">
+        <Input
+          id="instruction-name"
+          name="name"
+          defaultValue={instruction?.name ?? ""}
+          required
+        />
+      </Field>
+      <Field label="Content" htmlFor="instruction-body">
+        <Textarea
+          id="instruction-body"
+          name="body"
+          className="min-h-64 font-mono text-xs"
+          defaultValue={instruction?.body ?? ""}
+          required
+        />
+      </Field>
+      <Field
+        label="Tags"
+        htmlFor="instruction-tags"
+        hint="Separate tags with commas."
+      >
+        <Input
+          id="instruction-tags"
+          name="tags"
+          defaultValue={instruction?.tags.join(", ") ?? ""}
+        />
+      </Field>
+      <div className="flex flex-wrap gap-5">
+        <Checkbox
+          name="enabled"
+          label="Enabled"
+          defaultChecked={instruction?.enabled ?? true}
+        />
+        <Checkbox
+          name="global"
+          label="Global"
+          defaultChecked={instruction?.global ?? false}
+        />
+      </div>
+    </SettingsFormDialog>
   );
 }
 
