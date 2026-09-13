@@ -1,8 +1,8 @@
 import type { ProductRalph, ProductShell } from "@machdoch/fleet-protocol";
 import { CirclePlay, RotateCcw, Square, Workflow, X } from "lucide-react";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { ComposerModelPicker } from "./composer-model-picker";
-import { useDialogFocusLifecycle } from "./dialog-focus-lifecycle";
+import { ProductModal } from "./product-modal";
 import { formatTimestamp } from "./format";
 import type { ProductCommandHandler } from "./product-runtime";
 import {
@@ -55,7 +55,6 @@ export function Ralph({
   const [actionError, setActionError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const parameterErrorPrefix = useId();
-  const runDialogCloseButtonRef = useRef<HTMLButtonElement>(null);
   const selectedFlow =
     ralph.flows.find((flow) => getFlowKey(flow) === selectedFlowKey) ?? null;
   const selectedProvider = composer?.modelCatalog.find(
@@ -97,11 +96,6 @@ export function Ralph({
     setSelectedFlowKey(null);
     setValidationErrors({});
   }, []);
-  useDialogFocusLifecycle(
-    selectedFlow !== null,
-    closeRunDialog,
-    runDialogCloseButtonRef,
-  );
   const updateParameter = (variable: RalphVariable, value: string): void => {
     setParameters((current) => ({ ...current, [variable.name]: value }));
     setValidationErrors((current) => {
@@ -154,7 +148,7 @@ export function Ralph({
       if (accepted) {
         closeRunDialog();
         setView("runs");
-      }
+      } else setActionError("Flow could not be started. Try again.");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -272,7 +266,7 @@ export function Ralph({
           </div>
         </div>
       </header>
-      {ralph.error || actionError ? (
+      {ralph.error || (actionError && !selectedFlow) ? (
         <div className="m-media-error" role="alert">
           {ralph.error ?? actionError}
         </div>
@@ -312,7 +306,13 @@ export function Ralph({
               ))}
             </div>
           ) : (
-            <div className="m-product-empty-small">No flows</div>
+            <div className="m-product-empty-small" role="status">
+              {ralph.loading
+                ? "Loading flows…"
+                : ralph.error
+                  ? "Flows unavailable"
+                  : "No flows"}
+            </div>
           )
         ) : ralph.runs.length ? (
           <div className="m-ralph-run-list">
@@ -352,105 +352,112 @@ export function Ralph({
             ))}
           </div>
         ) : (
-          <div className="m-product-empty-small">No runs</div>
+          <div className="m-product-empty-small" role="status">
+            {ralph.loading
+              ? "Loading runs…"
+              : ralph.error
+                ? "Runs unavailable"
+                : "No runs"}
+          </div>
         )}
       </div>
       {selectedFlow ? (
-        <div className="m-media-modal-backdrop" role="presentation">
-          <div
-            className="m-media-modal m-ralph-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="m-ralph-run-title"
+        <ProductModal
+          className="m-media-modal m-ralph-modal"
+          title={`Run ${selectedFlow.name}`}
+          dismissible={!submitting}
+          onClose={closeRunDialog}
+        >
+          {actionError ? (
+            <p className="m-product-inline-error" role="alert">
+              {actionError}
+            </p>
+          ) : null}
+          <button
+            type="button"
+            className="m-media-modal-close"
+            aria-label="Close"
+            disabled={submitting}
+            onClick={closeRunDialog}
           >
+            <X aria-hidden="true" />
+          </button>
+          <div className="m-ralph-parameters">
+            {selectedFlow.variables.map((variable, index) => {
+              const error = Object.hasOwn(validationErrors, variable.name)
+                ? validationErrors[variable.name]
+                : undefined;
+              const errorId = error
+                ? `${parameterErrorPrefix}-${index}`
+                : undefined;
+              const controlProps = {
+                value: getRalphVariableValue(variable, parameters),
+                required: variable.required,
+                "aria-label": variable.name,
+                "aria-invalid": Boolean(error),
+                "aria-describedby": errorId,
+                onChange: (
+                  event: React.ChangeEvent<
+                    HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+                  >,
+                ) => updateParameter(variable, event.target.value),
+              };
+
+              return (
+                <label key={variable.name}>
+                  <span>{variable.name}</span>
+                  {variable.type === "boolean" ? (
+                    <select {...controlProps}>
+                      <option value="" />
+                      <option value="true">True</option>
+                      <option value="false">False</option>
+                    </select>
+                  ) : variable.type === "text" ? (
+                    <textarea {...controlProps} />
+                  ) : (
+                    <input
+                      {...controlProps}
+                      type={getInputType(variable.type)}
+                    />
+                  )}
+                  {error ? (
+                    <span
+                      id={errorId}
+                      className="m-ralph-validation"
+                      role="alert"
+                    >
+                      {error}
+                    </span>
+                  ) : null}
+                </label>
+              );
+            })}
+          </div>
+          <div>
             <button
               type="button"
-              className="m-media-modal-close"
-              aria-label="Close"
+              className="m-product-secondary-button"
               disabled={submitting}
-              ref={runDialogCloseButtonRef}
               onClick={closeRunDialog}
             >
-              <X aria-hidden="true" />
+              Cancel
             </button>
-            <h2 id="m-ralph-run-title">Run {selectedFlow.name}</h2>
-            <div className="m-ralph-parameters">
-              {selectedFlow.variables.map((variable, index) => {
-                const error = Object.hasOwn(validationErrors, variable.name)
-                  ? validationErrors[variable.name]
-                  : undefined;
-                const errorId = error
-                  ? `${parameterErrorPrefix}-${index}`
-                  : undefined;
-                const controlProps = {
-                  value: getRalphVariableValue(variable, parameters),
-                  required: variable.required,
-                  "aria-label": variable.name,
-                  "aria-invalid": Boolean(error),
-                  "aria-describedby": errorId,
-                  onChange: (
-                    event: React.ChangeEvent<
-                      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-                    >,
-                  ) => updateParameter(variable, event.target.value),
-                };
-
-                return (
-                  <label key={variable.name}>
-                    <span>{variable.name}</span>
-                    {variable.type === "boolean" ? (
-                      <select {...controlProps}>
-                        <option value="" />
-                        <option value="true">True</option>
-                        <option value="false">False</option>
-                      </select>
-                    ) : variable.type === "text" ? (
-                      <textarea {...controlProps} />
-                    ) : (
-                      <input
-                        {...controlProps}
-                        type={getInputType(variable.type)}
-                      />
-                    )}
-                    {error ? (
-                      <span
-                        id={errorId}
-                        className="m-ralph-validation"
-                        role="alert"
-                      >
-                        {error}
-                      </span>
-                    ) : null}
-                  </label>
-                );
-              })}
-            </div>
-            <div>
-              <button
-                type="button"
-                className="m-product-secondary-button"
-                disabled={submitting}
-                onClick={closeRunDialog}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="m-product-primary-button"
-                disabled={
-                  pending ||
-                  submitting ||
-                  !runtimeAvailable ||
-                  ralph.loading ||
-                  flowIsActive(selectedFlow)
-                }
-                onClick={() => void executeFlow(selectedFlow, parameters)}
-              >
-                <CirclePlay aria-hidden="true" /> Run
-              </button>
-            </div>
+            <button
+              type="button"
+              className="m-product-primary-button"
+              disabled={
+                pending ||
+                submitting ||
+                !runtimeAvailable ||
+                ralph.loading ||
+                flowIsActive(selectedFlow)
+              }
+              onClick={() => void executeFlow(selectedFlow, parameters)}
+            >
+              <CirclePlay aria-hidden="true" /> Run
+            </button>
           </div>
-        </div>
+        </ProductModal>
       ) : null}
     </section>
   );
