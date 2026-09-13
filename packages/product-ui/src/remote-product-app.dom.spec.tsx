@@ -52,7 +52,7 @@ function transport() {
 const snapshot = (eventId: number): ProductSnapshot => ({
   enabled: true, serverTime: eventId, eventId, sessions: [], commands: [],
 });
-const command: ProductCommand = { kind: "update-draft", sessionId: "session", prompt: "draft" };
+const command: ProductCommand = { kind: "rename-session", sessionId: "session", title: "Renamed" };
 const receipt: CommandReceipt = { commandId: "command", duplicate: false };
 const flush = async () => { await act(async () => {}); };
 const state = () => JSON.parse(screen.getByTestId("state").textContent!);
@@ -83,6 +83,44 @@ afterEach(() => {
 });
 
 describe("remote runtime refresh lifecycle", () => {
+  it("keeps background draft saves out of the foreground pending state", async () => {
+    const view = harness();
+    view.snapshots[0]!.resolve(snapshot(1));
+    await flush();
+    act(() => {
+      void shell.onCommand({
+        kind: "update-draft",
+        sessionId: "session",
+        prompt: "Draft",
+      });
+    });
+    expect(view.commands).toHaveLength(1);
+    expect(state().pending).toBe(0);
+    view.commands[0]!.resolve(receipt);
+    await flush();
+    view.snapshots[1]!.resolve(snapshot(2));
+    await flush();
+    expect(state().pending).toBe(0);
+  });
+
+  it("blocks commands while disconnected and enables them after recovery", async () => {
+    const view = harness();
+    view.snapshots[0]!.reject(new Error("Offline"));
+    await flush();
+    let accepted: boolean | undefined;
+    await act(async () => {
+      accepted = await shell.onCommand(command);
+    });
+    expect(accepted).toBe(false);
+    expect(view.commands).toHaveLength(0);
+    act(() => {
+      void shell.onRefresh();
+    });
+    view.snapshots[1]!.resolve(snapshot(2));
+    await flush();
+    startCommand();
+    expect(view.commands).toHaveLength(1);
+  });
   it("waits for a post-command snapshot when a command finishes during a poll", async () => {
     const view = harness();
     view.snapshots[0]!.resolve(snapshot(1));

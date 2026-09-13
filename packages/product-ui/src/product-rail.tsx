@@ -12,6 +12,7 @@ import {
 export type ProductView = "chat" | "media" | "scheduler" | "ralph" | "projects";
 
 export function ProductRail({
+  settingsHref,
   inspectorOpen,
   activeView,
   mediaAvailable,
@@ -21,6 +22,7 @@ export function ProductRail({
   onSelectView,
   onToggleInspector,
 }: {
+  settingsHref?: string | undefined;
   inspectorOpen: boolean;
   activeView: ProductView;
   mediaAvailable: boolean;
@@ -107,13 +109,15 @@ export function ProductRail({
         >
           <PanelRight aria-hidden="true" />
         </button>
-        <a
-          href="/settings"
-          className="m-product-rail-button"
-          aria-label="Settings"
-        >
-          <Settings2 aria-hidden="true" />
-        </a>
+        {settingsHref ? (
+          <a
+            href={settingsHref}
+            className="m-product-rail-button"
+            aria-label="Settings"
+          >
+            <Settings2 aria-hidden="true" />
+          </a>
+        ) : null}
       </div>
     </aside>
   );

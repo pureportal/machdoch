@@ -27,25 +27,30 @@ import { SessionSidebar } from "./session-sidebar";
 import { ProductPanel } from "./product-panel";
 import { useMediaQuery, useProductViewport } from "./responsive-layout";
 import { ProjectLibrary } from "./project-library";
+import type { ComposerDraftStore } from "./use-composer-draft";
 
 export function ProductShell({
   instanceName,
   servicesHref,
+  settingsHref,
   snapshot,
   error,
   commandError,
   onDismissCommandError,
   pendingCommands,
+  drafts,
   onCommand,
   onRefresh,
 }: {
   instanceName: string;
   servicesHref?: string | undefined;
+  settingsHref?: string | undefined;
   snapshot: ProductSnapshot | null;
   error: string | null;
   commandError?: string | null;
   onDismissCommandError?: () => void;
   pendingCommands: number;
+  drafts: ComposerDraftStore;
   onCommand: ProductCommandHandler;
   onRefresh: () => Promise<void>;
 }): React.ReactElement {
@@ -63,21 +68,8 @@ export function ProductShell({
     setInspectorOpen(false);
   };
 
-  if (!snapshot) {
-    return (
-      <div ref={viewportRef} className="machdoch-product m-product-loading">
-        <LoaderCircle aria-hidden="true" />
-        <span>{error ?? "Connecting"}</span>
-        {error ? (
-          <button type="button" onClick={() => void onRefresh()}>
-            Retry
-          </button>
-        ) : null}
-      </div>
-    );
-  }
-
-  const shell = snapshot.shell;
+  const shell = snapshot?.shell;
+  const commandsBlocked = error !== null || pendingCommands > 0;
   const activeSession = shell?.sessions.find(
     (session) => session.id === shell.activeSessionId,
   );
@@ -106,8 +98,11 @@ export function ProductShell({
         <div className="m-product-topbar-divider" />
         <div className="m-product-instance">
           <strong title={instanceName}>{instanceName}</strong>
-          <span data-connected={error === null}>
-            {error ? "Disconnected" : "Connected"}
+          <span
+            data-connected={snapshot !== null && error === null}
+            role="status"
+          >
+            {error ? "Disconnected" : snapshot ? "Connected" : "Connecting"}
           </span>
         </div>
         {shell ? (
@@ -222,7 +217,7 @@ export function ProductShell({
           ) : null}
         </div>
       </header>
-      {error ? (
+      {error && snapshot ? (
         <div className="m-product-connection-error" role="alert">
           <WifiOff aria-hidden="true" />
           <span>{error}</span>
@@ -239,7 +234,21 @@ export function ProductShell({
           </button>
         </div>
       ) : null}
-      {shell ? (
+      {!snapshot ? (
+        <main className="m-product-loading" role={error ? "alert" : "status"}>
+          {error ? (
+            <WifiOff aria-hidden="true" />
+          ) : (
+            <LoaderCircle className="m-product-spin" aria-hidden="true" />
+          )}
+          <span>{error ?? "Connecting"}</span>
+          {error ? (
+            <button type="button" onClick={() => void onRefresh()}>
+              Retry
+            </button>
+          ) : null}
+        </main>
+      ) : shell ? (
         <div
           className="m-product-layout"
           data-inspector-open={inspectorOpen}
@@ -247,6 +256,7 @@ export function ProductShell({
           data-view={activeView}
         >
           <ProductRail
+            settingsHref={settingsHref}
             inspectorOpen={inspectorOpen}
             activeView={activeView}
             mediaAvailable={shell.media !== undefined}
@@ -269,9 +279,11 @@ export function ProductShell({
                     activeSessionId={shell.activeSessionId}
                     sessions={shell.sessions}
                     workspace={workspace}
+                    pending={commandsBlocked}
                     onCommand={async (command) => {
-                      setSessionsOpen(false);
-                      return onCommand(command);
+                      const accepted = await onCommand(command);
+                      if (accepted) setSessionsOpen(false);
+                      return accepted;
                     }}
                   />
                 </ProductPanel>
@@ -280,9 +292,11 @@ export function ProductShell({
                   activeSessionId={shell.activeSessionId}
                   sessions={shell.sessions}
                   workspace={workspace}
+                  pending={commandsBlocked}
                   onCommand={async (command) => {
-                    setSessionsOpen(false);
-                    return onCommand(command);
+                    const accepted = await onCommand(command);
+                    if (accepted) setSessionsOpen(false);
+                    return accepted;
                   }}
                 />
               )}
@@ -290,16 +304,20 @@ export function ProductShell({
                 {activeSession ? (
                   <>
                     <SessionHeader
+                      key={activeSession.id}
                       session={activeSession}
+                      pending={commandsBlocked}
                       onCommand={onCommand}
                     />
                     <Conversation
                       messages={shell.visibleMessages}
                       sessionId={activeSession.id}
+                      pending={commandsBlocked}
                       onCommand={onCommand}
                     />
                     {shell.composer?.sessionId === activeSession.id ? (
                       <Composer
+                        drafts={drafts}
                         composer={shell.composer}
                         session={activeSession}
                         contextPacks={shell.contextPacks}
@@ -307,7 +325,12 @@ export function ProductShell({
                         webSearchAvailable={
                           shell.runtime?.webSearch?.available === true
                         }
-                        pending={pendingCommands > 0}
+                        canCancel={snapshot.sessions.some(
+                          (task) =>
+                            task.taskId === activeSession.runningTaskId &&
+                            task.cancellable,
+                        )}
+                        pending={commandsBlocked}
                         onCommand={onCommand}
                       />
                     ) : null}
@@ -324,7 +347,7 @@ export function ProductShell({
                 servicesHref={servicesHref}
                 library={shell.projectLibrary}
                 sessions={shell.sessions}
-                pending={pendingCommands > 0}
+                pending={commandsBlocked}
                 error={commandError ?? null}
                 onCommand={onCommand}
                 onOpenChat={() => selectView("chat")}
@@ -335,7 +358,7 @@ export function ProductShell({
             <main className="m-product-feature-main">
               <MediaStudio
                 media={shell.media}
-                pending={pendingCommands > 0}
+                pending={commandsBlocked}
                 onCommand={onCommand}
               />
             </main>
@@ -344,7 +367,7 @@ export function ProductShell({
             <main className="m-product-feature-main">
               <Scheduler
                 scheduler={shell.scheduler}
-                pending={pendingCommands > 0}
+                pending={commandsBlocked}
                 onCommand={onCommand}
               />
             </main>
@@ -354,7 +377,7 @@ export function ProductShell({
               <Ralph
                 ralph={shell.ralph}
                 {...(shell.composer ? { composer: shell.composer } : {})}
-                pending={pendingCommands > 0}
+                pending={commandsBlocked}
                 onCommand={onCommand}
               />
             </main>
@@ -369,7 +392,18 @@ export function ProductShell({
               snapshot={snapshot}
               shell={shell}
               activeSessionId={shell.activeSessionId}
-              onCommand={onCommand}
+              pending={commandsBlocked}
+              onCommand={async (command) => {
+                const accepted = await onCommand(command);
+                if (
+                  accepted &&
+                  (command.kind === "create-session" ||
+                    command.kind === "activate-session")
+                )
+                  selectView("chat");
+                return accepted;
+              }}
+              onRefresh={onRefresh}
             />
           </ProductPanel>
         </div>

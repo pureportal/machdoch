@@ -18,6 +18,7 @@ export default async function InstanceProductPage({
     <InstanceProduct
       instanceId={instance.instanceId}
       instanceName={instance.displayName}
+      settingsEnabled={getRuntime().settingsCipher !== null}
     />
   );
 }
