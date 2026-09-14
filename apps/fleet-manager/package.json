@@ -6,7 +6,7 @@
   "scripts": {
     "build": "next build",
     "check": "pnpm run lint && pnpm run typecheck && pnpm run test",
-    "dev": "node --watch-path=src/server.ts --watch-path=src/server --watch-path=next.config.ts --enable-source-maps --import @oxc-node/core/register src/server.ts dev",
+    "dev": "nodemon src/server.ts dev",
     "format": "oxfmt src next.config.ts postcss.config.mjs package.json tsconfig.json components.json",
     "lint": "oxlint src next.config.ts",
     "lint:fix": "oxlint --fix src next.config.ts",
@@ -16,6 +16,17 @@
     "start": "oxnode src/server.ts serve",
     "test": "vitest run",
     "typecheck": "next typegen && tsc --noEmit --pretty false"
+  },
+  "nodemonConfig": {
+    "watch": [
+      "src/server.ts",
+      "src/server",
+      "next.config.ts"
+    ],
+    "ext": "ts,sql",
+    "delay": 200,
+    "exec": "node --enable-source-maps --import @oxc-node/core/register",
+    "signal": "SIGTERM"
   },
   "engines": {
     "node": ">=22.13"
@@ -41,6 +52,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@types/ws": "^8.18.1",
+    "nodemon": "^3.1.14",
     "tailwindcss": "^4.3.3",
     "vitest": "^4.1.10"
   }
