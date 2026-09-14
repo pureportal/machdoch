@@ -1738,6 +1738,32 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(result?.reason).toContain("authentication failed");
   });
 
+  it.each([
+    '{"error":{"code":"refresh_token_reused","message":"Your refresh token has already been used to generate a new access token."}}',
+    "Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.",
+    '{"error":{"code":"refresh_token_expired"}}',
+    '{"error":{"code":"refresh_token_invalidated"}}',
+  ])(
+    "gives a sign-in recovery command for invalid Codex refresh tokens: %s",
+    async (error) => {
+      const workspaceRoot = await createWorkspace();
+      process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+      const resultPromise = maybeExecuteExternalAgentProviderTask(
+        createParams(workspaceRoot),
+      );
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      call.child.stderr.write(error);
+      call.child.emit("close", 1, null);
+
+      const result = await resultPromise;
+      expect(result?.status).toBe("failed");
+      expect(result?.reason).toContain("codex login --device-auth");
+      expect(result?.reason).toContain("same OS user running Machdoch");
+      expect(spawnCalls).toHaveLength(1);
+    },
+  );
+
   it("does not infer completion from human-readable Codex diagnostics", async () => {
     const workspaceRoot = await createWorkspace();
     const processKillSpy =
@@ -2062,6 +2088,49 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
     await expect(access(childEnv?.CODEX_HOME ?? "")).rejects.toBeDefined();
   });
+
+  it.each([0, 1])(
+    "keeps refreshed Codex credentials for the next task after exit %s",
+    async (exitCode) => {
+      const workspaceRoot = await createWorkspace();
+      process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+      const sourcePath = join(process.env.CODEX_HOME!, "auth.json");
+      await mkdir(process.env.CODEX_HOME!, { recursive: true });
+      await writeFile(sourcePath, '{"tokens":{"refresh_token":"original"}}');
+      const params = createParams(workspaceRoot);
+      const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      const childEnv = call.options.env as NodeJS.ProcessEnv;
+      const refreshed = '{"tokens":{"refresh_token":"refreshed"}}';
+      await writeFile(join(childEnv.CODEX_HOME!, "auth.json"), refreshed);
+      expect(await readFile(sourcePath, "utf8")).toBe(refreshed);
+      if (exitCode === 0) writeStructuredAnswer(call, "First task completed.");
+      else call.child.stderr.write("fixture task failure");
+      call.child.emit("close", exitCode, null);
+
+      await expect(resultPromise).resolves.toMatchObject({
+        status: exitCode === 0 ? "executed" : "failed",
+      });
+      await expect(access(childEnv.CODEX_HOME!)).rejects.toBeDefined();
+      expect(await readFile(sourcePath, "utf8")).toBe(refreshed);
+
+      const nextResultPromise = maybeExecuteExternalAgentProviderTask(params);
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(2));
+      const nextCall = spawnCalls[1]!;
+      const nextEnv = nextCall.options.env as NodeJS.ProcessEnv;
+      expect(
+        await readFile(join(nextEnv.CODEX_HOME!, "auth.json"), "utf8"),
+      ).toBe(refreshed);
+      writeStructuredAnswer(nextCall, "Second task completed.");
+      nextCall.child.emit("close", 0, null);
+      await expect(nextResultPromise).resolves.toMatchObject({
+        status: "executed",
+      });
+      expect(await readFile(sourcePath, "utf8")).toBe(refreshed);
+    },
+  );
 
   it("does not pass workspace environment values into delegated CLI processes", async () => {
     const workspaceRoot = await createWorkspace();

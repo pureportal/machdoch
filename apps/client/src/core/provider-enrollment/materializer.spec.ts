@@ -547,6 +547,9 @@ describe("CLI provider enrollment materializer", () => {
         expect(await readFile(configPath!, "utf8")).toContain(
           "developer_instructions",
         );
+        expect(await readFile(configPath!, "utf8")).toContain(
+          'cli_auth_credentials_store = "file"',
+        );
         expect(enrollment.env.CODEX_HOME).toContain("codex-home");
         expect(enrollment.args[0]).toBe("--config");
         expect(enrollment.args).not.toContainEqual(
