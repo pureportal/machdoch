@@ -29,8 +29,8 @@ use super::{
         rewrite_instruction_payload_arguments, rewrite_task_interview_payload_arguments,
     },
     process::{
-        create_desktop_task_activity, hide_child_process_window, read_bounded_stream_text,
-        read_bounded_stream_text_with_limit, read_stderr, SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
+        hide_child_process_window, read_bounded_stream_text, read_bounded_stream_text_with_limit,
+        read_stderr, SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
         SUBPROCESS_OUTPUT_TRUNCATED_MARKER,
     },
     registry::normalize_task_id,
@@ -359,20 +359,15 @@ fn run_bounded_auxiliary_cli_command(
         read_bounded_stream_text_with_limit(stdout, "stdout", stdout_capture_limit_bytes)
     });
     let stderr_worker = match progress_context {
-        Some(context) => {
-            let activity = create_desktop_task_activity();
-
-            thread::spawn(move || {
-                read_stderr(
-                    stderr,
-                    context.app_handle,
-                    context.window_label,
-                    context.task_id,
-                    activity,
-                )
-                .map(|lines| lines.join("\n"))
-            })
-        }
+        Some(context) => thread::spawn(move || {
+            read_stderr(
+                stderr,
+                context.app_handle,
+                context.window_label,
+                context.task_id,
+            )
+            .map(|lines| lines.join("\n"))
+        }),
         None => thread::spawn(move || read_bounded_stream_text(stderr, "stderr")),
     };
     let started_at = Instant::now();

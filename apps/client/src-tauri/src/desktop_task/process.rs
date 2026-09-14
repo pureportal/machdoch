@@ -2,9 +2,8 @@ use std::{
     io::{BufReader, Read},
     path::Path,
     process::{Command, Stdio},
-    sync::{Arc, Mutex},
+    sync::Arc,
     thread,
-    time::{Duration, Instant},
 };
 
 #[cfg(target_os = "windows")]
@@ -144,25 +143,6 @@ fn append_truncation_marker(output: &mut String) {
     output.push_str(SUBPROCESS_OUTPUT_TRUNCATED_MARKER);
 }
 
-pub(super) type DesktopTaskActivity = Arc<Mutex<Instant>>;
-
-pub(super) fn create_desktop_task_activity() -> DesktopTaskActivity {
-    Arc::new(Mutex::new(Instant::now()))
-}
-
-pub(super) fn mark_desktop_task_activity(activity: &DesktopTaskActivity) {
-    if let Ok(mut last_activity_at) = activity.lock() {
-        *last_activity_at = Instant::now();
-    }
-}
-
-pub(super) fn desktop_task_activity_elapsed(activity: &DesktopTaskActivity) -> Duration {
-    activity
-        .lock()
-        .map(|last_activity_at| last_activity_at.elapsed())
-        .unwrap_or(Duration::MAX)
-}
-
 fn read_stderr_lines(
     stderr: impl Read,
     mut handle_progress_line: impl FnMut(&str) -> Result<bool, String>,
@@ -299,19 +279,14 @@ pub(super) fn read_stderr(
     app_handle: tauri::AppHandle,
     window_label: String,
     task_id: Option<String>,
-    activity: DesktopTaskActivity,
 ) -> Result<Vec<String>, String> {
     read_stderr_lines(stderr, |trimmed_line| {
-        let is_progress = emit_progress_from_stderr_line(
+        Ok(emit_progress_from_stderr_line(
             &app_handle,
             &window_label,
             task_id.as_deref(),
             trimmed_line,
-        );
-        if is_progress {
-            mark_desktop_task_activity(&activity);
-        }
-        Ok(is_progress)
+        ))
     })
 }
 
@@ -440,13 +415,12 @@ pub(super) fn open_path_in_system_shell(path: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, io::Cursor, thread, time::Duration};
+    use std::{fs, io::Cursor, thread};
 
     use serde_json::json;
 
     use super::{
-        create_desktop_task_activity, desktop_task_activity_elapsed, join_cli_output_and_cleanup,
-        mark_desktop_task_activity, read_bounded_stream_text, read_bounded_stream_text_with_limit,
+        join_cli_output_and_cleanup, read_bounded_stream_text, read_bounded_stream_text_with_limit,
         read_stderr_lines, read_stdout_with_limit, SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
         SUBPROCESS_OUTPUT_TRUNCATED_MARKER,
     };
@@ -485,40 +459,22 @@ mod tests {
     }
 
     #[test]
-    fn desktop_task_activity_tracks_elapsed_time_since_last_progress() {
-        let activity = create_desktop_task_activity();
-
-        thread::sleep(Duration::from_millis(15));
-        let elapsed_before_progress = desktop_task_activity_elapsed(&activity);
-
-        mark_desktop_task_activity(&activity);
-        let elapsed_after_progress = desktop_task_activity_elapsed(&activity);
-
-        assert!(elapsed_before_progress >= Duration::from_millis(10));
-        assert!(elapsed_after_progress < elapsed_before_progress);
-    }
-
-    #[test]
-    fn stderr_reader_marks_activity_for_structured_progress_lines() {
-        let activity = create_desktop_task_activity();
-
-        thread::sleep(Duration::from_millis(15));
-        let elapsed_before_progress = desktop_task_activity_elapsed(&activity);
-
+    fn stderr_reader_dispatches_structured_progress_without_retaining_it() {
+        let mut progress_events = Vec::new();
         let stderr_lines = read_stderr_lines(
             Cursor::new("ordinary stderr\nmachdoch-progress: {\"state\":\"running\"}\n"),
             |line| {
-                let is_progress = super::parse_structured_progress_line(line).is_some();
-                if is_progress {
-                    mark_desktop_task_activity(&activity);
-                }
-                Ok(is_progress)
+                let Some(progress) = super::parse_structured_progress_line(line) else {
+                    return Ok(false);
+                };
+                progress_events.push(progress);
+                Ok(true)
             },
         )
         .expect("stderr should be read");
 
         assert_eq!(stderr_lines, vec!["ordinary stderr".to_string()]);
-        assert!(desktop_task_activity_elapsed(&activity) < elapsed_before_progress);
+        assert_eq!(progress_events, vec![json!({ "state": "running" })]);
     }
 
     #[test]
