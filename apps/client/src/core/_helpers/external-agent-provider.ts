@@ -194,12 +194,21 @@ const extractStructuredErrorMessage = (value: string): string | undefined => {
 };
 
 const createExternalAgentFailureReason = (
-  providerLabel: string,
+  provider: AgentCliProvider,
   stdout: string,
   stderr: string,
   exitCode: number | null,
 ): string => {
+  const providerLabel = getAgentCliProviderLabel(provider);
   const combined = [stderr, stdout].filter(Boolean).join("\n");
+  if (
+    provider === "codex-cli" &&
+    /refresh_token_(?:reused|expired|invalidated)|refresh token (?:has already been used|was already used|has expired|has been revoked)/iu.test(
+      combined,
+    )
+  ) {
+    return "Codex login has expired or been invalidated. Run `codex login --device-auth` on this machine as the same OS user running Machdoch, then retry the task.";
+  }
   const quotaLine = combined
     .split(/\r?\n/u)
     .map((line) => line.trim())
@@ -2171,7 +2180,7 @@ const executeExternalAgentCliTask = async (
     result.exitCode === null;
   if (result.exitCode !== 0 && !finalAnswerRecoveredWithoutExitCode) {
     const reason = createExternalAgentFailureReason(
-      providerLabel,
+      provider,
       stdout,
       stderr,
       result.exitCode,

@@ -16,7 +16,6 @@ import {
   relative,
   resolve,
 } from "node:path";
-import { getUserConfigPath } from "../env.js";
 import type { AgentCliProvider } from "../runtime-contract.generated.js";
 import type {
   FrozenInstructionSet,
@@ -30,6 +29,7 @@ import {
 } from "../_helpers/write-file-atomically.helper.js";
 import { readStableRegularFile as readStableRegularFileBytes } from "../_helpers/read-stable-regular-file.helper.js";
 import { probeProviderCli } from "./capability-registry.js";
+import { linkCodexAuthentication } from "./codex-authentication.js";
 import {
   canUseClaudeBareMode,
   createCliInstructionCapabilityFromProbe,
@@ -414,28 +414,6 @@ const isOptionalProviderStateError = (error: unknown): boolean => {
   return code === "ENOENT" || code === "EACCES" || code === "EPERM";
 };
 
-const copyCodexAuthentication = async (codexHome: string): Promise<void> => {
-  const configuredHome = process.env.CODEX_HOME?.trim();
-  const userHome = process.env.USERPROFILE?.trim() || process.env.HOME?.trim();
-  const sourceHome =
-    configuredHome ||
-    (userHome
-      ? join(userHome, ".codex")
-      : join(dirname(getUserConfigPath()), "..", ".codex"));
-  try {
-    await copyStableProviderStateFile(
-      join(sourceHome, "auth.json"),
-      join(codexHome, "auth.json"),
-      "Codex",
-    );
-  } catch (error) {
-    if (!isOptionalProviderStateError(error)) {
-      throw error;
-    }
-    // Environment tokens and OS credential stores do not require auth.json.
-  }
-};
-
 const copyCopilotAuthentication = async (
   copilotHome: string,
 ): Promise<void> => {
@@ -641,10 +619,11 @@ const renderCodexEnrollment = async (
 ): Promise<RenderedEnrollmentFiles> => {
   const codexHome = join(rootPath, "codex-home");
   await mkdir(codexHome, { recursive: true, mode: 0o700 });
-  await copyCodexAuthentication(codexHome);
+  const linkedAuthentication = await linkCodexAuthentication(codexHome);
   const configPath = join(codexHome, "config.toml");
   const content = [
     `developer_instructions = ${JSON.stringify(systemInstructions)}`,
+    ...(linkedAuthentication ? ['cli_auth_credentials_store = "file"'] : []),
     "project_doc_max_bytes = 0",
     "project_doc_fallback_filenames = []",
     renderCodexUntrustedProjectsToml(workspaceRoot),
