@@ -74,13 +74,54 @@ the imported adapter's inspected architecture/target components. Selected
 weights, order, strengths, schedules, immutable digests, and worker evidence
 are retained in run provenance.
 
-## Pinned Windows AMD path
+## Integrated runtime setup
 
-The Windows worker is launched from
-`apps/client/src-tauri/python/runtime/Scripts/python.exe` in development and from the
-equivalent bundled resource in a packaged build. It runs offline with pinned
-PyTorch, Diffusers, Transformers, Accelerate, PEFT, Pillow, safetensors, and
-imageio-ffmpeg versions.
+**Set up Media Studio** installs the local runtime from the desktop app. The
+same action repairs missing packages, incompatible versions, and interrupted
+installations. Progress stays available when the Studio is reopened; failures
+offer **Retry setup**, with technical output collapsed under **Show details**.
+
+Development and packaged builds both use
+`<app-data>/media-studio/runtime/environment/Scripts/python.exe` on Windows and
+`<app-data>/media-studio/runtime/environment/bin/python` on Linux/macOS. Setup
+does not use global Python installations or modify PATH, shell profiles, or
+the Windows Python registry. Models remain in their existing model store.
+
+The installer downloads a SHA-256-pinned uv archive, provisions Python 3.12.10,
+and installs the package versions in `media_diffusers_requirements.txt`.
+`media_runtime_manifest.json` defines the interpreter, setup tool, platform
+archives, and matching Torch/torchvision bundles. The worker reads these same
+files when checking versions. See the [uv Python installation documentation](https://docs.astral.sh/uv/guides/install-python/).
+
+Hardware detection chooses CPU, NVIDIA CUDA, AMD ROCm, or Apple Metal packages.
+AMD setup installs the core libraries first, queries the GPU architecture,
+then installs that device's wheel packages from the
+[AMD package index](https://repo.amd.com/rocm/whl-multi-arch/). The small ROCm
+Python source package is built inside uv's isolated build environment; native
+libraries use prebuilt wheels. Drivers remain an operating-system requirement.
+
+Setup completes only after dependency resolution, package checks, actual
+pipeline imports, computation on the selected device, and FFmpeg VP9 encoding
+succeed. GPU bundles fail readiness when their driver cannot start GPU
+execution. Installed models are then verified, and the catalog and generation
+allowlists refresh automatically. A separate model failure remains attached to
+that model; it does not invalidate a usable runtime.
+
+A healthy runtime is checked and reused without downloading or reinstalling.
+Repairs recreate only the app-owned environment. Setup is serialized with a
+process-level status lock and a filesystem lock; worker execution is excluded
+while installation modifies the environment. Closing the app stops setup
+children, and the next setup action can repair the interrupted environment.
+
+The opt-in native test `media::runtime_setup::tests::live_fresh_repair_and_already_configured`
+downloads a real runtime into an isolated temporary directory, reproduces the
+missing packages and incompatible versions, repairs them, and checks that a
+healthy environment is reused. Run it with Cargo's `--ignored --nocapture`
+test arguments. `scripts/verify-media-runtime-setup.mjs` exercises setup,
+failure, retry, and model-action updates against an existing UI development
+server using simulated native responses.
+
+## Windows AMD execution
 
 On hybrid AMD systems the readiness probe first identifies the discrete
 adapter, then inference workers set `HIP_VISIBLE_DEVICES` before importing
@@ -231,8 +272,7 @@ every poll.
 
 The asset library, model add-on library, and reference picker render 24 cards
 per page; workspace discovery renders 50 model records per page, managed models
-render 16, run history renders 30, and composite/contact-sheet pickers render
-20. Search resets to the first page, deep links select the page containing
+render 16, run history renders 30, and composite/contact-sheet pickers render 20. Search resets to the first page, deep links select the page containing
 their asset, and page bounds recover when a scan or filter changes. Paging
 returns keyboard focus and scroll position to the result heading. Searches
 match every whitespace-separated term across rich metadata: assets include
@@ -265,9 +305,8 @@ cannot reopen or overwrite a newer dialog.
 
 ## Development and verification notes
 
-The repository `.taurignore` excludes the managed Python runtime and bytecode
-cache from desktop source watching. Installing or running the worker therefore
-does not trigger a recursive Tauri rebuild.
+Setup data lives outside the source tree, so installing or repairing the
+runtime does not trigger desktop source watching.
 
 The validated worker contract is `1.10.0` on Python 3.12.10 with PyTorch
 `2.12.0+rocm7.14.0`, HIP 7.14, and Diffusers 0.39. Runtime readiness, imported
