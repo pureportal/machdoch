@@ -1,4 +1,5 @@
 import { CircleX, Sparkles } from "lucide-react";
+import { mediaAssetLabel } from "../../../../core/media/asset-label.js";
 import { useEffect, useState, type JSX } from "react";
 import type {
   MediaAssetRecord,
@@ -12,6 +13,7 @@ interface MediaAssetPreviewProps {
   className?: string;
   controls?: boolean;
   fit?: "cover" | "contain";
+  maxEdge?: number;
 }
 
 export const MediaAssetPreview = ({
@@ -19,16 +21,38 @@ export const MediaAssetPreview = ({
   className,
   controls = false,
   fit = "cover",
+  maxEdge = 768,
 }: MediaAssetPreviewProps): JSX.Element => {
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [previewElement, setPreviewElement] = useState<HTMLElement | null>(
+    null,
+  );
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    if (!previewElement || visible) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) setVisible(true);
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(previewElement);
+    return () => observer.disconnect();
+  }, [previewElement, visible]);
+
+  useEffect(() => {
+    if (!visible) return;
     let active = true;
     let objectUrl: string | null = null;
     setUrl(null);
     setFailed(false);
-    void readMediaAssetReferencePreview(asset.id, 768)
+    void readMediaAssetReferencePreview(
+      asset.id,
+      maxEdge,
+      asset.kind === "video" ? asset.mimeType : "image/webp",
+    )
       .then((blob) => {
         if (!active) return;
         objectUrl = URL.createObjectURL(blob);
@@ -41,11 +65,12 @@ export const MediaAssetPreview = ({
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [asset.id]);
+  }, [asset.id, asset.kind, asset.mimeType, maxEdge, visible]);
 
   if (failed) {
     return (
       <div
+        ref={setPreviewElement}
         role="img"
         aria-label="Preview unavailable"
         className={cn(
@@ -59,12 +84,18 @@ export const MediaAssetPreview = ({
   }
 
   if (!url) {
-    return <div className={cn("animate-pulse bg-slate-900", className)} />;
+    return (
+      <div
+        ref={setPreviewElement}
+        className={cn("animate-pulse bg-slate-900", className)}
+      />
+    );
   }
 
   const objectFit = fit === "contain" ? "object-contain" : "object-cover";
   return asset.kind === "video" ? (
     <video
+      ref={setPreviewElement}
       src={url}
       controls={controls}
       muted
@@ -76,8 +107,9 @@ export const MediaAssetPreview = ({
     />
   ) : (
     <img
+      ref={setPreviewElement}
       src={url}
-      alt=""
+      alt={mediaAssetLabel(asset)}
       onError={() => setFailed(true)}
       className={cn(objectFit, className)}
     />

@@ -98,7 +98,9 @@ impl Fixture {
                 mime_type: "image/png",
                 width: 1,
                 height: 1,
-                import_kind: database::LocalImportKind::Raster,
+                import_kind: database::LocalImportKind::Raster {
+                    source_file_name: "fixture.png",
+                },
             },
         )
     }
@@ -197,7 +199,6 @@ fn publication(content: StoredContent) {
 macro_rules! integrity_case {
     ($name:ident, $scenario:ident, $content:ident) => {
         #[test]
-        #[ignore = "Pending engine-frozen baseline/candidate verification before production changes"]
         fn $name() {
             $scenario(StoredContent::$content);
         }

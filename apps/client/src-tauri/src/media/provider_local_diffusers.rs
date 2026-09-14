@@ -81,7 +81,7 @@ pub(crate) struct LocalDiffusersRuntimeStatus {
 }
 
 impl LocalDiffusersRuntimeStatus {
-    fn unavailable(diagnostic: impl Into<String>) -> Self {
+    pub(crate) fn unavailable(diagnostic: impl Into<String>) -> Self {
         Self {
             status: "unavailable".to_string(),
             ready: false,
@@ -175,6 +175,8 @@ struct WorkerGenerationRequest<'a> {
     base_image_path: Option<&'a Path>,
     #[serde(skip_serializing_if = "Option::is_none")]
     edit_mask: Option<&'a MediaImageMask>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mask_image_path: Option<&'a Path>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pose_image_path: Option<&'a Path>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -579,7 +581,7 @@ impl Drop for StagingDirectory {
     }
 }
 
-fn worker_script(app: &AppHandle) -> MediaResult<PathBuf> {
+pub(crate) fn worker_script(app: &AppHandle) -> MediaResult<PathBuf> {
     let resource_path = app
         .path()
         .resource_dir()
@@ -601,54 +603,6 @@ fn worker_script(app: &AppHandle) -> MediaResult<PathBuf> {
     Err("The bundled local Diffusers worker is missing; reinstall the application.".to_string())
 }
 
-fn python_candidates(app: &AppHandle) -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        #[cfg(windows)]
-        candidates.push(
-            resource_dir
-                .join("python")
-                .join("runtime")
-                .join("python.exe"),
-        );
-        #[cfg(not(windows))]
-        candidates.push(
-            resource_dir
-                .join("python")
-                .join("runtime")
-                .join("bin")
-                .join("python3"),
-        );
-    }
-    #[cfg(debug_assertions)]
-    {
-        #[cfg(windows)]
-        candidates.push(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("python")
-                .join("runtime")
-                .join("Scripts")
-                .join("python.exe"),
-        );
-        #[cfg(not(windows))]
-        candidates.push(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("python")
-                .join("runtime")
-                .join("bin")
-                .join("python3"),
-        );
-    }
-    #[cfg(windows)]
-    candidates.push(PathBuf::from("python"));
-    #[cfg(not(windows))]
-    {
-        candidates.push(PathBuf::from("python3"));
-        candidates.push(PathBuf::from("python"));
-    }
-    candidates
-}
-
 fn run_worker(
     python: &Path,
     script: &Path,
@@ -657,10 +611,14 @@ fn run_worker(
     timeout: Duration,
     cancellation: Option<(&MediaRuntimePaths, &str)>,
 ) -> MediaResult<Output> {
+    let _runtime_guard = super::runtime_setup::RUNTIME_USE
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut worker = Command::new(python);
     worker
         .arg("-I")
         .arg("-B")
+        .arg("-Xutf8")
         .arg(script)
         .arg(command)
         .env("HF_HUB_OFFLINE", "1")
@@ -708,8 +666,47 @@ fn run_worker(
             .map_err(|error| format!("failed to write local Diffusers request: {error}"))?;
     }
     let started = Instant::now();
+    let (progress_sender, progress_receiver) = std::sync::mpsc::sync_channel(64);
+    let stdout = process
+        .stdout
+        .take()
+        .ok_or("Generation stdout is unavailable")?;
+    let stderr = process
+        .stderr
+        .take()
+        .ok_or("Generation stderr is unavailable")?;
+    let stdout_reader =
+        thread::spawn(move || super::worker_output::drain(stdout, MAX_WORKER_RESPONSE_BYTES, None));
+    let stderr_reader = thread::spawn(move || {
+        super::worker_output::drain(stderr, MAX_WORKER_DIAGNOSTIC_BYTES, Some(progress_sender))
+    });
     let mut next_cancellation_check = started;
     loop {
+        for event in progress_receiver.try_iter() {
+            if let Some((paths, run_id)) = cancellation {
+                if database::workflow::progress(paths, run_id, &event.stage, event.progress)? {
+                    continue;
+                }
+                let node_types: &[&str] = if command == "generate-video" {
+                    &["task.generate-video"]
+                } else {
+                    &["task.generate-image", "task.edit-image"]
+                };
+                if let Err(error) = database::transition_nodes_by_type(
+                    paths,
+                    run_id,
+                    node_types,
+                    "running",
+                    Some("generating"),
+                    Some(&event.stage),
+                    Some(event.progress),
+                ) {
+                    terminate_child_process_tree(&mut process);
+                    let _ = process.wait();
+                    return Err(error);
+                }
+            }
+        }
         if let Some((paths, run_id)) = cancellation {
             if Instant::now() >= next_cancellation_check {
                 if database::is_cancellation_requested(paths, run_id)? {
@@ -735,99 +732,117 @@ fn run_worker(
             }
         }
     }
-    let output = process
-        .wait_with_output()
-        .map_err(|error| format!("failed to collect local Diffusers worker output: {error}"))?;
-    if output.stdout.len() > MAX_WORKER_RESPONSE_BYTES
-        || output.stderr.len() > MAX_WORKER_DIAGNOSTIC_BYTES
-    {
-        return Err("local Diffusers worker returned an oversized response".to_string());
-    }
-    Ok(output)
+    let status = process.wait().map_err(|error| error.to_string())?;
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| "Generation output reader failed")??;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| "Generation diagnostic reader failed")??;
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
 }
 
 fn probe_with_python(
     app: &AppHandle,
     script: &Path,
 ) -> (LocalDiffusersRuntimeStatus, Option<PathBuf>) {
-    // Importing Torch initializes the GPU runtime. Concurrent probes contend
-    // for the same adapter and can make an otherwise healthy pinned runtime
-    // miss its deadline. Serialize this short readiness phase, then let the
-    // actual generation worker own the device independently.
+    let root = match super::runtime_setup::root(app) {
+        Ok(root) => root,
+        Err(error) => return (LocalDiffusersRuntimeStatus::unavailable(error), None),
+    };
+    let python = super::runtime_setup::python_path(&root);
+    let status = probe_python(&python, script);
+    let executable = status.ready.then_some(python);
+    (status, executable)
+}
+
+pub(crate) fn probe_python(python: &Path, script: &Path) -> LocalDiffusersRuntimeStatus {
+    probe_python_command(python, script, "probe", PROBE_TIMEOUT)
+}
+
+pub(crate) fn verify_python_runtime(python: &Path, script: &Path) -> LocalDiffusersRuntimeStatus {
+    probe_python_command(
+        python,
+        script,
+        "verify-runtime",
+        Duration::from_secs(10 * 60),
+    )
+}
+
+fn probe_python_command(
+    python: &Path,
+    script: &Path,
+    command: &str,
+    timeout: Duration,
+) -> LocalDiffusersRuntimeStatus {
+    if !python.is_file() {
+        return LocalDiffusersRuntimeStatus::unavailable("Media Studio setup is required.");
+    }
     let _guard = RUNTIME_PROBE_LOCK
         .get_or_init(|| Mutex::new(()))
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut diagnostics = Vec::new();
-    let mut unavailable_probe = None;
-    for python in python_candidates(app) {
-        match run_worker(&python, script, "probe", None, PROBE_TIMEOUT, None) {
-            Ok(output) => match serde_json::from_slice::<WorkerProbe>(&output.stdout) {
-                Ok(probe) if probe.schema_version == WORKER_SCHEMA_VERSION => {
-                    let status = LocalDiffusersRuntimeStatus {
-                        status: if probe.ready { "ready" } else { "unavailable" }.to_string(),
-                        ready: probe.ready,
-                        worker_version: Some(probe.worker_version),
-                        python_version: Some(probe.python_version),
-                        packages: probe.packages,
-                        device: probe.device,
-                        device_label: probe.device_label,
-                        device_memory_bytes: probe.device_memory_bytes,
-                        physical_memory_bytes: probe.physical_memory_bytes,
-                        architectures: probe.architectures,
-                        capabilities: probe.capabilities,
-                        diagnostic: probe.diagnostic,
-                    };
-                    if status.ready {
-                        if let Ok(configured) = std::env::var("HIP_VISIBLE_DEVICES") {
-                            if !configured.trim().is_empty() {
-                                let _ =
-                                    PREFERRED_HIP_VISIBLE_DEVICE.set(configured.trim().to_string());
-                            }
-                        } else if let Some(label) = status
-                            .device_label
-                            .as_deref()
-                            .filter(|label| label.to_ascii_lowercase().contains("amd"))
-                        {
-                            if let Some((_, suffix)) = label.rsplit_once("(cuda:") {
-                                if let Some(index) = suffix.strip_suffix(')') {
-                                    if index.chars().all(|character| character.is_ascii_digit()) {
-                                        let _ = PREFERRED_HIP_VISIBLE_DEVICE.set(index.to_string());
-                                    }
-                                }
-                            }
-                        }
+    let output = match run_worker(python, script, command, None, timeout, None) {
+        Ok(output) => output,
+        Err(error) => return LocalDiffusersRuntimeStatus::unavailable(error),
+    };
+    if !output.status.success() {
+        return LocalDiffusersRuntimeStatus::unavailable(format!(
+            "Worker probe failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    let probe = match serde_json::from_slice::<WorkerProbe>(&output.stdout) {
+        Ok(probe) => probe,
+        Err(error) => {
+            return LocalDiffusersRuntimeStatus::unavailable(format!(
+                "Worker probe returned invalid JSON: {error}"
+            ))
+        }
+    };
+    if probe.schema_version != WORKER_SCHEMA_VERSION {
+        return LocalDiffusersRuntimeStatus::unavailable(
+            "Worker returned an unsupported probe schema",
+        );
+    }
+    let status = LocalDiffusersRuntimeStatus {
+        status: if probe.ready { "ready" } else { "unavailable" }.to_string(),
+        ready: probe.ready,
+        worker_version: Some(probe.worker_version),
+        python_version: Some(probe.python_version),
+        packages: probe.packages,
+        device: probe.device,
+        device_label: probe.device_label,
+        device_memory_bytes: probe.device_memory_bytes,
+        physical_memory_bytes: probe.physical_memory_bytes,
+        architectures: probe.architectures,
+        capabilities: probe.capabilities,
+        diagnostic: probe.diagnostic,
+    };
+    if status.ready {
+        if let Ok(configured) = std::env::var("HIP_VISIBLE_DEVICES") {
+            if !configured.trim().is_empty() {
+                let _ = PREFERRED_HIP_VISIBLE_DEVICE.set(configured.trim().to_string());
+            }
+        } else if let Some(label) = status
+            .device_label
+            .as_deref()
+            .filter(|label| label.to_ascii_lowercase().contains("amd"))
+        {
+            if let Some((_, suffix)) = label.rsplit_once("(cuda:") {
+                if let Some(index) = suffix.strip_suffix(')') {
+                    if index.chars().all(|character| character.is_ascii_digit()) {
+                        let _ = PREFERRED_HIP_VISIBLE_DEVICE.set(index.to_string());
                     }
-                    if status.ready {
-                        return (status, Some(python));
-                    }
-                    diagnostics.push(format!("{}: {}", python.display(), status.diagnostic));
-                    unavailable_probe.get_or_insert(status);
                 }
-                Ok(_) => diagnostics.push(format!(
-                    "{}: worker returned an unsupported probe schema",
-                    python.display()
-                )),
-                Err(error) => diagnostics.push(format!(
-                    "{}: worker probe returned invalid JSON: {error}",
-                    python.display()
-                )),
-            },
-            Err(error) => diagnostics.push(format!("{}: {error}", python.display())),
+            }
         }
     }
-    let diagnostic = if diagnostics.is_empty() {
-        "No supported Python runtime was found.".to_string()
-    } else {
-        diagnostics.join("; ")
-    };
-    if let Some(mut probe) = unavailable_probe {
-        // Do not let an unrelated global Python probe conceal why the pinned
-        // managed runtime failed or timed out.
-        probe.diagnostic = diagnostic;
-        return (probe, None);
-    }
-    (LocalDiffusersRuntimeStatus::unavailable(diagnostic), None)
+    status
 }
 
 pub(crate) fn probe(app: &AppHandle) -> LocalDiffusersRuntimeStatus {
@@ -1308,7 +1323,10 @@ pub(crate) fn probe_model(
         Some(if diagnostic.is_empty() {
             format!("model readiness worker exited with {}", output.status)
         } else {
-            format!("model readiness worker failed: {diagnostic}")
+            format!(
+                "Model check exited with {}. Last output: {diagnostic}",
+                output.status
+            )
         })
     };
     if let Some(diagnostic) = failure {
@@ -2461,6 +2479,7 @@ pub(crate) fn generate(
     app: &AppHandle,
     paths: &MediaRuntimePaths,
     request: &GenerateMediaImagesRequest,
+    mask_asset_id: Option<&str>,
 ) -> MediaResult<LocalGeneratedImageBatch> {
     let script = worker_script(app)?;
     let (runtime, python) = ready_runtime(app, &script)?;
@@ -2570,6 +2589,12 @@ pub(crate) fn generate(
             placement: addon.placement.as_deref(),
         })
         .collect();
+    let mask_image_path = mask_asset_id
+        .map(|asset_id| {
+            stage_conditioning_image(paths, &input_directory, asset_id, "mask")
+                .map(|(_, path)| path)
+        })
+        .transpose()?;
     let worker_request = WorkerGenerationRequest {
         schema_version: WORKER_SCHEMA_VERSION,
         model: WorkerModel {
@@ -2602,6 +2627,7 @@ pub(crate) fn generate(
             .collect(),
         base_image_path: base_image_path.as_deref(),
         edit_mask: request.edit_mask.as_ref(),
+        mask_image_path: mask_image_path.as_deref(),
         pose_image_path: pose_image_path.as_deref(),
         pose_controlnet_path: pose_controlnet_path.as_deref(),
         pose_strength: request.pose_strength,
@@ -2656,7 +2682,7 @@ pub(crate) fn generate(
             reference_digests: &reference_digests,
             base_digest: base_source.as_ref().map(|source| source.digest.as_str()),
             pose_digest: pose_source.as_ref().map(|source| source.digest.as_str()),
-            has_mask: request.edit_mask.is_some(),
+            has_mask: request.edit_mask.is_some() || mask_asset_id.is_some(),
             edit_strength: request.edit_strength,
             mask_strength: request.mask_strength,
             requires_reference_binding: model.architecture == "flux-2"
@@ -2801,6 +2827,106 @@ pub(crate) fn generate(
             outputs: output_provenance,
         },
     })
+}
+
+pub(crate) fn workflow_operation(
+    app: &AppHandle,
+    paths: &MediaRuntimePaths,
+    run_id: &str,
+    command: &str,
+    mut request: serde_json::Value,
+    image_asset_id: Option<&str>,
+) -> MediaResult<(serde_json::Value, Option<GeneratedImageAsset>)> {
+    let main_script = worker_script(app)?;
+    let (_, python) = ready_runtime(app, &main_script)?;
+    let script = main_script.with_file_name("media_workflow_worker.py");
+    if !script.is_file() {
+        return Err("The workflow worker is missing. Repair Media Studio.".into());
+    }
+    if command != "prepare-mask" {
+        let model_path = request["modelPath"]
+            .as_str()
+            .ok_or("Choose a model first")?;
+        let model_path = fs::canonicalize(model_path)
+            .map_err(|_| "The model path is missing. Choose the model again.")?;
+        if (command == "upscale" && !model_path.is_file())
+            || (command != "upscale" && !model_path.is_dir())
+        {
+            return Err("Choose an upscaler file or a model folder for this step.".into());
+        }
+        request["modelPath"] = serde_json::json!(model_path);
+    }
+    let staging = create_staging_directory(paths)?;
+    request["outputDirectory"] = serde_json::json!(staging.0);
+    if let Some(asset_id) = image_asset_id {
+        let (_, path) = stage_conditioning_image(paths, &staging.0, asset_id, "source")?;
+        request["imagePath"] = serde_json::json!(path);
+    }
+    for (key, path_key, name) in [
+        ("referenceAssetId", "referencePath", "reference"),
+        ("maskAssetId", "maskPath", "mask"),
+    ] {
+        if let Some(asset_id) = request
+            .as_object_mut()
+            .and_then(|object| object.remove(key))
+            .and_then(|value| value.as_str().map(str::to_string))
+        {
+            let (_, path) = stage_conditioning_image(paths, &staging.0, &asset_id, name)?;
+            request[path_key] = serde_json::json!(path);
+        }
+    }
+    let encoded = serde_json::to_vec(&request).map_err(|e| e.to_string())?;
+    let output = run_worker(
+        &python,
+        &script,
+        command,
+        Some(&encoded),
+        Duration::from_secs(1800),
+        Some((paths, run_id)),
+    )?;
+    let response: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|e| {
+        worker_failure_with_diagnostics(format!("Workflow output is invalid: {e}"), &output.stderr)
+    })?;
+    if !output.status.success() || response.get("error").is_some() {
+        return Err(worker_failure_with_diagnostics(
+            response["error"]
+                .as_str()
+                .unwrap_or("Workflow operation failed")
+                .to_string(),
+            &output.stderr,
+        ));
+    }
+    if response["schemaVersion"] != 1 {
+        return Err("Workflow worker returned an invalid version".into());
+    }
+    if command == "generate-prompt" || command == "visual-check" {
+        return Ok((response, None));
+    }
+    let bytes = fs::read(staging.0.join("output.png")).map_err(|e| e.to_string())?;
+    if bytes.len() > 64 * 1024 * 1024 {
+        return Err("Workflow image exceeds 64 MB".into());
+    }
+    let decoded = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png)
+        .map_err(|e| e.to_string())?;
+    if response["width"] != decoded.width() || response["height"] != decoded.height() {
+        return Err("Workflow image dimensions do not match the result".into());
+    }
+    let digest = format!("{:x}", Sha256::digest(&bytes));
+    let relative_path = transform::cas_relative_path(&digest);
+    transform::publish_cas_bytes(paths, &relative_path, &digest, &bytes)?;
+    Ok((
+        response,
+        Some(GeneratedImageAsset {
+            digest,
+            relative_path: relative_path.to_string_lossy().into_owned(),
+            byte_size: bytes.len() as u64,
+            mime_type: "image/png",
+            width: decoded.width(),
+            height: decoded.height(),
+            output_index: 0,
+            subject_cutout: None,
+        }),
+    ))
 }
 
 const LTX_MODEL_REVISION: &str = "8984fa25007f376c1a299016d0957a37a2f797bb";
@@ -4214,6 +4340,40 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
+    fn isolated_worker_preserves_unicode_requests() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "machdoch-worker-unicode-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let script = root.join("worker.py");
+        fs::write(
+            &script,
+            "import json,sys\nprint(json.dumps(json.load(sys.stdin)))\n",
+        )
+        .unwrap();
+        let request = serde_json::json!({"criteria":"The woman’s silhouette · grün · 画像"});
+        let output = run_worker(
+            Path::new("python"),
+            &script,
+            "test-unicode",
+            Some(&serde_json::to_vec(&request).unwrap()),
+            Duration::from_secs(10),
+            None,
+        )
+        .unwrap();
+        assert!(output.status.success());
+        let response: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(response, request);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
     fn worker_timeout_terminates_descendant_processes() {
         let python_is_usable = Command::new("python")
             .arg("--version")
@@ -4453,6 +4613,7 @@ time.sleep(60)
             }],
             base_image_path: None,
             edit_mask: None,
+            mask_image_path: None,
             pose_image_path: None,
             pose_controlnet_path: None,
             pose_strength: None,

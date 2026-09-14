@@ -132,13 +132,13 @@ export const describeMediaModelReadiness = (
         message: `${model.displayName} failed its most recent verification.`,
         action:
           model.management.verification === "runtime-probe"
-            ? "Correct the reported runtime issue, then probe again."
-            : "Correct the reported model issue, then verify again.",
+            ? "Retry the runtime check."
+            : "Retry verification when generation has finished.",
       };
     case "runtime-unavailable":
       return {
-        message: `${model.displayName} requires a compatible local runtime that is not currently available.`,
-        action: "Start or repair the required runtime, then probe again.",
+        message: `${model.displayName} is not ready to use.`,
+        action: "Set up Media Studio to use local models.",
       };
   }
 };

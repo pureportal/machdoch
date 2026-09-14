@@ -937,7 +937,11 @@ fn safetensors_artifact(
         return Err("model discovery accepts only regular safetensors files".to_string());
     }
     let relative = relative_display(models_root, path);
-    let addon_inspection = model_addon::inspect(path.to_string_lossy().as_ref());
+    let header = model_import::parse_header(path.to_string_lossy().as_ref());
+    let addon_inspection = header
+        .as_ref()
+        .map_err(Clone::clone)
+        .and_then(|header| model_addon::inspect_header(header, String::new()));
     if let Ok(inspection) = addon_inspection.as_ref() {
         // Prefer the inspected tensor inventory over directory and file naming.
         // This also finds textual-inversion embeddings in arbitrary folders.
@@ -976,7 +980,11 @@ fn safetensors_artifact(
         }
     }
 
-    if let Ok(inspection) = model_import::inspect(path.to_string_lossy().as_ref()) {
+    if let Ok(inspection) = header
+        .as_ref()
+        .map_err(Clone::clone)
+        .and_then(|header| model_import::inspect_header(header, String::new()))
+    {
         return Ok(MediaDiscoveredModelArtifact {
             path: path.display().to_string(),
             relative_path: relative,

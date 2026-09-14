@@ -8,6 +8,7 @@ directory selected by the desktop process.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import gc
 import hashlib
 import importlib.metadata
@@ -23,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import threading
 import traceback
 import types
 from typing import Any
@@ -30,7 +32,7 @@ from typing import Any
 import numpy as np
 from PIL import Image, ImageOps
 
-WORKER_VERSION = "media-diffusers-worker/1.56.0"
+WORKER_VERSION = "media-diffusers-worker/1.58.0"
 # Disk group files contain only checkpoint/adapter tensors. Keep their
 # compatibility identity independent from response/provenance releases until
 # that serialization contract itself changes.
@@ -99,35 +101,17 @@ NATIVE_REFERENCE_ROLES = {
     "stable-diffusion-xl": frozenset({"composition"}),
     "flux-1": frozenset({"composition"}),
 }
-REQUIRED_PACKAGES = (
-    "torch",
-    "diffusers",
-    "transformers",
-    "sentencepiece",
-    "protobuf",
-    "accelerate",
-    "peft",
-    "safetensors",
-    "Pillow",
-    "imageio-ffmpeg",
-    "opencv-python-headless",
-)
-PROBED_PACKAGES = (*REQUIRED_PACKAGES, "torchvision")
+RUNTIME_MANIFEST = json.loads(Path(__file__).with_name("media_runtime_manifest.json").read_text(encoding="utf-8"))
 ACCEPTED_PACKAGE_VERSIONS = {
-    # Torch is selected with the accelerator bundle. AMD's current supported
-    # Windows wheel deliberately trails the generic runtime contract.
-    "torch": ("2.13.0", "2.12.0+rocm7.14.0"),
-    "diffusers": ("0.39.0",),
-    "transformers": ("5.13.0",),
-    "sentencepiece": ("0.2.2",),
-    "protobuf": ("7.35.1",),
-    "accelerate": ("1.14.0",),
-    "peft": ("0.19.1",),
-    "safetensors": ("0.8.0",),
-    "pillow": ("12.3.0",),
-    "imageio-ffmpeg": ("0.6.0",),
-    "opencv-python-headless": ("4.13.0.92",),
+    name.lower(): (version,)
+    for line in Path(__file__).with_name("media_diffusers_requirements.txt").read_text(encoding="utf-8").splitlines()
+    if line.strip() and not line.startswith("#")
+    for name, version in [line.strip().split("==", 1)]
 }
+for package in ("torch", "torchvision"):
+    ACCEPTED_PACKAGE_VERSIONS[package] = tuple(bundle[package] for bundle in RUNTIME_MANIFEST["accelerators"].values())
+REQUIRED_PACKAGES = tuple(ACCEPTED_PACKAGE_VERSIONS)
+PROBED_PACKAGES = REQUIRED_PACKAGES
 BASE_CAPABILITIES = (
     "lora",
     "textual-inversion",
@@ -247,7 +231,7 @@ def _pipeline_dtype(torch: Any, device: str) -> Any:
     return torch.float16
 
 
-def probe() -> dict[str, Any]:
+def probe(verify_operations: bool = False) -> dict[str, Any]:
     versions = _package_versions()
     capabilities = _runtime_capabilities(versions)
     physical_memory = _physical_memory_bytes()
@@ -258,6 +242,13 @@ def probe() -> dict[str, Any]:
         if versions[name.lower()] is not None
         and versions[name.lower()] not in ACCEPTED_PACKAGE_VERSIONS[name.lower()]
     ]
+    if platform.python_version() != RUNTIME_MANIFEST["pythonVersion"]:
+        mismatched.append(f"Python={platform.python_version()} (expected {RUNTIME_MANIFEST['pythonVersion']})")
+    if not any(
+        versions.get("torch") == bundle["torch"] and versions.get("torchvision") == bundle["torchvision"]
+        for bundle in RUNTIME_MANIFEST["accelerators"].values()
+    ):
+        mismatched.append("torch and torchvision must use the same accelerator bundle")
     if missing or mismatched:
         problems = []
         if missing:
@@ -281,7 +272,14 @@ def probe() -> dict[str, Any]:
     try:
         torch, _ = _runtime()
         device, label, memory = _device(torch)
-    except WorkerError as error:
+        if versions["torch"] in {
+            RUNTIME_MANIFEST["accelerators"][accelerator]["torch"]
+            for accelerator in ("amd", "nvidia")
+        } and device != "cuda":
+            raise WorkerError("The graphics driver could not start GPU execution")
+        if verify_operations:
+            _verify_runtime_operations(torch, device)
+    except Exception as error:
         return {
             "schemaVersion": SCHEMA_VERSION,
             "workerVersion": WORKER_VERSION,
@@ -308,8 +306,29 @@ def probe() -> dict[str, Any]:
         "physicalMemoryBytes": physical_memory,
         "architectures": list(SUPPORTED_ARCHITECTURES),
         "capabilities": capabilities,
-        "diagnostic": "Pinned local Diffusers imports succeeded.",
+        "diagnostic": "Media Studio imports, computation, and video encoding passed." if verify_operations else "Media Studio runtime is ready.",
     }
+
+
+def _verify_runtime_operations(torch: Any, device: str) -> None:
+    import imageio_ffmpeg
+
+    for module in ("accelerate", "cv2", "peft", "safetensors.torch", "sentencepiece", "torchvision", "transformers"):
+        importlib.import_module(module)
+    diffusers = importlib.import_module("diffusers")
+    for pipeline in ("Flux2KleinPipeline", "HunyuanVideo15ImageToVideoPipeline", "WanImageToVideoPipeline"):
+        getattr(diffusers, pipeline)
+
+    sample = torch.ones((4, 4), device=device)
+    if not bool(torch.isfinite(sample @ sample).all().item()):
+        raise WorkerError("The graphics computation check failed")
+    encoded = subprocess.run(
+        [imageio_ffmpeg.get_ffmpeg_exe(), "-v", "error", "-f", "lavfi", "-i", "color=s=16x16:d=0.1", "-frames:v", "1", "-c:v", "libvpx-vp9", "-f", "webm", "pipe:1"],
+        capture_output=True, timeout=30, check=True,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+    )
+    if not encoded.stdout:
+        raise WorkerError("The video encoding check returned no output")
 
 
 def _required_text(container: dict[str, Any], key: str, maximum: int) -> str:
@@ -2354,18 +2373,6 @@ def _composite_masked_result(context: dict[str, Any], generated: Image.Image) ->
     return result
 
 
-def _composite_flux2_inpaint_result(
-    base: Image.Image,
-    mask: Image.Image,
-    generated: Image.Image,
-) -> Image.Image:
-    source = _fit_conditioning_image(base, generated.width, generated.height)
-    output_mask = _fit_mask_image(mask, generated.width, generated.height)
-    result = source.copy()
-    result.paste(generated.convert("RGB"), (0, 0), output_mask)
-    return result
-
-
 def _controlnet_pipeline(
     diffusers: Any,
     torch: Any,
@@ -2409,7 +2416,70 @@ def _controlnet_pipeline(
     return pipeline_class.from_pipe(pipeline, controlnet=controlnet)
 
 
+def _progress(stage: str, progress: float) -> None:
+    print("\nMACHDOCH_PROGRESS " + json.dumps({"stage": stage, "progress": progress}), file=sys.stderr, flush=True)
+
+
+def _sampling_progress(total: int, index: int = 0, count: int = 1) -> Any:
+    def callback(pipeline: Any, step: int, timestep: Any, values: dict[str, Any]) -> dict[str, Any]:
+        _progress(f"Sampling {step + 1}/{total}", 0.25 + 0.6 * (index + (step + 1) / total) / count)
+        return values
+    return callback
+
+
+def _enable_hunyuan_sampling_progress(pipeline: Any) -> None:
+    original_progress_bar = pipeline.progress_bar
+
+    @contextmanager
+    def progress_bar(*, total: int) -> Any:
+        with original_progress_bar(total=total) as bar:
+            original_update = bar.update
+            completed = 0
+
+            def update(increment: int = 1) -> Any:
+                nonlocal completed
+                result = original_update(increment)
+                completed += increment
+                _progress(f"Sampling {completed}/{total}", 0.25 + 0.6 * completed / total)
+                return result
+
+            bar.update = update
+            yield bar
+
+    pipeline.progress_bar = progress_bar
+
+
+def _run_worker_command(arguments: list[str], *, input: str, timeout: float, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    process = subprocess.Popen(arguments, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    diagnostics = bytearray()
+    stream = process.stderr
+    process.stderr = None
+
+    def drain() -> None:
+        with stream:
+            while chunk := stream.read1(8192):
+                sys.stderr.buffer.write(chunk)
+                sys.stderr.buffer.flush()
+                diagnostics.extend(chunk)
+                del diagnostics[:-262144]
+
+    reader = threading.Thread(target=drain)
+    reader.start()
+    try:
+        stdout, _ = process.communicate(input=input.encode(), timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.communicate()
+        raise
+    finally:
+        reader.join()
+    if len(stdout) > 2 * 1024 * 1024:
+        raise WorkerError("Generation returned an oversized response")
+    return subprocess.CompletedProcess(arguments, process.returncode, stdout.decode("utf-8"), diagnostics.decode("utf-8", errors="replace"))
+
+
 def generate(request: dict[str, Any]) -> dict[str, Any]:
+    _progress("Starting image runtime", 0.02)
     if request.get("schemaVersion") != SCHEMA_VERSION:
         raise WorkerError("Unsupported worker request schema")
     torch, diffusers = _runtime()
@@ -2560,6 +2630,18 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
     )
     mask_strength = None
     mask_image = None
+    mask_path = request.get("maskImagePath")
+    if mask_path is not None:
+        if edit_mask is not None or base_image is None or output_format != "png":
+            raise WorkerError("A connected mask requires one base image, PNG output, and no painted mask")
+        with Image.open(mask_path) as selected:
+            if selected.size != base_image.size:
+                raise WorkerError("The connected mask dimensions do not match the base image")
+            mask_image = selected.convert("L")
+        if mask_image.getbbox() is None:
+            raise WorkerError("The connected mask is empty. Change the object selection")
+        mask_strength = float(request.get("maskStrength", 1.0))
+        mask_image = _apply_mask_strength(mask_image, mask_strength)
     if edit_mask is not None and base_image is not None:
         mask_strength = request.get("maskStrength", 1.0)
         mask_image = _apply_mask_strength(
@@ -2574,12 +2656,11 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
             edit_mask,
             width,
             height,
-            8,
+            16 if flux2_inpainting else 8,
             mask_image,
         )
-        if edit_mask is not None
+        if mask_image is not None
         and base_image is not None
-        and not flux2_inpainting
         else None
     )
     primary_reference_image = base_image or (
@@ -2597,6 +2678,7 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
             krea_text_root,
             prompt,
         )
+    _progress("Loading image model", 0.08)
     pipeline = _load_pipeline(
         diffusers,
         torch,
@@ -2696,6 +2778,7 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
     pending_cpu_decodes: list[tuple[int, int, Any]] = []
 
     def publish_image(index: int, image_seed: int, generated_image: Any) -> None:
+        _progress("Saving image", 0.9)
         suffix = "jpg" if output_format == "jpeg" else output_format
         filename = f"output-{index:04d}.{suffix}"
         destination = output_directory / filename
@@ -2703,10 +2786,6 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
         image = generated_image.convert("RGB")
         if masked_context is not None:
             image = _composite_masked_result(masked_context, image)
-        elif flux2_inpainting:
-            if base_image is None or mask_image is None:
-                raise WorkerError("FLUX.2 inpainting requires a base image and mask")
-            image = _composite_flux2_inpaint_result(base_image, mask_image, image)
         _validate_generated_pixels(image, applied, require_chroma_background)
         if requires_visible_reference_change:
             if base_image is None:
@@ -2750,7 +2829,7 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
             "generator": generator,
             "num_images_per_prompt": 1,
         }
-        step_callbacks: list[Any] = []
+        step_callbacks: list[Any] = [_sampling_progress(step_count, index, output_count)] if "callback_on_step_end" in call_parameters else []
         if architecture == "krea-2":
             cuda_device = torch.device(f"cuda:{torch.cuda.current_device()}")
             arguments["prompt"] = None
@@ -2765,10 +2844,10 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
             arguments["guidance_scale"] = 1.0
         if architecture == "flux-2":
             if flux2_inpainting:
-                if base_image is None or mask_image is None:
+                if masked_context is None:
                     raise WorkerError("FLUX.2 inpainting requires a base image and mask")
-                arguments["image"] = _fit_conditioning_image(base_image, width, height)
-                arguments["mask_image"] = _fit_mask_image(mask_image, width, height)
+                arguments["image"] = masked_context["source"]
+                arguments["mask_image"] = masked_context["generationMask"]
                 arguments["strength"] = edit_strength
                 if references:
                     reference_images = [reference["image"] for reference in references]
@@ -4506,7 +4585,7 @@ def _generate_framepack_latents(
         for attempt in range(2):
             output_directory = Path(temporary) / f"attempt-{attempt + 1}"
             output_directory.mkdir()
-            completed = subprocess.run(
+            completed = _run_worker_command(
                 [
                     sys.executable,
                     "-I",
@@ -4532,15 +4611,12 @@ def _generate_framepack_latents(
                         "memoryProfile": memory_profile,
                     }
                 ),
-                capture_output=True,
-                text=True,
                 timeout=_framepack_denoiser_timeout_seconds(
                     width,
                     height,
                     num_frames,
                     steps,
                 ),
-                check=False,
                 env=environment,
             )
             diagnostic = completed.stderr.strip()[-4_000:]
@@ -4902,6 +4978,7 @@ def _generate_hunyuan_video_15_latents_subprocess(
         transparent_background,
     )
     memory_evidence = _start_video_memory_observation(torch, device)
+    _progress("Loading video model", 0.08)
     started_at = time.perf_counter()
     (
         pipeline,
@@ -4928,6 +5005,7 @@ def _generate_hunyuan_video_15_latents_subprocess(
         performance["loopEndpointStrength"] = float(loop_endpoint_strength)
         performance["loopEndpointSpan"] = loop_endpoint_span
     pipeline.target_size = target_size
+    _enable_hunyuan_sampling_progress(pipeline)
     model_ready_at = time.perf_counter()
     execution_device = torch.device(f"cuda:{torch.cuda.current_device()}")
     generator = torch.Generator(device=execution_device).manual_seed(seed)
@@ -5027,7 +5105,7 @@ def _generate_hunyuan_video_15_latents(
         for attempt in range(2):
             output_directory = Path(temporary) / f"attempt-{attempt + 1}"
             output_directory.mkdir()
-            completed = subprocess.run(
+            completed = _run_worker_command(
                 [
                     sys.executable,
                     "-I",
@@ -5053,10 +5131,7 @@ def _generate_hunyuan_video_15_latents(
                         "memoryProfile": memory_profile,
                     }
                 ),
-                capture_output=True,
-                text=True,
                 timeout=2 * 60 * 60,
-                check=False,
                 env=environment,
             )
             diagnostic = completed.stderr.strip()[-4_000:]
@@ -8307,6 +8382,7 @@ def _finish_video_memory_observation(
 
 
 def generate_video(request: dict[str, Any]) -> dict[str, Any]:
+    _progress("Starting video runtime", 0.02)
     started_at = time.perf_counter()
     if request.get("schemaVersion") != SCHEMA_VERSION:
         raise WorkerError("Unsupported worker request schema")
@@ -8580,6 +8656,7 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             device_memory,
         )
         performance["vaeTileConfiguration"] = vae_tiles
+        _progress("Decoding video", 0.87)
         generated_frames = _decode_hunyuan_video_15(
             torch,
             vae,
@@ -8870,7 +8947,7 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             num_inference_steps=steps,
             guidance_scale=float(guidance_scale),
             generator=generator,
-            callback_on_step_end=wan_loop_callback,
+            callback_on_step_end=_chain_step_callbacks([wan_loop_callback, _sampling_progress(steps)]),
         )
         performance = pipeline._machdoch_wan_performance  # noqa: SLF001
         conditioning_mode = pipeline._machdoch_wan_conditioning_mode  # noqa: SLF001
@@ -8897,6 +8974,7 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             generated_frames,
             source,
         )
+    _progress("Encoding video", 0.94)
     destination, evidence, composite = _encode_video_webm(
         generated_frames,
         output_directory,
@@ -9017,6 +9095,9 @@ def main() -> int:
         if command == "probe":
             _emit(probe())
             return 0
+        if command == "verify-runtime":
+            _emit(probe(verify_operations=True))
+            return 0
         if command == "probe-model":
             request = json.load(sys.stdin)
             if not isinstance(request, dict):
@@ -9066,7 +9147,7 @@ def main() -> int:
             _emit(_generate_hunyuan_video_15_latents_subprocess(request))
             return 0
         raise WorkerError(
-            "Expected exactly one command: probe, probe-model, generate, "
+            "Expected exactly one command: probe, verify-runtime, probe-model, generate, "
             "generate-video, or render-source-anchored-loop"
         )
     except WorkerError as error:

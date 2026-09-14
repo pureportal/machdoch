@@ -99,7 +99,7 @@ export const MediaCategoryManagerDialog = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="media-category-manager-title"
-        className="flex max-h-[80vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl"
+        className="flex max-h-[calc(100dvh-2rem)] min-w-0 w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl"
       >
         <header className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
           <h1
@@ -128,11 +128,7 @@ export const MediaCategoryManagerDialog = ({
               maxLength={64}
               onChange={(event) => setNewName(event.target.value)}
               onKeyDown={(event) => {
-                if (
-                  event.key === "Enter" &&
-                  !event.ctrlKey &&
-                  !event.metaKey
-                ) {
+                if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
                   addCategory();
                 }
               }}
@@ -185,74 +181,78 @@ export const MediaCategoryManagerDialog = ({
                 ) : (
                   <SubmitShortcut asChild>
                     <div className="flex items-center gap-2">
-                    {editing ? (
-                      <input
-                        value={editingName}
-                        aria-label={`Rename ${category.name}`}
-                        maxLength={64}
-                        autoFocus
-                        onChange={(event) => setEditingName(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (
-                            event.key === "Enter" &&
-                            !event.ctrlKey &&
-                            !event.metaKey
-                          ) {
-                            saveRename();
-                          }
-                          if (event.key === "Escape") setEditingId(null);
-                        }}
-                        className="h-8 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100 outline-none focus:border-sky-500"
-                      />
-                    ) : (
-                      <span className="min-w-0 flex-1 truncate text-xs text-slate-200">
-                        {category.name}
-                      </span>
-                    )}
-                    <span className="text-[10px] text-slate-500">{count}</span>
-                    {editing ? (
-                      <ControlTooltip content={`Save ${category.name}`}>
-                        <button
-                          type="button"
-                          aria-label={`Save ${category.name}`}
-                          onClick={saveRename}
-                          {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                          className="rounded-md p-1.5 text-emerald-300 hover:bg-slate-800"
-                        >
-                          <Check className="h-3.5 w-3.5" />
-                        </button>
-                      </ControlTooltip>
-                    ) : (
-                      <ControlTooltip content={`Rename ${category.name}`}>
-                        <button
-                          type="button"
+                      {editing ? (
+                        <input
+                          value={editingName}
                           aria-label={`Rename ${category.name}`}
+                          maxLength={64}
+                          autoFocus
+                          onChange={(event) =>
+                            setEditingName(event.target.value)
+                          }
+                          onKeyDown={(event) => {
+                            if (
+                              event.key === "Enter" &&
+                              !event.ctrlKey &&
+                              !event.metaKey
+                            ) {
+                              saveRename();
+                            }
+                            if (event.key === "Escape") setEditingId(null);
+                          }}
+                          className="h-8 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100 outline-none focus:border-sky-500"
+                        />
+                      ) : (
+                        <span className="min-w-0 flex-1 truncate text-xs text-slate-200">
+                          {category.name}
+                        </span>
+                      )}
+                      <span className="text-[10px] text-slate-500">
+                        {count}
+                      </span>
+                      {editing ? (
+                        <ControlTooltip content={`Save ${category.name}`}>
+                          <button
+                            type="button"
+                            aria-label={`Save ${category.name}`}
+                            onClick={saveRename}
+                            {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                            className="rounded-md p-1.5 text-emerald-300 hover:bg-slate-800"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </button>
+                        </ControlTooltip>
+                      ) : (
+                        <ControlTooltip content={`Rename ${category.name}`}>
+                          <button
+                            type="button"
+                            aria-label={`Rename ${category.name}`}
+                            onClick={() => {
+                              setEditingId(category.id);
+                              setEditingName(category.name);
+                              setDeletingId(null);
+                              setError(null);
+                            }}
+                            className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        </ControlTooltip>
+                      )}
+                      <ControlTooltip content={`Remove ${category.name}`}>
+                        <button
+                          type="button"
+                          aria-label={`Remove ${category.name}`}
                           onClick={() => {
-                            setEditingId(category.id);
-                            setEditingName(category.name);
-                            setDeletingId(null);
+                            setDeletingId(category.id);
+                            setEditingId(null);
                             setError(null);
                           }}
-                          className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+                          className="rounded-md p-1.5 text-slate-400 hover:bg-rose-500/10 hover:text-rose-300"
                         >
-                          <Pencil className="h-3.5 w-3.5" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </ControlTooltip>
-                    )}
-                    <ControlTooltip content={`Remove ${category.name}`}>
-                      <button
-                        type="button"
-                        aria-label={`Remove ${category.name}`}
-                        onClick={() => {
-                          setDeletingId(category.id);
-                          setEditingId(null);
-                          setError(null);
-                        }}
-                        className="rounded-md p-1.5 text-slate-400 hover:bg-rose-500/10 hover:text-rose-300"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </ControlTooltip>
                     </div>
                   </SubmitShortcut>
                 )}

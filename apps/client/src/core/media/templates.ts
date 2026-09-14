@@ -4,6 +4,7 @@ import {
   createImageRecipeFlow,
   createMediaFlowLayout,
 } from "./compiler.js";
+import { createConnectedWorkflowTemplates } from "./workflow-templates.js";
 import type {
   ImageRecipeSettings,
   InstantiateMediaFlowTemplateResult,
@@ -410,6 +411,7 @@ const createConditionedImageBranchesTemplate =
   };
 
 const createBuiltInTemplates = (): MediaFlowTemplateDescriptor[] => [
+  ...createConnectedWorkflowTemplates(),
   createTemplate({
     id: "text-to-image-variants",
     name: "Text to image variants",

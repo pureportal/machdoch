@@ -1,14 +1,85 @@
 import { describe, expect, it } from "vitest";
 import { createMediaModelCatalogSnapshot } from "../../../core/media/catalog.js";
-import type { MediaAssetRecord } from "../../../core/media/contracts.js";
+import type {
+  MediaAssetRecord,
+  MediaModelDescriptor,
+} from "../../../core/media/contracts.js";
 import {
   createBasicMediaRecipeFlow,
+  createBasicMediaVideoFlow,
   createBasicVideoDraftFromImage,
+  createBasicImageDraftFromAsset,
 } from "./media-basic-generation";
 import {
   DEFAULT_MEDIA_STUDIO_STATE,
   normalizeMediaStudioState,
 } from "./media-studio-store";
+import {
+  MEDIA_VIDEO_QUALITY_PRESETS,
+  identifyMediaVideoQualityPreset,
+} from "../../../core/media/video-quality.js";
+import { compileMediaFlow } from "../../../core/media/compiler.js";
+import { readMediaVideoRecipeSettings } from "./media-generation-recipe";
+
+describe("Basic video configuration", () => {
+  it.each([false, true])(
+    "keeps Draft sampling, encoding, and transparency through conversion (%s)",
+    (transparentBackground) => {
+      const video = {
+        ...DEFAULT_MEDIA_STUDIO_STATE.videoRecipe,
+        ...MEDIA_VIDEO_QUALITY_PRESETS[0]!.settings,
+        modelId: "local:hunyuan-video-1.5-i2v-step-distilled" as const,
+        transparentBackground,
+      };
+      const flow = createBasicMediaVideoFlow({
+        id: "basic-video",
+        createdAt: "2026-09-14T00:00:00Z",
+        imageSettings: {
+          ...DEFAULT_MEDIA_STUDIO_STATE.recipe,
+          prompt: "A cat turns its head",
+        },
+        videoSettings: video,
+      });
+      const generation = flow.nodes.find(
+        (node) => node.type === "task.generate-video",
+      )!;
+      expect(
+        identifyMediaVideoQualityPreset(
+          generation.config,
+          "hunyuan-video-1.5-i2v",
+        ),
+      ).toBe("draft");
+      expect(readMediaVideoRecipeSettings(flow)).toMatchObject(video);
+      expect(
+        flow.nodes.some((node) => node.type === "operation.video-composite"),
+      ).toBe(false);
+      expect(
+        flow.nodes.find((node) => node.type === "output.video")?.config.role,
+      ).toBe(transparentBackground ? "transparent" : "opaque");
+      const models = createMediaModelCatalogSnapshot({
+        isOpenAiConfigured: false,
+        isLocalFluxInstalled: true,
+        isLocalBiRefNetInstalled: true,
+      }).models;
+      const videoModel: MediaModelDescriptor = {
+        ...models.find((model) => model.id === "local:flux-2-klein-4b")!,
+        id: video.modelId,
+        architecture: "hunyuan-video-1.5-i2v",
+        capabilities: ["image-to-video", "transparent-output", "alpha-video"],
+      };
+      const plan = compileMediaFlow({
+        flow,
+        models: [...models, videoModel],
+        compiledAt: "2026-09-14T00:00:00Z",
+      });
+      expect(
+        plan.diagnostics.filter(
+          (diagnostic) => diagnostic.severity === "error",
+        ),
+      ).toEqual([]);
+    },
+  );
+});
 
 const portraitImage: MediaAssetRecord = {
   id: "asset-portrait",
@@ -36,6 +107,22 @@ const portraitImage: MediaAssetRecord = {
 };
 
 describe("createBasicVideoDraftFromImage", () => {
+  it("clears unrelated image conditioning and hidden quality gates", () => {
+    const state = normalizeMediaStudioState(DEFAULT_MEDIA_STUDIO_STATE);
+    state.recipe.baseImageAssetId = "old-base";
+    state.recipe.poseImageAssetId = "old-pose";
+    state.recipe.qualityGateEnabled = true;
+    expect(
+      createBasicVideoDraftFromImage(state, portraitImage).recipe,
+    ).toMatchObject({
+      baseImageAssetId: null,
+      poseImageAssetId: null,
+      qualityGateEnabled: false,
+      referenceImages: [
+        { assetId: portraitImage.id, role: "base", influence: 1 },
+      ],
+    });
+  });
   it("opens a ready-to-edit Basic video draft without changing Advanced state", () => {
     const original = normalizeMediaStudioState(DEFAULT_MEDIA_STUDIO_STATE);
     const state = {
@@ -73,6 +160,43 @@ describe("createBasicVideoDraftFromImage", () => {
     expect(next.flow).toBe(state.flow);
     expect(next.flowLayout).toBe(state.flowLayout);
   });
+});
+
+describe("image reuse journeys", () => {
+  it.each(["edit", "reference"] as const)(
+    "opens %s in Image after a video or SVG draft",
+    (purpose) => {
+      const state = normalizeMediaStudioState(DEFAULT_MEDIA_STUDIO_STATE);
+      state.target = "video";
+      state.recipe.outputFormat = "svg";
+      state.recipe.referenceImages = [
+        { assetId: "unrelated", role: "subject", influence: 1 },
+      ];
+      state.recipe.baseImageAssetId = "old-base";
+      state.recipe.poseImageAssetId = "old-pose";
+      state.recipe.qualityGateEnabled = true;
+      const next = createBasicImageDraftFromAsset(
+        state,
+        portraitImage,
+        purpose,
+      );
+      expect(next.target).toBe("image");
+      expect(next.activeSection).toBe("generate");
+      expect(next.flow).toBe(state.flow);
+      expect(next.recipe).toMatchObject({
+        outputFormat: "png",
+        prompt: "",
+        poseImageAssetId: null,
+        qualityGateEnabled: false,
+        baseImageAssetId: purpose === "edit" ? portraitImage.id : null,
+        referenceImages:
+          purpose === "reference"
+            ? [{ assetId: portraitImage.id, role: "subject", influence: 1 }]
+            : [],
+      });
+      expect(state.recipe.baseImageAssetId).toBe("old-base");
+    },
+  );
 });
 
 describe("createBasicMediaRecipeFlow", () => {

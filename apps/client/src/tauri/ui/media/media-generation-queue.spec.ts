@@ -5,6 +5,7 @@ import {
   type MediaGenerationRecipeSnapshot,
 } from "./media-generation-queue";
 import { MediaRuntimeError } from "./media-runtime";
+import { generationJobToRunDetail } from "./media-generation-run";
 
 const recipe = (
   target: MediaGenerationRecipeSnapshot["target"],
@@ -69,6 +70,57 @@ const deferred = <T>() => {
 };
 
 describe("MediaGenerationQueue", () => {
+  it("retains workflow identity and execution evidence while polling", async () => {
+    const execution = deferred<MediaRunDetail>();
+    const workflow: MediaRunDetail = {
+      ...detail("workflow", "running"),
+      executor: "media-workflow",
+      outputCount: 2,
+      modelLabel: "Workflow",
+      currentStep: "Checking image",
+      events: [
+        {
+          id: 1,
+          runId: "workflow",
+          sequence: 1,
+          kind: "workflow_visual",
+          createdAt: "2026-08-20T10:00:10.000Z",
+          nodeId: "check",
+          stepId: null,
+          progress: null,
+          message: "fail: the dress is red",
+        },
+      ],
+    };
+    const queue = new MediaGenerationQueue({
+      readRunDetail: async () => workflow,
+      pollIntervalMs: 1,
+    });
+    queue.enqueue({
+      runId: "workflow",
+      recipe: recipe("video", "Animate the edited image"),
+      execute: () => execution.promise,
+    });
+    await vi.waitFor(() =>
+      expect(queue.getJob("workflow")?.runDetail).toEqual(workflow),
+    );
+    const displayed = generationJobToRunDetail(queue.getJob("workflow")!);
+    expect(displayed.executor).toBe("media-workflow");
+    expect(displayed.outputCount).toBe(2);
+    expect(displayed.events).toEqual(workflow.events);
+    expect(displayed.modelLabel).toBe("Workflow");
+    workflow.progress = 0.1;
+    queue.updateProgress("workflow", 0.9, "Previous step completed");
+    await vi.waitFor(() =>
+      expect(queue.getJob("workflow")?.progress).toBe(0.1),
+    );
+    execution.resolve({ ...workflow, status: "failed" });
+    await vi.waitFor(() =>
+      expect(queue.getJob("workflow")?.status).toBe("failed"),
+    );
+    queue.dispose();
+  });
+
   it("runs mixed immutable jobs serially", async () => {
     const first = deferred<MediaRunDetail>();
     const second = deferred<MediaRunDetail>();

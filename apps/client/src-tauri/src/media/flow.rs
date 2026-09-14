@@ -29,22 +29,22 @@ const FLOW_BUNDLE_SCHEMA_URI: &str = "https://machdoch.app/schemas/media-flow-bu
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct MediaFlowNode {
-    id: String,
-    r#type: String,
+    pub(crate) id: String,
+    pub(crate) r#type: String,
     version: u32,
-    label: String,
+    pub(crate) label: String,
     layer: String,
-    config: Map<String, Value>,
+    pub(crate) config: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct MediaFlowEdge {
     id: String,
-    from_node_id: String,
-    from_port_id: String,
-    to_node_id: String,
-    to_port_id: String,
+    pub(crate) from_node_id: String,
+    pub(crate) from_port_id: String,
+    pub(crate) to_node_id: String,
+    pub(crate) to_port_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -88,7 +88,7 @@ pub(crate) struct MediaFlowPreset {
 pub(crate) struct MediaFlowDocument {
     schema_version: u32,
     id: String,
-    name: String,
+    pub(crate) name: String,
     description: String,
     created_at: String,
     updated_at: String,
@@ -100,8 +100,8 @@ pub(crate) struct MediaFlowDocument {
     presets: Vec<MediaFlowPreset>,
     #[serde(default)]
     active_preset_id: Option<String>,
-    nodes: Vec<MediaFlowNode>,
-    edges: Vec<MediaFlowEdge>,
+    pub(crate) nodes: Vec<MediaFlowNode>,
+    pub(crate) edges: Vec<MediaFlowEdge>,
 }
 
 #[derive(Debug, Clone)]
@@ -814,6 +814,24 @@ pub(crate) fn compile_local_image_flow(
     })
 }
 
+pub(crate) fn load_workflow(
+    paths: &MediaRuntimePaths,
+    flow_id: &str,
+    revision_id: &str,
+) -> MediaResult<MediaFlowDocument> {
+    let connection = database::open(paths)?;
+    let revision = read_revision_by_id(&connection, revision_id)?;
+    if revision.flow_id != flow_id {
+        return Err("Workflow revision does not match the flow".into());
+    }
+    revision.flow.validate()?;
+    let nodes = resolve_ordered_flow_nodes(&revision.flow)?;
+    Ok(MediaFlowDocument {
+        nodes,
+        ..revision.flow
+    })
+}
+
 pub(crate) fn compile_remote_image_edit_flow(
     paths: &MediaRuntimePaths,
     flow_id: &str,
@@ -1097,7 +1115,9 @@ pub(crate) fn compile_remote_image_edit_flow(
     })
 }
 
-fn resolve_ordered_flow_nodes(flow: &MediaFlowDocument) -> MediaResult<Vec<MediaFlowNode>> {
+pub(crate) fn resolve_ordered_flow_nodes(
+    flow: &MediaFlowDocument,
+) -> MediaResult<Vec<MediaFlowNode>> {
     let mut incoming_count = flow
         .nodes
         .iter()
@@ -2756,6 +2776,12 @@ fn is_supported_node(node_type: &str, version: u32) -> bool {
         && matches!(
             node_type,
             "source.prompt"
+                | "task.generate-prompt"
+                | "operation.segment"
+                | "operation.upscale"
+                | "control.repeat"
+                | "operation.visual-check"
+                | "operation.prepare-mask"
                 | "source.image"
                 | "source.seed"
                 | "source.animated-background"
@@ -3564,8 +3590,15 @@ impl MediaFlowNode {
             "source.prompt" | "source.image" | "source.seed" | "source.animated-background" => {
                 "source"
             }
-            "task.generate-image" | "task.edit-image" | "task.generate-video" => "task",
-            "operation.crop"
+            "task.generate-image"
+            | "task.edit-image"
+            | "task.generate-video"
+            | "task.generate-prompt" => "task",
+            "operation.visual-check"
+            | "operation.prepare-mask"
+            | "operation.segment"
+            | "operation.upscale"
+            | "operation.crop"
             | "operation.resize"
             | "operation.text-overlay"
             | "operation.color-adjust"
@@ -3579,7 +3612,7 @@ impl MediaFlowNode {
             | "operation.composite"
             | "operation.video-composite"
             | "operation.quality-analyze" => "operation",
-            "control.quality-gate" | "control.human-review" => "control",
+            "control.quality-gate" | "control.human-review" | "control.repeat" => "control",
             "output.asset" | "output.video" => "output",
             _ => return Err(format!("flow node {} has an unsupported type", self.id)),
         };
@@ -3859,6 +3892,12 @@ fn validate_model_addon_config(node_id: &str, value: &Value) -> MediaResult<()> 
 
 fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
     match node.r#type.as_str() {
+        "task.generate-prompt"
+        | "operation.segment"
+        | "operation.upscale"
+        | "control.repeat"
+        | "operation.visual-check"
+        | "operation.prepare-mask" => super::workflow_schema::validate_node(node),
         "source.prompt" => {
             validate_config_keys(node, &["prompt"])?;
             config_multiline_string(node, "prompt", 8_000, true).map(|_| ())
@@ -4613,7 +4652,31 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
             config_string(node, "profile", 128, false).map(|_| ())
         }
         "control.quality-gate" => {
-            validate_config_keys(node, &["onUnknown", "profile"])?;
+            validate_config_keys(
+                node,
+                &[
+                    "onUnknown",
+                    "profile",
+                    "minWidth",
+                    "minHeight",
+                    "maxClipping",
+                    "onFailure",
+                ],
+            )?;
+            for (key, min, max, integer) in [
+                ("minWidth", 1.0, 16384.0, true),
+                ("minHeight", 1.0, 16384.0, true),
+                ("maxClipping", 0.0, 1.0, false),
+            ] {
+                if node.config.get(key).is_some_and(|value| {
+                    !super::workflow_schema::in_range(value, min, max, integer)
+                }) {
+                    return Err(format!("{} has an invalid {key}", node.label));
+                }
+            }
+            if node.config.contains_key("onFailure") {
+                config_enum(node, "onFailure", &["stop", "repeat"])?;
+            }
             config_enum(node, "onUnknown", &["human-review", "fail", "pass"])?;
             config_string(node, "profile", 128, false).map(|_| ())
         }
@@ -4731,6 +4794,16 @@ fn config_bool(node: &MediaFlowNode, key: &str) -> MediaResult<()> {
 
 fn port_type(node_type: &str, port_id: &str, output: bool) -> Option<&'static str> {
     match (node_type, output, port_id) {
+        ("task.generate-prompt", _, "prompt") => Some("prompt"),
+        ("operation.prepare-mask" | "operation.segment" | "operation.upscale", _, "image") => {
+            Some("image")
+        }
+        ("operation.prepare-mask", _, "mask") => Some("mask"),
+        ("operation.prepare-mask", false, "reference") => Some("image"),
+        ("operation.visual-check", false, "image" | "reference") => Some("image"),
+        ("operation.visual-check", false, "mask") => Some("mask"),
+        ("operation.visual-check", true, "report") => Some("quality-report"),
+        ("operation.segment", true, "mask") | ("task.edit-image", false, "mask") => Some("mask"),
         ("source.prompt", true, "prompt") => Some("prompt"),
         ("source.image", true, "image") => Some("image"),
         ("source.seed", true, "seed") => Some("seed"),
@@ -4800,6 +4873,11 @@ fn required_input_ports(node_type: &str, is_svg_vectorization: bool) -> &'static
         return &["image"];
     }
     match node_type {
+        "task.generate-prompt" => &["prompt"],
+        "operation.visual-check"
+        | "operation.prepare-mask"
+        | "operation.segment"
+        | "operation.upscale" => &["image"],
         "source.prompt" | "source.image" | "source.seed" | "source.animated-background" => &[],
         "task.generate-image" | "task.generate-video" => &["prompt"],
         "task.edit-image" => &["prompt", "image"],
@@ -4827,6 +4905,8 @@ fn required_input_ports(node_type: &str, is_svg_vectorization: bool) -> &'static
 
 fn required_output_ports(node_type: &str) -> &'static [&'static str] {
     match node_type {
+        "task.generate-prompt" => &["prompt"],
+        "operation.upscale" => &["image"],
         "source.prompt" => &["prompt"],
         "source.image" => &["image"],
         "source.seed" => &[],
@@ -4849,7 +4929,7 @@ fn required_output_ports(node_type: &str) -> &'static [&'static str] {
         | "control.human-review" => &["image"],
         "task.generate-video" => &["video"],
         "operation.video-composite" => &["video"],
-        "operation.quality-analyze" => &["report"],
+        "operation.visual-check" | "operation.quality-analyze" => &["report"],
         "output.asset" | "output.video" => &[],
         _ => &[],
     }
@@ -5045,10 +5125,7 @@ fn canonical_json(value: &Value) -> MediaResult<String> {
             let number = value
                 .as_f64()
                 .ok_or_else(|| "flow JSON contains a non-finite number".to_string())?;
-            if number.fract() == 0.0 {
-                return Ok(format!("{number:.0}"));
-            }
-            Ok(value.to_string())
+            Ok(ryu_js::Buffer::new().format(number).to_string())
         }
         Value::String(value) => serde_json::to_string(value)
             .map_err(|error| format!("failed to canonicalize JSON string: {error}")),
@@ -5071,6 +5148,26 @@ fn canonical_json(value: &Value) -> MediaResult<String> {
             }
             Ok(format!("{{{}}}", entries.join(",")))
         }
+    }
+}
+
+#[test]
+fn canonical_numbers_preserve_browser_mask_coordinates() {
+    for number in [
+        "0.21999999533540318",
+        "0.000001",
+        "1e-7",
+        "1e+21",
+        "333333333.3333333",
+        "0.0000123",
+    ] {
+        let parsed: Value = serde_json::from_str(number).unwrap();
+        assert_eq!(canonical_json(&parsed).unwrap(), number);
+        let persisted: Value = serde_json::from_str(&parsed.to_string()).unwrap();
+        assert_eq!(
+            digest_value(&parsed).unwrap(),
+            digest_value(&persisted).unwrap()
+        );
     }
 }
 

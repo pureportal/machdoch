@@ -397,9 +397,21 @@ pub(super) fn suggested_display_name(header: &ParsedSafetensorsHeader) -> String
             }
         }
     }
-    header
-        .canonical_path
-        .file_stem()
+    let path = if matches!(
+        header
+            .canonical_path
+            .file_stem()
+            .and_then(|name| name.to_str()),
+        Some("pytorch_lora_weights" | "adapter_model")
+    ) {
+        header
+            .canonical_path
+            .parent()
+            .unwrap_or(&header.canonical_path)
+    } else {
+        &header.canonical_path
+    };
+    path.file_stem()
         .and_then(|value| value.to_str())
         .unwrap_or("Imported diffusion model")
         .replace(['_', '-'], " ")
@@ -450,6 +462,13 @@ pub(crate) fn inspect(source_path: &str) -> MediaResult<MediaLocalModelImportIns
     if content_size != header.byte_size {
         return Err("the model file changed while it was being inspected".to_string());
     }
+    inspect_header(&header, content_digest)
+}
+
+pub(super) fn inspect_header(
+    header: &ParsedSafetensorsHeader,
+    content_digest: String,
+) -> MediaResult<MediaLocalModelImportInspection> {
     let (detected_architecture, architecture_confidence) = detect_architecture(&header);
     let is_adapter = likely_adapter(&header);
     let mut warnings = vec![
@@ -466,16 +485,23 @@ pub(crate) fn inspect(source_path: &str) -> MediaResult<MediaLocalModelImportIns
                 .to_string(),
         );
     }
-    if detected_architecture.as_deref() == Some("krea-2") {
-        warnings.push(
-            "KREA 2 checkpoints share a Qwen3-VL 4B text encoder and Qwen-Image VAE. Put the pinned runtime bundle in models/krea-2/runtime; it is reused by every imported KREA checkpoint."
-                .to_string(),
-        );
-    }
-    let blocking_reason = is_adapter.then(|| {
+    let is_component = header
+        .tensor_keys
+        .iter()
+        .any(|key| key.starts_with("decoder.") || key.starts_with("encoder."))
+        && header.tensor_keys.iter().all(|key| {
+            ["decoder.", "encoder.", "quant_conv.", "post_quant_conv."]
+                .iter()
+                .any(|prefix| key.starts_with(prefix))
+        });
+    let blocking_reason = if is_component {
+        Some("This file is a model component. Select a complete generation model.".to_string())
+    } else {
+        is_adapter.then(|| {
         "This file appears to be a LoRA or other adapter, not a complete SD/FLUX checkpoint. Adapter import requires a separate base-model compatibility workflow."
             .to_string()
-    });
+    })
+    };
     Ok(MediaLocalModelImportInspection {
         schema_version: 1,
         can_import: blocking_reason.is_none(),
@@ -530,50 +556,9 @@ pub(crate) fn inspect_for_import(
     Ok(inspection)
 }
 
-fn krea_runtime_descriptor(source_path: &str) -> MediaResult<Value> {
-    let checkpoint_directory = Path::new(source_path)
-        .parent()
-        .ok_or_else(|| "the KREA checkpoint has no parent directory".to_string())?;
-    let family_root = checkpoint_directory
-        .parent()
-        .ok_or_else(|| "the KREA checkpoint is not inside models/krea-2/checkpoints".to_string())?;
-    let runtime_root = family_root.join("runtime");
-    let required = [
-        runtime_root.join("qwen3-vl/config.json"),
-        runtime_root.join("qwen3-vl/tokenizer_config.json"),
-        runtime_root.join("qwen3-vl/tokenizer.json"),
-        runtime_root.join("qwen3-vl/model.safetensors.index.json"),
-        runtime_root.join("qwen3-vl/model-00001-of-00002.safetensors"),
-        runtime_root.join("qwen3-vl/model-00002-of-00002.safetensors"),
-        runtime_root.join("qwen-image/vae/config.json"),
-        runtime_root.join("qwen-image/vae/diffusion_pytorch_model.safetensors"),
-    ];
-    let mut total_bytes = 0_u64;
-    for path in &required {
-        let metadata = fs::symlink_metadata(path).map_err(|_| {
-            format!(
-                "KREA runtime is incomplete; missing {}. Install the pinned Qwen3-VL 4B and Qwen-Image VAE bundle in models/krea-2/runtime.",
-                path.strip_prefix(family_root)
-                    .unwrap_or(path)
-                    .display()
-            )
-        })?;
-        if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() == 0 {
-            return Err(format!(
-                "KREA runtime component {} must be a non-empty regular file",
-                path.display()
-            ));
-        }
-        total_bytes = total_bytes.saturating_add(metadata.len());
-    }
-    if total_bytes < 8_500_000_000 {
-        return Err(
-            "KREA runtime bundle is incomplete; the verified components total less than 8.5 GB"
-                .to_string(),
-        );
-    }
-    let canonical_root = fs::canonicalize(&runtime_root)
-        .map_err(|error| format!("failed to resolve the KREA runtime bundle: {error}"))?;
+fn krea_runtime_descriptor(paths: &MediaRuntimePaths, source_path: &str) -> MediaResult<Value> {
+    let runtime_root = super::model_components::krea_component_root(paths, source_path)?;
+    let canonical_root = super::model_components::ensure_krea_components(&runtime_root)?;
     Ok(serde_json::json!({
         "schemaVersion": 1,
         "runtimeRoot": canonical_root,
@@ -856,7 +841,7 @@ pub(crate) fn import_reviewed(
         );
     }
     let krea_runtime = if request.architecture == "krea-2" {
-        Some(krea_runtime_descriptor(&inspection.source_path)?)
+        Some(krea_runtime_descriptor(paths, &inspection.source_path)?)
     } else {
         None
     };

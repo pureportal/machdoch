@@ -9,10 +9,10 @@ const PROFILE_ID: &str = "technical-image-baseline";
 const PROFILE_VERSION: &str = "1.0.0";
 const PREPROCESSING_PROFILE_ID: &str = "srgb-encoded-rgba-unassociated-v1";
 
-pub(crate) fn analyze_image(
+pub(crate) fn measure_image(
     paths: &MediaRuntimePaths,
     source_asset_id: &str,
-) -> MediaResult<MediaQualityAnalysisResult> {
+) -> MediaResult<MediaQualityReport> {
     let (source, image) = transform::read_asset_image(paths, source_asset_id)?;
     let width = image.width();
     let height = image.height();
@@ -255,6 +255,14 @@ pub(crate) fn analyze_image(
         gate_reasons,
         observations,
     };
+    Ok(report)
+}
+
+pub(crate) fn analyze_image(
+    paths: &MediaRuntimePaths,
+    source_asset_id: &str,
+) -> MediaResult<MediaQualityAnalysisResult> {
+    let report = measure_image(paths, source_asset_id)?;
     let encoded = serde_json::to_vec_pretty(&report)
         .map_err(|error| format!("failed to encode quality report: {error}"))?;
     let digest = format!("{:x}", Sha256::digest(&encoded));

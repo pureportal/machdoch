@@ -1,3 +1,6 @@
+import { MediaSaveAssetButton } from "./media-save-asset-button";
+import { MediaGenerationJobs } from "./media-generation-jobs";
+import { mediaAssetLabel } from "../../../../core/media/asset-label.js";
 import {
   AlertTriangle,
   Check,
@@ -27,7 +30,11 @@ import {
   mediaModelSupportsPromptlessConditioning,
   mediaModelSupportsReferenceRole,
 } from "../../../../core/media/reference-conditioning.js";
-import { MEDIA_VIDEO_QUALITY_PRESETS } from "../../../../core/media/video-quality.js";
+import {
+  MEDIA_VIDEO_QUALITY_PRESETS,
+  identifyMediaVideoQualityPreset,
+  resolveMediaVideoQualityPresetSettings,
+} from "../../../../core/media/video-quality.js";
 import type {
   ImageRecipeSettings,
   MediaAssetCategory,
@@ -86,8 +93,11 @@ interface MediaGenerateViewProps {
   onChange: (settings: ImageRecipeSettings) => void;
   onVideoSettingsChange: (settings: MediaVideoRecipeSettings) => void;
   onOpenFlow: () => void;
-  onOpenAssets: () => void;
-  onOpenActivity: () => void;
+  flowOpening: boolean;
+  onOpenAssets: (modelId?: string) => void;
+  onOpenActivity: (runId: string) => void;
+  onSelectGenerationJob: (runId: string) => void;
+  onCancelGeneration: (runId: string) => void;
   onGenerate: () => void;
   onAddReferenceImages: () => void;
   onAddBaseImage: () => void;
@@ -132,8 +142,11 @@ export const MediaGenerateView = ({
   onChange,
   onVideoSettingsChange,
   onOpenFlow,
+  flowOpening,
   onOpenAssets,
   onOpenActivity,
+  onSelectGenerationJob,
+  onCancelGeneration,
   onGenerate,
   onAddReferenceImages,
   onAddBaseImage,
@@ -247,6 +260,16 @@ export const MediaGenerateView = ({
     });
   const selectedModelId =
     target === "video" ? videoSettings.modelId : settings.modelId;
+  const setupModel =
+    target === "video"
+      ? null
+      : catalog.models.find(
+          (model) =>
+            model.management.acquisition === "managed-install" &&
+            (requiredImageCapabilities ?? []).every((capability) =>
+              model.capabilities.includes(capability),
+            ),
+        );
   const selectedModel =
     models.find((model) => model.id === selectedModelId) ??
     (target !== "video"
@@ -374,9 +397,11 @@ export const MediaGenerateView = ({
     ) ?? [];
   const selectedVideoPreset = MEDIA_VIDEO_QUALITY_PRESETS.find(
     (preset) =>
-      preset.settings.resolution === videoSettings.resolution &&
-      preset.settings.numFrames === videoSettings.numFrames &&
-      preset.settings.fps === videoSettings.fps,
+      preset.id ===
+      identifyMediaVideoQualityPreset(
+        { ...videoSettings },
+        selectedModel?.architecture,
+      ),
   );
   const svgStyle = settings.svgStyle ?? "illustration";
   const svgStyleLabel = `${svgStyle[0].toLocaleUpperCase()}${svgStyle.slice(1)}`;
@@ -600,8 +625,18 @@ export const MediaGenerateView = ({
               </button>
             ))}
           </div>
-          <Button type="button" variant="outline" onClick={onOpenFlow}>
-            <Workflow className="h-4 w-4" /> Convert to Advanced
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onOpenFlow}
+            disabled={flowOpening}
+          >
+            {flowOpening ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+            ) : (
+              <Workflow className="h-4 w-4" />
+            )}
+            {flowOpening ? "Loading workflow" : "Convert to Advanced"}
           </Button>
         </header>
 
@@ -819,7 +854,7 @@ export const MediaGenerateView = ({
                           key={asset.id}
                           type="button"
                           aria-pressed={selected}
-                          aria-label={`${selected ? "Remove" : "Choose"} asset ${asset.outputIndex + 1}`}
+                          aria-label={`${selected ? "Remove" : "Choose"} ${mediaAssetLabel(asset)}`}
                           onClick={() =>
                             selected
                               ? changeReferences(
@@ -1220,9 +1255,11 @@ export const MediaGenerateView = ({
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={onOpenAssets}
+                    onClick={() => onOpenAssets(setupModel?.id)}
                   >
-                    Manage models
+                    {setupModel
+                      ? `${setupModel.installed ? "Set up" : "Install"} ${setupModel.displayName}`
+                      : "Manage models"}
                   </Button>
                 ) : null}
               </div>
@@ -1332,10 +1369,10 @@ export const MediaGenerateView = ({
                                 if (!preset) return;
                                 onVideoSettingsChange({
                                   ...videoSettings,
-                                  resolution: preset.settings.resolution,
-                                  numFrames: preset.settings.numFrames,
-                                  fps: preset.settings.fps,
-                                  memoryProfile: preset.settings.memoryProfile,
+                                  ...resolveMediaVideoQualityPresetSettings(
+                                    preset,
+                                    selectedModel?.architecture,
+                                  ),
                                 });
                               }}
                               className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-slate-200"
@@ -1658,76 +1695,22 @@ export const MediaGenerateView = ({
           </section>
 
           <section className="flex min-h-[360px] flex-col p-5 lg:min-h-0 lg:overflow-y-auto">
-            {generationPending || generationJobs.length > 0 ? (
-              <div role="status" aria-live="polite" className="mb-4 space-y-2">
-                {generationPending && generationJobs.length === 0 ? (
-                  <div className="rounded-2xl border border-sky-400/20 bg-sky-400/5 p-4">
-                    <span className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-                      <LoaderCircle className="h-4 w-4 animate-spin text-sky-300" />
-                      Preparing {target}
-                    </span>
-                  </div>
-                ) : null}
-                {generationJobs.map((job) => {
-                  const active = ["queued", "running", "canceling"].includes(
-                    job.status,
-                  );
-                  return (
-                    <button
-                      key={job.id}
-                      type="button"
-                      onClick={onOpenActivity}
-                      className={cn(
-                        "block w-full rounded-2xl border p-4 text-left",
-                        active
-                          ? "border-sky-400/20 bg-sky-400/5"
-                          : job.status === "failed"
-                            ? "border-rose-400/20 bg-rose-400/5"
-                            : "border-slate-800 bg-slate-900/45",
-                      )}
-                    >
-                      <span className="flex items-center justify-between gap-3">
-                        <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-100">
-                          {job.status === "running" ||
-                          job.status === "canceling" ? (
-                            <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-sky-300" />
-                          ) : null}
-                          <span className="truncate">
-                            {job.recipe.modelLabel} · {job.recipe.target}
-                          </span>
-                        </span>
-                        <span className="shrink-0 text-xs capitalize tabular-nums text-slate-300">
-                          {job.status === "canceled" ? "cancelled" : job.status}
-                          {active
-                            ? ` · ${Math.round(job.progress * 100)}%`
-                            : ""}
-                        </span>
-                      </span>
-                      <span className="mt-1 block truncate text-xs text-slate-400">
-                        {job.currentStep}
-                      </span>
-                      {active ? (
-                        <span
-                          role="progressbar"
-                          aria-label={`${job.recipe.modelLabel} progress`}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                          aria-valuenow={Math.round(job.progress * 100)}
-                          className="mt-3 block h-1.5 overflow-hidden rounded-full bg-slate-800"
-                        >
-                          <span
-                            className="block h-full rounded-full bg-sky-400 transition-[width]"
-                            style={{
-                              width: `${Math.max(4, Math.round(job.progress * 100))}%`,
-                            }}
-                          />
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })}
+            {generationPending ? (
+              <div
+                role="status"
+                className="mb-3 flex items-center gap-2 text-sm text-slate-300"
+              >
+                <LoaderCircle className="h-4 w-4 animate-spin" /> Preparing{" "}
+                {target}
               </div>
             ) : null}
+            <MediaGenerationJobs
+              jobs={generationJobs}
+              selectedJobId={generationJob?.id ?? null}
+              onSelect={onSelectGenerationJob}
+              onOpenActivity={onOpenActivity}
+              onCancel={onCancelGeneration}
+            />
 
             {resultAssets.length > 0 ? (
               <>
@@ -1754,7 +1737,9 @@ export const MediaGenerateView = ({
                       type="button"
                       variant="ghost"
                       size="sm"
-                      onClick={onOpenActivity}
+                      onClick={() =>
+                        generationJob && onOpenActivity(generationJob.id)
+                      }
                       className="shrink-0 text-amber-200 hover:text-white"
                     >
                       Activity
@@ -1785,6 +1770,7 @@ export const MediaGenerateView = ({
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-1 p-2">
+                        <MediaSaveAssetButton asset={asset} />
                         {asset.kind === "image" ? (
                           <>
                             <Button
@@ -1854,7 +1840,9 @@ export const MediaGenerateView = ({
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={onOpenActivity}
+                      onClick={() =>
+                        generationJob && onOpenActivity(generationJob.id)
+                      }
                       className="mt-4"
                     >
                       View activity

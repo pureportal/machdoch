@@ -203,11 +203,13 @@ export const projectMediaRunOverlay = ({
   );
   const eventsByNode = new Map<string, MediaRunEvent[]>();
   run.events.forEach((event) => {
-    const nodeId = event.nodeId ?? (event.stepId
-      ? snapshotNodeIds.has(event.stepId)
-        ? event.stepId
-        : stepSourceById.get(event.stepId)
-      : undefined);
+    const nodeId =
+      event.nodeId ??
+      (event.stepId
+        ? snapshotNodeIds.has(event.stepId)
+          ? event.stepId
+          : stepSourceById.get(event.stepId)
+        : undefined);
     if (!nodeId) return;
     const events = eventsByNode.get(nodeId) ?? [];
     events.push(event);
@@ -226,7 +228,7 @@ export const projectMediaRunOverlay = ({
   const boundaryNodeId =
     rejectedReview?.nodeId ?? pendingReview?.nodeId ?? failureNodeId;
   const boundaryIndices = boundaryNodeId
-    ? stepIndicesByNode.get(boundaryNodeId) ?? []
+    ? (stepIndicesByNode.get(boundaryNodeId) ?? [])
     : [];
   const boundaryStep = boundaryIndices.at(-1) ?? null;
   const boundaryState: MediaRunOverlayNodeState | null = rejectedReview
@@ -239,7 +241,9 @@ export const projectMediaRunOverlay = ({
         ? "failed"
         : null;
   const nodeExecutionsByNode = new Map(
-    (run.nodeExecutions ?? []).map((execution) => [execution.nodeId, execution] as const),
+    (run.nodeExecutions ?? []).map(
+      (execution) => [execution.nodeId, execution] as const,
+    ),
   );
   const hasDurableNodeExecutions = nodeExecutionsByNode.size > 0;
 
@@ -298,7 +302,8 @@ export const projectMediaRunOverlay = ({
       stepCount: stepIndices.length,
       observedEventCount: nodeEvents.length,
     };
-    observation.detail = nodeExecution?.message ?? describeObservation(observation);
+    observation.detail =
+      nodeExecution?.message ?? describeObservation(observation);
     observations.set(node.id, observation);
   });
 
@@ -332,6 +337,8 @@ export const projectMediaRunOverlay = ({
 
 const readOutputNodeId = (asset: MediaAssetRecord): string | null => {
   switch (asset.operation?.kind) {
+    case "workflow":
+      return asset.operation.sourceNodeId;
     case "local-diffusion-generation":
     case "remote-image-generation":
     case "remote-image-edit":
@@ -346,18 +353,29 @@ export const selectMediaRunOutputAssetForNode = (
   projection: MediaRunOverlayProjection | null,
   outputNodeId: string,
 ): MediaAssetRecord | null => {
-  if (run?.status !== "completed" || !projection?.exactFlowMatch) {
+  if (
+    !run ||
+    !projection?.exactFlowMatch ||
+    (run.executor !== "media-workflow" && run.status !== "completed")
+  ) {
     return null;
   }
   return run.assets
     .filter(
       (asset) =>
-        (asset.kind === "image" || asset.kind === "vector") &&
+        (asset.kind === "image" ||
+          asset.kind === "vector" ||
+          asset.kind === "video") &&
         readOutputNodeId(asset) === outputNodeId,
     )
     .reduce<MediaAssetRecord | null>(
       (first, asset) =>
-        first === null || asset.outputIndex < first.outputIndex ? asset : first,
+        first === null ||
+        (asset.operation?.kind === "workflow"
+          ? asset.outputIndex > first.outputIndex
+          : asset.outputIndex < first.outputIndex)
+          ? asset
+          : first,
       null,
     );
 };

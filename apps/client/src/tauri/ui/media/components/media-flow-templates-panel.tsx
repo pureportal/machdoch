@@ -18,7 +18,6 @@ import {
   instantiateMediaFlowTemplate,
   listBuiltInMediaFlowTemplates,
 } from "../../../../core/media/templates.js";
-import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { AppNotification } from "../../components/ui/notification";
@@ -96,18 +95,14 @@ export const MediaFlowTemplatesPanel = ({
   return (
     <aside
       aria-label="Flow templates"
-      className="absolute inset-y-0 right-0 z-20 min-h-0 w-[min(410px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none"
+      className="app-flow-panel absolute inset-y-0 right-0 z-20 min-h-0 w-[min(410px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
             <LayoutTemplate className="h-4 w-4 text-violet-300" />
-            Built-in flow templates
+            Templates
           </div>
-          <p className="mt-1 text-[10px] leading-4 text-slate-500">
-            Fork a versioned semantic graph, then edit only the intent-level
-            controls you need.
-          </p>
         </div>
         <Button
           type="button"
@@ -183,23 +178,18 @@ export const MediaFlowTemplatesPanel = ({
                   <div className="text-xs font-semibold text-slate-100">
                     {template.name}
                   </div>
-                  <div className="mt-1 font-mono text-[8px] text-slate-600">
-                    {template.id}@1
-                  </div>
                 </div>
-                <Badge
-                  variant="outline"
-                  className="border-violet-400/20 text-[8px] text-violet-300"
-                >
-                  {template.category}
-                </Badge>
               </div>
-              <p className="mt-3 text-[10px] leading-4 text-slate-400">
-                {template.description}
-              </p>
-              <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/45 p-2.5 text-[9px] leading-4 text-slate-500">
-                {template.workflowSummary}
-              </div>
+              {template.description ? (
+                <p className="mt-3 text-[10px] leading-4 text-slate-400">
+                  {template.description}
+                </p>
+              ) : null}
+              {template.workflowSummary ? (
+                <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/45 p-2.5 text-[9px] leading-4 text-slate-500">
+                  {template.workflowSummary}
+                </div>
+              ) : null}
 
               <dl className="mt-3 grid grid-cols-2 gap-1.5 text-[9px]">
                 <div className="rounded border border-slate-800 bg-slate-950/30 p-2">
@@ -216,19 +206,22 @@ export const MediaFlowTemplatesPanel = ({
                 <div className="rounded border border-slate-800 bg-slate-950/30 p-2">
                   <dt className="text-slate-600">Outputs</dt>
                   <dd className="mt-1 text-slate-300">
-                    {plan.preflight.estimatedOutputs} bounded
+                    {plan.preflight.estimatedOutputs}
                     {plan.preflight.requiresHumanReview
                       ? ` · review ${plan.preflight.generatedCandidates}`
                       : ""}
                   </dd>
                 </div>
-                <div className="rounded border border-slate-800 bg-slate-950/30 p-2">
-                  <dt className="text-slate-600">Variables</dt>
-                  <dd className="mt-1 text-slate-300">
-                    {template.flow.variables.length} ·{" "}
-                    {template.flow.presets.length} presets
-                  </dd>
-                </div>
+                {template.flow.variables.length > 0 ||
+                template.flow.presets.length > 0 ? (
+                  <div className="rounded border border-slate-800 bg-slate-950/30 p-2">
+                    <dt className="text-slate-600">Variables</dt>
+                    <dd className="mt-1 text-slate-300">
+                      {template.flow.variables.length} ·{" "}
+                      {template.flow.presets.length} presets
+                    </dd>
+                  </div>
+                ) : null}
                 <div className="rounded border border-slate-800 bg-slate-950/30 p-2">
                   <dt className="text-slate-600">Preflight</dt>
                   <dd
@@ -248,7 +241,7 @@ export const MediaFlowTemplatesPanel = ({
 
               <details className="mt-3 rounded-lg border border-slate-800 bg-slate-950/30">
                 <summary className="cursor-pointer px-3 py-2 text-[9px] font-medium text-slate-400">
-                  Privacy, resources & graph contract
+                  Details
                 </summary>
                 <div className="space-y-3 border-t border-slate-800 p-3">
                   <p className="flex gap-2 text-[9px] leading-4 text-slate-500">
@@ -315,8 +308,7 @@ export const MediaFlowTemplatesPanel = ({
                   className="mt-3 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3"
                 >
                   <p className="text-[9px] leading-4 text-amber-100">
-                    The current unsaved draft remains in semantic undo history,
-                    but this template starts a new persisted flow identity.
+                    Start a new flow? You can restore this draft with Undo.
                   </p>
                   <div className="mt-2 flex gap-2">
                     <Button
@@ -325,7 +317,7 @@ export const MediaFlowTemplatesPanel = ({
                       onClick={() => forkTemplate(template.id)}
                       className="h-7 bg-violet-500 px-2 text-[9px] text-white hover:bg-violet-400"
                     >
-                      Confirm fork
+                      Use template
                     </Button>
                     <Button
                       type="button"
@@ -351,7 +343,7 @@ export const MediaFlowTemplatesPanel = ({
                   className="mt-3 h-8 w-full border-violet-400/25 bg-violet-400/5 text-[10px] text-violet-200 hover:bg-violet-400/10"
                 >
                   <GitFork className="h-3.5 w-3.5" />
-                  Fork editable flow
+                  Use template
                 </Button>
               )}
             </article>

@@ -1,3 +1,6 @@
+import { mediaAssetLabel } from "../../../../core/media/asset-label.js";
+import { countMediaRunOutputs } from "../../../../core/media/run-library.js";
+import { MediaWorkflowModelField } from "./media-workflow-model-field";
 import {
   Position,
   type Connection,
@@ -276,6 +279,8 @@ interface MediaFlowViewProps {
   }[];
   runOverlay?: MediaRunDetail | null;
   onRunOverlayClear?: () => void;
+  onOpenRun?: (runId: string) => void;
+  onCancelRun?: (runId: string) => void;
 }
 
 interface MediaCanvasNodeData extends Record<string, unknown> {
@@ -442,6 +447,7 @@ const LAYER_STYLES: Record<MediaNodeLayer, string> = {
 };
 
 const PORT_TONES: Record<MediaPortDataType, FlowPortTone> = {
+  mask: "violet",
   prompt: "sky",
   image: "fuchsia",
   seed: "amber",
@@ -451,6 +457,7 @@ const PORT_TONES: Record<MediaPortDataType, FlowPortTone> = {
 };
 
 const PORT_LABELS: Record<MediaPortDataType, string> = {
+  mask: "Mask",
   prompt: "Text",
   image: "Image",
   seed: "Seed",
@@ -519,9 +526,16 @@ const readNodeDetail = (
   if (typeof config.prompt === "string") {
     return config.prompt.trim() || "Awaiting a creative brief";
   }
-  if (typeof config.profile === "string") {
-    return config.profile;
-  }
+  if (typeof config.query === "string") return config.query;
+  if (typeof config.maxIterations === "number")
+    return `Up to ${config.maxIterations} attempts`;
+  if (typeof config.scale === "string" && config.modelPath !== undefined)
+    return `${config.scale}\u00d7`;
+  if (
+    typeof config.minWidth === "number" &&
+    typeof config.minHeight === "number"
+  )
+    return `At least ${config.minWidth} \u00d7 ${config.minHeight}`;
   if (typeof config.maxSelections === "number") {
     return `Approve up to ${config.maxSelections}`;
   }
@@ -538,12 +552,8 @@ const readNodeDetail = (
           : "one-way";
     return `${delivery.durationSeconds.toFixed(2)}s · ${delivery.outputFrameCount} frames · ${delivery.width}×${delivery.height} · ${loop}`;
   }
-  return "Configured by the recipe compiler";
+  return "";
 };
-
-const mediaAssetLabel = (asset: MediaAssetRecord, index: number): string =>
-  asset.tags.find((tag) => tag.source === "user")?.label ??
-  `Image ${index + 1}`;
 
 const MediaAssetThumbnail = ({
   asset,
@@ -1003,7 +1013,7 @@ const MediaAssetPicker = ({
         />
       </button>
 
-      <DialogContent className="max-h-[min(760px,calc(100vh-28px))] w-[min(720px,calc(100vw-28px))] max-w-none grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-slate-700 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
+      <DialogContent className="max-h-[min(760px,calc(100dvh-28px))] w-[min(720px,calc(100vw-28px))] max-w-none grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-slate-700 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
         <DialogHeader className="border-b border-slate-800 px-5 py-4 pr-12">
           <DialogTitle className="text-base">Choose {fieldLabel}</DialogTitle>
           <DialogDescription className="text-xs text-slate-500">
@@ -1596,6 +1606,7 @@ const ModelAddonPicker = ({
 
 const NodeFieldEditor = ({
   node,
+  nodes,
   field,
   models,
   addons,
@@ -1614,6 +1625,7 @@ const NodeFieldEditor = ({
   onPatch,
 }: {
   node: MediaFlowNode;
+  nodes: readonly MediaFlowNode[];
   field: MediaNodeFieldDefinition;
   models: readonly MediaModelDescriptor[];
   addons: readonly MediaModelAddonDescriptor[];
@@ -1634,7 +1646,7 @@ const NodeFieldEditor = ({
   const controlId = `media-node-${node.id}-${field.id}`;
   const descriptionId = `${controlId}-description`;
   const issueId = `${controlId}-issue`;
-  const value = node.config[field.id];
+  const value = node.config[field.id] ?? field.defaultValue;
   const variableTokenId =
     typeof value === "string"
       ? (value.match(/^\{\{([a-z][a-z0-9_-]{0,63})\}\}$/u)?.[1] ?? null)
@@ -1688,6 +1700,56 @@ const NodeFieldEditor = ({
 
   let control: JSX.Element;
   switch (field.kind) {
+    case "file":
+    case "directory":
+      control = (
+        <MediaWorkflowModelField
+          id={controlId}
+          value={typeof value === "string" ? value : ""}
+          directory={field.kind === "directory"}
+          modelKind={
+            node.type === "task.generate-prompt"
+              ? "prompt"
+              : node.type === "operation.segment"
+                ? "sam3"
+                : node.type === "operation.visual-check"
+                  ? "vision"
+                  : "upscale"
+          }
+          onChange={(value) => onChange(field.id, value)}
+        />
+      );
+      break;
+    case "node":
+      control = (
+        <select
+          id={controlId}
+          value={typeof value === "string" ? value : ""}
+          onChange={(event) => onChange(field.id, event.target.value)}
+          className={cn(
+            FIELD_CONTROL_CLASS,
+            "h-9 w-full rounded-md border px-3",
+          )}
+        >
+          <option value="">Choose a step</option>
+          {nodes
+            .filter((item) =>
+              [
+                "task.generate-image",
+                "task.edit-image",
+                "task.generate-prompt",
+                "operation.resize",
+                "operation.upscale",
+              ].includes(item.type),
+            )
+            .map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+        </select>
+      );
+      break;
     case "textarea":
       control = (
         <Textarea
@@ -2061,11 +2123,8 @@ const NodeFieldEditor = ({
         >
           {field.label}
         </label>
-        {field.readOnly ? (
-          <span className="text-[9px] font-medium tracking-wide text-cyan-400/70 uppercase">
-            Synchronized
-          </span>
-        ) : compatibleVariables.length > 0 || variableTokenId ? (
+        {!field.readOnly &&
+        (compatibleVariables.length > 0 || variableTokenId) ? (
           <select
             aria-label={`Variable binding for ${field.label}`}
             value={variableTokenId ?? ""}
@@ -2148,7 +2207,7 @@ const NodePalettePanel = ({
   return (
     <aside
       aria-label="Node palette"
-      className="absolute inset-y-0 right-0 z-20 min-h-0 w-[min(390px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none"
+      className="app-flow-panel absolute inset-y-0 right-0 z-20 min-h-0 w-[min(390px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -2323,11 +2382,7 @@ const VisualGroupEditor = ({
             onChange={(event) => setDraftLabel(event.target.value)}
             onBlur={commitLabel}
             onKeyDown={(event) => {
-              if (
-                event.key === "Enter" &&
-                !event.ctrlKey &&
-                !event.metaKey
-              ) {
+              if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
                 event.currentTarget.blur();
               }
               if (event.key === "Escape") {
@@ -2520,7 +2575,7 @@ const VisualGroupsPanel = ({
   return (
     <aside
       aria-label="Canvas organization"
-      className="absolute inset-y-0 right-0 z-20 min-h-0 w-[min(360px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none"
+      className="app-flow-panel absolute inset-y-0 right-0 z-20 min-h-0 w-[min(360px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -2669,7 +2724,7 @@ const NodeSelectionPanel = ({
   return (
     <aside
       aria-label="Node selection"
-      className="absolute inset-y-0 right-0 z-20 min-h-0 w-[min(360px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none"
+      className="app-flow-panel absolute inset-y-0 right-0 z-20 min-h-0 w-[min(360px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -2772,10 +2827,6 @@ const VideoQualityPresetPanel = ({
       ? "Hunyuan is first-frame-only. Choose an endpoint-conditioned model for a forward seamless loop."
       : null;
   const activePreset = identifyMediaVideoQualityPreset(config, architecture);
-  const activeDescription =
-    MEDIA_VIDEO_QUALITY_PRESETS.find((preset) => preset.id === activePreset)
-      ?.description ??
-    "Custom settings preserve deliberate overrides. Choose a preset to replace temporal density, sampling, matte, encoding, and memory controls together.";
   const delivery = summarizeMediaVideoDelivery(config, architecture);
   const execution = resolveMediaVideoExecutionSettings(config, architecture);
   const frameContract = resolveMediaVideoFrameContract(architecture);
@@ -2844,9 +2895,6 @@ const VideoQualityPresetPanel = ({
           </ControlTooltip>
         ))}
       </div>
-      <p className="mt-2 text-[9px] leading-4 text-slate-500">
-        {activeDescription}
-      </p>
       {unsupportedLoopReason ? (
         <div
           role="alert"
@@ -2937,44 +2985,20 @@ const VideoQualityPresetPanel = ({
         <>
           <p className="mt-2 text-[9px] leading-4 text-violet-200/70">
             {model.displayName}: {execution.numInferenceSteps} sampling steps,{" "}
-            {execution.guidanceScale} guidance
-            {execution.modelManaged ? " (fixed distilled trajectory)" : ""}.
+            {execution.guidanceScale} guidance.
           </p>
-          {architecture !== "wan-2.2-ti2v" ? (
-            <p className="mt-1 text-[9px] leading-4 text-amber-200/70">
-              This runtime has no separate negative-conditioning channel for the
-              selected model. Put identity, anatomy, camera, and stability
-              constraints directly in the Motion brief.
+          {!frameCountValid ? (
+            <p role="alert" className="mt-1 text-xs text-amber-200">
+              Choose {frameContract.minimum}–{frameContract.maximum} frames in
+              increments of {frameContract.stride}.
             </p>
           ) : null}
-          <p
-            className={cn(
-              "mt-1 text-[9px] leading-4",
-              frameCountValid ? "text-emerald-300/70" : "text-amber-300/80",
-            )}
-          >
-            {String(config.numFrames)} source frames{" "}
-            {frameCountValid ? "fit" : "do not fit"} the native{" "}
-            {frameContract.minimum}–{frameContract.maximum},{" "}
-            {frameContract.stride}k+1 contract.
-          </p>
         </>
       ) : null}
       {delivery ? (
         <p className="mt-2 rounded-lg border border-slate-800/80 bg-slate-950/55 px-2.5 py-2 text-[9px] leading-4 text-slate-400">
-          {delivery.width} x {delivery.height} / {delivery.outputFrameCount}{" "}
-          delivered frame{delivery.outputFrameCount === 1 ? "" : "s"} /{" "}
-          {delivery.durationSeconds.toFixed(2)}s at {delivery.fps} fps /{" "}
-          {delivery.transparent ? "verified alpha" : "opaque"} /{" "}
-          {delivery.loopMode === "ping-pong"
-            ? "boomerang with reversed playback"
-            : delivery.loopMode === "seamless"
-              ? "forward seamless loop without a duplicate end frame"
-              : "one-way"}{" "}
-          /{" "}
-          {delivery.encodingQuality === "lossless" && !delivery.transparent
-            ? "full-range 4:4:4 lossless"
-            : `${delivery.encodingQuality} 4:2:0`}
+          {delivery.width} × {delivery.height} ·{" "}
+          {delivery.durationSeconds.toFixed(2)}s · {delivery.fps} fps
         </p>
       ) : null}
     </section>
@@ -2997,11 +3021,6 @@ const VideoKeyframeReviewPanel = ({
   model: MediaModelDescriptor | null;
 }): JSX.Element => {
   const nativeFirstFrameOnly = model?.architecture === "hunyuan-video-1.5-i2v";
-  const reviewedAssetCount = new Set(
-    [firstFrame.asset?.id, lastFrame.asset?.id].filter(
-      (assetId): assetId is string => assetId !== undefined,
-    ),
-  ).size;
   return (
     <section
       aria-labelledby="video-keyframe-review-heading"
@@ -3013,15 +3032,8 @@ const VideoKeyframeReviewPanel = ({
           className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-100"
         >
           <CircleAlert aria-hidden="true" className="h-3.5 w-3.5" />
-          Keyframe gate
+          Starting and ending images
         </h3>
-        <span className="text-[9px] font-medium text-amber-300/70">
-          {firstFrame.connected && lastFrame.connected
-            ? firstFrame.asset && lastFrame.asset
-              ? `${reviewedAssetCount} reviewed asset${reviewedAssetCount === 1 ? "" : "s"}`
-              : "runtime sources"
-            : "incomplete"}
-        </span>
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
         {[
@@ -3060,18 +3072,14 @@ const VideoKeyframeReviewPanel = ({
       </div>
       <p className="mt-2 text-[9px] leading-4 text-slate-500">
         {nativeFirstFrameOnly
-          ? "Hunyuan uses the first image as its native reference; the last port must mirror it for the single-reference flow contract."
-          : "Both keys condition the generated motion."}{" "}
-        Inspect face, hands, limb count, costume, and framing at full size
-        before a quality run.
+          ? "Use the same image for both inputs. This model generates the ending."
+          : "The video moves between these images."}
       </p>
       {firstFrame.asset &&
       lastFrame.asset &&
       firstFrame.asset.digest === lastFrame.asset.digest ? (
         <p className="mt-1.5 text-[9px] leading-4 text-emerald-300/75">
-          {nativeFirstFrameOnly
-            ? "Matching inputs satisfy the native first-frame contract; the ending remains model-authored."
-            : "Matching endpoints close the cycle. If motion locks, try another seed or use two forward A→B and B→A legs."}
+          {nativeFirstFrameOnly ? null : "Matching images create a loop."}
         </p>
       ) : null}
     </section>
@@ -3080,6 +3088,7 @@ const VideoKeyframeReviewPanel = ({
 
 const NodeInspector = ({
   node,
+  run,
   flow,
   plan,
   models,
@@ -3097,6 +3106,7 @@ const NodeInspector = ({
   onClose,
 }: {
   node: MediaFlowNode;
+  run: MediaRunDetail | null;
   flow: MediaFlow;
   plan: MediaCompiledPlan;
   models: readonly MediaModelDescriptor[];
@@ -3135,6 +3145,14 @@ const NodeInspector = ({
     setNodeLabelDraft(node.label);
   }, [node.id, node.label]);
 
+  const results =
+    run?.events.filter(
+      (event) =>
+        event.nodeId === node.id &&
+        (event.kind === "workflow_prompt" ||
+          event.kind === "workflow_gate" ||
+          event.kind === "workflow_visual"),
+    ) ?? [];
   const incoming = flow.edges.filter((edge) => edge.toNodeId === node.id);
   const outgoing = flow.edges.filter((edge) => edge.fromNodeId === node.id);
   const diagnostics = plan.diagnostics.filter(
@@ -3153,7 +3171,9 @@ const NodeInspector = ({
     plan.runtimeBindings.find((binding) => binding.nodeId === node.id)?.model ??
     null;
   const imageTaskBinding = plan.runtimeBindings.find(
-    (binding) => binding.modality === "image",
+    (binding) =>
+      binding.modality === "image" &&
+      outgoing.some((edge) => edge.toNodeId === binding.nodeId),
   );
   const referenceRoleModel =
     node.type === "source.image"
@@ -3210,12 +3230,27 @@ const NodeInspector = ({
   const hasPoseInput = imageInputSources.some(
     (source) => source.config.referenceRole === "pose",
   );
-  const conditionedImageCount = imageInputSources.filter(
-    (source) => source.config.referenceRole !== "pose",
-  ).length;
-  const maskBaseAsset = baseImageAssetId
+  const conditionedImageCount =
+    imageInputEdges.length -
+    imageInputSources.filter((source) => source.config.referenceRole === "pose")
+      .length;
+  const maskReferenceEdge =
+    node.type === "operation.prepare-mask"
+      ? incoming.find((edge) => edge.toPortId === "reference")
+      : undefined;
+  const maskReferenceSource = maskReferenceEdge
+    ? resolvedFlow.nodes.find(
+        (entry) =>
+          entry.id === maskReferenceEdge.fromNodeId &&
+          entry.type === "source.image",
+      )
+    : undefined;
+  const maskBaseAssetId = maskReferenceEdge
+    ? maskReferenceSource?.config.assetId
+    : baseImageAssetId;
+  const maskBaseAsset = maskBaseAssetId
     ? (assets.find(
-        (asset) => asset.id === baseImageAssetId && asset.kind === "image",
+        (asset) => asset.id === maskBaseAssetId && asset.kind === "image",
       ) ?? null)
     : null;
   const editMask = normalizeMediaImageMask(node.config.editMask);
@@ -3236,7 +3271,8 @@ const NodeInspector = ({
       : node.type === "task.edit-image"
         ? [
             ...(hasPoseInput ? (["pose-control"] as const) : []),
-            ...(hasMediaImageMaskContent(editMask)
+            ...(hasMediaImageMaskContent(editMask) ||
+            incoming.some((edge) => edge.toPortId === "mask")
               ? (["masked-image-edit"] as const)
               : []),
             ...(conditionedImageCount > 1
@@ -3287,9 +3323,13 @@ const NodeInspector = ({
   const visibleFields = definition
     ? listVisibleMediaNodeFields(definition, node.config, activeGroup).filter(
         (field) =>
+          !(field.id === "providerPolicy" && field.readOnly) &&
           (field.kind !== "mask" ||
             (maskBaseAsset !== null &&
-              (hasMediaImageMaskContent(editMask) ||
+              (!incoming.some((edge) => edge.toPortId === "mask") ||
+                hasMediaImageMaskContent(editMask)) &&
+              (node.type === "operation.prepare-mask" ||
+                hasMediaImageMaskContent(editMask) ||
                 resolvedGenerationModel?.capabilities.includes(
                   "masked-image-edit",
                 ) === true))) &&
@@ -3310,8 +3350,24 @@ const NodeInspector = ({
   return (
     <aside
       aria-label="Node inspector"
-      className="absolute inset-y-0 right-0 z-20 min-h-0 w-[min(360px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none"
+      className="app-flow-panel absolute inset-y-0 right-0 z-20 min-h-0 w-[min(360px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none"
     >
+      {results.map((result, index) => (
+        <details
+          key={result.id}
+          className="mb-4 rounded-lg border border-slate-700 p-3 text-xs"
+        >
+          <summary className="cursor-pointer">
+            {result.kind === "workflow_prompt"
+              ? "Generated prompt"
+              : "Check result"}
+            {results.length > 1 ? ` · Attempt ${index + 1}` : ""}
+          </summary>
+          <p className="mt-2 whitespace-pre-wrap text-slate-300">
+            {result.message}
+          </p>
+        </details>
+      ))}
       <div className="flex items-start justify-between gap-3">
         <label className="min-w-0 flex-1">
           <span className="text-[10px] font-medium text-slate-300">Name</span>
@@ -3326,11 +3382,7 @@ const NodeInspector = ({
               onChange={(event) => setNodeLabelDraft(event.target.value)}
               onBlur={commitNodeLabel}
               onKeyDown={(event) => {
-                if (
-                  event.key === "Enter" &&
-                  !event.ctrlKey &&
-                  !event.metaKey
-                ) {
+                if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
                   event.currentTarget.blur();
                 }
                 if (event.key === "Escape") {
@@ -3474,6 +3526,7 @@ const NodeInspector = ({
             >
               {visibleFields.map((field) => (
                 <NodeFieldEditor
+                  nodes={flow.nodes}
                   key={field.id}
                   node={node}
                   field={field}
@@ -3768,7 +3821,7 @@ const RevisionHistoryPanel = ({
   return (
     <aside
       aria-label="Flow revision history"
-      className="absolute inset-y-0 right-0 z-20 min-h-0 w-[min(390px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none"
+      className="app-flow-panel absolute inset-y-0 right-0 z-20 min-h-0 w-[min(390px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -4022,7 +4075,7 @@ const FlowPortabilityPanel = ({
   return (
     <aside
       aria-label="Flow portability review"
-      className="absolute inset-y-0 right-0 z-20 min-h-0 w-[min(410px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none"
+      className="app-flow-panel absolute inset-y-0 right-0 z-20 min-h-0 w-[min(410px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -4030,10 +4083,6 @@ const FlowPortabilityPanel = ({
             <FileUp className="h-4 w-4 text-violet-300" />
             Portable flow
           </div>
-          <p className="mt-1 text-[10px] leading-4 text-slate-500">
-            Review exact schema and node requirements before creating an
-            isolated copy.
-          </p>
         </div>
         <Button
           type="button"
@@ -4214,10 +4263,6 @@ const FlowPortabilityPanel = ({
           <p className="mt-2 text-xs font-medium text-slate-300">
             Inspect before import
           </p>
-          <p className="mt-1 text-[10px] leading-4 text-slate-600">
-            The backend checks strict JSON, digests, graph bounds, node
-            versions, and layout identity.
-          </p>
           <Button
             type="button"
             variant="ghost"
@@ -4299,6 +4344,8 @@ export const MediaFlowView = ({
   remoteUploadManifest = [],
   runOverlay = null,
   onRunOverlayClear = () => undefined,
+  onOpenRun,
+  onCancelRun,
 }: MediaFlowViewProps): JSX.Element => {
   const disconnectConnection =
     onDisconnectConnection ??
@@ -4450,7 +4497,8 @@ export const MediaFlowView = ({
       const configuredAsset =
         assetIndex >= 0 ? (flowImageAssets[assetIndex] ?? null) : null;
       const runOutputAsset =
-        node.type === "output.asset"
+        node.type === "output.asset" ||
+        runOverlay?.executor === "media-workflow"
           ? selectMediaRunOutputAssetForNode(
               runOverlay,
               runOverlayProjection,
@@ -4472,7 +4520,9 @@ export const MediaFlowView = ({
           assetLabel: runOutputAsset
             ? runOutputAsset.kind === "vector"
               ? "Final SVG"
-              : "Final image"
+              : node.type === "operation.segment"
+                ? "Mask"
+                : `${runOutputAsset.width} \u00d7 ${runOutputAsset.height}`
             : configuredAsset
               ? mediaAssetLabel(configuredAsset, assetIndex)
               : null,
@@ -4968,14 +5018,16 @@ export const MediaFlowView = ({
         availability: () => {
           const state = mediaCommandStateRef.current;
           return !state.revisionLoading &&
+            !state.savedFlowsLoading &&
             !state.localRunPending &&
             !state.remoteRunPending &&
             (state.localRunSupported || state.remoteRunSupported)
             ? { state: "enabled" }
             : {
                 state: "disabled",
-                reason:
-                  state.localRunPending || state.remoteRunPending
+                reason: state.savedFlowsLoading
+                  ? "Loading workflow"
+                  : state.localRunPending || state.remoteRunPending
                     ? "A workflow run is already starting"
                     : "This workflow has no available executor",
               };
@@ -4997,13 +5049,16 @@ export const MediaFlowView = ({
           const state = mediaCommandStateRef.current;
           return state.localRunSupported &&
             !state.localRunPending &&
+            !state.savedFlowsLoading &&
             !state.revisionLoading
             ? { state: "enabled" }
             : {
                 state: "disabled",
-                reason: state.localRunPending
-                  ? "A local run is already starting"
-                  : state.localRunDescription,
+                reason: state.savedFlowsLoading
+                  ? "Loading workflow"
+                  : state.localRunPending
+                    ? "A local run is already starting"
+                    : state.localRunDescription,
               };
         },
         execute: () => mediaCommandStateRef.current.onRunLocalFlow(),
@@ -5018,13 +5073,16 @@ export const MediaFlowView = ({
           const state = mediaCommandStateRef.current;
           return state.remoteRunSupported &&
             !state.remoteRunPending &&
+            !state.savedFlowsLoading &&
             !state.revisionLoading
             ? { state: "enabled" }
             : {
                 state: "disabled",
-                reason: state.remoteRunPending
-                  ? "A remote run is already starting"
-                  : state.remoteRunDescription,
+                reason: state.savedFlowsLoading
+                  ? "Loading workflow"
+                  : state.remoteRunPending
+                    ? "A remote run is already starting"
+                    : state.remoteRunDescription,
               };
         },
         execute: () =>
@@ -5734,10 +5792,10 @@ export const MediaFlowView = ({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-slate-950">
-      <header className="grid shrink-0 gap-3 border-b border-slate-800/80 px-3 py-3 sm:px-6 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
-        <div>
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+    <div className="app-media-flow flex h-full min-h-0 flex-col bg-slate-950">
+      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-800/80 px-3 py-3 sm:px-6">
+        <div className="min-w-0 flex-1 basis-72">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-semibold text-slate-100">
             <GitBranch className="h-4 w-4 text-cyan-300" />
             <span className="max-w-72 truncate">{flow.name}</span>
             {hasUnsavedChanges ? (
@@ -5780,7 +5838,7 @@ export const MediaFlowView = ({
             </p>
           ) : null}
         </div>
-        <div className="flex max-w-full items-center gap-2 overflow-x-auto pb-1 xl:justify-end xl:pb-0">
+        <div className="flex max-w-full shrink-0 items-center gap-2 overflow-x-auto pb-1 xl:pb-0">
           <div
             className="flex items-center"
             aria-label="Semantic editing controls"
@@ -6127,9 +6185,16 @@ export const MediaFlowView = ({
           <Button
             type="button"
             size="sm"
-            aria-describedby="media-run-description"
-            disabled={runPending || revisionLoading || !runSupported}
-            tooltip={runDescription}
+            aria-describedby={
+              runSupported ? undefined : "media-run-description"
+            }
+            disabled={
+              runPending ||
+              revisionLoading ||
+              savedFlowsLoading ||
+              !runSupported
+            }
+            tooltip={runSupported ? undefined : runDescription}
             onClick={() => {
               if (localRunSupported) onRunLocalFlow();
               else if (remoteRunSupported) setRemoteConfirmationOpen(true);
@@ -6145,9 +6210,11 @@ export const MediaFlowView = ({
             )}
             {runPending ? "Running…" : "Run"}
           </Button>
-          <span id="media-run-description" className="sr-only">
-            {runDescription}
-          </span>
+          {!runSupported ? (
+            <span id="media-run-description" className="sr-only">
+              {runDescription}
+            </span>
+          ) : null}
           {(history?.revisions.length ?? 0) > 0 ? (
             <Button
               type="button"
@@ -6239,8 +6306,8 @@ export const MediaFlowView = ({
               </div>
               <p className="mt-1 text-[9px] leading-4 text-slate-500">
                 {Math.round(runOverlay.progress * 100)}% ·{" "}
-                {runOverlay.assets.length} output
-                {runOverlay.assets.length === 1 ? "" : "s"}
+                {countMediaRunOutputs(runOverlay)} output
+                {countMediaRunOutputs(runOverlay) === 1 ? "" : "s"}
               </p>
               <p
                 aria-live="polite"
@@ -6266,6 +6333,34 @@ export const MediaFlowView = ({
               ) : null}
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
+              {onOpenRun ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onOpenRun(runOverlay.id)}
+                >
+                  {runOverlay.assets.length > 0
+                    ? "View results"
+                    : "View activity"}
+                </Button>
+              ) : null}
+              {onCancelRun &&
+              ["queued", "running", "waiting-for-review", "canceling"].includes(
+                runOverlay.status,
+              ) ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={runOverlay.status === "canceling"}
+                  onClick={() => onCancelRun(runOverlay.id)}
+                >
+                  {runOverlay.status === "canceling"
+                    ? "Canceling"
+                    : "Cancel run"}
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"
@@ -6298,7 +6393,7 @@ export const MediaFlowView = ({
 
       <div
         className={cn(
-          "relative grid min-h-0 flex-1",
+          "app-media-flow-grid relative grid min-h-0 flex-1",
           panelOpen
             ? "grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px]"
             : "grid-cols-1",
@@ -6394,6 +6489,8 @@ export const MediaFlowView = ({
           />
         ) : selectedNode ? (
           <NodeInspector
+            key={`${flow.id}:${selectedNode.id}`}
+            run={visualRunOverlayProjection ? runOverlay : null}
             node={selectedNode}
             flow={flow}
             plan={plan}
@@ -6455,8 +6552,11 @@ export const MediaFlowView = ({
             }}
           />
         ) : planPanelOpen ? (
-          <aside className="absolute inset-y-0 right-0 z-20 min-h-0 w-[min(360px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none">
-            <div className="flex items-center justify-between">
+          <aside
+            aria-label="Runtime plan"
+            className="app-flow-panel absolute inset-y-0 right-0 z-20 min-h-0 w-[min(360px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none"
+          >
+            <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
                 <Sparkles className="h-4 w-4 text-violet-300" />
                 Runtime expansion
@@ -6464,6 +6564,16 @@ export const MediaFlowView = ({
               <span className="text-[10px] text-slate-600">
                 {plan.steps.length} steps
               </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Close runtime plan"
+                onClick={() => setPlanPanelOpen(false)}
+                className="text-slate-500 hover:bg-slate-800 hover:text-slate-200"
+              >
+                <PanelRightClose className="h-3.5 w-3.5" />
+              </Button>
             </div>
             {planErrors.length > 0 ? (
               <section className="mt-4" aria-label="Flow errors">
@@ -6586,7 +6696,7 @@ export const MediaFlowView = ({
         open={remoteConfirmationOpen}
         onOpenChange={setRemoteConfirmationOpen}
       >
-        <DialogContent className="max-h-[min(760px,calc(100vh-28px))] w-[min(680px,calc(100vw-28px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-amber-400/20 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
+        <DialogContent className="max-h-[min(760px,calc(100dvh-28px))] w-[min(680px,calc(100vw-28px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-amber-400/20 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
           <DialogHeader className="border-b border-slate-800 px-6 py-5 pr-12 text-left">
             <DialogTitle className="flex items-center gap-2 text-lg text-white">
               <ShieldCheck className="h-5 w-5 text-amber-300" />

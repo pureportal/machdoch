@@ -77,6 +77,9 @@ fn prepare_export(
     let (bytes, expected_pixels) = match mode {
         MediaAssetExportMode::VerifiedOriginal => (original_bytes, None),
         MediaAssetExportMode::MetadataStripped => {
+            if mime_type == "application/json" {
+                return Err("Report export requires verified-original mode".to_string());
+            }
             if mime_type == "video/webm" {
                 return Err(
                     "WebM video export must use verified-original mode so VP9 alpha and loop metadata remain intact"
@@ -206,6 +209,7 @@ fn validate_destination(destination_path: &str, mime_type: &str) -> MediaResult<
         "image/webp" => extension == "webp",
         "image/svg+xml" => extension == "svg",
         "video/webm" => extension == "webm",
+        "application/json" => extension == "json",
         _ => false,
     };
     if !extension_matches {
@@ -401,6 +405,43 @@ mod tests {
         let source = database::get_asset_blob_source(&paths, &asset_id).unwrap();
         assert_eq!(source.digest, record.source_digest);
         drop(connection);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn report_export_preserves_json_and_requires_a_matching_destination() {
+        let root = test_root("report");
+        fs::create_dir_all(&root).unwrap();
+        let source_bytes = br#"{"verdict":"unknown","criteria":[]}"#.to_vec();
+        let prepared = prepare_export(
+            "application/json",
+            MediaAssetExportMode::VerifiedOriginal,
+            source_bytes.clone(),
+        )
+        .unwrap();
+
+        assert_eq!(prepared.bytes, source_bytes);
+        assert_eq!(
+            prepared.digest,
+            format!("{:x}", Sha256::digest(&source_bytes))
+        );
+        assert!(prepared.expected_pixels.is_none());
+        assert!(validate_destination(
+            root.join("report.json").to_str().unwrap(),
+            "application/json"
+        )
+        .is_ok());
+        assert!(validate_destination(
+            root.join("report.png").to_str().unwrap(),
+            "application/json"
+        )
+        .is_err());
+        assert!(prepare_export(
+            "application/json",
+            MediaAssetExportMode::MetadataStripped,
+            source_bytes,
+        )
+        .is_err());
         fs::remove_dir_all(root).unwrap();
     }
 

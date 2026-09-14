@@ -3090,6 +3090,7 @@ dependencies = [
  "chacha20poly1305 0.11.0",
  "chrono",
  "enigo",
+ "flate2",
  "font8x8",
  "futures-util",
  "getrandom 0.3.4",
@@ -3106,12 +3107,14 @@ dependencies = [
  "resvg",
  "roxmltree 0.21.1",
  "rusqlite",
+ "ryu-js",
  "serde",
  "serde_json",
  "sha2",
  "snow",
  "socket2",
  "sysinfo",
+ "tar",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
@@ -3132,6 +3135,7 @@ dependencies = [
  "windows-sys 0.61.2",
  "xcap",
  "zeroize",
+ "zip",
 ]
 
 [[package]]
@@ -5302,6 +5306,12 @@ name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
+
+[[package]]
+name = "ryu-js"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04d056b875a9d2e6cb9a61d127afee9ac5999b9f87bcb32079d1318e505be714"
 
 [[package]]
 name = "same-file"

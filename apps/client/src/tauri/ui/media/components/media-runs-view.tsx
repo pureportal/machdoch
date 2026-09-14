@@ -27,7 +27,10 @@ import type {
   MediaRuntimeRunRecord,
 } from "../../../../core/media/contracts.js";
 import { paginateMediaItems } from "../../../../core/media/gallery.js";
-import { matchesMediaRunQuery } from "../../../../core/media/run-library.js";
+import {
+  countMediaRunOutputs,
+  matchesMediaRunQuery,
+} from "../../../../core/media/run-library.js";
 import { Badge } from "../../components/ui/badge";
 import { useOptionalRegisterCommands } from "../../commands/command-context";
 import { getDefaultCommandShortcut } from "../../commands/command-defaults";
@@ -41,6 +44,7 @@ import type { MediaGenerationRecipeSnapshot } from "../media-generation-queue";
 import { formatMediaImageRecipeOutput } from "../media-generation-recipe";
 import { MediaPagination } from "./media-pagination";
 import { MediaAssetPreview } from "./media-visual-preview";
+import { MediaRunResults } from "./media-run-results";
 
 const RUN_HISTORY_PAGE_SIZE = 30;
 
@@ -48,6 +52,9 @@ interface MediaRunsViewProps {
   runs: readonly MediaRunRecord[];
   assets: readonly MediaAssetRecord[];
   selectedRun: MediaRunDetail | null;
+  selectedRunId: string | null;
+  selectedRunLoading: boolean;
+  onOpenAsset: (asset: MediaAssetRecord) => void;
   selectedRecipe: MediaGenerationRecipeSnapshot | null;
   onCreate: () => void;
   onSelect: (runId: string) => void;
@@ -85,6 +92,7 @@ const EXECUTOR_LABELS: Record<MediaRunDetail["executor"], string> = {
   "local-import": "Local import",
   "local-transform": "Local transform",
   "local-image-flow": "Local image generation",
+  "media-workflow": "Workflow",
   "local-analysis": "Local analysis",
   "local-video": "Local video generation",
   "local-wan-video": "Local WAN video generation",
@@ -185,9 +193,24 @@ export const MediaActivityPreview = ({
   run: MediaRunRecord;
   assets: readonly MediaAssetRecord[];
 }): JSX.Element => {
-  const asset = assets.find(
+  const candidates = assets.filter(
     (candidate) => candidate.runId === run.id && candidate.kind !== "report",
   );
+  const asset =
+    isRuntimeRun(run) && run.executor === "media-workflow"
+      ? candidates.sort((left, right) => {
+          const leftFinal =
+            left.operation?.kind === "workflow" &&
+            left.operation.details.finalOutput === true;
+          const rightFinal =
+            right.operation?.kind === "workflow" &&
+            right.operation.details.finalOutput === true;
+          return (
+            Number(rightFinal) - Number(leftFinal) ||
+            right.outputIndex - left.outputIndex
+          );
+        })[0]
+      : candidates[0];
   if (asset) {
     return (
       <MediaAssetPreview
@@ -257,6 +280,7 @@ const RunInspector = ({
   onInspectInFlow,
   recipe,
   onReuseSettings,
+  onOpenAsset,
 }: {
   run: MediaRunDetail;
   onCancel: (runId: string) => void;
@@ -268,6 +292,7 @@ const RunInspector = ({
   onInspectInFlow: MediaRunsViewProps["onInspectInFlow"];
   recipe: MediaGenerationRecipeSnapshot | null;
   onReuseSettings: MediaRunsViewProps["onReuseSettings"];
+  onOpenAsset: MediaRunsViewProps["onOpenAsset"];
 }): JSX.Element => {
   const pendingReview = run.humanReviews.find(
     (review) => review.status === "pending",
@@ -314,7 +339,7 @@ const RunInspector = ({
           }
       : {
           label: "Published",
-          value: `${run.assets.length} / ${run.outputCount}`,
+          value: `${countMediaRunOutputs(run)} / ${run.outputCount}`,
         };
   const reviewCommentValid =
     !pendingReview?.requireComment || comment.trim().length > 0;
@@ -343,12 +368,12 @@ const RunInspector = ({
   return (
     <aside
       aria-label="Run inspector"
-      className="min-h-0 overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900/35 p-5"
+      className="order-first min-h-0 overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900/35 p-5 xl:order-last"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-            <ListTree className="h-4 w-4 text-cyan-300" /> Execution log
+            <ListTree className="h-4 w-4 text-cyan-300" /> {run.flowName}
           </div>
           <p className="mt-1 break-all font-mono text-[10px] text-slate-600">
             {run.id}
@@ -395,6 +420,35 @@ const RunInspector = ({
         </div>
       </div>
 
+      <div className="mt-3 flex flex-wrap gap-2">
+        {canCancel ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onCancel(run.id)}
+          >
+            Cancel run
+          </Button>
+        ) : run.status === "canceling" ? (
+          <Button type="button" variant="outline" size="sm" disabled>
+            Canceling
+          </Button>
+        ) : null}
+        {run.flowRevisionId &&
+        ["failed", "canceled", "blocked"].includes(run.status) ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onReuseSettings(run.id)}
+          >
+            Edit and rerun
+          </Button>
+        ) : null}
+      </div>
+      <MediaRunResults key={run.id} run={run} onOpenAsset={onOpenAsset} />
+
       {run.flowRevisionId ? (
         <Button
           type="button"
@@ -435,7 +489,7 @@ const RunInspector = ({
               {recipe?.modelLabel ?? run.modelLabel}
             </dd>
           </div>
-          {recipe?.imageSettings ? (
+          {recipe?.imageSettings && recipe.target !== "video" ? (
             <div className="col-span-2">
               <dt className="text-slate-600">Output</dt>
               <dd className="text-slate-300">
@@ -450,8 +504,7 @@ const RunInspector = ({
             <div className="col-span-2">
               <dt className="text-slate-600">Video</dt>
               <dd className="text-slate-300">
-                {recipe.videoSettings.resolution} ·{" "}
-                {recipe.videoSettings.numFrames} frames ·{" "}
+                WebM · {recipe.videoSettings.numFrames} frames ·{" "}
                 {recipe.videoSettings.fps} fps
               </dd>
             </div>
@@ -481,32 +534,47 @@ const RunInspector = ({
           aria-label="Structured run failure"
           className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/8 p-3"
         >
-          <div className="flex flex-wrap items-center gap-2">
-            <ShieldAlert className="h-3.5 w-3.5 text-rose-200" />
-            <p className="text-[11px] font-semibold text-rose-100">
-              {run.failure.message}
-            </p>
-            <Badge
-              variant="outline"
-              className="border-rose-300/20 font-mono text-[8px] text-rose-200/65"
-            >
-              {run.failure.code}
-            </Badge>
-          </div>
-          <p className="mt-1.5 text-[9px] leading-4 text-rose-100/60">
-            {run.failure.partialOutputsExist
-              ? "Published outputs were preserved."
-              : "No output was published."}{" "}
-            Retry policy: {run.failure.retryability.replaceAll("-", " ")}.
-          </p>
-          <details className="mt-2 text-[9px] text-slate-500">
-            <summary className="cursor-pointer hover:text-slate-300">
-              Technical diagnostic
-            </summary>
-            <p className="mt-1.5 break-words rounded-md bg-slate-950/45 p-2 font-mono leading-4 text-slate-400">
-              {run.failure.technicalDiagnostic}
-            </p>
-          </details>
+          {run.failure.code === "QUALITY_GATE_FAILED" ? (
+            <details>
+              <summary className="cursor-pointer text-xs text-rose-100">
+                Quality check details
+              </summary>
+              <p className="mt-2 text-xs leading-5 text-rose-100/80">
+                {run.failure.message}
+              </p>
+            </details>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <ShieldAlert className="h-3.5 w-3.5 text-rose-200" />
+              <p className="text-[11px] font-semibold text-rose-100">
+                {run.failure.message}
+              </p>
+              <Badge
+                variant="outline"
+                className="border-rose-300/20 font-mono text-[8px] text-rose-200/65"
+              >
+                {run.failure.code}
+              </Badge>
+            </div>
+          )}
+          {run.failure.code !== "QUALITY_GATE_FAILED" ? (
+            <>
+              <p className="mt-1.5 text-[9px] leading-4 text-rose-100/60">
+                {run.failure.partialOutputsExist
+                  ? "Published outputs were preserved."
+                  : "No output was published."}{" "}
+                Retry policy: {run.failure.retryability.replaceAll("-", " ")}.
+              </p>
+              <details className="mt-2 text-[9px] text-slate-500">
+                <summary className="cursor-pointer hover:text-slate-300">
+                  Technical diagnostic
+                </summary>
+                <p className="mt-1.5 break-words rounded-md bg-slate-950/45 p-2 font-mono leading-4 text-slate-400">
+                  {run.failure.technicalDiagnostic}
+                </p>
+              </details>
+            </>
+          ) : null}
         </section>
       ) : run.error ? (
         <div className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/8 p-3 text-xs leading-5 text-rose-200">
@@ -1010,16 +1078,6 @@ const RunInspector = ({
         ))}
       </ol>
 
-      {canCancel ? (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => onCancel(run.id)}
-          className="mt-5 w-full border-orange-400/20 bg-orange-400/5 text-orange-200 hover:bg-orange-400/10"
-        >
-          <Ban className="h-4 w-4" /> Cancel at safe checkpoint
-        </Button>
-      ) : null}
       {canRetry ? (
         <Button
           type="button"
@@ -1038,6 +1096,9 @@ export const MediaRunsView = ({
   runs,
   assets,
   selectedRun,
+  selectedRunId,
+  selectedRunLoading,
+  onOpenAsset,
   selectedRecipe,
   onCreate,
   onSelect,
@@ -1285,7 +1346,8 @@ export const MediaRunsView = ({
           <div
             className={cn(
               "mt-6 grid min-h-0 flex-1 gap-4 overflow-y-auto xl:overflow-hidden",
-              selectedRun && "xl:grid-cols-[minmax(0,1fr)_360px]",
+              (selectedRun || selectedRunLoading) &&
+                "xl:grid-cols-[minmax(0,1fr)_360px]",
             )}
           >
             <div
@@ -1306,7 +1368,7 @@ export const MediaRunsView = ({
               <div className="overflow-hidden rounded-2xl border border-slate-800">
                 {runPagination.items.map((run) => {
                   const runtimeRun = isRuntimeRun(run);
-                  const selected = selectedRun?.id === run.id;
+                  const selected = selectedRunId === run.id;
                   const content = (
                     <>
                       <div className="mb-4 aspect-[3/1] overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
@@ -1328,9 +1390,11 @@ export const MediaRunsView = ({
                               {run.status}
                             </span>
                           </div>
-                          <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-400">
-                            {run.prompt || "No prompt supplied"}
-                          </p>
+                          {run.prompt && run.prompt !== run.flowName ? (
+                            <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-400">
+                              {run.prompt}
+                            </p>
+                          ) : null}
                         </div>
                         <div className="text-right text-[10px] text-slate-600">
                           {formatCreatedAt(run.createdAt)}
@@ -1364,7 +1428,16 @@ export const MediaRunsView = ({
                           <RadioTower className="h-3.5 w-3.5" />
                           {run.target ?? "unresolved"}
                         </span>
-                        <span>{run.outputCount} outputs</span>
+                        <span>
+                          {runtimeRun && run.executor === "media-workflow"
+                            ? `Published ${countMediaRunOutputs({
+                                executor: run.executor,
+                                assets: assets.filter(
+                                  (asset) => asset.runId === run.id,
+                                ),
+                              })} / ${run.outputCount}`
+                            : `${run.outputCount} outputs`}
+                        </span>
                         {run.diagnosticCount > 0 ? (
                           <span>{run.diagnosticCount} diagnostics</span>
                         ) : null}
@@ -1404,7 +1477,14 @@ export const MediaRunsView = ({
                 ) : null}
               </div>
             </div>
-            {selectedRun ? (
+            {selectedRunLoading ? (
+              <aside
+                role="status"
+                className="order-first rounded-2xl border border-slate-800 p-5 text-sm text-slate-400 xl:order-last"
+              >
+                Loading run…
+              </aside>
+            ) : selectedRun ? (
               <RunInspector
                 run={selectedRun}
                 onCancel={onCancel}
@@ -1414,6 +1494,7 @@ export const MediaRunsView = ({
                 onResolveHumanReview={onResolveHumanReview}
                 humanReviewPending={humanReviewPending}
                 onInspectInFlow={onInspectInFlow}
+                onOpenAsset={onOpenAsset}
                 recipe={selectedRecipe}
                 onReuseSettings={onReuseSettings}
               />

@@ -1,3 +1,4 @@
+import { describe, expect, it } from "vitest";
 import { createMediaModelCatalog } from "./catalog.js";
 import {
   analyzeMediaFlowCardinality,
@@ -23,6 +24,12 @@ describe("built-in media flow templates", () => {
     });
 
     expect(templates.map((template) => template.id)).toEqual([
+      "replace-selected-object",
+      "replace-background",
+      "refine-until-pass",
+      "upscale-and-animate",
+      "refine-selected-edit",
+      "refine-edit-boundary",
       "text-to-image-variants",
       "product-cutout-quality",
       "quality-gated-campaign",

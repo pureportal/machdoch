@@ -1,3 +1,4 @@
+import { describe, expect, it } from "vitest";
 import { createImageRecipeFlow, createMediaFlowLayout } from "./compiler.js";
 import {
   createMediaFlowDocumentDigest,

@@ -1,3 +1,4 @@
+import { describe, expect, it } from "vitest";
 import type { MediaAssetRecord } from "./contracts.js";
 import {
   fitMediaVideoDuration,

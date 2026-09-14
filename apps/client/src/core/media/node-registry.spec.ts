@@ -72,14 +72,14 @@ describe("media node registry", () => {
     const flow = createFlow();
 
     expect(validateMediaFlowNodes(flow)).toEqual([]);
-    expect(listMediaNodeDefinitions()).toHaveLength(25);
+    expect(listMediaNodeDefinitions()).toHaveLength(31);
     for (const definition of listMediaNodeDefinitions()) {
       expect(definition.version).toBe(1);
       expect(definition.fields.every((field) => "defaultValue" in field)).toBe(
         true,
       );
       expect(
-        definition.fields.every((field) => field.examples.length > 0),
+        definition.fields.every((field) => Array.isArray(field.examples)),
       ).toBe(true);
       expect(
         [...definition.inputs, ...definition.outputs].every(
@@ -581,12 +581,18 @@ describe("media node registry", () => {
       listVisibleMediaNodeFields(definition!, config, "Basic").map(
         (field) => field.id,
       ),
-    ).toEqual(["providerPolicy", "aspectRatio", "outputCount", "outputFormat"]);
+    ).toEqual([
+      "providerPolicy",
+      "aspectRatio",
+      "outputCount",
+      "outputFormat",
+      "modelId",
+    ]);
     expect(
       listVisibleMediaNodeFields(definition!, config, "Expert").map(
         (field) => field.id,
       ),
-    ).toEqual(["modelId", "modelAddons", "memoryProfile"]);
+    ).toEqual(["modelAddons", "memoryProfile"]);
   });
 
   it("defines human review as a bounded typed pass-through gate", () => {
@@ -711,13 +717,13 @@ describe("media node registry", () => {
         nodeId: added.nodeId,
       }),
     );
-    expect(() =>
+    expect(
       addMediaFlowNode({
         flow: added.flow,
         type: "task.generate-image",
         updatedAt: "2026-07-14T11:02:00.000Z",
-      }),
-    ).toThrow("already present");
+      }).flow.nodes.filter((node) => node.type === "task.generate-image"),
+    ).toHaveLength(2);
 
     const removed = removeMediaFlowNode({
       flow: createSimpleFlow(),
@@ -906,14 +912,14 @@ describe("media node registry", () => {
       }),
     );
 
-    const singleton = copyMediaFlowNode(source, "generate");
-    expect(() =>
+    const generation = copyMediaFlowNode(source, "generate");
+    expect(
       pasteMediaFlowNode({
         flow: source,
-        payload: singleton,
+        payload: generation,
         updatedAt: "2026-07-14T11:11:00.000Z",
-      }),
-    ).toThrow("already present");
+      }).flow.nodes.filter((node) => node.type === "task.generate-image"),
+    ).toHaveLength(2);
   });
 
   it("remaps multi-node clipboard identities while preserving internal typed edges", () => {
@@ -1162,7 +1168,11 @@ describe("media node registry", () => {
       ],
     };
 
-    expect(validateMediaImageReferenceTopology(invalid).map((issue) => issue.message)).toEqual(
+    expect(
+      validateMediaImageReferenceTopology(invalid).map(
+        (issue) => issue.message,
+      ),
+    ).toEqual(
       expect.arrayContaining([
         "An image run accepts one pose image.",
         "An image asset can be connected only once to the same image task.",

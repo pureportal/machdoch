@@ -906,7 +906,7 @@ pub(crate) fn snapshot(
                         acquisition: "bundled".to_string(),
                         verification: "none".to_string(),
                     }
-                } else if externally_managed_local_runtime {
+                } else if provider_id == "local-svg-runtime" {
                     MediaModelManagement {
                         acquisition: "external-runtime".to_string(),
                         verification: "none".to_string(),

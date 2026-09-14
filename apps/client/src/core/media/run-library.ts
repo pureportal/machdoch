@@ -1,13 +1,25 @@
 import type {
+  MediaRunDetail,
   MediaRunRecord,
   MediaRunPage,
   MediaRuntimeRunRecord,
 } from "./contracts.js";
+
 import {
   collectRevisionedMediaPages,
   type RevisionedMediaLibrarySnapshot,
   type RevisionedMediaPageRequest,
 } from "./revisioned-library.js";
+
+export const countMediaRunOutputs = (
+  run: Pick<MediaRunDetail, "assets" | "executor">,
+): number =>
+  run.assets.filter(
+    (asset) =>
+      run.executor !== "media-workflow" ||
+      (asset.operation?.kind === "workflow" &&
+        asset.operation.details.finalOutput === true),
+  ).length;
 
 export type MediaRunLibrarySnapshot =
   RevisionedMediaLibrarySnapshot<MediaRuntimeRunRecord>;

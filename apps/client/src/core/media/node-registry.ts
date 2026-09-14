@@ -8,9 +8,17 @@ import type {
 import { resolveMediaFlowVariables } from "./variables.js";
 import { DEFAULT_SUBJECT_CUTOUT_MODEL_PRIORITY } from "./subject-cutout-policy.js";
 import { isMediaImageMask } from "./image-mask.js";
+import {
+  WORKFLOW_NODE_DEFINITIONS,
+  WORKFLOW_GATE_FIELDS,
+  workflowMaskPort,
+} from "./workflow-nodes.js";
 
 export type MediaNodeInspectorGroup = "Basic" | "Creative" | "Expert";
 export type MediaNodeFieldKind =
+  | "file"
+  | "directory"
+  | "node"
   | "text"
   | "textarea"
   | "asset"
@@ -238,6 +246,7 @@ const backgroundVideoInput: MediaNodePortDefinition = {
 };
 
 export const MEDIA_NODE_DEFINITIONS = [
+  ...WORKFLOW_NODE_DEFINITIONS,
   {
     type: "source.prompt",
     version: 1,
@@ -247,7 +256,7 @@ export const MEDIA_NODE_DEFINITIONS = [
     layer: "source",
     category: "Input",
     paletteVisibility: "default",
-    maxInstances: 1,
+    maxInstances: 8,
     inputs: [],
     outputs: [promptPort],
     fields: [
@@ -405,13 +414,13 @@ export const MEDIA_NODE_DEFINITIONS = [
     layer: "task",
     category: "Generation",
     paletteVisibility: "default",
-    maxInstances: 1,
+    maxInstances: 8,
     inputs: [promptPort, optionalImageReferenceInput, seedInput],
     outputs: [imageOutput],
     fields: [
       {
         id: "providerPolicy",
-        label: "Execution boundary",
+        label: "Run on",
         description:
           "Auto chooses a ready compatible model; Local prevents remote prompt upload.",
         group: "Basic",
@@ -646,10 +655,9 @@ export const MEDIA_NODE_DEFINITIONS = [
       },
       {
         id: "modelId",
-        label: "Exact model pin",
-        description:
-          "Expert override. Automatic selection remains reproducible in the compiled plan.",
-        group: "Expert",
+        label: "Model",
+        description: "",
+        group: "Basic",
         kind: "model",
         required: true,
         defaultValue: null,
@@ -706,19 +714,18 @@ export const MEDIA_NODE_DEFINITIONS = [
   {
     type: "task.edit-image",
     version: 1,
-    displayName: "Generate",
-    summary:
-      "Applies provider-neutral text-guided changes to one or more labeled immutable references.",
+    displayName: "Edit image",
+    summary: "",
     layer: "task",
     category: "Generation",
     paletteVisibility: "default",
-    maxInstances: 1,
-    inputs: [promptPort, imageReferenceInput, seedInput],
+    maxInstances: 8,
+    inputs: [promptPort, imageReferenceInput, seedInput, workflowMaskPort],
     outputs: [imageOutput],
     fields: [
       {
         id: "providerPolicy",
-        label: "Execution boundary",
+        label: "Run on",
         description:
           "Auto chooses a ready compatible model; Local prevents source-image upload.",
         group: "Basic",
@@ -905,10 +912,9 @@ export const MEDIA_NODE_DEFINITIONS = [
       },
       {
         id: "modelId",
-        label: "Exact model pin",
-        description:
-          "Expert override. Automatic selection remains reproducible in the compiled plan.",
-        group: "Expert",
+        label: "Model",
+        description: "",
+        group: "Basic",
         kind: "model",
         required: true,
         defaultValue: null,
@@ -981,7 +987,7 @@ export const MEDIA_NODE_DEFINITIONS = [
     fields: [
       {
         id: "providerPolicy",
-        label: "Execution boundary",
+        label: "Run on",
         description:
           "Automatic resolves a compatible adapter; Local and Remote keep the execution boundary explicit.",
         group: "Basic",
@@ -1098,10 +1104,10 @@ export const MEDIA_NODE_DEFINITIONS = [
       },
       {
         id: "modelId",
-        label: "Exact model pin",
+        label: "Model",
         description:
           "Use HunyuanVideo 1.5 for one-way first-frame motion, Wan2.2 for circular same-endpoint loops, FramePack for distinct endpoints, LTX 13B as an alternate endpoint model, and LTX 2B on lower-memory hardware.",
-        group: "Expert",
+        group: "Basic",
         kind: "model",
         required: true,
         defaultValue: "local:hunyuan-video-1.5-i2v-step-distilled",
@@ -2169,9 +2175,8 @@ export const MEDIA_NODE_DEFINITIONS = [
   {
     type: "operation.quality-analyze",
     version: 1,
-    displayName: "Analyze quality",
-    summary:
-      "Measures explicit quality observations without silently changing image pixels.",
+    displayName: "Measure image",
+    summary: "",
     layer: "operation",
     category: "Quality",
     paletteVisibility: "advanced",
@@ -2193,10 +2198,13 @@ export const MEDIA_NODE_DEFINITIONS = [
         label: "Quality profile",
         description: "Versioned rubric used for deterministic image checks.",
         group: "Expert",
-        kind: "text",
+        kind: "select",
+        options: [
+          option("technical-image-baseline", "Technical image checks", ""),
+        ],
         required: true,
-        defaultValue: "quality.standard.v1",
-        examples: ["quality.standard.v1"],
+        defaultValue: "technical-image-baseline",
+        examples: ["technical-image-baseline"],
         maxLength: 128,
       },
     ],
@@ -2207,7 +2215,7 @@ export const MEDIA_NODE_DEFINITIONS = [
     type: "control.quality-gate",
     version: 1,
     displayName: "Quality gate",
-    summary: "Routes an image through an explicit tri-state quality decision.",
+    summary: "",
     layer: "control",
     category: "Control",
     paletteVisibility: "advanced",
@@ -2224,32 +2232,20 @@ export const MEDIA_NODE_DEFINITIONS = [
     ],
     outputs: [imageOutput],
     fields: [
+      ...WORKFLOW_GATE_FIELDS.map((field) => ({ ...field, required: false })),
       {
         id: "onUnknown",
-        label: "Unknown result",
+        label: "Inconclusive check",
         description:
           "Choose an explicit policy when evidence cannot produce pass or fail.",
         group: "Basic",
         kind: "select",
         required: true,
-        defaultValue: "human-review",
-        examples: ["human-review", "fail"],
+        defaultValue: "fail",
+        examples: ["fail", "pass"],
         options: [
-          option(
-            "human-review",
-            "Require human review",
-            "Pause before publication.",
-          ),
-          option(
-            "fail",
-            "Treat as failed",
-            "Block publication conservatively.",
-          ),
-          option(
-            "pass",
-            "Treat as passed",
-            "Continue despite incomplete evidence.",
-          ),
+          option("fail", "Stop", ""),
+          option("pass", "Continue", "Continue despite incomplete evidence."),
         ],
       },
       {
@@ -2257,10 +2253,13 @@ export const MEDIA_NODE_DEFINITIONS = [
         label: "Quality profile",
         description: "Must match the report semantics consumed by this gate.",
         group: "Expert",
-        kind: "text",
+        kind: "select",
+        options: [
+          option("technical-image-baseline", "Technical image checks", ""),
+        ],
         required: true,
-        defaultValue: "quality.standard.v1",
-        examples: ["quality.standard.v1"],
+        defaultValue: "technical-image-baseline",
+        examples: ["technical-image-baseline"],
         maxLength: 128,
       },
     ],
@@ -2600,6 +2599,9 @@ const validateFieldValue = (
   switch (field.kind) {
     case "text":
     case "textarea":
+    case "file":
+    case "directory":
+    case "node":
     case "asset":
       isValid =
         typeof value === "string" &&
@@ -2692,7 +2694,8 @@ export const validateMediaFlowNode = (
       severity: "error",
       nodeId: node.id,
       fieldId: null,
-      message: "Node names must be trimmed, non-empty, and at most 256 characters.",
+      message:
+        "Node names must be trimmed, non-empty, and at most 256 characters.",
     });
   }
   if (node.version !== definition.version) {
@@ -2818,7 +2821,8 @@ export const validateMediaImageReferenceTopology = (
         severity: "error",
         nodeId: baseNodes[1]?.id ?? taskNode.id,
         fieldId: "referenceRole",
-        message: "An image run accepts one base image. Run each base image separately.",
+        message:
+          "An image run accepts one base image. Run each base image separately.",
       });
     }
     const poseNodes = sourceNodes.filter(
@@ -3135,6 +3139,16 @@ const cloneConfigValue = (value: unknown): unknown => {
   }
   return value;
 };
+
+export const createDefaultMediaNodeConfig = (
+  type: MediaNodeType,
+): Record<string, unknown> =>
+  Object.fromEntries(
+    (getMediaNodeDefinition(type)?.fields ?? []).map((field) => [
+      field.id,
+      cloneConfigValue(field.defaultValue),
+    ]),
+  );
 
 const createUniqueId = (
   base: string,
@@ -3967,7 +3981,11 @@ export const updateMediaFlowNodeConfig = ({
     return node;
   });
 
-  const nextFlow = synchronizeMediaFlowAssetCounts({ ...flow, updatedAt, nodes });
+  const nextFlow = synchronizeMediaFlowAssetCounts({
+    ...flow,
+    updatedAt,
+    nodes,
+  });
   if (
     sourceNode.type === "source.image" &&
     (fieldId === "assetId" || fieldId === "referenceRole")

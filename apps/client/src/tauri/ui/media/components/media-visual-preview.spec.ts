@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
 import { createElement } from "react";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MediaAssetRecord } from "../../../../core/media/contracts.js";
 import { MediaAssetPreview } from "./media-visual-preview";
+import { readMediaAssetReferencePreview } from "../media-runtime";
 
 vi.mock("../media-runtime", () => ({
   readMediaAssetReferencePreview: vi
@@ -29,14 +30,68 @@ const missingAsset: MediaAssetRecord = {
   tags: [],
 };
 
-afterEach(cleanup);
+let intersect: IntersectionObserverCallback;
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(callback: IntersectionObserverCallback) {
+        intersect = callback;
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+const reveal = (): void => {
+  act(() =>
+    intersect(
+      [{ isIntersecting: true } as IntersectionObserverEntry],
+      {} as IntersectionObserver,
+    ),
+  );
+};
 
 describe("MediaAssetPreview", () => {
   it("replaces an unavailable media file with a failure state", async () => {
     render(createElement(MediaAssetPreview, { asset: missingAsset }));
+    reveal();
 
     expect(
       await screen.findByRole("img", { name: "Preview unavailable" }),
     ).toBeTruthy();
+  });
+  it("defers offscreen preview work and requests the inspection resolution when visible", async () => {
+    render(
+      createElement(MediaAssetPreview, { asset: missingAsset, maxEdge: 2048 }),
+    );
+    expect(readMediaAssetReferencePreview).not.toHaveBeenCalled();
+    reveal();
+    await screen.findByRole("img", { name: "Preview unavailable" });
+    expect(readMediaAssetReferencePreview).toHaveBeenCalledWith(
+      missingAsset.id,
+      2048,
+      "image/webp",
+    );
+  });
+  it("requests video previews with their actual content type", async () => {
+    render(
+      createElement(MediaAssetPreview, {
+        asset: { ...missingAsset, kind: "video", mimeType: "video/webm" },
+      }),
+    );
+    reveal();
+    await screen.findByRole("img", { name: "Preview unavailable" });
+    expect(readMediaAssetReferencePreview).toHaveBeenCalledWith(
+      missingAsset.id,
+      768,
+      "video/webm",
+    );
   });
 });

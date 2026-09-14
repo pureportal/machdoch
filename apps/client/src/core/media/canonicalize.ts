@@ -7,6 +7,19 @@ const toHex = (bytes: Uint8Array): string => {
   );
 };
 
+const compareCanonicalText = (left: string, right: string): number => {
+  const leftCharacters = [...left];
+  const rightCharacters = [...right];
+  const length = Math.min(leftCharacters.length, rightCharacters.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference =
+      leftCharacters[index]!.codePointAt(0)! -
+      rightCharacters[index]!.codePointAt(0)!;
+    if (difference !== 0) return difference;
+  }
+  return leftCharacters.length - rightCharacters.length;
+};
+
 export const canonicalizeMediaValue = (value: unknown): unknown => {
   if (Array.isArray(value)) {
     return value.map(canonicalizeMediaValue);
@@ -19,7 +32,7 @@ export const canonicalizeMediaValue = (value: unknown): unknown => {
   return Object.fromEntries(
     Object.entries(value)
       .filter(([, entry]) => entry !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareCanonicalText(left, right))
       .map(([key, entry]) => [key, canonicalizeMediaValue(entry)]),
   );
 };
@@ -30,7 +43,7 @@ const createExecutionProjection = (flow: MediaFlow): unknown => {
     ...(flow.variables.length > 0
       ? {
           variables: [...flow.variables]
-            .sort((left, right) => left.id.localeCompare(right.id))
+            .sort((left, right) => compareCanonicalText(left.id, right.id))
             .map(({ id, type, required, defaultValue, constraints }) => ({
               id,
               type,
@@ -44,7 +57,7 @@ const createExecutionProjection = (flow: MediaFlow): unknown => {
       ? { variableBindings: flow.variableBindings }
       : {}),
     nodes: [...flow.nodes]
-      .sort((left, right) => left.id.localeCompare(right.id))
+      .sort((left, right) => compareCanonicalText(left.id, right.id))
       .map((node) => ({
         id: node.id,
         type: node.type,
@@ -68,7 +81,7 @@ const createExecutionProjection = (flow: MediaFlow): unknown => {
           right.id,
         ].join("\u0000");
 
-        return leftIdentity.localeCompare(rightIdentity);
+        return compareCanonicalText(leftIdentity, rightIdentity);
       })
       .map((edge) => ({
         id: edge.id,
@@ -86,40 +99,42 @@ const digestCanonicalValue = (value: unknown): string => {
 };
 
 export const createMediaFlowDocumentDigest = (flow: MediaFlow): string =>
-  digestCanonicalValue((() => {
-    const {
-      variables,
-      variableBindings,
-      presets,
-      activePresetId,
-      ...document
-    } = flow;
-    return {
-      ...document,
-      ...(variables.length > 0 ? { variables } : {}),
-      ...(Object.keys(variableBindings).length > 0 ? { variableBindings } : {}),
-      ...(presets.length > 0 ? { presets } : {}),
-      ...(activePresetId !== null ? { activePresetId } : {}),
-    };
-  })());
+  digestCanonicalValue(
+    (() => {
+      const {
+        variables,
+        variableBindings,
+        presets,
+        activePresetId,
+        ...document
+      } = flow;
+      return {
+        ...document,
+        ...(variables.length > 0 ? { variables } : {}),
+        ...(Object.keys(variableBindings).length > 0
+          ? { variableBindings }
+          : {}),
+        ...(presets.length > 0 ? { presets } : {}),
+        ...(activePresetId !== null ? { activePresetId } : {}),
+      };
+    })(),
+  );
 
-export const createMediaFlowLayoutDigest = (
-  layout: MediaFlowLayout,
-): string =>
+export const createMediaFlowLayoutDigest = (layout: MediaFlowLayout): string =>
   digestCanonicalValue({
     schemaVersion: layout.schemaVersion,
     flowId: layout.flowId,
     nodes: [...layout.nodes].sort((left, right) =>
-      left.nodeId.localeCompare(right.nodeId),
+      compareCanonicalText(left.nodeId, right.nodeId),
     ),
     ...(layout.groups.length > 0
       ? {
           groups: [...layout.groups]
-            .sort((left, right) => left.id.localeCompare(right.id))
+            .sort((left, right) => compareCanonicalText(left.id, right.id))
             .map((group) => ({
               ...group,
               nodeIds: [...group.nodeIds].sort((left, right) =>
-                left.localeCompare(right),
+                compareCanonicalText(left, right),
               ),
             })),
         }
@@ -127,7 +142,7 @@ export const createMediaFlowLayoutDigest = (
     ...(layout.comments.length > 0
       ? {
           comments: [...layout.comments].sort((left, right) =>
-            left.id.localeCompare(right.id),
+            compareCanonicalText(left.id, right.id),
           ),
         }
       : {}),

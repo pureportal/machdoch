@@ -24,6 +24,7 @@ import {
 } from "../../../core/media/asset-metadata.js";
 import { getMediaNodeDefinition } from "../../../core/media/node-registry.js";
 import { normalizeMediaImageMask } from "../../../core/media/image-mask.js";
+import { MEDIA_VIDEO_QUALITY_PRESETS } from "../../../core/media/video-quality.js";
 import { validateMediaFlowVariableDocument } from "../../../core/media/variables.js";
 import {
   loadStoredValue,
@@ -66,14 +67,11 @@ export const DEFAULT_IMAGE_RECIPE_SETTINGS = {
 } as const satisfies ImageRecipeSettings;
 
 export const DEFAULT_VIDEO_RECIPE_SETTINGS = {
+  ...MEDIA_VIDEO_QUALITY_PRESETS[0]!.settings,
   modelId: null,
   aspectRatio: "16:9",
-  resolution: "quality-640",
   transparentBackground: false,
   loopMode: "none",
-  fps: 16,
-  numFrames: 33,
-  memoryProfile: "auto",
 } as const satisfies MediaVideoRecipeSettings;
 
 export const DEFAULT_MEDIA_STUDIO_STATE = {
@@ -282,6 +280,30 @@ const normalizeVideoRecipeSettings = (
         9,
         257,
       ),
+    ),
+    numInferenceSteps: Math.round(
+      normalizeBoundedNumber(
+        value.numInferenceSteps,
+        DEFAULT_VIDEO_RECIPE_SETTINGS.numInferenceSteps,
+        1,
+        100,
+      ),
+    ),
+    guidanceScale: normalizeBoundedNumber(
+      value.guidanceScale,
+      DEFAULT_VIDEO_RECIPE_SETTINGS.guidanceScale,
+      0,
+      30,
+    ),
+    matteQuality: normalizeOneOf(
+      value.matteQuality,
+      ["fast", "balanced", "production"],
+      DEFAULT_VIDEO_RECIPE_SETTINGS.matteQuality,
+    ),
+    encodingQuality: normalizeOneOf(
+      value.encodingQuality,
+      ["draft", "balanced", "production", "lossless"],
+      DEFAULT_VIDEO_RECIPE_SETTINGS.encodingQuality,
     ),
     memoryProfile: normalizeOneOf(
       value.memoryProfile,

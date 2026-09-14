@@ -46,6 +46,7 @@ export interface MediaGenerationQueueJob {
   assets: readonly MediaAssetRecord[];
   error: string | null;
   failure: MediaErrorDetail | null;
+  runDetail: MediaRunDetail | null;
 }
 
 interface MediaGenerationQueueTask {
@@ -158,6 +159,7 @@ export class MediaGenerationQueue {
       assets: [],
       error: null,
       failure: null,
+      runDetail: null,
     });
     this.tasks.set(input.runId, {
       execute: input.execute,
@@ -371,7 +373,10 @@ export class MediaGenerationQueue {
     const completedAt = isTerminalStatus(status) ? detail.updatedAt : null;
     this.patchJob(jobId, {
       status,
-      progress: Math.max(current.progress, detail.progress),
+      progress:
+        detail.executor === "media-workflow"
+          ? detail.progress
+          : Math.max(current.progress, detail.progress),
       currentStep: preserveCurrentStatus
         ? current.currentStep
         : detail.currentStep,
@@ -379,6 +384,7 @@ export class MediaGenerationQueue {
       assets: detail.assets,
       error: detail.error,
       failure: detail.failure,
+      runDetail: detail,
     });
   }
 
