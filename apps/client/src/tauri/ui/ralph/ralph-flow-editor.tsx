@@ -7,6 +7,7 @@ import {
   type XYPosition,
 } from "@xyflow/react";
 import { isTauri } from "@tauri-apps/api/core";
+import { useIsMobile } from "../lib/use-mobile";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   createDefaultRalphVariableValues,
@@ -160,6 +161,11 @@ import {
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
 import { Input } from "../components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "../components/ui/popover";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { SearchField } from "../components/ui/search-field";
 import {
@@ -584,9 +590,16 @@ export const RalphFlowEditor = ({
   const [editorMode, setEditorMode] = useState<RalphEditorMode>(
     initialSelection?.running || initialSelection?.runId ? "run" : "design",
   );
+  const compactLayout = useIsMobile(1200);
   const [flowListOpen, setFlowListOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [inspectorWidth, setInspectorWidth] = useState(loadRalphInspectorWidth);
+  useEffect(() => {
+    if (compactLayout) {
+      setFlowListOpen(false);
+      setInspectorOpen(false);
+    }
+  }, [compactLayout]);
   const [activeInspectorSection, setActiveInspectorSection] =
     useState<RalphInspectorSectionId>("content");
   const [inspectorScrollState, setInspectorScrollState] = useState({
@@ -1954,22 +1967,26 @@ export const RalphFlowEditor = ({
     ? "Active run is already running."
     : (runBlockedReason ?? runReadyMessage);
   const flowListColumnWidth = flowListOpen ? "16rem" : "2.75rem";
-  const editorGridTemplateColumns = showInspectorPanel
-    ? `${flowListColumnWidth} minmax(0,1fr) ${inspectorWidth}px`
-    : `${flowListColumnWidth} minmax(0,1fr)`;
+  const editorGridTemplateColumns = compactLayout
+    ? "2.75rem minmax(0,1fr)"
+    : showInspectorPanel
+      ? `${flowListColumnWidth} minmax(0,1fr) ${inspectorWidth}px`
+      : `${flowListColumnWidth} minmax(0,1fr)`;
   const editorGridStyle = {
     gridTemplateColumns: editorGridTemplateColumns,
   };
   const inspectorTwoColumnClass =
-    inspectorWidth >= 430 ? "grid-cols-2" : "grid-cols-1";
+    !compactLayout && inspectorWidth >= 430 ? "grid-cols-2" : "grid-cols-1";
   const inspectorThreeColumnClass =
-    inspectorWidth >= 620
+    !compactLayout && inspectorWidth >= 620
       ? "grid-cols-3"
-      : inspectorWidth >= 430
+      : !compactLayout && inspectorWidth >= 430
         ? "grid-cols-2"
         : "grid-cols-1";
   const inspectorHttpGridClass =
-    inspectorWidth >= 500 ? "grid-cols-[0.55fr_1.45fr]" : "grid-cols-1";
+    !compactLayout && inspectorWidth >= 500
+      ? "grid-cols-[0.55fr_1.45fr]"
+      : "grid-cols-1";
   const editorRowsClass =
     editorMode === "design"
       ? "grid-rows-[minmax(0,1fr)_3.25rem]"
@@ -1980,9 +1997,10 @@ export const RalphFlowEditor = ({
           : issues.length > 0
             ? "grid-rows-[minmax(12rem,1fr)_minmax(12rem,30vh)]"
             : "grid-rows-[minmax(0,1fr)_6.5rem]";
-  const bottomPanelSpanClass = showInspectorPanel
-    ? "col-start-1 col-span-3"
-    : "col-start-1 col-span-2";
+  const bottomPanelSpanClass =
+    showInspectorPanel && !compactLayout
+      ? "col-start-1 col-span-3"
+      : "col-start-1 col-span-2";
   const staleRunMessage = Boolean(
     message && /Ralph flow [`'"]?[^`'"]+[`'"]? was not found/u.test(message),
   );
@@ -6863,12 +6881,6 @@ export const RalphFlowEditor = ({
       closeFlowListMenu();
     },
   });
-  useCommandOverlay({
-    open: shortcutHelpOpen,
-    id: "ralph-shortcut-help",
-    kind: "non-modal",
-    dismiss: () => setShortcutHelpOpen(false),
-  });
 
   const ralphCommandStateRef = useRef({
     activeInspectorSection,
@@ -7702,14 +7714,10 @@ export const RalphFlowEditor = ({
     const handleEditorShortcut = (event: KeyboardEvent): void => {
       if (event.defaultPrevented) return;
       const key = event.key.toLowerCase();
-      if (
-        key === "escape" &&
-        (canvasMenu || flowListMenu || shortcutHelpOpen)
-      ) {
+      if (key === "escape" && (canvasMenu || flowListMenu)) {
         event.preventDefault();
         closeCanvasMenu();
         closeFlowListMenu();
-        setShortcutHelpOpen(false);
         return;
       }
     };
@@ -7719,7 +7727,7 @@ export const RalphFlowEditor = ({
     return () => {
       window.removeEventListener("keydown", handleEditorShortcut);
     };
-  }, [canvasMenu, flowListMenu, isActive, shortcutHelpOpen]);
+  }, [canvasMenu, flowListMenu, isActive]);
 
   const renderFlowListContextMenu = (): JSX.Element | null => (
     <RalphFlowListContextMenu
@@ -9458,7 +9466,7 @@ export const RalphFlowEditor = ({
   };
 
   return (
-    <section className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-slate-950 text-slate-100">
+    <section className="app-ralph-editor grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-slate-950 text-slate-100">
       <header className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-950/95 px-3 py-2 text-left">
         <h1 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-white">
           <Workflow className="h-4 w-4 shrink-0 text-emerald-300" />
@@ -9472,7 +9480,7 @@ export const RalphFlowEditor = ({
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <nav
             aria-label="Ralph editor mode"
-            className="grid shrink-0 grid-cols-4 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1"
+            className="grid min-w-0 max-w-full grid-cols-4 gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1"
           >
             {EDITOR_MODES.map((mode) => (
               <button
@@ -9492,38 +9500,41 @@ export const RalphFlowEditor = ({
             ))}
           </nav>
           <div className="h-6 w-px bg-slate-800" />
-          <div className="relative">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label="Ralph keyboard shortcuts"
-              aria-expanded={shortcutHelpOpen}
-              tooltip="Keyboard shortcuts"
-              onClick={() => setShortcutHelpOpen((current) => !current)}
-              className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-white"
-            >
-              <Keyboard className="h-4 w-4" />
-            </Button>
-            {shortcutHelpOpen ? (
-              <div
-                role="dialog"
-                aria-label="Ralph editor shortcuts"
-                className="absolute right-0 top-full z-[100] mt-2 w-64 rounded-lg border border-slate-700 bg-slate-950 p-2 text-slate-100 shadow-2xl shadow-black/40"
+          <Popover
+            open={shortcutHelpOpen}
+            onOpenChange={setShortcutHelpOpen}
+            commandOverlayId="ralph-shortcut-help"
+          >
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Ralph keyboard shortcuts"
+                aria-expanded={shortcutHelpOpen}
+                tooltip="Keyboard shortcuts"
+                className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-white"
               >
-                <div className="px-2 pb-2 text-xs font-semibold text-white">
-                  Editor shortcuts
-                </div>
-                {RALPH_EDITOR_SHORTCUTS.map(([label, commandId]) => (
-                  <RalphShortcutHelpRow
-                    key={label}
-                    label={label}
-                    commandId={commandId}
-                  />
-                ))}
+                <Keyboard className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              aria-label="Ralph editor shortcuts"
+              className="w-64 rounded-lg border-slate-700 bg-slate-950 p-2 text-slate-100 shadow-2xl shadow-black/40"
+            >
+              <div className="px-2 pb-2 text-xs font-semibold text-white">
+                Editor shortcuts
               </div>
-            ) : null}
-          </div>
+              {RALPH_EDITOR_SHORTCUTS.map(([label, commandId]) => (
+                <RalphShortcutHelpRow
+                  key={label}
+                  label={label}
+                  commandId={commandId}
+                />
+              ))}
+            </PopoverContent>
+          </Popover>
           {editorMode !== "run" ? (
             <Button
               type="button"
@@ -9564,7 +9575,10 @@ export const RalphFlowEditor = ({
       </header>
 
       <div
-        className={cn("grid min-h-0 overflow-hidden", editorRowsClass)}
+        className={cn(
+          "app-ralph-editor-grid grid min-h-0 min-w-0 overflow-hidden",
+          editorRowsClass,
+        )}
         style={editorGridStyle}
       >
         <RalphFlowLibraryPanel
@@ -9592,13 +9606,19 @@ export const RalphFlowEditor = ({
           warningCount={warningCount}
           workspaceRoot={workspaceRoot ?? ""}
           onCollapseFlowList={() => setFlowListOpen(false)}
-          onCreateLocalFlow={(scope) => void createLocalFlow(scope)}
+          onCreateLocalFlow={(scope) => {
+            void createLocalFlow(scope);
+            if (compactLayout) setFlowListOpen(false);
+          }}
           onFlowContextMenu={openFlowListMenu}
           onFlowLibraryModeChange={onFlowLibraryModeChange}
           onOpenFlowList={() => setFlowListOpen(true)}
           onOpenStarterFlowDialog={openStarterFlowDialog}
           onRefreshFlows={() => void refreshFlows()}
-          onSelectFlow={(flow) => void selectFlow(flow)}
+          onSelectFlow={(flow) => {
+            void selectFlow(flow);
+            if (compactLayout) setFlowListOpen(false);
+          }}
           onUpgradeStarterFlow={(flow) => void upgradeStarterFlow(flow)}
         />
 
@@ -9719,7 +9739,7 @@ export const RalphFlowEditor = ({
         </main>
 
         {showInspectorPanel ? (
-          <aside className="relative col-start-3 row-start-1 grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)_auto] border-l border-slate-800 bg-slate-950/90 shadow-[-18px_0_36px_rgba(2,6,23,0.18)]">
+          <aside className="app-ralph-inspector relative col-start-3 row-start-1 grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_auto] border-l border-slate-800 bg-slate-950/90 shadow-[-18px_0_36px_rgba(2,6,23,0.18)]">
             <ControlTooltip content="Drag to resize · Double-click to reset">
               <button
                 type="button"
@@ -12518,7 +12538,7 @@ export const RalphFlowEditor = ({
         {editorMode === "design" ? (
           <section
             className={cn(
-              "row-start-2 grid min-h-0 grid-cols-[minmax(10rem,0.8fr)_minmax(10rem,0.8fr)_minmax(14rem,1.4fr)] border-t border-slate-800 bg-slate-950/95",
+              "row-start-2 grid min-h-0 grid-cols-3 border-t border-slate-800 bg-slate-950/95",
               bottomPanelSpanClass,
             )}
           >

@@ -40,7 +40,7 @@ export const ShellTitlebar = ({
   );
 
   return (
-    <div className="relative z-50 flex h-10 w-full shrink-0 select-none items-center border-b border-slate-900 bg-slate-950/90 px-3">
+    <div className="app-shell-titlebar relative z-30 flex h-10 w-full shrink-0 select-none items-center border-b border-slate-900 bg-slate-950/90 px-3">
       <div
         aria-hidden="true"
         className="absolute inset-0"
@@ -62,7 +62,7 @@ export const ShellTitlebar = ({
         </span>
         {IS_DEVELOPMENT_BUILD ? (
           <span
-            className="rounded-full border border-amber-300/35 bg-amber-300/10 px-2 py-0.5 text-[9px] font-bold tracking-[0.12em] text-amber-200 uppercase shadow-[0_0_12px_rgba(252,211,77,0.08)]"
+            className="hidden sm:inline rounded-full border border-amber-300/35 bg-amber-300/10 px-2 py-0.5 text-[9px] font-bold tracking-[0.12em] text-amber-200 uppercase shadow-[0_0_12px_rgba(252,211,77,0.08)]"
             data-tauri-drag-region
           >
             Developer
@@ -79,7 +79,7 @@ export const ShellTitlebar = ({
               <TooltipTrigger asChild>
                 <div
                   className={cn(
-                    "mx-1 h-2 w-2 rounded-full",
+                    "hidden sm:block mx-1 h-2 w-2 rounded-full",
                     configured
                       ? "bg-emerald-500 shadow-[0_0_8px_rgba(63,137,117,0.32)]"
                       : "bg-slate-700",

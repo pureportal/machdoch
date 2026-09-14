@@ -899,7 +899,7 @@ export const InstructionManager = ({
   useOptionalRegisterCommands(instructionCommands);
 
   return (
-    <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
+    <main className="app-management-view flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-900 px-6 py-4">
         <div>
           <h1 className="text-lg font-semibold text-slate-100">Instructions</h1>
@@ -1016,7 +1016,7 @@ export const InstructionManager = ({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(11rem,30vh)_minmax(0,1fr)] lg:grid-cols-[20rem_minmax(0,1fr)] lg:grid-rows-1">
+      <div className="app-management-panes grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(11rem,30vh)_minmax(0,1fr)] lg:grid-cols-[20rem_minmax(0,1fr)] lg:grid-rows-1">
         <aside className="flex min-h-0 min-w-0 flex-col border-r border-slate-900 bg-slate-950/70">
           <div className="shrink-0 space-y-3 border-b border-slate-900 p-4">
             <SearchField

@@ -813,7 +813,7 @@ export const RalphApp = ({
             <ArrowLeft className="h-3.5 w-3.5" /> All workspaces
           </Button>
         </div>
-        <div className="grid min-w-0 grid-cols-[minmax(13rem,1fr)_minmax(0,max-content)_minmax(0,max-content)_auto] items-end gap-2">
+        <div className="grid min-w-0 grid-cols-1 items-end gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(13rem,1fr)_minmax(0,max-content)_minmax(0,max-content)_auto]">
           <div className="grid min-w-0 gap-1">
             <span className="flex min-w-0 items-center gap-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
               <span className="truncate">Workspace</span>

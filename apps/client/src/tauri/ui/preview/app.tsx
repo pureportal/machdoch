@@ -136,7 +136,7 @@ export const App = (): JSX.Element => {
 
   return (
     <Suspense fallback={fallback}>
-      <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
+      <main className="h-dvh min-h-0 bg-slate-950 text-slate-50 flex flex-col">
         <ChatSession />
       </main>
     </Suspense>

@@ -1,16 +1,17 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { XIcon } from "lucide-react"
-import { Dialog as SheetPrimitive } from "radix-ui"
+import * as React from "react";
+import { XIcon } from "lucide-react";
+import { Dialog as SheetPrimitive } from "radix-ui";
 
-import { cn } from "../../lib/utils"
-import { useCommandOverlay } from "../../commands/use-command-overlay"
+import { cn } from "../../lib/utils";
+import { useCommandOverlay } from "../../commands/use-command-overlay";
+import { commandOverlayStore } from "../../commands/command-overlay-store";
 
 type SheetProps = React.ComponentProps<typeof SheetPrimitive.Root> & {
-  commandOverlayId?: string
-  commandOverlayAllowGlobalCommands?: readonly string[]
-}
+  commandOverlayId?: string;
+  commandOverlayAllowGlobalCommands?: readonly string[];
+};
 
 function Sheet({
   commandOverlayId,
@@ -20,23 +21,25 @@ function Sheet({
   onOpenChange,
   ...props
 }: SheetProps) {
-  const generatedId = React.useId()
-  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen ?? false)
-  const open = controlledOpen ?? uncontrolledOpen
+  const generatedId = React.useId();
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(
+    defaultOpen ?? false,
+  );
+  const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = React.useCallback(
     (nextOpen: boolean) => {
-      if (controlledOpen === undefined) setUncontrolledOpen(nextOpen)
-      onOpenChange?.(nextOpen)
+      if (controlledOpen === undefined) setUncontrolledOpen(nextOpen);
+      onOpenChange?.(nextOpen);
     },
     [controlledOpen, onOpenChange],
-  )
+  );
   useCommandOverlay({
     open,
     id: commandOverlayId ?? `sheet:${generatedId}`,
     kind: "modal",
     allowGlobalCommands: commandOverlayAllowGlobalCommands,
     dismiss: () => setOpen(false),
-  })
+  });
   return (
     <SheetPrimitive.Root
       data-slot="sheet"
@@ -44,25 +47,25 @@ function Sheet({
       onOpenChange={setOpen}
       {...props}
     />
-  )
+  );
 }
 
 function SheetTrigger({
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Trigger>) {
-  return <SheetPrimitive.Trigger data-slot="sheet-trigger" {...props} />
+  return <SheetPrimitive.Trigger data-slot="sheet-trigger" {...props} />;
 }
 
 function SheetClose({
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Close>) {
-  return <SheetPrimitive.Close data-slot="sheet-close" {...props} />
+  return <SheetPrimitive.Close data-slot="sheet-close" {...props} />;
 }
 
 function SheetPortal({
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Portal>) {
-  return <SheetPrimitive.Portal data-slot="sheet-portal" {...props} />
+  return <SheetPrimitive.Portal data-slot="sheet-portal" {...props} />;
 }
 
 function SheetOverlay({
@@ -74,11 +77,11 @@ function SheetOverlay({
       data-slot="sheet-overlay"
       className={cn(
         "fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
-        className
+        className,
       )}
       {...props}
     />
-  )
+  );
 }
 
 function SheetContent({
@@ -86,16 +89,33 @@ function SheetContent({
   children,
   side = "right",
   showCloseButton = true,
+  onEscapeKeyDown,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
-  side?: "top" | "right" | "bottom" | "left"
-  showCloseButton?: boolean
+  side?: "top" | "right" | "bottom" | "left";
+  showCloseButton?: boolean;
 }) {
   return (
     <SheetPortal>
       <SheetOverlay />
       <SheetPrimitive.Content
         data-slot="sheet-content"
+        onEscapeKeyDown={(event) => {
+          onEscapeKeyDown?.(event);
+          if (
+            !event.defaultPrevented &&
+            commandOverlayStore.getSnapshot().at(-1)?.kind === "non-modal"
+          ) {
+            event.preventDefault();
+            void commandOverlayStore.dismissTopNonModal();
+          }
+        }}
+        onInteractOutside={(event) => {
+          onInteractOutside?.(event);
+          if (commandOverlayStore.getSnapshot().at(-1)?.kind === "non-modal")
+            event.preventDefault();
+        }}
         className={cn(
           "fixed z-50 flex flex-col gap-4 bg-oklch(1 0 0) shadow-lg transition ease-in-out data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:animate-in data-[state=open]:duration-500 dark:bg-oklch(0.141 0.005 285.823)",
           side === "right" &&
@@ -106,7 +126,7 @@ function SheetContent({
             "inset-x-0 top-0 h-auto border-b data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top",
           side === "bottom" &&
             "inset-x-0 bottom-0 h-auto border-t data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
-          className
+          className,
         )}
         {...props}
       >
@@ -119,7 +139,7 @@ function SheetContent({
         )}
       </SheetPrimitive.Content>
     </SheetPortal>
-  )
+  );
 }
 
 function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
@@ -129,7 +149,7 @@ function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
       className={cn("flex flex-col gap-1.5 p-4", className)}
       {...props}
     />
-  )
+  );
 }
 
 function SheetFooter({ className, ...props }: React.ComponentProps<"div">) {
@@ -139,7 +159,7 @@ function SheetFooter({ className, ...props }: React.ComponentProps<"div">) {
       className={cn("mt-auto flex flex-col gap-2 p-4", className)}
       {...props}
     />
-  )
+  );
 }
 
 function SheetTitle({
@@ -149,10 +169,13 @@ function SheetTitle({
   return (
     <SheetPrimitive.Title
       data-slot="sheet-title"
-      className={cn("font-semibold text-oklch(0.141 0.005 285.823) dark:text-oklch(0.985 0 0)", className)}
+      className={cn(
+        "font-semibold text-oklch(0.141 0.005 285.823) dark:text-oklch(0.985 0 0)",
+        className,
+      )}
       {...props}
     />
-  )
+  );
 }
 
 function SheetDescription({
@@ -162,10 +185,13 @@ function SheetDescription({
   return (
     <SheetPrimitive.Description
       data-slot="sheet-description"
-      className={cn("text-sm text-oklch(0.552 0.016 285.938) dark:text-oklch(0.705 0.015 286.067)", className)}
+      className={cn(
+        "text-sm text-oklch(0.552 0.016 285.938) dark:text-oklch(0.705 0.015 286.067)",
+        className,
+      )}
       {...props}
     />
-  )
+  );
 }
 
 export {
@@ -177,4 +203,4 @@ export {
   SheetFooter,
   SheetTitle,
   SheetDescription,
-}
+};

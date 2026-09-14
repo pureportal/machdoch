@@ -1230,10 +1230,10 @@ export const AgentComposer = ({
           <div className="overflow-hidden rounded-2xl border border-slate-800/90 bg-slate-900/60 shadow-inner shadow-black/10 focus-within:border-sky-400/40 focus-within:ring-2 focus-within:ring-sky-500/20">
             {textarea}
 
-            <div className="flex items-center gap-2 border-t border-slate-800/75 px-2.5 py-2">
+            <div className="flex flex-wrap items-center gap-2 border-t border-slate-800/75 px-2.5 py-2">
               {attachmentMenu}
 
-              <div className="min-w-0 flex-1 [&>button]:h-8 [&>button]:w-full [&>button]:max-w-none [&>button]:justify-start">
+              <div className="order-first min-w-0 flex-1 basis-full sm:order-none sm:basis-0 [&>button]:h-8 [&>button]:w-full [&>button]:max-w-none [&>button]:justify-start">
                 <SessionModelPicker
                   chooserProviders={chooserProviders}
                   activeProvider={activeProvider}
@@ -1242,7 +1242,7 @@ export const AgentComposer = ({
                 />
               </div>
 
-              <div className="flex shrink-0 items-center gap-1.5">
+              <div className="ml-auto flex shrink-0 items-center gap-1.5">
                 {toggleButtons}
                 {actionButtons}
                 {sendControl}

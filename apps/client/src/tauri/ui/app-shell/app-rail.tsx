@@ -5,6 +5,7 @@ import {
   FileSliders,
   FolderGit2,
   MessageSquareText,
+  Menu,
   Server,
   TerminalSquare,
   Workflow,
@@ -12,6 +13,12 @@ import {
 } from "lucide-react";
 import type { JSX } from "react";
 import { Button } from "../components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu";
 import { Separator } from "../components/ui/separator";
 import {
   Tooltip,
@@ -158,85 +165,170 @@ export const AppRail = ({
   onOpenFleetManager,
   onOpenSettings,
 }: AppRailProps): JSX.Element => {
+  const navigation = [
+    {
+      id: "chat",
+      label: "Chat",
+      icon: MessageSquareText,
+      activity: chatActivity,
+      select: () => onSelectApp("chat"),
+    },
+    {
+      id: "ralph",
+      label: "Ralph",
+      icon: Workflow,
+      activity: ralphActivity,
+      select: () => onSelectApp("ralph"),
+    },
+    {
+      id: "media",
+      label: "Media Studio",
+      icon: Aperture,
+      activity: mediaActivity,
+      select: () => onSelectApp("media"),
+    },
+    {
+      id: "instructions",
+      label: "Instructions",
+      icon: FileSliders,
+      select: () => onSelectApp("instructions"),
+    },
+    {
+      id: "workspaces",
+      label: "Workspace Management",
+      icon: FolderGit2,
+      select: () => onSelectApp("workspaces"),
+    },
+    {
+      id: "scheduler",
+      label: "Smart Scheduler",
+      icon: CalendarClock,
+      activity: schedulerActivity,
+      select: onOpenScheduler,
+    },
+    {
+      id: "fleet",
+      label: "Fleet Manager",
+      icon: Server,
+      select: onOpenFleetManager,
+    },
+    { id: "settings", label: "Settings", icon: Cog, select: onOpenSettings },
+  ];
   return (
-    <aside className="app-shell-rail z-10 flex min-h-0 w-20 shrink-0 flex-col items-center justify-between overflow-y-auto border-r border-slate-900 bg-slate-950 py-6">
-      <div className="app-shell-rail-group flex shrink-0 flex-col items-center gap-4">
-        <div className="app-shell-logo flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-800 bg-slate-900 shadow-lg shadow-sky-500/10">
-          <TerminalSquare className="h-6 w-6 text-sky-400" />
+    <>
+      <nav
+        aria-label="App navigation"
+        className="shrink-0 border-b border-slate-900 px-2 md:hidden"
+      >
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              aria-label="Open navigation"
+              className="h-11 max-w-full justify-start"
+            >
+              <Menu className="size-4" />
+              <span className="truncate">
+                {navigation.find((entry) => entry.id === activeApp)?.label}
+              </span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-64">
+            {navigation.map(({ id, label, icon: Icon, activity, select }) => (
+              <DropdownMenuItem
+                key={id}
+                onSelect={select}
+                aria-current={id === activeApp ? "page" : undefined}
+                className="relative min-h-11 gap-3 pr-8"
+              >
+                <Icon className="size-4" />
+                {label}
+                <AppActivityIndicator activity={activity} />
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </nav>
+      <aside className="app-shell-rail z-10 hidden min-h-0 w-20 shrink-0 flex-col items-center justify-between overflow-y-auto border-r border-slate-900 bg-slate-950 py-6 md:flex">
+        <div className="app-shell-rail-group flex shrink-0 flex-col items-center gap-4">
+          <div className="app-shell-logo flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-800 bg-slate-900 shadow-lg shadow-sky-500/10">
+            <TerminalSquare className="h-6 w-6 text-sky-400" />
+          </div>
+
+          <Separator className="w-10 bg-slate-900" />
+
+          <div className="flex flex-col items-center gap-2">
+            <AppRailButton
+              label="Chat"
+              icon={MessageSquareText}
+              active={activeApp === "chat"}
+              activity={chatActivity}
+              onClick={() => onSelectApp("chat")}
+              shortcutId="app.view.chat"
+            />
+            <AppRailButton
+              label="Ralph"
+              icon={Workflow}
+              active={activeApp === "ralph"}
+              activity={ralphActivity}
+              onClick={() => onSelectApp("ralph")}
+              shortcutId="app.view.ralph"
+            />
+            <AppRailButton
+              label="Media Studio"
+              icon={Aperture}
+              active={activeApp === "media"}
+              activity={mediaActivity}
+              onClick={() => onSelectApp("media")}
+              shortcutId="app.view.media"
+            />
+            <AppRailButton
+              label="Instructions"
+              icon={FileSliders}
+              active={activeApp === "instructions"}
+              onClick={() => onSelectApp("instructions")}
+              shortcutId="app.view.instructions"
+            />
+            <Separator className="my-1 w-8 bg-slate-900" />
+            <AppRailButton
+              label="Workspace Management"
+              icon={FolderGit2}
+              active={activeApp === "workspaces"}
+              onClick={() => onSelectApp("workspaces")}
+              shortcutId="app.view.workspaces"
+            />
+          </div>
         </div>
 
-        <Separator className="w-10 bg-slate-900" />
-
-        <div className="flex flex-col items-center gap-2">
+        <div className="app-shell-rail-group flex shrink-0 flex-col items-center gap-3">
           <AppRailButton
-            label="Chat"
-            icon={MessageSquareText}
-            active={activeApp === "chat"}
-            activity={chatActivity}
-            onClick={() => onSelectApp("chat")}
-            shortcutId="app.view.chat"
+            label="Smart Scheduler"
+            icon={CalendarClock}
+            activity={schedulerActivity}
+            onClick={onOpenScheduler}
           />
           <AppRailButton
-            label="Ralph"
-            icon={Workflow}
-            active={activeApp === "ralph"}
-            activity={ralphActivity}
-            onClick={() => onSelectApp("ralph")}
-            shortcutId="app.view.ralph"
+            label="Fleet Manager"
+            icon={Server}
+            onClick={onOpenFleetManager}
           />
           <AppRailButton
-            label="Media Studio"
-            icon={Aperture}
-            active={activeApp === "media"}
-            activity={mediaActivity}
-            onClick={() => onSelectApp("media")}
-            shortcutId="app.view.media"
+            label="Settings"
+            icon={Cog}
+            onClick={onOpenSettings}
+            shortcutId="app.settings.open"
           />
-          <AppRailButton
-            label="Instructions"
-            icon={FileSliders}
-            active={activeApp === "instructions"}
-            onClick={() => onSelectApp("instructions")}
-            shortcutId="app.view.instructions"
-          />
-          <Separator className="my-1 w-8 bg-slate-900" />
-          <AppRailButton
-            label="Workspace Management"
-            icon={FolderGit2}
-            active={activeApp === "workspaces"}
-            onClick={() => onSelectApp("workspaces")}
-            shortcutId="app.view.workspaces"
-          />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="app-shell-version mt-1 inline-flex h-5 min-w-12 items-center justify-center rounded-full border border-slate-900/80 bg-slate-950/40 px-1.5 text-[9px] font-medium leading-none text-slate-600 transition-colors hover:text-slate-500">
+                v{appVersion}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="right">machdoch {appVersion}</TooltipContent>
+          </Tooltip>
         </div>
-      </div>
-
-      <div className="app-shell-rail-group flex shrink-0 flex-col items-center gap-3">
-        <AppRailButton
-          label="Smart Scheduler"
-          icon={CalendarClock}
-          activity={schedulerActivity}
-          onClick={onOpenScheduler}
-        />
-        <AppRailButton
-          label="Fleet Manager"
-          icon={Server}
-          onClick={onOpenFleetManager}
-        />
-        <AppRailButton
-          label="Settings"
-          icon={Cog}
-          onClick={onOpenSettings}
-          shortcutId="app.settings.open"
-        />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="app-shell-version mt-1 inline-flex h-5 min-w-12 items-center justify-center rounded-full border border-slate-900/80 bg-slate-950/40 px-1.5 text-[9px] font-medium leading-none text-slate-600 transition-colors hover:text-slate-500">
-              v{appVersion}
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="right">machdoch {appVersion}</TooltipContent>
-        </Tooltip>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 };

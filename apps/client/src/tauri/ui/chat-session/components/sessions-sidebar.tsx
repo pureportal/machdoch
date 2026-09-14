@@ -12,6 +12,7 @@ import {
   Trash2,
   Upload,
   RotateCcw,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -343,7 +344,7 @@ const SessionContextActionMenu = ({
       ref={menuRef}
       role="menu"
       aria-label={`Session actions for ${title}`}
-      className="app-session-context-menu fixed z-[140] w-[192px] max-w-[calc(100dvw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain rounded-lg border border-slate-700 bg-slate-950 p-1.5 text-slate-100 shadow-2xl shadow-black/45"
+      className="app-session-context-menu pointer-events-auto fixed z-[140] w-[192px] max-w-[calc(100dvw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain rounded-lg border border-slate-700 bg-slate-950 p-1.5 text-slate-100 shadow-2xl shadow-black/45"
       style={{ visibility: "hidden" }}
       onPointerDown={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
@@ -386,6 +387,7 @@ const SessionContextActionMenu = ({
 };
 
 export interface SessionsSidebarProps {
+  onClose?: () => void;
   totalSessions: number;
   activeSessionId: string;
   filteredSessions: ChatSessionRecord[];
@@ -417,6 +419,7 @@ export interface SessionsSidebarProps {
 }
 
 export const SessionsSidebar = ({
+  onClose,
   totalSessions,
   activeSessionId,
   filteredSessions,
@@ -887,7 +890,7 @@ export const SessionsSidebar = ({
 
   return (
     <aside className="app-sessions-sidebar flex min-h-0 w-84 shrink-0 flex-col border-r border-slate-900 bg-slate-950/50 backdrop-blur-xl">
-      <div className="app-sessions-sidebar-header flex h-16 items-center justify-between border-b border-slate-900 px-5">
+      <div className="app-sessions-sidebar-header flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-900 px-5 py-2">
         <div>
           <p className="text-xs font-semibold tracking-[0.24em] text-slate-500 uppercase">
             Sessions
@@ -896,6 +899,17 @@ export const SessionsSidebar = ({
         </div>
 
         <div className="app-sessions-actions flex items-center gap-1.5">
+          {onClose ? (
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              aria-label="Close sessions"
+              onClick={onClose}
+            >
+              <X className="size-4" />
+            </Button>
+          ) : null}
           <input
             ref={importInputRef}
             type="file"

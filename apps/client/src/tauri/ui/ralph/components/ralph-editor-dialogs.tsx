@@ -76,7 +76,7 @@ export const RalphStarterFlowDialog = ({
 }: RalphStarterFlowDialogProps): JSX.Element => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="h-[min(720px,calc(100vh-28px))] w-[min(880px,calc(100vw-28px))] max-w-none grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-xl border-slate-700/80 bg-slate-950 p-0 text-slate-100 shadow-[0_24px_80px_rgba(2,6,23,0.65)] sm:max-w-none">
+      <DialogContent className="h-[min(720px,calc(100dvh-28px))] w-[min(880px,calc(100vw-28px))] max-w-none grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-xl border-slate-700/80 bg-slate-950 p-0 text-slate-100 shadow-[0_24px_80px_rgba(2,6,23,0.65)] sm:max-w-none">
         <DialogHeader className="border-b border-slate-800 bg-slate-950 px-5 py-4 pr-12">
           <div className="flex min-w-0 items-center gap-3">
             <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-amber-400/25 bg-amber-400/10">
@@ -261,7 +261,7 @@ export const RalphExpandedEditorDialog = ({
       }}
     >
       <SubmitShortcut asChild>
-        <DialogContent className="max-h-[calc(100vh-3rem)] max-w-[min(72rem,calc(100vw-3rem))] grid-rows-[auto_minmax(0,1fr)_auto] border-slate-700 bg-slate-950 p-0 text-slate-100">
+        <DialogContent className="max-h-[calc(100dvh-3rem)] max-w-[min(72rem,calc(100vw-3rem))] grid-rows-[auto_minmax(0,1fr)_auto] border-slate-700 bg-slate-950 p-0 text-slate-100">
           <DialogHeader className="border-b border-slate-800 px-5 py-4 pr-12">
             <DialogTitle className="text-base text-white">
               {editor?.title ?? "Expanded editor"}
@@ -270,9 +270,9 @@ export const RalphExpandedEditorDialog = ({
               {editor?.description ?? "Edit the field in a larger workspace."}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid min-h-0 gap-3 overflow-hidden px-5 py-4">
+          <div className="flex min-h-0 flex-col gap-3 overflow-hidden px-5 py-4">
             {editor?.supportsVariables ? (
-              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-1.5">
                 <span className="mr-1 text-xs font-medium text-slate-500">
                   Insert
                 </span>
@@ -296,7 +296,7 @@ export const RalphExpandedEditorDialog = ({
               spellCheck={editor?.mode === "text"}
               onChange={(event) => onDraftChange(event.target.value)}
               className={cn(
-                "min-h-[min(56vh,34rem)] resize-none overflow-auto rounded-md border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm leading-6 text-slate-100 outline-none placeholder:text-slate-600 focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30",
+                "h-[min(56dvh,34rem)] min-h-0 resize-none overflow-auto rounded-md border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm leading-6 text-slate-100 outline-none placeholder:text-slate-600 focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30",
                 isJsonMode && "font-mono",
               )}
             />
