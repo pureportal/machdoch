@@ -156,9 +156,9 @@ export const WorkspaceTools = ({
     <section
       ref={containerRef}
       aria-label="Workspace files and terminal"
-      className="flex h-[clamp(28rem,calc(100vh-28rem),44rem)] min-h-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20 shadow-[0_18px_60px_rgba(0,0,0,0.18)] xl:h-[clamp(28rem,calc(100vh-20rem),50rem)]"
+      className="app-workspace-tools flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20 shadow-[0_18px_60px_rgba(0,0,0,0.18)] md:h-[clamp(28rem,calc(100dvh-28rem),44rem)] xl:h-[clamp(28rem,calc(100dvh-20rem),50rem)]"
     >
-      <div className="grid min-h-[17.5rem] min-w-0 flex-1 grid-cols-[clamp(12rem,24%,16rem)_minmax(0,1fr)] overflow-hidden">
+      <div className="grid min-h-[32rem] min-w-0 flex-1 grid-rows-[12rem_minmax(20rem,1fr)] overflow-hidden md:min-h-[17.5rem] md:grid-cols-[clamp(12rem,24%,16rem)_minmax(0,1fr)] md:grid-rows-1">
         <WorkspaceFileTree
           workspaceRoot={workspaceRoot}
           selectedEntry={selectedEntry}
@@ -236,7 +236,7 @@ export const WorkspaceTools = ({
       <div
         id="workspace-terminal-panel"
         className="shrink-0 overflow-hidden"
-        style={{ height: terminalOpen ? terminalHeight : 40 }}
+        style={{ height: terminalOpen ? terminalHeight : undefined }}
       >
         <WorkspaceTerminal
           key={workspaceRoot}

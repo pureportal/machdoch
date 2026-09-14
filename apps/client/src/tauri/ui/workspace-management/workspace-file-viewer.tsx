@@ -689,7 +689,7 @@ export const WorkspaceFileViewer = ({
 
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-slate-950/30">
-      <header className="flex h-10 shrink-0 items-center gap-2 border-b border-slate-800/80 px-3">
+      <header className="flex min-h-10 shrink-0 flex-wrap items-center gap-2 border-b border-slate-800/80 px-3 py-1">
         <FileText className="size-3.5 shrink-0 text-slate-500" />
         <div className="flex min-w-0 flex-1 items-baseline gap-2">
           <span className="truncate text-xs font-medium text-slate-200">

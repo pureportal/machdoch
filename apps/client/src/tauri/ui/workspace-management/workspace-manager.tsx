@@ -1537,7 +1537,7 @@ export const WorkspaceManager = ({
   useOptionalRegisterCommands(workspaceCommands);
 
   return (
-    <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
+    <main className="app-management-view flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-900 px-6 py-4">
         <div>
           <h1 className="text-lg font-semibold text-slate-100">Workspaces</h1>
@@ -1598,7 +1598,7 @@ export const WorkspaceManager = ({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 min-w-0 flex-1 grid-rows-[10rem_minmax(0,1fr)] lg:grid-cols-[16rem_minmax(0,1fr)] lg:grid-rows-1 xl:grid-cols-[20rem_minmax(0,1fr)]">
+      <div className="app-management-panes grid min-h-0 min-w-0 flex-1 grid-rows-[10rem_minmax(0,1fr)] lg:grid-cols-[16rem_minmax(0,1fr)] lg:grid-rows-1 xl:grid-cols-[20rem_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-r border-slate-900">
           <div className="border-b border-slate-900 p-4">
             <SearchField
@@ -1923,7 +1923,7 @@ export const WorkspaceManager = ({
                   <section className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20">
                     <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 px-4 py-3">
                       <GitBranch className="size-4 text-sky-300" />
-                      <div className="min-w-0 flex-1">
+                      <div className="min-w-0 basis-48 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           {(gitRepositories?.repositories.length ?? 0) > 1 ? (
                             <select
@@ -2188,7 +2188,7 @@ export const WorkspaceManager = ({
                                         setBranchName(event.target.value)
                                       }
                                       placeholder="New branch"
-                                      className="h-9 border-slate-800 bg-slate-950"
+                                      className="h-9 min-w-0 border-slate-800 bg-slate-950"
                                     />
                                     <Button
                                       size="sm"
@@ -2211,7 +2211,7 @@ export const WorkspaceManager = ({
                                   (branch) => (
                                     <div
                                       key={branch.name}
-                                      className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-800 px-3 py-2"
+                                      className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-slate-800 px-3 py-2"
                                     >
                                       <GitBranch className="size-3.5 shrink-0 text-slate-500" />
                                       <span className="min-w-0 flex-1 truncate text-sm text-slate-200">

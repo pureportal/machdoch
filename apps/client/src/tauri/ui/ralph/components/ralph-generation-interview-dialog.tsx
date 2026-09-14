@@ -195,7 +195,7 @@ export const RalphGenerationInterviewDialog = ({
 
         {state ? (
           <SubmitShortcut asChild>
-            <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] bg-slate-950">
+            <div className="grid min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(0,1fr)_auto] bg-slate-950">
               <ScrollArea className="min-h-0 bg-slate-950" type="always">
                 <div className="grid gap-4 p-5">
                   {state.status === "loading" ? (
@@ -343,7 +343,7 @@ export const RalphGenerationInterviewDialog = ({
               </ScrollArea>
 
               <DialogFooter className="justify-end border-t border-slate-800 bg-slate-950 px-5 py-3 sm:flex-row">
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 flex-wrap justify-end items-center gap-2">
                   <Button
                     type="button"
                     variant="ghost"

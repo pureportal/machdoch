@@ -138,7 +138,7 @@ export function FlowCanvas<NodeType extends Node, EdgeType extends Edge>({
       <ReactFlow<NodeType, EdgeType>
         {...props}
         className={cn(
-          "bg-slate-950 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.055),transparent_34%)]",
+          "app-flow-canvas bg-slate-950 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.055),transparent_34%)]",
           className,
         )}
         colorMode="dark"

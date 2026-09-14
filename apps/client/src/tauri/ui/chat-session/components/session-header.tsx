@@ -1,4 +1,4 @@
-import { GitBranch, PencilLine, Pin, Trash2 } from "lucide-react";
+import { GitBranch, PanelLeft, PencilLine, Pin, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type JSX } from "react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -8,6 +8,7 @@ import { cn } from "../../lib/utils";
 import { WorkspaceRunDialogControl } from "./workspace-run-dialog-control";
 
 export interface SessionHeaderProps {
+  onOpenSessions?: () => void;
   activeSession: ChatSessionRecord;
   currentSessionTitle: string;
   isRenamingSession: boolean;
@@ -33,6 +34,7 @@ export interface SessionHeaderProps {
 }
 
 export const SessionHeader = ({
+  onOpenSessions,
   activeSession,
   currentSessionTitle,
   isRenamingSession,
@@ -88,7 +90,18 @@ export const SessionHeader = ({
 
   return (
     <header className="app-session-header flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2 border-b border-slate-900 bg-slate-950/60 px-8 backdrop-blur-md">
-      <div className="min-w-0 basis-40 flex-1">
+      <div className="flex min-w-0 basis-40 flex-1 items-center gap-2">
+        {onOpenSessions ? (
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            aria-label="Open sessions"
+            onClick={onOpenSessions}
+          >
+            <PanelLeft className="size-4" />
+          </Button>
+        ) : null}
         {isRenamingSession ? (
           <SubmitShortcut asChild onSubmitShortcut={onRenameCommit}>
             <Input

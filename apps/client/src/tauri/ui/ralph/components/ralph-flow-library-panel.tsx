@@ -187,7 +187,7 @@ export const RalphFlowLibraryPanel = ({
   }
 
   return (
-    <aside className="col-start-1 row-start-1 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border-r border-slate-800 bg-slate-950/85">
+    <aside className="app-ralph-flow-library col-start-1 row-start-1 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border-r border-slate-800 bg-slate-950/85">
       <div className="grid gap-2.5 border-b border-slate-800 p-3">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-semibold tracking-[0.16em] text-slate-300 uppercase">

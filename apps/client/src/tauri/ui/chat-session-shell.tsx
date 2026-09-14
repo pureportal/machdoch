@@ -10,6 +10,8 @@ import {
 } from "react";
 import { canArchiveSession, getSessionTitle } from "./chat-session.model";
 import { AppRail } from "./app-shell/app-rail";
+import { useIsMobile } from "./lib/use-mobile";
+import { Sheet, SheetContent, SheetTitle } from "./components/ui/sheet";
 import {
   getCompletedOperationIds,
   toAppActivityState,
@@ -177,6 +179,8 @@ export const ChatSession = (): JSX.Element => {
   const [instructionDraftDirty, setInstructionDraftDirty] = useState(false);
   const [workspaceDraftDirty, setWorkspaceDraftDirty] = useState(false);
   const sessionSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const isMobile = useIsMobile();
+  const [sessionsOpen, setSessionsOpen] = useState(false);
   const previousChatOperationIdsRef = useRef<Set<string>>(new Set());
   const appShellInteractionRevisionRef = useRef(0);
   const appShellSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -507,6 +511,7 @@ export const ChatSession = (): JSX.Element => {
         ],
         palette: "visible",
         execute: () => {
+          setSessionsOpen(true);
           window.requestAnimationFrame(() => {
             window.requestAnimationFrame(() => {
               sessionSearchInputRef.current?.focus({ preventScroll: true });
@@ -871,7 +876,7 @@ export const ChatSession = (): JSX.Element => {
         commandOverlayId="settings-dialog"
         commandOverlayAllowGlobalCommands={["app.palette.toggle"]}
       >
-        <div className="app-shell relative flex h-screen w-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-950 font-sans text-slate-100 antialiased">
+        <div className="app-shell relative flex h-dvh w-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-950 font-sans text-slate-100 antialiased">
           <ShellTitlebar {...controller.titlebar} />
 
           <FileDropOverlay
@@ -952,7 +957,7 @@ export const ChatSession = (): JSX.Element => {
             </div>
           ) : null}
 
-          <div className="flex min-h-0 min-w-0 flex-1 w-full overflow-hidden bg-slate-950">
+          <div className="flex min-h-0 min-w-0 flex-1 w-full flex-col overflow-hidden bg-slate-950 md:flex-row">
             <AppRail
               activeApp={activeApp}
               chatActivity={chatActivity}
@@ -967,10 +972,36 @@ export const ChatSession = (): JSX.Element => {
 
             {activeApp === "chat" ? (
               <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                <SessionsSidebar
-                  {...controller.sidebar}
-                  searchInputRef={sessionSearchInputRef}
-                />
+                {isMobile ? (
+                  <Sheet open={sessionsOpen} onOpenChange={setSessionsOpen}>
+                    <SheetContent
+                      side="left"
+                      showCloseButton={false}
+                      aria-describedby={undefined}
+                      className="app-session-drawer w-[min(24rem,100dvw)] max-w-full gap-0 border-slate-800 bg-slate-950 p-0"
+                    >
+                      <SheetTitle className="sr-only">Sessions</SheetTitle>
+                      <SessionsSidebar
+                        {...controller.sidebar}
+                        searchInputRef={sessionSearchInputRef}
+                        onClose={() => setSessionsOpen(false)}
+                        onActivateSession={(sessionId) => {
+                          controller.sidebar.onActivateSession(sessionId);
+                          setSessionsOpen(false);
+                        }}
+                        onCreateSession={() => {
+                          controller.sidebar.onCreateSession();
+                          setSessionsOpen(false);
+                        }}
+                      />
+                    </SheetContent>
+                  </Sheet>
+                ) : (
+                  <SessionsSidebar
+                    {...controller.sidebar}
+                    searchInputRef={sessionSearchInputRef}
+                  />
+                )}
 
                 {controller.isDesktop && !controller.hasAnyProvider ? (
                   <ProviderEmptyState
@@ -978,7 +1009,12 @@ export const ChatSession = (): JSX.Element => {
                   />
                 ) : (
                   <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
-                    <SessionHeader {...controller.header} />
+                    <SessionHeader
+                      {...controller.header}
+                      onOpenSessions={
+                        isMobile ? () => setSessionsOpen(true) : undefined
+                      }
+                    />
 
                     <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
                       <ScrollArea className="h-full min-w-0" type="always">

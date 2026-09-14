@@ -360,7 +360,7 @@ export const WorkspaceTerminal = ({
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-[#050910]">
-      <header className="flex h-10 shrink-0 items-center gap-1.5 border-b border-slate-800/80 px-2.5">
+      <header className="app-workspace-terminal-toolbar flex min-h-10 shrink-0 flex-wrap items-center gap-1.5 border-b border-slate-800/80 px-2.5">
         <button
           type="button"
           aria-expanded={open}
