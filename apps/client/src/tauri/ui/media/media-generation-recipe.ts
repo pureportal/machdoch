@@ -37,7 +37,7 @@ export const normalizeMediaFlowForPersistence = (
     for (const [key, maximumLength] of [
       ["prompt", 8_000],
       ["negativePrompt", 8_000],
-      ["instructions", 1_000],
+      ["instructions", node.type === "task.generate-prompt" ? 4_000 : 1_000],
     ] as const) {
       if (typeof config[key] === "string") {
         config[key] = normalizeMediaSubmissionText(
@@ -134,6 +134,24 @@ export const readMediaVideoRecipeSettings = (
       typeof config.numFrames === "number"
         ? config.numFrames
         : DEFAULT_VIDEO_RECIPE_SETTINGS.numFrames,
+    numInferenceSteps:
+      typeof config.numInferenceSteps === "number"
+        ? config.numInferenceSteps
+        : DEFAULT_VIDEO_RECIPE_SETTINGS.numInferenceSteps,
+    guidanceScale:
+      typeof config.guidanceScale === "number"
+        ? config.guidanceScale
+        : DEFAULT_VIDEO_RECIPE_SETTINGS.guidanceScale,
+    matteQuality:
+      config.matteQuality === "fast" || config.matteQuality === "balanced"
+        ? config.matteQuality
+        : "production",
+    encodingQuality:
+      config.encodingQuality === "draft" ||
+      config.encodingQuality === "balanced" ||
+      config.encodingQuality === "production"
+        ? config.encodingQuality
+        : "lossless",
     memoryProfile:
       config.memoryProfile === "memory-saver" ||
       config.memoryProfile === "balanced" ||

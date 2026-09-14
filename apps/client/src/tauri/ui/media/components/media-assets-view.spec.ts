@@ -15,6 +15,7 @@ import type {
   MediaAssetRecord,
 } from "../../../../core/media/contracts.js";
 import { MediaAssetsView } from "./media-assets-view";
+import { EMPTY_MEDIA_RUNTIME_SETUP } from "../media-runtime-setup";
 
 vi.mock("./media-visual-preview", () => ({
   MediaAssetPreview: () => null,
@@ -73,6 +74,7 @@ const deletionImpact: MediaAssetDeletionImpact = {
 type Props = ComponentProps<typeof MediaAssetsView>;
 
 const createProps = (overrides: Partial<Props> = {}): Props => ({
+  discoveredFiles: [],
   assets: [asset],
   catalog: createMediaModelCatalogSnapshot({
     isOpenAiConfigured: false,
@@ -99,12 +101,17 @@ const createProps = (overrides: Partial<Props> = {}): Props => ({
   onRetryPersistence: vi.fn(),
   onDismissImport: vi.fn(),
   onUseModel: vi.fn(),
-  onRefreshLocalRuntime: vi.fn(),
+  onSetupRuntime: vi.fn(),
   onVerifyModel: vi.fn(),
-  localRuntimeRefreshing: false,
+  onRefreshModels: vi.fn(async () => undefined),
+  onScanModels: vi.fn(),
+  runtimeSetup: EMPTY_MEDIA_RUNTIME_SETUP,
+  runtimeReady: false,
   verifyingModelId: null,
   onUseAddon: vi.fn(),
   onUseAsReference: vi.fn(),
+  onEditImage: vi.fn(),
+  onAnimateImage: vi.fn(),
   onOpenVideoAsFlow: vi.fn(),
   onInspectSettings: vi.fn(),
   onReuseSettings: vi.fn(),
@@ -122,6 +129,27 @@ afterEach(() => {
 });
 
 describe("MediaAssetsView asset actions", () => {
+  it("opens asset inspection as a dialog with edit, reference, animation, and save actions", () => {
+    const props = createProps();
+    render(createElement(MediaAssetsView, props));
+    fireEvent.click(screen.getByRole("button", { name: "View Image 1" }));
+    const dialog = screen.getByRole("dialog", { name: "Image 1" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Edit image" }));
+    expect(props.onEditImage).toHaveBeenCalledWith(asset);
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Use as reference" }),
+    );
+    expect(props.onUseAsReference).toHaveBeenCalledWith(asset);
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Animate image" }),
+    );
+    expect(props.onAnimateImage).toHaveBeenCalledWith(asset);
+    expect(
+      within(dialog).getByRole("button", { name: "Save image" }),
+    ).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
   it("plans destructive deletion and confirms its dependency impact", async () => {
     const onPlanAssetDeletion = vi.fn(async () => deletionImpact);
     const onDeleteAsset = vi.fn(async () => undefined);
@@ -133,7 +161,7 @@ describe("MediaAssetsView asset actions", () => {
     );
 
     const assetCard = screen
-      .getByRole("button", { name: "View image output 1" })
+      .getByRole("button", { name: "View Image 1" })
       .closest("article");
     expect(assetCard).not.toBeNull();
     fireEvent.contextMenu(assetCard!);
@@ -206,7 +234,7 @@ describe("MediaAssetsView asset actions", () => {
       ],
     };
     const onUseModel = vi.fn();
-    const onRefreshLocalRuntime = vi.fn();
+    const onSetupRuntime = vi.fn();
     const onVerifyModel = vi.fn();
 
     render(
@@ -216,7 +244,7 @@ describe("MediaAssetsView asset actions", () => {
           assets: [],
           catalog,
           onUseModel,
-          onRefreshLocalRuntime,
+          onSetupRuntime,
           onVerifyModel,
         }),
       ),
@@ -233,10 +261,10 @@ describe("MediaAssetsView asset actions", () => {
       ),
     ).toBeNull();
     expect(
-      screen.getByText(
+      screen.queryByText(
         "Start or repair the required runtime, then probe again.",
       ),
-    ).toBeTruthy();
+    ).toBeNull();
 
     const providerCard = screen
       .getByRole("button", { name: `View ${providerReady.displayName}` })
@@ -265,10 +293,10 @@ describe("MediaAssetsView asset actions", () => {
     ).toBeNull();
     fireEvent.click(
       within(unavailableCard!).getByRole("button", {
-        name: "Refresh runtime",
+        name: "Set up Media Studio",
       }),
     );
-    expect(onRefreshLocalRuntime).toHaveBeenCalledOnce();
+    expect(onSetupRuntime).toHaveBeenCalledOnce();
 
     const unverifiedCard = screen
       .getByRole("button", { name: `View ${unverified.displayName}` })

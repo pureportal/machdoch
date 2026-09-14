@@ -40,6 +40,7 @@ import { MediaCategoryPicker } from "./media-category-picker";
 import { MediaSampleImagesInput } from "./media-sample-images-input";
 
 interface MediaAssetImportDialogProps {
+  initialPath?: string;
   assets: readonly MediaAssetRecord[];
   categories: readonly MediaAssetCategory[];
   loading: boolean;
@@ -129,6 +130,7 @@ const IMPORT_PROGRESS_LABELS: Record<
 };
 
 export const MediaAssetImportDialog = ({
+  initialPath,
   assets,
   categories,
   loading,
@@ -286,6 +288,14 @@ export const MediaAssetImportDialog = ({
     }
   };
 
+  const initialPathHandled = useRef(false);
+  useEffect(() => {
+    if (initialPath && !initialPathHandled.current) {
+      initialPathHandled.current = true;
+      selectPath(initialPath);
+    }
+  }, [initialPath, selectPath]);
+
   const importSamplePaths = useCallback(
     async (paths: string[]): Promise<string[]> => {
       const importedAssetIds: string[] = [];
@@ -391,13 +401,16 @@ export const MediaAssetImportDialog = ({
     ) {
       setTriggerWords(
         normalizeMediaTriggerWords(
-          inspection.suggestedTriggerWords.filter(
-            (value): value is string => typeof value === "string",
-          ),
+          (importType === "embedding" &&
+          "suggestedToken" in inspection &&
+          typeof inspection.suggestedToken === "string"
+            ? [inspection.suggestedToken]
+            : inspection.suggestedTriggerWords
+          ).filter((value): value is string => typeof value === "string"),
         ),
       );
     }
-  }, [inspection]);
+  }, [inspection, importType]);
 
   useEffect(() => {
     if (!civitaiInspection?.canEnrich) return;
@@ -457,6 +470,8 @@ export const MediaAssetImportDialog = ({
       !inspection ||
       !inspection.canImport ||
       !displayName.trim() ||
+      (importType === "embedding" &&
+        parseMediaTriggerWords(triggerWords).length !== 1) ||
       !architecture
     ) {
       return;
@@ -503,13 +518,13 @@ export const MediaAssetImportDialog = ({
   };
 
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-70 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
       <SubmitShortcut asChild>
         <div
           role="dialog"
           aria-modal="true"
           aria-labelledby="media-import-title"
-          className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl"
+          className="flex max-h-[calc(100dvh-2rem)] min-w-0 w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl"
         >
           <header className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
             <h1
@@ -714,8 +729,11 @@ export const MediaAssetImportDialog = ({
                 </label>
                 {importIsAddon ? (
                   <label className="space-y-1 text-xs text-slate-400 sm:col-span-2">
-                    <span>Trigger words</span>
+                    <span>
+                      {importType === "embedding" ? "Token" : "Trigger words"}
+                    </span>
                     <input
+                      required={importType === "embedding"}
                       value={triggerWords}
                       onChange={(event) => {
                         dirtyEnrichmentFields.current.add("triggerWords");
@@ -749,6 +767,13 @@ export const MediaAssetImportDialog = ({
             {civitaiInspection && !civitaiInspection.canEnrich ? (
               <p className="text-sm text-rose-300">
                 {civitaiInspection.blockingReason}
+              </p>
+            ) : null}
+            {importType === "model" &&
+            architecture === "krea-2" &&
+            !inspection?.duplicate ? (
+              <p className="text-sm text-slate-400">
+                Required components: up to 8.6 GB.
               </p>
             ) : null}
             {inspection?.duplicate ? (
@@ -791,6 +816,8 @@ export const MediaAssetImportDialog = ({
                       (!inspection ||
                         !inspection.canImport ||
                         !displayName.trim() ||
+                        (importType === "embedding" &&
+                          parseMediaTriggerWords(triggerWords).length !== 1) ||
                         !architecture))))
               }
               {...SUBMIT_SHORTCUT_ACTION_PROPS}

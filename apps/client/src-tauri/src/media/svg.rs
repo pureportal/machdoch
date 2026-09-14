@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fs, path::Path};
+use std::collections::HashSet;
 
 use image::{imageops::FilterType, DynamicImage, RgbaImage};
 use resvg::{tiny_skia, usvg};
@@ -58,15 +58,6 @@ pub(crate) struct ValidatedSvgDocument {
     pub(crate) width: u32,
     pub(crate) height: u32,
     pub(crate) structure: SvgStructureSummary,
-}
-
-#[derive(Debug)]
-pub(crate) struct SvgRasterization {
-    pub(crate) png_bytes: Vec<u8>,
-    pub(crate) width: u32,
-    pub(crate) height: u32,
-    pub(crate) xml_node_count: usize,
-    pub(crate) had_text: bool,
 }
 
 #[derive(Debug)]
@@ -319,28 +310,6 @@ fn edge_agreement(reference: &[f64], rendered: &[f64], width: u32, height: u32) 
     } else {
         (overlap / total).clamp(0.0, 1.0)
     }
-}
-
-pub(crate) fn rasterize_staged_svg(staged_path: &Path) -> MediaResult<SvgRasterization> {
-    let metadata = fs::metadata(staged_path)
-        .map_err(|error| format!("failed to inspect staged SVG: {error}"))?;
-    if metadata.len() == 0 || metadata.len() > MAX_SVG_BYTES as u64 {
-        return Err(format!(
-            "SVG imports must be between 1 byte and {} MB",
-            MAX_SVG_BYTES / 1024 / 1024
-        ));
-    }
-    let bytes =
-        fs::read(staged_path).map_err(|error| format!("failed to read staged SVG: {error}"))?;
-    let document = validate_and_canonicalize_svg(&bytes)?;
-    let evaluation = evaluate_svg(&document, document.width.max(document.height).min(2_048))?;
-    Ok(SvgRasterization {
-        png_bytes: evaluation.png_bytes,
-        width: evaluation.preview_width,
-        height: evaluation.preview_height,
-        xml_node_count: document.structure.xml_node_count,
-        had_text: document.structure.text_count > 0,
-    })
 }
 
 fn parse_svg_tree(source: &str) -> MediaResult<usvg::Tree> {

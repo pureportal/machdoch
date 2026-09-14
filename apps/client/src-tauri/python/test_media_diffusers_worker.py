@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import math
 from pathlib import Path
@@ -22,6 +23,56 @@ SPEC.loader.exec_module(WORKER)
 
 
 class MediaDiffusersQualityTests(unittest.TestCase):
+    def test_hunyuan_sampling_reports_steps_and_closes_the_progress_bar(self) -> None:
+        from tqdm.auto import tqdm
+
+        for disabled in (False, True):
+            with self.subTest(console_progress_disabled=disabled):
+                bar = tqdm(total=8, mininterval=3600, disable=disabled, file=io.StringIO())
+                pipeline = SimpleNamespace(progress_bar=mock.Mock(return_value=bar))
+                original_progress_bar = pipeline.progress_bar
+                WORKER._enable_hunyuan_sampling_progress(pipeline)
+
+                with mock.patch.object(WORKER, "_progress") as report:
+                    with pipeline.progress_bar(total=8) as sampling:
+                        sampling.update()
+                        sampling.update(3)
+                        sampling.update(4)
+
+                original_progress_bar.assert_called_once_with(total=8)
+                self.assertTrue(bar.disable)
+                self.assertEqual(
+                    report.call_args_list,
+                    [
+                        mock.call("Sampling 1/8", 0.325),
+                        mock.call("Sampling 4/8", 0.55),
+                        mock.call("Sampling 8/8", 0.85),
+                    ],
+                )
+
+    def test_sampling_events_remain_readable_among_console_progress_updates(self) -> None:
+        from contextlib import redirect_stderr
+        from tqdm.auto import tqdm
+
+        stream = io.StringIO()
+        with redirect_stderr(stream):
+            pipeline = SimpleNamespace(
+                progress_bar=lambda *, total: tqdm(total=total, mininterval=0)
+            )
+            WORKER._enable_hunyuan_sampling_progress(pipeline)
+            with pipeline.progress_bar(total=8) as sampling:
+                for _ in range(8):
+                    sampling.update()
+
+        prefix = "MACHDOCH_PROGRESS "
+        events = [
+            json.loads(line[len(prefix):])
+            for line in stream.getvalue().split("\n")
+            if line.startswith(prefix)
+        ]
+        self.assertEqual([event["stage"] for event in events], [f"Sampling {step}/8" for step in range(1, 9)])
+        self.assertEqual(events[-1]["progress"], 0.85)
+
     def test_large_image_decode_enables_native_overlapping_vae_tiles(self) -> None:
         class FakeVae:
             def __init__(self) -> None:
@@ -245,20 +296,20 @@ class MediaDiffusersQualityTests(unittest.TestCase):
         np.testing.assert_array_equal(result_pixels[mask == 0], pixels[mask == 0])
         self.assertTrue(np.any(result_pixels[mask > 0] != pixels[mask > 0]))
 
-    def test_flux2_inpaint_composite_preserves_the_fitted_source_outside_the_mask(self) -> None:
-        base = Image.new("RGB", (64, 64), (18, 42, 78))
-        mask_pixels = np.zeros((64, 64), dtype=np.uint8)
-        mask_pixels[16:48, 16:48] = 255
+    def test_inpaint_preserves_portrait_framing_and_all_unselected_pixels(self) -> None:
+        pixels = np.arange(832 * 1104 * 3, dtype=np.uint8).reshape(1104, 832, 3)
+        base = Image.fromarray(pixels)
+        mask_pixels = np.zeros((1104, 832), dtype=np.uint8)
+        mask_pixels[160:480, 160:480] = 255
         mask = Image.fromarray(mask_pixels)
         generated = Image.new("RGB", (96, 96), (230, 180, 35))
 
-        result = WORKER._composite_flux2_inpaint_result(base, mask, generated)
+        context = WORKER._masked_generation_context(base, None, 512, 512, 16, mask)
+        result = WORKER._composite_masked_result(context, generated)
         result_pixels = np.asarray(result)
-        output_mask = np.asarray(WORKER._fit_mask_image(mask, 96, 96))
-        fitted_base = np.asarray(WORKER._fit_conditioning_image(base, 96, 96))
-
-        np.testing.assert_array_equal(result_pixels[output_mask == 0], fitted_base[output_mask == 0])
-        self.assertTrue(np.all(result_pixels[output_mask == 255] == (230, 180, 35)))
+        self.assertEqual(result.size, base.size)
+        np.testing.assert_array_equal(result_pixels[mask_pixels == 0], pixels[mask_pixels == 0])
+        self.assertTrue(np.all(result_pixels[mask_pixels == 255] == (230, 180, 35)))
 
     def test_wan_endpoint_conditioning_uses_one_full_temporal_vae_encode(self) -> None:
         try:
@@ -855,8 +906,8 @@ class MediaDiffusersQualityTests(unittest.TestCase):
             returncode=3,
         )
         with mock.patch.object(
-            WORKER.subprocess,
-            "run",
+            WORKER,
+            "_run_worker_command",
             return_value=completed,
         ) as run:
             with self.assertRaisesRegex(
@@ -888,8 +939,8 @@ class MediaDiffusersQualityTests(unittest.TestCase):
             returncode=3,
         )
         with mock.patch.object(
-            WORKER.subprocess,
-            "run",
+            WORKER,
+            "_run_worker_command",
             return_value=completed,
         ) as run:
             with self.assertRaisesRegex(

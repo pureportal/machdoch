@@ -187,6 +187,12 @@ export type MediaNodeLayer =
   | "runtime";
 
 export type MediaNodeType =
+  | "operation.visual-check"
+  | "operation.prepare-mask"
+  | "task.generate-prompt"
+  | "operation.segment"
+  | "operation.upscale"
+  | "control.repeat"
   | "source.prompt"
   | "source.image"
   | "source.seed"
@@ -214,6 +220,7 @@ export type MediaNodeType =
   | "output.video";
 
 export type MediaPortDataType =
+  | "mask"
   | "prompt"
   | "image"
   | "seed"
@@ -1075,6 +1082,10 @@ export interface MediaVideoRecipeSettings {
   loopMode: "none" | "ping-pong" | "seamless";
   fps: number;
   numFrames: number;
+  numInferenceSteps: number;
+  guidanceScale: number;
+  matteQuality: "fast" | "balanced" | "production";
+  encodingQuality: "draft" | "balanced" | "production" | "lossless";
   memoryProfile: "auto" | "memory-saver" | "balanced" | "maximum-speed";
 }
 
@@ -1145,6 +1156,7 @@ export type MediaErrorCode =
   | "PROVENANCE_VERIFY_FAILED"
   | "WATERMARK_DETECTION_FAILED"
   | "OUTPUT_VALIDATION_FAILED"
+  | "QUALITY_GATE_FAILED"
   | "EXPORT_FAILED"
   | "CANCELLED_BY_USER";
 
@@ -1246,6 +1258,12 @@ export interface MediaExecutionStep {
   id: string;
   sourceNodeId: string;
   kind:
+    | "generate-prompt"
+    | "segment-image"
+    | "prepare-mask"
+    | "check-image"
+    | "upscale-image"
+    | "repeat-flow"
     | "normalize-prompt"
     | "resolve-asset"
     | "resolve-seed"
@@ -1409,6 +1427,7 @@ export interface MediaRuntimeRunRecord extends MediaRunRecord {
     | "local-import"
     | "local-transform"
     | "local-image-flow"
+    | "media-workflow"
     | "local-analysis"
     | "local-video"
     | "local-wan-video"
@@ -1441,6 +1460,10 @@ export interface MediaRunEvent {
     | "run_failed"
     | "run_recovered"
     | "retry_queued"
+    | "workflow_retry"
+    | "workflow_prompt"
+    | "workflow_gate"
+    | "workflow_visual"
     | "asset_imported"
     | "asset_transformed"
     | "local_flow_executed"
@@ -1633,6 +1656,7 @@ export interface MediaSvgRasterizeOperation {
 
 export interface MediaLocalImportOperation {
   kind: "local-import";
+  sourceFileName?: string;
   mediaType?: "svg" | "video";
   sanitizerVersion?: string;
   xmlNodeCount?: number;
@@ -1996,6 +2020,12 @@ export interface MediaRemoteSvgGenerationOperation {
 }
 
 export type MediaAssetOperation =
+  | {
+      kind: "workflow";
+      sourceNodeId: string;
+      iteration: number;
+      details: Record<string, unknown>;
+    }
   | MediaImageTransformOperation
   | MediaLocalImportOperation
   | MediaQualityAnalysisOperation
@@ -2007,6 +2037,18 @@ export type MediaAssetOperation =
   | MediaLocalWanVideoGenerationOperation
   | MediaRemoteImageEditOperation
   | MediaRemoteSvgGenerationOperation;
+
+export interface MediaVisualAssessment {
+  checks: {
+    criterion: string;
+    verdict: "pass" | "fail" | "unknown";
+    reason: string;
+  }[];
+  rawResponse: string;
+  modelType: string;
+  modelPath: string;
+  maxPixels: number;
+}
 
 export interface MediaQualityObservation {
   metricId: string;
@@ -2021,7 +2063,12 @@ export interface MediaQualityObservation {
     | "pair"
     | "collection";
   status: "observed" | "unknown" | "error";
-  value?: number | boolean | string | Record<string, number>;
+  value?:
+    | number
+    | boolean
+    | string
+    | Record<string, number>
+    | MediaVisualAssessment;
   unit?: string;
   direction?:
     | "higher-is-better"

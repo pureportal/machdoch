@@ -1,3 +1,6 @@
+import { MediaAssetDetailsDialog } from "./media-asset-details-dialog";
+import { MediaModelInstallDialog } from "./media-model-install-dialog";
+import { MediaRemoveResourceButton } from "./media-remove-resource-button";
 import {
   FileImage,
   FileType,
@@ -25,6 +28,7 @@ import {
   describeMediaModelReadiness,
   isMediaModelReady,
 } from "../../../../core/media/model-readiness.js";
+import { mediaAssetLabel } from "../../../../core/media/asset-label.js";
 import type {
   ImportMediaLocalModelRequest,
   ImportMediaModelAddonRequest,
@@ -61,6 +65,11 @@ import { MediaAssetMetadataEditor } from "./media-asset-metadata-editor";
 import { MediaCategoryManagerDialog } from "./media-category-manager-dialog";
 import { MediaCategoryPicker } from "./media-category-picker";
 import {
+  isMediaRuntimeSetupActive,
+  mediaRuntimeSetupLabel,
+  type MediaRuntimeSetupStatus,
+} from "../media-runtime-setup";
+import {
   MediaAssetPreview,
   MediaResourcePreview,
 } from "./media-visual-preview";
@@ -75,6 +84,7 @@ type AssetFilter =
   | "svg";
 
 interface MediaAssetsViewProps {
+  discoveredFiles: readonly import("../../../../core/media/contracts.js").MediaDiscoveredModelArtifact[];
   assets: readonly MediaAssetRecord[];
   catalog: MediaModelCatalogSnapshot;
   categories: readonly MediaAssetCategory[];
@@ -111,12 +121,17 @@ interface MediaAssetsViewProps {
   onRetryPersistence: () => void;
   onDismissImport: () => void;
   onUseModel: (model: MediaModelDescriptor) => void;
-  onRefreshLocalRuntime: () => void;
+  onSetupRuntime: () => void;
   onVerifyModel: (model: MediaModelDescriptor) => void;
-  localRuntimeRefreshing: boolean;
+  onRefreshModels: () => Promise<void>;
+  onScanModels: () => void;
+  runtimeSetup: MediaRuntimeSetupStatus;
+  runtimeReady: boolean;
   verifyingModelId: string | null;
   onUseAddon: (addonId: string) => void;
   onUseAsReference: (asset: MediaAssetRecord) => void;
+  onEditImage: (asset: MediaAssetRecord) => void;
+  onAnimateImage: (asset: MediaAssetRecord) => void;
   onOpenVideoAsFlow: (asset: MediaAssetRecord) => void;
   onInspectSettings: (runId: string) => void;
   onReuseSettings: (runId: string) => void;
@@ -154,6 +169,7 @@ const resourceMatches = (
 };
 
 export const MediaAssetsView = ({
+  discoveredFiles,
   assets,
   catalog,
   categories,
@@ -181,12 +197,17 @@ export const MediaAssetsView = ({
   onRetryPersistence,
   onDismissImport,
   onUseModel,
-  onRefreshLocalRuntime,
+  onSetupRuntime,
   onVerifyModel,
-  localRuntimeRefreshing,
+  onRefreshModels,
+  onScanModels,
+  runtimeSetup,
+  runtimeReady,
   verifyingModelId,
   onUseAddon,
   onUseAsReference,
+  onEditImage,
+  onAnimateImage,
   onOpenVideoAsFlow,
   onInspectSettings,
   onReuseSettings,
@@ -197,10 +218,16 @@ export const MediaAssetsView = ({
   onCategoryStateChange,
   tagLoadingAssetId,
 }: MediaAssetsViewProps): JSX.Element => {
+  const setupActive = isMediaRuntimeSetupActive(runtimeSetup);
+  const setupLabel =
+    runtimeSetup.phase === "ready"
+      ? "Set up Media Studio"
+      : mediaRuntimeSetupLabel(runtimeSetup);
   const [filter, setFilter] = useState<AssetFilter>("all");
   const [query, setQuery] = useState("");
   const [categoryFilterIds, setCategoryFilterIds] = useState<string[]>([]);
   const [importOpen, setImportOpen] = useState(false);
+  const [importPath, setImportPath] = useState<string | undefined>();
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(
     openAssetId ?? null,
@@ -310,6 +337,7 @@ export const MediaAssetsView = ({
       resourceMatches(
         [
           asset.id,
+          mediaAssetLabel(asset),
           asset.mimeType,
           ...asset.tags.map((tag) => tag.label),
           ...categoryNamesFor(asset.id),
@@ -410,6 +438,14 @@ export const MediaAssetsView = ({
     }
   };
 
+  const [installModel, setInstallModel] = useState<MediaModelDescriptor | null>(
+    null,
+  );
+  const closeInstall = useCallback(() => setInstallModel(null), []);
+  const installed = useCallback(async () => {
+    await onRefreshModels();
+    if (installModel) onVerifyModel(installModel);
+  }, [onRefreshModels, onVerifyModel, installModel]);
   return (
     <div className="flex h-full min-h-0 flex-col bg-slate-950">
       <header className="flex flex-wrap items-center gap-3 border-b border-slate-800/80 px-5 py-3">
@@ -432,10 +468,21 @@ export const MediaAssetsView = ({
         />
         <Button
           type="button"
-          onClick={() => setImportOpen(true)}
+          onClick={() => {
+            setImportPath(undefined);
+            setImportOpen(true);
+          }}
           disabled={!importSupported}
         >
           <Import className="h-4 w-4" /> Import
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onScanModels}
+          disabled={importLoading}
+        >
+          Scan models
         </Button>
         {persistenceError ? (
           <div
@@ -474,6 +521,38 @@ export const MediaAssetsView = ({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
+        {discoveredFiles.some((file) => file.status === "importable") &&
+        ["all", "model", "lora", "embedding"].includes(filter) ? (
+          <details className="mb-4 rounded-xl border border-slate-800 p-3">
+            <summary className="cursor-pointer text-sm text-slate-300">
+              Workspace files
+            </summary>
+            {discoveredFiles
+              .filter(
+                (file) =>
+                  file.status === "importable" &&
+                  resourceMatches([file.displayName, file.relativePath], query),
+              )
+              .map((file) => (
+                <div key={file.path} className="mt-3 flex items-center gap-3">
+                  <span className="min-w-0 flex-1 truncate text-xs text-slate-300">
+                    {file.relativePath}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={importLoading}
+                    onClick={() => {
+                      setImportPath(file.path);
+                      setImportOpen(true);
+                    }}
+                  >
+                    Import {file.displayName}
+                  </Button>
+                </div>
+              ))}
+          </details>
+        ) : null}
         {totalVisible === 0 ? (
           <div className="flex min-h-72 items-center justify-center rounded-2xl border border-dashed border-slate-800 text-sm text-slate-500">
             {query || categoryFilterIds.length > 0
@@ -521,40 +600,58 @@ export const MediaAssetsView = ({
                         {model.displayName}
                       </h2>
                       <p className="truncate text-xs text-slate-500">
-                        {categorySummary || readiness?.action || model.family}
+                        {categorySummary ||
+                          (model.runtimeReadiness === "runtime-unavailable"
+                            ? model.family
+                            : readiness?.action) ||
+                          model.family}
                       </p>
                     </div>
-                    {ready ? (
+                    {!model.installed &&
+                    model.management.acquisition === "managed-install" ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => setInstallModel(model)}
+                        disabled={!importSupported}
+                      >
+                        Install model
+                      </Button>
+                    ) : ready ? (
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
                         onClick={() => onUseModel(model)}
+                        disabled={setupActive && model.target === "local"}
                         className="w-full"
                       >
                         Use model
                       </Button>
-                    ) : model.runtimeReadiness === "runtime-unavailable" ? (
+                    ) : model.runtimeReadiness === "runtime-unavailable" &&
+                      !runtimeReady &&
+                      model.providerId === "local-diffusers" ? (
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={onRefreshLocalRuntime}
-                        disabled={localRuntimeRefreshing}
+                        onClick={onSetupRuntime}
+                        disabled={setupActive || !importSupported}
                         className="w-full"
                       >
-                        {localRuntimeRefreshing
-                          ? "Refreshing…"
-                          : "Refresh runtime"}
+                        {setupLabel}
                       </Button>
-                    ) : model.installed &&
+                    ) : model.runtimeReadiness !== "runtime-unavailable" &&
+                      model.installed &&
                       model.management.verification !== "none" ? (
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
                         onClick={() => onVerifyModel(model)}
-                        disabled={verifyingModelId === model.id}
+                        disabled={setupActive || verifyingModelId === model.id}
                         className="w-full"
                       >
                         {verifyingModelId === model.id
@@ -658,6 +755,11 @@ export const MediaAssetsView = ({
                   </ControlTooltip>
                   <DropdownMenuContent align="end">
                     {asset.kind === "image" ? (
+                      <DropdownMenuItem onSelect={() => onEditImage(asset)}>
+                        Edit image
+                      </DropdownMenuItem>
+                    ) : null}
+                    {asset.kind === "image" ? (
                       <DropdownMenuItem
                         onSelect={() => onUseAsReference(asset)}
                       >
@@ -665,10 +767,15 @@ export const MediaAssetsView = ({
                       </DropdownMenuItem>
                     ) : null}
                     {asset.kind === "image" ? (
+                      <DropdownMenuItem onSelect={() => onAnimateImage(asset)}>
+                        Animate image
+                      </DropdownMenuItem>
+                    ) : null}
+                    {asset.kind === "image" ? (
                       <DropdownMenuItem
                         onSelect={() => onOpenVideoAsFlow(asset)}
                       >
-                        Animate image
+                        Animate in Advanced
                       </DropdownMenuItem>
                     ) : null}
                     {asset.operation?.kind !== "local-import" ? (
@@ -696,7 +803,7 @@ export const MediaAssetsView = ({
                 </DropdownMenu>
                 <button
                   type="button"
-                  aria-label={`View ${asset.kind === "vector" ? "SVG" : asset.kind} output ${asset.outputIndex + 1}`}
+                  aria-label={`View ${mediaAssetLabel(asset)}`}
                   onClick={() => {
                     setSelectedResourceId(null);
                     setSelectedAssetId(asset.id);
@@ -735,7 +842,7 @@ export const MediaAssetsView = ({
                         onClick={() => onUseAsReference(asset)}
                         className="flex-1"
                       >
-                        Use
+                        Use as reference
                       </Button>
                     ) : null}
                     {asset.kind === "image" ? (
@@ -743,7 +850,8 @@ export const MediaAssetsView = ({
                         type="button"
                         variant="ghost"
                         size="sm"
-                        onClick={() => onOpenVideoAsFlow(asset)}
+                        onClick={() => onAnimateImage(asset)}
+                        aria-label="Animate image"
                       >
                         <Play className="h-4 w-4" />
                       </Button>
@@ -795,6 +903,24 @@ export const MediaAssetsView = ({
               }}
               onManageCategories={() => setCategoryManagerOpen(true)}
             />
+            {selectedResourceModel?.installed &&
+            ["managed-install", "file-import"].includes(
+              selectedResourceModel.management.acquisition,
+            ) ? (
+              <MediaRemoveResourceButton
+                key={selectedResourceModel.id}
+                id={selectedResourceModel.id}
+                kind="model"
+                onRemoved={onRefreshModels}
+              />
+            ) : selectedResourceAddon ? (
+              <MediaRemoveResourceButton
+                key={selectedResourceAddon.id}
+                id={selectedResourceAddon.id}
+                kind="addon"
+                onRemoved={onRefreshModels}
+              />
+            ) : null}
             {selectedResourceModel &&
             isMediaModelReady(selectedResourceModel) ? (
               <Button
@@ -802,6 +928,9 @@ export const MediaAssetsView = ({
                 variant="outline"
                 size="sm"
                 onClick={() => onUseModel(selectedResourceModel)}
+                disabled={
+                  setupActive && selectedResourceModel.target === "local"
+                }
                 className="w-full"
               >
                 Use model
@@ -809,29 +938,59 @@ export const MediaAssetsView = ({
             ) : selectedResourceModel && selectedModelReadiness ? (
               <div className="space-y-2">
                 <p className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-[10px] leading-4 text-amber-100">
-                  {selectedResourceModel.runtimeReadinessDiagnostic ??
-                    selectedModelReadiness.message}
+                  {selectedResourceModel.runtimeReadiness ===
+                  "runtime-unavailable"
+                    ? runtimeReady
+                      ? "This model cannot run on this computer."
+                      : "Set up Media Studio to use local models."
+                    : selectedModelReadiness.message}
                 </p>
-                {selectedResourceModel.runtimeReadiness ===
-                "runtime-unavailable" ? (
+                {selectedResourceModel.runtimeReadinessDiagnostic ? (
+                  <details className="text-xs text-slate-400">
+                    <summary className="cursor-pointer">Show details</summary>
+                    <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words">
+                      {selectedResourceModel.runtimeReadinessDiagnostic}
+                    </pre>
+                  </details>
+                ) : null}
+                {!selectedResourceModel.installed &&
+                selectedResourceModel.management.acquisition ===
+                  "managed-install" ? (
+                  <Button
+                    type="button"
+                    className="w-full"
+                    onClick={() => setInstallModel(selectedResourceModel)}
+                    disabled={!importSupported}
+                  >
+                    Install model
+                  </Button>
+                ) : selectedResourceModel.runtimeReadiness ===
+                    "runtime-unavailable" &&
+                  !runtimeReady &&
+                  selectedResourceModel.providerId === "local-diffusers" ? (
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={onRefreshLocalRuntime}
-                    disabled={localRuntimeRefreshing}
+                    onClick={onSetupRuntime}
+                    disabled={setupActive || !importSupported}
                     className="w-full"
                   >
-                    {localRuntimeRefreshing ? "Refreshing…" : "Refresh runtime"}
+                    {setupLabel}
                   </Button>
-                ) : selectedResourceModel.installed &&
+                ) : selectedResourceModel.runtimeReadiness !==
+                    "runtime-unavailable" &&
+                  selectedResourceModel.installed &&
                   selectedResourceModel.management.verification !== "none" ? (
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     onClick={() => onVerifyModel(selectedResourceModel)}
-                    disabled={verifyingModelId === selectedResourceModel.id}
+                    disabled={
+                      setupActive ||
+                      verifyingModelId === selectedResourceModel.id
+                    }
                     className="w-full"
                   >
                     {verifyingModelId === selectedResourceModel.id
@@ -856,52 +1015,23 @@ export const MediaAssetsView = ({
         </aside>
       ) : null}
 
+      {installModel ? (
+        <MediaModelInstallDialog
+          model={installModel}
+          onClose={closeInstall}
+          onInstalled={installed}
+        />
+      ) : null}
       {selectedAsset && selectedAssetMetadata ? (
-        <aside className="absolute bottom-4 right-4 z-20 max-h-[calc(100%-2rem)] w-80 overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950/95 p-4 shadow-2xl backdrop-blur">
-          <div className="mb-3 flex items-center justify-between">
-            <span className="text-sm font-semibold text-slate-100">
-              {selectedAsset.kind === "vector"
-                ? "SVG"
-                : selectedAsset.kind[0]?.toUpperCase() +
-                  selectedAsset.kind.slice(1)}
-            </span>
-            <ControlTooltip content="Close">
-              <button
-                type="button"
-                aria-label="Close asset details"
-                onClick={() => setSelectedAssetId(null)}
-                className="rounded-md p-1 text-slate-400 hover:text-white"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </ControlTooltip>
-          </div>
-          <MediaAssetPreview
-            asset={selectedAsset}
-            className="mb-3 aspect-video w-full rounded-xl"
-            controls={selectedAsset.kind === "video"}
-            fit="contain"
-          />
-          {selectedAsset.operation?.kind !== "local-import" ? (
-            <div className="mb-3 grid grid-cols-2 gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => onInspectSettings(selectedAsset.runId)}
-              >
-                View settings
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => onReuseSettings(selectedAsset.runId)}
-              >
-                Reuse settings
-              </Button>
-            </div>
-          ) : null}
+        <MediaAssetDetailsDialog
+          asset={selectedAsset}
+          onClose={() => setSelectedAssetId(null)}
+          onEdit={onEditImage}
+          onUseAsReference={onUseAsReference}
+          onAnimate={onAnimateImage}
+          onInspectSettings={onInspectSettings}
+          onReuseSettings={onReuseSettings}
+        >
           <MediaAssetMetadataEditor
             key={selectedAsset.id}
             resourceId={selectedAsset.id}
@@ -926,11 +1056,12 @@ export const MediaAssetsView = ({
             }
             onManageCategories={() => setCategoryManagerOpen(true)}
           />
-        </aside>
+        </MediaAssetDetailsDialog>
       ) : null}
 
       {importOpen ? (
         <MediaAssetImportDialog
+          initialPath={importPath}
           assets={assets}
           categories={categories}
           loading={importLoading}

@@ -10,6 +10,7 @@ mod hardware;
 mod ingest;
 mod local_flow;
 mod model_addon;
+mod model_components;
 mod model_discovery;
 mod model_import;
 mod model_install;
@@ -17,9 +18,14 @@ mod provider_local_diffusers;
 mod provider_mock;
 mod provider_openai;
 mod provider_svg;
+pub(crate) mod runtime_setup;
 mod subject_cutout;
 mod svg;
 mod transform;
+mod worker_output;
+pub(crate) mod workflow;
+pub(crate) mod workflow_models;
+mod workflow_schema;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -72,10 +78,30 @@ pub(crate) struct MediaRuntimeState {
     active_runs: Mutex<HashSet<String>>,
     active_model_installs: Mutex<HashSet<String>>,
     local_diffusers_status: Mutex<Option<provider_local_diffusers::LocalDiffusersRuntimeStatus>>,
+    runtime_setup: Mutex<runtime_setup::SetupStatus>,
+}
+
+struct ActiveMediaRun<'a> {
+    state: &'a MediaRuntimeState,
+    run_id: &'a str,
+}
+
+impl Drop for ActiveMediaRun<'_> {
+    fn drop(&mut self) {
+        self.state.finish_run(self.run_id);
+    }
 }
 
 pub(crate) fn has_pending_shutdown_work(app: &AppHandle) -> MediaResult<bool> {
     let state = app.state::<MediaRuntimeState>();
+    if state
+        .runtime_setup
+        .lock()
+        .map_err(|_| "Media setup status is unavailable")?
+        .active()
+    {
+        return Ok(true);
+    }
     if !state
         .active_runs
         .lock()
@@ -111,7 +137,23 @@ pub(crate) struct RalphMediaFlowRunRequest {
 }
 
 impl MediaRuntimeState {
+    fn claim_run<'a>(&'a self, run_id: &'a str) -> MediaResult<Option<ActiveMediaRun<'a>>> {
+        Ok(self.begin_run(run_id)?.then(|| ActiveMediaRun {
+            state: self,
+            run_id,
+        }))
+    }
+
     fn begin_run(&self, run_id: &str) -> MediaResult<bool> {
+        let setup = self
+            .runtime_setup
+            .lock()
+            .map_err(|_| "Media setup status is unavailable")?;
+        if setup.active() {
+            return Err(
+                "Media Studio setup is running. Wait for it to finish, then retry.".to_string(),
+            );
+        }
         let mut active_runs = self
             .active_runs
             .lock()
@@ -136,6 +178,11 @@ impl MediaRuntimeState {
         &self,
         app: &AppHandle,
     ) -> provider_local_diffusers::LocalDiffusersRuntimeStatus {
+        if self.runtime_setup.lock().is_ok_and(|setup| setup.active()) {
+            return provider_local_diffusers::LocalDiffusersRuntimeStatus::unavailable(
+                "Media Studio setup is running.",
+            );
+        }
         if let Ok(status) = self.local_diffusers_status.lock() {
             if let Some(status) = status.as_ref() {
                 return status.clone();
@@ -2497,6 +2544,12 @@ impl MediaRunPlanSnapshot {
             if !matches!(
                 node.r#type.as_str(),
                 "source.prompt"
+                    | "task.generate-prompt"
+                    | "operation.segment"
+                    | "operation.upscale"
+                    | "control.repeat"
+                    | "operation.visual-check"
+                    | "operation.prepare-mask"
                     | "source.image"
                     | "source.seed"
                     | "source.animated-background"
@@ -2549,6 +2602,12 @@ impl MediaRunPlanSnapshot {
             if !matches!(
                 step.kind.as_str(),
                 "normalize-prompt"
+                    | "generate-prompt"
+                    | "segment-image"
+                    | "upscale-image"
+                    | "repeat-flow"
+                    | "check-image"
+                    | "prepare-mask"
                     | "resolve-asset"
                     | "resolve-seed"
                     | "resolve-animated-background"
@@ -3098,7 +3157,20 @@ fn required_catalog_revision(value: &str) -> MediaResult<String> {
 
 #[cfg(test)]
 mod ipc_contract_tests {
-    use super::required_catalog_revision;
+    use super::{required_catalog_revision, MediaRuntimeState};
+
+    #[test]
+    fn direct_generation_claim_tracks_activity_until_its_scope_ends() {
+        let state = MediaRuntimeState::default();
+        let claimed = state.claim_run("direct-image").unwrap().unwrap();
+        assert_eq!(state.active_count(), 1);
+        assert!(state.claim_run("direct-image").unwrap().is_none());
+        assert_eq!(state.active_count(), 1);
+        drop(claimed);
+        assert_eq!(state.active_count(), 0);
+        assert!(state.claim_run("direct-image").unwrap().is_some());
+        assert_eq!(state.active_count(), 0);
+    }
 
     #[test]
     fn accepts_opaque_catalog_revision_with_database_instance_identity() {
@@ -3690,7 +3762,9 @@ pub(crate) fn media_plan_model_addon_removal(
             let addon_id = required_text("addonId", &addon_id, 256)?;
             let paths = MediaRuntimePaths::resolve(&app)?;
             database::ensure_initialized(&paths)?;
-            model_addon::plan_removal(&paths, &addon_id)
+            let mut plan = model_addon::plan_removal(&paths, &addon_id)?;
+            plan.can_remove &= app.state::<MediaRuntimeState>().active_count() == 0;
+            Ok(plan)
         })(),
     )
 }
@@ -3700,6 +3774,14 @@ pub(crate) async fn media_remove_model_addon(
     app: AppHandle,
     request: RemoveMediaModelAddonRequest,
 ) -> MediaCommandResult<MediaModelAddonRemovalResult> {
+    if app.state::<MediaRuntimeState>().active_count() > 0 {
+        return command_result(
+            "media_remove_model_addon",
+            Err::<MediaModelAddonRemovalResult, _>(
+                "Wait for generation to finish, then remove the add-on.".to_string(),
+            ),
+        );
+    }
     let result = match MediaRuntimePaths::resolve(&app) {
         Ok(paths) => {
             if let Err(error) = database::ensure_initialized(&paths) {
@@ -3797,7 +3879,9 @@ pub(crate) fn media_plan_model_removal(
             let model_id = required_text("modelId", &model_id, 128)?;
             let paths = MediaRuntimePaths::resolve(&app)?;
             database::ensure_initialized(&paths)?;
-            model_install::plan_removal(&paths, &model_id)
+            let mut plan = model_install::plan_removal(&paths, &model_id)?;
+            plan.can_remove &= app.state::<MediaRuntimeState>().active_count() == 0;
+            Ok(plan)
         })(),
     )
 }
@@ -3808,6 +3892,9 @@ pub(crate) async fn media_remove_model(
     mut request: RemoveMediaModelRequest,
 ) -> MediaCommandResult<MediaModelRemovalResult> {
     let result: MediaResult<_> = async {
+        if app.state::<MediaRuntimeState>().active_count() > 0 {
+            return Err("Wait for generation to finish, then remove the model.".to_string());
+        }
         request.model_id = required_text("modelId", &request.model_id, 128)?;
         request.confirmation_token =
             required_text("confirmationToken", &request.confirmation_token, 128)?;
@@ -4001,6 +4088,10 @@ async fn generate_local_diffusers(
     paths: MediaRuntimePaths,
     request: GenerateMediaImagesRequest,
 ) -> MediaResult<MediaRunDetail> {
+    let state = app.state::<MediaRuntimeState>();
+    let Some(_active_run) = state.claim_run(&request.run_id)? else {
+        return database::get_run_detail(&paths, &request.run_id);
+    };
     let begin_paths = paths.clone();
     let begin_request = request.clone();
     let claimed = tauri::async_runtime::spawn_blocking(move || {
@@ -4033,7 +4124,12 @@ async fn generate_local_diffusers(
     let generation_paths = paths.clone();
     let generation_request = request.clone();
     let batch = tauri::async_runtime::spawn_blocking(move || {
-        provider_local_diffusers::generate(&generation_app, &generation_paths, &generation_request)
+        provider_local_diffusers::generate(
+            &generation_app,
+            &generation_paths,
+            &generation_request,
+            None,
+        )
     })
     .await
     .map_err(|error| format!("local Diffusers worker could not be joined: {error}"))?;
@@ -4110,6 +4206,10 @@ pub(crate) async fn media_generate_video(
         let _sleep_inhibition = inhibit_system_sleep_for_media_work(&app)?;
         let paths = MediaRuntimePaths::resolve(&app)?;
         database::ensure_initialized(&paths)?;
+        let state = app.state::<MediaRuntimeState>();
+        let Some(_active_run) = state.claim_run(&request.run_id)? else {
+            return database::get_run_detail(&paths, &request.run_id);
+        };
         let begin_paths = paths.clone();
         let begin_request = request.clone();
         let claimed = tauri::async_runtime::spawn_blocking(move || {

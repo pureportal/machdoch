@@ -6,6 +6,8 @@ use std::{
 };
 
 use chrono::{SecondsFormat, Utc};
+#[path = "workflow_database.rs"]
+pub(crate) mod workflow;
 use rusqlite::{
     params, params_from_iter, types::Type, Connection, OptionalExtension as _, Row, Transaction,
 };
@@ -39,8 +41,8 @@ pub(crate) struct AssetBlobSource {
 }
 
 pub(crate) enum LocalImportKind<'a> {
-    Raster,
-    RasterizedSvg { operation_json: &'a str },
+    Raster { source_file_name: &'a str },
+    Svg { operation_json: &'a str },
 }
 
 pub(crate) struct ImportedAssetRegistration<'a> {
@@ -609,6 +611,12 @@ pub(crate) fn record_imported_asset(
         height,
         import_kind,
     } = registration;
+    transform::verify_cas_blob(paths, Path::new(relative_path), digest, byte_size)?;
+    let asset_kind = if matches!(import_kind, LocalImportKind::Svg { .. }) {
+        "vector"
+    } else {
+        "image"
+    };
     let mut connection = open(paths)?;
     let transaction = connection
         .transaction()
@@ -616,7 +624,7 @@ pub(crate) fn record_imported_asset(
     let existing_asset = transaction
         .query_row(
             "SELECT a.id, a.run_id FROM assets a JOIN runs r ON r.id = a.run_id
-             WHERE a.blob_digest = ?1 AND a.kind = 'image' AND a.deleted_at IS NULL
+             WHERE a.blob_digest = ?1 AND a.kind = ?2 AND a.deleted_at IS NULL
                AND (
                  NOT EXISTS (SELECT 1 FROM human_reviews hr WHERE hr.run_id = a.run_id)
                  OR (r.status = 'completed' AND EXISTS (
@@ -629,7 +637,7 @@ pub(crate) fn record_imported_asset(
                  ))
                )
              ORDER BY a.created_at ASC, a.id ASC LIMIT 1",
-            params![digest],
+            params![digest, asset_kind],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
         )
         .optional()
@@ -667,25 +675,25 @@ pub(crate) fn record_imported_asset(
         operation_json,
         imported_event,
     ) = match import_kind {
-        LocalImportKind::Raster => (
+        LocalImportKind::Raster { source_file_name } => (
             "builtin:import-image",
             "Import image",
             "import:validated-v1",
             "Imported local image",
             "Validated local import",
             "local-import",
-            None,
+            Some(serde_json::json!({"kind":"local-import", "sourceFileName":source_file_name}).to_string()),
             "Selected bytes passed format, animation, dimension, allocation, and decode checks before CAS publication.",
         ),
-        LocalImportKind::RasterizedSvg { operation_json } => (
-            "builtin:import-svg-raster",
-            "Import safe SVG raster",
-            "import:svg-raster-v1",
-            "Rasterized local SVG",
-            "Safe SVG rasterizer",
-            "local-svg-raster",
-            Some(operation_json),
-            "SVG XML and resource policy checks passed before a no-network raster was published to CAS.",
+        LocalImportKind::Svg { operation_json } => (
+            "builtin:import-svg",
+            "Import SVG",
+            "import:svg-v1",
+            "Imported local SVG",
+            "SVG import",
+            "local-svg",
+            Some(operation_json.to_string()),
+            "SVG validation passed before publishing the vector asset.",
         ),
     };
     let asset_id = format!("asset:{run_id}:0");
@@ -726,7 +734,7 @@ pub(crate) fn record_imported_asset(
             "INSERT INTO assets(\n\
                id, run_id, blob_digest, kind, mime_type, byte_size, width, height, created_at,\n\
                output_index, fixture, operation_json\n\
-             ) VALUES (?1, ?2, ?3, 'image', ?4, ?5, ?6, ?7, ?8, 0, 0, ?9)",
+             ) VALUES (?1, ?2, ?3, ?10, ?4, ?5, ?6, ?7, ?8, 0, 0, ?9)",
             params![
                 asset_id,
                 run_id,
@@ -737,6 +745,11 @@ pub(crate) fn record_imported_asset(
                 height,
                 timestamp,
                 operation_json,
+                if mime_type == "image/svg+xml" {
+                    "vector"
+                } else {
+                    "image"
+                },
             ],
         )
         .map_err(|error| format!("failed to register imported image asset: {error}"))?;
@@ -888,7 +901,7 @@ pub(crate) fn begin_local_image_flow(
 ) -> MediaResult<bool> {
     let mut connection = open(paths)?;
     let transaction = connection
-        .transaction()
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .map_err(|error| format!("failed to begin local image flow: {error}"))?;
     validate_run_flow_revision(
         &transaction,
@@ -4089,7 +4102,7 @@ fn update_terminal_run(
 ) -> MediaResult<()> {
     let mut connection = open(paths)?;
     let transaction = connection
-        .transaction()
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .map_err(|failure| format!("failed to begin media run finalization: {failure}"))?;
     let timestamp = now();
     finalize_node_executions(&transaction, run_id, status)?;
@@ -4127,7 +4140,7 @@ fn update_terminal_run(
 pub(crate) fn request_cancellation(paths: &MediaRuntimePaths, run_id: &str) -> MediaResult<()> {
     let mut connection = open(paths)?;
     let transaction = connection
-        .transaction()
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .map_err(|error| format!("failed to begin media cancellation request: {error}"))?;
     let status = transaction
         .query_row(
@@ -6175,7 +6188,7 @@ pub(crate) fn transition_node_execution(
 ) -> MediaResult<()> {
     let mut connection = open(paths)?;
     let transaction = connection
-        .transaction()
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .map_err(|error| format!("failed to begin node execution transition: {error}"))?;
     transition_node_execution_in_transaction(
         &transaction,
@@ -6203,7 +6216,7 @@ pub(crate) fn transition_nodes_by_type(
     let wanted = node_types.iter().copied().collect::<HashSet<_>>();
     let mut connection = open(paths)?;
     let transaction = connection
-        .transaction()
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .map_err(|error| format!("failed to begin typed node execution transition: {error}"))?;
     let node_ids = {
         let mut statement = transaction
@@ -6442,6 +6455,89 @@ mod tests {
             .execute("UPDATE runs SET status = 'failed' WHERE id = 'pending'", [])
             .unwrap();
         assert!(!has_pending_work(&paths).unwrap());
+    }
+
+    #[test]
+    fn workflow_publication_and_progress_are_atomic_under_contention() {
+        let paths = test_paths("workflow-contention");
+        initialize(&paths).unwrap();
+        let mut run_request = request("concurrent-workflow");
+        run_request.plan_snapshot = Some(plan_snapshot());
+        enqueue_fixture_run(&paths, &run_request).unwrap();
+        open(&paths).unwrap().execute("UPDATE runs SET status='running', executor='media-workflow' WHERE id='concurrent-workflow'", []).unwrap();
+        let bytes = b"{}";
+        let digest = format!("{:x}", Sha256::digest(bytes));
+        let relative = crate::media::transform::cas_relative_path(&digest);
+        crate::media::transform::publish_cas_bytes(&paths, &relative, &digest, bytes).unwrap();
+        let asset = crate::media::provider_openai::GeneratedImageAsset {
+            digest,
+            relative_path: relative.to_string_lossy().into_owned(),
+            byte_size: bytes.len() as u64,
+            mime_type: "application/json",
+            width: 0,
+            height: 0,
+            output_index: 0,
+            subject_cutout: None,
+        };
+        let barrier = std::sync::Barrier::new(3);
+        std::thread::scope(|scope| {
+            for _ in 0..2 {
+                scope.spawn(|| {
+                    barrier.wait();
+                    for iteration in 1..=40 {
+                        workflow::publish(
+                            &paths,
+                            "concurrent-workflow",
+                            "node:prompt",
+                            iteration,
+                            &asset,
+                            "report",
+                            &[],
+                            serde_json::json!({}),
+                        )
+                        .unwrap();
+                    }
+                });
+            }
+            scope.spawn(|| {
+                barrier.wait();
+                for _ in 0..80 {
+                    transition_node_execution(
+                        &paths,
+                        "concurrent-workflow",
+                        "node:prompt",
+                        "running",
+                        Some("workflow.execute"),
+                        Some("Reviewing image"),
+                        Some(0.5),
+                    )
+                    .unwrap();
+                }
+            });
+        });
+        let detail = get_run_detail(&paths, "concurrent-workflow").unwrap();
+        assert_eq!(detail.assets.len(), 80);
+        assert_eq!(
+            detail
+                .assets
+                .iter()
+                .map(|asset| &asset.id)
+                .collect::<HashSet<_>>()
+                .len(),
+            80
+        );
+        request_cancellation(&paths, "concurrent-workflow").unwrap();
+        assert!(workflow::publish(
+            &paths,
+            "concurrent-workflow",
+            "node:prompt",
+            41,
+            &asset,
+            "report",
+            &[],
+            serde_json::json!({})
+        )
+        .is_err());
     }
 
     fn openai_request(run_id: &str) -> GenerateMediaImagesRequest {

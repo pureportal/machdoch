@@ -1,8 +1,16 @@
+import { generationJobToRunDetail } from "./media-generation-run";
+import {
+  isConnectedMediaFlow,
+  WORKFLOW_EXECUTABLE_TYPES,
+} from "../../../core/media/workflow-compiler.js";
+import { invoke } from "@tauri-apps/api/core";
 import {
   enqueueMediaGeneration,
   mediaGenerationQueue as generationQueue,
 } from "./media-generation-service";
 import { useMediaGenerationPreparation } from "./use-media-generation-preparation";
+import { useMediaRuntimeSetup } from "./use-media-runtime-setup";
+import { MediaRuntimeSetupNotice } from "./components/media-runtime-setup-notice";
 import { MediaStudioNavigation } from "@machdoch/product-ui";
 import {
   open as openDialog,
@@ -35,7 +43,6 @@ import {
 import {
   compileMediaFlow,
   compileMediaImageOutputBranches,
-  createGeneratedLoopVideoFlow,
   createImageRecipeFlow,
   createImageToVideoFlow,
   createMediaFlowLayout,
@@ -124,7 +131,9 @@ import { MediaAssetsView } from "./components/media-assets-view";
 import { MediaRunsView } from "./components/media-runs-view";
 import {
   createBasicMediaRecipeFlow,
+  createBasicMediaVideoFlow,
   createBasicVideoDraftFromImage,
+  createBasicImageDraftFromAsset,
 } from "./media-basic-generation";
 import {
   DEFAULT_MEDIA_STUDIO_STATE,
@@ -132,12 +141,8 @@ import {
   normalizeMediaStudioState,
   saveMediaStudioState,
 } from "./media-studio-store";
+import type { MediaGenerationRecipeSnapshot } from "./media-generation-queue";
 import {
-  type MediaGenerationQueueJob,
-  type MediaGenerationRecipeSnapshot,
-} from "./media-generation-queue";
-import {
-  countMediaImageRecipeOutputs,
   normalizeMediaFlowForPersistence,
   normalizeMediaFlowLayoutForPersistence,
   normalizeMediaSubmissionText,
@@ -174,7 +179,6 @@ import {
   listMediaRuns,
   planMediaAssetDeletion,
   probeMediaLocalModel,
-  refreshMediaLocalDiffusersRuntime,
   retryMediaFixtureRun,
   resolveMediaHumanReview,
   resolveMediaProviderReview,
@@ -284,54 +288,6 @@ const createFlowSaveId = (): string => {
     .toString(36)
     .slice(2)}`;
 };
-
-const generationJobToRunDetail = (
-  job: MediaGenerationQueueJob,
-): MediaRunDetail => ({
-  id: job.runId,
-  flowId: job.recipe.flowId,
-  flowRevisionId: job.recipe.flowRevisionId,
-  flowName: job.recipe.flowName,
-  planId: job.recipe.planId,
-  status: job.status,
-  createdAt: job.submittedAt,
-  updatedAt: job.completedAt ?? job.startedAt ?? job.submittedAt,
-  prompt: job.recipe.prompt,
-  modelLabel: job.recipe.modelLabel,
-  target:
-    job.recipe.modelId === null
-      ? null
-      : job.recipe.modelId.startsWith("local:")
-        ? "local"
-        : "remote",
-  outputCount: job.recipe.imageSettings
-    ? countMediaImageRecipeOutputs(
-        job.recipe.imageSettings,
-        job.recipe.outputBranches,
-      )
-    : 1,
-  diagnosticCount: 0,
-  progress: job.progress,
-  currentStep: job.currentStep,
-  executor:
-    job.recipe.target === "video"
-      ? "local-video"
-      : job.recipe.target === "svg"
-        ? "svg-ai-pipeline"
-        : job.recipe.modelId?.startsWith("openai:")
-          ? "openai-image-api"
-          : job.recipe.modelId
-            ? "local-image-flow"
-            : "local-analysis",
-  error: job.error,
-  failure: job.failure,
-  events: [],
-  assets: [...job.assets],
-  providerJobs: [],
-  humanReviews: [],
-  nodeExecutions: [],
-  planSnapshot: null,
-});
 
 const recipeSnapshotFromRevision = (
   run: MediaRunDetail,
@@ -669,6 +625,7 @@ export const MediaStudio = ({
   );
   const [runtimeRuns, setRuntimeRuns] = useState<MediaRuntimeRunRecord[]>([]);
   const [runtimeAssets, setRuntimeAssets] = useState<MediaAssetRecord[]>([]);
+  const [runtimeLoading, setRuntimeLoading] = useState(true);
   const [runtimeError, setRuntimeError] = useState<MediaErrorDetail | null>(
     null,
   );
@@ -678,9 +635,16 @@ export const MediaStudio = ({
   );
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [selectedRun, setSelectedRun] = useState<MediaRunDetail | null>(null);
+  const [selectedRunLoading, setSelectedRunLoading] = useState(false);
+  const [selectedGenerationJobId, setSelectedGenerationJobId] = useState<
+    string | null
+  >(null);
   const [selectedRunRecipe, setSelectedRunRecipe] =
     useState<MediaGenerationRecipeSnapshot | null>(null);
   const [flowRunOverlayId, setFlowRunOverlayId] = useState<string | null>(null);
+  const [flowRunOverlay, setFlowRunOverlay] = useState<MediaRunDetail | null>(
+    null,
+  );
   const [generationPending, setGenerationPending] =
     useMediaGenerationPreparation();
   const [localFlowPending, setLocalFlowPending] =
@@ -694,7 +658,6 @@ export const MediaStudio = ({
   );
   const [providerReviewPending, setProviderReviewPending] = useState(false);
   const [humanReviewPending, setHumanReviewPending] = useState(false);
-  const [localRuntimeRefreshing, setLocalRuntimeRefreshing] = useState(false);
   const [verifyingModelId, setVerifyingModelId] = useState<string | null>(null);
   const [modelCatalog, setModelCatalog] =
     useState<MediaModelCatalogSnapshot | null>(null);
@@ -810,7 +773,7 @@ export const MediaStudio = ({
 
   const refreshRuntime = useCallback(async (): Promise<void> => {
     const refreshSequence = ++runtimeRefreshSequence.current;
-    const detailSequence = ++selectedRunDetailSequence.current;
+    const detailSequence = selectedRunDetailSequence.current;
     const requestedRunId = selectedRunIdRef.current;
     const requestedQueueJob = requestedRunId
       ? generationQueue.getJob(requestedRunId)
@@ -855,17 +818,31 @@ export const MediaStudio = ({
       ) {
         setRuntimeError(normalizeMediaError(error, "refresh_media_runtime"));
       }
+    } finally {
+      if (
+        mediaStudioMounted.current &&
+        refreshSequence === runtimeRefreshSequence.current
+      ) {
+        setRuntimeLoading(false);
+      }
     }
   }, [presentRunFailure]);
 
-  const displayedGenerationJob = useMemo<MediaGenerationQueueJob | null>(() => {
-    const active = generationJobs.find((job) =>
-      ["running", "canceling"].includes(job.status),
-    );
-    if (active) return active;
-    const queued = generationJobs.find((job) => job.status === "queued");
-    return queued ?? generationJobs.at(-1) ?? null;
-  }, [generationJobs]);
+  const basicGenerationJobs = useMemo(
+    () => generationJobs.filter((job) => job.recipe.mode === "basic"),
+    [generationJobs],
+  );
+  const latestBasicGenerationJobId = basicGenerationJobs.at(-1)?.id ?? null;
+  const flowOverlayJob = generationJobs.find(
+    (job) => job.id === flowRunOverlayId,
+  );
+  useEffect(() => {
+    setSelectedGenerationJobId(latestBasicGenerationJobId);
+  }, [latestBasicGenerationJobId]);
+  const displayedGenerationJob =
+    basicGenerationJobs.find((job) => job.id === selectedGenerationJobId) ??
+    basicGenerationJobs.at(-1) ??
+    null;
   const generationQueueBusy = generationJobs.some((job) =>
     ["queued", "running", "canceling"].includes(job.status),
   );
@@ -928,19 +905,19 @@ export const MediaStudio = ({
       return null;
     }, [configuredProviderIds]);
 
-  const refreshLocalRuntime = useCallback(async (): Promise<void> => {
-    setLocalRuntimeRefreshing(true);
-    try {
-      await refreshMediaLocalDiffusersRuntime();
-      setRuntimeStatus(await initializeMediaRuntime());
-      await refreshModelCatalog();
-      setRuntimeError(null);
-    } catch (error: unknown) {
-      setRuntimeError(normalizeMediaError(error, "refresh_local_runtime"));
-    } finally {
-      setLocalRuntimeRefreshing(false);
-    }
-  }, [refreshModelCatalog]);
+  const runtimeSetup = useMediaRuntimeSetup(async () => {
+    const requestSequence = ++modelCatalogRequestSequence.current;
+    const status = await initializeMediaRuntime();
+    const catalog = await getMediaModelCatalog(configuredProviderIds);
+    if (
+      !mediaStudioMounted.current ||
+      requestSequence !== modelCatalogRequestSequence.current
+    )
+      return;
+    setRuntimeStatus(status);
+    setModelCatalog(catalog);
+    setRuntimeError(null);
+  });
 
   const verifyLocalModel = useCallback(
     async (model: MediaModelDescriptor): Promise<void> => {
@@ -1297,24 +1274,37 @@ export const MediaStudio = ({
         const detail = await getMediaRunDetail(flowRunOverlayId);
         if (cancelled) return;
         misses = 0;
+        setFlowRunOverlay(detail);
         if (selectedRunIdRef.current === detail.id) {
-          ++selectedRunDetailSequence.current;
           setSelectedRun(detail);
         }
         if (detail.failure) presentRunFailure(detail.failure);
-        if (["queued", "running", "canceling"].includes(detail.status)) {
-          timeout = window.setTimeout(() => void pollOverlayRun(), 140);
+        if (
+          [
+            "queued",
+            "running",
+            "canceling",
+            "waiting-for-review",
+            "needs-review",
+          ].includes(detail.status)
+        ) {
+          timeout = window.setTimeout(() => void pollOverlayRun(), 450);
         }
-      } catch {
+      } catch (error: unknown) {
         if (cancelled) return;
         misses += 1;
-        // Native commands register the run inside their worker. A short not-found
-        // window is expected between choosing the id and the first committed row.
-        if (localFlowPending || remoteEditPending || misses < 40) {
+        if (
+          generationQueue.getJob(flowRunOverlayId)?.status === "queued" ||
+          localFlowPending ||
+          remoteEditPending ||
+          misses < 40
+        ) {
           timeout = window.setTimeout(
             () => void pollOverlayRun(),
             Math.min(100 + misses * 25, 500),
           );
+        } else {
+          setRuntimeError(normalizeMediaError(error, "monitor_workflow"));
         }
       }
     };
@@ -1482,6 +1472,54 @@ export const MediaStudio = ({
       return {
         supported: false,
         reason: "Resolve preflight diagnostics before running this flow.",
+      };
+    }
+    if (isConnectedMediaFlow(flow)) {
+      const resolved = resolveMediaFlowVariables(flow).flow;
+      const unsupported = resolved.nodes.find(
+        (node) => !WORKFLOW_EXECUTABLE_TYPES.has(node.type),
+      );
+      if (unsupported)
+        return {
+          supported: false,
+          reason: `${unsupported.label} cannot run in a connected workflow.`,
+        };
+      if (
+        plan.runtimeBindings.some((binding) => binding.model.target !== "local")
+      )
+        return {
+          supported: false,
+          reason: "Choose local models for this workflow.",
+        };
+      if (
+        resolved.nodes.some(
+          (node) =>
+            node.type === "control.quality-gate" &&
+            node.config.onUnknown === "human-review",
+        )
+      )
+        return {
+          supported: false,
+          reason: "Choose Stop or Continue for inconclusive checks.",
+        };
+      if (
+        resolved.nodes.some(
+          (node) =>
+            node.type.startsWith("task.") &&
+            typeof node.config.outputCount === "number" &&
+            node.config.outputCount !== 1,
+        )
+      )
+        return {
+          supported: false,
+          reason: "Set variants to one per workflow attempt.",
+        };
+      return {
+        supported: runtimeStatus?.mode === "native",
+        reason:
+          runtimeStatus?.mode === "native"
+            ? "Runs the connected workflow on this device."
+            : "Open the desktop app to run this workflow.",
       };
     }
     const supportedNodeTypes = new Set<MediaNodeType>([
@@ -1905,33 +1943,9 @@ export const MediaStudio = ({
       selectedRunIdRef.current = null;
       setSelectedRunId(null);
       setSelectedRun(null);
-      setState((current) => ({
-        ...current,
-        activeSection: "generate",
-        target: asset.kind === "vector" ? "svg" : current.target,
-        recipe: {
-          ...current.recipe,
-          prompt: "",
-          modelId: null,
-          modelAddons: [],
-          outputFormat:
-            asset.kind === "vector"
-              ? "svg"
-              : current.recipe.outputFormat === "svg"
-                ? "png"
-                : current.recipe.outputFormat,
-          referenceImages: [
-            {
-              assetId: asset.id,
-              role: "subject",
-              influence: 1,
-            },
-          ],
-          baseImageAssetId: null,
-          poseImageAssetId: null,
-          editMask: null,
-        },
-      }));
+      setState((current) =>
+        createBasicImageDraftFromAsset(current, asset, "reference"),
+      );
     },
     [],
   );
@@ -1952,28 +1966,9 @@ export const MediaStudio = ({
     selectedRunIdRef.current = null;
     setSelectedRunId(null);
     setSelectedRun(null);
-    setState((current) => ({
-      ...current,
-      activeSection: "generate",
-      target: "image",
-      recipe: {
-        ...current.recipe,
-        prompt: "",
-        modelId: null,
-        modelAddons: [],
-        outputFormat: "png",
-        transparentBackground: false,
-        referenceImages: current.recipe.referenceImages.filter(
-          (reference) => reference.assetId !== asset.id,
-        ),
-        baseImageAssetId: asset.id,
-        poseImageAssetId:
-          current.recipe.poseImageAssetId === asset.id
-            ? null
-            : current.recipe.poseImageAssetId,
-        editMask: null,
-      },
-    }));
+    setState((current) =>
+      createBasicImageDraftFromAsset(current, asset, "edit"),
+    );
   }, []);
   const useModelInCreate = useCallback(
     (model: MediaModelCatalogSnapshot["models"][number]): void => {
@@ -2078,23 +2073,11 @@ export const MediaStudio = ({
     [applySemanticFlow, changeFlowLayout, state.videoRecipe],
   );
   const createCurrentVideoFlow = useCallback((): MediaFlow => {
-    const sourceAssetId = state.recipe.referenceImages[0]?.assetId;
-    if (sourceAssetId) {
-      return createImageToVideoFlow({
-        id: `media-basic-video-${createFlowSaveId()}`,
-        createdAt: new Date().toISOString(),
-        sourceAssetId,
-        prompt: state.recipe.prompt.trim(),
-        settings: state.videoRecipe,
-      });
-    }
-    return createGeneratedLoopVideoFlow({
+    return createBasicMediaVideoFlow({
       id: `media-basic-video-${createFlowSaveId()}`,
       createdAt: new Date().toISOString(),
-      prompt: state.recipe.prompt.trim(),
-      imageModelId: state.recipe.modelId,
-      imageModelAddons: state.recipe.modelAddons,
-      settings: state.videoRecipe,
+      imageSettings: state.recipe,
+      videoSettings: state.videoRecipe,
     });
   }, [state.recipe, state.videoRecipe]);
   const basicVideoDraft = useMemo(() => {
@@ -2121,65 +2104,14 @@ export const MediaStudio = ({
     state.target,
   ]);
   const openVideoCreationFlow = useCallback((): void => {
-    const sourceAssetId = state.recipe.referenceImages[0]?.assetId;
-    if (!sourceAssetId) {
-      const createdAt = new Date().toISOString();
-      const generatedLoop = createGeneratedLoopVideoFlow({
-        id: `media-generated-loop-${createFlowSaveId()}`,
-        createdAt,
-        ...(state.recipe.prompt.trim()
-          ? { prompt: state.recipe.prompt.trim() }
-          : {}),
-        imageModelId: state.recipe.modelId,
-        imageModelAddons: state.recipe.modelAddons,
-        settings: state.videoRecipe,
-      });
-      applySemanticFlow(generatedLoop);
-      changeFlowLayout(createMediaFlowLayout(generatedLoop));
-      setFlowHistory(null);
-      setFlowRunOverlayId(null);
-      setFlowRevisionNotice("Video setup converted to Advanced.");
-      setState((current) => ({ ...current, activeSection: "flow" }));
-      return;
-    }
-    const sourceAsset =
-      runtimeAssets.find((asset) => asset.id === sourceAssetId) ?? null;
-    openVideoFlowDraft({
-      prompt: state.recipe.prompt.trim(),
-      sourceAssetId,
-      aspectRatio: sourceAsset
-        ? inferMediaVideoAspectRatio(sourceAsset.width, sourceAsset.height)
-        : "1:1",
-      transparentBackground:
-        sourceAsset !== null && isMediaAssetKnownTransparent(sourceAsset),
-    });
-  }, [
-    applySemanticFlow,
-    changeFlowLayout,
-    openVideoFlowDraft,
-    state.recipe.modelAddons,
-    state.recipe.modelId,
-    state.recipe.prompt,
-    state.recipe.referenceImages,
-    state.videoRecipe,
-    runtimeAssets,
-  ]);
-  const openAssetAsVideoFlow = useCallback(
-    (asset: MediaAssetRecord): void => {
-      if (asset.kind !== "image") return;
-      const transparentBackground = isMediaAssetKnownTransparent(asset);
-      openVideoFlowDraft({
-        sourceAssetId: asset.id,
-        aspectRatio: inferMediaVideoAspectRatio(asset.width, asset.height),
-        loopMode: "seamless",
-        transparentBackground,
-        prompt: transparentBackground
-          ? "One continuous forward-time subject cycle on a perfectly uniform chroma-green background. Locked camera. First the subject gently inhales or shifts weight, then completes one soft blink with one continuous secondary sway, then exhales and arrives naturally at the opening pose only at the final instant. Keep the subject centered, fully visible, and unchanged. Never reverse playback, mirrored replay, boomerang, pause, shadows, or background movement."
-          : "One continuous forward-time cyclic animation of the exact supplied image. Locked camera. First the subject gently inhales or shifts weight, then completes one soft blink while hair, fabric, flames, or particles continue along one natural direction, then exhales and arrives naturally at the opening pose only at the final instant. Preserve identity, anatomy, composition, lighting, and the existing background. Never reverse playback, mirrored replay, boomerang, cut, pause, zoom, camera shake, or background-only motion.",
-      });
-    },
-    [openVideoFlowDraft],
-  );
+    const videoFlow = createCurrentVideoFlow();
+    applySemanticFlow(videoFlow);
+    changeFlowLayout(createMediaFlowLayout(videoFlow));
+    setFlowHistory(null);
+    setFlowRunOverlayId(null);
+    setFlowRevisionNotice(null);
+    setState((current) => ({ ...current, activeSection: "flow" }));
+  }, [applySemanticFlow, changeFlowLayout, createCurrentVideoFlow]);
   const openAssetInLibrary = useCallback((asset: MediaAssetRecord): void => {
     setImportedAssetId(asset.id);
     setState((current) => ({ ...current, activeSection: "library" }));
@@ -2460,54 +2392,6 @@ export const MediaStudio = ({
       .finally(() => setSavedFlowsLoading(false));
   }, []);
 
-  const openSavedFlow = useCallback(
-    (flowId: string): void => {
-      if (flowId === flow.id || savedFlowsLoading) {
-        return;
-      }
-      if (
-        hasUnsavedFlowChanges &&
-        !window.confirm(`Discard unsaved workflow "${flow.name}"?`)
-      ) {
-        return;
-      }
-      setSavedFlowsLoading(true);
-      setFlowRevisionNotice(null);
-      void getMediaFlow(flowId)
-        .then((history) => {
-          const head = history.revisions.find((revision) => revision.isHead);
-          if (!head) {
-            throw new Error("The saved workflow has no head revision.");
-          }
-          const openedFlow = head.flow;
-          clearSemanticHistory();
-          setFlowHistory(history);
-          setFlowRunOverlayId(null);
-          setState((current) => ({
-            ...current,
-            activeSection: "flow",
-            flow: openedFlow,
-            flowLayout: head.layout,
-          }));
-          setFlowRevisionNotice(
-            `Opened ${openedFlow.name} at revision ${head.revisionNumber}.`,
-          );
-          setRuntimeError(null);
-        })
-        .catch((error: unknown) => {
-          setRuntimeError(normalizeMediaError(error, "media_get_flow"));
-        })
-        .finally(() => setSavedFlowsLoading(false));
-    },
-    [
-      clearSemanticHistory,
-      flow.id,
-      flow.name,
-      hasUnsavedFlowChanges,
-      savedFlowsLoading,
-    ],
-  );
-
   const persistFlowRevision = useCallback(
     async (
       sourceFlow: MediaFlow,
@@ -2521,13 +2405,21 @@ export const MediaStudio = ({
       setFlowRevisionNotice(null);
       setRuntimeError(null);
       try {
+        const historyForSave =
+          flowHistory?.flowId === sourceFlow.id
+            ? flowHistory
+            : await getMediaFlow(sourceFlow.id).catch((error: unknown) => {
+                if (
+                  normalizeMediaError(error, "media_get_flow").code ===
+                  "RESOURCE_NOT_FOUND"
+                )
+                  return null;
+                throw error;
+              });
         const result = await saveMediaFlowRevision({
           schemaVersion: 1,
           idempotencyKey: createFlowSaveId(),
-          expectedHeadRevisionId:
-            flowHistory?.flowId === sourceFlow.id
-              ? (flowHistory.head?.headRevisionId ?? null)
-              : null,
+          expectedHeadRevisionId: historyForSave?.head?.headRevisionId ?? null,
           changeSummary,
           flow: sourceFlow,
           layout: sourceLayout,
@@ -2560,6 +2452,88 @@ export const MediaStudio = ({
     [flowHistory, flowRevisionLoading],
   );
 
+  const preserveFlowDraft = useCallback(async (): Promise<boolean> => {
+    if (!state.flow || !hasUnsavedFlowChanges) return true;
+    try {
+      const saved = await persistFlowRevision(
+        normalizeMediaFlowForPersistence(state.flow),
+        normalizeMediaFlowLayoutForPersistence(layout),
+        "Saved before opening another workflow",
+      );
+      return (
+        Boolean(saved) &&
+        stateRef.current.flow === state.flow &&
+        stateRef.current.flowLayout === state.flowLayout
+      );
+    } catch (error: unknown) {
+      setRuntimeError(normalizeMediaError(error, "save_workflow_draft"));
+      return false;
+    }
+  }, [
+    state.flow,
+    state.flowLayout,
+    hasUnsavedFlowChanges,
+    layout,
+    persistFlowRevision,
+  ]);
+
+  const openSavedFlow = useCallback(
+    async (flowId: string): Promise<void> => {
+      if (flowId === flow.id || savedFlowsLoading) {
+        return;
+      }
+      if (!(await preserveFlowDraft())) return;
+      setSavedFlowsLoading(true);
+      setFlowRevisionNotice(null);
+      void getMediaFlow(flowId)
+        .then((history) => {
+          const head = history.revisions.find((revision) => revision.isHead);
+          if (!head) {
+            throw new Error("The saved workflow has no head revision.");
+          }
+          const openedFlow = head.flow;
+          clearSemanticHistory();
+          setFlowHistory(history);
+          setFlowRunOverlayId(null);
+          setState((current) => ({
+            ...current,
+            activeSection: "flow",
+            flow: openedFlow,
+            flowLayout: head.layout,
+          }));
+          setRuntimeError(null);
+        })
+        .catch((error: unknown) => {
+          setRuntimeError(normalizeMediaError(error, "media_get_flow"));
+        })
+        .finally(() => setSavedFlowsLoading(false));
+    },
+    [
+      clearSemanticHistory,
+      flow.id,
+      flow.name,
+      preserveFlowDraft,
+      savedFlowsLoading,
+    ],
+  );
+
+  const openAssetAsVideoFlow = useCallback(
+    async (asset: MediaAssetRecord): Promise<void> => {
+      if (asset.kind !== "image") return;
+      if (!(await preserveFlowDraft())) return;
+      const transparentBackground = isMediaAssetKnownTransparent(asset);
+      openVideoFlowDraft({
+        sourceAssetId: asset.id,
+        aspectRatio: inferMediaVideoAspectRatio(asset.width, asset.height),
+        loopMode: "seamless",
+        transparentBackground,
+        prompt: transparentBackground
+          ? "One continuous forward-time subject cycle on a perfectly uniform chroma-green background. Locked camera. First the subject gently inhales or shifts weight, then completes one soft blink with one continuous secondary sway, then exhales and arrives naturally at the opening pose only at the final instant. Keep the subject centered, fully visible, and unchanged. Never reverse playback, mirrored replay, boomerang, pause, shadows, or background movement."
+          : "One continuous forward-time cyclic animation of the exact supplied image. Locked camera. First the subject gently inhales or shifts weight, then completes one soft blink while hair, fabric, flames, or particles continue along one natural direction, then exhales and arrives naturally at the opening pose only at the final instant. Preserve identity, anatomy, composition, lighting, and the existing background. Never reverse playback, mirrored replay, boomerang, cut, pause, zoom, camera shake, or background-only motion.",
+      });
+    },
+    [openVideoFlowDraft, preserveFlowDraft],
+  );
   const persistBasicFlowRevision = useCallback(
     async (
       sourceFlow: MediaFlow,
@@ -2599,7 +2573,8 @@ export const MediaStudio = ({
     );
   }, [flow, layout, persistFlowRevision]);
 
-  const openRecipeAsFlow = useCallback((): void => {
+  const openRecipeAsFlow = useCallback(async (): Promise<void> => {
+    if (!(await preserveFlowDraft())) return;
     if (state.target === "video") {
       openVideoCreationFlow();
       return;
@@ -2621,7 +2596,13 @@ export const MediaStudio = ({
       flow: convertedFlow,
       flowLayout: createMediaFlowLayout(convertedFlow),
     }));
-  }, [clearSemanticHistory, openVideoCreationFlow, recipeFlow, state.target]);
+  }, [
+    clearSemanticHistory,
+    openVideoCreationFlow,
+    recipeFlow,
+    state.target,
+    preserveFlowDraft,
+  ]);
 
   const restoreFlowRevision = useCallback(
     (revision: MediaFlowRevision): void => {
@@ -2683,7 +2664,7 @@ export const MediaStudio = ({
       .finally(() => setFlowPortabilityLoading(false));
   }, [flowPortabilityLoading]);
 
-  const importReviewedFlow = useCallback((): void => {
+  const importReviewedFlow = useCallback(async (): Promise<void> => {
     if (
       flowPortabilityLoading ||
       !flowImportInspection?.canImport ||
@@ -2691,6 +2672,7 @@ export const MediaStudio = ({
     ) {
       return;
     }
+    if (!(await preserveFlowDraft())) return;
     setFlowPortabilityLoading(true);
     setRuntimeError(null);
     setFlowRevisionNotice(null);
@@ -2739,6 +2721,7 @@ export const MediaStudio = ({
     flowImportInspection,
     flowImportSourcePath,
     flowPortabilityLoading,
+    preserveFlowDraft,
   ]);
 
   const exportCurrentFlowRevision = useCallback((): void => {
@@ -2803,26 +2786,6 @@ export const MediaStudio = ({
     }
     const submittedFlow = normalizeMediaFlowForPersistence(flow);
     const submittedLayout = normalizeMediaFlowLayoutForPersistence(layout);
-    const submittedPlan = compileMediaFlow({
-      flow: submittedFlow,
-      models,
-      addons: activeModelCatalog.addons,
-      compiledAt: new Date().toISOString(),
-    });
-    const submittedPlanSnapshot: MediaRunPlanSnapshot = {
-      schemaVersion: 1,
-      planId: submittedPlan.id,
-      flowId: submittedFlow.id,
-      flowFingerprint: submittedPlan.flowFingerprint,
-      compiledAt: submittedPlan.compiledAt,
-      nodes: submittedFlow.nodes.map(({ id, type, label, layer }) => ({
-        id,
-        type,
-        label,
-        layer,
-      })),
-      steps: submittedPlan.steps.map((step) => ({ ...step })),
-    };
     const preparation = setLocalFlowPending(true);
     setRuntimeError(null);
     setFlowRevisionNotice(null);
@@ -2831,13 +2794,42 @@ export const MediaStudio = ({
         persistFlowRevision(
           submittedFlow,
           submittedLayout,
-          "Pinned automatically for local utility execution",
+          "Pinned automatically for local execution",
         ),
       )
       .then((revisionResult) => {
         if (!revisionResult) {
           return null;
         }
+        const submittedFlow = revisionResult.revision.flow;
+        const submittedPlan = compileMediaFlow({
+          flow: submittedFlow,
+          models,
+          addons: activeModelCatalog.addons,
+          compiledAt: new Date().toISOString(),
+        });
+        const submittedPlanSnapshot: MediaRunPlanSnapshot = {
+          schemaVersion: 1,
+          planId: submittedPlan.id,
+          flowId: submittedFlow.id,
+          flowFingerprint: submittedPlan.flowFingerprint,
+          compiledAt: submittedPlan.compiledAt,
+          nodes: submittedFlow.nodes.map(({ id, type, label, layer }) => ({
+            id,
+            type,
+            label,
+            layer,
+          })),
+          steps: submittedPlan.steps.map((step) => ({ ...step })),
+        };
+        if (
+          submittedPlan.status !== "ready" ||
+          submittedPlan.flowFingerprint !==
+            revisionResult.revision.executionDigest
+        )
+          throw new Error(
+            "The saved workflow could not be verified. Retry the run.",
+          );
         const runId = createRunId();
         const request: ExecuteLocalImageFlowRequest = {
           schemaVersion: 1,
@@ -2873,7 +2865,22 @@ export const MediaStudio = ({
             videoSettings: readMediaVideoRecipeSettings(submittedFlow),
             resultDestination: "assets",
           },
-          execute: () => executeMediaLocalImageFlow(request, submittedFlow),
+          execute: () =>
+            isConnectedMediaFlow(submittedFlow)
+              ? invoke<MediaRunDetail>("media_execute_workflow", {
+                  request: {
+                    ...request,
+                    workspaceRoot,
+                    modelBindings: Object.fromEntries(
+                      submittedPlan.runtimeBindings.map((binding) => [
+                        binding.nodeId,
+                        binding.model.id,
+                      ]),
+                    ),
+                  },
+                })
+              : executeMediaLocalImageFlow(request, submittedFlow),
+          cancel: () => cancelMediaRun(runId),
         });
       })
       .catch((error: unknown) => {
@@ -2888,6 +2895,7 @@ export const MediaStudio = ({
     localFlowPending,
     models,
     persistFlowRevision,
+    workspaceRoot,
   ]);
   const runAdvancedLocalImageFlow = useCallback((): void => {
     if (!advancedLocalImageExecution.supported || localFlowPending) return;
@@ -3108,20 +3116,6 @@ export const MediaStudio = ({
       }
       const normalizedWorkspaceRoot = workspaceRoot?.trim();
       if (!normalizedWorkspaceRoot) return;
-      const sourcePlanSnapshot: MediaRunPlanSnapshot = {
-        schemaVersion: 1,
-        planId: submittedPlan.id,
-        flowId: submittedFlow.id,
-        flowFingerprint: submittedPlan.flowFingerprint,
-        compiledAt: submittedPlan.compiledAt,
-        nodes: submittedFlow.nodes.map(({ id, type, label, layer }) => ({
-          id,
-          type,
-          label,
-          layer,
-        })),
-        steps: submittedPlan.steps.map((step) => ({ ...step })),
-      };
       const updateNotice = (notice: string | null): void => {
         if (!basicExecution) setFlowRevisionNotice(notice);
       };
@@ -3149,13 +3143,43 @@ export const MediaStudio = ({
           ),
         )
         .then(async (revisionResult) => {
+          if (!revisionResult) return null;
+          const submittedFlow = revisionResult.revision.flow;
+          const submittedPlan = compileMediaFlow({
+            flow: submittedFlow,
+            models,
+            addons: activeModelCatalog.addons,
+            compiledAt: new Date().toISOString(),
+          });
+          const submittedExecution = assessVideoFlow(
+            submittedFlow,
+            submittedPlan,
+          );
           if (
-            !revisionResult ||
+            !submittedExecution.supported ||
             !submittedExecution.videoNode ||
-            !submittedExecution.videoModel
+            !submittedExecution.videoModel ||
+            submittedPlan.flowFingerprint !==
+              revisionResult.revision.executionDigest
           ) {
-            return null;
+            throw new Error(
+              "The saved video settings could not be verified. Retry generation.",
+            );
           }
+          const sourcePlanSnapshot: MediaRunPlanSnapshot = {
+            schemaVersion: 1,
+            planId: submittedPlan.id,
+            flowId: submittedFlow.id,
+            flowFingerprint: submittedPlan.flowFingerprint,
+            compiledAt: submittedPlan.compiledAt,
+            nodes: submittedFlow.nodes.map(({ id, type, label, layer }) => ({
+              id,
+              type,
+              label,
+              layer,
+            })),
+            steps: submittedPlan.steps.map((step) => ({ ...step })),
+          };
           const queueRunId = createRunId();
           const imageSettings = readMediaFlowImageSettings(submittedFlow);
           const prompt = normalizeMediaSubmissionText(
@@ -3319,7 +3343,7 @@ export const MediaStudio = ({
                       : "png",
                   modelPolicy: settings.modelPolicy,
                   modelAddons: settings.modelAddons,
-                  transparentBackground: true,
+                  transparentBackground: settings.transparentBackground,
                   subjectCutoutModelPriority:
                     readFlowSubjectCutoutModelPriority(resolvedFlow),
                   referenceImages: [],
@@ -3519,20 +3543,6 @@ export const MediaStudio = ({
       addons: activeModelCatalog.addons,
       compiledAt: new Date().toISOString(),
     });
-    const submittedPlanSnapshot: MediaRunPlanSnapshot = {
-      schemaVersion: 1,
-      planId: submittedPlan.id,
-      flowId: submittedFlow.id,
-      flowFingerprint: submittedPlan.flowFingerprint,
-      compiledAt: submittedPlan.compiledAt,
-      nodes: submittedFlow.nodes.map(({ id, type, label, layer }) => ({
-        id,
-        type,
-        label,
-        layer,
-      })),
-      steps: submittedPlan.steps.map((step) => ({ ...step })),
-    };
     const submittedRemoteEditExecution = assessRemoteEditExecution({
       plan: submittedPlan,
       flow: submittedFlow,
@@ -3568,10 +3578,6 @@ export const MediaStudio = ({
       localReferenceReady &&
       localInpaintingReady &&
       localPoseReady;
-    const imageTaskConfig = submittedFlow.nodes.find(
-      (node) =>
-        node.type === "task.generate-image" || node.type === "task.edit-image",
-    )?.config;
     if (
       submittedPlan.status !== "ready" ||
       !model ||
@@ -3615,6 +3621,42 @@ export const MediaStudio = ({
         if (!revisionResult) {
           return null;
         }
+        const pinnedFlow = revisionResult.revision.flow;
+        const pinnedPlan = compileMediaFlow({
+          flow: pinnedFlow,
+          models,
+          addons: activeModelCatalog.addons,
+          compiledAt: new Date().toISOString(),
+        });
+        const pinnedRecipe = readMediaFlowImageSettings(pinnedFlow);
+        if (
+          !pinnedRecipe ||
+          pinnedPlan.status !== "ready" ||
+          pinnedPlan.flowFingerprint !== revisionResult.revision.executionDigest
+        ) {
+          throw new Error(
+            "The saved generation settings could not be verified. Retry generation.",
+          );
+        }
+        const pinnedImageTaskConfig = pinnedFlow.nodes.find(
+          (node) =>
+            node.type === "task.generate-image" ||
+            node.type === "task.edit-image",
+        )?.config;
+        const pinnedPlanSnapshot: MediaRunPlanSnapshot = {
+          schemaVersion: 1,
+          planId: pinnedPlan.id,
+          flowId: pinnedFlow.id,
+          flowFingerprint: pinnedPlan.flowFingerprint,
+          compiledAt: pinnedPlan.compiledAt,
+          nodes: pinnedFlow.nodes.map(({ id, type, label, layer }) => ({
+            id,
+            type,
+            label,
+            layer,
+          })),
+          steps: pinnedPlan.steps.map((step) => ({ ...step })),
+        };
         const runId = createRunId();
         ++selectedRunDetailSequence.current;
         selectedRunIdRef.current = runId;
@@ -3624,19 +3666,19 @@ export const MediaStudio = ({
           schemaVersion: 1,
           mode: "basic",
           target: isSvg ? "svg" : "image",
-          flowId: submittedFlow.id,
-          flowName: submittedFlow.name,
+          flowId: pinnedFlow.id,
+          flowName: pinnedFlow.name,
           flowRevisionId: revisionResult.revision.revisionId,
           flowRevisionNumber: revisionResult.revision.revisionNumber,
-          planId: submittedPlan.id,
-          prompt: submittedRecipe.prompt,
+          planId: pinnedPlan.id,
+          prompt: pinnedRecipe.prompt,
           modelId: model.id,
-          modelLabel: submittedPlan.preflight.modelLabel,
-          modelAddons: submittedRecipe.modelAddons,
+          modelLabel: pinnedPlan.preflight.modelLabel,
+          modelAddons: pinnedRecipe.modelAddons,
           outputBranches: isSvg
             ? []
-            : compileMediaImageOutputBranches(submittedFlow),
-          imageSettings: submittedRecipe,
+            : compileMediaImageOutputBranches(pinnedFlow),
+          imageSettings: pinnedRecipe,
           videoSettings: null,
           resultDestination: "assets",
         };
@@ -3644,41 +3686,41 @@ export const MediaStudio = ({
           const candidateCount = isSvgVectorization
             ? 1
             : Math.max(
-                submittedRecipe.outputCount,
+                pinnedRecipe.outputCount,
                 Math.min(
                   model.id.startsWith("recraft:") ? 6 : 16,
-                  submittedRecipe.svgCandidateCount ?? 6,
+                  pinnedRecipe.svgCandidateCount ?? 6,
                 ),
               );
           const request = {
             schemaVersion: 1,
             runId,
-            flowId: submittedFlow.id,
+            flowId: pinnedFlow.id,
             flowRevisionId: revisionResult.revision.revisionId,
-            flowName: submittedFlow.name,
-            planId: submittedPlan.id,
-            prompt: submittedRecipe.prompt,
+            flowName: pinnedFlow.name,
+            planId: pinnedPlan.id,
+            prompt: pinnedRecipe.prompt,
             modelId: model.id,
-            modelLabel: submittedPlan.preflight.modelLabel,
-            outputCount: submittedPlan.preflight.generatedCandidates,
+            modelLabel: pinnedPlan.preflight.modelLabel,
+            outputCount: pinnedPlan.preflight.generatedCandidates,
             candidateCount,
-            diagnosticCount: submittedPlan.diagnostics.length,
-            aspectRatio: submittedRecipe.aspectRatio,
-            modelPolicy: submittedRecipe.modelPolicy,
-            transparentBackground: submittedRecipe.transparentBackground,
-            mode: submittedRecipe.svgMode ?? "generate",
-            autoCrop: submittedRecipe.svgAutoCrop !== false,
-            targetSize: submittedRecipe.svgTargetSize ?? 1024,
-            style: submittedRecipe.svgStyle ?? "illustration",
-            textPolicy: submittedRecipe.svgTextPolicy ?? "avoid",
+            diagnosticCount: pinnedPlan.diagnostics.length,
+            aspectRatio: pinnedRecipe.aspectRatio,
+            modelPolicy: pinnedRecipe.modelPolicy,
+            transparentBackground: pinnedRecipe.transparentBackground,
+            mode: pinnedRecipe.svgMode ?? "generate",
+            autoCrop: pinnedRecipe.svgAutoCrop !== false,
+            targetSize: pinnedRecipe.svgTargetSize ?? 1024,
+            style: pinnedRecipe.svgStyle ?? "illustration",
+            textPolicy: pinnedRecipe.svgTextPolicy ?? "avoid",
             criticEnabled:
               !isSvgVectorization &&
               model.target === "remote" &&
-              submittedRecipe.modelPolicy === "quality" &&
-              submittedRecipe.svgCriticEnabled === true,
-            referenceImages: submittedRecipe.referenceImages,
+              pinnedRecipe.modelPolicy === "quality" &&
+              pinnedRecipe.svgCriticEnabled === true,
+            referenceImages: pinnedRecipe.referenceImages,
             allowRemoteUpload: model.target === "remote" && hasReferences,
-            planSnapshot: submittedPlanSnapshot,
+            planSnapshot: pinnedPlanSnapshot,
           } satisfies GenerateMediaSvgRequest;
           enqueueMediaGeneration({
             runId,
@@ -3696,92 +3738,91 @@ export const MediaStudio = ({
           const request: ExecuteRemoteImageEditFlowRequest = {
             schemaVersion: 1,
             runId,
-            flowId: submittedFlow.id,
+            flowId: pinnedFlow.id,
             flowRevisionId: revisionResult.revision.revisionId,
-            planId: submittedPlan.id,
-            planSnapshot: submittedPlanSnapshot,
+            planId: pinnedPlan.id,
+            planSnapshot: pinnedPlanSnapshot,
             allowRemoteUpload: true,
           };
           enqueueMediaGeneration({
             runId,
             recipe: recipeSnapshot,
-            execute: () =>
-              executeMediaRemoteImageEditFlow(request, submittedFlow),
+            execute: () => executeMediaRemoteImageEditFlow(request, pinnedFlow),
           });
           return;
         }
         const request = {
           schemaVersion: 1,
           runId,
-          flowId: submittedFlow.id,
+          flowId: pinnedFlow.id,
           flowRevisionId: revisionResult.revision.revisionId,
-          flowName: submittedFlow.name,
-          planId: submittedPlan.id,
-          prompt: submittedRecipe.prompt,
+          flowName: pinnedFlow.name,
+          planId: pinnedPlan.id,
+          prompt: pinnedRecipe.prompt,
           modelId: model.id,
-          modelLabel: submittedPlan.preflight.modelLabel,
-          outputCount: submittedPlan.preflight.generatedCandidates,
-          diagnosticCount: submittedPlan.diagnostics.length,
-          aspectRatio: submittedRecipe.aspectRatio,
+          modelLabel: pinnedPlan.preflight.modelLabel,
+          outputCount: pinnedPlan.preflight.generatedCandidates,
+          diagnosticCount: pinnedPlan.diagnostics.length,
+          aspectRatio: pinnedRecipe.aspectRatio,
           outputFormat:
-            submittedRecipe.outputFormat === "svg"
+            pinnedRecipe.outputFormat === "svg"
               ? "png"
-              : submittedRecipe.outputFormat,
-          modelPolicy: submittedRecipe.modelPolicy,
-          modelAddons: submittedRecipe.modelAddons,
-          transparentBackground: submittedRecipe.transparentBackground,
+              : pinnedRecipe.outputFormat,
+          modelPolicy: pinnedRecipe.modelPolicy,
+          modelAddons: pinnedRecipe.modelAddons,
+          transparentBackground: pinnedRecipe.transparentBackground,
           subjectCutoutModelPriority:
-            readFlowSubjectCutoutModelPriority(submittedFlow),
+            readFlowSubjectCutoutModelPriority(pinnedFlow),
           negativePrompt: "",
           referenceImages: localConditionedGeneration
-            ? submittedRecipe.referenceImages
+            ? pinnedRecipe.referenceImages
             : [],
           baseImageAssetId: localConditionedGeneration
-            ? submittedRecipe.baseImageAssetId
+            ? pinnedRecipe.baseImageAssetId
             : null,
           editMask:
-            localConditionedGeneration && submittedRecipe.baseImageAssetId
-              ? (normalizeMediaImageMask(submittedRecipe.editMask) ?? null)
+            localConditionedGeneration && pinnedRecipe.baseImageAssetId
+              ? (normalizeMediaImageMask(pinnedRecipe.editMask) ?? null)
               : null,
           poseImageAssetId: localConditionedGeneration
-            ? submittedRecipe.poseImageAssetId
+            ? pinnedRecipe.poseImageAssetId
             : null,
           poseStrength:
-            localConditionedGeneration && submittedRecipe.poseImageAssetId
-              ? submittedRecipe.poseStrength
+            localConditionedGeneration && pinnedRecipe.poseImageAssetId
+              ? pinnedRecipe.poseStrength
               : null,
           poseStart:
-            localConditionedGeneration && submittedRecipe.poseImageAssetId
-              ? (submittedRecipe.poseStart ?? 0)
+            localConditionedGeneration && pinnedRecipe.poseImageAssetId
+              ? (pinnedRecipe.poseStart ?? 0)
               : null,
           poseEnd:
-            localConditionedGeneration && submittedRecipe.poseImageAssetId
-              ? (submittedRecipe.poseEnd ?? 1)
+            localConditionedGeneration && pinnedRecipe.poseImageAssetId
+              ? (pinnedRecipe.poseEnd ?? 1)
               : null,
-          seed: submittedRecipe.seed ?? null,
+          seed: pinnedRecipe.seed ?? null,
           editStrength:
             localConditionedGeneration &&
-            typeof imageTaskConfig?.editStrength === "number"
-              ? imageTaskConfig.editStrength
+            typeof pinnedImageTaskConfig?.editStrength === "number"
+              ? pinnedImageTaskConfig.editStrength
               : undefined,
           maskStrength:
             localConditionedGeneration &&
-            submittedRecipe.baseImageAssetId &&
-            normalizeMediaImageMask(submittedRecipe.editMask) !== null &&
-            typeof imageTaskConfig?.maskStrength === "number"
-              ? imageTaskConfig.maskStrength
+            pinnedRecipe.baseImageAssetId &&
+            normalizeMediaImageMask(pinnedRecipe.editMask) !== null &&
+            typeof pinnedImageTaskConfig?.maskStrength === "number"
+              ? pinnedImageTaskConfig.maskStrength
               : undefined,
           requireChromaBackground:
             localConditionedGeneration &&
-            imageTaskConfig?.requireChromaBackground === true,
+            pinnedImageTaskConfig?.requireChromaBackground === true,
           memoryProfile:
-            imageTaskConfig?.memoryProfile === "memory-saver" ||
-            imageTaskConfig?.memoryProfile === "balanced" ||
-            imageTaskConfig?.memoryProfile === "maximum-speed"
-              ? imageTaskConfig.memoryProfile
+            pinnedImageTaskConfig?.memoryProfile === "memory-saver" ||
+            pinnedImageTaskConfig?.memoryProfile === "balanced" ||
+            pinnedImageTaskConfig?.memoryProfile === "maximum-speed"
+              ? pinnedImageTaskConfig.memoryProfile
               : "auto",
-          outputBranches: compileMediaImageOutputBranches(submittedFlow),
-          planSnapshot: submittedPlanSnapshot,
+          outputBranches: compileMediaImageOutputBranches(pinnedFlow),
+          planSnapshot: pinnedPlanSnapshot,
         } satisfies GenerateMediaImagesRequest;
         enqueueMediaGeneration({
           runId,
@@ -3867,12 +3908,14 @@ export const MediaStudio = ({
       setSelectedRunId(runId);
       setSelectedRun(null);
       setSelectedRunRecipe(null);
+      setSelectedRunLoading(false);
       const queuedJob = generationQueue.getJob(runId);
       if (queuedJob && !runtimeRuns.some((run) => run.id === runId)) {
         setSelectedRun(generationJobToRunDetail(queuedJob));
         setSelectedRunRecipe(queuedJob.recipe);
         return;
       }
+      setSelectedRunLoading(true);
       void getMediaRunDetail(runId)
         .then(async (detail) => {
           let recipe = queuedJob?.recipe ?? null;
@@ -3913,6 +3956,10 @@ export const MediaStudio = ({
           ) {
             setRuntimeError(normalizeMediaError(error, "inspect_run"));
           }
+        })
+        .finally(() => {
+          if (requestSequence === selectedRunDetailSequence.current)
+            setSelectedRunLoading(false);
         });
     },
     [presentRunFailure, runtimeRuns],
@@ -3982,9 +4029,11 @@ export const MediaStudio = ({
       .finally(() => setImportLoading(false));
   }, [importLoading, importPath, loaded, onImportPathHandled, refreshRuntime]);
   const inspectRunInFlow = useCallback(
-    (run: MediaRunDetail): void => {
+    async (run: MediaRunDetail): Promise<void> => {
       if (!run.flowRevisionId) return;
+      if (!(await preserveFlowDraft())) return;
       setFlowRevisionLoading(true);
+      setFlowRevisionNotice(null);
       setRuntimeError(null);
       void getMediaFlow(run.flowId)
         .then((history) => {
@@ -4002,6 +4051,7 @@ export const MediaStudio = ({
           setSelectedRunRecipe(recipeSnapshotFromRevision(run, revision));
           setFlowHistory(history);
           setFlowRunOverlayId(run.id);
+          setFlowRunOverlay(run);
           setState((current) => ({
             ...current,
             activeSection: "flow",
@@ -4014,7 +4064,7 @@ export const MediaStudio = ({
         })
         .finally(() => setFlowRevisionLoading(false));
     },
-    [clearSemanticHistory],
+    [clearSemanticHistory, preserveFlowDraft],
   );
   const reuseRunSettings = useCallback(
     (runId: string): void => {
@@ -4069,6 +4119,7 @@ export const MediaStudio = ({
         if (!revision) throw new Error("The pinned settings are unavailable.");
         const recipe =
           queuedJob?.recipe ?? recipeSnapshotFromRevision(run, revision);
+        if (recipe.mode === "advanced" && !(await preserveFlowDraft())) return;
         setFlowHistory(history);
         applyRecipe(recipe, revision);
       })()
@@ -4077,7 +4128,7 @@ export const MediaStudio = ({
         })
         .finally(() => setFlowRevisionLoading(false));
     },
-    [clearSemanticHistory, selectedRun],
+    [clearSemanticHistory, selectedRun, preserveFlowDraft],
   );
   const inspectRunSettings = useCallback(
     (runId: string): void => {
@@ -4506,9 +4557,15 @@ export const MediaStudio = ({
       setRuntimeError(null);
       switch (action) {
         case "refresh":
-        case "retry":
           void refreshRuntime();
           refreshFlowHistory();
+          break;
+        case "retry":
+          if (runtimeError?.context.runId) {
+            reuseRunSettings(runtimeError.context.runId);
+          } else {
+            void refreshRuntime();
+          }
           break;
         case "open-models":
         case "free-space":
@@ -4519,7 +4576,11 @@ export const MediaStudio = ({
           onOpenProviderSettings();
           break;
         case "review-run":
-          setState((current) => ({ ...current, activeSection: "runs" }));
+          if (runtimeError?.context.runId) {
+            inspectRunSettings(runtimeError.context.runId);
+          } else {
+            selectSection("runs");
+          }
           break;
         case "review-input":
         case "choose-location":
@@ -4531,6 +4592,10 @@ export const MediaStudio = ({
       refreshModelCatalog,
       refreshFlowHistory,
       refreshRuntime,
+      runtimeError,
+      reuseRunSettings,
+      inspectRunSettings,
+      selectSection,
     ],
   );
 
@@ -4538,12 +4603,23 @@ export const MediaStudio = ({
 
   return (
     <main className="m-media-studio-layout">
-      <MediaStudioNavigation
-        activeSection={state.activeSection}
-        onSelect={selectSection}
-      />
+      {loaded ? (
+        <MediaStudioNavigation
+          activeSection={state.activeSection}
+          onSelect={selectSection}
+        />
+      ) : null}
 
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <MediaRuntimeSetupNotice
+          status={runtimeSetup.status}
+          needed={runtimeStatus?.localDiffusers.ready === false}
+          supported={runtimeStatus?.mode === "native"}
+          refreshFailed={runtimeSetup.refreshFailed}
+          statusUnavailable={runtimeSetup.statusUnavailable}
+          onSetup={() => void runtimeSetup.start()}
+          onRefresh={() => void runtimeSetup.refresh()}
+        />
         {runtimeError ? (
           <MediaErrorNotice
             error={runtimeError}
@@ -4552,7 +4628,12 @@ export const MediaStudio = ({
           />
         ) : null}
         <div className="min-h-0 min-w-0 flex-1">
-          {state.activeSection === "generate" ? (
+          {!loaded ? (
+            <div role="status" className="p-6 text-sm text-slate-400">
+              Loading Media Studio…
+            </div>
+          ) : null}
+          {loaded && state.activeSection === "generate" ? (
             <MediaGenerateView
               target={state.target}
               settings={state.recipe}
@@ -4581,15 +4662,21 @@ export const MediaStudio = ({
               referenceImportSupported={supportsNativeMediaImport()}
               referenceImportPending={importLoading}
               generationJob={displayedGenerationJob}
-              generationJobs={generationJobs}
+              generationJobs={basicGenerationJobs}
+              onSelectGenerationJob={setSelectedGenerationJobId}
+              onCancelGeneration={cancelRun}
               queueBusy={generationQueueBusy}
               persistenceError={persistenceError}
               onTargetChange={changeGenerationTarget}
               onChange={changeRecipe}
               onVideoSettingsChange={changeVideoRecipe}
               onOpenFlow={openRecipeAsFlow}
-              onOpenAssets={() => selectSection("library")}
-              onOpenActivity={() => selectSection("runs")}
+              flowOpening={flowRevisionLoading}
+              onOpenAssets={(modelId) => {
+                if (modelId) setImportedResourceId(modelId);
+                selectSection("library");
+              }}
+              onOpenActivity={inspectRunSettings}
               onGenerate={runGeneration}
               onAddReferenceImages={importReferenceImages}
               onAddBaseImage={() => importConditioningImage("base")}
@@ -4600,7 +4687,7 @@ export const MediaStudio = ({
               generationPending={generationPending || localFlowPending}
             />
           ) : null}
-          {state.activeSection === "flow" ? (
+          {loaded && state.activeSection === "flow" ? (
             <MediaFlowView
               flow={flow}
               layout={layout}
@@ -4632,7 +4719,7 @@ export const MediaStudio = ({
               pasteBlockedReason={pasteInspection.reason}
               history={flowHistory}
               savedFlows={savedFlows}
-              savedFlowsLoading={savedFlowsLoading}
+              savedFlowsLoading={savedFlowsLoading || flowRevisionLoading}
               revisionLoading={flowRevisionLoading}
               revisionNotice={flowRevisionNotice}
               hasUnsavedChanges={hasUnsavedFlowChanges}
@@ -4649,24 +4736,30 @@ export const MediaStudio = ({
               onDismissImport={dismissFlowImport}
               onExportRevision={exportCurrentFlowRevision}
               onRunLocalFlow={
-                advancedLocalImageExecution.supported
-                  ? runAdvancedLocalImageFlow
-                  : videoFlowExecution.supported
-                    ? runVideoFlow
-                    : runLocalFlow
+                isConnectedMediaFlow(flow)
+                  ? runLocalFlow
+                  : advancedLocalImageExecution.supported
+                    ? runAdvancedLocalImageFlow
+                    : videoFlowExecution.supported
+                      ? runVideoFlow
+                      : runLocalFlow
               }
               localRunPending={localFlowPending}
               localRunSupported={
-                advancedLocalImageExecution.supported ||
-                localFlowExecution.supported ||
-                videoFlowExecution.supported
+                isConnectedMediaFlow(flow)
+                  ? localFlowExecution.supported
+                  : advancedLocalImageExecution.supported ||
+                    localFlowExecution.supported ||
+                    videoFlowExecution.supported
               }
               localRunDescription={
-                advancedLocalImageExecution.supported
-                  ? advancedLocalImageExecution.reason
-                  : videoFlowExecution.videoNode
-                    ? videoFlowExecution.reason
-                    : localFlowExecution.reason
+                isConnectedMediaFlow(flow)
+                  ? localFlowExecution.reason
+                  : advancedLocalImageExecution.supported
+                    ? advancedLocalImageExecution.reason
+                    : videoFlowExecution.videoNode
+                      ? videoFlowExecution.reason
+                      : localFlowExecution.reason
               }
               onRunRemoteEdit={runRemoteEditFlow}
               remoteRunPending={remoteEditPending}
@@ -4676,13 +4769,28 @@ export const MediaStudio = ({
               remoteMaskIncluded={remoteEditExecution.maskIncluded}
               remoteUploadManifest={remoteEditExecution.manifest}
               runOverlay={
-                flowRunOverlayId === selectedRun?.id ? selectedRun : null
+                flowRunOverlayId === flowRunOverlay?.id
+                  ? flowRunOverlay
+                  : flowOverlayJob
+                    ? generationJobToRunDetail(flowOverlayJob)
+                    : null
               }
               onRunOverlayClear={() => setFlowRunOverlayId(null)}
+              onOpenRun={inspectRunSettings}
+              onCancelRun={cancelRun}
             />
           ) : null}
-          {state.activeSection === "library" ? (
+          {loaded &&
+          runtimeLoading &&
+          ["library", "runs"].includes(state.activeSection) ? (
+            <div role="status" className="p-6 text-sm text-slate-400">
+              Loading{" "}
+              {state.activeSection === "library" ? "assets" : "activity"}…
+            </div>
+          ) : null}
+          {loaded && !runtimeLoading && state.activeSection === "library" ? (
             <MediaAssetsView
+              discoveredFiles={workspaceModelDiscovery?.entries ?? []}
               assets={runtimeAssets}
               catalog={activeModelCatalog}
               categories={state.categories}
@@ -4724,15 +4832,23 @@ export const MediaStudio = ({
               onRetryPersistence={() => void retryMediaStudioStateSave()}
               onDismissImport={dismissAssetImport}
               onUseModel={useModelInCreate}
-              onRefreshLocalRuntime={() => void refreshLocalRuntime()}
+              onSetupRuntime={() => void runtimeSetup.start()}
               onVerifyModel={(model) => void verifyLocalModel(model)}
-              localRuntimeRefreshing={localRuntimeRefreshing}
+              onRefreshModels={async () => {
+                await refreshModelCatalog();
+                setRuntimeStatus(await initializeMediaRuntime());
+              }}
+              onScanModels={refreshWorkspaceModels}
+              runtimeSetup={runtimeSetup.status}
+              runtimeReady={runtimeStatus?.localDiffusers.ready ?? false}
               verifyingModelId={verifyingModelId}
               onUseAddon={useAddonInCreate}
               onUpdateTags={updateAssetTags}
               onUpdateMetadata={updateAssetMetadata}
               onCategoryStateChange={updateAssetCategoryState}
               onUseAsReference={useAssetAsCreateReference}
+              onEditImage={useAssetAsBaseImage}
+              onAnimateImage={useAssetAsBasicVideoReference}
               onOpenVideoAsFlow={openAssetAsVideoFlow}
               onInspectSettings={inspectRunSettings}
               onReuseSettings={reuseRunSettings}
@@ -4740,11 +4856,13 @@ export const MediaStudio = ({
               onDeleteAsset={deleteAsset}
             />
           ) : null}
-          {state.activeSection === "runs" ? (
+          {loaded && !runtimeLoading && state.activeSection === "runs" ? (
             <MediaRunsView
               runs={combinedRuns}
               assets={runtimeAssets}
               selectedRun={selectedRun}
+              selectedRunId={selectedRunId}
+              selectedRunLoading={selectedRunLoading}
               selectedRecipe={selectedRunRecipe}
               onCreate={() => selectSection("generate")}
               onSelect={selectRun}
@@ -4757,6 +4875,7 @@ export const MediaStudio = ({
               onInspectInFlow={inspectRunInFlow}
               onReuseSettings={reuseRunSettings}
               onRefresh={() => void refreshRuntime()}
+              onOpenAsset={openAssetInLibrary}
             />
           ) : null}
         </div>

@@ -152,8 +152,11 @@ const createProps = (
   onChange: noop,
   onVideoSettingsChange: noop,
   onOpenFlow: noop,
+  flowOpening: false,
   onOpenAssets: noop,
   onOpenActivity: noop,
+  onSelectGenerationJob: noop,
+  onCancelGeneration: noop,
   onGenerate: noop,
   onAddReferenceImages: noop,
   onAddBaseImage: noop,
@@ -196,6 +199,7 @@ const createQueuedRun = (): MediaGenerationQueueJob => ({
   error: null,
   failure: null,
   assets: [],
+  runDetail: null,
 });
 
 afterEach(() => {
@@ -203,6 +207,48 @@ afterEach(() => {
 });
 
 describe("MediaGenerateView", () => {
+  it("selects results and routes activity and cancellation to the clicked generation", () => {
+    const completed = {
+      ...createQueuedRun(),
+      id: "run:completed",
+      status: "completed" as const,
+      recipe: { ...createQueuedRun().recipe, prompt: "A red bowl" },
+    };
+    const queued = {
+      ...createQueuedRun(),
+      id: "run:queued",
+      status: "queued" as const,
+      recipe: { ...createQueuedRun().recipe, prompt: "A green bowl" },
+    };
+    const onSelectGenerationJob = vi.fn();
+    const onOpenActivity = vi.fn();
+    const onCancelGeneration = vi.fn();
+    render(
+      createElement(
+        MediaGenerateView,
+        createProps({
+          generationJobs: [completed, queued],
+          generationJob: completed,
+          onSelectGenerationJob,
+          onOpenActivity,
+          onCancelGeneration,
+        }),
+      ),
+    );
+    const card = screen
+      .getByRole("button", { name: /A green bowl/u })
+      .closest("article")!;
+    fireEvent.click(
+      within(card).getByRole("button", { name: /A green bowl/u }),
+    );
+    expect(onSelectGenerationJob).toHaveBeenCalledWith(queued.id);
+    fireEvent.click(
+      within(card).getByRole("button", { name: "View activity" }),
+    );
+    expect(onOpenActivity).toHaveBeenCalledWith(queued.id);
+    fireEvent.click(within(card).getByRole("button", { name: "Cancel" }));
+    expect(onCancelGeneration).toHaveBeenCalledWith(queued.id);
+  });
   it("keeps optional settings collapsed while the primary inputs stay clear", () => {
     render(createElement(MediaGenerateView, createProps()));
 
@@ -392,7 +438,7 @@ describe("MediaGenerateView", () => {
     fireEvent.click(
       screen.getAllByRole("button", { name: "Choose from Assets" })[0]!,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Choose asset 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose Image 1" }));
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
         referenceImages: [
@@ -684,6 +730,6 @@ describe("MediaGenerateView", () => {
     expect(screen.getByText("queued · 0%")).toBeTruthy();
     expect(screen.getByText("completed")).toBeTruthy();
     expect(screen.getByText("failed")).toBeTruthy();
-    expect(screen.getByText("cancelled")).toBeTruthy();
+    expect(screen.getByText("canceled")).toBeTruthy();
   });
 });

@@ -57,6 +57,7 @@ pub(crate) enum MediaErrorCode {
     ProvenanceVerifyFailed,
     WatermarkDetectionFailed,
     OutputValidationFailed,
+    QualityGateFailed,
     ExportFailed,
     CancelledByUser,
 }
@@ -141,7 +142,14 @@ impl MediaError {
             schema_version: 1,
             code,
             category,
-            message: message.to_string(),
+            message: if code == MediaErrorCode::QualityGateFailed {
+                format!(
+                    "{}. Review the image and gate settings.",
+                    sanitize_diagnostic(&diagnostic).trim_end_matches('.')
+                )
+            } else {
+                message.to_string()
+            },
             technical_diagnostic: sanitize_diagnostic(&diagnostic),
             context: MediaErrorContext {
                 operation: Some(operation.to_string()),
@@ -172,6 +180,11 @@ pub(crate) fn command_result<T>(
 }
 
 fn classify(operation: &str, diagnostic: &str) -> MediaErrorCode {
+    if diagnostic.starts_with("quality gate failed")
+        || diagnostic.starts_with("quality gate stopped")
+    {
+        return MediaErrorCode::QualityGateFailed;
+    }
     if diagnostic.contains("flow revision conflict") {
         return MediaErrorCode::FlowRevisionConflict;
     }
@@ -374,6 +387,12 @@ fn presentation(
         "Reload the durable Media Studio state before trying again.",
     );
     match code {
+        Code::QualityGateFailed => (
+            Category::Validation,
+            "Quality checks failed. Review the image and gate settings.",
+            Retry::AfterUserAction,
+            vec![Action::new("review-input", "Review gate", "Review the image and gate settings.")],
+        ),
         Code::FlowRevisionConflict => (
             Category::Integrity,
             "This flow changed since its revision history was loaded.",
@@ -644,6 +663,23 @@ fn sanitize_diagnostic(diagnostic: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quality_gate_rejection_preserves_measurements_and_requires_review() {
+        for diagnostic in [
+            "Quality gate failed after 2 attempts: width is 512px; requires 1024px",
+            "Quality gate stopped: width is 512px; requires 1024px",
+        ] {
+            let error = MediaError::from_internal("run_execution", diagnostic);
+            assert_eq!(error.code, MediaErrorCode::QualityGateFailed);
+            assert_eq!(error.category, MediaErrorCategory::Validation);
+            assert_eq!(error.retryability, MediaErrorRetryability::AfterUserAction);
+            assert!(error.message.contains("512px; requires 1024px"));
+            assert!(error
+                .message
+                .ends_with("Review the image and gate settings."));
+        }
+    }
 
     #[test]
     fn classifies_paid_retry_as_reconcile_first() {

@@ -1004,16 +1004,23 @@ fn suggested_token(header: &ParsedSafetensorsHeader, kind: Option<&str>) -> Opti
     ) {
         return validated_token(Some(&token)).ok().flatten();
     }
-    header.tensor_keys.iter().find_map(|key| {
-        let candidate = key
-            .strip_prefix("string_to_param.")
-            .or_else(|| key.strip_prefix("string_to_token."))
-            .unwrap_or(key);
-        if matches!(candidate, "emb_params" | "clip_l" | "clip_g" | "t5") {
-            return None;
-        }
-        validated_token(Some(candidate)).ok().flatten()
-    })
+    header
+        .tensor_keys
+        .iter()
+        .find_map(|key| {
+            let candidate = key
+                .strip_prefix("string_to_param.")
+                .or_else(|| key.strip_prefix("string_to_token."))
+                .unwrap_or(key);
+            if matches!(candidate, "emb_params" | "clip_l" | "clip_g" | "t5") {
+                return None;
+            }
+            validated_token(Some(candidate)).ok().flatten()
+        })
+        .or_else(|| {
+            let stem = Path::new(&header.source_file_name).file_stem()?.to_str()?;
+            validated_token(Some(stem)).ok().flatten()
+        })
 }
 
 fn inspection_review_token(
@@ -1044,6 +1051,13 @@ pub(crate) fn inspect(source_path: &str) -> MediaResult<MediaModelAddonImportIns
     if content_size != header.byte_size {
         return Err("the add-on file changed while it was being inspected".to_string());
     }
+    inspect_header(&header, content_digest)
+}
+
+pub(super) fn inspect_header(
+    header: &ParsedSafetensorsHeader,
+    content_digest: String,
+) -> MediaResult<MediaModelAddonImportInspection> {
     let detected_kind = detect_kind(&header);
     let (detected_architecture, architecture_confidence) =
         detect_addon_architecture(&header, detected_kind);

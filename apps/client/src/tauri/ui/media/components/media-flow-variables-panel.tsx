@@ -71,11 +71,7 @@ const VariableTextField = ({
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => {
-          if (
-            event.key === "Enter" &&
-            !event.ctrlKey &&
-            !event.metaKey
-          ) {
+          if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
             event.currentTarget.blur();
           }
           if (event.key === "Escape") {
@@ -237,7 +233,7 @@ export const MediaFlowVariablesPanel = ({
   return (
     <aside
       aria-label="Variables and presets"
-      className="absolute inset-y-0 right-0 z-20 min-h-0 w-[min(390px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none"
+      className="app-flow-panel absolute inset-y-0 right-0 z-20 min-h-0 w-[min(390px,calc(100%-2rem))] overflow-y-auto border-l border-slate-800/80 bg-slate-950/95 p-5 shadow-2xl xl:static xl:w-auto xl:bg-slate-950/90 xl:shadow-none"
     >
       <div className="flex items-start justify-between gap-3">
         <div>

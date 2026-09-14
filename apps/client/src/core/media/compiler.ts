@@ -1,5 +1,9 @@
 import { createMediaFlowFingerprint } from "./canonicalize.js";
 import {
+  compileConnectedMediaFlow,
+  requiresWorkflowCompilation,
+} from "./workflow-compiler.js";
+import {
   getMediaNodeDefinition,
   orderMediaFlowNodes,
   validateMediaFlowDocument,
@@ -252,14 +256,14 @@ export const createImageRecipeFlow = ({
       "operation.quality-analyze",
       "Analyze quality",
       "operation",
-      { profile: "image-technical-v1" },
+      { profile: "technical-image-baseline" },
     );
     const gate = createNode(
       "quality-gate",
       "control.quality-gate",
       "Quality gate",
       "control",
-      { onUnknown: "human-review", profile: "image-technical-v1" },
+      { onUnknown: "fail", profile: "technical-image-baseline" },
     );
     nodes.push(analyze, gate);
     edges.push(
@@ -483,14 +487,14 @@ export const createImageEditFlow = ({
       "operation.quality-analyze",
       "Analyze quality",
       "operation",
-      { profile: "image-technical-v1" },
+      { profile: "technical-image-baseline" },
     );
     const gate = createNode(
       "quality-gate",
       "control.quality-gate",
       "Quality gate",
       "control",
-      { onUnknown: "human-review", profile: "image-technical-v1" },
+      { onUnknown: "fail", profile: "technical-image-baseline" },
     );
     nodes.push(analyze, gate);
     edges.push(
@@ -594,12 +598,13 @@ export const createImageToVideoFlow = ({
       loopMode,
       fps: settings?.fps ?? 16,
       numFrames: settings?.numFrames ?? 33,
-      numInferenceSteps: 30,
-      guidanceScale: loopMode === "seamless" ? 5 : 9,
+      numInferenceSteps: settings?.numInferenceSteps ?? 30,
+      guidanceScale:
+        settings?.guidanceScale ?? (loopMode === "seamless" ? 5 : 9),
       seed: 0,
       negativePrompt: "",
-      matteQuality: "production",
-      encodingQuality: "lossless",
+      matteQuality: settings?.matteQuality ?? "production",
+      encodingQuality: settings?.encodingQuality ?? "lossless",
       memoryProfile: settings?.memoryProfile ?? "auto",
       experimentalLowMemory: true,
     },
@@ -780,12 +785,12 @@ export const createGeneratedLoopVideoFlow = ({
       loopMode: settings?.loopMode ?? "seamless",
       fps: settings?.fps ?? 16,
       numFrames: settings?.numFrames ?? 33,
-      numInferenceSteps: 30,
-      guidanceScale: 5,
+      numInferenceSteps: settings?.numInferenceSteps ?? 30,
+      guidanceScale: settings?.guidanceScale ?? 5,
       seed: 0,
       negativePrompt: "",
-      matteQuality: "production",
-      encodingQuality: "lossless",
+      matteQuality: settings?.matteQuality ?? "production",
+      encodingQuality: settings?.encodingQuality ?? "lossless",
       memoryProfile: settings?.memoryProfile ?? "auto",
       experimentalLowMemory: true,
     },
@@ -2006,9 +2011,7 @@ const readMediaImageTaskSettings = (
           ? node.config.referenceRole
           : "base",
       influence:
-        typeof node.config.influence === "number"
-          ? node.config.influence
-          : 1,
+        typeof node.config.influence === "number" ? node.config.influence : 1,
     }),
   );
   const poseConditioned = sourceAssets.some((source) => source.role === "pose");
@@ -3137,6 +3140,11 @@ export const compileMediaFlow = ({
   addons = [],
   compiledAt,
 }: CompileMediaFlowInput): MediaCompiledPlan => {
+  if (requiresWorkflowCompilation(flow))
+    return compileConnectedMediaFlow(
+      { flow, models, addons, compiledAt },
+      compileMediaFlow,
+    );
   const variableResolution = resolveMediaFlowVariables(flow);
   const effectiveFlow = variableResolution.flow;
   const imageTaskNodes = effectiveFlow.nodes.filter(

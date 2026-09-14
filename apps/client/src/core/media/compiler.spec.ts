@@ -257,6 +257,10 @@ describe("media flow compiler", () => {
           loopMode,
           fps: 16,
           numFrames: 33,
+          numInferenceSteps: 30,
+          guidanceScale: 5,
+          matteQuality: "production",
+          encodingQuality: "lossless",
           memoryProfile: "auto",
         },
         prompt: "A controlled forward action with a locked camera",
@@ -299,6 +303,10 @@ describe("media flow compiler", () => {
           loopMode: "seamless",
           fps: 16,
           numFrames: 33,
+          numInferenceSteps: 30,
+          guidanceScale: 5,
+          matteQuality: "production",
+          encodingQuality: "lossless",
           memoryProfile: "auto",
         },
       }).nodes.find((node) => node.id === "generate-video")?.config,
@@ -1430,9 +1438,7 @@ describe("media flow compiler", () => {
           id: `flow:flux-promptless-${role}`,
           createdAt: "2026-08-21T00:00:00.000Z",
           sourceAssetId: "asset:base",
-          referenceAssets: [
-            { assetId: `asset:${role}`, role, influence: 1 },
-          ],
+          referenceAssets: [{ assetId: `asset:${role}`, role, influence: 1 }],
           settings: {
             ...DEFAULT_SETTINGS,
             prompt: "",
@@ -1444,7 +1450,7 @@ describe("media flow compiler", () => {
         }),
         models: [fluxModel],
         compiledAt: "2026-08-21T00:01:00.000Z",
-    });
+      });
 
     expect(compileRole("subject").status).toBe("ready");
     expect(compileRole("style").status).toBe("ready");

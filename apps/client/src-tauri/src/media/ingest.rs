@@ -29,7 +29,14 @@ pub(crate) fn import_image(
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
     {
-        let result = import_svg_raster(paths, &staged);
+        let result = import_svg(
+            paths,
+            &staged,
+            source_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("image.svg"),
+        );
         let _ = fs::remove_file(&staged.path);
         return result;
     }
@@ -44,7 +51,12 @@ pub(crate) fn import_image(
                     mime_type: validated.mime_type,
                     width: validated.width,
                     height: validated.height,
-                    import_kind: database::LocalImportKind::Raster,
+                    import_kind: database::LocalImportKind::Raster {
+                        source_file_name: source_path
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or("image"),
+                    },
                 },
             )
         })
@@ -224,30 +236,20 @@ pub(crate) async fn import_image_url(
     worker_result.map_err(|error| format!("image import worker could not be joined: {error}"))?
 }
 
-fn import_svg_raster(
+fn import_svg(
     paths: &MediaRuntimePaths,
     staged: &StagedImage,
+    source_file_name: &str,
 ) -> MediaResult<MediaImageImportResult> {
-    let raster = svg::rasterize_staged_svg(&staged.path)?;
-    if raster.png_bytes.len() as u64 > MAX_ENCODED_BYTES {
-        return Err(format!(
-            "Sanitized SVG raster exceeds the {} MB encoded-byte limit",
-            MAX_ENCODED_BYTES / 1024 / 1024
-        ));
-    }
-    let digest = format!("{:x}", Sha256::digest(&raster.png_bytes));
+    let bytes = fs::read(&staged.path).map_err(|error| error.to_string())?;
+    let document = svg::validate_and_canonicalize_svg(&bytes)?;
+    let digest = format!("{:x}", Sha256::digest(&document.bytes));
     let relative_path = transform::cas_relative_path(&digest);
-    transform::publish_cas_bytes(paths, &relative_path, &digest, &raster.png_bytes)?;
+    transform::publish_cas_bytes(paths, &relative_path, &digest, &document.bytes)?;
     let operation_json = serde_json::json!({
-        "kind": "rasterize-svg",
+        "kind": "local-import", "mediaType": "svg", "sourceFileName": source_file_name,
         "sanitizerVersion": svg::SANITIZER_VERSION,
-        "sourceDigest": staged.digest,
-        "sourceByteSize": staged.byte_size,
-        "xmlNodeCount": raster.xml_node_count,
-        "hadText": raster.had_text,
         "resourcePolicy": "no-external-or-embedded-images",
-        "fontPolicy": "system-font-snapshot",
-        "outputColorSpace": "srgb",
     })
     .to_string();
     database::record_imported_asset(
@@ -255,11 +257,11 @@ fn import_svg_raster(
         database::ImportedAssetRegistration {
             digest: &digest,
             relative_path: &relative_path.to_string_lossy(),
-            byte_size: raster.png_bytes.len() as u64,
-            mime_type: "image/png",
-            width: raster.width,
-            height: raster.height,
-            import_kind: database::LocalImportKind::RasterizedSvg {
+            byte_size: document.bytes.len() as u64,
+            mime_type: "image/svg+xml",
+            width: document.width,
+            height: document.height,
+            import_kind: database::LocalImportKind::Svg {
                 operation_json: &operation_json,
             },
         },
@@ -483,7 +485,15 @@ fn promote_to_cas(paths: &MediaRuntimePaths, staged: &StagedImage) -> MediaResul
         fs::create_dir_all(parent)
             .map_err(|error| format!("failed to create imported CAS shard: {error}"))?;
     }
-    if destination.exists() {
+    let registered: bool = database::open(paths)?
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM blobs WHERE digest = ?1)",
+            [&staged.digest],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("Could not check imported content: {error}"))?;
+    if registered || fs::symlink_metadata(&destination).is_ok() {
+        transform::verify_cas_blob(paths, &relative_path, &staged.digest, staged.byte_size)?;
         fs::remove_file(&staged.path)
             .map_err(|error| format!("failed to discard deduplicated staging file: {error}"))?;
         return Ok(relative_path);
@@ -491,6 +501,7 @@ fn promote_to_cas(paths: &MediaRuntimePaths, staged: &StagedImage) -> MediaResul
     match fs::rename(&staged.path, &destination) {
         Ok(()) => Ok(relative_path),
         Err(_) if destination.exists() => {
+            transform::verify_cas_blob(paths, &relative_path, &staged.digest, staged.byte_size)?;
             let _ = fs::remove_file(&staged.path);
             Ok(relative_path)
         }
@@ -595,7 +606,7 @@ mod tests {
     }
 
     #[test]
-    fn svg_import_publishes_only_safe_png_with_source_digest_lineage() {
+    fn svg_import_preserves_the_sanitized_vector_and_filename() {
         let root = test_root("svg");
         fs::create_dir_all(&root).unwrap();
         let source = root.join("source.svg");
@@ -614,15 +625,16 @@ mod tests {
         let result = import_image(&paths, source.to_str().unwrap()).unwrap();
         let detail = &result.detail;
 
-        assert_eq!(detail.run.executor, "local-svg-raster");
+        assert_eq!(detail.run.executor, "local-svg");
         assert_eq!(detail.assets.len(), 1);
         let asset = &detail.assets[0];
-        assert_eq!(asset.mime_type, "image/png");
+        assert_eq!(asset.mime_type, "image/svg+xml");
+        assert_eq!(asset.kind, "vector");
         assert_eq!((asset.width, asset.height), (96, 64));
         assert_ne!(asset.digest, source_digest);
         let operation = asset.operation.as_ref().unwrap();
-        assert_eq!(operation["kind"], "rasterize-svg");
-        assert_eq!(operation["sourceDigest"], source_digest);
+        assert_eq!(operation["kind"], "local-import");
+        assert_eq!(operation["sourceFileName"], "source.svg");
         assert_eq!(operation["sanitizerVersion"], svg::SANITIZER_VERSION);
         let published = fs::read(
             paths
@@ -632,7 +644,7 @@ mod tests {
                 .join(&asset.digest),
         )
         .unwrap();
-        assert_eq!(&published[..8], &[137, 80, 78, 71, 13, 10, 26, 10]);
+        assert_eq!(String::from_utf8(published).unwrap().trim(), svg.trim());
         assert!(!paths
             .blobs
             .join(&source_digest[0..2])

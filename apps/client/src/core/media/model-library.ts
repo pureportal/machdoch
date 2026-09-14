@@ -86,6 +86,7 @@ export const listMediaLibraryModels = (
     (model) =>
       isMediaGenerationModel(model) &&
       (model.userImported ||
+        model.management.acquisition === "managed-install" ||
         (model.target === "local" ? model.installed : model.configured)),
   );
 

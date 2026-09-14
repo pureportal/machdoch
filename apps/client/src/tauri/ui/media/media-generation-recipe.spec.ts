@@ -9,8 +9,27 @@ import { DEFAULT_MEDIA_STUDIO_STATE } from "./media-studio-store";
 import { createImageRecipeFlow } from "../../../core/media/compiler.js";
 import { updateMediaFlowNodeLabel } from "../../../core/media/node-registry.js";
 import type { MediaImageOutputBranch } from "../../../core/media/contracts.js";
+import { createConnectedWorkflowTemplates } from "../../../core/media/workflow-templates.js";
 
 describe("media generation text normalization", () => {
+  it("preserves prompt-generation instructions up to their declared limit", () => {
+    const flow = structuredClone(
+      createConnectedWorkflowTemplates().find(
+        (template) => template.id === "refine-until-pass",
+      )!.flow,
+    );
+    const instructions = "Keep the requested subject and framing. "
+      .repeat(60)
+      .trim();
+    flow.nodes.find(
+      (node) => node.type === "task.generate-prompt",
+    )!.config.instructions = instructions;
+    expect(
+      normalizeMediaFlowForPersistence(flow).nodes.find(
+        (node) => node.type === "task.generate-prompt",
+      )!.config.instructions,
+    ).toBe(instructions);
+  });
   it.each([
     ["trailing:", "trailing:"],
     ["punctuation!?...", "punctuation!?..."],

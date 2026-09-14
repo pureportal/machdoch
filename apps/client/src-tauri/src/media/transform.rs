@@ -860,6 +860,31 @@ pub(crate) fn cas_relative_path(digest: &str) -> PathBuf {
     Path::new(&digest[0..2]).join(&digest[2..4]).join(digest)
 }
 
+pub(crate) fn verify_cas_blob(
+    paths: &MediaRuntimePaths,
+    relative_path: &Path,
+    digest: &str,
+    byte_size: u64,
+) -> MediaResult<()> {
+    if digest.len() != 64
+        || !digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || relative_path != cas_relative_path(digest)
+    {
+        return Err("Asset integrity check failed: invalid content path".to_string());
+    }
+    let path = paths.blobs.join(relative_path);
+    let metadata = fs::symlink_metadata(&path)
+        .map_err(|error| format!("Asset integrity check failed: {error}"))?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() != byte_size {
+        return Err("Asset integrity check failed: stored file is damaged".to_string());
+    }
+    let bytes = fs::read(path).map_err(|error| format!("Asset integrity check failed: {error}"))?;
+    if format!("{:x}", Sha256::digest(&bytes)) != digest {
+        return Err("Asset integrity check failed: stored content has changed".to_string());
+    }
+    Ok(())
+}
+
 pub(crate) fn publish_cas_bytes(
     paths: &MediaRuntimePaths,
     relative_path: &Path,

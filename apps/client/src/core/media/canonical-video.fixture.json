@@ -1,0 +1,157 @@
+{
+  "flow": {
+    "activePresetId": null,
+    "createdAt": "2026-09-14T01:32:44.818Z",
+    "description": "Typed video recipe with explicit prompt, keyframe, provider, and publication boundaries.",
+    "edges": [
+      {
+        "fromNodeId": "prompt",
+        "fromPortId": "prompt",
+        "id": "prompt-to-generate",
+        "toNodeId": "generate",
+        "toPortId": "prompt"
+      },
+      {
+        "fromNodeId": "prompt",
+        "fromPortId": "prompt",
+        "id": "prompt-to-video",
+        "toNodeId": "generate-video",
+        "toPortId": "prompt"
+      },
+      {
+        "fromNodeId": "generate-video",
+        "fromPortId": "video",
+        "id": "video-to-output",
+        "toNodeId": "video-output",
+        "toPortId": "video"
+      },
+      {
+        "fromNodeId": "generate",
+        "fromPortId": "image",
+        "id": "generated-image-to-first-frame",
+        "toNodeId": "generate-video",
+        "toPortId": "first-frame"
+      },
+      {
+        "fromNodeId": "generate",
+        "fromPortId": "image",
+        "id": "generated-image-to-last-frame",
+        "toNodeId": "generate-video",
+        "toPortId": "last-frame"
+      }
+    ],
+    "id": "media-basic-video-e2a695f4-8328-45a3-8266-70f5c510d5d0",
+    "name": "Create video",
+    "nodes": [
+      {
+        "config": {
+          "prompt": "A red ceramic teapot on a wooden table in a sunlit kitchen. The camera slowly moves closer, subtle steam rising, stable composition."
+        },
+        "id": "prompt",
+        "label": "Creative brief",
+        "layer": "source",
+        "type": "source.prompt",
+        "version": 1
+      },
+      {
+        "config": {
+          "aspectRatio": "1:1",
+          "memoryProfile": "auto",
+          "modelAddons": [],
+          "modelId": "local:flux-2-klein-4b",
+          "modelPolicy": "quality",
+          "outputCount": 1,
+          "outputFormat": "png",
+          "providerPolicy": "auto",
+          "svgAutoCrop": true,
+          "svgCandidateCount": 1,
+          "svgCriticEnabled": false,
+          "svgMode": "vectorize",
+          "svgStyle": "illustration",
+          "svgTargetSize": 1024,
+          "svgTextPolicy": "avoid",
+          "transparentBackground": false
+        },
+        "id": "generate",
+        "label": "Generate image",
+        "layer": "task",
+        "type": "task.generate-image",
+        "version": 1
+      },
+      {
+        "config": {
+          "aspectRatio": "1:1",
+          "encodingQuality": "balanced",
+          "experimentalLowMemory": true,
+          "fps": 8,
+          "generateAudio": false,
+          "guidanceScale": 1,
+          "loopMode": "none",
+          "matteQuality": "balanced",
+          "memoryProfile": "auto",
+          "modelId": "local:hunyuan-video-1.5-i2v-step-distilled",
+          "modelPolicy": "quality",
+          "negativePrompt": "",
+          "numFrames": 17,
+          "numInferenceSteps": 8,
+          "providerPolicy": "local",
+          "resolution": "preview-512",
+          "seed": 0,
+          "transparentBackground": false
+        },
+        "id": "generate-video",
+        "label": "Generate video",
+        "layer": "task",
+        "type": "task.generate-video",
+        "version": 1
+      },
+      {
+        "config": {
+          "format": "webm",
+          "role": "opaque"
+        },
+        "id": "video-output",
+        "label": "Save video",
+        "layer": "output",
+        "type": "output.video",
+        "version": 1
+      }
+    ],
+    "presets": [],
+    "schemaVersion": 1,
+    "updatedAt": "2026-09-14T01:32:44.818Z",
+    "variableBindings": {},
+    "variables": []
+  },
+  "layout": {
+    "comments": [],
+    "flowId": "media-basic-video-e2a695f4-8328-45a3-8266-70f5c510d5d0",
+    "groups": [],
+    "nodes": [
+      {
+        "nodeId": "prompt",
+        "x": 52,
+        "y": 80
+      },
+      {
+        "nodeId": "generate",
+        "x": 302,
+        "y": 80
+      },
+      {
+        "nodeId": "generate-video",
+        "x": 302,
+        "y": 230
+      },
+      {
+        "nodeId": "video-output",
+        "x": 1052,
+        "y": 80
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "executionDigest": "sha256:701d7de9316abee0ff40cd0bd785de19bce3a10be44735e046a2fda8ab365acf",
+  "documentDigest": "sha256:31e104b056fc78cb4121d3d15f7754723e0dd6083149149079965cec26382686",
+  "layoutDigest": "sha256:7a721073402d012650aee162b9150e95ecba18d963b26abbedc45f79af188bf9"
+}
