@@ -21,8 +21,8 @@ use super::{
     payload::cleanup_temporary_files,
     payload_files::rewrite_ralph_payload_arguments,
     process::{
-        create_desktop_task_activity, join_cli_output_and_cleanup,
-        read_bounded_stream_text_with_limit, read_stderr, SUBPROCESS_OUTPUT_TRUNCATED_MARKER,
+        join_cli_output_and_cleanup, read_bounded_stream_text_with_limit, read_stderr,
+        SUBPROCESS_OUTPUT_TRUNCATED_MARKER,
     },
     progress::{create_bridge_progress, emit_progress_event},
     ralph_media_bridge::RalphMediaBridge,
@@ -299,11 +299,10 @@ pub(super) fn execute_ralph_command(
     let progress_app_handle = app_handle.clone();
     let progress_window_label = window_label.clone();
     let progress_task_id = task_id.clone();
-    let activity = create_desktop_task_activity();
     let stdout_worker = thread::spawn(move || read_ralph_stdout(stdout));
     let stderr_app_handle = app_handle.clone();
     let stderr_worker = thread::spawn(move || {
-        read_stderr(stderr, stderr_app_handle, window_label, task_id, activity)
+        read_stderr(stderr, stderr_app_handle, window_label, task_id)
     });
 
     let started_at = Instant::now();
