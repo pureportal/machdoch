@@ -41,6 +41,122 @@ const createState = (
 };
 
 describe("queued message persistence", () => {
+  it("preserves enhancement attempts when another window changes queue order", () => {
+    const base = createQueuedMessage({
+      promptEnhancementRequest: { mode: "simple" },
+    });
+    const attempt = {
+      execution: {
+        rootTaskId: "enhancement",
+        task: "Enhance",
+        retryNumber: 1,
+        retryLimit: 2,
+      },
+      status: "waiting" as const,
+      readyAt: 2_020,
+      updatedAt: 20,
+    };
+    const retry = {
+      ...base,
+      status: "enhancing" as const,
+      statusUpdatedAt: 20,
+      updatedAt: 20,
+      promptEnhancementAttempt: attempt,
+    };
+    const reordered = {
+      ...base,
+      orderRank: 2,
+      orderUpdatedAt: 30,
+      updatedAt: 30,
+    };
+    for (const [local, latest] of [
+      [retry, reordered],
+      [reordered, retry],
+    ]) {
+      const restored = normalizeShellState(
+        mergeShellStateForPersistence(
+          createState([local]),
+          createState([base]),
+          createState([latest]),
+        ),
+      );
+      expect(restored.queuedSessionMessages[0]).toMatchObject({
+        orderRank: 2,
+        status: "enhancing",
+        promptEnhancementAttempt: attempt,
+      });
+    }
+  });
+
+  it("does not apply an old enhancement attempt to edited queued content", () => {
+    const base = createQueuedMessage({
+      promptEnhancementRequest: { mode: "simple" },
+    });
+    const retry = {
+      ...base,
+      promptEnhancementAttempt: {
+        execution: {
+          rootTaskId: "enhancement",
+          task: "Enhance",
+          retryNumber: 1,
+          retryLimit: 2,
+        },
+        status: "waiting" as const,
+        readyAt: 2_020,
+        updatedAt: 20,
+      },
+    };
+    const edited = {
+      ...base,
+      task: "Changed request",
+      contentUpdatedAt: 30,
+      updatedAt: 30,
+    };
+    const merged = mergeShellStateForPersistence(
+      createState([retry]),
+      createState([base]),
+      createState([edited]),
+    );
+    expect(merged.queuedSessionMessages[0].task).toBe("Changed request");
+    expect(
+      merged.queuedSessionMessages[0].promptEnhancementAttempt,
+    ).toBeUndefined();
+  });
+
+  it("does not mistake enhancement placeholders for submitted queued messages", () => {
+    const base = createQueuedMessage({
+      promptEnhancementRequest: { mode: "simple" },
+    });
+    const local = createState([
+      { ...base, status: "enhancing", statusUpdatedAt: 20 },
+    ]);
+    const latest = createState([]);
+    latest.sessions[0].messages.push({
+      id: "enhancement-user",
+      taskId: "enhancement",
+      role: "user",
+      content: base.task,
+      createdAt: 20,
+      lifecycle: {
+        kind: "transient",
+        owner: "prompt-enhancement",
+        operationId: "enhancement",
+        slot: "user",
+        ownerLaunchId: "launch",
+        ownerWindowId: "window",
+        ownerInstanceId: "instance",
+        placement: "queued-message",
+      },
+    });
+    const merged = mergeShellStateForPersistence(
+      local,
+      createState([base]),
+      latest,
+    );
+    expect(merged.queuedSessionMessages).toHaveLength(1);
+    expect(merged.queuedSessionMessages[0].id).toBe(base.id);
+  });
+
   it("keeps a prepended follow-up ahead of existing queued work after persistence", () => {
     const existing = createQueuedMessage({
       id: "existing",

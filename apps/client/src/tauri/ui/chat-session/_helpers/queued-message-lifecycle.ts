@@ -108,6 +108,7 @@ export const createQueuedMessageDispatchAttempt = (
 
   if (enhancedPrompt !== undefined) {
     delete nextMessage.promptEnhancementRequest;
+    delete nextMessage.promptEnhancementAttempt;
     delete nextMessage.promptEnhancement;
 
     if (prompt.promptEnhancement) {
@@ -149,5 +150,6 @@ export const createQueuedMessageRetry = (
   };
 
   delete retry.failureMessage;
+  delete retry.promptEnhancementAttempt;
   return retry;
 };

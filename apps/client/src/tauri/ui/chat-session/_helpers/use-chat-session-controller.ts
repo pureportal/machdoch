@@ -152,7 +152,6 @@ import {
   createMessagePromptEnhancement,
   createPromptEnhancementTask,
   createQueuedPromptEnhancementRequest,
-  extractEnhancedPrompt,
   isPromptEnhancementCancellation,
   PROMPT_ENHANCEMENT_LABELS,
   PromptEnhancementCancellationError,
@@ -162,6 +161,12 @@ import {
   type PromptEnhancementPendingPlacement,
   type PromptEnhancementMode,
 } from "./prompt-enhancement";
+import { getExecutionAttemptTaskId } from "./execution-retry-policy";
+import { runPromptEnhancement } from "./run-prompt-enhancement";
+import {
+  isPromptEnhancementCurrent,
+  updatePromptEnhancementAttempt,
+} from "./prompt-enhancement-state";
 import {
   canDispatchQueuedMessage,
   canStartQueuedMessageDispatch,
@@ -305,6 +310,7 @@ interface PromptEnhancementPendingState {
   ownerInstanceId: string;
   targetMessageId?: string;
   composerClearGuard?: ComposerClearGuard;
+  abortController: AbortController;
 }
 
 interface PromptEnhancementResult {
@@ -490,6 +496,9 @@ const setQueuedMessageStatus = (
   };
 
   delete nextMessage.failureMessage;
+  if (status === "queued") {
+    delete nextMessage.promptEnhancementAttempt;
+  }
 
   return status === "failed" && failureMessage?.trim()
     ? { ...nextMessage, failureMessage: failureMessage.trim() }
@@ -739,6 +748,17 @@ export const useChatSessionController = (
     );
   }, []);
   const ignoredDesktopTaskIdsRef = useRef<Set<string>>(new Set());
+  const promptEnhancementAbortControllersRef = useRef(
+    new Set<AbortController>(),
+  );
+  useEffect(
+    () => () => {
+      for (const controller of promptEnhancementAbortControllersRef.current) {
+        controller.abort();
+      }
+    },
+    [],
+  );
   const sessionOperationConflictHandlerRef = useRef<
     (submission: SessionOperationConflictSubmission) => boolean
   >(() => false);
@@ -940,6 +960,8 @@ export const useChatSessionController = (
     activeSessionProvider: activeComposerSession.provider,
     activeSessionWorkspace: activeComposerSession.workspace,
   });
+  const retrySettingsRef = useRef(runtime.userAgentLimitsSettings);
+  retrySettingsRef.current = runtime.userAgentLimitsSettings;
   const voice = useChatSessionVoice({
     activeSessionId: state.activeSession.id,
     settings: state.shellState.voice,
@@ -1964,6 +1986,7 @@ export const useChatSessionController = (
             >["placement"];
             prompt?: string;
             contextAttachments: ChatSessionContextAttachment[];
+            retryReadyAt?: number;
           }
         >();
         for (const session of shellStateRef.current.sessions) {
@@ -1986,6 +2009,9 @@ export const useChatSessionController = (
               ownerLaunchId: lifecycle.ownerLaunchId,
               ownerWindowId: lifecycle.ownerWindowId,
               ownerInstanceId: lifecycle.ownerInstanceId,
+              ...(message.promptEnhancementAttempt?.status === "waiting"
+                ? { retryReadyAt: message.promptEnhancementAttempt.readyAt }
+                : {}),
               ...(lifecycle.placement
                 ? { placement: lifecycle.placement }
                 : {}),
@@ -2082,6 +2108,16 @@ export const useChatSessionController = (
           if (recoveryAction === "reconcile") {
             missingTaskIds.push(operation.taskId);
             inactiveTaskIds.push(operation.taskId);
+            continue;
+          }
+
+          if (
+            operation.retryReadyAt !== undefined &&
+            now < operation.retryReadyAt + ACTIVE_DESKTOP_TASK_MISSING_GRACE_MS
+          ) {
+            transientTaskMissingObservationsRef.current.delete(
+              operation.taskId,
+            );
             continue;
           }
 
@@ -3374,6 +3410,7 @@ export const useChatSessionController = (
 
       if (pendingPromptEnhancement) {
         const targetTaskId = pendingPromptEnhancement.taskId;
+        pendingPromptEnhancement.abortController.abort();
         ignoredDesktopTaskIdsRef.current.add(targetTaskId);
         setPromptEnhancementStatus(null);
       } else {
@@ -5100,6 +5137,7 @@ export const useChatSessionController = (
       >,
       prompt: string,
       placement: PromptEnhancementPendingPlacement,
+      queuedMessage?: ChatSessionQueuedMessage,
     ): Promise<PromptEnhancementResult> => {
       const normalizedPrompt = prompt.trim();
       const enhancementMode = submission.promptEnhancementMode;
@@ -5122,9 +5160,13 @@ export const useChatSessionController = (
       }
 
       const activeMode = enhancementMode as ActivePromptEnhancementMode;
-      const taskId = `${PROMPT_ENHANCEMENT_TASK_ID_PREFIX}${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2, 8)}`;
+      const taskId = queuedMessage?.promptEnhancementAttempt
+        ? getExecutionAttemptTaskId(
+            queuedMessage.promptEnhancementAttempt.execution,
+          )
+        : `${PROMPT_ENHANCEMENT_TASK_ID_PREFIX}${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2, 8)}`;
       const sessionSnapshot = submission.sessionSnapshot;
       const targetMessageId = submission.conversationCutoffMessageId?.trim();
 
@@ -5148,9 +5190,11 @@ export const useChatSessionController = (
           shellStateRef.current.lastRecoveredLaunchId ?? "pending-launch",
         ownerWindowId: chatOperationWindowId,
         ownerInstanceId: chatOperationInstanceId,
+        abortController: new AbortController(),
         ...(targetMessageId ? { targetMessageId } : {}),
       };
       const imagePaths = getImageAttachmentPaths(submission.contextAttachments);
+      promptEnhancementAbortControllersRef.current.add(pending.abortController);
 
       setPromptEnhancementStatus(null);
       setPromptEnhancementPreview((current) =>
@@ -5192,61 +5236,94 @@ export const useChatSessionController = (
           );
         }
 
-        const taskRun = await runInternalDesktopTask(
-          sessionSnapshot.workspace,
-          createPromptEnhancementTask({
+        const enhancedPrompt = await runPromptEnhancement({
+          taskId,
+          task: createPromptEnhancementTask({
             mode: activeMode,
             prompt: normalizedPrompt,
             contextAttachments: submission.contextAttachments,
           }),
-          {
-            conversationContext: createConversationContextFromSession(
-              sessionSnapshot,
-              runtime.userMemorySettings.globalEnabled,
-              uiControlAvailability,
-              aiContextMessageLimit,
-              runtime.runtimeSnapshot?.workspaceMemoryEnabled ??
-                runtime.userMemorySettings.workspaceDefaultEnabled !== false,
-            ),
-            mode: "ask",
-            ...(imagePaths.length > 0 ? { imagePaths } : {}),
-            sessionId: sessionSnapshot.id,
-            taskId,
-            operationKind: "prompt-enhancement",
+          previousAttempt: queuedMessage?.promptEnhancementAttempt,
+          signal: pending.abortController.signal,
+          getSettings: () => retrySettingsRef.current,
+          assertActive: () => {
+            const currentSession = state.getSessionById(pending.sessionId);
+            const currentQueuedMessage = queuedMessage
+              ? shellStateRef.current.queuedSessionMessages.find(
+                  (message) => message.id === queuedMessage.id,
+                )
+              : undefined;
+            if (
+              ignoredDesktopTaskIdsRef.current.has(pending.taskId) ||
+              !isPromptEnhancementCurrent({
+                session: currentSession,
+                taskId: pending.taskId,
+                targetMessageId: pending.targetMessageId,
+                queuedMessage,
+                currentQueuedMessage,
+              })
+            ) {
+              throw new PromptEnhancementCancellationError(pending.taskId);
+            }
           },
-        );
-
-        if (ignoredDesktopTaskIdsRef.current.has(taskId)) {
-          throw new PromptEnhancementCancellationError(taskId);
-        }
-
-        const responseText =
-          taskRun.execution.response?.markdown ?? taskRun.execution.summary;
-        const enhancedPrompt = extractEnhancedPrompt(responseText);
-
-        if (!enhancedPrompt) {
-          throw new Error(
-            "Prompt enhancement did not return an enhanced prompt.",
-          );
-        }
-
-        if (
-          taskRun.execution.status !== "executed" &&
-          taskRun.execution.status !== "planned"
-        ) {
-          throw new Error(
-            taskRun.execution.reason ?? taskRun.execution.summary,
-          );
-        }
+          persist: async (attempt) => {
+            const previousTaskId = pending.taskId;
+            const nextTaskId = getExecutionAttemptTaskId(attempt.execution);
+            state.applyShellState((current) =>
+              updatePromptEnhancementAttempt(current, {
+                sessionId: pending.sessionId,
+                taskId: previousTaskId,
+                attempt,
+                queuedMessage,
+              }),
+            );
+            if (nextTaskId !== previousTaskId) {
+              activeDesktopTasksRef.current.delete(previousTaskId);
+              activePromptEnhancementInputsRef.current.delete(previousTaskId);
+              desktopTaskProgressRoutesRef.current.delete(previousTaskId);
+              activeDesktopTasksRef.current.set(nextTaskId, pending.sessionId);
+              activePromptEnhancementInputsRef.current.set(
+                nextTaskId,
+                pending.prompt,
+              );
+              desktopTaskProgressRoutesRef.current.set(nextTaskId, {});
+              pending.taskId = nextTaskId;
+              setPromptEnhancementPendingTasks((tasks) =>
+                tasks.map((entry) =>
+                  entry.taskId === previousTaskId || entry === pending
+                    ? { ...pending }
+                    : entry,
+                ),
+              );
+            }
+            await state.flushPersistence();
+          },
+          run: (task, attemptTaskId) =>
+            runInternalDesktopTask(sessionSnapshot.workspace, task, {
+              conversationContext: createConversationContextFromSession(
+                sessionSnapshot,
+                runtime.userMemorySettings.globalEnabled,
+                uiControlAvailability,
+                aiContextMessageLimit,
+                runtime.runtimeSnapshot?.workspaceMemoryEnabled ??
+                  runtime.userMemorySettings.workspaceDefaultEnabled !== false,
+              ),
+              mode: "ask",
+              ...(imagePaths.length > 0 ? { imagePaths } : {}),
+              sessionId: sessionSnapshot.id,
+              taskId: attemptTaskId,
+              operationKind: "prompt-enhancement",
+            }),
+        });
 
         setPromptEnhancementStatus(null);
 
-        return { task: enhancedPrompt, taskId };
+        return { task: enhancedPrompt, taskId: pending.taskId };
       } catch (error) {
         const message = getPromptEnhancementErrorMessage(error);
         const wasCancelled = isPromptEnhancementCancellation(
           error,
-          taskId,
+          pending.taskId,
           ignoredDesktopTaskIdsRef.current,
         );
 
@@ -5268,13 +5345,16 @@ export const useChatSessionController = (
         );
         throw error instanceof Error ? error : new Error(message);
       } finally {
-        activeDesktopTasksRef.current.delete(taskId);
-        activePromptEnhancementInputsRef.current.delete(taskId);
-        desktopTaskProgressRoutesRef.current.delete(taskId);
-        ignoredDesktopTaskIdsRef.current.delete(taskId);
+        activeDesktopTasksRef.current.delete(pending.taskId);
+        activePromptEnhancementInputsRef.current.delete(pending.taskId);
+        desktopTaskProgressRoutesRef.current.delete(pending.taskId);
+        ignoredDesktopTaskIdsRef.current.delete(pending.taskId);
+        promptEnhancementAbortControllersRef.current.delete(
+          pending.abortController,
+        );
         removePromptEnhancementSessionPlaceholder(pending);
         setPromptEnhancementPendingTasks((current) =>
-          current.filter((entry) => entry.taskId !== taskId),
+          current.filter((entry) => entry.taskId !== pending.taskId),
         );
       }
     },
@@ -5289,6 +5369,9 @@ export const useChatSessionController = (
       restorePromptEnhancementComposer,
       runtime.userMemorySettings.globalEnabled,
       showPromptEnhancementSessionPlaceholder,
+      state.flushPersistence,
+      state.getSessionById,
+      state.applyShellState,
       uiControlAvailability,
     ],
   );
@@ -5496,8 +5579,9 @@ export const useChatSessionController = (
           }
 
           if (
+            !activePromptEnhancementInputsRef.current.has(taskId) &&
             activeDesktopTasksRef.current.get(taskId) ===
-            blockedMessage.sessionId
+              blockedMessage.sessionId
           ) {
             activeDesktopTasksRef.current.delete(taskId);
           }
@@ -5718,6 +5802,7 @@ export const useChatSessionController = (
                   },
                   queuedMessageAtDispatch.task,
                   "queued-message",
+                  queuedMessageAtDispatch,
                 );
                 enhancedPrompt = enhancement.task;
                 promptEnhancementTaskId = enhancement.taskId;
@@ -6912,6 +6997,9 @@ export const useChatSessionController = (
     onSetInterview: handleInterviewEnabledChange,
     onCancelPromptEnhancement: (taskId: string) => {
       ignoredDesktopTaskIdsRef.current.add(taskId);
+      promptEnhancementPendingTasks
+        .find((pending) => pending.taskId === taskId)
+        ?.abortController.abort();
       void cancelDesktopTask(taskId).catch((error) => {
         console.error("Failed to cancel prompt enhancement", error);
       });

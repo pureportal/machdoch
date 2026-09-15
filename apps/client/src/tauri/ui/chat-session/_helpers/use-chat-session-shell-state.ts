@@ -44,6 +44,7 @@ import {
   loadRecentDesktopTaskResults,
 } from "../../runtime";
 import { reconcileRecoveredTaskResults } from "./recovered-task-result";
+import { isQueuedPromptEnhancementInputCurrent } from "./queued-message-lifecycle";
 import {
   type SessionScopeFilter,
   type SessionStatusFilterSelection,
@@ -750,6 +751,25 @@ const mergeMessageVersionForPersistence = (
   baseMessage: ChatSessionMessage | undefined,
   latestMessage: ChatSessionMessage,
 ): ChatSessionMessage => {
+  const localEnhancement = localMessage.promptEnhancementAttempt;
+  const latestEnhancement = latestMessage.promptEnhancementAttempt;
+  if (
+    localEnhancement &&
+    latestEnhancement &&
+    localEnhancement.execution.rootTaskId ===
+      latestEnhancement.execution.rootTaskId
+  ) {
+    const retryDifference =
+      localEnhancement.execution.retryNumber -
+      latestEnhancement.execution.retryNumber;
+    const timestampDifference =
+      localEnhancement.updatedAt - latestEnhancement.updatedAt;
+    if (retryDifference !== 0 || timestampDifference !== 0) {
+      return (retryDifference || timestampDifference) > 0
+        ? localMessage
+        : latestMessage;
+    }
+  }
   const localChanged =
     !baseMessage || !areShellFragmentsEqual(localMessage, baseMessage);
   const latestChanged =
@@ -1855,6 +1875,18 @@ const mergeQueuedMessageVersionForPersistence = (
     mergedMessage.failureMessage = statusMessage.failureMessage;
   }
 
+  delete mergedMessage.promptEnhancementAttempt;
+  const enhancementAttempt = [localMessage, latestMessage]
+    .filter((message) =>
+      isQueuedPromptEnhancementInputCurrent(mergedMessage, message),
+    )
+    .map((message) => message.promptEnhancementAttempt)
+    .filter((attempt) => attempt !== undefined)
+    .sort((left, right) => right.updatedAt - left.updatedAt)[0];
+  if (mergedMessage.promptEnhancementRequest && enhancementAttempt) {
+    mergedMessage.promptEnhancementAttempt = enhancementAttempt;
+  }
+
   return mergedMessage;
 };
 
@@ -1888,6 +1920,7 @@ const wasQueuedMessageSubmittedInSessions = (
   return session.messages.some((entry) => {
     return (
       entry.role === "user" &&
+      !isTransientChatOperationMessage(entry) &&
       (entry.createdAt ?? 0) >= message.createdAt &&
       submittedContent.has(entry.content.trim())
     );
