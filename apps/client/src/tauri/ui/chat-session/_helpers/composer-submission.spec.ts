@@ -2,8 +2,10 @@ import { createSession } from "../../chat-session.model";
 import {
   createComposerClearGuard,
   createComposerSubmissionSessionSnapshot,
+  getSessionMessageRunningAction,
   isComposerClearGuardCurrent,
 } from "./composer-submission";
+import { shouldDeferPromptEnhancementUntilQueuedDispatch } from "./prompt-enhancement";
 
 const createDraftSession = (draft: string, draftUpdatedAt: number) => ({
   ...createSession({
@@ -67,4 +69,88 @@ describe("composer submission snapshots", () => {
 
     expect(isComposerClearGuardCurrent(changedSession, guard)).toBe(false);
   });
+});
+
+describe("session message routing", () => {
+  const runningSession = createSession({
+    id: "session-1",
+    messages: [{ id: "task-1", role: "user", content: "First request" }],
+  });
+  const completedSession = createSession({
+    ...runningSession,
+    messages: [
+      ...runningSession.messages,
+      {
+        id: "task-1-result",
+        taskId: "task-1",
+        role: "agent",
+        content: "Done",
+        outcome: { status: "succeeded" },
+      },
+    ],
+  });
+
+  it.each(["queue", "steer", "stop-and-send"] as const)(
+    "queues during post-agent processing with the %s preference",
+    (runningAction) => {
+      expect(
+        getSessionMessageRunningAction({
+          session: completedSession,
+          activeTaskId: null,
+          unsettledTaskId: "task-1",
+          runningAction,
+        }),
+      ).toBe("queue");
+    },
+  );
+
+  it.each(["queue", "steer", "stop-and-send"] as const)(
+    "preserves the %s action while the agent is running",
+    (runningAction) => {
+      for (const [session, activeTaskId] of [
+        [runningSession, "task-1"],
+        [runningSession, null],
+        [completedSession, "task-1"],
+      ] as const) {
+        expect(
+          getSessionMessageRunningAction({
+            session,
+            activeTaskId,
+            unsettledTaskId: "task-1",
+            runningAction,
+          }),
+        ).toBe(runningAction);
+      }
+    },
+  );
+
+  it.each(["simple", "web-search"] as const)(
+    "defers %s enhancement until post-agent processing settles",
+    (mode) => {
+      const runningAction = getSessionMessageRunningAction({
+        session: completedSession,
+        activeTaskId: null,
+        unsettledTaskId: "task-1",
+        runningAction: "steer",
+      });
+
+      expect(
+        shouldDeferPromptEnhancementUntilQueuedDispatch(mode, runningAction),
+      ).toBe(true);
+    },
+  );
+
+  it.each([createSession({ id: "empty" }), completedSession])(
+    "sends directly when the session is settled",
+    (session) => {
+      expect(
+        getSessionMessageRunningAction({
+          session,
+          activeTaskId: null,
+          unsettledTaskId: null,
+          runningAction: "queue",
+        }),
+      ).toBeNull();
+    },
+  );
 });

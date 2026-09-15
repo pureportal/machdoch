@@ -139,6 +139,7 @@ import {
 import {
   createComposerClearGuard,
   createComposerSubmissionSessionSnapshot,
+  getSessionMessageRunningAction,
   isComposerClearGuardCurrent,
   type ComposerClearGuard,
 } from "./composer-submission";
@@ -5423,7 +5424,8 @@ export const useChatSessionController = (
       const blockedByTaskId =
         input?.blockedByTaskId ??
         (targetSession ? getLatestRunningTaskId(targetSession) : null) ??
-        getActiveDesktopTaskIdForSession(sessionId);
+        getActiveDesktopTaskIdForSession(sessionId) ??
+        getUnsettledDesktopTaskIdForSession(sessionId);
       const hasUnsupportedImage = Boolean(
         targetSession &&
         getImageAttachmentPaths(contextAttachments).length > 0 &&
@@ -5489,6 +5491,7 @@ export const useChatSessionController = (
     [
       clearSessionComposerInput,
       getActiveDesktopTaskIdForSession,
+      getUnsettledDesktopTaskIdForSession,
       state.activeSession,
       updateQueuedSessionMessages,
     ],
@@ -8018,10 +8021,12 @@ export const useChatSessionController = (
           sessionSnapshot: session,
           task: prompt,
           contextAttachments: [],
-          runningAction:
-            getSessionOverviewStatus(session) === "running" || activeTaskId
-              ? "queue"
-              : null,
+          runningAction: getSessionMessageRunningAction({
+            session,
+            activeTaskId,
+            unsettledTaskId: getUnsettledDesktopTaskIdForSession(session.id),
+            runningAction: "queue",
+          }),
           composerClearGuard: createComposerClearGuard(session),
           messageSettings: createSessionMessageSettings(
             session,
@@ -8037,6 +8042,7 @@ export const useChatSessionController = (
     },
     [
       getActiveDesktopTaskIdForSession,
+      getUnsettledDesktopTaskIdForSession,
       state.getSessionById,
       submitResolvedChatInputNeededSubmission,
     ],
@@ -8153,15 +8159,20 @@ export const useChatSessionController = (
       ),
       promptEnhancementMode: selectedPromptEnhancementMode,
       interviewEnabled: currentEdit?.interviewEnabled ?? chatInterviewEnabled,
-      runningAction:
-        !currentEdit &&
-        (getSessionOverviewStatus(sessionSnapshot) === "running" ||
-          Boolean(activeComposerTaskId))
-          ? activeSessionPromptEnhancementBusy ||
-            Boolean(activePromptEnhancementInput)
-            ? "queue"
-            : runningTaskMessageAction
-          : null,
+      runningAction: currentEdit
+        ? null
+        : getSessionMessageRunningAction({
+            session: sessionSnapshot,
+            activeTaskId: activeComposerTaskId,
+            unsettledTaskId: getUnsettledDesktopTaskIdForSession(
+              sessionSnapshot.id,
+            ),
+            runningAction:
+              activeSessionPromptEnhancementBusy ||
+              Boolean(activePromptEnhancementInput)
+                ? "queue"
+                : runningTaskMessageAction,
+          }),
       ...(currentEdit
         ? {
             conversationCutoffMessageId: currentEdit.messageId,

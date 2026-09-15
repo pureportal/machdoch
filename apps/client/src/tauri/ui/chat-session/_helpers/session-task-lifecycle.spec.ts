@@ -3,6 +3,7 @@ import { DEFAULT_USER_AGENT_LIMITS_SETTINGS } from "../../../../core/runtime-con
 import {
   createInitialShellState,
   createSession,
+  getSessionOverviewStatus,
   getSessionTaskOutcome,
   type ChatSessionQueuedMessage,
   type ChatSessionRecord,
@@ -16,6 +17,7 @@ import {
   type AutomaticChatWorkOptions,
 } from "./use-automatic-chat-work";
 import { hasPendingChatWork } from "../../app-shell/shutdown-when-idle";
+import { getSessionMessageRunningAction } from "./composer-submission";
 
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
@@ -141,10 +143,14 @@ const setup = () => {
   };
   const enqueue = (task: string): void => {
     const timestamp = Date.now();
+    const blockedByTaskId =
+      [...active.current.keys()].at(-1) ??
+      options.getUnsettledTaskId(session.id);
     shell.queuedSessionMessages.push({
       id: crypto.randomUUID(),
       sessionId: session.id,
       task,
+      ...(blockedByTaskId ? { blockedByTaskId } : {}),
       contextAttachments: [],
       status: "queued",
       createdAt: timestamp,
@@ -158,21 +164,36 @@ const setup = () => {
       statusUpdatedAt: timestamp,
     } satisfies ChatSessionQueuedMessage);
   };
+  const submit = (task: string) =>
+    submission.submitTaskToSession({
+      sessionSnapshot: state.activeSession,
+      task,
+      contextAttachments: [],
+      clearDraft: false,
+      activateSession: false,
+    });
   return {
     state,
     options,
     submission,
+    active,
     unsettled,
     progressRoutes,
     enqueue,
-    submit: (task: string) =>
-      submission.submitTaskToSession({
-        sessionSnapshot: state.activeSession,
-        task,
-        contextAttachments: [],
-        clearDraft: false,
-        activateSession: false,
-      }),
+    submit,
+    send: (task: string) => {
+      const action = getSessionMessageRunningAction({
+        session: state.activeSession,
+        activeTaskId: [...active.current.keys()].at(-1) ?? null,
+        unsettledTaskId: options.getUnsettledTaskId(session.id),
+        runningAction: "queue",
+      });
+      if (action === "queue") {
+        enqueue(task);
+        return "queued";
+      }
+      return submit(task) ? "submitted" : "rejected";
+    },
   };
 };
 
@@ -187,6 +208,123 @@ afterEach(() => {
 });
 
 describe("chat execution lifecycle", () => {
+  it("queues messages during Git diff processing and drains them once after settlement", async () => {
+    vi.useFakeTimers();
+    const work = setup();
+    const first = deferred<TaskResult>();
+    const second = deferred<TaskResult>();
+    vi.mocked(runDesktopTask)
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+      .mockResolvedValue(success("Done"));
+
+    expect(work.send("First")).toBe("submitted");
+    await vi.advanceTimersByTimeAsync(0);
+    const taskId = [...work.progressRoutes.current.keys()][0];
+    work.progressRoutes.current.get(taskId)?.onProgress?.(
+      {
+        task: "First",
+        mode: "machdoch",
+        state: "completed",
+        message: "Done",
+        executedTools: [],
+        outputSections: [],
+        cancellable: false,
+      },
+      Date.now(),
+    );
+    await vi.advanceTimersByTimeAsync(1600);
+
+    expect(getSessionOverviewStatus(work.state.activeSession)).toBe("done");
+    expect(work.active.current.size).toBe(0);
+    expect(work.unsettled.current.has(taskId)).toBe(true);
+    expect(work.send("During diff")).toBe("queued");
+    await processAutomaticChatWork(() => work.options);
+    expect(runDesktopTask).toHaveBeenCalledTimes(1);
+    expect(work.state.shellState.queuedSessionMessages[0]).toMatchObject({
+      task: "During diff",
+      blockedByTaskId: taskId,
+      status: "queued",
+    });
+
+    first.resolve(success("First"));
+    expect(work.send("At settlement")).toBe("queued");
+    const queueIds = work.state.shellState.queuedSessionMessages.map(
+      (message) => message.id,
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.all([
+      processAutomaticChatWork(() => work.options),
+      processAutomaticChatWork(() => work.options),
+    ]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vi.mocked(runDesktopTask).mock.calls.map((call) => call[1])).toEqual(
+      ["First", "During diff"],
+    );
+    expect(
+      work.state.shellState.queuedSessionMessages.map((item) => item.id),
+    ).toEqual([queueIds[1]]);
+
+    expect(work.send("While running")).toBe("queued");
+    second.resolve(success("During diff"));
+    await vi.advanceTimersByTimeAsync(0);
+    for (let index = 0; index < 3; index += 1) {
+      await processAutomaticChatWork(() => work.options);
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(work.send("After idle")).toBe("submitted");
+    await vi.advanceTimersByTimeAsync(0);
+    const expectedTasks = [
+      "First",
+      "During diff",
+      "At settlement",
+      "While running",
+      "After idle",
+    ];
+    expect(vi.mocked(runDesktopTask).mock.calls.map((call) => call[1])).toEqual(
+      expectedTasks,
+    );
+    expect(
+      work.state.activeSession.messages
+        .filter((message) => message.role === "user")
+        .map((message) => message.content),
+    ).toEqual(expectedTasks);
+    expect(work.state.shellState.queuedSessionMessages).toEqual([]);
+    expect(Object.keys(work.state.shellState.queuedMessageTombstones)).toEqual(
+      expect.arrayContaining(queueIds),
+    );
+    expect(work.unsettled.current.size).toBe(0);
+  });
+
+  it("retains queued messages when a new send starts as the session becomes idle", async () => {
+    const work = setup();
+    const first = deferred<TaskResult>();
+    const immediate = deferred<TaskResult>();
+    vi.mocked(runDesktopTask)
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(immediate.promise)
+      .mockResolvedValue(success("Queued"));
+
+    expect(work.send("First")).toBe("submitted");
+    expect(work.send("Queued")).toBe("queued");
+    first.resolve(success("First"));
+    await vi.waitFor(() => expect(work.unsettled.current.size).toBe(0));
+    expect(work.send("At idle")).toBe("submitted");
+    await processAutomaticChatWork(() => work.options);
+    expect(work.state.shellState.queuedSessionMessages).toHaveLength(1);
+    immediate.resolve(success("At idle"));
+    await vi.waitFor(() => expect(work.unsettled.current.size).toBe(0));
+    await Promise.all([
+      processAutomaticChatWork(() => work.options),
+      processAutomaticChatWork(() => work.options),
+    ]);
+    await vi.waitFor(() => expect(work.unsettled.current.size).toBe(0));
+    expect(vi.mocked(runDesktopTask).mock.calls.map((call) => call[1])).toEqual(
+      ["First", "At idle", "Queued"],
+    );
+    expect(work.state.shellState.queuedSessionMessages).toEqual([]);
+  });
+
   it("waits for the native promise after terminal progress and preserves a late cancellation", async () => {
     vi.useFakeTimers();
     const work = setup();
