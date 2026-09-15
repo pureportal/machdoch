@@ -1,3 +1,5 @@
+import { MediaGenerationEstimate } from "./media-generation-estimate";
+import { generationJobToRunDetail } from "../media-generation-run";
 import { LoaderCircle } from "lucide-react";
 import type { JSX } from "react";
 import type { MediaGenerationQueueJob } from "../media-generation-queue";
@@ -67,6 +69,9 @@ export const MediaGenerationJobs = ({
                 </>
               ) : null}
             </span>
+            {active ? (
+              <MediaGenerationEstimate run={generationJobToRunDetail(job)} />
+            ) : null}
             {active ? (
               <span
                 role="progressbar"
