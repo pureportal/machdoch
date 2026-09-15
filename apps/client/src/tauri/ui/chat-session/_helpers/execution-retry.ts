@@ -7,6 +7,7 @@ import {
 } from "../../chat-session.model";
 
 import type { ExecutionAttempt } from "./execution-attempt";
+import { createExecutionRetry } from "./execution-retry-policy";
 export type { ExecutionAttempt } from "./execution-attempt";
 
 export interface PendingExecutionRetry {
@@ -30,10 +31,7 @@ export const getPendingExecutionRetry = (
   if (!source?.executionAttempt) return null;
   const previousTaskId = source.taskId ?? source.id;
   const outcome = getSessionTaskOutcome(session, previousTaskId);
-  if (!outcome || !["failed", "crashed", "timed-out"].includes(outcome.status))
-    return null;
-  const retryNumber = source.executionAttempt.retryNumber + 1;
-  if (retryNumber > settings.retryAttempts) return null;
+  if (!outcome) return null;
   const terminal = [...session.messages]
     .reverse()
     .find(
@@ -45,27 +43,22 @@ export const getPendingExecutionRetry = (
     );
   const task = source.executionAttempt.task;
   if (!task) return null;
-  const rootTaskId = source.executionAttempt.rootTaskId;
   const failureContext = (
     outcome.reason ||
     terminal?.content ||
     `The previous execution ${outcome.status}.`
   ).slice(0, 8_000);
-  return {
-    source,
-    attempt: {
-      rootTaskId,
-      task,
-      retryNumber,
-      retryLimit: settings.retryAttempts,
-      previousTaskId,
-      failureContext,
+  const retry = createExecutionRetry(
+    source.executionAttempt,
+    {
+      taskId: previousTaskId,
+      status: outcome.status,
+      context: failureContext,
+      failedAt: terminal?.createdAt ?? source.createdAt ?? 0,
     },
-    taskId: `${rootTaskId}-retry-${retryNumber}`,
-    readyAt:
-      (terminal?.createdAt ?? source.createdAt ?? 0) +
-      Math.min(30_000, 2_000 * 2 ** (retryNumber - 1)),
-  };
+    settings,
+  );
+  return retry ? { source, ...retry } : null;
 };
 
 export const createExecutionRetryPrompt = (attempt: ExecutionAttempt): string =>

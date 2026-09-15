@@ -51,6 +51,10 @@ import {
   normalizeExecutionAttempt,
   type ExecutionAttempt,
 } from "./chat-session/_helpers/execution-attempt";
+import {
+  normalizePromptEnhancementAttempt,
+  type PromptEnhancementAttempt,
+} from "./chat-session/_helpers/prompt-enhancement-attempt";
 
 export type ChatSessionMessageSource =
   | { kind: "preview"; preview: TaskRunPreview }
@@ -165,6 +169,7 @@ export interface ChatSessionMessageSettings {
 
 export interface ChatSessionMessage {
   executionAttempt?: ExecutionAttempt;
+  promptEnhancementAttempt?: PromptEnhancementAttempt;
   id: string;
   taskId?: string;
   role: "user" | "agent";
@@ -331,6 +336,7 @@ export interface ChatSessionQueuedMessage {
   promptHistoryContent?: string;
   promptEnhancement?: ChatSessionMessagePromptEnhancement;
   promptEnhancementRequest?: ChatSessionQueuedPromptEnhancementRequest;
+  promptEnhancementAttempt?: PromptEnhancementAttempt;
   blockedByTaskId?: string;
   contentUpdatedAt: number;
   attachmentsUpdatedAt: number;
@@ -2612,6 +2618,10 @@ const normalizeSessionMessages = (
     );
     const outcome = normalizeMessageOutcome(entry.outcome);
     const executionAttempt = normalizeExecutionAttempt(entry.executionAttempt);
+    const promptEnhancementAttempt =
+      lifecycle?.owner === "prompt-enhancement"
+        ? normalizePromptEnhancementAttempt(entry.promptEnhancementAttempt)
+        : undefined;
     const preferredMessageId = normalizeString(
       entry.id,
       `${sessionId}-message-${index}`,
@@ -2639,6 +2649,7 @@ const normalizeSessionMessages = (
       ...(lifecycle ? { lifecycle } : {}),
       ...(outcome ? { outcome } : {}),
       ...(executionAttempt ? { executionAttempt } : {}),
+      ...(promptEnhancementAttempt ? { promptEnhancementAttempt } : {}),
     };
 
     messages.push(message);
@@ -2830,6 +2841,9 @@ const normalizeQueuedSessionMessages = (
     const promptEnhancementRequest = normalizeQueuedPromptEnhancementRequest(
       entry.promptEnhancementRequest,
     );
+    const promptEnhancementAttempt = promptEnhancementRequest
+      ? normalizePromptEnhancementAttempt(entry.promptEnhancementAttempt)
+      : undefined;
     const blockedByTaskId = normalizeString(entry.blockedByTaskId).trim();
     const createdAt = normalizeFiniteNumber(entry.createdAt, index);
     const updatedAt = Math.max(
@@ -2890,6 +2904,7 @@ const normalizeQueuedSessionMessages = (
       ...(promptHistoryContent ? { promptHistoryContent } : {}),
       ...(promptEnhancement ? { promptEnhancement } : {}),
       ...(promptEnhancementRequest ? { promptEnhancementRequest } : {}),
+      ...(promptEnhancementAttempt ? { promptEnhancementAttempt } : {}),
       ...(blockedByTaskId ? { blockedByTaskId } : {}),
       contentUpdatedAt,
       attachmentsUpdatedAt,
