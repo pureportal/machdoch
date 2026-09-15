@@ -1,5 +1,6 @@
 import { MediaAssetBrowser } from "./media-asset-browser";
 import { MediaNodeAddonField } from "./media-node-addon-field";
+import { MediaGenerationEstimate } from "./media-generation-estimate";
 import { mediaAssetLabel } from "../../../../core/media/asset-label.js";
 import { countMediaRunOutputs } from "../../../../core/media/run-library.js";
 import { MediaWorkflowModelField } from "./media-workflow-model-field";
@@ -5775,6 +5776,8 @@ export const MediaFlowView = ({
                 </p>
               </div>
               <p className="mt-1 text-[9px] leading-4 text-slate-500">
+                <MediaGenerationEstimate run={runOverlay} />
+                {" · "}
                 {Math.round(runOverlay.progress * 100)}% ·{" "}
                 {countMediaRunOutputs(runOverlay)} output
                 {countMediaRunOutputs(runOverlay) === 1 ? "" : "s"}

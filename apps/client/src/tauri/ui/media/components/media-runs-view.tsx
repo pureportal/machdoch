@@ -1,3 +1,4 @@
+import { MediaGenerationEstimate } from "./media-generation-estimate";
 import {
   Ban,
   CircleX,
@@ -389,7 +390,12 @@ const RunInspector = ({
 
       <div className="mt-5">
         <div className="flex items-center justify-between text-[11px]">
-          <span className="text-slate-400">{run.currentStep}</span>
+          <span className="text-slate-400">
+            {run.currentStep}
+            <span className="block mt-1">
+              <MediaGenerationEstimate run={run} />
+            </span>
+          </span>
           <span className="tabular-nums text-slate-500">
             {Math.round(run.progress * 100)}%
           </span>

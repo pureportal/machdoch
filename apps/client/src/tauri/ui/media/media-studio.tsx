@@ -1,4 +1,5 @@
 import { assessRemoteEditExecution } from "./media-remote-edit-assessment";
+import { useMediaGenerationTiming } from "./use-media-generation-timing";
 import { basicImageReferenceLimit } from "./media-basic-image-options";
 import { getMediaReferenceConditioningCapabilities } from "../../../core/media/reference-conditioning.js";
 import { mediaImportQueue } from "./media-import-queue";
@@ -712,6 +713,12 @@ export const MediaStudio = ({
       }
     }
   }, [presentRunFailure]);
+
+  useMediaGenerationTiming(
+    runtimeRuns,
+    generationJobs,
+    runtimeStatus?.localDiffusers,
+  );
 
   const basicGenerationJobs = useMemo(
     () => generationJobs.filter((job) => job.recipe.mode === "basic"),
