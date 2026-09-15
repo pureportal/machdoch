@@ -134,7 +134,7 @@ const expectHighlightedMessage = (
   expect(scrollIntoView.mock.contexts.at(-1)).toBe(highlightedMessages[0]);
   expect(scrollIntoView).toHaveBeenLastCalledWith({
     behavior: "smooth",
-    block: "center",
+    block: "start",
     inline: "nearest",
   });
 };

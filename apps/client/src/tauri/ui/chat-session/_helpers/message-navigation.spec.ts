@@ -8,11 +8,20 @@ import {
 
 const getActiveMessageId = (
   messageBounds: ConversationMessageViewportBounds[],
-  viewportEdge: "start" | "end" | null = null,
+  isAtBottom = false,
 ): string | null =>
-  getVisibleConversationMessageId(messageBounds, 0, 120, viewportEdge);
+  getVisibleConversationMessageId(messageBounds, 0, 120, isAtBottom);
 
 describe("getVisibleConversationMessageId", () => {
+  it("keeps a short message at the top active before a long response", () => {
+    expect(
+      getActiveMessageId([
+        { id: "short-message", top: 0, bottom: 24 },
+        { id: "long-response", top: 40, bottom: 2_000 },
+      ]),
+    ).toBe("short-message");
+  });
+
   it("follows messages while scrolling upward from the last entry", () => {
     expect(
       getActiveMessageId(
@@ -21,7 +30,7 @@ describe("getVisibleConversationMessageId", () => {
           { id: "27", top: -100, bottom: 0 },
           { id: "28", top: 20, bottom: 120 },
         ],
-        "end",
+        true,
       ),
     ).toBe("28");
     expect(
@@ -62,7 +71,7 @@ describe("getVisibleConversationMessageId", () => {
           { id: "27", top: -100, bottom: 0 },
           { id: "28", top: 20, bottom: 120 },
         ],
-        "end",
+        true,
       ),
     ).toBe("28");
   });
@@ -73,8 +82,8 @@ describe("getVisibleConversationMessageId", () => {
       { id: "27", top: 100, bottom: 200 },
     ];
 
-    expect(getActiveMessageId(messageBounds, "start")).toBe("26");
-    expect(getActiveMessageId(messageBounds, "end")).toBe("27");
+    expect(getActiveMessageId(messageBounds)).toBe("26");
+    expect(getActiveMessageId(messageBounds, true)).toBe("27");
   });
 
   it("ignores messages outside the viewport", () => {

@@ -843,7 +843,7 @@ export const ConversationFeed = ({
 
     targetElement.scrollIntoView({
       behavior: reduceMotion ? "auto" : "smooth",
-      block: "center",
+      block: "start",
       inline: "nearest",
     });
     setNavigationScrollTargetId(null);
@@ -854,8 +854,15 @@ export const ConversationFeed = ({
     const scrollViewport = bottomElement?.closest<HTMLElement>(
       '[data-slot="scroll-area-viewport"]',
     );
+    const firstMessageElement = messageElementsRef.current
+      .values()
+      .next().value;
 
-    if (!scrollViewport || navigationMessageIds.length === 0) {
+    if (
+      !scrollViewport ||
+      !firstMessageElement ||
+      navigationMessageIds.length === 0
+    ) {
       return;
     }
 
@@ -865,6 +872,11 @@ export const ConversationFeed = ({
       animationFrameId = null;
 
       const viewportBounds = scrollViewport.getBoundingClientRect();
+      const viewportContentTop =
+        viewportBounds.top +
+        Number.parseFloat(
+          window.getComputedStyle(firstMessageElement).scrollMarginTop,
+        );
       const messageBounds = navigationMessageIds.flatMap((messageId) => {
         const element = messageElementsRef.current.get(messageId);
 
@@ -882,23 +894,15 @@ export const ConversationFeed = ({
       const scrollingUp =
         previousScrollTop !== null &&
         scrollViewport.scrollTop < previousScrollTop;
-      const scrollingDown =
-        previousScrollTop !== null &&
-        scrollViewport.scrollTop > previousScrollTop;
       previousScrollTop = scrollViewport.scrollTop;
-      const viewportEdge =
+      const isAtBottom =
         distanceToBottom <= MESSAGE_NAVIGATION_SCROLL_EDGE_EPSILON_PX &&
-        !scrollingUp
-          ? "end"
-          : scrollViewport.scrollTop <=
-                MESSAGE_NAVIGATION_SCROLL_EDGE_EPSILON_PX && !scrollingDown
-            ? "start"
-            : null;
+        !scrollingUp;
       const visibleMessageId = getVisibleConversationMessageId(
         messageBounds,
-        viewportBounds.top,
+        viewportContentTop,
         viewportBounds.bottom,
-        viewportEdge,
+        isAtBottom,
       );
 
       if (visibleMessageId) {

@@ -14,8 +14,6 @@ export interface ConversationMessageViewportBounds {
   top: number;
 }
 
-export type ConversationMessageViewportEdge = "start" | "end" | null;
-
 export const isNavigableConversationMessage = (
   message: ChatSessionMessage,
 ): boolean => {
@@ -86,7 +84,7 @@ export const getVisibleConversationMessageId = (
   messageBounds: readonly ConversationMessageViewportBounds[],
   viewportTop: number,
   viewportBottom: number,
-  viewportEdge: ConversationMessageViewportEdge = null,
+  isAtBottom = false,
 ): string | null => {
   const visibleMessageBounds = messageBounds.filter(
     (bounds) =>
@@ -99,31 +97,9 @@ export const getVisibleConversationMessageId = (
     return null;
   }
 
-  if (viewportEdge === "start") {
-    return visibleMessageBounds[0]?.id ?? null;
-  }
-
-  if (viewportEdge === "end") {
+  if (isAtBottom) {
     return visibleMessageBounds.at(-1)?.id ?? null;
   }
 
-  const viewportCenter = viewportTop + (viewportBottom - viewportTop) / 2;
-  let currentMessageId = visibleMessageBounds[0]?.id ?? null;
-  let currentDistance = Number.POSITIVE_INFINITY;
-
-  for (const bounds of visibleMessageBounds) {
-    const distance =
-      viewportCenter < bounds.top
-        ? bounds.top - viewportCenter
-        : viewportCenter > bounds.bottom
-          ? viewportCenter - bounds.bottom
-          : 0;
-
-    if (distance < currentDistance) {
-      currentMessageId = bounds.id;
-      currentDistance = distance;
-    }
-  }
-
-  return currentMessageId;
+  return visibleMessageBounds[0]?.id ?? null;
 };
