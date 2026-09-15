@@ -3,13 +3,10 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
-  Copy,
-  Download,
   History,
   Pencil,
   Play,
   RotateCcw,
-  Save,
   Square,
   User,
   Volume2,
@@ -28,7 +25,6 @@ import {
   type MouseEvent,
   type RefObject,
 } from "react";
-import { useCommandOverlay } from "../../commands/use-command-overlay";
 import { useOptionalRegisterCommands } from "../../commands/command-context";
 import {
   asPaletteCommands,
@@ -71,6 +67,15 @@ import { MessageAttachmentsList } from "./context-attachments";
 import { ExecutionInsightRow } from "./execution-insight-row";
 import { MarkdownContent } from "../../components/markdown-content";
 import { PromptEnhancementPending } from "./prompt-enhancement-pending";
+import {
+  copyMessageText,
+  createMessageMarkdownFileName,
+  saveMessageMarkdown,
+} from "../_helpers/message-export";
+import {
+  MessageContextMenu,
+  type MessageContextMenuTarget,
+} from "./message-context-menu";
 
 export interface ConversationFeedProps {
   visibleMessages: ChatSessionMessage[];
@@ -105,24 +110,10 @@ export interface ConversationFeedProps {
   };
 }
 
-const MESSAGE_CONTEXT_MENU_WIDTH = 196;
-const MESSAGE_CONTEXT_MENU_HEADER_HEIGHT = 44;
-const MESSAGE_CONTEXT_MENU_ITEM_HEIGHT = 32;
-const MESSAGE_CONTEXT_MENU_MARGIN = 8;
 const INITIAL_RENDERED_MESSAGE_LIMIT = 80;
 const RENDERED_MESSAGE_PAGE_SIZE = 80;
 const MESSAGE_NAVIGATION_HIGHLIGHT_DURATION_MS = 1_800;
 const MESSAGE_NAVIGATION_SCROLL_EDGE_EPSILON_PX = 8;
-
-interface MessageContextMenuState {
-  role: ChatSessionMessage["role"];
-  content: string;
-  fileName: string;
-  contextPackMessage: ChatSessionMessage | null;
-  hasMarkdownContent: boolean;
-  left: number;
-  top: number;
-}
 
 const getOriginalPromptContent = (
   visibleContent: string,
@@ -138,99 +129,6 @@ const getOriginalPromptContent = (
   }
 
   return normalizedOriginalContent;
-};
-
-const clampMenuCoordinate = (
-  coordinate: number,
-  menuSize: number,
-  viewportSize: number,
-): number => {
-  const maxCoordinate = Math.max(
-    MESSAGE_CONTEXT_MENU_MARGIN,
-    viewportSize - menuSize - MESSAGE_CONTEXT_MENU_MARGIN,
-  );
-
-  return Math.min(
-    Math.max(coordinate, MESSAGE_CONTEXT_MENU_MARGIN),
-    maxCoordinate,
-  );
-};
-
-const createMessageContextMenuPosition = (
-  event: MouseEvent<HTMLElement>,
-  menuHeight: number,
-): { left: number; top: number } => {
-  if (typeof window === "undefined") {
-    return {
-      left: event.clientX,
-      top: event.clientY,
-    };
-  }
-
-  return {
-    left: clampMenuCoordinate(
-      event.clientX,
-      MESSAGE_CONTEXT_MENU_WIDTH,
-      window.innerWidth,
-    ),
-    top: clampMenuCoordinate(event.clientY, menuHeight, window.innerHeight),
-  };
-};
-
-const getMessageContextMenuHeight = (itemCount: number): number =>
-  MESSAGE_CONTEXT_MENU_HEADER_HEIGHT +
-  itemCount * MESSAGE_CONTEXT_MENU_ITEM_HEIGHT;
-
-const sanitizeMessageFileNamePart = (value: string): string => {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64);
-};
-
-const createMessageMarkdownFileName = (message: ChatSessionMessage): string => {
-  const roleLabel = message.role === "agent" ? "assistant" : "user";
-  const createdAtLabel =
-    typeof message.createdAt === "number" && Number.isFinite(message.createdAt)
-      ? new Date(message.createdAt).toISOString().replace(/[:.]/g, "-")
-      : null;
-  const fallbackLabel = sanitizeMessageFileNamePart(message.id) || "message";
-
-  return `machdoch-${roleLabel}-message-${createdAtLabel ?? fallbackLabel}.md`;
-};
-
-const copyMarkdownToClipboard = async (content: string): Promise<void> => {
-  if (!navigator.clipboard?.writeText) {
-    throw new Error("Clipboard write access is unavailable.");
-  }
-
-  await navigator.clipboard.writeText(content);
-};
-
-const saveMarkdownDownload = (content: string, fileName: string): void => {
-  if (typeof document === "undefined") {
-    throw new Error("Document downloads are unavailable.");
-  }
-
-  const blob = new Blob([content], {
-    type: "text/markdown;charset=utf-8",
-  });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-
-  try {
-    anchor.href = url;
-    anchor.download = fileName;
-    anchor.rel = "noopener";
-    anchor.style.display = "none";
-    document.body.append(anchor);
-    anchor.click();
-  } finally {
-    anchor.remove();
-    URL.revokeObjectURL(url);
-  }
 };
 
 const getRetryableAgentMessageIds = (
@@ -769,13 +667,11 @@ export const ConversationFeed = ({
   voicePlayback,
 }: ConversationFeedProps): JSX.Element => {
   const [messageContextMenu, setMessageContextMenu] =
-    useState<MessageContextMenuState | null>(null);
-  useCommandOverlay({
-    open: messageContextMenu !== null,
-    id: "message-context-menu",
-    kind: "non-modal",
-    dismiss: () => setMessageContextMenu(null),
-  });
+    useState<MessageContextMenuTarget | null>(null);
+  const closeMessageContextMenu = useCallback(
+    () => setMessageContextMenu(null),
+    [],
+  );
   const [expandedOriginalPromptIds, setExpandedOriginalPromptIds] = useState<
     ReadonlySet<string>
   >(() => new Set());
@@ -1035,34 +931,6 @@ export const ConversationFeed = ({
     };
   }, [bottomRef, navigationMessageIds, renderedMessageLimit]);
 
-  useEffect(() => {
-    if (!messageContextMenu) {
-      return;
-    }
-
-    const closeMessageContextMenu = (): void => {
-      setMessageContextMenu(null);
-    };
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.defaultPrevented) return;
-      if (event.key === "Escape") {
-        closeMessageContextMenu();
-      }
-    };
-
-    document.addEventListener("pointerdown", closeMessageContextMenu);
-    document.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("resize", closeMessageContextMenu);
-    window.addEventListener("scroll", closeMessageContextMenu, true);
-
-    return () => {
-      document.removeEventListener("pointerdown", closeMessageContextMenu);
-      document.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("resize", closeMessageContextMenu);
-      window.removeEventListener("scroll", closeMessageContextMenu, true);
-    };
-  }, [messageContextMenu]);
-
   const openMessageContextMenu = useCallback(
     (
       event: MouseEvent<HTMLDivElement>,
@@ -1073,74 +941,22 @@ export const ConversationFeed = ({
       event.preventDefault();
       event.stopPropagation();
 
-      const hasMarkdownContent = content.length > 0;
-
-      if (!hasMarkdownContent && !canSaveAsContextPack) {
+      if (!content && !message.content && !canSaveAsContextPack) {
         setMessageContextMenu(null);
         return;
       }
 
-      const position = createMessageContextMenuPosition(
-        event,
-        getMessageContextMenuHeight(
-          (canSaveAsContextPack ? 1 : 0) + (hasMarkdownContent ? 2 : 0),
-        ),
-      );
-
       setMessageContextMenu({
-        role: message.role,
+        message,
         content,
-        fileName: createMessageMarkdownFileName(message),
-        contextPackMessage: canSaveAsContextPack ? message : null,
-        hasMarkdownContent,
-        ...position,
+        bubble: event.currentTarget,
+        canSaveAsContextPack,
+        left: event.clientX,
+        top: event.clientY,
       });
     },
     [],
   );
-
-  const copyMessageMarkdown = useCallback(async (): Promise<void> => {
-    const activeMenu = messageContextMenu;
-
-    if (!activeMenu) {
-      return;
-    }
-
-    setMessageContextMenu(null);
-
-    try {
-      await copyMarkdownToClipboard(activeMenu.content);
-    } catch (error) {
-      console.error("Failed to copy message Markdown:", error);
-    }
-  }, [messageContextMenu]);
-
-  const saveMessageMarkdown = useCallback((): void => {
-    const activeMenu = messageContextMenu;
-
-    if (!activeMenu) {
-      return;
-    }
-
-    setMessageContextMenu(null);
-
-    try {
-      saveMarkdownDownload(activeMenu.content, activeMenu.fileName);
-    } catch (error) {
-      console.error("Failed to save message Markdown:", error);
-    }
-  }, [messageContextMenu]);
-
-  const saveMessageAsContextPack = useCallback((): void => {
-    const activeMenu = messageContextMenu;
-
-    if (!activeMenu?.contextPackMessage) {
-      return;
-    }
-
-    setMessageContextMenu(null);
-    onSaveMessageAsContextPack?.(activeMenu.contextPackMessage);
-  }, [messageContextMenu, onSaveMessageAsContextPack]);
 
   const conversationCommandStateRef = useRef({
     visibleMessages,
@@ -1476,7 +1292,7 @@ export const ConversationFeed = ({
                 id: message.id,
                 title: getMessageCommandTitle(message, index),
                 execute: () =>
-                  copyMarkdownToClipboard(getRenderedMessageContent(message)),
+                  copyMessageText(getRenderedMessageContent(message)),
               })),
             },
           ],
@@ -1502,7 +1318,7 @@ export const ConversationFeed = ({
                 id: message.id,
                 title: getMessageCommandTitle(message, index),
                 execute: () =>
-                  saveMarkdownDownload(
+                  saveMessageMarkdown(
                     getRenderedMessageContent(message),
                     createMessageMarkdownFileName(message),
                   ),
@@ -1865,62 +1681,12 @@ export const ConversationFeed = ({
         </div>
       ) : null}
       {messageContextMenu ? (
-        <div
-          role="menu"
-          aria-label="Message actions"
-          className="app-message-context-menu fixed z-[140] w-[196px] rounded-lg border border-slate-700 bg-slate-950 p-1.5 text-slate-100 shadow-2xl shadow-black/45"
-          style={{
-            left: messageContextMenu.left,
-            top: messageContextMenu.top,
-          }}
-          onPointerDown={(event) => event.stopPropagation()}
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={(event) => event.stopPropagation()}
-          onContextMenu={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-        >
-          <div className="min-w-0 px-2 pb-1 pt-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            <span className="block truncate">
-              {messageContextMenu.role === "agent" ? "Assistant" : "User"}{" "}
-              message
-            </span>
-          </div>
-          {messageContextMenu.contextPackMessage ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={saveMessageAsContextPack}
-              className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium text-slate-200 outline-none hover:bg-slate-800 focus:bg-slate-800"
-            >
-              <Save className="h-3.5 w-3.5 shrink-0 text-sky-300" />
-              <span className="min-w-0 flex-1 truncate">Save as pack</span>
-            </button>
-          ) : null}
-          {messageContextMenu.hasMarkdownContent ? (
-            <>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => void copyMessageMarkdown()}
-                className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium text-slate-200 outline-none hover:bg-slate-800 focus:bg-slate-800"
-              >
-                <Copy className="h-3.5 w-3.5 shrink-0 text-sky-300" />
-                <span className="min-w-0 flex-1 truncate">Copy Markdown</span>
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={saveMessageMarkdown}
-                className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium text-slate-200 outline-none hover:bg-slate-800 focus:bg-slate-800"
-              >
-                <Download className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
-                <span className="min-w-0 flex-1 truncate">Save Message</span>
-              </button>
-            </>
-          ) : null}
-        </div>
+        <MessageContextMenu
+          key={`${messageContextMenu.message.id}:${messageContextMenu.left}:${messageContextMenu.top}`}
+          target={messageContextMenu}
+          onClose={closeMessageContextMenu}
+          onSaveAsContextPack={onSaveMessageAsContextPack}
+        />
       ) : null}
       <div ref={bottomRef} className="h-2 shrink-0" />
     </div>
