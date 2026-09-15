@@ -25,6 +25,7 @@ pub(crate) struct ExecuteMediaWorkflowRequest {
 
 #[derive(Clone)]
 enum WorkflowValue {
+    ControlNet(controlnet::ControlNetConditioning),
     Text(String),
     Image(String),
     Video(String),
@@ -279,9 +280,86 @@ fn execute_started(
                         )?))
                     }
                 }
-                "operation.segment" | "operation.prepare-mask" | "operation.upscale" => {
+                "operation.controlnet" => {
+                    let mut control = controlnet::ControlNetConditioning {
+                        image_asset_id: image()?,
+                        kind: config_text(node, "kind").to_string(),
+                        strength: config_number(node, "strength", 1.0),
+                        start: config_number(node, "start", 0.0),
+                        end: config_number(node, "end", 1.0),
+                    };
+                    control.validate()?;
+                    output_port = "controlnet";
+                    Some(WorkflowValue::ControlNet(control))
+                }
+                "operation.mask-composite" => {
+                    let WorkflowValue::Mask {
+                        asset_id: destination,
+                        source_id,
+                    } = input(flow, &values, node, "destination")?
+                    else {
+                        return Err("Connect a destination mask".into());
+                    };
+                    let WorkflowValue::Mask {
+                        asset_id: source,
+                        source_id: other_source,
+                    } = input(flow, &values, node, "source")?
+                    else {
+                        return Err("Connect a source mask".into());
+                    };
+                    if source_id != other_source {
+                        return Err("Combine masks belonging to the same image".into());
+                    }
+                    let mut config = Value::Object(node.config.clone());
+                    config["maskAssetId"] = json!(source);
+                    let (details, asset) = provider_local_diffusers::workflow_operation(
+                        app,
+                        paths,
+                        &request.run_id,
+                        "mask-composite",
+                        config,
+                        Some(destination),
+                    )?;
+                    let id = database::workflow::publish(
+                        paths,
+                        &request.run_id,
+                        &node.id,
+                        iteration,
+                        &asset.ok_or("Workflow returned no mask")?,
+                        "image",
+                        &[destination.clone(), source.clone(), source_id.clone()],
+                        details,
+                    )?;
+                    output_port = "mask";
+                    Some(WorkflowValue::Mask {
+                        asset_id: id,
+                        source_id: source_id.clone(),
+                    })
+                }
+                "operation.segment"
+                | "operation.prepare-mask"
+                | "operation.image-mask"
+                | "operation.upscale"
+                | "operation.canny"
+                | "operation.depth-map" => {
                     let source = image()?;
                     let mut config = Value::Object(node.config.clone());
+                    let mut mask_reference = source.clone();
+                    if node.r#type == "operation.image-mask" {
+                        if let Some(reference) = optional_input(flow, &values, node, "reference")? {
+                            let WorkflowValue::Image(reference) = reference else {
+                                return Err("Connect the image the mask belongs to".into());
+                            };
+                            let original = database::get_asset(paths, reference)?;
+                            let mask = database::get_asset(paths, &source)?;
+                            if (original.width, original.height) != (mask.width, mask.height) {
+                                return Err(
+                                    "The mask and reference must have matching dimensions".into()
+                                );
+                            }
+                            mask_reference = reference.clone();
+                        }
+                    }
                     if node.r#type == "operation.prepare-mask" {
                         let reference = match optional_input(flow, &values, node, "reference")? {
                             Some(WorkflowValue::Image(id)) => id.as_str(),
@@ -326,13 +404,9 @@ fn execute_started(
                         app,
                         paths,
                         &request.run_id,
-                        if node.r#type == "operation.segment" {
-                            "segment"
-                        } else if node.r#type == "operation.prepare-mask" {
-                            "prepare-mask"
-                        } else {
-                            "upscale"
-                        },
+                        node.r#type
+                            .strip_prefix("operation.")
+                            .ok_or("Invalid image operation")?,
                         config,
                         Some(&source),
                     )?;
@@ -343,18 +417,25 @@ fn execute_started(
                         iteration,
                         &asset.ok_or("Workflow returned no image")?,
                         "image",
-                        std::slice::from_ref(&source),
+                        &if source == mask_reference {
+                            vec![source.clone()]
+                        } else {
+                            vec![source.clone(), mask_reference.clone()]
+                        },
                         details,
                     )?;
-                    if node.r#type != "operation.upscale" {
+                    if matches!(
+                        node.r#type.as_str(),
+                        "operation.segment" | "operation.prepare-mask" | "operation.image-mask"
+                    ) {
                         values.insert(
                             (node.id.clone(), "mask".into()),
                             WorkflowValue::Mask {
                                 asset_id: id,
-                                source_id: source.clone(),
+                                source_id: mask_reference.clone(),
                             },
                         );
-                        Some(WorkflowValue::Image(source))
+                        Some(WorkflowValue::Image(mask_reference))
                     } else {
                         Some(WorkflowValue::Image(id))
                     }

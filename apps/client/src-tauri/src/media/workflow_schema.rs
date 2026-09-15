@@ -6,6 +6,11 @@ use serde_json::Value;
 
 pub(crate) fn validate_node(node: &MediaFlowNode) -> MediaResult<()> {
     let keys: &[&str] = match node.r#type.as_str() {
+        "operation.image-mask" => &["channel", "invert"],
+        "operation.mask-composite" => &["operation"],
+        "operation.canny" => &["lowThreshold", "highThreshold"],
+        "operation.depth-map" => &[],
+        "operation.controlnet" => &["kind", "strength", "start", "end"],
         "operation.visual-check" => &[
             "criteria",
             "modelPath",
@@ -58,6 +63,19 @@ pub(crate) fn validate_node(node: &MediaFlowNode) -> MediaResult<()> {
             .get(*key)
             .ok_or_else(|| format!("{} requires {key}", node.label))?;
         let valid = match *key {
+            "channel" => value.as_str().is_some_and(|channel| {
+                ["alpha", "luminance", "red", "green", "blue"].contains(&channel)
+            }),
+            "operation" => value
+                .as_str()
+                .is_some_and(|operation| ["add", "subtract", "multiply"].contains(&operation)),
+            "kind" => value
+                .as_str()
+                .is_some_and(|kind| ["canny", "depth"].contains(&kind)),
+            "lowThreshold" => in_range(value, 0.0, 254.0, true),
+            "highThreshold" => in_range(value, 1.0, 255.0, true),
+            "strength" => in_range(value, 0.0, 2.0, false),
+            "start" | "end" => in_range(value, 0.0, 1.0, false),
             "editMask" => {
                 value.is_null()
                     || serde_json::from_value::<super::MediaImageMask>(value.clone()).is_ok_and(
@@ -103,6 +121,16 @@ pub(crate) fn validate_node(node: &MediaFlowNode) -> MediaResult<()> {
         if !valid {
             return Err(format!("{} has an invalid {key}", node.label));
         }
+    }
+    if node.r#type == "operation.canny"
+        && node.config["lowThreshold"].as_f64() >= node.config["highThreshold"].as_f64()
+    {
+        return Err("Low threshold must be below High threshold.".into());
+    }
+    if node.r#type == "operation.controlnet"
+        && node.config["start"].as_f64() >= node.config["end"].as_f64()
+    {
+        return Err("ControlNet Start must be before End.".into());
     }
     Ok(())
 }

@@ -23,6 +23,48 @@ SPEC.loader.exec_module(WORKER)
 
 
 class MediaDiffusersQualityTests(unittest.TestCase):
+    def test_framepack_prompt_subprocess_preserves_embeddings_and_excludes_credentials(self) -> None:
+        import torch
+        from safetensors.torch import save_file
+
+        embeddings = {
+            "prompt_embeddings": torch.ones(1, 4, 8),
+            "pooled_prompt_embeddings": torch.ones(1, 8),
+            "prompt_attention_mask": torch.ones(1, 4),
+        }
+        def encode(command, **arguments):
+            self.assertNotIn("HF_TOKEN", arguments["env"])
+            request = json.loads(arguments["input"])
+            self.assertEqual(request["prompts"], ["A dragon waves"])
+            filename = "prompt-embeddings.safetensors"
+            save_file(embeddings, str(Path(request["outputDirectory"]) / filename))
+            return SimpleNamespace(returncode=0, stdout=json.dumps({"fileName": filename, "gpuMemory": {"peakAllocatedBytes": 128}}), stderr="")
+
+        with mock.patch.object(WORKER.subprocess, "run", side_effect=encode):
+            result = WORKER._encode_framepack_prompt_embeddings(torch, Path("model"), "A dragon waves", torch.bfloat16)
+        for actual, expected in zip(result[:3], embeddings.values()):
+            torch.testing.assert_close(actual, expected.to(torch.bfloat16))
+
+    def test_sampling_progress_uses_effective_denoising_steps(self) -> None:
+        for total in (16, 25):
+            with self.subTest(total=total):
+                pipeline = SimpleNamespace(num_timesteps=total)
+                values = {"latents": object()}
+                callback = WORKER._sampling_progress(index=1, count=2)
+                with mock.patch.object(WORKER, "_progress") as report:
+                    self.assertIs(callback(pipeline, total - 1, None, values), values)
+                report.assert_called_once_with(f"Sampling {total}/{total}", 0.85)
+
+    def test_manual_image_sampling_and_distilled_constraints(self) -> None:
+        request = {"aspectRatio": "1:1", "sampling": {"width": 640, "height": 960, "numInferenceSteps": 18, "guidanceScale": 5.5}}
+        self.assertEqual(WORKER._image_sampling(request, "stable-diffusion-xl", "quality"), (640, 960, 18, 5.5))
+        for patch in ({"width": 641}, {"height": None}, {"numInferenceSteps": 0}, {"guidanceScale": float("nan")}):
+            with self.subTest(patch=patch), self.assertRaises(WORKER.WorkerError):
+                WORKER._image_sampling({**request, "sampling": {**request["sampling"], **patch}}, "stable-diffusion-xl", "quality")
+        with self.assertRaisesRegex(WORKER.WorkerError, "4 sampling steps"):
+            WORKER._image_sampling(request, "flux-2", "quality")
+        self.assertEqual(WORKER._image_sampling({"aspectRatio": "1:1"}, "flux-2", "quality")[2], 4)
+
     def test_hunyuan_sampling_reports_steps_and_closes_the_progress_bar(self) -> None:
         from tqdm.auto import tqdm
 
@@ -202,11 +244,12 @@ class MediaDiffusersQualityTests(unittest.TestCase):
             (1_408, 768),
         )
 
-    def test_krea_remains_text_only(self) -> None:
+    def test_krea_exposes_vision_references_and_latent_masks(self) -> None:
         without_torchvision = WORKER._runtime_capabilities({"torchvision": None})
         with_torchvision = WORKER._runtime_capabilities({"torchvision": "0.27.0"})
 
-        self.assertNotIn("krea-2", WORKER.NATIVE_REFERENCE_ROLES)
+        self.assertIn("krea-2", WORKER.NATIVE_MASKED_EDIT_ARCHITECTURES)
+        self.assertEqual(WORKER.NATIVE_REFERENCE_ROLES["krea-2"], frozenset({"subject", "style", "composition", "palette", "detail"}))
         self.assertEqual(without_torchvision, list(WORKER.BASE_CAPABILITIES))
         self.assertEqual(with_torchvision, list(WORKER.BASE_CAPABILITIES))
 
@@ -227,6 +270,12 @@ class MediaDiffusersQualityTests(unittest.TestCase):
 
         self.assertEqual(list(scaled.getdata()), [0, 64, 128])
         self.assertEqual(list(mask.getdata()), [0, 128, 255])
+
+    def test_full_and_empty_masks(self) -> None:
+        full = {"schemaVersion": 2, "inverted": True, "strokes": []}
+        self.assertEqual(WORKER._rasterize_edit_mask(full, 80, 120).getextrema(), (255, 255))
+        with self.assertRaises(WORKER.WorkerError):
+            WORKER._rasterize_edit_mask({**full, "inverted": False}, 80, 120)
 
     def test_edit_mask_uses_normalized_source_coordinates(self) -> None:
         document = {
@@ -295,6 +344,45 @@ class MediaDiffusersQualityTests(unittest.TestCase):
 
         np.testing.assert_array_equal(result_pixels[mask == 0], pixels[mask == 0])
         self.assertTrue(np.any(result_pixels[mask > 0] != pixels[mask > 0]))
+
+    def test_masked_edit_preserves_source_transparency_outside_selection(self) -> None:
+        y, x = np.indices((96, 160))
+        pixels = np.stack(
+            ((x * 3) % 256, (y * 5) % 256, (x + y) % 256, (x * 7) % 256),
+            axis=-1,
+        ).astype(np.uint8)
+        mask_pixels = np.zeros((96, 160), dtype=np.uint8)
+        mask_pixels[24:72, 48:112] = 255
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "transparent.png"
+            Image.fromarray(pixels).save(path)
+            _, base = WORKER._conditioning_image(str(path), "baseImagePath", preserve_alpha=True)
+            context = WORKER._masked_generation_context(
+                base, None, 128, 128, mask=Image.fromarray(mask_pixels)
+            )
+            self.assertEqual(context["source"].mode, "RGB")
+            generated = Image.new("RGB", context["source"].size, (20, 80, 220))
+            result = WORKER._composite_masked_result(context, generated)
+
+        result_pixels = np.asarray(result)
+        self.assertEqual(result.mode, "RGBA")
+        np.testing.assert_array_equal(result_pixels[mask_pixels == 0], pixels[mask_pixels == 0])
+        self.assertTrue(np.all(result_pixels[mask_pixels == 255] == (20, 80, 220, 255)))
+
+    def test_small_sd_mask_uses_the_requested_inference_canvas(self) -> None:
+        base = Image.new("RGBA", (513, 769), (80, 120, 150, 90))
+        mask_pixels = np.zeros((769, 513), dtype=np.uint8)
+        mask_pixels[144:192, 160:224] = 255
+        context = WORKER._masked_generation_context(
+            base, None, 1024, 1024, mask=Image.fromarray(mask_pixels), upscale_crop=True
+        )
+        self.assertEqual(context["width"], 1024)
+        self.assertEqual(context["height"], 896)
+        generated = Image.new("RGB", context["source"].size, (20, 80, 220))
+        result = WORKER._composite_masked_result(context, generated)
+        self.assertEqual(result.size, base.size)
+        np.testing.assert_array_equal(np.asarray(result)[mask_pixels == 0], np.asarray(base)[mask_pixels == 0])
+        self.assertTrue(np.all(np.asarray(result)[mask_pixels == 255] == (20, 80, 220, 255)))
 
     def test_inpaint_preserves_portrait_framing_and_all_unselected_pixels(self) -> None:
         pixels = np.arange(832 * 1104 * 3, dtype=np.uint8).reshape(1104, 832, 3)
@@ -679,7 +767,7 @@ class MediaDiffusersQualityTests(unittest.TestCase):
 
     def test_framepack_vae_tiles_bound_decode_memory_on_smaller_gpus(self) -> None:
         gib = 1_024**3
-        bounded = WORKER._framepack_vae_tile_configuration(16 * gib)
+        bounded = WORKER._framepack_vae_tile_configuration(6 * gib)
         self.assertEqual(bounded["tile_sample_min_height"], 64)
         self.assertEqual(bounded["tile_sample_min_width"], 64)
         self.assertEqual(bounded["tile_sample_min_num_frames"], 8)
@@ -691,6 +779,10 @@ class MediaDiffusersQualityTests(unittest.TestCase):
             WORKER._framepack_vae_tile_configuration(None),
             bounded,
         )
+
+        standard = WORKER._framepack_vae_tile_configuration(16 * gib)
+        self.assertEqual(standard["tile_sample_min_height"], 128)
+        self.assertEqual(standard["tile_sample_stride_num_frames"], 4)
 
         roomy = WORKER._framepack_vae_tile_configuration(24 * gib)
         self.assertEqual(roomy["tile_sample_min_height"], 256)

@@ -63,14 +63,21 @@ const ARCHITECTURE_ADDON_CAPABILITIES: Readonly<
   ],
   "flux-2": [capability("lora", ["denoiser"], 8, false, true)],
   "krea-2": [capability("lora", ["denoiser"], 8, false, true)],
-  "wan-2.2-ti2v": [],
+  "wan-2.2-ti2v": [capability("lora", ["denoiser"], 8, false, false)],
+  "ltx-video": [capability("lora", ["denoiser"], 8, false, false)],
+  "framepack-i2v": [capability("lora", ["denoiser"], 8, false, false)],
+  "hunyuan-video-1.5-i2v": [capability("lora", ["denoiser"], 8, false, false)],
 };
 
 export const getMediaModelAddonCapabilities = (
   providerId: string,
   architecture: MediaLocalModelArchitecture | null,
 ): readonly MediaModelAddonCapability[] => {
-  if (providerId !== "local-diffusers" || architecture === null) return [];
+  if (
+    !["local-diffusers", "local-video", "local-wan"].includes(providerId) ||
+    architecture === null
+  )
+    return [];
   return ARCHITECTURE_ADDON_CAPABILITIES[architecture] ?? [];
 };
 
@@ -78,6 +85,10 @@ export interface MediaModelAddonCompatibility {
   status: "compatible" | "unverified" | "incompatible";
   reason: string;
 }
+
+const NEGATIVE_EMBEDDING_DIGESTS = new Set([
+  "c74b4e810b030f6b75fde959e2db678c268d07115b85356d3c0138ba5eb42340",
+]);
 
 export const createMediaModelAddonSelection = (
   addon: MediaModelAddonDescriptor,
@@ -96,7 +107,9 @@ export const createMediaModelAddonSelection = (
         addonId: addon.id,
         enabled: true,
         token: addon.defaultToken ?? addon.triggerWords[0] ?? addon.displayName,
-        placement: "positive",
+        placement: NEGATIVE_EMBEDDING_DIGESTS.has(addon.digest)
+          ? "negative"
+          : "positive",
       };
 
 export const getMediaModelAddonTriggerWords = (
@@ -109,7 +122,7 @@ export const getMediaModelAddonTriggerWords = (
       : [];
 
 const normalizePromptText = (value: string): string =>
-  value.toLocaleLowerCase().replace(/\s+/gu, " ").trim();
+  value.toLowerCase().replace(/\s+/gu, " ").trim();
 
 export const promptContainsMediaModelAddonTrigger = (
   prompt: string,
@@ -118,10 +131,38 @@ export const promptContainsMediaModelAddonTrigger = (
   const triggers = getMediaModelAddonTriggerWords(addon);
   if (triggers.length === 0) return true;
   const normalizedPrompt = normalizePromptText(prompt);
-  return triggers.some((trigger) =>
-    normalizedPrompt.includes(normalizePromptText(trigger)),
-  );
+  return triggers.some((trigger) => {
+    const escaped = normalizePromptText(trigger).replace(
+      /[.*+?^${}()|[\]\\]/gu,
+      "\\$&",
+    );
+    return new RegExp(
+      `(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`,
+      "u",
+    ).test(normalizedPrompt);
+  });
 };
+
+export const getMissingMediaModelAddonTriggers = (
+  prompt: string,
+  addons: readonly MediaModelAddonDescriptor[],
+  selections: readonly MediaModelAddonSelection[],
+) =>
+  selections.flatMap((selection) => {
+    if (!selection.enabled || selection.kind !== "lora") return [];
+    const addon = addons.find((entry) => entry.id === selection.addonId);
+    if (!addon) return [];
+    const hasEffect = addon.targetComponents.some(
+      (component) =>
+        (component === "denoiser"
+          ? selection.modelStrength
+          : (selection.textEncoderStrength ?? selection.modelStrength)) !== 0,
+    );
+    if (!hasEffect || promptContainsMediaModelAddonTrigger(prompt, addon))
+      return [];
+    const trigger = getMediaModelAddonTriggerWords(addon)[0];
+    return trigger ? [{ addon, trigger }] : [];
+  });
 
 const normalizeBaseModelIdentity = (value: string): string =>
   value.toLowerCase().replace(/[^a-z0-9]+/gu, "");
@@ -144,36 +185,6 @@ const modelBaseIdentities = (model: MediaModelDescriptor): Set<string> =>
       ])
       .filter(Boolean),
   );
-
-export const matchesMediaModelAddonQuery = (
-  addon: MediaModelAddonDescriptor,
-  query: string,
-): boolean => {
-  const terms = query.trim().toLowerCase().split(/\s+/u).filter(Boolean);
-  if (terms.length === 0) return true;
-
-  const searchableText = [
-    addon.id,
-    addon.displayName,
-    addon.kind,
-    addon.architecture,
-    addon.architectureConfidence,
-    ...addon.targetComponents,
-    addon.baseModelHint ?? "",
-    ...addon.triggerWords,
-    addon.defaultToken ?? "",
-    addon.digest,
-    addon.relativePath,
-    addon.sourceUrl ?? "",
-    addon.license.name,
-    addon.license.spdxId ?? "",
-    addon.license.commercialUse,
-  ]
-    .join("\n")
-    .toLowerCase();
-
-  return terms.every((term) => searchableText.includes(term));
-};
 
 export const inspectMediaModelAddonCompatibility = (
   model: MediaModelDescriptor,
@@ -227,6 +238,24 @@ export const inspectMediaModelAddonCompatibility = (
     return {
       status: "incompatible",
       reason: `${addon.displayName} contains convolutional LoCon weights that this transformer pipeline cannot load.`,
+    };
+  }
+  if (
+    addon.kind === "lora" &&
+    addon.loraProfile !== null &&
+    [
+      "wan-2.2-ti2v",
+      "ltx-video",
+      "framepack-i2v",
+      "hunyuan-video-1.5-i2v",
+    ].includes(model.architecture ?? "") &&
+    (addon.loraProfile.dialect !== "diffusers-peft" ||
+      addon.loraProfile.algorithm !== "lora" ||
+      addon.loraProfile.networkAlphaCount !== 0)
+  ) {
+    return {
+      status: "incompatible",
+      reason: "Choose a video LoRA in Diffusers PEFT Safetensors format.",
     };
   }
   if (

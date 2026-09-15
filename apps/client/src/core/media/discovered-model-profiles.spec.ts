@@ -147,9 +147,9 @@ describe("discovered media runtime profiles", () => {
 
     expect(matchesMediaDiscoveredModelQuery(artifact, "wan video")).toBe(true);
     expect(matchesMediaDiscoveredModelQuery(artifact, "TI2V READY")).toBe(true);
-    expect(matchesMediaDiscoveredModelQuery(artifact, "workspace missing")).toBe(
-      false,
-    );
+    expect(
+      matchesMediaDiscoveredModelQuery(artifact, "workspace missing"),
+    ).toBe(false);
   });
 
   it("leaves a catalog untouched before workspace discovery", () => {
@@ -199,6 +199,44 @@ describe("discovered media runtime profiles", () => {
     expect(model?.runtimeReadiness).toBe("runtime-unavailable");
     expect(model?.runtimeReadinessDiagnostic).toContain("vp9-alpha");
   });
+
+  it.each([
+    ["wan-2.2-ti2v", discovery, () => runtime()],
+    ["ltx-video", ltxDiscovery, () => ltxRuntime("cuda:0", 16 * 1_024 ** 3)],
+    [
+      "framepack-i2v",
+      framepackDiscovery,
+      () => framepackRuntime("cuda:0", 16 * 1_024 ** 3),
+    ],
+    [
+      "hunyuan-video-1.5-i2v",
+      hunyuanDiscovery,
+      () => hunyuanRuntime("cuda:0", 16 * 1_024 ** 3),
+    ],
+  ] as const)(
+    "makes discovered %s LoRAs selectable",
+    (architecture, discover, runtimeStatus) => {
+      const models = extendMediaCatalogWithWorkspaceDiscovery({
+        catalog: baseCatalog(),
+        discovery: discover(),
+        runtime: runtimeStatus(),
+      }).models.filter((model) => model.architecture === architecture);
+
+      expect(models.length).toBeGreaterThan(0);
+      for (const model of models) {
+        expect(model.configured).toBe(true);
+        expect(model.addonCapabilities).toEqual([
+          {
+            kind: "lora",
+            targetComponents: ["denoiser"],
+            maxActive: 8,
+            supportsSeparateComponentStrengths: false,
+            supportsDenoisingSchedules: false,
+          },
+        ]);
+      }
+    },
+  );
 
   it("selects 13B on 16 GiB and degrades to 2B on 8 GiB or CPU", () => {
     const modelsFor = (
@@ -251,14 +289,8 @@ describe("discovered media runtime profiles", () => {
     const lowRam = extendMediaCatalogWithWorkspaceDiscovery({
       catalog: baseCatalog(),
       discovery: framepackDiscovery(),
-      runtime: framepackRuntime(
-        "cuda:0",
-        16 * 1_024 ** 3,
-        28 * 1_024 ** 3,
-      ),
-    }).models.find(
-      (model) => model.id === "local:framepack-i2v-hy-13b",
-    );
+      runtime: framepackRuntime("cuda:0", 16 * 1_024 ** 3, 28 * 1_024 ** 3),
+    }).models.find((model) => model.id === "local:framepack-i2v-hy-13b");
     expect(lowRam?.configured).toBe(false);
     expect(lowRam?.runtimeReadinessDiagnostic).toContain(
       "30 GiB of physical memory",
@@ -274,14 +306,9 @@ describe("discovered media runtime profiles", () => {
       extendMediaCatalogWithWorkspaceDiscovery({
         catalog: baseCatalog(),
         discovery: hunyuanDiscovery(),
-        runtime: hunyuanRuntime(
-          device,
-          deviceMemoryBytes,
-          physicalMemoryBytes,
-        ),
+        runtime: hunyuanRuntime(device, deviceMemoryBytes, physicalMemoryBytes),
       }).models.find(
-        (model) =>
-          model.id === "local:hunyuan-video-1.5-i2v-step-distilled",
+        (model) => model.id === "local:hunyuan-video-1.5-i2v-step-distilled",
       );
 
     expect(modelFor("cuda:0", 16 * 1_024 ** 3)?.configured).toBe(true);

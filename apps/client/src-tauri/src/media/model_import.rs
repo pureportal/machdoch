@@ -33,7 +33,7 @@ pub(super) const SUPPORTED_ARCHITECTURES: &[&str] = &[
 ];
 const TEXT_TO_IMAGE_CAPABILITIES: &[&str] = &["text-to-image"];
 const IMAGE_EDIT_CAPABILITIES: &[&str] = &["text-to-image", "image-to-image", "masked-image-edit"];
-const FLUX_2_CAPABILITIES: &[&str] = &[
+const MULTI_IMAGE_CAPABILITIES: &[&str] = &[
     "text-to-image",
     "image-to-image",
     "masked-image-edit",
@@ -109,11 +109,10 @@ fn architecture_profile(architecture: &str) -> Option<ArchitectureProfile> {
 
 pub(crate) fn capabilities_for_architecture(architecture: &str) -> &'static [&'static str] {
     match architecture {
-        "stable-diffusion-1" | "stable-diffusion-2" | "stable-diffusion-xl" | "flux-1" => {
-            IMAGE_EDIT_CAPABILITIES
+        "stable-diffusion-2" | "flux-1" => IMAGE_EDIT_CAPABILITIES,
+        "stable-diffusion-1" | "stable-diffusion-xl" | "flux-2" | "krea-2" => {
+            MULTI_IMAGE_CAPABILITIES
         }
-        "flux-2" => FLUX_2_CAPABILITIES,
-        "krea-2" => TEXT_TO_IMAGE_CAPABILITIES,
         _ => TEXT_TO_IMAGE_CAPABILITIES,
     }
 }
@@ -458,16 +457,11 @@ fn inspection_review_token(header: &ParsedSafetensorsHeader) -> String {
 
 pub(crate) fn inspect(source_path: &str) -> MediaResult<MediaLocalModelImportInspection> {
     let header = parse_header(source_path)?;
-    let (content_size, content_digest) = hash_file(&header.canonical_path)?;
-    if content_size != header.byte_size {
-        return Err("the model file changed while it was being inspected".to_string());
-    }
-    inspect_header(&header, content_digest)
+    inspect_header(&header)
 }
 
 pub(super) fn inspect_header(
     header: &ParsedSafetensorsHeader,
-    content_digest: String,
 ) -> MediaResult<MediaLocalModelImportInspection> {
     let (detected_architecture, architecture_confidence) = detect_architecture(&header);
     let is_adapter = likely_adapter(&header);
@@ -511,7 +505,6 @@ pub(super) fn inspect_header(
         byte_size: header.byte_size,
         tensor_count: header.tensor_count,
         header_digest: header.header_digest.clone(),
-        content_digest,
         duplicate: None,
         review_token: inspection_review_token(&header),
         suggested_display_name: suggested_display_name(&header),
@@ -522,6 +515,7 @@ pub(super) fn inspect_header(
     })
 }
 
+#[cfg(test)]
 fn imported_duplicate(
     paths: &MediaRuntimePaths,
     digest: &str,
@@ -545,15 +539,6 @@ fn imported_duplicate(
         )
         .optional()
         .map_err(|error| format!("failed to inspect duplicate model state: {error}"))
-}
-
-pub(crate) fn inspect_for_import(
-    paths: &MediaRuntimePaths,
-    source_path: &str,
-) -> MediaResult<MediaLocalModelImportInspection> {
-    let mut inspection = inspect(source_path)?;
-    inspection.duplicate = imported_duplicate(paths, &inspection.content_digest)?;
-    Ok(inspection)
 }
 
 fn krea_runtime_descriptor(paths: &MediaRuntimePaths, source_path: &str) -> MediaResult<Value> {
@@ -820,14 +805,6 @@ pub(crate) fn import_reviewed(
     validated_text("displayName", &request.display_name, 120)?;
     validated_optional_text("licenseName", request.license_name.as_deref(), 256)?;
     validated_source_url(request.source_url.as_deref())?;
-    if request.content_digest.len() != 64
-        || !request
-            .content_digest
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
-        return Err("contentDigest must be a lowercase SHA-256 digest".to_string());
-    }
 
     let inspection = inspect(&request.source_path)?;
     if !inspection.can_import {
@@ -845,6 +822,10 @@ pub(crate) fn import_reviewed(
     } else {
         None
     };
+    let (source_size, source_digest) = hash_file(Path::new(&inspection.source_path))?;
+    if source_size != inspection.byte_size {
+        return Err("the file changed; select it again before importing".to_string());
+    }
     let required_bytes = inspection.byte_size.saturating_mul(105).div_ceil(100);
     let models_root = paths.models_root()?;
     fs::create_dir_all(&models_root)
@@ -873,7 +854,7 @@ pub(crate) fn import_reviewed(
             return Err(error);
         }
     };
-    if digest != request.content_digest {
+    if digest != source_digest {
         let _ = fs::remove_dir_all(&stage_root);
         return Err(
             "the selected model file changed; inspect it again before importing".to_string(),
@@ -939,6 +920,15 @@ pub(crate) fn import_reviewed(
         .map_err(|error| format!("failed to publish the KREA runtime manifest: {error}"))?;
     }
 
+    if matches!(
+        request.architecture.as_str(),
+        "stable-diffusion-1" | "stable-diffusion-xl"
+    ) {
+        super::model_components::ensure_sd_config(
+            &revision_root.join("config"),
+            &request.architecture,
+        )?;
+    }
     let imported_at = database::now();
     let active_pointer = serde_json::json!({
         "schemaVersion": 1,
@@ -1025,7 +1015,10 @@ mod tests {
 
     #[test]
     fn imported_architectures_expose_only_supported_conditioning() {
-        assert_eq!(capabilities_for_architecture("krea-2"), ["text-to-image"]);
+        assert_eq!(
+            capabilities_for_architecture("krea-2"),
+            MULTI_IMAGE_CAPABILITIES
+        );
         assert_eq!(
             capabilities_for_architecture("flux-2"),
             [
@@ -1144,7 +1137,6 @@ mod tests {
                 display_name: "Managed XL".to_string(),
                 architecture: "stable-diffusion-xl".to_string(),
                 source_url: Some("https://civitai.com/models/123".to_string()),
-                content_digest: inspection.content_digest.clone(),
                 license_name: None,
                 commercial_use: None,
             },
@@ -1153,9 +1145,9 @@ mod tests {
 
         assert!(result.model_id.starts_with(USER_MODEL_ID_PREFIX));
         assert!(!result.already_installed);
-        let duplicate = inspect_for_import(&paths, source.to_string_lossy().as_ref())
+        let (_, digest) = hash_file(&source).expect("source should hash");
+        let duplicate = imported_duplicate(&paths, &digest)
             .expect("duplicate inspection should pass")
-            .duplicate
             .expect("imported model should be detected");
         assert_eq!(duplicate.resource_id, result.model_id);
         assert_eq!(duplicate.display_name, "Managed XL");
@@ -1178,7 +1170,12 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<Vec<String>>(&stored_capabilities)
                 .expect("capabilities should decode"),
-            ["text-to-image", "image-to-image", "masked-image-edit"]
+            [
+                "text-to-image",
+                "image-to-image",
+                "masked-image-edit",
+                "multi-reference-edit"
+            ]
         );
         let catalog =
             catalog::snapshot(&connection, &Default::default()).expect("catalog should load");
@@ -1194,7 +1191,12 @@ mod tests {
         assert_eq!(imported.license.commercial_use, "unknown");
         assert_eq!(
             imported.capabilities,
-            ["text-to-image", "image-to-image", "masked-image-edit"]
+            [
+                "text-to-image",
+                "image-to-image",
+                "masked-image-edit",
+                "multi-reference-edit"
+            ]
         );
 
         let removal_plan = model_install::plan_removal(&paths, &result.model_id)

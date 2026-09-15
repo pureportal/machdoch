@@ -1072,10 +1072,8 @@ pub(crate) fn compile_remote_image_edit_flow(
             height,
         });
     }
-    if role_count.get("base") != Some(&1) {
-        return Err(
-            "remote image edits require exactly one reference with the base role".to_string(),
-        );
+    if role_count.get("base").copied().unwrap_or(0) > 1 {
+        return Err("remote image edits accept at most one base image".to_string());
     }
     prepared.sort_by_key(|source| if source.role == "base" { 0_u8 } else { 1_u8 });
     let upload_bytes = prepared.iter().try_fold(0_u64, |total, source| {
@@ -1200,6 +1198,7 @@ fn validate_remote_edit_snapshot(
             "normalize-prompt" | "resolve-asset" | "resolve-seed" => ("orchestrator", true, None),
             "resolve-model" => ("orchestrator", false, None),
             "edit-image" => ("remote", false, Some("paid-request")),
+            "cutout-subject" => ("local", true, None),
             "ingest-asset" => ("orchestrator", false, Some("asset-write")),
             _ => return Err("compiled remote edit plan contains an unsupported step".to_string()),
         };
@@ -1249,10 +1248,12 @@ fn create_remote_edit_provider_prompt(
             source.influence
         ));
     }
-    instructions.push(format!(
-        "Apply an overall edit strength of {:.3}; preserve unspecified details from the base image.",
-        edit_strength
-    ));
+    if sources.iter().any(|source| source.role == "base") {
+        instructions.push(format!(
+            "Apply an overall edit strength of {:.3}; preserve unspecified details from the base image.",
+            edit_strength
+        ));
+    }
     instructions.join("\n")
 }
 
@@ -2777,6 +2778,11 @@ fn is_supported_node(node_type: &str, version: u32) -> bool {
             node_type,
             "source.prompt"
                 | "task.generate-prompt"
+                | "operation.canny"
+                | "operation.image-mask"
+                | "operation.mask-composite"
+                | "operation.depth-map"
+                | "operation.controlnet"
                 | "operation.segment"
                 | "operation.upscale"
                 | "control.repeat"
@@ -3595,6 +3601,11 @@ impl MediaFlowNode {
             | "task.generate-video"
             | "task.generate-prompt" => "task",
             "operation.visual-check"
+            | "operation.canny"
+            | "operation.image-mask"
+            | "operation.mask-composite"
+            | "operation.depth-map"
+            | "operation.controlnet"
             | "operation.prepare-mask"
             | "operation.segment"
             | "operation.upscale"
@@ -3893,6 +3904,11 @@ fn validate_model_addon_config(node_id: &str, value: &Value) -> MediaResult<()> 
 fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
     match node.r#type.as_str() {
         "task.generate-prompt"
+        | "operation.canny"
+        | "operation.image-mask"
+        | "operation.mask-composite"
+        | "operation.depth-map"
+        | "operation.controlnet"
         | "operation.segment"
         | "operation.upscale"
         | "control.repeat"
@@ -3968,6 +3984,10 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                         "requireChromaBackground",
                         "modelAddons",
                         "memoryProfile",
+                        "width",
+                        "height",
+                        "numInferenceSteps",
+                        "guidanceScale",
                     ]
                 } else {
                     &[
@@ -3987,9 +4007,14 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                         "svgCriticEnabled",
                         "modelAddons",
                         "memoryProfile",
+                        "width",
+                        "height",
+                        "numInferenceSteps",
+                        "guidanceScale",
                     ]
                 },
             )?;
+            super::image_sampling::ImageSampling::from_config(&node.config)?;
             config_enum(node, "providerPolicy", &["auto", "local", "remote"])?;
             config_enum(node, "modelPolicy", &["balanced", "fast", "quality"])?;
             if let Some(addons) = node.config.get("modelAddons") {
@@ -4206,8 +4231,11 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                     "providerPolicy",
                     "modelPolicy",
                     "modelId",
+                    "modelAddons",
                     "aspectRatio",
                     "resolution",
+                    "width",
+                    "height",
                     "generateAudio",
                     "transparentBackground",
                     "loopMode",
@@ -4222,6 +4250,36 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                     "memoryProfile",
                     "experimentalLowMemory",
                 ],
+            )?;
+            if let Some(addons) = node.config.get("modelAddons") {
+                let mut selections =
+                    serde_json::from_value::<Vec<super::MediaModelAddonSelection>>(addons.clone())
+                        .map_err(|error| {
+                            format!("flow node {} has invalid modelAddons: {error}", node.id)
+                        })?;
+                super::validate_video_model_addons(&mut selections)?;
+            }
+            super::validate_video_dimensions(
+                node.config
+                    .get("width")
+                    .filter(|value| !value.is_null())
+                    .map(|value| {
+                        value
+                            .as_u64()
+                            .and_then(|number| u32::try_from(number).ok())
+                            .ok_or_else(|| "Invalid video width".to_string())
+                    })
+                    .transpose()?,
+                node.config
+                    .get("height")
+                    .filter(|value| !value.is_null())
+                    .map(|value| {
+                        value
+                            .as_u64()
+                            .and_then(|number| u32::try_from(number).ok())
+                            .ok_or_else(|| "Invalid video height".to_string())
+                    })
+                    .transpose()?,
             )?;
             config_enum(node, "providerPolicy", &["local"])?;
             config_enum(node, "modelPolicy", &["balanced", "fast", "quality"])?;
@@ -4271,7 +4329,11 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                     node.id
                 ));
             }
-            config_enum(node, "loopMode", &["none", "ping-pong", "seamless"])?;
+            config_enum(
+                node,
+                "loopMode",
+                &["none", "ping-pong", "seamless", "crossfade"],
+            )?;
             for (key, minimum, maximum) in [
                 ("fps", 1_u64, 60_u64),
                 ("numInferenceSteps", 4, if ltx_video { 10 } else { 50 }),
@@ -4328,9 +4390,14 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
             let seed = node
                 .config
                 .get("seed")
-                .and_then(Value::as_u64)
-                .ok_or_else(|| format!("flow node {} requires integer seed", node.id))?;
-            if seed > 9_007_199_254_740_991 {
+                .filter(|value| !value.is_null())
+                .map(|value| {
+                    value
+                        .as_u64()
+                        .ok_or_else(|| format!("flow node {} requires integer seed", node.id))
+                })
+                .transpose()?;
+            if seed.is_some_and(|value| value > 9_007_199_254_740_991) {
                 return Err(format!(
                     "flow node {} seed must be a JavaScript-safe non-negative integer",
                     node.id
@@ -4794,6 +4861,14 @@ fn config_bool(node: &MediaFlowNode, key: &str) -> MediaResult<()> {
 
 fn port_type(node_type: &str, port_id: &str, output: bool) -> Option<&'static str> {
     match (node_type, output, port_id) {
+        ("operation.image-mask", _, "image") => Some("image"),
+        ("operation.image-mask", false, "reference") => Some("image"),
+        ("operation.image-mask" | "operation.mask-composite", true, "mask")
+        | ("operation.mask-composite", false, "destination" | "source") => Some("mask"),
+        ("operation.canny" | "operation.depth-map", _, "image") => Some("image"),
+        ("operation.controlnet", false, "image") => Some("image"),
+        ("operation.controlnet", true, "controlnet")
+        | ("task.generate-image" | "task.edit-image", false, "controlnet") => Some("controlnet"),
         ("task.generate-prompt", _, "prompt") => Some("prompt"),
         ("operation.prepare-mask" | "operation.segment" | "operation.upscale", _, "image") => {
             Some("image")
@@ -4873,6 +4948,9 @@ fn required_input_ports(node_type: &str, is_svg_vectorization: bool) -> &'static
         return &["image"];
     }
     match node_type {
+        "operation.image-mask" => &["image"],
+        "operation.mask-composite" => &["destination", "source"],
+        "operation.canny" | "operation.depth-map" | "operation.controlnet" => &["image"],
         "task.generate-prompt" => &["prompt"],
         "operation.visual-check"
         | "operation.prepare-mask"
@@ -4905,6 +4983,9 @@ fn required_input_ports(node_type: &str, is_svg_vectorization: bool) -> &'static
 
 fn required_output_ports(node_type: &str) -> &'static [&'static str] {
     match node_type {
+        "operation.image-mask" | "operation.mask-composite" => &["mask"],
+        "operation.canny" | "operation.depth-map" => &["image"],
+        "operation.controlnet" => &["controlnet"],
         "task.generate-prompt" => &["prompt"],
         "operation.upscale" => &["image"],
         "source.prompt" => &["prompt"],
@@ -5343,6 +5424,25 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+
+    #[test]
+    fn remote_reference_guidance_preserves_roles_without_inventing_a_base() {
+        let source = RemoteImageEditSource {
+            node_id: "reference".to_string(),
+            asset_id: "asset".to_string(),
+            role: "style".to_string(),
+            influence: 1.0,
+            source_digest: "a".repeat(64),
+            upload_digest: "b".repeat(64),
+            upload_byte_size: 0,
+            upload_bytes: vec![],
+            width: 512,
+            height: 512,
+        };
+        let prompt = create_remote_edit_provider_prompt("A teapot", 0.65, &[source]);
+        assert!(prompt.contains("style reference"));
+        assert!(!prompt.contains("base image"));
+    }
 
     fn test_paths(label: &str) -> MediaRuntimePaths {
         let unique = SystemTime::now()
@@ -5915,9 +6015,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn validates_explicit_image_to_video_ports_and_frame_pairing() {
-        let flow = serde_json::from_value::<MediaFlowDocument>(json!({
+    fn video_flow() -> MediaFlowDocument {
+        serde_json::from_value::<MediaFlowDocument>(json!({
             "schemaVersion": 1,
             "id": "flow:image-to-video",
             "name": "Animate image",
@@ -5938,8 +6037,57 @@ mod tests {
                 {"id":"generate-output","fromNodeId":"generate","fromPortId":"video","toNodeId":"output","toPortId":"video"}
             ]
         }))
-        .unwrap();
+        .unwrap()
+    }
 
+    #[test]
+    fn saves_and_reloads_video_loras_with_strict_selection_validation() {
+        let paths = test_paths("video-loras");
+        let mut source = request("save-video-loras", None, "Animate");
+        source.flow = video_flow();
+        source.layout.flow_id = source.flow.id.clone();
+        source.layout.nodes = source
+            .flow
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(index, node)| {
+                serde_json::from_value(json!({"nodeId": node.id, "x": index * 250, "y": 0}))
+                    .unwrap()
+            })
+            .collect();
+        let addons = json!([
+            {"kind":"lora","addonId":"local-addon:wan","enabled":true,"modelStrength":0.75,"textEncoderStrength":null,"denoisingSchedule":null},
+            {"kind":"lora","addonId":"local-addon:wan-secondary","enabled":false,"modelStrength":0.5,"textEncoderStrength":null,"denoisingSchedule":null}
+        ]);
+        source.flow.nodes[3]
+            .config
+            .insert("modelAddons".to_string(), addons.clone());
+        save(&paths, &source).unwrap();
+        let history = get(&paths, &source.flow.id).unwrap();
+        assert_eq!(
+            history.revisions[0].flow.nodes[3].config["modelAddons"],
+            addons
+        );
+
+        for invalid in [
+            json!([{"kind":"textual-inversion","addonId":"embedding","enabled":true,"token":"token","placement":"positive"}]),
+            json!([addons[0].clone(), addons[0].clone()]),
+            json!([{"kind":"lora","addonId":"lora","enabled":true,"modelStrength":1,"textEncoderStrength":0.5,"denoisingSchedule":null}]),
+            json!([{"kind":"lora","addonId":"lora","enabled":true,"modelStrength":1,"textEncoderStrength":null,"denoisingSchedule":{"start":0.1,"end":0.9}}]),
+            json!(null),
+        ] {
+            source.flow.nodes[3]
+                .config
+                .insert("modelAddons".to_string(), invalid);
+            assert!(source.flow.validate().is_err());
+        }
+        fs::remove_dir_all(paths.database.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn validates_explicit_image_to_video_ports_and_frame_pairing() {
+        let flow = video_flow();
         assert!(flow.validate().is_ok());
 
         let mut invalid_frame_count = flow.clone();

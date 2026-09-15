@@ -3,6 +3,7 @@ import type {
   MediaFlowNode,
   MediaFlowTemplateDescriptor,
 } from "./contracts.js";
+import { createMediaFlowLayout } from "./compiler.js";
 import {
   createDefaultMediaNodeConfig,
   getMediaNodeDefinition,
@@ -67,17 +68,7 @@ export function createConnectedWorkflowTemplates(): MediaFlowTemplateDescriptor[
       privacySummary: "Runs on this device.",
       remoteCapable: false,
       flow,
-      layout: {
-        schemaVersion: 1,
-        flowId: flow.id,
-        groups: [],
-        comments: [],
-        nodes: nodes.map((item, index) => ({
-          nodeId: item.id,
-          x: Math.floor(index / 2) * 310,
-          y: (index % 2) * 230,
-        })),
-      },
+      layout: createMediaFlowLayout(flow),
     };
   };
   const selection = (background: boolean) =>
@@ -122,6 +113,33 @@ export function createConnectedWorkflowTemplates(): MediaFlowTemplateDescriptor[
         edge("edit", "save"),
       ],
     );
+  const controlTemplates = (["canny", "depth"] as const).map((kind) =>
+    create(
+      `controlnet-${kind}`,
+      kind === "canny" ? "Generate from edges" : "Generate from depth",
+      [
+        node("image", "source.image", "Reference image"),
+        node(
+          "guide",
+          kind === "canny" ? "operation.canny" : "operation.depth-map",
+          kind === "canny" ? "Canny edges" : "Depth map",
+        ),
+        node("control", "operation.controlnet", "Apply ControlNet", { kind }),
+        node("prompt", "source.prompt", "Prompt"),
+        node("generate", "task.generate-image", "Generate image", {
+          providerPolicy: "local",
+        }),
+        node("save", "output.asset", "Save image"),
+      ],
+      [
+        edge("image", "guide"),
+        edge("guide", "control"),
+        edge("control", "generate", "controlnet"),
+        edge("prompt", "generate", "prompt"),
+        edge("generate", "save"),
+      ],
+    ),
+  );
   return [
     selection(false),
     selection(true),
@@ -270,5 +288,6 @@ export function createConnectedWorkflowTemplates(): MediaFlowTemplateDescriptor[
         edge("gate", "save"),
       ],
     ),
+    ...controlTemplates,
   ];
 }

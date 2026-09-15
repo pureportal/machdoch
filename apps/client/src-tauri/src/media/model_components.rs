@@ -113,6 +113,29 @@ pub(super) fn ensure_krea_components(root: &Path) -> MediaResult<PathBuf> {
     ensure_components(root, include_str!("krea_components.json"))
 }
 
+pub(super) fn ensure_sd_config(root: &Path, architecture: &str) -> MediaResult<PathBuf> {
+    let manifest = match architecture {
+        "stable-diffusion-1" => include_str!("sd15_components.json"),
+        "stable-diffusion-xl" => include_str!("sdxl_components.json"),
+        _ => return Err("Unsupported Stable Diffusion component family".to_string()),
+    };
+    ensure_components(root, manifest)
+}
+
+pub(super) fn ensure_ip_adapter(
+    paths: &MediaRuntimePaths,
+    architecture: &str,
+) -> MediaResult<PathBuf> {
+    let manifest = match architecture {
+        "stable-diffusion-1" => include_str!("ip_adapter_sd15_components.json"),
+        "stable-diffusion-xl" => include_str!("ip_adapter_sdxl_components.json"),
+        _ => return Err("Unsupported image adapter family".to_string()),
+    };
+    let root = paths.models_root()?.join("components").join("ip-adapter");
+    ensure_components(&root, include_str!("ip_adapter_encoder_components.json"))?;
+    ensure_components(&root, manifest)
+}
+
 pub(super) fn ensure_components(root: &Path, manifest: &str) -> MediaResult<PathBuf> {
     installer::validate_directory(root)?;
     let root = fs::canonicalize(root).map_err(|e| e.to_string())?;
@@ -128,8 +151,7 @@ pub(super) fn ensure_components(root: &Path, manifest: &str) -> MediaResult<Path
     lock.try_lock().map_err(|_| {
         "Another model is installing shared components. Retry when it finishes.".to_string()
     })?;
-    let files: Vec<ComponentFile> =
-        serde_json::from_str(manifest).map_err(|e| e.to_string())?;
+    let files: Vec<ComponentFile> = serde_json::from_str(manifest).map_err(|e| e.to_string())?;
     let client = Client::builder()
         .https_only(true)
         .connect_timeout(Duration::from_secs(30))

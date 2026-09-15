@@ -1,10 +1,12 @@
+import { matchesMediaResourceQuery } from "./resource-discovery.js";
 import { describe, expect, it } from "vitest";
 import type { MediaModelAddonDescriptor } from "./contracts.js";
 import {
   createMediaModelAddonSelection,
+  getMediaModelAddonCapabilities,
+  getMissingMediaModelAddonTriggers,
   inspectMediaModelAddonCompatibility,
   mediaModelAddonSelectionsEqual,
-  matchesMediaModelAddonQuery,
   promptContainsMediaModelAddonTrigger,
   reconcileMediaModelAddonSelections,
 } from "./model-addons.js";
@@ -50,24 +52,137 @@ const addon: MediaModelAddonDescriptor = {
 
 describe("media model add-on search", () => {
   it("matches multiple terms across names, architecture, targets, and triggers", () => {
-    expect(matchesMediaModelAddonQuery(addon, "character flux-2")).toBe(true);
-    expect(matchesMediaModelAddonQuery(addon, "idle denoiser")).toBe(true);
-    expect(matchesMediaModelAddonQuery(addon, "creative review-required")).toBe(
-      true,
-    );
+    expect(
+      matchesMediaResourceQuery(addon, undefined, [], "character flux-2"),
+    ).toBe(true);
+    expect(
+      matchesMediaResourceQuery(addon, undefined, [], "idle denoiser"),
+    ).toBe(true);
+    expect(
+      matchesMediaResourceQuery(
+        addon,
+        undefined,
+        [],
+        "creative review-required",
+      ),
+    ).toBe(true);
   });
 
   it("is case insensitive and rejects a query with any unmatched term", () => {
-    expect(matchesMediaModelAddonQuery(addon, "KLEIN GAME GIRL")).toBe(true);
-    expect(matchesMediaModelAddonQuery(addon, "flux audio")).toBe(false);
+    expect(
+      matchesMediaResourceQuery(addon, undefined, [], "KLEIN GAME GIRL"),
+    ).toBe(true);
+    expect(matchesMediaResourceQuery(addon, undefined, [], "flux audio")).toBe(
+      false,
+    );
   });
 
   it("treats blank queries as an unfiltered library", () => {
-    expect(matchesMediaModelAddonQuery(addon, " \t ")).toBe(true);
+    expect(matchesMediaResourceQuery(addon, undefined, [], " \t ")).toBe(true);
   });
 });
 
 describe("media model add-on selection", () => {
+  it("matches complete words, punctuation and escaped trigger phrases", () => {
+    const dog = { ...addon, triggerWords: ["sks dog"] };
+    expect(
+      promptContainsMediaModelAddonTrigger("a sks dog, outside", dog),
+    ).toBe(true);
+    expect(
+      promptContainsMediaModelAddonTrigger("a sks dogmatic speaker", dog),
+    ).toBe(false);
+    expect(
+      promptContainsMediaModelAddonTrigger("pixelated", {
+        ...addon,
+        triggerWords: ["pixel"],
+      }),
+    ).toBe(false);
+    expect(
+      promptContainsMediaModelAddonTrigger("(style.v2), portrait", {
+        ...addon,
+        triggerWords: ["(style.v2)"],
+      }),
+    ).toBe(true);
+  });
+
+  it("warns only for active LoRAs that change a loaded component", () => {
+    const selection = createMediaModelAddonSelection(addon);
+    if (selection.kind !== "lora") throw new Error("Expected a LoRA");
+    expect(
+      getMissingMediaModelAddonTriggers("landscape", [addon], [selection]),
+    ).toHaveLength(1);
+    expect(
+      getMissingMediaModelAddonTriggers(
+        "landscape",
+        [addon],
+        [{ ...selection, enabled: false }],
+      ),
+    ).toEqual([]);
+    expect(
+      getMissingMediaModelAddonTriggers(
+        "landscape",
+        [addon],
+        [{ ...selection, modelStrength: 0, textEncoderStrength: 1 }],
+      ),
+    ).toEqual([]);
+    expect(
+      getMissingMediaModelAddonTriggers(
+        "landscape",
+        [{ ...addon, targetComponents: ["text-encoder"] }],
+        [{ ...selection, modelStrength: 0, textEncoderStrength: 1 }],
+      ),
+    ).toHaveLength(1);
+    const embedding = {
+      ...addon,
+      kind: "textual-inversion" as const,
+      defaultToken: "EasyNegative",
+    };
+    expect(
+      getMissingMediaModelAddonTriggers(
+        "landscape",
+        [embedding],
+        [createMediaModelAddonSelection(embedding)],
+      ),
+    ).toEqual([]);
+  });
+
+  it("defaults the verified EasyNegative asset to the negative prompt", () => {
+    expect(
+      createMediaModelAddonSelection({
+        ...addon,
+        kind: "textual-inversion",
+        digest:
+          "c74b4e810b030f6b75fde959e2db678c268d07115b85356d3c0138ba5eb42340",
+      }),
+    ).toMatchObject({ placement: "negative" });
+    expect(
+      createMediaModelAddonSelection({
+        ...addon,
+        kind: "textual-inversion",
+        defaultToken: "<monet>",
+      }),
+    ).toMatchObject({ placement: "positive" });
+  });
+
+  it.each([
+    ["local-wan", "wan-2.2-ti2v"],
+    ["local-video", "ltx-video"],
+    ["local-video", "framepack-i2v"],
+    ["local-video", "hunyuan-video-1.5-i2v"],
+  ] as const)(
+    "exposes denoiser LoRAs for %s / %s",
+    (providerId, architecture) => {
+      expect(getMediaModelAddonCapabilities(providerId, architecture)).toEqual([
+        {
+          kind: "lora",
+          targetComponents: ["denoiser"],
+          maxActive: 8,
+          supportsSeparateComponentStrengths: false,
+          supportsDenoisingSchedules: false,
+        },
+      ]);
+    },
+  );
   it("creates an enabled LoRA selection with neutral strength", () => {
     expect(createMediaModelAddonSelection(addon)).toEqual({
       kind: "lora",

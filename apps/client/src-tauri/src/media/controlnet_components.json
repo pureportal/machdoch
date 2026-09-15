@@ -1,0 +1,50 @@
+{
+  "controlnet-sd15-canny": [
+    {
+      "path": "config.json",
+      "url": "https://huggingface.co/lllyasviel/control_v11p_sd15_canny/resolve/115a470d547982438f70198e353a921996e2e819/config.json",
+      "bytes": 996,
+      "sha256": "8f13c37bac4c495785d6b5edcd604c013776690794d2dddff7579bbc70960801"
+    },
+    {
+      "path": "diffusion_pytorch_model.safetensors",
+      "url": "https://huggingface.co/lllyasviel/control_v11p_sd15_canny/resolve/115a470d547982438f70198e353a921996e2e819/diffusion_pytorch_model.safetensors",
+      "bytes": 1445157124,
+      "sha256": "be713fb941fc7c625f0c7d816b6a19115783a665f3049a8974f127e0c075d9a9"
+    }
+  ],
+  "controlnet-sd15-depth": [
+    {
+      "path": "config.json",
+      "url": "https://huggingface.co/lllyasviel/control_v11f1p_sd15_depth/resolve/539f99181d33db39cf1af2e517cd8056785f0a87/config.json",
+      "bytes": 945,
+      "sha256": "ee789f6b46cd8c443c80ffb81e5c05e14b8b3cbec9e861829bfa3d2a6d3ee16f"
+    },
+    {
+      "path": "diffusion_pytorch_model.safetensors",
+      "url": "https://huggingface.co/lllyasviel/control_v11f1p_sd15_depth/resolve/539f99181d33db39cf1af2e517cd8056785f0a87/diffusion_pytorch_model.safetensors",
+      "bytes": 1445157124,
+      "sha256": "999aca923ca5e19e70e6afc8d11073cc3c03553ca935b636bd5925df4a1c77d1"
+    }
+  ],
+  "depth-anything-v2-small": [
+    {
+      "path": "config.json",
+      "url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Small-hf/resolve/5426e4f0f36572d16453bbda7a8389317b1bef99/config.json",
+      "bytes": 950,
+      "sha256": "c56698d3643dde1f83ea2212759e6b31a22b8f827246a36dd007ee8a22b3ff75"
+    },
+    {
+      "path": "preprocessor_config.json",
+      "url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Small-hf/resolve/5426e4f0f36572d16453bbda7a8389317b1bef99/preprocessor_config.json",
+      "bytes": 775,
+      "sha256": "d41175c0d889477ca8fc67191e540faef14baf6275157b3fdecf78469e6bbf84"
+    },
+    {
+      "path": "model.safetensors",
+      "url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Small-hf/resolve/5426e4f0f36572d16453bbda7a8389317b1bef99/model.safetensors",
+      "bytes": 99173660,
+      "sha256": "3152477ce0d8d6978d76b995120de97cb5b928701fd0f817769f59e249a16b70"
+    }
+  ]
+}

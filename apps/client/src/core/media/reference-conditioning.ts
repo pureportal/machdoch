@@ -36,6 +36,13 @@ export const getMediaReferenceConditioningCapabilities = (
       : NONE;
   }
   switch (model.architecture) {
+    case "krea-2":
+      return {
+        roles: ["subject", "style", "composition", "palette", "detail"],
+        maximumReferenceImages: 3,
+        adjustableInfluence: false,
+        promptless: true,
+      };
     case "flux-2":
       return {
         roles: ["subject", "style", "composition", "palette", "detail"],
@@ -44,8 +51,20 @@ export const getMediaReferenceConditioningCapabilities = (
         promptless: true,
       };
     case "stable-diffusion-1":
-    case "stable-diffusion-2":
+      return {
+        roles: ["subject"],
+        maximumReferenceImages: 3,
+        adjustableInfluence: true,
+        promptless: true,
+      };
     case "stable-diffusion-xl":
+      return {
+        roles: ["subject", "style", "composition"],
+        maximumReferenceImages: 3,
+        adjustableInfluence: true,
+        promptless: true,
+      };
+    case "stable-diffusion-2":
     case "flux-1":
       return {
         roles: ["composition"],

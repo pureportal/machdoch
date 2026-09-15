@@ -1,3 +1,8 @@
+import { mediaVideoDimensionsError } from "./video-quality.js";
+import {
+  mediaImageSamplingError,
+  readMediaImageSampling,
+} from "./image-sampling.js";
 import { createMediaFlowFingerprint } from "./canonicalize.js";
 import {
   compileConnectedMediaFlow,
@@ -9,6 +14,7 @@ import {
   validateMediaFlowDocument,
 } from "./node-registry.js";
 import { resolveMediaFlowVariables } from "./variables.js";
+import { resolveMediaNodePrompt } from "./prompt-resolution.js";
 import { inspectMediaModelAddonCompatibility } from "./model-addons.js";
 import {
   getMediaReferenceConditioningCapabilities,
@@ -70,6 +76,7 @@ interface CreateImageRecipeFlowInput extends CreateImageFlowInputBase {
 interface CreateImageEditFlowInput extends CreateImageFlowInputBase {
   sourceAssetId: string;
   sourceRole?: MediaImageReferenceRole;
+  sourceInfluence?: number;
   editStrength?: number;
   referenceAssets?: readonly {
     assetId: string;
@@ -152,6 +159,7 @@ export const createImageRecipeFlow = ({
       modelPolicy: settings.modelPolicy,
       modelId: settings.modelId,
       modelAddons: settings.modelAddons,
+      ...settings.sampling,
       aspectRatio: settings.aspectRatio,
       outputCount: settings.outputCount,
       outputFormat: settings.outputFormat,
@@ -357,6 +365,7 @@ export const createImageEditFlow = ({
   settings,
   sourceAssetId,
   sourceRole = "base",
+  sourceInfluence = 1,
   editStrength = 0.65,
   referenceAssets = [],
 }: CreateImageEditFlowInput): MediaFlow => {
@@ -382,7 +391,7 @@ export const createImageEditFlow = ({
     {
       assetId: sourceAssetId,
       referenceRole: sourceRole,
-      influence: 1,
+      influence: sourceInfluence,
     },
   );
   const additionalSources = referenceAssets.map((reference, index) =>
@@ -403,6 +412,7 @@ export const createImageEditFlow = ({
     modelPolicy: settings.modelPolicy,
     modelId: settings.modelId,
     modelAddons: settings.modelAddons,
+    ...settings.sampling,
     aspectRatio: settings.aspectRatio,
     outputCount: settings.outputCount,
     outputFormat: settings.outputFormat,
@@ -574,7 +584,9 @@ export const createImageToVideoFlow = ({
     settings?.modelId ??
     (loopMode === "seamless"
       ? "local:wan2.2-ti2v-5b"
-      : "local:hunyuan-video-1.5-i2v-step-distilled");
+      : lastFrameAssetId && lastFrameAssetId !== sourceAssetId
+        ? "local:framepack-i2v-hy-13b"
+        : "local:hunyuan-video-1.5-i2v-step-distilled");
   const prompt = createNode(
     "video-prompt",
     "source.prompt",
@@ -591,8 +603,11 @@ export const createImageToVideoFlow = ({
       providerPolicy: "local",
       modelPolicy: "quality",
       modelId: videoModelId,
+      modelAddons: settings?.modelAddons ?? [],
       aspectRatio,
       resolution: settings?.resolution ?? "quality-640",
+      width: settings?.width ?? null,
+      height: settings?.height ?? null,
       generateAudio: false,
       transparentBackground,
       loopMode,
@@ -601,7 +616,7 @@ export const createImageToVideoFlow = ({
       numInferenceSteps: settings?.numInferenceSteps ?? 30,
       guidanceScale:
         settings?.guidanceScale ?? (loopMode === "seamless" ? 5 : 9),
-      seed: 0,
+      seed: settings?.seed ?? null,
       negativePrompt: "",
       matteQuality: settings?.matteQuality ?? "production",
       encodingQuality: settings?.encodingQuality ?? "lossless",
@@ -778,8 +793,11 @@ export const createGeneratedLoopVideoFlow = ({
       providerPolicy: "local",
       modelPolicy: "quality",
       modelId: settings?.modelId ?? "local:wan2.2-ti2v-5b",
+      modelAddons: settings?.modelAddons ?? [],
       aspectRatio: settings?.aspectRatio ?? "1:1",
       resolution: settings?.resolution ?? "quality-640",
+      width: settings?.width ?? null,
+      height: settings?.height ?? null,
       generateAudio: false,
       transparentBackground: settings?.transparentBackground ?? true,
       loopMode: settings?.loopMode ?? "seamless",
@@ -787,7 +805,7 @@ export const createGeneratedLoopVideoFlow = ({
       numFrames: settings?.numFrames ?? 33,
       numInferenceSteps: settings?.numInferenceSteps ?? 30,
       guidanceScale: settings?.guidanceScale ?? 5,
-      seed: 0,
+      seed: settings?.seed ?? null,
       negativePrompt: "",
       matteQuality: settings?.matteQuality ?? "production",
       encodingQuality: settings?.encodingQuality ?? "lossless",
@@ -1383,14 +1401,20 @@ export const createImageContactSheetFlow = ({
 };
 
 export const createMediaFlowLayout = (flow: MediaFlow): MediaFlowLayout => {
-  const layerColumns: Record<MediaFlowNode["layer"], number> = {
-    source: 0,
-    task: 1,
-    operation: 2,
-    control: 3,
-    output: 4,
-    runtime: 2,
-  };
+  const parentsByNode = new Map(
+    flow.nodes.map((node) => [node.id, [] as string[]]),
+  );
+  for (const edge of flow.edges) {
+    if (parentsByNode.has(edge.fromNodeId))
+      parentsByNode.get(edge.toNodeId)?.push(edge.fromNodeId);
+  }
+  const columnsByNode = new Map<string, number>();
+  for (const node of orderMediaFlowNodes(flow)) {
+    const parentColumns = (parentsByNode.get(node.id) ?? []).map(
+      (parentId) => (columnsByNode.get(parentId) ?? -1) + 1,
+    );
+    columnsByNode.set(node.id, Math.max(0, ...parentColumns));
+  }
   const rowsByColumn = new Map<number, number>();
 
   return {
@@ -1399,14 +1423,14 @@ export const createMediaFlowLayout = (flow: MediaFlow): MediaFlowLayout => {
     groups: [],
     comments: [],
     nodes: flow.nodes.map((node) => {
-      const column = layerColumns[node.layer];
+      const column = columnsByNode.get(node.id) ?? 0;
       const row = rowsByColumn.get(column) ?? 0;
       rowsByColumn.set(column, row + 1);
 
       return {
         nodeId: node.id,
-        x: 52 + column * 250,
-        y: 80 + row * 150,
+        x: 52 + column * 360,
+        y: 80 + row * 420,
       };
     }),
   };
@@ -1785,7 +1809,7 @@ const readTaskSeed = (
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const readModelAddonSelections = (
+export const readModelAddonSelections = (
   value: unknown,
 ): MediaModelAddonSelection[] | null => {
   if (!Array.isArray(value) || value.length > 24) return null;
@@ -1880,7 +1904,7 @@ const readImageTaskNodeSettings = (
   flow: MediaFlow,
   taskNode: MediaFlowNode,
 ): ImageRecipeSettings | null => {
-  const promptNode = flow.nodes.find((node) => node.type === "source.prompt");
+  const resolvedPrompt = resolveMediaNodePrompt(flow, taskNode.id);
   const providerPolicy = taskNode.config.providerPolicy;
   const modelPolicy = taskNode.config.modelPolicy;
   const aspectRatio = taskNode.config.aspectRatio;
@@ -1888,7 +1912,7 @@ const readImageTaskNodeSettings = (
   const outputFormat = taskNode.config.outputFormat;
   const svgMode = taskNode.config.svgMode;
   const isSvgVectorization = outputFormat === "svg" && svgMode === "vectorize";
-  const prompt = promptNode?.config.prompt;
+  const prompt = resolvedPrompt.prompt;
   const modelId = taskNode.config.modelId;
   const modelAddons =
     taskNode.config.modelAddons === undefined
@@ -1915,6 +1939,7 @@ const readImageTaskNodeSettings = (
     modelPolicy: modelPolicy as ImageRecipeSettings["modelPolicy"],
     modelId: typeof modelId === "string" ? modelId : null,
     modelAddons,
+    sampling: readMediaImageSampling(taskNode.config),
     aspectRatio: aspectRatio as ImageRecipeSettings["aspectRatio"],
     outputCount,
     outputFormat: outputFormat as ImageRecipeSettings["outputFormat"],
@@ -2885,7 +2910,9 @@ const createExecutionSteps = (
               ? "seamless loop"
               : node.config.loopMode === "ping-pong"
                 ? "reversed boomerang"
-                : "one-way video";
+                : node.config.loopMode === "crossfade"
+                  ? "crossfade loop"
+                  : "one-way video";
           steps.push({
             id: stepId(node, "generate-video"),
             sourceNodeId: node.id,
@@ -3163,7 +3190,13 @@ export const compileMediaFlow = ({
     effectiveFlow.nodes.some((node) => node.type === "source.image") &&
     effectiveFlow.nodes.some((node) => node.type === "output.asset");
   const settings = imageTask?.settings ?? null;
-  const promptNode = flow.nodes.find((node) => node.type === "source.prompt");
+  const taskPrompt = imageTask?.taskNode ?? videoTaskNode;
+  const resolvedPrompt = taskPrompt
+    ? resolveMediaNodePrompt(effectiveFlow, taskPrompt.id)
+    : null;
+  const promptNode = effectiveFlow.nodes.find(
+    (node) => node.id === resolvedPrompt?.sourceNodeId,
+  );
   const imageTaskNode = imageTask?.taskNode ?? null;
   const subjectCutoutNode = effectiveFlow.nodes.find(
     (node) => node.type === "operation.subject-cutout",
@@ -3173,6 +3206,17 @@ export const compileMediaFlow = ({
   );
   const diagnostics: MediaCompilerDiagnostic[] = [];
   const cardinality = analyzeMediaFlowCardinality(effectiveFlow);
+  const samplingError = settings
+    ? mediaImageSamplingError(settings.sampling ?? {})
+    : null;
+  if (samplingError)
+    diagnostics.push({
+      code: "NODE_SCHEMA_INVALID",
+      severity: "error",
+      message: samplingError,
+      ...(imageTaskNode ? { nodeId: imageTaskNode.id } : {}),
+      action: "Update the sampling settings.",
+    });
 
   diagnostics.push(
     ...variableResolution.issues.map((issue) => ({
@@ -3493,7 +3537,7 @@ export const compileMediaFlow = ({
         const configured = configuredId
           ? ranked.find((candidate) => candidate.id === configuredId)
           : null;
-        return configured ?? ranked[0] ?? null;
+        return configuredId ? (configured ?? null) : (ranked[0] ?? null);
       })()
     : null;
   const imageModel = imageTask
@@ -3583,11 +3627,22 @@ export const compileMediaFlow = ({
   const openAiConfigured = models.some(
     (candidate) => candidate.providerId === "openai" && candidate.configured,
   );
+  const videoAddons = videoTaskNode
+    ? readModelAddonSelections(videoTaskNode.config.modelAddons ?? [])
+    : [];
+  if (videoAddons === null)
+    diagnostics.push({
+      code: "NODE_SCHEMA_INVALID",
+      severity: "error",
+      message: "Invalid video LoRA selection.",
+      nodeId: videoTaskNode!.id,
+      action: "Select the LoRAs again.",
+    });
   const resolvedAddons = resolveModelAddons(
-    settings?.modelAddons ?? [],
+    settings?.modelAddons ?? videoAddons ?? [],
     addons,
     model,
-    imageTaskNode?.id ?? "generate",
+    imageTaskNode?.id ?? videoTaskNode?.id ?? "generate",
   );
   diagnostics.push(...resolvedAddons.diagnostics);
 
@@ -3613,11 +3668,10 @@ export const compileMediaFlow = ({
       diagnostics.push({
         code: "MODEL_NOT_FOUND",
         severity: "error",
-        message:
-          "No discovered image-to-video model matches the video node's execution policy.",
+        message: "The selected video model cannot run these settings.",
         nodeId: videoTaskNode.id,
         action:
-          "Scan the workspace models directory and choose a ready HunyuanVideo, FramePack, or lightweight LTX-Video variant.",
+          "Choose a compatible model or change the loop and frame inputs.",
       });
     } else {
       const readinessGuidance = describeMediaModelReadiness(videoModel);
@@ -3651,8 +3705,10 @@ export const compileMediaFlow = ({
       hasVideoComposite && config.transparentBackground !== true
         ? "Animated background compositing requires transparent foreground extraction."
         : null,
-      !["none", "ping-pong", "seamless"].includes(String(config.loopMode))
-        ? "Select one-way, reversed boomerang, or seamless assembly."
+      !["none", "ping-pong", "seamless", "crossfade"].includes(
+        String(config.loopMode),
+      )
+        ? "Select a loop mode."
         : null,
       config.loopMode === "seamless" && !sameEndpointSource
         ? "Seamless assembly requires the same source on both endpoint ports."
@@ -3673,6 +3729,7 @@ export const compileMediaFlow = ({
       config.fps > 60
         ? "Playback rate must be an integer from 1 through 60 fps."
         : null,
+      mediaVideoDimensionsError(config),
       !["preview-512", "quality-640", "quality-768"].includes(
         String(config.resolution),
       )
@@ -3690,9 +3747,10 @@ export const compileMediaFlow = ({
       config.guidanceScale > 10
         ? "Video motion guidance must be from 1 through 10."
         : null,
-      typeof config.seed !== "number" ||
-      !Number.isSafeInteger(config.seed) ||
-      config.seed < 0
+      config.seed != null &&
+      (typeof config.seed !== "number" ||
+        !Number.isSafeInteger(config.seed) ||
+        config.seed < 0)
         ? "Video seed must be a JavaScript-safe non-negative integer."
         : null,
       !["fast", "balanced", "production"].includes(String(config.matteQuality))

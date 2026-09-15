@@ -90,6 +90,45 @@ def check_image(request, torch, device):
     return visual_check(request, source, reference, torch, device, progress)
 
 
+def image_mask(request):
+    image = load_image(request["imagePath"])
+    channels = {"red": "R", "green": "G", "blue": "B", "alpha": "A"}
+    channel = request["channel"]
+    if channel == "luminance":
+        mask = image.convert("L")
+    elif channel in channels:
+        mask = image.getchannel(channels[channel])
+    else:
+        raise ValueError("Choose an image channel for the mask.")
+    if request["invert"]:
+        mask = ImageOps.invert(mask)
+    mask.save(Path(request["outputDirectory"]) / "output.png")
+    return {"width": mask.width, "height": mask.height, "channel": channel, "inverted": request["invert"]}
+
+
+def composite_masks(first, second, operation):
+    if first.size != second.size:
+        raise ValueError("The masks must have matching dimensions.")
+    destination = np.asarray(first.convert("L"), dtype=np.float32) / 255.0
+    source = np.asarray(second.convert("L"), dtype=np.float32) / 255.0
+    if operation == "add":
+        result = destination + source
+    elif operation == "subtract":
+        result = destination - source
+    elif operation == "multiply":
+        result = destination * source
+    else:
+        raise ValueError("Choose Add, Subtract, or Multiply for the masks.")
+    return Image.fromarray(np.round(result.clip(0, 1) * 255).astype(np.uint8))
+
+
+def mask_composite(request):
+    with Image.open(request["imagePath"]) as first, Image.open(request["maskPath"]) as second:
+        result = composite_masks(first, second, request["operation"])
+    result.save(Path(request["outputDirectory"]) / "output.png")
+    return {"width": result.width, "height": result.height, "operation": request["operation"]}
+
+
 def segment(request, torch, device):
     from transformers import Sam3Model, Sam3Processor
 
@@ -180,13 +219,26 @@ def main():
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     request = json.load(sys.stdin)
     command = sys.argv[1]
-    if command == "prepare-mask":
-        print(json.dumps({"schemaVersion": 1, **prepare_mask(request)}))
+    image_operations = {"prepare-mask": prepare_mask, "image-mask": image_mask, "mask-composite": mask_composite}
+    if command in image_operations:
+        print(json.dumps({"schemaVersion": 1, **image_operations[command](request)}))
+        return
+    if command == "canny":
+        from media_controlnet import preprocess
+
+        print(json.dumps({"schemaVersion": 1, **preprocess(request, command)}))
         return
     import torch
     from media_diffusers_worker import _device
 
     device, _, _ = _device(torch)
+    if command == "depth-map":
+        from media_controlnet import preprocess
+        from media_diffusers_worker import _configure_amd_convolution_backend
+
+        _configure_amd_convolution_backend(torch, device)
+        print(json.dumps({"schemaVersion": 1, **preprocess(request, command, torch, device)}))
+        return
     handlers = {"segment": segment, "visual-check": check_image, "upscale": upscale, "generate-prompt": generate_prompt}
     if command not in handlers:
         raise ValueError("Unknown workflow operation")

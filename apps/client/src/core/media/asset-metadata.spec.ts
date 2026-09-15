@@ -1,14 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyMediaAssetMetadataToAddon,
-  createEmptyMediaGenerationAssetMetadata,
   isMediaCivitaiSourceUrl,
   normalizeMediaCivitaiSampleImageUrl,
   normalizeMediaExternalLink,
   normalizeMediaTriggerWords,
   parseMediaTriggerWords,
 } from "./asset-metadata.js";
-import type { MediaModelAddonDescriptor } from "./contracts.js";
 
 describe("media asset metadata links", () => {
   it("accepts credential-free HTTPS links", () => {
@@ -57,21 +54,5 @@ describe("media asset trigger words", () => {
       "cinematic lighting",
       "red dress",
     ]);
-  });
-
-  it("applies edited trigger words to generation add-ons", () => {
-    const addon = {
-      kind: "lora",
-      triggerWords: ["original"],
-      defaultToken: null,
-    } as MediaModelAddonDescriptor;
-    const metadata = {
-      ...createEmptyMediaGenerationAssetMetadata(),
-      triggerWords: "edited phrase, Second Phrase",
-    };
-
-    expect(
-      applyMediaAssetMetadataToAddon(addon, metadata).triggerWords,
-    ).toEqual(["edited phrase", "Second Phrase"]);
   });
 });

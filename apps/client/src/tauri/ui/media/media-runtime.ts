@@ -1775,6 +1775,16 @@ export const planMediaModelAddonRemoval = async (
   });
 };
 
+export const updateMediaModelAddonTriggers = async (
+  addonId: string,
+  triggerWords: string[],
+): Promise<void> => {
+  await invoke<void>("media_update_model_addon_triggers", {
+    addonId,
+    triggerWords,
+  });
+};
+
 export const removeMediaModelAddon = async (
   request: RemoveMediaModelAddonRequest,
 ): Promise<MediaModelAddonRemovalResult> => {

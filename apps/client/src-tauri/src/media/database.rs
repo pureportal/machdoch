@@ -2101,6 +2101,13 @@ pub(crate) fn complete_local_diffusers_generation(
         for (input_asset_id, role) in [
             (request.base_image_asset_id.as_deref(), "base-image"),
             (request.pose_image_asset_id.as_deref(), "pose"),
+            (
+                request
+                    .control_net
+                    .as_ref()
+                    .map(|control| control.image_asset_id.as_str()),
+                "controlnet",
+            ),
         ] {
             if let Some(input_asset_id) = input_asset_id {
                 transaction
@@ -2228,6 +2235,7 @@ pub(crate) fn begin_local_video_generation(
         "opaque encoder and decoder verification"
     };
     let ending_contract = match request.loop_mode.as_str() {
+        "crossfade" => "crossfade transition inspection",
         "seamless" => "seamless endpoint policy",
         "ping-pong" => "reversed boomerang boundary policy",
         _ => "intentional one-way ending policy",
@@ -2386,6 +2394,7 @@ pub(crate) fn complete_local_video_generation(
         "architecture": video.architecture,
         "flowRevisionId": request.flow_revision_id,
         "modelRevision": video.model_revision,
+        "addons": video.addons,
         "modelDigest": video.model_digest,
         "workerVersion": video.worker_version,
         "packages": video.packages,
@@ -2398,6 +2407,7 @@ pub(crate) fn complete_local_video_generation(
         "conditioningFraming": video.conditioning_framing,
         "endpointRestoration": video.endpoint_restoration,
         "loopEndpointRestoration": video.loop_endpoint_restoration,
+        "loopBoundaryInspection": video.loop_boundary_inspection,
         "prompt": video.prompt,
         "negativePrompt": video.negative_prompt,
         "negativePromptApplied": video.negative_prompt_applied,
@@ -2466,6 +2476,7 @@ pub(crate) fn complete_local_video_generation(
         technical_tags.push(("vp9-profile-1-444", "VP9 4:4:4"));
     }
     technical_tags.push(match request.loop_mode.as_str() {
+        "crossfade" => ("crossfade-loop", "Crossfade loop"),
         "ping-pong" => ("ping-pong-loop", "Boomerang (reversed)"),
         "seamless" => ("seamless-loop", "Forward seamless loop"),
         _ => ("non-looping-shot", "Non-looping shot"),
@@ -2516,6 +2527,7 @@ pub(crate) fn complete_local_video_generation(
             "architecture": video.architecture,
             "flowRevisionId": request.flow_revision_id,
             "modelRevision": video.model_revision,
+            "addons": video.addons,
             "modelDigest": video.model_digest,
             "workerVersion": video.worker_version,
             "packages": video.packages,
@@ -2528,6 +2540,7 @@ pub(crate) fn complete_local_video_generation(
             "conditioningFraming": video.conditioning_framing,
             "endpointRestoration": video.endpoint_restoration,
             "loopEndpointRestoration": video.loop_endpoint_restoration,
+            "loopBoundaryInspection": video.loop_boundary_inspection,
             "prompt": video.prompt,
             "negativePrompt": video.negative_prompt,
             "negativePromptApplied": video.negative_prompt_applied,
@@ -6564,6 +6577,7 @@ mod tests {
             output_format: "png".to_string(),
             model_policy: "balanced".to_string(),
             model_addons: Vec::new(),
+            sampling: Default::default(),
             transparent_background: false,
             subject_cutout_model_priority: Vec::new(),
             negative_prompt: String::new(),
@@ -6571,6 +6585,7 @@ mod tests {
             base_image_asset_id: None,
             edit_mask: None,
             pose_image_asset_id: None,
+            control_net: None,
             pose_strength: None,
             pose_start: None,
             pose_end: None,
@@ -6746,6 +6761,9 @@ mod tests {
             (512, 288),
         );
         let request = GenerateMediaVideoRequest {
+            model_addons: Vec::new(),
+            width: None,
+            height: None,
             schema_version: 1,
             run_id: run_id.to_string(),
             flow_id: "flow-1".to_string(),
@@ -6823,6 +6841,7 @@ mod tests {
         }))
         .unwrap();
         LocalGeneratedVideo {
+            addons: Vec::new(),
             digest,
             relative_path,
             byte_size,
@@ -6842,6 +6861,7 @@ mod tests {
             conditioning_framing: None,
             endpoint_restoration: None,
             loop_endpoint_restoration: None,
+            loop_boundary_inspection: None,
             model_revision: "test-revision".to_string(),
             model_digest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
                 .to_string(),

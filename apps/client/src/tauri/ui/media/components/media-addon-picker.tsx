@@ -1,8 +1,7 @@
-import { Check, Search, SlidersHorizontal, X } from "lucide-react";
+import { Check, SlidersHorizontal, X } from "lucide-react";
 import { useState, type JSX } from "react";
 import {
   inspectMediaModelAddonCompatibility,
-  matchesMediaModelAddonQuery,
   reconcileMediaModelAddonSelections,
 } from "../../../../core/media/model-addons.js";
 import type {
@@ -17,6 +16,11 @@ import { cn } from "../../lib/utils";
 import { ControlTooltip } from "../../components/ui/tooltip";
 import { MediaLoraStrengthControl } from "./media-lora-strength-control";
 import { MediaResourcePreview } from "./media-visual-preview";
+
+import {
+  MediaResourceFilters,
+  useMediaResourceDiscovery,
+} from "./media-resource-filters";
 
 type AddonTypeFilter = "all" | "lora" | "textual-inversion";
 
@@ -48,10 +52,9 @@ export const MediaAddonBrowser = ({
   onClear,
   className,
 }: MediaAddonBrowserProps): JSX.Element => {
-  const [query, setQuery] = useState("");
-  const [categoryId, setCategoryId] = useState("all");
-  const [tag, setTag] = useState("all");
+  const [selectedOnly, setSelectedOnly] = useState(false);
   const [type, setType] = useState<AddonTypeFilter>("all");
+  const showTypeFilter = model.addonCapabilities.length > 1;
   const [openControlsId, setOpenControlsId] = useState<string | null>(null);
   const reconciledSelections = reconcileMediaModelAddonSelections(
     model,
@@ -62,102 +65,67 @@ export const MediaAddonBrowser = ({
     (addon) =>
       inspectMediaModelAddonCompatibility(model, addon).status === "compatible",
   );
-  const availableTags = [
-    ...new Set(
-      compatibleAddons.flatMap((addon) => metadata[addon.id]?.tags ?? []),
-    ),
-  ].sort((left, right) => left.localeCompare(right));
-  const visibleAddons = compatibleAddons.filter((addon) => {
-    const details = metadata[addon.id];
-    const categoryNames = (details?.categoryIds ?? []).flatMap((id) => {
-      const category = categories.find((candidate) => candidate.id === id);
-      return category ? [category.name] : [];
-    });
-    const queryMatches =
-      matchesMediaModelAddonQuery(addon, query) ||
-      [details?.tags.join(" ") ?? "", categoryNames.join(" ")]
-        .join(" ")
-        .toLocaleLowerCase()
-        .includes(query.trim().toLocaleLowerCase());
-    return (
-      queryMatches &&
-      (categoryId === "all" || details?.categoryIds.includes(categoryId)) &&
-      (tag === "all" || details?.tags.includes(tag)) &&
-      (type === "all" || addon.kind === type)
-    );
-  });
+  const discovery = useMediaResourceDiscovery(
+    compatibleAddons,
+    metadata,
+    categories,
+  );
+  const visibleAddons = discovery.visibleResources.filter(
+    (addon) =>
+      (!showTypeFilter || type === "all" || addon.kind === type) &&
+      (!selectedOnly ||
+        reconciledSelections.some(
+          (selection) => selection.addonId === addon.id,
+        )),
+  );
 
   return (
     <div className={cn("space-y-3", className)}>
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="relative sm:col-span-2 xl:col-span-1">
-          <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+      <MediaResourceFilters
+        label="add-ons"
+        filters={discovery.filters}
+        onChange={discovery.setFilters}
+        categories={categories}
+        tags={discovery.tags}
+        allowNewest
+      />
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-xs text-slate-300">
           <input
-            aria-label="Search add-ons"
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search add-ons"
-            className={cn(
-              "h-9 w-full rounded-lg border border-slate-700 bg-slate-950 pl-8 text-xs text-slate-100 outline-none focus:border-sky-500",
-              reconciledSelections.length > 0 ? "pr-24" : "pr-2",
-            )}
+            type="checkbox"
+            checked={selectedOnly}
+            onChange={(event) => setSelectedOnly(event.target.checked)}
           />
-          {reconciledSelections.length > 0 ? (
-            <div className="absolute inset-y-0 right-1.5 flex items-center gap-1.5 text-[10px] text-slate-400">
-              <span>{reconciledSelections.length} selected</span>
-              <ControlTooltip content="Clear selected add-ons">
-                <button
-                  type="button"
-                  aria-label="Clear selected add-ons"
-                  onClick={onClear}
-                  className="rounded p-0.5 hover:bg-slate-800 hover:text-slate-100"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </ControlTooltip>
-            </div>
-          ) : null}
-        </div>
-        <select
-          aria-label="Add-on category"
-          value={categoryId}
-          onChange={(event) => setCategoryId(event.target.value)}
-          className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200"
-        >
-          <option value="all">All categories</option>
-          {categories.map((category) => (
-            <option key={category.id} value={category.id}>
-              {category.name}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="Add-on tag"
-          value={tag}
-          onChange={(event) => setTag(event.target.value)}
-          className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200"
-        >
-          <option value="all">All tags</option>
-          {availableTags.map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="Add-on type"
-          value={type}
-          onChange={(event) => setType(event.target.value as AddonTypeFilter)}
-          className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200"
-        >
-          <option value="all">All types</option>
-          <option value="lora">LoRA</option>
-          <option value="textual-inversion">Embedding</option>
-        </select>
+          Selected only
+        </label>
+        <span className="text-xs text-slate-400" aria-live="polite">
+          {reconciledSelections.length} selected
+        </span>
+        {reconciledSelections.length > 0 ? (
+          <button
+            type="button"
+            aria-label="Clear selected add-ons"
+            onClick={onClear}
+            className="text-xs text-sky-300"
+          >
+            Clear
+          </button>
+        ) : null}
+        {showTypeFilter ? (
+          <select
+            aria-label="Add-on type"
+            value={type}
+            onChange={(event) => setType(event.target.value as AddonTypeFilter)}
+            className="ml-auto h-9 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200"
+          >
+            <option value="all">All types</option>
+            <option value="lora">LoRA</option>
+            <option value="textual-inversion">Embedding</option>
+          </select>
+        ) : null}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,12rem),1fr))] gap-2">
         {visibleAddons.map((addon) => {
           const selection = reconciledSelections.find(
             (candidate) => candidate.addonId === addon.id,
@@ -194,7 +162,10 @@ export const MediaAddonBrowser = ({
                     {addon.displayName}
                   </span>
                   <span className="block text-[9px] text-slate-500">
-                    {addonTypeLabel(addon.kind)}
+                    {[
+                      addonTypeLabel(addon.kind),
+                      ...(metadata[addon.id]?.tags ?? []).slice(0, 2),
+                    ].join(" · ")}
                   </span>
                 </span>
                 {selection ? <Check className="h-4 w-4 text-sky-300" /> : null}
@@ -225,7 +196,7 @@ export const MediaAddonBrowser = ({
               )}
 
               {selection ? (
-                <div className="absolute inset-x-2 top-2 z-10 max-h-[calc(100%-1rem)] overflow-y-auto rounded-lg border border-sky-300/30 bg-slate-950/90 p-2 shadow-xl backdrop-blur">
+                <div className="border-t border-slate-800 bg-slate-950/90 p-2">
                   <div className="flex items-center gap-2">
                     {selection.kind === "lora" ? (
                       <>
@@ -284,6 +255,19 @@ export const MediaAddonBrowser = ({
                       </button>
                     </ControlTooltip>
                   </div>
+                  {selection.kind === "textual-inversion" ? (
+                    <input
+                      aria-label={`${addon.displayName} token`}
+                      value={selection.token}
+                      onChange={(event) =>
+                        onChangeSelection({
+                          ...selection,
+                          token: event.target.value,
+                        })
+                      }
+                      className="mt-2 h-8 w-full rounded border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200"
+                    />
+                  ) : null}
                   {selection.kind === "lora" && openControlsId === addon.id ? (
                     <div className="mt-2 space-y-2 border-t border-slate-800 pt-2 text-[9px] text-slate-300">
                       {capability?.supportsSeparateComponentStrengths ? (
@@ -388,7 +372,9 @@ export const MediaAddonBrowser = ({
       </div>
       {visibleAddons.length === 0 ? (
         <p className="py-6 text-center text-xs text-slate-500">
-          No compatible add-ons
+          {compatibleAddons.length === 0
+            ? "No compatible add-ons"
+            : "No matching add-ons"}
         </p>
       ) : null}
     </div>

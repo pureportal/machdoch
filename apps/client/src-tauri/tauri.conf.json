@@ -54,6 +54,13 @@
     "longDescription": "Machdoch is a local-first AI assistant for Windows and Linux that works with folders, runs tasks, and automates repeatable workflows from the desktop or CLI.",
     "resources": {
       "python/media_diffusers_worker.py": "python/media_diffusers_worker.py",
+      "python/media_image_conditioning.py": "python/media_image_conditioning.py",
+      "python/media_controlnet.py": "python/media_controlnet.py",
+      "python/media_framepack_loading.py": "python/media_framepack_loading.py",
+      "python/media_video_loop.py": "python/media_video_loop.py",
+      "python/media_video_io.py": "python/media_video_io.py",
+      "python/media_video_addons.py": "python/media_video_addons.py",
+      "python/media_image_addons.py": "python/media_image_addons.py",
       "python/media_workflow_worker.py": "python/media_workflow_worker.py",
       "python/media_visual_check.py": "python/media_visual_check.py",
       "python/media_diffusers_requirements.txt": "python/media_diffusers_requirements.txt",

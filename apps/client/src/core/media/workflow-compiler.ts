@@ -23,6 +23,11 @@ export const requiresWorkflowCompilation = (flow: MediaFlow): boolean =>
       "operation.visual-check",
       "operation.prepare-mask",
       "operation.upscale",
+      "operation.canny",
+      "operation.image-mask",
+      "operation.mask-composite",
+      "operation.depth-map",
+      "operation.controlnet",
       "control.repeat",
     ].includes(node.type),
   ) ||
@@ -47,6 +52,11 @@ export const WORKFLOW_EXECUTABLE_TYPES = new Set([
   "operation.visual-check",
   "operation.prepare-mask",
   "operation.upscale",
+  "operation.canny",
+  "operation.image-mask",
+  "operation.mask-composite",
+  "operation.depth-map",
+  "operation.controlnet",
   "operation.crop",
   "operation.resize",
   "operation.color-adjust",
@@ -64,7 +74,9 @@ export function workflowTaskFlow(
   task: MediaFlowNode,
 ): MediaFlow {
   const inputs = flow.edges.filter(
-    (edge) => edge.toNodeId === task.id && edge.toPortId !== "mask",
+    (edge) =>
+      edge.toNodeId === task.id &&
+      !["mask", "controlnet"].includes(edge.toPortId),
   );
   const nodes: MediaFlowNode[] = [];
   const edges: MediaFlow["edges"] = [];
@@ -262,8 +274,32 @@ export function compileConnectedMediaFlow(
         node.config.outputCount !== 1
       )
         error(node.id, "Set variants to one per workflow attempt.");
+      const hasControlnet = effective.edges.some(
+        (edge) => edge.toNodeId === node.id && edge.toPortId === "controlnet",
+      );
+      if (
+        hasControlnet &&
+        effective.edges.some(
+          (edge) =>
+            edge.toNodeId === node.id &&
+            edge.toPortId === "image" &&
+            effective.nodes.some(
+              (source) =>
+                source.id === edge.fromNodeId &&
+                source.config.referenceRole === "pose",
+            ),
+        )
+      )
+        error(node.id, "Use one ControlNet input per image generation.");
       const taskPlan = compileTask({
         ...input,
+        models: hasControlnet
+          ? input.models.filter(
+              (model) =>
+                model.providerId === "local-diffusers" &&
+                model.architecture === "stable-diffusion-1",
+            )
+          : input.models,
         flow: workflowTaskFlow(effective, node),
       });
       diagnostics.push(
@@ -275,6 +311,18 @@ export function compileConnectedMediaFlow(
       );
       if (binding) {
         bindings.push(binding);
+        if (
+          effective.edges.some(
+            (edge) =>
+              edge.toNodeId === node.id && edge.toPortId === "controlnet",
+          ) &&
+          (binding.model.providerId !== "local-diffusers" ||
+            binding.model.architecture !== "stable-diffusion-1")
+        )
+          error(
+            node.id,
+            "Choose an SD1.5 model for Canny or Depth ControlNet.",
+          );
         if (binding.model.target !== "local")
           error(node.id, "Choose a local model for connected workflows.");
         if (
@@ -301,6 +349,11 @@ export function compileConnectedMediaFlow(
         "operation.prepare-mask": "prepare-mask",
         "operation.visual-check": "check-image",
         "operation.upscale": "upscale-image",
+        "operation.canny": "prepare-control-image",
+        "operation.image-mask": "prepare-mask",
+        "operation.mask-composite": "prepare-mask",
+        "operation.depth-map": "prepare-control-image",
+        "operation.controlnet": "apply-controlnet",
         "operation.crop": "crop-image",
         "operation.resize": "resize-image",
         "operation.color-adjust": "adjust-color",

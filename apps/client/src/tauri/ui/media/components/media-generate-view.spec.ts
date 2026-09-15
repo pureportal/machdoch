@@ -22,6 +22,8 @@ import {
   normalizeMediaStudioState,
 } from "../media-studio-store";
 import { MediaGenerateView } from "./media-generate-view";
+import { MediaAddonTriggerWarnings } from "./media-addon-trigger-warnings";
+import { createMediaModelAddonSelection } from "../../../../core/media/model-addons.js";
 
 vi.mock("./media-visual-preview", () => ({
   MediaAssetPreview: () => null,
@@ -207,6 +209,180 @@ afterEach(() => {
 });
 
 describe("MediaGenerateView", () => {
+  it("adds missing triggers without replacing prompt variables", () => {
+    const onPromptChange = vi.fn();
+    render(
+      createElement(MediaAddonTriggerWarnings, {
+        prompt: "a castle",
+        sourcePrompt: "a {{subject}}",
+        addons: [addon],
+        selections: [createMediaModelAddonSelection(addon)],
+        onPromptChange,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(onPromptChange).toHaveBeenCalledExactlyOnceWith(
+      "a {{subject}}, portrait detail",
+    );
+  });
+
+  it("does not offer a positive Add action for an automatically inserted negative embedding", () => {
+    const embedding = {
+      ...addon,
+      kind: "textual-inversion" as const,
+      defaultToken: "EasyNegative",
+      triggerWords: ["EasyNegative"],
+    };
+    render(
+      createElement(MediaAddonTriggerWarnings, {
+        prompt: "a castle",
+        addons: [embedding],
+        selections: [
+          {
+            kind: "textual-inversion",
+            addonId: embedding.id,
+            enabled: true,
+            token: "EasyNegative",
+            placement: "negative",
+          },
+        ],
+        onPromptChange: vi.fn(),
+      }),
+    );
+    expect(screen.queryByRole("button", { name: "Add" })).toBeNull();
+  });
+
+  it("shows missing triggers in Basic before opening additional options", () => {
+    const props = createProps();
+    const onChange = vi.fn();
+    render(
+      createElement(MediaGenerateView, {
+        ...props,
+        catalog: { ...catalog, addons: [addon] },
+        settings: {
+          ...props.settings,
+          modelAddons: [createMediaModelAddonSelection(addon)],
+        },
+        onChange,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: "A quiet lakeside cabin, portrait detail",
+      }),
+    );
+  });
+  it("keeps a missing video model selected until it becomes available", () => {
+    const onVideoSettingsChange = vi.fn();
+    const hunyuan = {
+      ...imageModel,
+      id: "local:hunyuan-video-1.5-i2v-step-distilled",
+      displayName: "HunyuanVideo 1.5",
+      architecture: "hunyuan-video-1.5-i2v" as const,
+      capabilities: ["image-to-video" as const, "alpha-video" as const],
+    };
+    const wan = {
+      ...hunyuan,
+      id: "local:wan2.2-ti2v-5b",
+      displayName: "Wan2.2",
+      architecture: "wan-2.2-ti2v" as const,
+    };
+    const props = createProps({
+      target: "video",
+      catalog: { ...catalog, models: [wan] },
+      videoSettings: {
+        ...baseState.videoRecipe,
+        modelId: "local:hunyuan-video-1.5-i2v-step-distilled",
+        loopMode: "none",
+      },
+      onVideoSettingsChange,
+    });
+    const { rerender } = render(createElement(MediaGenerateView, props));
+    expect(
+      screen
+        .getByRole("button", { name: "Generate video" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(
+      screen.getByRole("combobox", { name: "Model" }).textContent,
+    ).toContain("Choose model");
+    expect(onVideoSettingsChange).not.toHaveBeenCalled();
+
+    rerender(
+      createElement(MediaGenerateView, {
+        ...props,
+        catalog: { ...catalog, models: [wan, hunyuan] },
+      }),
+    );
+    expect(
+      screen.getByRole("combobox", { name: "Model" }).textContent,
+    ).toContain("HunyuanVideo 1.5");
+    expect(
+      screen
+        .getByRole("button", { name: "Generate video" })
+        .hasAttribute("disabled"),
+    ).toBe(false);
+    expect(onVideoSettingsChange).not.toHaveBeenCalled();
+  });
+
+  it("blocks saved seamless settings on a model without closing-frame conditioning", () => {
+    const model = {
+      ...imageModel,
+      id: "local:hunyuan-video-1.5-i2v-step-distilled",
+      displayName: "HunyuanVideo 1.5",
+      architecture: "hunyuan-video-1.5-i2v" as const,
+      capabilities: ["image-to-video" as const, "alpha-video" as const],
+    };
+    const props = createProps({
+      target: "video",
+      catalog: { ...catalog, models: [model] },
+      onVideoSettingsChange: vi.fn(),
+      videoSettings: {
+        ...baseState.videoRecipe,
+        modelId: "local:hunyuan-video-1.5-i2v-step-distilled",
+        loopMode: "seamless",
+      },
+    });
+    const { rerender } = render(createElement(MediaGenerateView, props));
+    expect(
+      screen
+        .getByRole("button", { name: "Generate video" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(
+      screen.getByText(
+        "This model cannot close a seamless loop. Choose Crossfade or Ping-pong.",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /More options/ }));
+    expect(
+      (screen.getByRole("option", { name: "Seamless" }) as HTMLOptionElement)
+        .disabled,
+    ).toBe(true);
+    fireEvent.change(screen.getByRole("combobox", { name: "Loop" }), {
+      target: { value: "crossfade" },
+    });
+    expect(props.onVideoSettingsChange).toHaveBeenCalledWith(
+      expect.objectContaining({ loopMode: "crossfade" }),
+    );
+    rerender(
+      createElement(MediaGenerateView, {
+        ...props,
+        videoSettings: {
+          ...props.videoSettings,
+          loopMode: "crossfade",
+          transparentBackground: true,
+        },
+      }),
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "Generate video" })
+        .hasAttribute("disabled"),
+    ).toBe(false);
+  });
+
   it("selects results and routes activity and cancellation to the clicked generation", () => {
     const completed = {
       ...createQueuedRun(),
@@ -340,7 +516,7 @@ describe("MediaGenerateView", () => {
     ).toBe(false);
   });
 
-  it("does not offer unsupported KREA image conditioning", () => {
+  it("shows KREA reference roles while waiting for the image runtime", () => {
     const kreaModel = {
       ...imageModel,
       id: "local:user:krea-2",
@@ -386,7 +562,7 @@ describe("MediaGenerateView", () => {
 
     expect(
       screen.getByLabelText("Reference 1 role").querySelectorAll("option"),
-    ).toHaveLength(0);
+    ).toHaveLength(5);
     expect((screen.getByLabelText("Prompt") as HTMLTextAreaElement).value).toBe(
       "",
     );
@@ -396,7 +572,7 @@ describe("MediaGenerateView", () => {
     expect(onGenerate).not.toHaveBeenCalled();
   });
 
-  it("defaults a new SDXL reference to its only executable role", () => {
+  it("defaults a new SDXL reference to subject conditioning", () => {
     const sdxlModel = {
       ...imageModel,
       id: "local:user:sdxl",
@@ -436,13 +612,13 @@ describe("MediaGenerateView", () => {
     );
 
     fireEvent.click(
-      screen.getAllByRole("button", { name: "Choose from Assets" })[0]!,
+      screen.getAllByRole("button", { name: "Choose from Assets" })[1]!,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Choose Image 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Image 1" }));
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
         referenceImages: [
-          { assetId: sourceAsset.id, role: "composition", influence: 1 },
+          { assetId: sourceAsset.id, role: "subject", influence: 1 },
         ],
       }),
     );
@@ -552,17 +728,11 @@ describe("MediaGenerateView", () => {
     expect(screen.queryByLabelText("Image edit mask canvas")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Mask area" }));
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        outputFormat: "png",
-        editMask: {
-          schemaVersion: 2,
-          sourceAssetId: sourceAsset.id,
-          inverted: false,
-          strokes: [],
-        },
-      }),
-    );
+    expect(onChange).not.toHaveBeenCalled();
+    expect(
+      (screen.getByRole("button", { name: "Mask area" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
   });
 
   it("keeps active run progress and the current step in the result pane", () => {
@@ -619,9 +789,9 @@ describe("MediaGenerateView", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /More options/u }));
-    fireEvent.click(screen.getByRole("button", { name: "Browse" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose LoRAs" }));
 
-    const dialog = screen.getByRole("dialog", { name: "Model add-ons" });
+    const dialog = screen.getByRole("dialog", { name: "LoRAs" });
     expect(within(dialog).getByLabelText("Search add-ons")).toBeTruthy();
     fireEvent.click(
       within(dialog).getByRole("button", { name: /Portrait Detail/u }),

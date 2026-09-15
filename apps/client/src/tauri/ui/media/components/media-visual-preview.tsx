@@ -1,6 +1,10 @@
 import { CircleX, Sparkles } from "lucide-react";
 import { mediaAssetLabel } from "../../../../core/media/asset-label.js";
 import { useEffect, useState, type JSX } from "react";
+import {
+  isMediaAssetKnownTransparent,
+  resolveMediaAssetVideoLoopMode,
+} from "../../../../core/media/video-quality.js";
 import type {
   MediaAssetRecord,
   MediaGenerationAssetMetadata,
@@ -93,15 +97,30 @@ export const MediaAssetPreview = ({
   }
 
   const objectFit = fit === "contain" ? "object-contain" : "object-cover";
+  const loopMode = resolveMediaAssetVideoLoopMode(asset);
+  const transparencyStyle = isMediaAssetKnownTransparent(asset)
+    ? {
+        backgroundColor: "#cbd5e1",
+        backgroundImage:
+          "conic-gradient(#94a3b8 25%, transparent 0 50%, #94a3b8 0 75%, transparent 0)",
+        backgroundSize: "16px 16px",
+      }
+    : undefined;
   return asset.kind === "video" ? (
     <video
       ref={setPreviewElement}
       src={url}
       controls={controls}
       muted
-      loop
+      loop={
+        loopMode === "seamless" ||
+        loopMode === "ping-pong" ||
+        loopMode === "crossfade"
+      }
       playsInline
       preload="metadata"
+      aria-label={mediaAssetLabel(asset)}
+      style={transparencyStyle}
       onError={() => setFailed(true)}
       className={cn(objectFit, className)}
     />
@@ -110,6 +129,7 @@ export const MediaAssetPreview = ({
       ref={setPreviewElement}
       src={url}
       alt={mediaAssetLabel(asset)}
+      style={transparencyStyle}
       onError={() => setFailed(true)}
       className={cn(objectFit, className)}
     />

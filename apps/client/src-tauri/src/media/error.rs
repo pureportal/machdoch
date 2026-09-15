@@ -136,13 +136,23 @@ impl MediaError {
     pub(crate) fn from_internal(operation: &str, diagnostic: impl Into<String>) -> Self {
         let diagnostic = diagnostic.into();
         let lower = diagnostic.to_ascii_lowercase();
-        let code = classify(operation, &lower);
+        let cause = lower
+            .split("\nworker diagnostics (tail):")
+            .next()
+            .unwrap_or(&lower);
+        let code = classify(operation, cause);
         let (category, message, retryability, suggested_actions) = presentation(code);
         Self {
             schema_version: 1,
             code,
             category,
-            message: if code == MediaErrorCode::QualityGateFailed {
+            message: if cause.contains("cannot fit all vectors for") {
+                "Prompt is too long for the selected embeddings. Shorten it or remove an embedding."
+                    .to_string()
+            } else if cause.contains("negative embeddings need guidance above 1") {
+                "Negative embeddings need guidance above 1. Increase guidance or change placement."
+                    .to_string()
+            } else if code == MediaErrorCode::QualityGateFailed {
                 format!(
                     "{}. Review the image and gate settings.",
                     sanitize_diagnostic(&diagnostic).trim_end_matches('.')
@@ -180,6 +190,11 @@ pub(crate) fn command_result<T>(
 }
 
 fn classify(operation: &str, diagnostic: &str) -> MediaErrorCode {
+    if diagnostic.contains("cannot fit all vectors for")
+        || diagnostic.contains("negative embeddings need guidance above 1")
+    {
+        return MediaErrorCode::InvalidRequest;
+    }
     if diagnostic.starts_with("quality gate failed")
         || diagnostic.starts_with("quality gate stopped")
     {
@@ -255,11 +270,20 @@ fn classify(operation: &str, diagnostic: &str) -> MediaErrorCode {
     {
         return MediaErrorCode::WorkerCrashed;
     }
-    if diagnostic.contains("safety") && diagnostic.contains("input") {
+    if diagnostic.contains("safety rejected input") || diagnostic.contains("safety_rejected_input")
+    {
         return MediaErrorCode::SafetyRejectedInput;
     }
-    if diagnostic.contains("safety") {
+    if diagnostic.contains("safety rejected output")
+        || diagnostic.contains("safety_rejected_output")
+    {
         return MediaErrorCode::SafetyRejectedOutput;
+    }
+    if diagnostic.contains("generator of type cuda")
+        || diagnostic.contains("same device")
+        || diagnostic.contains("cpu/gpu")
+    {
+        return MediaErrorCode::DriverRuntimeMismatch;
     }
     if diagnostic.contains("provenance") && diagnostic.contains("attach") {
         return MediaErrorCode::ProvenanceAttachFailed;
@@ -663,6 +687,14 @@ fn sanitize_diagnostic(diagnostic: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn startup_safety_notices_do_not_hide_generation_device_errors() {
+        let error = MediaError::from_internal("media_generate_image", "Cannot generate a cpu:0 tensor from a generator of type cuda.\nWorker diagnostics (tail):\nYou have disabled the safety checker.");
+        assert_eq!(error.code, MediaErrorCode::DriverRuntimeMismatch);
+        let safety = MediaError::from_internal("media_generate_image", "safety rejected output");
+        assert_eq!(safety.code, MediaErrorCode::SafetyRejectedOutput);
+    }
 
     #[test]
     fn quality_gate_rejection_preserves_measurements_and_requires_review() {

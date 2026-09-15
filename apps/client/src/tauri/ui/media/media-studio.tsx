@@ -1,3 +1,7 @@
+import { assessRemoteEditExecution } from "./media-remote-edit-assessment";
+import { basicImageReferenceLimit } from "./media-basic-image-options";
+import { getMediaReferenceConditioningCapabilities } from "../../../core/media/reference-conditioning.js";
+import { mediaImportQueue } from "./media-import-queue";
 import { generationJobToRunDetail } from "./media-generation-run";
 import {
   isConnectedMediaFlow,
@@ -6,6 +10,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import {
   enqueueMediaGeneration,
+  getMediaGenerationRunDetail,
   mediaGenerationQueue as generationQueue,
 } from "./media-generation-service";
 import { useMediaGenerationPreparation } from "./use-media-generation-preparation";
@@ -26,14 +31,17 @@ import {
   type JSX,
 } from "react";
 import { createMediaModelCatalogSnapshot } from "../../../core/media/catalog.js";
-import { applyMediaAssetMetadataToAddon } from "../../../core/media/asset-metadata.js";
+import { parseMediaTriggerWords } from "../../../core/media/asset-metadata.js";
 import type { MediaAssetImportProgress } from "../../../core/media/asset-import.js";
 import { extendMediaCatalogWithWorkspaceDiscovery } from "../../../core/media/discovered-model-profiles.js";
 import {
   hasMediaImageMaskContent,
   normalizeMediaImageMask,
 } from "../../../core/media/image-mask.js";
-import { createMediaModelAddonSelection } from "../../../core/media/model-addons.js";
+import {
+  createMediaModelAddonSelection,
+  isMediaModelAddonSelectable,
+} from "../../../core/media/model-addons.js";
 import { getMediaModelPrimaryGenerationTarget } from "../../../core/media/model-library.js";
 import {
   createMediaFlowDocumentDigest,
@@ -66,6 +74,7 @@ import {
   type MediaFlowNodeClipboardPayload,
 } from "../../../core/media/node-registry.js";
 import { resolveMediaFlowVariables } from "../../../core/media/variables.js";
+import { resolveMediaNodePrompt } from "../../../core/media/prompt-resolution.js";
 import { readFlowSubjectCutoutModelPriority } from "../../../core/media/subject-cutout-policy.js";
 import {
   inferMediaVideoAspectRatio,
@@ -131,6 +140,7 @@ import { MediaAssetsView } from "./components/media-assets-view";
 import { MediaRunsView } from "./components/media-runs-view";
 import {
   createBasicMediaRecipeFlow,
+  compileBasicImageOutputBranches,
   createBasicMediaVideoFlow,
   createBasicVideoDraftFromImage,
   createBasicImageDraftFromAsset,
@@ -140,6 +150,8 @@ import {
   loadMediaStudioState,
   normalizeMediaStudioState,
   saveMediaStudioState,
+  saveImportedMediaMetadata,
+  subscribeImportedMediaMetadata,
 } from "./media-studio-store";
 import type { MediaGenerationRecipeSnapshot } from "./media-generation-queue";
 import {
@@ -173,6 +185,7 @@ import {
   importMediaFlow,
   importMediaLocalModel,
   importMediaModelAddon,
+  updateMediaModelAddonTriggers,
   inspectMediaFlowImport,
   listMediaFlows,
   listMediaAssets,
@@ -273,6 +286,26 @@ const readAssetImportError = (failure: MediaErrorDetail): string => {
   return "Select a valid PNG, JPEG, WebP, SVG, or WebM file.";
 };
 
+const basicImageImportFailure = (
+  error: unknown,
+  operation: string,
+): MediaErrorDetail => {
+  const failure = normalizeMediaError(error, operation);
+  if (error instanceof Error && error.cause === "basic-image-input")
+    return { ...failure, message: error.message, suggestedActions: [] };
+  if (
+    failure.code === "INTERNAL_ERROR" &&
+    failure.context.operation === "media_import_image"
+  )
+    return {
+      ...failure,
+      message:
+        "Image could not be added. Choose a valid PNG, JPEG, or WebP file.",
+      suggestedActions: [],
+    };
+  return failure;
+};
+
 const createRunId = (): string => {
   if (typeof globalThis.crypto?.randomUUID === "function") {
     return globalThis.crypto.randomUUID();
@@ -319,7 +352,8 @@ const recipeSnapshotFromRevision = (
         ? (videoSettings?.modelId ?? null)
         : (imageSettings?.modelId ?? null),
     modelLabel: run.modelLabel,
-    modelAddons: imageSettings?.modelAddons ?? [],
+    modelAddons:
+      (target === "video" ? videoSettings : imageSettings)?.modelAddons ?? [],
     outputBranches,
     imageSettings,
     videoSettings,
@@ -328,19 +362,6 @@ const recipeSnapshotFromRevision = (
 };
 
 const SEMANTIC_HISTORY_LIMIT = 100;
-
-interface RemoteEditExecutionAssessment {
-  supported: boolean;
-  reason: string;
-  maskIncluded: boolean;
-  manifest: Array<{
-    assetId: string;
-    digest: string;
-    byteSize: number;
-    role: string;
-    influence: number;
-  }>;
-}
 
 interface AdvancedLocalImageExecutionAssessment {
   supported: boolean;
@@ -464,137 +485,6 @@ const assessAdvancedLocalImageExecution = ({
       error instanceof Error ? error.message : "Output branches are invalid.",
     );
   }
-};
-
-const assessRemoteEditExecution = ({
-  plan,
-  flow,
-  assets,
-  runtimeMode,
-  directReferenceImageModelIds,
-}: {
-  plan: ReturnType<typeof compileMediaFlow>;
-  flow: MediaFlow;
-  assets: readonly MediaAssetRecord[];
-  runtimeMode: MediaRuntimeStatus["mode"] | null;
-  directReferenceImageModelIds: readonly string[] | null;
-}): RemoteEditExecutionAssessment => {
-  const unavailable = (reason: string): RemoteEditExecutionAssessment => ({
-    supported: false,
-    reason,
-    maskIncluded: false,
-    manifest: [],
-  });
-  const resolvedFlow = resolveMediaFlowVariables(flow).flow;
-  if (!resolvedFlow.nodes.some((node) => node.type === "task.edit-image")) {
-    return unavailable("This flow does not contain a remote image-edit task.");
-  }
-  if (plan.status !== "ready") {
-    return unavailable(
-      "Resolve preflight diagnostics before using image references.",
-    );
-  }
-  if (directReferenceImageModelIds === null) {
-    return unavailable(
-      "Checking whether the selected model can use image references.",
-    );
-  }
-  if (!plan.model || !directReferenceImageModelIds.includes(plan.model.id)) {
-    return unavailable(
-      "The selected model runtime does not support image references yet.",
-    );
-  }
-  if (plan.model.target !== "remote" || !plan.preflight.requiresRemoteRequest) {
-    return unavailable(
-      "The selected reference-image runtime is not available in this build.",
-    );
-  }
-  const supportedNodeTypes = new Set<MediaNodeType>([
-    "source.prompt",
-    "source.image",
-    "task.edit-image",
-    "output.asset",
-  ]);
-  const unsupported = resolvedFlow.nodes.find(
-    (node) => !supportedNodeTypes.has(node.type),
-  );
-  if (unsupported) {
-    return unavailable(
-      `${unsupported.label} requires a separate executor; reference generation currently supports a one-shot edit followed directly by Save assets.`,
-    );
-  }
-  const editNodes = resolvedFlow.nodes.filter(
-    (node) => node.type === "task.edit-image",
-  );
-  const promptNodes = resolvedFlow.nodes.filter(
-    (node) => node.type === "source.prompt",
-  );
-  const outputNodes = resolvedFlow.nodes.filter(
-    (node) => node.type === "output.asset",
-  );
-  const sourceNodes = resolvedFlow.nodes.filter(
-    (node) => node.type === "source.image",
-  );
-  if (
-    editNodes.length !== 1 ||
-    promptNodes.length !== 1 ||
-    outputNodes.length !== 1 ||
-    sourceNodes.length < 1 ||
-    sourceNodes.length > 8
-  ) {
-    return unavailable(
-      "Reference generation requires one prompt, one edit task, one output, and one to eight images.",
-    );
-  }
-  const availableAssets = new Map(assets.map((asset) => [asset.id, asset]));
-  const manifest = sourceNodes.map((node) => {
-    const assetId = String(node.config.assetId ?? "");
-    const asset = availableAssets.get(assetId);
-    return asset
-      ? {
-          assetId,
-          digest: asset.digest,
-          byteSize: asset.byteSize,
-          role: String(node.config.referenceRole ?? "base"),
-          influence:
-            typeof node.config.influence === "number"
-              ? node.config.influence
-              : 1,
-        }
-      : null;
-  });
-  if (manifest.some((item) => item === null)) {
-    return unavailable(
-      "Every reference must point to an available Library image.",
-    );
-  }
-  const exactManifest = manifest.filter(
-    (item): item is NonNullable<typeof item> => item !== null,
-  );
-  if (
-    new Set(exactManifest.map((item) => item.assetId)).size !==
-    exactManifest.length
-  ) {
-    return unavailable("Remove duplicate reference images before generation.");
-  }
-  if (exactManifest.filter((item) => item.role === "base").length !== 1) {
-    return unavailable("Exactly one reference must be the base image.");
-  }
-  exactManifest.sort((left, right) =>
-    left.role === "base" ? -1 : right.role === "base" ? 1 : 0,
-  );
-  const maskIncluded = hasMediaImageMaskContent(
-    normalizeMediaImageMask(editNodes[0]?.config.editMask),
-  );
-  return {
-    supported: true,
-    reason:
-      runtimeMode === "browser-preview"
-        ? "Runs a deterministic browser fixture with no upload or charge."
-        : `Submits one paid ${plan.model.displayName} edit request with ${exactManifest.length} image${exactManifest.length === 1 ? "" : "s"}${maskIncluded ? " and a mask" : ""}.`,
-    maskIncluded,
-    manifest: exactManifest,
-  };
 };
 
 export const MediaStudio = ({
@@ -782,12 +672,7 @@ export const MediaStudio = ({
       const [runs, assets, detail] = await Promise.all([
         listMediaRuns(),
         listMediaAssets(),
-        requestedRunId
-          ? getMediaRunDetail(requestedRunId).catch((error: unknown) => {
-              if (requestedQueueJob) return null;
-              throw error;
-            })
-          : null,
+        requestedRunId ? getMediaGenerationRunDetail(requestedRunId) : null,
       ]);
       if (
         !mediaStudioMounted.current ||
@@ -958,31 +843,20 @@ export const MediaStudio = ({
       });
   }, [workspaceRoot]);
 
-  const persistImportedResourceMetadata = useCallback(
-    async (
-      resourceId: string,
-      metadata: MediaGenerationAssetMetadata,
-    ): Promise<void> => {
-      const nextState = {
-        ...stateRef.current,
-        assetMetadata: {
-          ...stateRef.current.assetMetadata,
-          [resourceId]: metadata,
-        },
-      };
-      const saveSequence = ++latestSaveSequence.current;
-      try {
-        await saveMediaStudioState(nextState);
-        if (latestSaveSequence.current === saveSequence) setSaveError(null);
-      } catch {
-        if (latestSaveSequence.current === saveSequence) {
-          setSaveError("Imported metadata could not be saved.");
-        }
-      }
-      stateRef.current = nextState;
-      setState(nextState);
-    },
-    [],
+  useEffect(
+    () =>
+      subscribeImportedMediaMetadata((resourceId, metadata) => {
+        setState((current) => ({
+          ...current,
+          assetMetadata: { ...current.assetMetadata, [resourceId]: metadata },
+        }));
+        void refreshModelCatalog().catch((error: unknown) =>
+          setRuntimeError(
+            normalizeMediaError(error, "refresh_imported_models"),
+          ),
+        );
+      }),
+    [refreshModelCatalog],
   );
 
   const retryMediaStudioStateSave = useCallback(async (): Promise<void> => {
@@ -1034,34 +908,19 @@ export const MediaStudio = ({
       request: ImportMediaLocalModelRequest,
       metadata: MediaGenerationAssetMetadata,
     ): Promise<boolean> => {
-      setModelImportLoading(true);
-      setAssetImportProgress(null);
-      setModelImportError(null);
-      try {
-        const result = await importMediaLocalModel(request);
-        await persistImportedResourceMetadata(result.modelId, metadata);
-        const snapshot = await refreshModelCatalog();
-        setImportedAssetId(null);
-        setImportedResourceId(result.modelId);
-        if (!snapshot?.models.some((model) => model.id === result.modelId)) {
-          void refreshModelCatalog();
-        }
-        return true;
-      } catch (error: unknown) {
-        setModelImportError(
-          readImportError(
-            error,
-            "The model could not be imported. Check the file and available storage.",
-          ),
-        );
-        return false;
-      } finally {
-        setModelImportLoading(false);
-      }
+      const submittedRequest = structuredClone(request);
+      const submittedMetadata = structuredClone(metadata);
+      let importedModelId: string | null = null;
+      mediaImportQueue.enqueue(request.displayName, async () => {
+        importedModelId ??= (await importMediaLocalModel(submittedRequest))
+          .modelId;
+        await saveImportedMediaMetadata(importedModelId, submittedMetadata);
+        return importedModelId;
+      });
+      return true;
     },
-    [persistImportedResourceMetadata, refreshModelCatalog],
+    [],
   );
-
   const dismissModelImport = useCallback((): void => {
     if (modelImportLoading) return;
     setModelImportInspection(null);
@@ -1130,34 +989,19 @@ export const MediaStudio = ({
       request: ImportMediaModelAddonRequest,
       metadata: MediaGenerationAssetMetadata,
     ): Promise<boolean> => {
-      setAddonImportLoading(true);
-      setAssetImportProgress(null);
-      setAddonImportError(null);
-      try {
-        const result = await importMediaModelAddon(request);
-        await persistImportedResourceMetadata(result.addonId, metadata);
-        const snapshot = await refreshModelCatalog();
-        setImportedAssetId(null);
-        setImportedResourceId(result.addonId);
-        if (!snapshot?.addons.some((addon) => addon.id === result.addonId)) {
-          void refreshModelCatalog();
-        }
-        return true;
-      } catch (error: unknown) {
-        setAddonImportError(
-          readImportError(
-            error,
-            "The add-on could not be imported. Check the file and available storage.",
-          ),
-        );
-        return false;
-      } finally {
-        setAddonImportLoading(false);
-      }
+      const submittedRequest = structuredClone(request);
+      const submittedMetadata = structuredClone(metadata);
+      let importedAddonId: string | null = null;
+      mediaImportQueue.enqueue(request.displayName, async () => {
+        importedAddonId ??= (await importMediaModelAddon(submittedRequest))
+          .addonId;
+        await saveImportedMediaMetadata(importedAddonId, submittedMetadata);
+        return importedAddonId;
+      });
+      return true;
     },
-    [persistImportedResourceMetadata, refreshModelCatalog],
+    [],
   );
-
   const dismissAddonImport = useCallback((): void => {
     if (addonImportLoading) return;
     setAddonImportInspection(null);
@@ -1268,12 +1112,10 @@ export const MediaStudio = ({
     if (!flowRunOverlayId) return;
     let cancelled = false;
     let timeout: number | null = null;
-    let misses = 0;
     const pollOverlayRun = async (): Promise<void> => {
       try {
-        const detail = await getMediaRunDetail(flowRunOverlayId);
+        const detail = await getMediaGenerationRunDetail(flowRunOverlayId);
         if (cancelled) return;
-        misses = 0;
         setFlowRunOverlay(detail);
         if (selectedRunIdRef.current === detail.id) {
           setSelectedRun(detail);
@@ -1292,20 +1134,7 @@ export const MediaStudio = ({
         }
       } catch (error: unknown) {
         if (cancelled) return;
-        misses += 1;
-        if (
-          generationQueue.getJob(flowRunOverlayId)?.status === "queued" ||
-          localFlowPending ||
-          remoteEditPending ||
-          misses < 40
-        ) {
-          timeout = window.setTimeout(
-            () => void pollOverlayRun(),
-            Math.min(100 + misses * 25, 500),
-          );
-        } else {
-          setRuntimeError(normalizeMediaError(error, "monitor_workflow"));
-        }
+        setRuntimeError(normalizeMediaError(error, "monitor_workflow"));
       }
     };
     void pollOverlayRun();
@@ -1313,12 +1142,7 @@ export const MediaStudio = ({
       cancelled = true;
       if (timeout !== null) window.clearTimeout(timeout);
     };
-  }, [
-    flowRunOverlayId,
-    localFlowPending,
-    presentRunFailure,
-    remoteEditPending,
-  ]);
+  }, [flowRunOverlayId, presentRunFailure]);
 
   useEffect(() => {
     if (!loaded) {
@@ -1386,15 +1210,12 @@ export const MediaStudio = ({
           ? model
           : { ...model, capabilities };
       }),
-      addons: discoveredModelCatalog.addons.map((addon) =>
-        applyMediaAssetMetadataToAddon(addon, state.assetMetadata[addon.id]),
-      ),
+      addons: discoveredModelCatalog.addons,
     };
   }, [
     discoveredModelCatalog,
     runtimeStatus?.directInpaintingModelIds,
     runtimeStatus?.directPoseModelIds,
-    state.assetMetadata,
   ]);
   const models = activeModelCatalog.models;
   const recipeFlow = useMemo(() => {
@@ -1407,7 +1228,6 @@ export const MediaStudio = ({
       createdAt: draftCreatedAt,
       target: state.target,
       settings,
-      models,
     });
   }, [basicImageFlowId, draftCreatedAt, models, state.recipe, state.target]);
   const recipeLayout = useMemo(
@@ -2013,6 +1833,37 @@ export const MediaStudio = ({
       );
       if (!addon) return;
       setState((current) => {
+        const videoModel = activeModelCatalog.models.find(
+          (model) =>
+            getMediaModelPrimaryGenerationTarget(model) === "video" &&
+            isMediaModelAddonSelectable(model, addon),
+        );
+        if (videoModel && isExecutableLocalVideoModelId(videoModel.id)) {
+          const currentModel = activeModelCatalog.models.find(
+            (model) => model.id === current.videoRecipe.modelId,
+          );
+          const modelId =
+            currentModel && isMediaModelAddonSelectable(currentModel, addon)
+              ? current.videoRecipe.modelId
+              : videoModel.id;
+          return {
+            ...current,
+            activeSection: "generate",
+            target: "video",
+            videoRecipe: {
+              ...current.videoRecipe,
+              modelId,
+              modelAddons: current.videoRecipe.modelAddons.some(
+                (selection) => selection.addonId === addonId,
+              )
+                ? current.videoRecipe.modelAddons
+                : [
+                    ...current.videoRecipe.modelAddons,
+                    createMediaModelAddonSelection(addon),
+                  ],
+            },
+          };
+        }
         if (
           current.recipe.modelAddons.some(
             (selection) => selection.addonId === addonId,
@@ -2034,7 +1885,7 @@ export const MediaStudio = ({
         };
       });
     },
-    [activeModelCatalog.addons],
+    [activeModelCatalog.addons, activeModelCatalog.models],
   );
   const openVideoFlowDraft = useCallback(
     ({
@@ -2859,7 +2710,11 @@ export const MediaStudio = ({
             prompt: readMediaFlowPrompt(submittedFlow),
             modelId: submittedPlan.model?.id ?? null,
             modelLabel: submittedPlan.model?.displayName ?? "Local flow",
-            modelAddons: imageSettings?.modelAddons ?? [],
+            modelAddons:
+              (readMediaGenerationTarget(submittedFlow) === "video"
+                ? readMediaVideoRecipeSettings(submittedFlow)
+                : imageSettings
+              )?.modelAddons ?? [],
             outputBranches: [],
             imageSettings,
             videoSettings: readMediaVideoRecipeSettings(submittedFlow),
@@ -2998,6 +2853,7 @@ export const MediaStudio = ({
           aspectRatio: settings.aspectRatio,
           outputFormat: "png",
           modelPolicy: settings.modelPolicy,
+          sampling: settings.sampling,
           modelAddons: settings.modelAddons,
           transparentBackground: settings.transparentBackground,
           subjectCutoutModelPriority: settings.transparentBackground
@@ -3183,7 +3039,10 @@ export const MediaStudio = ({
           const queueRunId = createRunId();
           const imageSettings = readMediaFlowImageSettings(submittedFlow);
           const prompt = normalizeMediaSubmissionText(
-            readMediaFlowPrompt(submittedFlow),
+            resolveMediaNodePrompt(
+              submittedFlow,
+              submittedExecution.videoNode.id,
+            ).prompt ?? "",
           );
           const recipeSnapshot: MediaGenerationRecipeSnapshot = {
             schemaVersion: 1,
@@ -3197,7 +3056,8 @@ export const MediaStudio = ({
             prompt,
             modelId: submittedExecution.videoModel.id,
             modelLabel: submittedExecution.videoModel.displayName,
-            modelAddons: imageSettings?.modelAddons ?? [],
+            modelAddons:
+              readMediaVideoRecipeSettings(submittedFlow)?.modelAddons ?? [],
             outputBranches: [],
             imageSettings,
             videoSettings: readMediaVideoRecipeSettings(submittedFlow),
@@ -3215,13 +3075,11 @@ export const MediaStudio = ({
             execute: async () => {
               const resolvedFlow =
                 resolveMediaFlowVariables(submittedFlow).flow;
-              const promptNode = resolvedFlow.nodes.find(
-                (node) => node.type === "source.prompt",
-              );
               const prompt =
-                typeof promptNode?.config.prompt === "string"
-                  ? promptNode.config.prompt.trim()
-                  : "";
+                resolveMediaNodePrompt(
+                  resolvedFlow,
+                  submittedExecution.videoNode.id,
+                ).prompt?.trim() ?? "";
               const configuredAspect =
                 submittedExecution.videoNode.config.aspectRatio;
               const aspectRatio =
@@ -3238,6 +3096,7 @@ export const MediaStudio = ({
                   : "quality-640";
               const loopMode =
                 videoConfig.loopMode === "ping-pong" ||
+                videoConfig.loopMode === "crossfade" ||
                 videoConfig.loopMode === "seamless"
                   ? videoConfig.loopMode
                   : "none";
@@ -3290,6 +3149,14 @@ export const MediaStudio = ({
                   lastFrameAssetId,
                   aspectRatio,
                   resolution,
+                  width:
+                    typeof videoConfig.width === "number"
+                      ? videoConfig.width
+                      : null,
+                  height:
+                    typeof videoConfig.height === "number"
+                      ? videoConfig.height
+                      : null,
                   outputFormat: "webm",
                   transparentBackground:
                     videoConfig.transparentBackground === true,
@@ -3303,11 +3170,16 @@ export const MediaStudio = ({
                   numInferenceSteps: videoExecutionSettings.numInferenceSteps,
                   guidanceScale: videoExecutionSettings.guidanceScale,
                   seed:
-                    typeof videoConfig.seed === "number" ? videoConfig.seed : 0,
-                  negativePrompt:
-                    typeof videoConfig.negativePrompt === "string"
-                      ? videoConfig.negativePrompt
-                      : "",
+                    typeof videoConfig.seed === "number"
+                      ? videoConfig.seed
+                      : Math.floor(Math.random() * Number.MAX_SAFE_INTEGER),
+                  modelAddons:
+                    readMediaVideoRecipeSettings(submittedFlow)?.modelAddons ??
+                    [],
+                  negativePrompt: resolveMediaNodePrompt(
+                    submittedFlow,
+                    submittedExecution.videoNode!.id,
+                  ).negativePrompt,
                   matteQuality,
                   encodingQuality,
                   memoryProfile,
@@ -3342,6 +3214,7 @@ export const MediaStudio = ({
                       ? settings.outputFormat
                       : "png",
                   modelPolicy: settings.modelPolicy,
+                  sampling: settings.sampling,
                   modelAddons: settings.modelAddons,
                   transparentBackground: settings.transparentBackground,
                   subjectCutoutModelPriority:
@@ -3590,8 +3463,7 @@ export const MediaStudio = ({
         : hasImageConditioning
           ? !localConditionedGeneration &&
             !(
-              hasReferences &&
-              !hasBaseImage &&
+              (hasReferences || hasBaseImage) &&
               !hasPoseImage &&
               submittedRemoteEditExecution.supported
             )
@@ -3658,10 +3530,6 @@ export const MediaStudio = ({
           steps: pinnedPlan.steps.map((step) => ({ ...step })),
         };
         const runId = createRunId();
-        ++selectedRunDetailSequence.current;
-        selectedRunIdRef.current = runId;
-        setSelectedRunId(runId);
-        setSelectedRun(null);
         const recipeSnapshot: MediaGenerationRecipeSnapshot = {
           schemaVersion: 1,
           mode: "basic",
@@ -3677,11 +3545,15 @@ export const MediaStudio = ({
           modelAddons: pinnedRecipe.modelAddons,
           outputBranches: isSvg
             ? []
-            : compileMediaImageOutputBranches(pinnedFlow),
+            : compileBasicImageOutputBranches(pinnedFlow),
           imageSettings: pinnedRecipe,
           videoSettings: null,
           resultDestination: "assets",
         };
+        ++selectedRunDetailSequence.current;
+        selectedRunIdRef.current = runId;
+        setSelectedRunId(runId);
+        setSelectedRun(null);
         if (isSvg) {
           const candidateCount = isSvgVectorization
             ? 1
@@ -3730,8 +3602,7 @@ export const MediaStudio = ({
           return;
         }
         if (
-          hasReferences &&
-          !hasBaseImage &&
+          (hasReferences || hasBaseImage) &&
           !hasPoseImage &&
           !localConditionedGeneration
         ) {
@@ -3770,6 +3641,7 @@ export const MediaStudio = ({
               : pinnedRecipe.outputFormat,
           modelPolicy: pinnedRecipe.modelPolicy,
           modelAddons: pinnedRecipe.modelAddons,
+          sampling: pinnedRecipe.sampling,
           transparentBackground: pinnedRecipe.transparentBackground,
           subjectCutoutModelPriority:
             readFlowSubjectCutoutModelPriority(pinnedFlow),
@@ -3821,7 +3693,7 @@ export const MediaStudio = ({
             pinnedImageTaskConfig?.memoryProfile === "maximum-speed"
               ? pinnedImageTaskConfig.memoryProfile
               : "auto",
-          outputBranches: compileMediaImageOutputBranches(pinnedFlow),
+          outputBranches: compileBasicImageOutputBranches(pinnedFlow),
           planSnapshot: pinnedPlanSnapshot,
         } satisfies GenerateMediaImagesRequest;
         enqueueMediaGeneration({
@@ -3916,7 +3788,7 @@ export const MediaStudio = ({
         return;
       }
       setSelectedRunLoading(true);
-      void getMediaRunDetail(runId)
+      void getMediaGenerationRunDetail(runId)
         .then(async (detail) => {
           let recipe = queuedJob?.recipe ?? null;
           if (!recipe && detail.flowRevisionId) {
@@ -4311,7 +4183,7 @@ export const MediaStudio = ({
         filters: [
           {
             name: "Supported images",
-            extensions: ["png", "jpg", "jpeg", "webp", "svg"],
+            extensions: ["png", "jpg", "jpeg", "webp"],
           },
         ],
       });
@@ -4321,26 +4193,61 @@ export const MediaStudio = ({
           ? [selected]
           : [];
       if (paths.length === 0) return;
-      const remaining =
-        8 -
-        state.recipe.referenceImages.length -
-        (state.recipe.baseImageAssetId ? 1 : 0) -
-        (state.recipe.poseImageAssetId ? 1 : 0);
+      const importState = stateRef.current;
+      const importModel =
+        models.find((model) => model.id === importState.recipe.modelId) ?? null;
+      const referenceRole =
+        importState.target === "image"
+          ? getMediaReferenceConditioningCapabilities(importModel).roles[0]
+          : "base";
+      if (!referenceRole)
+        throw new Error("Choose a model that accepts reference images.", {
+          cause: "basic-image-input",
+        });
+      const limit =
+        importState.target === "image"
+          ? basicImageReferenceLimit(importState.recipe, importModel)
+          : 1;
+      const remaining = limit - importState.recipe.referenceImages.length;
       if (paths.length > remaining) {
         throw new Error(
           `Add at most ${remaining} more reference image${remaining === 1 ? "" : "s"}.`,
+          { cause: "basic-image-input" },
         );
       }
 
       const importedAssets: MediaAssetRecord[] = [];
       for (const path of paths) {
         const result = await importMediaAsset(path);
+        setRuntimeAssets((current) => [
+          result.asset,
+          ...current.filter((asset) => asset.id !== result.asset.id),
+        ]);
+        if (result.asset.kind !== "image")
+          throw new Error("Choose a PNG, JPEG, or WebP image.", {
+            cause: "basic-image-input",
+          });
         importedAssets.push(result.asset);
       }
       const uniqueImportedAssets = [
         ...new Map(importedAssets.map((asset) => [asset.id, asset])).values(),
       ];
       if (uniqueImportedAssets.length === 0) return;
+      if (
+        stateRef.current.target !== importState.target ||
+        stateRef.current.recipe.modelId !== importState.recipe.modelId ||
+        stateRef.current.recipe.baseImageAssetId !==
+          importState.recipe.baseImageAssetId ||
+        stateRef.current.recipe.poseImageAssetId !==
+          importState.recipe.poseImageAssetId ||
+        stateRef.current.recipe.referenceImages !==
+          importState.recipe.referenceImages
+      ) {
+        throw new Error(
+          "The image setup changed while importing. Choose the imported images from Assets.",
+          { cause: "basic-image-input" },
+        );
+      }
       setRuntimeAssets((current) => {
         const importedIds = new Set(
           uniqueImportedAssets.map((asset) => asset.id),
@@ -4362,35 +4269,30 @@ export const MediaStudio = ({
         }
         const additions = uniqueImportedAssets
           .filter((asset) => !existingIds.has(asset.id))
-          .map((asset, index) => ({
+          .map<ImageRecipeSettings["referenceImages"][number]>((asset) => ({
             assetId: asset.id,
-            role:
-              current.target !== "image" &&
-              current.recipe.referenceImages.length === 0 &&
-              index === 0
-                ? ("base" as const)
-                : ("subject" as const),
+            role: referenceRole,
             influence: 1,
           }));
         return {
           ...current,
           recipe: {
             ...current.recipe,
-            referenceImages: [
-              ...current.recipe.referenceImages,
-              ...additions,
-            ].slice(0, 8),
+            referenceImages: [...current.recipe.referenceImages, ...additions],
           },
         };
       });
       await refreshRuntime();
     })()
       .catch((error: unknown) => {
-        setRuntimeError(normalizeMediaError(error, "import_reference_images"));
+        setRuntimeError(
+          basicImageImportFailure(error, "import_reference_images"),
+        );
       })
       .finally(() => setImportLoading(false));
   }, [
     importLoading,
+    models,
     refreshRuntime,
     state.recipe.baseImageAssetId,
     state.recipe.poseImageAssetId,
@@ -4414,11 +4316,30 @@ export const MediaStudio = ({
           ],
         });
         if (typeof selected !== "string") return;
+        const importState = stateRef.current;
         const result = await importMediaAsset(selected);
         setRuntimeAssets((current) => [
           result.asset,
           ...current.filter((asset) => asset.id !== result.asset.id),
         ]);
+        if (result.asset.kind !== "image")
+          throw new Error("Choose a PNG, JPEG, or WebP image.", {
+            cause: "basic-image-input",
+          });
+        if (
+          stateRef.current.target !== importState.target ||
+          stateRef.current.recipe.modelId !== importState.recipe.modelId ||
+          stateRef.current.recipe.baseImageAssetId !==
+            importState.recipe.baseImageAssetId ||
+          stateRef.current.recipe.poseImageAssetId !==
+            importState.recipe.poseImageAssetId ||
+          stateRef.current.recipe.referenceImages !==
+            importState.recipe.referenceImages
+        )
+          throw new Error(
+            "The image setup changed while importing. Choose the imported image from Assets.",
+            { cause: "basic-image-input" },
+          );
         setState((current) => {
           const referenceImages = current.recipe.referenceImages.filter(
             (reference) => reference.assetId !== result.asset.id,
@@ -4436,8 +4357,6 @@ export const MediaStudio = ({
                         ? null
                         : current.recipe.poseImageAssetId,
                     editMask: null,
-                    outputFormat: "png" as const,
-                    transparentBackground: false,
                   }
                 : {
                     poseImageAssetId: result.asset.id,
@@ -4456,7 +4375,9 @@ export const MediaStudio = ({
         await refreshRuntime();
       })()
         .catch((error: unknown) => {
-          setRuntimeError(normalizeMediaError(error, `import_${kind}_image`));
+          setRuntimeError(
+            basicImageImportFailure(error, `import_${kind}_image`),
+          );
         })
         .finally(() => setImportLoading(false));
     },
@@ -4522,15 +4443,39 @@ export const MediaStudio = ({
   );
   const updateAssetMetadata = useCallback(
     (resourceId: string, metadata: MediaGenerationAssetMetadata): void => {
-      setState((current) => ({
-        ...current,
-        assetMetadata: {
-          ...current.assetMetadata,
-          [resourceId]: metadata,
-        },
-      }));
+      const addon = activeModelCatalog.addons.find(
+        (entry) => entry.id === resourceId,
+      );
+      const saveMetadata = (): void => {
+        setState((current) => ({
+          ...current,
+          assetMetadata: {
+            ...current.assetMetadata,
+            [resourceId]: addon ? { ...metadata, triggerWords: "" } : metadata,
+          },
+        }));
+      };
+      const triggerWords = parseMediaTriggerWords(metadata.triggerWords);
+      const savedTriggers =
+        addon?.kind === "textual-inversion"
+          ? [addon.defaultToken ?? ""]
+          : addon?.triggerWords;
+      saveMetadata();
+      if (
+        !addon ||
+        JSON.stringify(triggerWords) === JSON.stringify(savedTriggers)
+      ) {
+        return;
+      }
+      void updateMediaModelAddonTriggers(resourceId, triggerWords)
+        .then(refreshModelCatalog)
+        .catch((error: unknown) =>
+          setRuntimeError(
+            normalizeMediaError(error, "update_model_addon_triggers"),
+          ),
+        );
     },
-    [],
+    [activeModelCatalog.addons, refreshModelCatalog],
   );
   const updateAssetCategoryState = useCallback(
     (
@@ -4696,6 +4641,7 @@ export const MediaStudio = ({
               addons={activeModelCatalog.addons}
               assets={runtimeAssets}
               assetMetadata={state.assetMetadata}
+              categories={state.categories}
               onLayoutChange={changeFlowLayout}
               onFlowVariablesChange={applySemanticFlow}
               onTemplateApply={applyFlowTemplate}

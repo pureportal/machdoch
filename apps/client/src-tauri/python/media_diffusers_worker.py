@@ -32,7 +32,7 @@ from typing import Any
 import numpy as np
 from PIL import Image, ImageOps
 
-WORKER_VERSION = "media-diffusers-worker/1.58.0"
+WORKER_VERSION = "media-diffusers-worker/1.68.0"
 # Disk group files contain only checkpoint/adapter tensors. Keep their
 # compatibility identity independent from response/provenance releases until
 # that serialization contract itself changes.
@@ -92,14 +92,16 @@ NATIVE_MASKED_EDIT_ARCHITECTURES = frozenset(
         "stable-diffusion-2",
         "stable-diffusion-xl",
         "flux-1",
+        "krea-2",
     }
 )
 NATIVE_REFERENCE_ROLES = {
     "flux-2": frozenset({"subject", "style", "composition", "palette", "detail"}),
-    "stable-diffusion-1": frozenset({"composition"}),
+    "stable-diffusion-1": frozenset({"subject"}),
     "stable-diffusion-2": frozenset({"composition"}),
-    "stable-diffusion-xl": frozenset({"composition"}),
+    "stable-diffusion-xl": frozenset({"subject", "style", "composition"}),
     "flux-1": frozenset({"composition"}),
+    "krea-2": frozenset({"subject", "style", "composition", "palette", "detail"}),
 }
 RUNTIME_MANIFEST = json.loads(Path(__file__).with_name("media_runtime_manifest.json").read_text(encoding="utf-8"))
 ACCEPTED_PACKAGE_VERSIONS = {
@@ -918,67 +920,14 @@ def _configure_krea_offload(
     }
 
 
-def _encode_krea_prompt(torch: Any, text_root: Path, prompt: str) -> tuple[Any, Any]:
-    from transformers import AutoTokenizer, Qwen3VLForConditionalGeneration
-
-    tokenizer = AutoTokenizer.from_pretrained(
-        str(text_root), local_files_only=True, trust_remote_code=False
-    )
-    encoder = Qwen3VLForConditionalGeneration.from_pretrained(
-        str(text_root),
-        torch_dtype=torch.bfloat16,
-        local_files_only=True,
-        use_safetensors=True,
-        trust_remote_code=False,
-        low_cpu_mem_usage=True,
-    )
-    device = torch.device(f"cuda:{torch.cuda.current_device()}")
-    encoder.to(device).eval().requires_grad_(False)
-    prefix = (
-        "<|im_start|>system\nDescribe the image by detailing the color, shape, size, "
-        "texture, quantity, text, spatial relationships of the objects and background:"
-        "<|im_end|>\n<|im_start|>user\n"
-    )
-    suffix = "<|im_end|>\n<|im_start|>assistant\n"
-    prefix_tokens = 34
-    text_tokens = tokenizer(
-        [prefix + prompt],
-        truncation=True,
-        padding="max_length",
-        max_length=512 + prefix_tokens - 5,
-        return_tensors="pt",
-    ).to(device)
-    suffix_tokens = tokenizer([suffix], return_tensors="pt").to(device)
-    input_ids = torch.cat((text_tokens.input_ids, suffix_tokens.input_ids), dim=1)
-    attention_mask = torch.cat(
-        (text_tokens.attention_mask, suffix_tokens.attention_mask), dim=1
-    ).bool()
-    position_ids = (attention_mask.long().cumsum(dim=-1) - 1).clamp(min=0)
-    position_ids = position_ids.unsqueeze(0).expand(3, -1, -1)
-    with torch.inference_mode():
-        states = encoder(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            output_hidden_states=True,
-        )
-        # Windows ROCm 7.14 intermittently faults in the HIP cat kernel used by
-        # torch.stack for this 68 MB tensor. The encoder work remains on the
-        # GPU; copying the twelve selected taps separately and stacking on the
-        # host avoids that unnecessary kernel and lowers peak VRAM.
-        selected = [
-            states.hidden_states[index][:, prefix_tokens:].to(
-                device="cpu", dtype=torch.bfloat16
-            )
-            for index in (2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35)
-        ]
-    hidden = torch.stack(selected, dim=2)
-    mask = attention_mask[:, prefix_tokens:].to(device="cpu")
-    del states, encoder, tokenizer, input_ids, attention_mask, position_ids
-    del text_tokens, suffix_tokens, selected
-    gc.collect()
-    torch.cuda.empty_cache()
-    return hidden, mask
+def _load_image_conditioning() -> Any:
+    path = Path(__file__).with_name("media_image_conditioning.py")
+    spec = importlib.util.spec_from_file_location("media_image_conditioning", path)
+    if spec is None or spec.loader is None:
+        raise WorkerError("Image conditioning runtime is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _load_pipeline(
@@ -1037,12 +986,6 @@ def _load_pipeline(
         pipeline = pipeline_class.from_pipe(pipeline, torch_dtype=dtype)
         pipeline.mask_processor.register_to_config(do_binarize=False)
 
-    if architecture == "krea-2":
-        pass
-    elif device == "cuda" and hasattr(pipeline, "enable_model_cpu_offload"):
-        pipeline.enable_model_cpu_offload(gpu_id=torch.cuda.current_device())
-    else:
-        pipeline.to(device)
     if hasattr(pipeline, "set_progress_bar_config"):
         pipeline.set_progress_bar_config(disable=True)
     return pipeline
@@ -1156,6 +1099,17 @@ def probe_model(request: dict[str, Any]) -> dict[str, Any]:
                 else []
             ),
         ]
+    video_transformers = {
+        "wan-2.2-ti2v": "WanTransformer3DModel",
+        "ltx-video": "LTXVideoTransformer3DModel",
+        "framepack-i2v": "HunyuanVideoFramepackTransformer3DModel",
+        "hunyuan-video-1.5-i2v": "HunyuanVideo15Transformer3DModel",
+    }
+    if architecture in video_transformers:
+        transformer_class = getattr(diffusers, video_transformers[architecture])
+        if any(not hasattr(transformer_class, name) for name in ("load_lora_adapter", "set_adapters")):
+            raise WorkerError("The video runtime does not expose LoRA loading")
+        capabilities.extend(["lora", "multi-lora"])
     missing_methods = [name for name in required_methods if not hasattr(pipeline, name)]
     if missing_methods:
         raise WorkerError(
@@ -1299,6 +1253,7 @@ def _load_textual_inversion(
     profiles: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     from safetensors.torch import load_file
+    from transformers import AddedToken
 
     state = load_file(str(path), device="cpu")
     runtime_components = {
@@ -1357,6 +1312,12 @@ def _load_textual_inversion(
             raise WorkerError(
                 f"Textual-inversion aliases were not fully registered in {component}"
             )
+        tokenizer.add_tokens([
+            AddedToken(alias, normalized=False, single_word=True, special=False)
+            for alias in registered_tokens
+        ])
+        if tokenizer.tokenize(" ".join(registered_tokens)) != registered_tokens:
+            raise WorkerError(f"The {component} tokenizer cannot encode all vectors for {token}")
         loaded.append({**profile, "registeredTokens": registered_tokens})
     if [profile["component"] for profile in loaded] != target_components:
         raise WorkerError(
@@ -1366,9 +1327,38 @@ def _load_textual_inversion(
 
 
 def _append_token(prompt: str, token: str) -> str:
-    if token in prompt.split():
+    if re.search(r"(?<!\w)" + re.escape(token) + r"(?!\w)", prompt):
         return prompt
     return f"{prompt.rstrip()}, {token}" if prompt.strip() else token
+
+
+def _verify_embedding_prompt_tokens(
+    pipeline: Any, applied: list[dict[str, Any]], prompt: str, negative_prompt: str
+) -> None:
+    for addon in applied:
+        if addon["kind"] != "textual-inversion":
+            continue
+        for profile in addon["embeddingVectors"]:
+            tokenizer = getattr(pipeline, {
+                "text-encoder": "tokenizer",
+                "text-encoder-2": "tokenizer_2",
+            }[profile["component"]])
+            limit = min(int(tokenizer.model_max_length), 512)
+            channels = {"positive": prompt, "negative": negative_prompt}
+            encoded_counts = {}
+            for channel, text in channels.items():
+                if addon["placement"] not in (channel, "both"):
+                    continue
+                expanded = pipeline.maybe_convert_prompt(text, tokenizer)
+                ids = tokenizer(expanded, truncation=True, max_length=limit)["input_ids"]
+                counts = [ids.count(tokenizer.convert_tokens_to_ids(alias)) for alias in profile["registeredTokens"]]
+                if not counts or min(counts) == 0 or len(set(counts)) != 1:
+                    raise WorkerError(
+                        f"The {channel} prompt cannot fit all vectors for {addon['token']}. Shorten the prompt or remove an embedding."
+                    )
+                encoded_counts[channel] = sum(counts)
+            profile["encodedTokenCounts"] = encoded_counts
+            profile["maxSequenceLength"] = limit
 
 
 def _confirmed_lora_components(
@@ -1618,12 +1608,21 @@ def _apply_addons(
                     for key in tensor_file.keys()
                 }
             lora_profile = _lora_profile(addon, tensor_shapes)
-            pipeline.load_lora_weights(
-                str(path.parent),
-                weight_name=path.name,
-                adapter_name=name,
-                low_cpu_mem_usage=True,
-            )
+            if any(component.startswith("text-encoder") for component in target_components):
+                module_path = Path(__file__).with_name("media_image_addons.py")
+                spec = importlib.util.spec_from_file_location("media_image_addons", module_path)
+                if spec is None or spec.loader is None:
+                    raise WorkerError("Image LoRA runtime is unavailable")
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                module.load_text_encoder_lora(pipeline, path, name, target_components)
+            else:
+                pipeline.load_lora_weights(
+                    str(path.parent),
+                    weight_name=path.name,
+                    adapter_name=name,
+                    low_cpu_mem_usage=True,
+                )
             # PEFT initializes adapter matrices from the base layer's dtype. For
             # scaled-FP8 KREA checkpoints that would leave LoRA A/B in FP8 and
             # route them through ordinary addmm, which ROCm intentionally does
@@ -1779,6 +1778,7 @@ def _apply_addons(
                 lora_weights, lora_schedules, 0.0
             ),
         )
+    _verify_embedding_prompt_tokens(pipeline, applied, prompt, negative_prompt)
     return (
         prompt,
         negative_prompt,
@@ -1924,6 +1924,35 @@ def _steps(architecture: str, policy: str) -> int:
     if architecture == "krea-2":
         return {"fast": 8, "balanced": 10, "quality": 12}[policy]
     return {"fast": 16, "balanced": 24, "quality": 32}[policy]
+
+
+def _image_sampling(request: dict[str, Any], architecture: str, policy: str) -> tuple[int, int, int, float | None]:
+    sampling = request.get("sampling", {})
+    if not isinstance(sampling, dict):
+        raise WorkerError("Image sampling settings must be an object")
+    width, height = _dimensions(architecture, request.get("aspectRatio"), policy)
+    requested_width, requested_height = sampling.get("width"), sampling.get("height")
+    if (requested_width is None) != (requested_height is None):
+        raise WorkerError("Enter both width and height")
+    if requested_width is not None:
+        if any(not isinstance(value, int) or isinstance(value, bool) or not 256 <= value <= 2048 or value % 32 for value in (requested_width, requested_height)):
+            raise WorkerError("Width and height must be multiples of 32 between 256 and 2048")
+        width, height = requested_width, requested_height
+    steps = sampling.get("numInferenceSteps")
+    if steps is None:
+        steps = _steps(architecture, policy)
+    if not isinstance(steps, int) or isinstance(steps, bool) or not 1 <= steps <= 100:
+        raise WorkerError("Sampling steps must be between 1 and 100")
+    if architecture == "flux-2" and steps != 4:
+        raise WorkerError("FLUX.2 Klein requires 4 sampling steps")
+    guidance = sampling.get("guidanceScale")
+    if guidance is not None:
+        if not isinstance(guidance, (int, float)) or isinstance(guidance, bool) or not math.isfinite(guidance) or not 0 <= guidance <= 20:
+            raise WorkerError("Guidance must be between 0 and 20")
+        fixed = {"flux-2": 1.0, "krea-2": 0.0}.get(architecture)
+        if fixed is not None and guidance != fixed:
+            raise WorkerError(f"{architecture} requires guidance {fixed}")
+    return width, height, steps, guidance
 
 
 def _configure_large_image_vae_decode(
@@ -2078,12 +2107,14 @@ def _validate_generated_pixels(
             )
 
 
-def _conditioning_image(value: Any, field: str) -> tuple[Path, Image.Image]:
+def _conditioning_image(
+    value: Any, field: str, *, preserve_alpha: bool = False
+) -> tuple[Path, Image.Image]:
     path = _absolute_existing_path(value, file=True)
     if path.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
         raise WorkerError(f"{field} must be a supported image")
     try:
-        image = Image.open(path).convert("RGB")
+        image = Image.open(path).convert("RGBA" if preserve_alpha else "RGB")
         image.load()
     except Exception as error:
         raise WorkerError(f"{field} could not be decoded: {error}") from error
@@ -2144,7 +2175,7 @@ def _rasterize_edit_mask(document: Any, width: int, height: int) -> Image.Image:
     if not isinstance(document, dict) or document.get("schemaVersion") != 2:
         raise WorkerError("editMask is invalid")
     strokes = document.get("strokes")
-    if not isinstance(strokes, list) or not 1 <= len(strokes) <= 256:
+    if not isinstance(strokes, list) or not 0 <= len(strokes) <= 256:
         raise WorkerError("editMask strokes are invalid")
     mask = np.zeros((height, width), dtype=np.float32)
     for stroke in strokes:
@@ -2324,6 +2355,8 @@ def _masked_generation_context(
     maximum_height: int,
     generation_alignment: int = 8,
     mask: Image.Image | None = None,
+    *,
+    upscale_crop: bool = False,
 ) -> dict[str, Any]:
     if mask is None:
         mask = _rasterize_edit_mask(document, base.width, base.height)
@@ -2338,7 +2371,9 @@ def _masked_generation_context(
     bottom = min(base.height, math.ceil((bottom + padding) / 8) * 8)
     crop_width = right - left
     crop_height = bottom - top
-    scale = min(1.0, maximum_width / crop_width, maximum_height / crop_height)
+    scale = min(maximum_width / crop_width, maximum_height / crop_height)
+    if not upscale_crop:
+        scale = min(1.0, scale)
     generation_width = max(
         64,
         round(crop_width * scale / generation_alignment) * generation_alignment,
@@ -2347,7 +2382,7 @@ def _masked_generation_context(
         64,
         round(crop_height * scale / generation_alignment) * generation_alignment,
     )
-    source = base.crop((left, top, right, bottom)).resize(
+    source = base.convert("RGB").crop((left, top, right, bottom)).resize(
         (generation_width, generation_height), Image.Resampling.LANCZOS
     )
     generation_mask = mask.crop((left, top, right, bottom)).resize(
@@ -2412,7 +2447,7 @@ def _controlnet_pipeline(
     }.get((architecture, image_to_image))
     pipeline_class = getattr(diffusers, class_name or "", None)
     if pipeline_class is None or not hasattr(pipeline_class, "from_pipe"):
-        raise WorkerError("The pinned Diffusers runtime cannot construct this OpenPose pipeline")
+        raise WorkerError("The pinned Diffusers runtime cannot construct this ControlNet pipeline")
     return pipeline_class.from_pipe(pipeline, controlnet=controlnet)
 
 
@@ -2420,8 +2455,9 @@ def _progress(stage: str, progress: float) -> None:
     print("\nMACHDOCH_PROGRESS " + json.dumps({"stage": stage, "progress": progress}), file=sys.stderr, flush=True)
 
 
-def _sampling_progress(total: int, index: int = 0, count: int = 1) -> Any:
+def _sampling_progress(index: int = 0, count: int = 1) -> Any:
     def callback(pipeline: Any, step: int, timestep: Any, values: dict[str, Any]) -> dict[str, Any]:
+        total = pipeline.num_timesteps
         _progress(f"Sampling {step + 1}/{total}", 0.25 + 0.6 * (index + (step + 1) / total) / count)
         return values
     return callback
@@ -2508,7 +2544,7 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(seed, int) or not 0 <= seed < 2**63:
         raise WorkerError("seed is invalid")
     architecture = _required_text(model, "architecture", 64)
-    width, height = _dimensions(architecture, request.get("aspectRatio"), policy)
+    width, height, step_count, requested_guidance = _image_sampling(request, architecture, policy)
     output_directory = _fresh_output_directory(request.get("outputDirectory"))
     addons = request.get("addons", [])
     if not isinstance(addons, list) or len(addons) > 24:
@@ -2557,49 +2593,61 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
             f"{architecture} does not implement {', '.join(unsupported_roles)} reference conditioning"
         )
     base_path = None
+    base_original = None
     base_image = None
     if request.get("baseImagePath") is not None:
-        base_path, base_image = _conditioning_image(
-            request.get("baseImagePath"), "baseImagePath"
+        base_path, base_original = _conditioning_image(
+            request.get("baseImagePath"), "baseImagePath", preserve_alpha=True
         )
-    pose_path = None
-    pose_image = None
+        base_image = base_original.convert("RGB")
+    control_path = None
+    control_image = None
     controlnet_path = None
-    pose_strength = None
-    pose_start = None
-    pose_end = None
-    if request.get("poseImagePath") is not None:
-        pose_path, pose_image = _conditioning_image(
-            request.get("poseImagePath"), "poseImagePath"
+    control_strength = None
+    control_start = None
+    control_end = None
+    control = request.get("controlNet")
+    control_kind = "openpose"
+    if control is not None:
+        if not isinstance(control, dict) or set(control) != {"kind", "imagePath", "modelPath", "strength", "start", "end"}:
+            raise WorkerError("ControlNet requires kind, image, model, strength, start, and end")
+        if request.get("poseImagePath") is not None:
+            raise WorkerError("Use one ControlNet input per image generation")
+        control_kind = control["kind"]
+        if control_kind not in ("canny", "depth") or architecture != "stable-diffusion-1":
+            raise WorkerError("Canny and Depth ControlNet require an SD1.5 model")
+    if control is not None or request.get("poseImagePath") is not None:
+        control_path, control_image = _conditioning_image(
+            control["imagePath"] if control is not None else request.get("poseImagePath"), "ControlNet image"
         )
         controlnet_path = _absolute_existing_path(
-            request.get("poseControlnetPath"), file=False
+            control["modelPath"] if control is not None else request.get("poseControlnetPath"), file=False
         )
-        pose_strength = request.get("poseStrength", 1.0)
+        control_strength = control["strength"] if control is not None else request.get("poseStrength", 1.0)
         if (
-            not isinstance(pose_strength, (int, float))
-            or isinstance(pose_strength, bool)
-            or not math.isfinite(float(pose_strength))
-            or not 0 <= float(pose_strength) <= 2
+            not isinstance(control_strength, (int, float))
+            or isinstance(control_strength, bool)
+            or not math.isfinite(float(control_strength))
+            or not 0 <= float(control_strength) <= 2
         ):
-            raise WorkerError("poseStrength must be between 0 and 2")
-        pose_strength = float(pose_strength)
-        pose_start = request.get("poseStart", 0.0)
-        pose_end = request.get("poseEnd", 1.0)
+            raise WorkerError("ControlNet strength must be between 0 and 2")
+        control_strength = float(control_strength)
+        control_start = control["start"] if control is not None else request.get("poseStart", 0.0)
+        control_end = control["end"] if control is not None else request.get("poseEnd", 1.0)
         if (
-            not isinstance(pose_start, (int, float))
-            or isinstance(pose_start, bool)
-            or not math.isfinite(float(pose_start))
-            or not isinstance(pose_end, (int, float))
-            or isinstance(pose_end, bool)
-            or not math.isfinite(float(pose_end))
-            or not 0 <= float(pose_start) < float(pose_end) <= 1
+            not isinstance(control_start, (int, float))
+            or isinstance(control_start, bool)
+            or not math.isfinite(float(control_start))
+            or not isinstance(control_end, (int, float))
+            or isinstance(control_end, bool)
+            or not math.isfinite(float(control_end))
+            or not 0 <= float(control_start) < float(control_end) <= 1
         ):
             raise WorkerError(
-                "pose control range must satisfy 0 <= start < end <= 1"
+                "ControlNet range must satisfy 0 <= start < end <= 1"
             )
-        pose_start = float(pose_start)
-        pose_end = float(pose_end)
+        control_start = float(control_start)
+        control_end = float(control_end)
         if architecture not in (
             "stable-diffusion-1",
             "stable-diffusion-2",
@@ -2609,17 +2657,16 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
     conditioned_images = ([base_image] if base_image is not None else []) + [
         reference["image"] for reference in references
     ]
-    if any(
+    ip_adapter_references = architecture in ("stable-diffusion-1", "stable-diffusion-xl") and bool(references)
+    if not ip_adapter_references and any(
         reference["influence"] != 1.0 for reference in references
     ):
         raise WorkerError("This local runtime requires reference influence 1")
-    if architecture != "flux-2" and len(conditioned_images) > 1:
+    if architecture in ("stable-diffusion-2", "flux-1") and len(conditioned_images) > 1:
         raise WorkerError(f"{architecture} accepts one reference or base image")
-    if architecture == "krea-2" and (conditioned_images or pose_image is not None):
-        raise WorkerError(
-            "KREA 2 supports text-to-image only; choose FLUX.2 klein for image conditioning"
-        )
-    if not prompt and not conditioned_images and pose_image is None:
+    if architecture in ("stable-diffusion-1", "stable-diffusion-xl", "krea-2") and len(references) > 3:
+        raise WorkerError(f"{architecture} accepts at most three reference images")
+    if not prompt and not conditioned_images and control_image is None:
         raise WorkerError("prompt or image conditioning is required")
     edit_mask = request.get("editMask")
     _validate_edit_mask_request(
@@ -2652,31 +2699,39 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
     flux2_inpainting = architecture == "flux-2" and mask_image is not None
     masked_context = (
         _masked_generation_context(
-            base_image,
+            base_original,
             edit_mask,
             width,
             height,
-            16 if flux2_inpainting else 8,
+            16 if architecture in ("flux-2", "krea-2") else 8,
             mask_image,
+            upscale_crop=architecture in ("stable-diffusion-1", "stable-diffusion-xl"),
         )
         if mask_image is not None
-        and base_image is not None
+        and base_original is not None
         else None
     )
     primary_reference_image = base_image or (
-        references[0]["image"] if references else None
+        references[0]["image"] if references and architecture in ("stable-diffusion-2", "flux-1") else None
     )
     if masked_context is not None:
         primary_reference_image = masked_context["source"]
         width = masked_context["width"]
         height = masked_context["height"]
+        if control_image is not None:
+            control_image = (
+                _fit_conditioning_image(control_image, base_original.width, base_original.height)
+                .crop(masked_context["bounds"])
+                .resize((width, height), Image.Resampling.LANCZOS)
+            )
     if architecture == "krea-2":
         config_path = _absolute_existing_path(model.get("configPath"), file=False)
         krea_text_root, _ = _krea_runtime_paths(config_path)
-        krea_prompt_embeds, krea_prompt_mask = _encode_krea_prompt(
+        krea_prompt_embeds, krea_prompt_mask = _load_image_conditioning().encode_krea_prompt(
             torch,
             krea_text_root,
             prompt,
+            references,
         )
     _progress("Loading image model", 0.08)
     pipeline = _load_pipeline(
@@ -2685,7 +2740,7 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
         model,
         flux2_inpainting=flux2_inpainting,
     )
-    if pose_image is not None and controlnet_path is not None:
+    if control_image is not None and controlnet_path is not None:
         pipeline = _controlnet_pipeline(
             diffusers,
             torch,
@@ -2717,6 +2772,9 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
         )
     ):
         pipeline = diffusers.AutoPipelineForImage2Image.from_pipe(pipeline)
+    if ip_adapter_references:
+        adapter_root = _absolute_existing_path(request.get("ipAdapterPath"), file=False)
+        _load_image_conditioning().load_ip_adapter(pipeline, adapter_root, architecture, references)
     vae_decode_evidence = _configure_large_image_vae_decode(
         pipeline,
         architecture,
@@ -2735,6 +2793,11 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
     ) = _apply_addons(
         pipeline, addons, prompt, negative_prompt
     )
+    if architecture != "krea-2":
+        if runtime_device == "cuda":
+            pipeline.enable_model_cpu_offload(gpu_id=torch.cuda.current_device(), device="cuda")
+        else:
+            pipeline.to(runtime_device)
     edit_strength = request.get("editStrength", 0.5)
     if primary_reference_image is not None:
         if (
@@ -2767,7 +2830,6 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
         )
     device, device_label, device_memory = _device(torch)
     call_parameters = inspect.signature(pipeline.__call__).parameters
-    step_count = _steps(architecture, policy)
     has_lora_schedule = any(schedule is not None for schedule in lora_schedules)
     if has_lora_schedule and "callback_on_step_end" not in call_parameters:
         raise WorkerError(
@@ -2829,7 +2891,11 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
             "generator": generator,
             "num_images_per_prompt": 1,
         }
-        step_callbacks: list[Any] = [_sampling_progress(step_count, index, output_count)] if "callback_on_step_end" in call_parameters else []
+        if requested_guidance is not None:
+            if "guidance_scale" not in call_parameters:
+                raise WorkerError(f"{architecture} does not support manual guidance")
+            arguments["guidance_scale"] = requested_guidance
+        step_callbacks: list[Any] = [_sampling_progress(index, output_count)] if "callback_on_step_end" in call_parameters else []
         if architecture == "krea-2":
             cuda_device = torch.device(f"cuda:{torch.cuda.current_device()}")
             arguments["prompt"] = None
@@ -2838,6 +2904,17 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
             # Community KREA 2 accelerated checkpoints document CFG=1. In the
             # Diffusers KREA convention the conditional-only equivalent is 0.
             arguments["guidance_scale"] = 0.0
+            if primary_reference_image is not None:
+                edit_arguments, mask_callback = _load_image_conditioning().prepare_krea_edit(
+                    pipeline, torch, primary_reference_image,
+                    masked_context["generationMask"] if masked_context is not None else None,
+                    width, height, step_count, edit_strength, generator,
+                )
+                arguments.update(edit_arguments)
+                if mask_callback is not None:
+                    step_callbacks.append(mask_callback)
+        if ip_adapter_references:
+            arguments["ip_adapter_image"] = [reference["image"] for reference in references]
         if architecture == "flux-2" and "guidance_scale" in call_parameters:
             # FLUX.2 Klein is distilled for guidance 1.0. Larger classifier-free
             # guidance values cost memory and diverge from the model card recipe.
@@ -2863,7 +2940,7 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
                 arguments["image"] = (
                     flux_images[0] if len(flux_images) == 1 else flux_images
                 )
-        elif primary_reference_image is not None:
+        elif primary_reference_image is not None and architecture != "krea-2":
             arguments["image"] = _fit_conditioning_image(
                 primary_reference_image, width, height
             )
@@ -2875,19 +2952,23 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
                         f"{architecture} does not expose latent mask conditioning"
                     )
                 arguments["mask_image"] = masked_context["generationMask"]
-        if pose_image is not None:
-            fitted_pose = _fit_conditioning_image(pose_image, width, height)
+        if control_image is not None:
+            fitted_control = _fit_conditioning_image(control_image, width, height)
             if primary_reference_image is None:
-                arguments["image"] = fitted_pose
+                arguments["image"] = fitted_control
             else:
-                arguments["control_image"] = fitted_pose
+                arguments["control_image"] = fitted_control
             if "controlnet_conditioning_scale" in call_parameters:
-                arguments["controlnet_conditioning_scale"] = pose_strength
+                arguments["controlnet_conditioning_scale"] = control_strength
             if "control_guidance_start" in call_parameters:
-                arguments["control_guidance_start"] = pose_start
+                arguments["control_guidance_start"] = control_start
             if "control_guidance_end" in call_parameters:
-                arguments["control_guidance_end"] = pose_end
+                arguments["control_guidance_end"] = control_end
         if "negative_prompt" in call_parameters and negative_prompt.strip():
+            if any(addon["kind"] == "textual-inversion" and addon["placement"] != "positive" for addon in applied):
+                guidance = arguments.get("guidance_scale", call_parameters["guidance_scale"].default)
+                if guidance <= 1:
+                    raise WorkerError("Negative embeddings need guidance above 1. Increase guidance or change embedding placement.")
             arguments["negative_prompt"] = negative_prompt
         elif negative_prompt.strip():
             raise WorkerError(
@@ -2954,10 +3035,14 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
         "editConditioning": (
             {
                 "mode": (
-                    "controlnet-openpose-soft-inpaint-v1"
-                    if pose_image is not None and masked_context is not None
-                    else "controlnet-openpose"
-                    if pose_image is not None
+                    "krea2-latent-inpaint-v1"
+                    if architecture == "krea-2" and masked_context is not None
+                    else "krea2-image-conditioning-v1"
+                    if architecture == "krea-2"
+                    else f"controlnet-{control_kind}-soft-inpaint-v1"
+                    if control_image is not None and masked_context is not None
+                    else f"controlnet-{control_kind}"
+                    if control_image is not None
                     else "flux2-klein-inpaint-v1"
                     if flux2_inpainting
                     else "diffusers-soft-inpaint-v1"
@@ -2966,6 +3051,7 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
                     if architecture == "flux-2"
                     else "diffusers-image-to-image"
                 ),
+                "referenceEncoding": "ip-adapter-plus-v1" if ip_adapter_references else "qwen3-vl-v1" if architecture == "krea-2" and references else None,
                 "referenceSources": [
                     {
                         "digest": _sha256_file(reference["path"]),
@@ -2975,10 +3061,17 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
                     for reference in references
                 ],
                 "baseDigest": _sha256_file(base_path) if base_path is not None else None,
-                "poseDigest": _sha256_file(pose_path) if pose_path is not None else None,
-                "poseStrength": pose_strength,
-                "poseStart": pose_start,
-                "poseEnd": pose_end,
+                "poseDigest": _sha256_file(control_path) if control_path is not None and control is None else None,
+                "controlNet": {
+                    "kind": control_kind,
+                    "imageDigest": _sha256_file(control_path),
+                    "strength": control_strength,
+                    "start": control_start,
+                    "end": control_end,
+                } if control is not None else None,
+                "poseStrength": control_strength if control is None else None,
+                "poseStart": control_start if control is None else None,
+                "poseEnd": control_end if control is None else None,
                 "globalEditStrength": edit_strength if flux2_inpainting else None,
                 "maskStrength": mask_strength,
                 "maskBounds": list(mask_image.getbbox())
@@ -2995,7 +3088,7 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
                 if requires_visible_reference_change
                 else None,
             }
-            if conditioned_images or pose_image is not None
+            if conditioned_images or control_image is not None
             else None
         ),
         "outputs": outputs,
@@ -3175,13 +3268,14 @@ def _framepack_vae_tile_configuration(device_memory: int | None) -> dict[str, in
             "tile_sample_stride_width": 192,
             "tile_sample_stride_num_frames": 12,
         }
+    tile_size = 128 if device_memory is not None and device_memory >= 12 * 1024**3 else 64
     return {
-        "tile_sample_min_height": 64,
-        "tile_sample_min_width": 64,
+        "tile_sample_min_height": tile_size,
+        "tile_sample_min_width": tile_size,
         "tile_sample_min_num_frames": 8,
-        "tile_sample_stride_height": 48,
-        "tile_sample_stride_width": 48,
-        "tile_sample_stride_num_frames": 6,
+        "tile_sample_stride_height": tile_size * 3 // 4,
+        "tile_sample_stride_width": tile_size * 3 // 4,
+        "tile_sample_stride_num_frames": 4,
     }
 
 
@@ -3723,6 +3817,16 @@ def _encode_framepack_prompt(
     )
 
 
+def _load_framepack_prompt_encoder(model_path: Path, torch: Any) -> Any:
+    path = Path(__file__).with_name("media_framepack_loading.py")
+    specification = importlib.util.spec_from_file_location("media_framepack_loading", path)
+    if specification is None or specification.loader is None:
+        raise WorkerError("FramePack prompt loading is unavailable. Reinstall the media runtime.")
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return module.load_prompt_encoder(model_path / "text_encoder", torch)
+
+
 def _encode_framepack_prompt_embeddings_in_process(
     diffusers: Any,
     torch: Any,
@@ -3734,7 +3838,6 @@ def _encode_framepack_prompt_embeddings_in_process(
     from transformers import (
         CLIPTextModel,
         CLIPTokenizer,
-        LlamaModel,
         LlamaTokenizerFast,
     )
 
@@ -3747,15 +3850,7 @@ def _encode_framepack_prompt_embeddings_in_process(
         local_files_only=True,
         trust_remote_code=False,
     )
-    text_encoder = LlamaModel.from_pretrained(
-        str(model_path),
-        subfolder="text_encoder",
-        torch_dtype=torch.bfloat16,
-        local_files_only=True,
-        use_safetensors=True,
-        trust_remote_code=False,
-        low_cpu_mem_usage=True,
-    )
+    text_encoder = _load_framepack_prompt_encoder(model_path, torch)
     tokenizer_2 = CLIPTokenizer.from_pretrained(
         str(model_path),
         subfolder="tokenizer_2",
@@ -4067,7 +4162,7 @@ def _load_framepack_transformer(
     )
     loaded: set[str] = set()
     for shard in checkpoint_files:
-        with safe_open(shard, framework="pt", device="cpu") as weights:
+        with safe_open(shard, framework="pt", device="cpu", backend="pread") as weights:
             for name in weights.keys():
                 tensor = weights.get_tensor(name)
                 target_dtype = (
@@ -4116,12 +4211,23 @@ def _load_framepack_transformer(
     ), cached_checkpoint is not None
 
 
+def _load_video_addons(transformer: Any, addons: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    path = Path(__file__).with_name("media_video_addons.py")
+    spec = importlib.util.spec_from_file_location("media_video_addons", path)
+    if spec is None or spec.loader is None:
+        raise WorkerError("Video LoRA runtime is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.load_loras(transformer, addons, _lora_profile)
+
+
 def _load_framepack_pipeline(
     diffusers: Any,
     torch: Any,
     model: dict[str, Any],
     prompt: str | list[str],
     memory_profile: Any = None,
+    addons: list[dict[str, Any]] | None = None,
 ) -> tuple[Any, Any, Any, Any, dict[str, Any]]:
     from transformers import SiglipImageProcessor, SiglipVisionModel
 
@@ -4205,11 +4311,13 @@ def _load_framepack_pipeline(
         compute_dtype,
         device_memory,
     )
+    applied_addons = _load_video_addons(transformer, addons or [])
     performance = _configure_video_offload(
         transformer,
         torch,
         memory_profile,
     )
+    performance["addons"] = applied_addons
     performance["promptEncoderGpuMemory"] = prompt_encoder_memory
     gc.collect()
     torch.cuda.empty_cache()
@@ -4265,30 +4373,17 @@ def _load_framepack_pipeline(
             gc.collect()
             torch.cuda.empty_cache()
 
-    if amd_runtime:
-
-        def encode_image_with_release(image: Any, device: Any) -> Any:
+    def encode_image_with_release(image: Any, device: Any) -> Any:
+        pipeline.image_encoder.to(execution_device)
+        try:
             return original_encode_image(
                 image,
-                device=torch.device("cpu"),
+                device=execution_device,
             ).to(device)
-
-        image_encoder_device = "cpu-amd-conv2d-fallback"
-    else:
-
-        def encode_image_with_release(image: Any, device: Any) -> Any:
-            pipeline.image_encoder.to(execution_device)
-            try:
-                return original_encode_image(
-                    image,
-                    device=execution_device,
-                ).to(device)
-            finally:
-                pipeline.image_encoder.to("cpu")
-                gc.collect()
-                torch.cuda.empty_cache()
-
-        image_encoder_device = "stage-sequential-gpu"
+        finally:
+            pipeline.image_encoder.to("cpu")
+            gc.collect()
+            torch.cuda.empty_cache()
 
     pipeline.vae.encode = vae_encode_with_release
     pipeline.encode_image = encode_image_with_release
@@ -4301,7 +4396,7 @@ def _load_framepack_pipeline(
     performance["fp8CacheHit"] = fp8_cache_hit
     performance["computeDtype"] = "bfloat16"
     performance["textEncoderDevice"] = "isolated-block-level-gpu-offload"
-    performance["imageEncoderDevice"] = image_encoder_device
+    performance["imageEncoderDevice"] = "stage-sequential-gpu"
     performance["vaeDevice"] = "stage-sequential-gpu"
     performance["renderStrategy"] = "inverted-anti-drifting-single-window"
     return (
@@ -4421,6 +4516,7 @@ def _generate_framepack_latents_subprocess(
         model,
         section_prompts,
         request.get("memoryProfile"),
+        request.get("addons", []),
     )
     performance["convolutionBackend"] = conv_backend
     if first_frame_path == last_frame_path:
@@ -4567,6 +4663,7 @@ def _generate_framepack_latents(
     transparent_background: bool,
     memory_profile: Any,
     section_prompts: list[str] | None = None,
+    addons: list[dict[str, Any]] | None = None,
 ) -> tuple[Any, dict[str, Any], dict[str, Any]]:
     with tempfile.TemporaryDirectory(
         prefix="machdoch-framepack-denoise-"
@@ -4607,6 +4704,7 @@ def _generate_framepack_latents(
                         "guidanceScale": guidance_scale,
                         "seed": seed,
                         "sectionPrompts": section_prompts,
+                        "addons": addons or [],
                         "transparentBackground": transparent_background,
                         "memoryProfile": memory_profile,
                     }
@@ -4728,6 +4826,7 @@ def _load_hunyuan_video_15_pipeline(
     model: dict[str, Any],
     prompt: str,
     memory_profile: Any,
+    addons: list[dict[str, Any]] | None = None,
 ) -> tuple[Any, Any, Any, Any, Any, dict[str, Any]]:
     from transformers import SiglipImageProcessor, SiglipVisionModel
 
@@ -4747,12 +4846,14 @@ def _load_hunyuan_video_15_pipeline(
         memory_profile,
     )
     transformer.eval()
+    applied_addons = _load_video_addons(transformer, addons or [])
     performance = _configure_video_offload(
         transformer,
         torch,
         memory_profile,
     )
     performance["promptEncoderGpuMemory"] = prompt_encoder_memory
+    performance["addons"] = applied_addons
     gc.collect()
     torch.cuda.empty_cache()
     vae = diffusers.AutoencoderKLHunyuanVideo15.from_pretrained(
@@ -4993,6 +5094,7 @@ def _generate_hunyuan_video_15_latents_subprocess(
         model,
         prompt,
         request.get("memoryProfile"),
+        request.get("addons", []),
     )
     performance["convolutionBackend"] = conv_backend
     if float(loop_endpoint_strength) > 0.0:
@@ -5087,6 +5189,7 @@ def _generate_hunyuan_video_15_latents(
     memory_profile: Any,
     loop_endpoint_strength: float = 0.0,
     loop_endpoint_span: int = 1,
+    addons: list[dict[str, Any]] | None = None,
 ) -> tuple[Any, dict[str, Any], dict[str, Any]]:
     with tempfile.TemporaryDirectory(
         prefix="machdoch-hunyuan-video-1.5-denoise-"
@@ -5127,6 +5230,7 @@ def _generate_hunyuan_video_15_latents(
                         "seed": seed,
                         "loopEndpointStrength": loop_endpoint_strength,
                         "loopEndpointSpan": loop_endpoint_span,
+                        "addons": addons or [],
                         "transparentBackground": transparent_background,
                         "memoryProfile": memory_profile,
                     }
@@ -5529,6 +5633,7 @@ def _load_ltx_video_pipeline(
     model: dict[str, Any],
     prompt: str,
     memory_profile: Any = None,
+    addons: list[dict[str, Any]] | None = None,
 ) -> tuple[Any, Any, Any, dict[str, Any]]:
     if _required_text(model, "packageKind", 64) != "diffusers-directory":
         raise WorkerError("LTX-Video generation requires a Diffusers directory")
@@ -5600,6 +5705,7 @@ def _load_ltx_video_pipeline(
         config_subfolder,
         compute_dtype,
     )
+    applied_addons = _load_video_addons(transformer, addons or [])
     if device == "cuda":
         performance = _configure_video_offload(
             transformer,
@@ -5661,6 +5767,7 @@ def _load_ltx_video_pipeline(
             disable=os.environ.get("MACHDOCH_MEDIA_DEBUG_PROGRESS") != "1"
         )
     performance["variant"] = variant
+    performance["addons"] = applied_addons
     performance["weightStorageDtype"] = "float8_e4m3fn"
     performance["computeDtype"] = str(compute_dtype).removeprefix("torch.")
     performance["textEncoderDevice"] = text_encoder_device
@@ -5680,6 +5787,7 @@ def _load_video_pipeline(
     prompt: str = "",
     negative_prompt: str = "",
     memory_profile: Any = None,
+    addons: list[dict[str, Any]] | None = None,
 ) -> tuple[Any, Any, Any]:
     architecture = _required_text(model, "architecture", 64)
     if architecture != "wan-2.2-ti2v":
@@ -5722,6 +5830,7 @@ def _load_video_pipeline(
         trust_remote_code=False,
         low_cpu_mem_usage=True,
     )
+    applied_addons = _load_video_addons(transformer, addons or [])
     # Offload the 9.3 GB BF16 denoiser before loading the 2.6 GB FP32 VAE. This
     # ordering prevents their initialization peaks from overlapping on 32 GB
     # Windows systems and leaves the VAE resident for endpoint encode/decode.
@@ -5760,6 +5869,7 @@ def _load_video_pipeline(
     if hasattr(pipeline.vae, "enable_tiling"):
         pipeline.vae.enable_tiling()
     pipeline._machdoch_wan_performance = performance
+    performance["addons"] = applied_addons
     if hasattr(pipeline, "set_progress_bar_config"):
         pipeline.set_progress_bar_config(
             disable=os.environ.get("MACHDOCH_MEDIA_DEBUG_PROGRESS") != "1"
@@ -6110,14 +6220,16 @@ def _frame_rgb_array(frame: Any) -> Any:
     if isinstance(frame, Image.Image):
         return np.asarray(frame.convert("RGB"), dtype=np.uint8)
     array = np.asarray(frame)
+    if array.ndim != 3 or array.shape[2] < 3 or array.size == 0:
+        raise WorkerError("Video model returned a frame without three color channels")
+    if not np.isfinite(array).all():
+        raise WorkerError("Video model returned nonfinite pixels; try another seed or precision setting")
     if array.dtype.kind == "f":
         array = np.clip(
             array * 255.0 if float(array.max()) <= 1.0 else array,
             0.0,
             255.0,
         )
-    if array.ndim != 3 or array.shape[2] < 3:
-        raise WorkerError("WAN returned a frame without three color channels")
     return np.asarray(array[..., :3], dtype=np.uint8)
 
 
@@ -6167,9 +6279,9 @@ def _frame_green_key(rgb: Any) -> tuple[Any, float, float]:
     keyed_ratio = float(np.mean(keyed))
     if keyed_ratio < 0.55:
         raise WorkerError(
-            "Transparent video requires a predominantly green border in every WAN "
-            f"frame; observed {keyed_ratio:.1%}. Keep subject motion and effects away "
-            "from the boundary and use a uniform chroma-green source background."
+            "The green background could not be separated from the subject "
+            f"({keyed_ratio:.1%} green border). Keep the subject inside the frame "
+            "and regenerate with a plain green background."
         )
     candidates = border[keyed]
     key = np.median(candidates, axis=0).astype(np.float32)
@@ -6206,6 +6318,7 @@ def _spatially_refine_alpha(alpha: Any, strength: float) -> Any:
 def _temporally_stabilize_alpha(
     alphas: list[Any],
     strength: float,
+    loop_mode: str = "none",
 ) -> list[Any]:
     """Suppress stationary matte chatter without smearing moving boundaries."""
     import numpy as np
@@ -6213,16 +6326,22 @@ def _temporally_stabilize_alpha(
     if strength <= 0.0 or len(alphas) < 3:
         return alphas
     stabilized: list[Any] = []
-    for index, current_value in enumerate(alphas):
+    period = len(alphas) - 1 if loop_mode == "seamless" else len(alphas)
+    for index, current_value in enumerate(alphas[:period]):
         current = np.asarray(current_value, dtype=np.float32)
-        if index == 0 or index == len(alphas) - 1:
+        if loop_mode == "none" and index in (0, period - 1):
             stabilized.append(current_value)
             continue
+        previous_index = (index - 1) % period
+        next_index = (index + 1) % period
+        if loop_mode == "ping-pong":
+            previous_index = 1 if index == 0 else index - 1
+            next_index = period - 2 if index == period - 1 else index + 1
         window = np.stack(
             (
-                np.asarray(alphas[index - 1], dtype=np.float32),
+                np.asarray(alphas[previous_index], dtype=np.float32),
                 current,
-                np.asarray(alphas[index + 1], dtype=np.float32),
+                np.asarray(alphas[next_index], dtype=np.float32),
             )
         )
         median = np.median(window, axis=0)
@@ -6244,6 +6363,8 @@ def _temporally_stabilize_alpha(
         stabilized.append(
             np.rint(np.clip(output, 0.0, 255.0)).astype(np.uint8)
         )
+    if loop_mode == "seamless":
+        stabilized.append(stabilized[0].copy())
     return stabilized
 
 
@@ -6619,6 +6740,7 @@ def _decontaminate_green_edges(
 def _matte_video_frames(
     frames: list[Any],
     matte_quality: str,
+    loop_mode: str = "none",
 ) -> tuple[list[Any], dict[str, Any]]:
     """Create a calibrated, temporally stable, decontaminated RGBA sequence."""
     import numpy as np
@@ -6637,7 +6759,7 @@ def _matte_video_frames(
         try:
             calibrations.append(_frame_green_key(rgb))
         except WorkerError as error:
-            raise WorkerError(f"WAN frame {index}: {error}") from error
+            raise WorkerError(f"Video frame {index + 1}: {error}") from error
     key_colors = np.stack([calibration[0] for calibration in calibrations])
     keyed_ratios = [calibration[1] for calibration in calibrations]
     transparent_threshold = float(
@@ -6661,6 +6783,7 @@ def _matte_video_frames(
     final_alphas = _temporally_stabilize_alpha(
         refined_alphas,
         temporal_strength,
+        loop_mode,
     )
     primary_subject_isolation: list[dict[str, Any]] = []
     component_cleanup: list[dict[str, int]] = []
@@ -6723,6 +6846,7 @@ def _matte_video_frames(
         "transparentDominance": round(transparent_threshold, 3),
         "spatialRefinementStrength": spatial_strength,
         "temporalStabilizationStrength": temporal_strength,
+        "temporalBoundaryMode": loop_mode,
         "primarySubjectIsolation": (
             {
                 "engine": "primary-opaque-core-hysteresis-v2",
@@ -7004,6 +7128,17 @@ def _restore_wan_seam_endpoints(
         "sourceHasTerminalClosureFrame": True,
         "deliveryDropsTerminalClosureFrame": True,
     }
+
+
+def _load_video_loop_module() -> Any:
+    specification = importlib.util.spec_from_file_location(
+        "machdoch_video_loop", Path(__file__).with_name("media_video_loop.py")
+    )
+    if specification is None or specification.loader is None:
+        raise WorkerError("The video loop processor could not be loaded")
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return module
 
 
 def _video_frame_to_rgba(frame: Any) -> tuple[Any, int, int]:
@@ -7290,6 +7425,12 @@ def _vp9_quality_arguments(
         "1",
         *rate_control,
     ]
+    if alpha and encoding_quality == "lossless":
+        arguments.extend([
+            "-vf",
+            "split[color][alpha];[alpha]alphaextract[mask];"
+            "[color]format=yuv420p[yuv];[yuv][mask]alphamerge",
+        ])
     if alpha:
         # VP9 alpha cannot use alternate reference frames without corrupting the
         # alpha plane in common WebM decoders.
@@ -7364,7 +7505,12 @@ def _assemble_video_frames(frames: list[Any], loop_mode: str) -> list[Any]:
         # conditioning frame representing the same instant as frame zero of
         # the next cycle. Publish [0, T) so that instant is displayed once.
         return list(frames[:-1])
-    raise WorkerError("loopMode must be none, ping-pong, or seamless")
+    if loop_mode == "crossfade":
+        try:
+            return _load_video_loop_module().crossfade_frames(frames)
+        except ValueError as error:
+            raise WorkerError(str(error)) from error
+    raise WorkerError("loopMode must be none, ping-pong, seamless, or crossfade")
 
 
 def _loop_transition_evidence(frames: list[Any]) -> dict[str, float]:
@@ -7515,15 +7661,31 @@ def _decoded_rgb_encoding_evidence(
 ) -> dict[str, float | int]:
     import numpy as np
 
-    source_rgb = np.stack([frame[..., :3] for frame in source_frames])
-    decoded_rgb = decoded_frames[..., :3]
-    error = np.abs(
-        decoded_rgb.astype(np.int16) - source_rgb.astype(np.int16)
-    )
+    total_error = 0
+    maximum_error = 0
+    sample_count = 0
+    for decoded, source in zip(decoded_frames, source_frames, strict=True):
+        error = np.abs(
+            decoded[..., :3].astype(np.int16) - source[..., :3].astype(np.int16)
+        )
+        total_error += int(error.sum(dtype=np.int64))
+        maximum_error = max(maximum_error, int(error.max()))
+        sample_count += error.size
     return {
-        "mae": float(np.mean(error)),
-        "maximumError": int(np.max(error)),
+        "mae": total_error / sample_count,
+        "maximumError": maximum_error,
     }
+
+
+def _load_video_io() -> Any:
+    specification = importlib.util.spec_from_file_location(
+        "machdoch_video_io", Path(__file__).with_name("media_video_io.py")
+    )
+    if specification is None or specification.loader is None:
+        raise WorkerError("The video encoder could not be loaded")
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return module
 
 
 def _encode_animated_composite(
@@ -7533,12 +7695,12 @@ def _encode_animated_composite(
     config: dict[str, Any],
     loop_mode: str,
     encoding_quality: str,
+    source_frame_count: int,
 ) -> tuple[Path, dict[str, Any]]:
     """Composite an alpha sequence over a deterministic seamless background."""
     import imageio_ffmpeg
     import numpy as np
     import subprocess
-    from PIL import Image
 
     if not rgba_frames:
         raise WorkerError("Animated video composition requires at least one frame")
@@ -7554,8 +7716,6 @@ def _encode_animated_composite(
         position = np.broadcast_to(y, (height, width))
     else:
         position = (x + y) * 0.5
-    composite_directory = output_directory / "composite-frames"
-    composite_directory.mkdir()
     composite_frames: list[Any] = []
     denominator = frame_count if loop_mode != "none" else max(frame_count - 1, 1)
     for index, rgba in enumerate(rgba_frames):
@@ -7589,55 +7749,42 @@ def _encode_animated_composite(
             + np.maximum(composed_float, spell_rgb) * spell_alpha
         )
         composed = np.rint(composed_float).clip(0, 255).astype(np.uint8)
-        Image.fromarray(composed).save(
-            composite_directory / f"frame-{index:04d}.png",
-            format="PNG",
-            compress_level=3,
-        )
         composite_frames.append(composed)
     loop_evidence = _loop_transition_evidence(composite_frames)
+    loop_inspection = None
+    if loop_mode != "none":
+        video_loop = _load_video_loop_module()
+        try:
+            loop_inspection = {"generated": video_loop.inspect_loop(
+                composite_frames, source_frame_count, loop_mode, "Generated composite",
+            )}
+        except ValueError as error:
+            raise WorkerError(str(error)) from error
     destination = output_directory / "output-0001.webm"
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     pixel_format, color_range = _vp9_delivery_pixel_format(
         encoding_quality,
         alpha=False,
     )
-    encoded = subprocess.run(
-        [
-            ffmpeg,
-            "-y",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-framerate",
-            str(fps),
-            "-i",
-            str(composite_directory / "frame-%04d.png"),
-            "-an",
-            "-c:v",
-            "libvpx-vp9",
-            "-pix_fmt",
-            pixel_format,
-            *(
-                ["-color_range", "pc"]
-                if color_range == "full"
-                else []
-            ),
-            *_vp9_quality_arguments(encoding_quality, alpha=False),
-            "-fps_mode",
-            "passthrough",
-            str(destination),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=15 * 60,
-        check=False,
-    )
-    if encoded.returncode != 0:
-        raise WorkerError(
-            "Animated-background VP9 encoding failed: "
-            + encoded.stderr.strip()[-2_000:]
+    try:
+        _load_video_io().encode_frames(
+            ffmpeg, destination, composite_frames, fps,
+            [
+                "-c:v",
+                "libvpx-vp9",
+                "-pix_fmt",
+                pixel_format,
+                *(
+                    ["-color_range", "pc"]
+                    if color_range == "full"
+                    else []
+                ),
+                *_vp9_quality_arguments(encoding_quality, alpha=False),
+            ],
+            alpha=False,
         )
+    except ValueError as error:
+        raise WorkerError(str(error)) from error
     if (
         not destination.is_file()
         or destination.stat().st_size == 0
@@ -7690,7 +7837,14 @@ def _encode_animated_composite(
             f"round-trip error: {encoding_evidence['maximumError']}"
         )
     decoded_loop_evidence = _loop_transition_evidence(list(decoded_frames))
-    if loop_mode == "seamless" and (
+    if loop_inspection is not None:
+        try:
+            loop_inspection["decoded"] = video_loop.inspect_loop(
+                list(decoded_frames), source_frame_count, loop_mode, "Encoded composite"
+            )
+        except ValueError as error:
+            raise WorkerError(str(error)) from error
+    if loop_mode in ("seamless", "crossfade") and (
         decoded_duplicate_evidence["exactAdjacentDuplicateCount"] > 0
         or decoded_duplicate_evidence["duplicateClosureFrame"]
     ):
@@ -7713,6 +7867,7 @@ def _encode_animated_composite(
         "durationSeconds": frame_count / fps,
         "hasAlpha": False,
         "loopMode": loop_mode,
+        "loopBoundaryInspection": loop_inspection,
         "loopEndpointMae": loop_evidence["boundaryMae"],
         "loopBoundaryReferenceMae": loop_evidence["referenceMae"],
         "loopBoundaryContinuityRatio": loop_evidence["continuityRatio"],
@@ -7726,7 +7881,11 @@ def _encode_animated_composite(
         ],
         "decodedRgbEncodingMae": encoding_evidence["mae"],
         "decodedRgbEncodingMaximumError": encoding_evidence["maximumError"],
-        "frameCadence": "source-passthrough",
+        "frameCadence": (
+            "motion-compensated-overlap"
+            if loop_mode == "crossfade"
+            else "source-passthrough"
+        ),
         **duplicate_evidence,
         "decodedExactAdjacentDuplicateCount": decoded_duplicate_evidence[
             "exactAdjacentDuplicateCount"
@@ -7773,16 +7932,17 @@ def _encode_video_webm(
     import subprocess
 
     if not frames:
-        raise WorkerError("WAN returned no frames")
+        raise WorkerError("Video generation returned no frames")
     if animated_background is not None and not transparent_background:
         raise WorkerError(
             "animatedBackground requires transparentBackground so the generated "
             "subject can be composited"
         )
-    frame_directory = output_directory / "frames"
-    frame_directory.mkdir()
+    video_io = _load_video_io()
     if transparent_background:
-        rgba_arrays, matte_evidence = _matte_video_frames(frames, matte_quality)
+        rgba_arrays, matte_evidence = _matte_video_frames(
+            frames, matte_quality, "none" if loop_mode == "crossfade" else loop_mode
+        )
     else:
         rgba_arrays = []
         for frame in frames:
@@ -7804,33 +7964,41 @@ def _encode_video_webm(
     alpha_minimum = min(int(frame[..., 3].min()) for frame in rgba_arrays)
     alpha_maximum = max(int(frame[..., 3].max()) for frame in rgba_arrays)
     output_frames = _assemble_video_frames(rgba_arrays, loop_mode)
-    for index, frame in enumerate(output_frames):
-        from PIL import Image
-
-        Image.fromarray(
-            frame if transparent_background else frame[..., :3],
-        ).save(
-            frame_directory / f"frame-{index:04d}.png",
-            format="PNG",
-            compress_level=3,
-        )
+    if matte_evidence is not None:
+        try:
+            matte_evidence["sourceFrameCoverage"] = video_io.alpha_frame_coverage(
+                output_frames, "Generated video"
+            )
+        except ValueError as error:
+            raise WorkerError(str(error)) from error
     loop_evidence = _rgb_loop_transition_evidence(output_frames)
     duplicate_evidence = _duplicate_frame_evidence(output_frames)
     cadence_evidence = _cadence_evidence(
         [frame[..., :3] for frame in output_frames]
     )
-    if loop_mode == "seamless" and (
+    if loop_mode in ("seamless", "crossfade") and (
         duplicate_evidence["exactAdjacentDuplicateCount"] > 0
         or duplicate_evidence["duplicateClosureFrame"]
     ):
         raise WorkerError(
-            "Seamless delivery contains an exact duplicate frame or closure hold"
+            "Video loop contains an exact duplicate frame or closure hold"
         )
-    if loop_mode == "seamless":
+    if loop_mode in ("seamless", "crossfade"):
         _require_decoded_loop_cadence(
             cadence_evidence,
             "Source",
         )
+    loop_inspection = None
+    if loop_mode != "none":
+        video_loop = _load_video_loop_module()
+        try:
+            loop_inspection = {
+                "generated": video_loop.inspect_loop(
+                    output_frames, len(frames), loop_mode, "Generated"
+                ),
+            }
+        except ValueError as error:
+            raise WorkerError(str(error)) from error
     destination = output_directory / "output-0000.webm"
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     pixel_format, color_range = _vp9_delivery_pixel_format(
@@ -7838,16 +8006,6 @@ def _encode_video_webm(
         alpha=transparent_background,
     )
     command = [
-        ffmpeg,
-        "-y",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-framerate",
-        str(fps),
-        "-i",
-        str(frame_directory / "frame-%04d.png"),
-        "-an",
         "-c:v",
         "libvpx-vp9",
         "-pix_fmt",
@@ -7861,17 +8019,14 @@ def _encode_video_webm(
             encoding_quality,
             alpha=transparent_background,
         ),
-        "-fps_mode",
-        "passthrough",
-        str(destination),
     ]
-    encoded = subprocess.run(
-        command, capture_output=True, text=True, timeout=15 * 60, check=False
-    )
-    if encoded.returncode != 0:
-        raise WorkerError(
-            "VP9 encoding failed: " + encoded.stderr.strip()[-2_000:]
+    try:
+        video_io.encode_frames(
+            ffmpeg, destination, output_frames, fps, command,
+            alpha=transparent_background,
         )
+    except ValueError as error:
+        raise WorkerError(str(error)) from error
     if not destination.is_file() or destination.stat().st_size == 0:
         raise WorkerError("VP9 encoder produced no output")
     if destination.read_bytes()[:4] != b"\x1aE\xdf\xa3":
@@ -7924,7 +8079,20 @@ def _encode_video_webm(
             channel_count,
         )
     )
+    if loop_inspection is not None:
+        try:
+            loop_inspection["decoded"] = video_loop.inspect_loop(
+                list(decoded_frames), len(frames), loop_mode, "Encoded"
+            )
+        except ValueError as error:
+            raise WorkerError(str(error)) from error
     if transparent_background:
+        try:
+            matte_evidence["decodedFrameCoverage"] = video_io.alpha_frame_coverage(
+                decoded_frames, "Encoded video"
+            )
+        except ValueError as error:
+            raise WorkerError(str(error)) from error
         decoded_alpha = decoded_frames[..., 3]
         decoded_alpha_minimum = int(decoded_alpha.min())
         decoded_alpha_maximum = int(decoded_alpha.max())
@@ -7932,12 +8100,14 @@ def _encode_video_webm(
             raise WorkerError(
                 "Encoded WebM did not retain a usable transparent alpha plane"
             )
+        if encoding_quality == "lossless":
+            if any(
+                not np.array_equal(decoded[..., 3], source[..., 3])
+                for decoded, source in zip(decoded_frames, output_frames, strict=True)
+            ):
+                raise WorkerError("Lossless WebM did not retain the source alpha values")
+            matte_evidence["losslessAlphaVerified"] = True
     else:
-        decoded_alpha = np.full(
-            decoded_frames.shape[:3],
-            255,
-            dtype=np.uint8,
-        )
         decoded_alpha_minimum = 255
         decoded_alpha_maximum = 255
     encoding_evidence = _decoded_rgb_encoding_evidence(
@@ -7974,7 +8144,7 @@ def _encode_video_webm(
         }
     )
     if loop_mode != "none":
-        if loop_mode == "seamless" and (
+        if loop_mode in ("seamless", "crossfade") and (
             decoded_duplicate_evidence["exactAdjacentDuplicateCount"] > 0
             or decoded_duplicate_evidence["duplicateClosureFrame"]
         ):
@@ -7986,7 +8156,7 @@ def _encode_video_webm(
             decoded_loop_evidence,
             "Encoded WebM color",
         )
-        if loop_mode == "seamless":
+        if loop_mode in ("seamless", "crossfade"):
             _require_decoded_loop_cadence(
                 decoded_cadence_evidence,
                 "Encoded WebM",
@@ -8026,7 +8196,11 @@ def _encode_video_webm(
         ],
         "decodedRgbEncodingMae": encoding_evidence["mae"],
         "decodedRgbEncodingMaximumError": encoding_evidence["maximumError"],
-        "frameCadence": "source-passthrough",
+        "frameCadence": (
+            "motion-compensated-overlap"
+            if loop_mode == "crossfade"
+            else "source-passthrough"
+        ),
         "cadence": cadence_evidence,
         "decodedCadence": decoded_cadence_evidence,
         **duplicate_evidence,
@@ -8040,6 +8214,7 @@ def _encode_video_webm(
             "duplicateClosureFrame"
         ],
         "loopMode": loop_mode,
+        "loopBoundaryInspection": loop_inspection,
         "loopEndpointMae": loop_evidence["boundaryMae"],
         "loopBoundaryReferenceMae": loop_evidence["referenceMae"],
         "loopBoundaryContinuityRatio": loop_evidence["continuityRatio"],
@@ -8059,6 +8234,7 @@ def _encode_video_webm(
             animated_background,
             loop_mode,
             encoding_quality,
+            len(frames),
         )
         if animated_background is not None
         else None
@@ -8428,6 +8604,13 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(resolution, str):
         raise WorkerError("resolution must be a string")
     width, height = _video_dimensions(aspect_ratio, resolution, architecture)
+    requested_width, requested_height = request.get("width"), request.get("height")
+    if (requested_width is None) != (requested_height is None):
+        raise WorkerError("Enter both video width and height")
+    if requested_width is not None:
+        if any(not isinstance(value, int) or isinstance(value, bool) or not 128 <= value <= 1536 or value % 32 for value in (requested_width, requested_height)):
+            raise WorkerError("Video width and height must be multiples of 32 between 128 and 1536")
+        width, height = requested_width, requested_height
     num_frames = request.get("numFrames")
     if architecture == "ltx-video":
         if (
@@ -8469,8 +8652,8 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
     ):
         raise WorkerError("fps must be between 1 and 60")
     loop_mode = request.get("loopMode", "none")
-    if loop_mode not in ("none", "ping-pong", "seamless"):
-        raise WorkerError("loopMode must be none, ping-pong, or seamless")
+    if loop_mode not in ("none", "ping-pong", "seamless", "crossfade"):
+        raise WorkerError("loopMode must be none, ping-pong, seamless, or crossfade")
     transparent_background = request.get("transparentBackground", True)
     if not isinstance(transparent_background, bool):
         raise WorkerError("transparentBackground must be boolean")
@@ -8632,6 +8815,7 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
                 request.get("memoryProfile"),
                 float(requested_hunyuan_loop_endpoint_strength),
                 requested_hunyuan_loop_endpoint_span,
+                request.get("addons", []),
             )
         )
         model_ready_at = model_load_started_at + float(
@@ -8695,6 +8879,7 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             transparent_background,
             request.get("memoryProfile"),
             request.get("sectionPrompts"),
+            request.get("addons", []),
         )
         model_ready_at = model_load_started_at + float(
             denoiser_timing["modelLoadAndPrompt"]
@@ -8753,6 +8938,7 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
                 model,
                 prompt,
                 request.get("memoryProfile"),
+                request.get("addons", []),
             )
         )
         from diffusers.pipelines.ltx.pipeline_ltx_condition import (
@@ -8902,6 +9088,7 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             prompt,
             negative_prompt,
             request.get("memoryProfile"),
+            request.get("addons", []),
         )
         cuda_device = torch.device(f"cuda:{torch.cuda.current_device()}")
         prompt_embeddings = prompt_embeddings.to(cuda_device)
@@ -8947,7 +9134,11 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             num_inference_steps=steps,
             guidance_scale=float(guidance_scale),
             generator=generator,
-            callback_on_step_end=_chain_step_callbacks([wan_loop_callback, _sampling_progress(steps)]),
+            callback_on_step_end=(
+                _chain_step_callbacks([wan_loop_callback, _sampling_progress()])
+                if wan_loop_callback is not None
+                else _sampling_progress()
+            ),
         )
         performance = pipeline._machdoch_wan_performance  # noqa: SLF001
         conditioning_mode = pipeline._machdoch_wan_conditioning_mode  # noqa: SLF001
@@ -8959,7 +9150,7 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             }
         effective_guidance_scale = float(guidance_scale)
         effective_steps = steps
-        negative_prompt_applied = True
+        negative_prompt_applied = effective_guidance_scale > 1
         generated_frames = list(result.frames[0])
     generated_at = time.perf_counter()
     if not generated_frames:
@@ -9046,6 +9237,7 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
         "deviceLabel": device_label,
         "deviceMemoryBytes": device_memory,
         "architecture": architecture,
+        "addons": performance.pop("addons"),
         "performance": performance,
         "conv3dBackend": conv3d_backend,
         "conditioningMode": conditioning_mode,
@@ -9055,6 +9247,7 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
         },
         "endpointRestoration": endpoint_restoration,
         "loopEndpointRestoration": loop_endpoint_restoration,
+        "loopBoundaryInspection": evidence.pop("loopBoundaryInspection"),
         "prompt": prompt,
         "negativePrompt": negative_prompt,
         "negativePromptApplied": negative_prompt_applied,

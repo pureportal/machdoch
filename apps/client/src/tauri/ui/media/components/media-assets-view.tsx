@@ -1,3 +1,9 @@
+import {
+  discoverMediaResources,
+  listMediaResourceTags,
+  type MediaResourceSort,
+} from "../../../../core/media/resource-discovery.js";
+import { MediaImportJobs } from "./media-import-jobs";
 import { MediaAssetDetailsDialog } from "./media-asset-details-dialog";
 import { MediaModelInstallDialog } from "./media-model-install-dialog";
 import { MediaRemoveResourceButton } from "./media-remove-resource-button";
@@ -225,6 +231,9 @@ export const MediaAssetsView = ({
       : mediaRuntimeSetupLabel(runtimeSetup);
   const [filter, setFilter] = useState<AssetFilter>("all");
   const [query, setQuery] = useState("");
+  const [tagFilter, setTagFilter] = useState("all");
+  const [architectureFilter, setArchitectureFilter] = useState("all");
+  const [sort, setSort] = useState<MediaResourceSort>("name");
   const [categoryFilterIds, setCategoryFilterIds] = useState<string[]>([]);
   const [importOpen, setImportOpen] = useState(false);
   const [importPath, setImportPath] = useState<string | undefined>();
@@ -251,16 +260,20 @@ export const MediaAssetsView = ({
   const selectedResourceAddon =
     catalog.addons.find((addon) => addon.id === selectedResourceId) ?? null;
   const selectedResourceMetadata = selectedResourceId
-    ? (metadata[selectedResourceId] ?? {
+    ? {
         ...createEmptyMediaGenerationAssetMetadata(),
+        ...metadata[selectedResourceId],
         triggerWords: selectedResourceAddon
-          ? normalizeMediaTriggerWords(selectedResourceAddon.triggerWords)
-          : "",
+          ? selectedResourceAddon.kind === "textual-inversion"
+            ? (selectedResourceAddon.defaultToken ?? "")
+            : normalizeMediaTriggerWords(selectedResourceAddon.triggerWords)
+          : (metadata[selectedResourceId]?.triggerWords ?? ""),
         sourceUrl:
+          metadata[selectedResourceId]?.sourceUrl ??
           selectedResourceAddon?.sourceUrl ??
           selectedResourceModel?.lifecycleSourceUrl ??
           null,
-      })
+      }
     : null;
   const selectedAssetMetadata = selectedAsset
     ? (metadata[selectedAsset.id] ?? createEmptyMediaGenerationAssetMetadata())
@@ -278,75 +291,78 @@ export const MediaAssetsView = ({
       metadata[resourceId]?.categoryIds ?? [],
       categoryFilterIds,
     );
+  const resourceFilters = { query, tag: tagFilter, categoryId: "all", sort };
+  const resourceTypesOnly = ["model", "lora", "embedding"].includes(filter);
+  const matchesArchitecture = (architecture: string | null): boolean =>
+    !resourceTypesOnly ||
+    architectureFilter === "all" ||
+    architecture === architectureFilter;
   const visibleModels =
     filter === "all" || filter === "model"
+      ? discoverMediaResources(
+          libraryModels,
+          metadata,
+          categories,
+          resourceFilters,
+        ).filter(
+          (model) =>
+            matchesCategoryFilter(model.id) &&
+            matchesArchitecture(model.architecture),
+        )
+      : [];
+  const visibleAddons = ["all", "lora", "embedding"].includes(filter)
+    ? discoverMediaResources(
+        catalog.addons,
+        metadata,
+        categories,
+        resourceFilters,
+      ).filter(
+        (addon) =>
+          matchesCategoryFilter(addon.id) &&
+          matchesArchitecture(addon.architecture) &&
+          (filter === "all" ||
+            (filter === "lora"
+              ? addon.kind === "lora"
+              : addon.kind === "textual-inversion")),
+      )
+    : [];
+  const visibleMedia = discoverMediaResources(
+    assets,
+    metadata,
+    categories,
+    resourceFilters,
+  ).filter(
+    (asset) =>
+      matchesCategoryFilter(asset.id) &&
+      (filter === "all"
+        ? asset.kind !== "report"
+        : filter === "svg"
+          ? asset.kind === "vector"
+          : asset.kind === filter),
+  );
+  const filteredTypeResources =
+    filter === "model"
       ? libraryModels
-          .filter((model) => matchesCategoryFilter(model.id))
-          .filter((model) =>
-            resourceMatches(
-              [
-                model.displayName,
-                model.family,
-                model.architecture,
-                ...categoryNamesFor(model.id),
-                ...(metadata[model.id]?.tags ?? []),
-                metadata[model.id]?.triggerWords,
-                metadata[model.id]?.sourceUrl,
-              ],
-              query,
-            ),
-          )
-      : [];
-  const visibleAddons =
-    filter === "all" || filter === "lora" || filter === "embedding"
-      ? catalog.addons
-          .filter(
+      : filter === "lora" || filter === "embedding"
+        ? catalog.addons.filter(
             (addon) =>
-              filter === "all" ||
-              (filter === "lora"
-                ? addon.kind === "lora"
-                : addon.kind === "textual-inversion"),
+              addon.kind === (filter === "lora" ? "lora" : "textual-inversion"),
           )
-          .filter((addon) => matchesCategoryFilter(addon.id))
-          .filter((addon) =>
-            resourceMatches(
-              [
-                addon.displayName,
-                addon.architecture,
-                addon.baseModelHint,
-                ...addon.triggerWords,
-                metadata[addon.id]?.triggerWords,
-                ...categoryNamesFor(addon.id),
-                ...(metadata[addon.id]?.tags ?? []),
-                metadata[addon.id]?.sourceUrl,
-              ],
-              query,
-            ),
-          )
-      : [];
-  const visibleMedia = assets
-    .filter((asset) => {
-      if (filter === "all") return asset.kind !== "report";
-      if (filter === "image") return asset.kind === "image";
-      if (filter === "video") return asset.kind === "video";
-      if (filter === "svg") return asset.kind === "vector";
-      return false;
-    })
-    .filter((asset) => matchesCategoryFilter(asset.id))
-    .filter((asset) =>
-      resourceMatches(
-        [
-          asset.id,
-          mediaAssetLabel(asset),
-          asset.mimeType,
-          ...asset.tags.map((tag) => tag.label),
-          ...categoryNamesFor(asset.id),
-          ...(metadata[asset.id]?.tags ?? []),
-          metadata[asset.id]?.sourceUrl,
-        ],
-        query,
+        : filter === "all"
+          ? [...libraryModels, ...catalog.addons, ...assets]
+          : assets.filter(
+              (asset) => asset.kind === (filter === "svg" ? "vector" : filter),
+            );
+  const availableTags = listMediaResourceTags(filteredTypeResources, metadata);
+  const architectures = [
+    ...new Set(
+      filteredTypeResources.flatMap((resource) =>
+        "architecture" in resource && resource.architecture
+          ? [resource.architecture]
+          : [],
       ),
-    );
+    ),
+  ].sort();
   const totalVisible =
     visibleModels.length + visibleAddons.length + visibleMedia.length;
 
@@ -364,6 +380,9 @@ export const MediaAssetsView = ({
       );
       setQuery("");
       setCategoryFilterIds([]);
+      setTagFilter("all");
+      setArchitectureFilter("all");
+      setSort("name");
       requestAnimationFrame(() =>
         cardRefs.current[resourceId]?.scrollIntoView?.({ block: "center" }),
       );
@@ -379,6 +398,9 @@ export const MediaAssetsView = ({
     setFilter("all");
     setQuery("");
     setCategoryFilterIds([]);
+    setTagFilter("all");
+    setArchitectureFilter("all");
+    setSort("name");
     requestAnimationFrame(() =>
       cardRefs.current[openAssetId]?.scrollIntoView?.({ block: "center" }),
     );
@@ -454,6 +476,7 @@ export const MediaAssetsView = ({
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            aria-label="Search assets"
             placeholder="Search assets"
             className="h-10 w-full rounded-xl border border-slate-800 bg-slate-900/70 pl-9 pr-3 text-sm text-slate-100 outline-none focus:border-sky-500"
           />
@@ -466,6 +489,34 @@ export const MediaAssetsView = ({
           compact
           className="w-48"
         />
+        <select
+          aria-label="Asset tag"
+          value={tagFilter}
+          onChange={(event) => setTagFilter(event.target.value)}
+          className="h-10 max-w-48 rounded-xl border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200"
+        >
+          <option value="all">All tags</option>
+          {tagFilter !== "all" && !availableTags.includes(tagFilter) ? (
+            <option value={tagFilter}>{tagFilter}</option>
+          ) : null}
+          {availableTags.map((tag) => (
+            <option key={tag} value={tag}>
+              {tag}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Sort assets"
+          value={sort}
+          onChange={(event) => setSort(event.target.value as MediaResourceSort)}
+          className="h-10 rounded-xl border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200"
+        >
+          <option value="name">Name A–Z</option>
+          <option value="name-desc">Name Z–A</option>
+          {filter !== "all" && filter !== "model" ? (
+            <option value="newest">Newest first</option>
+          ) : null}
+        </select>
         <Button
           type="button"
           onClick={() => {
@@ -501,13 +552,18 @@ export const MediaAssetsView = ({
           </div>
         ) : null}
       </header>
+      <MediaImportJobs onOpen={showResource} />
       <div className="flex gap-2 overflow-x-auto border-b border-slate-800/70 px-5 py-2">
         {FILTERS.map((item) => (
           <button
             key={item.id}
             type="button"
             aria-pressed={filter === item.id}
-            onClick={() => setFilter(item.id)}
+            onClick={() => {
+              setFilter(item.id);
+              if (item.id === "all" || item.id === "model")
+                setSort((current) => (current === "newest" ? "name" : current));
+            }}
             className={cn(
               "shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium",
               filter === item.id
@@ -520,6 +576,31 @@ export const MediaAssetsView = ({
         ))}
       </div>
 
+      {resourceTypesOnly ? (
+        <div className="border-b border-slate-800 px-5 py-2">
+          <select
+            aria-label="Base model family"
+            value={architectureFilter}
+            onChange={(event) => setArchitectureFilter(event.target.value)}
+            className="h-9 max-w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200"
+          >
+            <option value="all">All model families</option>
+            {architectureFilter !== "all" &&
+            !architectures.some(
+              (architecture) => architecture === architectureFilter,
+            ) ? (
+              <option value={architectureFilter}>{architectureFilter}</option>
+            ) : null}
+            {architectures.map((architecture) => (
+              <option key={architecture} value={architecture}>
+                {libraryModels.find(
+                  (model) => model.architecture === architecture,
+                )?.family ?? architecture}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
         {discoveredFiles.some((file) => file.status === "importable") &&
         ["all", "model", "lora", "embedding"].includes(filter) ? (
@@ -555,12 +636,20 @@ export const MediaAssetsView = ({
         ) : null}
         {totalVisible === 0 ? (
           <div className="flex min-h-72 items-center justify-center rounded-2xl border border-dashed border-slate-800 text-sm text-slate-500">
-            {query || categoryFilterIds.length > 0
+            {query ||
+            categoryFilterIds.length > 0 ||
+            tagFilter !== "all" ||
+            (resourceTypesOnly && architectureFilter !== "all")
               ? "No matching assets"
               : "Import an asset"}
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4 md:grid-cols-3 2xl:grid-cols-4">
+            {filter === "all" && visibleModels.length > 0 ? (
+              <h2 className="col-span-full text-sm font-medium text-slate-300">
+                Models
+              </h2>
+            ) : null}
             {visibleModels.map((model) => {
               const ready = isMediaModelReady(model);
               const readiness = describeMediaModelReadiness(model);
@@ -663,6 +752,11 @@ export const MediaAssetsView = ({
                 </article>
               );
             })}
+            {filter === "all" && visibleAddons.length > 0 ? (
+              <h2 className="col-span-full text-sm font-medium text-slate-300">
+                LoRAs and embeddings
+              </h2>
+            ) : null}
             {visibleAddons.map((addon) => {
               const compatible = addonCompatible(addon.id);
               return (
@@ -719,6 +813,11 @@ export const MediaAssetsView = ({
                 </article>
               );
             })}
+            {filter === "all" && visibleMedia.length > 0 ? (
+              <h2 className="col-span-full text-sm font-medium text-slate-300">
+                Media
+              </h2>
+            ) : null}
             {visibleMedia.map((asset) => (
               <article
                 key={asset.id}
@@ -896,6 +995,11 @@ export const MediaAssetsView = ({
               metadata={selectedResourceMetadata}
               categories={categories}
               showTriggerWords
+              triggerWordsLabel={
+                selectedResourceAddon?.kind === "textual-inversion"
+                  ? "Token"
+                  : "Trigger words"
+              }
               onChange={(nextMetadata) => {
                 if (selectedResourceId) {
                   onUpdateMetadata(selectedResourceId, nextMetadata);

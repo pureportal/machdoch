@@ -18,10 +18,34 @@ import {
   MEDIA_VIDEO_QUALITY_PRESETS,
   identifyMediaVideoQualityPreset,
 } from "../../../core/media/video-quality.js";
-import { compileMediaFlow } from "../../../core/media/compiler.js";
+import {
+  readImageRecipeSettings,
+  compileMediaFlow,
+} from "../../../core/media/compiler.js";
 import { readMediaVideoRecipeSettings } from "./media-generation-recipe";
 
 describe("Basic video configuration", () => {
+  it("preserves crossfade through saved settings and Basics/Advanced conversion", () => {
+    const state = normalizeMediaStudioState({
+      ...DEFAULT_MEDIA_STUDIO_STATE,
+      videoRecipe: {
+        ...DEFAULT_MEDIA_STUDIO_STATE.videoRecipe,
+        loopMode: "crossfade",
+        numFrames: 33,
+      },
+    });
+    const flow = createBasicMediaVideoFlow({
+      id: "crossfade-roundtrip",
+      createdAt: "2026-09-15T00:00:00Z",
+      imageSettings: state.recipe,
+      videoSettings: state.videoRecipe,
+    });
+    expect(state.videoRecipe.loopMode).toBe("crossfade");
+    expect(readMediaVideoRecipeSettings(flow)).toMatchObject({
+      loopMode: "crossfade",
+      numFrames: 33,
+    });
+  });
   it.each([false, true])(
     "keeps Draft sampling, encoding, and transparency through conversion (%s)",
     (transparentBackground) => {
@@ -200,7 +224,31 @@ describe("image reuse journeys", () => {
 });
 
 describe("createBasicMediaRecipeFlow", () => {
-  it("marks the primary remote reference as the required base image", () => {
+  it.each([null, "base-asset"])(
+    "preserves independent reference influences with base %s",
+    (baseImageAssetId) => {
+      const referenceImages = [
+        { assetId: "subject-asset", role: "subject" as const, influence: 0.25 },
+        { assetId: "style-asset", role: "style" as const, influence: 0.8 },
+      ];
+      const flow = createBasicMediaRecipeFlow({
+        id: "reference-influence",
+        createdAt: "2026-09-15T00:00:00Z",
+        target: "image",
+        settings: {
+          ...DEFAULT_MEDIA_STUDIO_STATE.recipe,
+          baseImageAssetId,
+          referenceImages,
+        },
+      });
+      expect(readImageRecipeSettings(flow)).toMatchObject({
+        baseImageAssetId,
+        referenceImages,
+      });
+    },
+  );
+
+  it("preserves the primary remote reference role", () => {
     const remoteModel = createMediaModelCatalogSnapshot({
       isOpenAiConfigured: true,
       isLocalFluxInstalled: false,
@@ -211,7 +259,6 @@ describe("createBasicMediaRecipeFlow", () => {
       id: "media-basic-remote-reference",
       createdAt: "2026-08-21T15:00:00.000Z",
       target: "image",
-      models: [remoteModel],
       settings: {
         ...state.recipe,
         prompt: "Refine the product photograph",
@@ -226,7 +273,7 @@ describe("createBasicMediaRecipeFlow", () => {
     expect(
       flow.nodes.find((node) => node.type === "source.image")?.config
         .referenceRole,
-    ).toBe("base");
+    ).toBe("subject");
   });
 
   it("preserves semantic local reference roles", () => {
@@ -240,7 +287,6 @@ describe("createBasicMediaRecipeFlow", () => {
       id: "media-basic-local-reference",
       createdAt: "2026-08-21T15:00:00.000Z",
       target: "image",
-      models: [localModel],
       settings: {
         ...state.recipe,
         prompt: "Preserve this subject",
@@ -256,5 +302,59 @@ describe("createBasicMediaRecipeFlow", () => {
       flow.nodes.find((node) => node.type === "source.image")?.config
         .referenceRole,
     ).toBe("subject");
+  });
+});
+
+describe("Basic custom settings conversion", () => {
+  it("preserves image sampling through persistence and conversion", () => {
+    const sampling = {
+      width: 640,
+      height: 960,
+      numInferenceSteps: 18,
+      guidanceScale: 5.5,
+    };
+    const state = normalizeMediaStudioState({
+      ...DEFAULT_MEDIA_STUDIO_STATE,
+      recipe: {
+        ...DEFAULT_MEDIA_STUDIO_STATE.recipe,
+        prompt: "Bowl",
+        sampling,
+        seed: 42,
+      },
+    });
+    const flow = createBasicMediaRecipeFlow({
+      id: "custom-image",
+      createdAt: "2026-09-14T00:00:00Z",
+      target: "image",
+      settings: state.recipe,
+    });
+    expect(readImageRecipeSettings(flow)).toMatchObject({ sampling, seed: 42 });
+  });
+
+  it("preserves manual video dimensions, timing, and seed", () => {
+    const settings = {
+      ...DEFAULT_MEDIA_STUDIO_STATE.videoRecipe,
+      modelId: "local:wan2.2-ti2v-5b" as const,
+      width: 640,
+      height: 384,
+      fps: 12,
+      numFrames: 25,
+      numInferenceSteps: 20,
+      seed: 78,
+    };
+    const state = normalizeMediaStudioState({
+      ...DEFAULT_MEDIA_STUDIO_STATE,
+      videoRecipe: settings,
+    });
+    const flow = createBasicMediaVideoFlow({
+      id: "custom-video",
+      createdAt: "2026-09-14T00:00:00Z",
+      imageSettings: {
+        ...state.recipe,
+        referenceImages: [{ assetId: "image", role: "base", influence: 1 }],
+      },
+      videoSettings: state.videoRecipe,
+    });
+    expect(readMediaVideoRecipeSettings(flow)).toMatchObject(settings);
   });
 });

@@ -20,12 +20,14 @@ use crate::child_process::{
 };
 
 use super::{
-    database, model_addon, model_import,
+    database, model_addon, model_components, model_import,
     provider_openai::{self, GeneratedImageAsset},
-    subject_cutout, transform, GenerateMediaImagesRequest, GenerateMediaVideoRequest,
-    MediaAnimatedBackgroundConfig, MediaEmbeddingVectorProfile, MediaImageMask,
-    MediaImageReference, MediaLoraDenoisingSchedule, MediaLoraTensorProfile,
-    MediaModelAddonSelection, MediaModelDescriptor, MediaResult, MediaRuntimePaths,
+    subject_cutout, transform,
+    video_loop::{self, VideoLoopBoundaryInspection},
+    GenerateMediaImagesRequest, GenerateMediaVideoRequest, MediaAnimatedBackgroundConfig,
+    MediaEmbeddingVectorProfile, MediaImageMask, MediaImageReference, MediaLoraDenoisingSchedule,
+    MediaLoraTensorProfile, MediaModelAddonSelection, MediaModelDescriptor, MediaResult,
+    MediaRuntimePaths,
 };
 
 const WORKER_SCHEMA_VERSION: u32 = 5;
@@ -159,6 +161,9 @@ struct WorkerAddon<'a> {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct WorkerGenerationRequest<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    control_net: Option<super::controlnet::WorkerControlNet<'a>>,
+    sampling: &'a super::image_sampling::ImageSampling,
     schema_version: u32,
     model: WorkerModel<'a>,
     prompt: &'a str,
@@ -171,6 +176,7 @@ struct WorkerGenerationRequest<'a> {
     output_directory: &'a Path,
     addons: Vec<WorkerAddon<'a>>,
     reference_images: Vec<WorkerReferenceImage<'a>>,
+    ip_adapter_path: Option<&'a Path>,
     #[serde(skip_serializing_if = "Option::is_none")]
     base_image_path: Option<&'a Path>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -207,6 +213,9 @@ struct WorkerReferenceImage<'a> {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct WorkerVideoGenerationRequest<'a> {
+    addons: Vec<WorkerAddon<'a>>,
+    width: Option<u32>,
+    height: Option<u32>,
     schema_version: u32,
     model: WorkerModel<'a>,
     prompt: &'a str,
@@ -326,6 +335,7 @@ pub(crate) struct LocalWanAnimatedBackgroundEvidence {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LocalWanCompositeOutputProvenance {
+    pub(crate) loop_boundary_inspection: Option<VideoLoopBoundaryInspection>,
     pub(crate) index: u32,
     file_name: String,
     pub(crate) seed: u64,
@@ -371,6 +381,7 @@ pub(crate) struct LocalWanEndpointRestorationEvidence {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WorkerVideoGenerationResponse {
+    addons: Vec<serde_json::Value>,
     schema_version: u32,
     worker_version: String,
     #[serde(default)]
@@ -389,6 +400,8 @@ struct WorkerVideoGenerationResponse {
     endpoint_restoration: Option<LocalWanEndpointRestorationEvidence>,
     #[serde(default)]
     loop_endpoint_restoration: Option<serde_json::Value>,
+    #[serde(default)]
+    loop_boundary_inspection: Option<VideoLoopBoundaryInspection>,
     prompt: String,
     negative_prompt: String,
     #[serde(default)]
@@ -416,6 +429,8 @@ struct WorkerEmbeddingVectorEvidence {
     vector_count: u32,
     dimension: u32,
     registered_tokens: Vec<String>,
+    encoded_token_counts: HashMap<String, u32>,
+    max_sequence_length: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -514,6 +529,7 @@ pub(crate) struct LocalGeneratedImageBatch {
 
 #[derive(Debug)]
 pub(crate) struct LocalGeneratedVideo {
+    pub(crate) addons: Vec<serde_json::Value>,
     pub(crate) digest: String,
     pub(crate) relative_path: String,
     pub(crate) byte_size: u64,
@@ -531,6 +547,7 @@ pub(crate) struct LocalGeneratedVideo {
     pub(crate) conditioning_framing: Option<serde_json::Value>,
     pub(crate) endpoint_restoration: Option<LocalWanEndpointRestorationEvidence>,
     pub(crate) loop_endpoint_restoration: Option<serde_json::Value>,
+    pub(crate) loop_boundary_inspection: Option<VideoLoopBoundaryInspection>,
     pub(crate) model_revision: String,
     pub(crate) model_digest: String,
     pub(crate) prompt: String,
@@ -571,6 +588,26 @@ struct ResolvedAddon {
     denoising_schedule: Option<MediaLoraDenoisingSchedule>,
     token: Option<String>,
     placement: Option<String>,
+}
+
+impl<'a> From<&'a ResolvedAddon> for WorkerAddon<'a> {
+    fn from(addon: &'a ResolvedAddon) -> Self {
+        Self {
+            kind: &addon.kind,
+            addon_id: &addon.id,
+            enabled: true,
+            path: &addon.path,
+            digest: &addon.digest,
+            target_components: &addon.target_components,
+            embedding_vectors: &addon.embedding_vectors,
+            lora_profile: addon.lora_profile.as_ref(),
+            model_strength: addon.model_strength,
+            text_encoder_strength: addon.text_encoder_strength,
+            denoising_schedule: addon.denoising_schedule.as_ref(),
+            token: addon.token.as_deref(),
+            placement: addon.placement.as_deref(),
+        }
+    }
 }
 
 struct StagingDirectory(PathBuf);
@@ -1266,7 +1303,7 @@ pub(crate) fn probe_model(
     paths: &MediaRuntimePaths,
     model_id: &str,
 ) -> MediaResult<LocalModelRuntimeProbeResult> {
-    let model = installed_model(paths, model_id)?;
+    let mut model = installed_model(paths, model_id)?;
     let checked_at = database::now();
     let script = worker_script(app)?;
     let (runtime, python) = probe_with_python(app, &script);
@@ -1289,6 +1326,22 @@ pub(crate) fn probe_model(
         "The pinned local Diffusers runtime passed readiness without identifying its interpreter."
             .to_string()
     })?;
+    if model.package_kind == "single-file"
+        && matches!(
+            model.architecture.as_str(),
+            "stable-diffusion-1" | "stable-diffusion-xl"
+        )
+    {
+        let root = model
+            .path
+            .parent()
+            .ok_or("Model package has no directory")?
+            .join("config");
+        model.config_path = Some(model_components::ensure_sd_config(
+            &root,
+            &model.architecture,
+        )?);
+    }
     let request = WorkerModelProbeRequest {
         schema_version: WORKER_SCHEMA_VERSION,
         model: WorkerModel {
@@ -1775,6 +1828,7 @@ pub(crate) fn runnable_reference_model_ids(
                         | "stable-diffusion-xl"
                         | "flux-1"
                         | "flux-2"
+                        | "krea-2"
                 )
             })
         })
@@ -1802,6 +1856,7 @@ pub(crate) fn runnable_inpainting_model_ids(
                         | "stable-diffusion-xl"
                         | "flux-1"
                         | "flux-2"
+                        | "krea-2"
                 )
             })
         })
@@ -1933,10 +1988,17 @@ fn worker_failure_with_diagnostics(summary: String, stderr: &[u8]) -> String {
 }
 
 fn append_prompt_token(prompt: &str, token: &str) -> String {
-    if prompt
-        .split_whitespace()
-        .any(|candidate| candidate == token)
-    {
+    let word_character = |character: char| character.is_alphanumeric() || character == '_';
+    if prompt.match_indices(token).any(|(index, _)| {
+        !prompt[..index]
+            .chars()
+            .next_back()
+            .is_some_and(word_character)
+            && !prompt[index + token.len()..]
+                .chars()
+                .next()
+                .is_some_and(word_character)
+    }) {
         prompt.to_string()
     } else if prompt.trim().is_empty() {
         token.to_string()
@@ -1968,7 +2030,25 @@ fn validate_generation_evidence(
             "local Diffusers generation returned evidence from a different runtime".to_string(),
         );
     }
-    if response.addons.len() != addons.len() {
+    validate_addon_evidence(
+        &response.addons,
+        &response.prompt,
+        &response.negative_prompt,
+        request_prompt,
+        request_negative_prompt,
+        addons,
+    )
+}
+
+fn validate_addon_evidence(
+    evidence: &[serde_json::Value],
+    prompt: &str,
+    negative_prompt: &str,
+    request_prompt: &str,
+    request_negative_prompt: &str,
+    addons: &[ResolvedAddon],
+) -> MediaResult<()> {
+    if evidence.len() != addons.len() {
         return Err(
             "local Diffusers generation did not confirm the exact requested add-on stack"
                 .to_string(),
@@ -1976,7 +2056,7 @@ fn validate_generation_evidence(
     }
     let mut expected_prompt = request_prompt.to_string();
     let mut expected_negative_prompt = request_negative_prompt.to_string();
-    for (index, (evidence, addon)) in response.addons.iter().zip(addons).enumerate() {
+    for (index, (evidence, addon)) in evidence.iter().zip(addons).enumerate() {
         let object = evidence
             .as_object()
             .ok_or_else(|| format!("local Diffusers add-on evidence {index} is not an object"))?;
@@ -2074,6 +2154,25 @@ fn validate_generation_evidence(
                                 || evidence.dimension != expected.dimension
                                 || evidence.registered_tokens
                                     != registered_embedding_tokens(token, expected.vector_count)
+                                || evidence.max_sequence_length == 0
+                                || evidence.max_sequence_length > 512
+                                || ["positive", "negative"].iter().any(|channel| {
+                                    let active = addon.placement.as_deref() == Some(*channel)
+                                        || addon.placement.as_deref() == Some("both");
+                                    match evidence.encoded_token_counts.get(*channel) {
+                                        Some(count) => {
+                                            !active
+                                                || *count < expected.vector_count
+                                                || *count % expected.vector_count != 0
+                                                || *count > evidence.max_sequence_length
+                                        }
+                                        None => active,
+                                    }
+                                })
+                                || evidence
+                                    .encoded_token_counts
+                                    .keys()
+                                    .any(|channel| channel != "positive" && channel != "negative")
                         },
                     )
                 {
@@ -2100,7 +2199,7 @@ fn validate_generation_evidence(
             _ => return Err("resolved model add-on has an unsupported kind".to_string()),
         }
     }
-    if response.prompt != expected_prompt || response.negative_prompt != expected_negative_prompt {
+    if prompt != expected_prompt || negative_prompt != expected_negative_prompt {
         return Err(
             "local Diffusers generation did not confirm the exact compiled prompt channels"
                 .to_string(),
@@ -2111,6 +2210,8 @@ fn validate_generation_evidence(
 
 #[derive(Clone, Copy)]
 struct EditConditioningEvidenceExpectation<'a> {
+    control_net: Option<&'a super::controlnet::ControlNetConditioning>,
+    control_digest: Option<&'a str>,
     architecture: &'a str,
     references: &'a [MediaImageReference],
     reference_digests: &'a [&'a str],
@@ -2291,7 +2392,24 @@ fn validate_edit_conditioning_evidence(
     let object = evidence.as_object().ok_or_else(|| {
         "local Diffusers reference conditioning evidence is not an object".to_string()
     })?;
-    let expected_mode = if expected.pose_digest.is_some() && expected.has_mask {
+    let control_mode = expected.control_net.map(|control| {
+        format!(
+            "controlnet-{}{}",
+            control.kind,
+            if expected.has_mask {
+                "-soft-inpaint-v1"
+            } else {
+                ""
+            }
+        )
+    });
+    let expected_mode = if let Some(mode) = &control_mode {
+        mode.as_str()
+    } else if expected.architecture == "krea-2" && expected.has_mask {
+        "krea2-latent-inpaint-v1"
+    } else if expected.architecture == "krea-2" {
+        "krea2-image-conditioning-v1"
+    } else if expected.pose_digest.is_some() && expected.has_mask {
         "controlnet-openpose-soft-inpaint-v1"
     } else if expected.pose_digest.is_some() {
         "controlnet-openpose"
@@ -2309,6 +2427,43 @@ fn validate_edit_conditioning_evidence(
             "local Diffusers generation did not confirm the requested native conditioning mode"
                 .to_string(),
         );
+    }
+    let reference_encoding = if expected.references.is_empty() {
+        None
+    } else {
+        match expected.architecture {
+            "stable-diffusion-1" | "stable-diffusion-xl" => Some("ip-adapter-plus-v1"),
+            "krea-2" => Some("qwen3-vl-v1"),
+            _ => None,
+        }
+    };
+    if let Some(control) = expected.control_net {
+        let proof = object
+            .get("controlNet")
+            .ok_or("Image generation omitted ControlNet evidence.")?;
+        if proof["kind"].as_str() != Some(control.kind.as_str())
+            || proof["imageDigest"].as_str() != expected.control_digest
+            || proof["strength"].as_f64() != Some(control.strength)
+            || proof["start"].as_f64() != Some(control.start)
+            || proof["end"].as_f64() != Some(control.end)
+        {
+            return Err(
+                "Image generation did not confirm the requested ControlNet input and settings."
+                    .into(),
+            );
+        }
+    } else if object
+        .get("controlNet")
+        .is_some_and(|value| !value.is_null())
+    {
+        return Err("Image generation returned an unexpected ControlNet input.".into());
+    }
+    if object
+        .get("referenceEncoding")
+        .and_then(serde_json::Value::as_str)
+        != reference_encoding
+    {
+        return Err("Image generation did not confirm the reference encoder".to_string());
     }
     let reference_sources = object
         .get("referenceSources")
@@ -2487,12 +2642,13 @@ pub(crate) fn generate(
     ensure_model_is_probe_ready(paths, &model, &runtime)?;
     let has_conditioning = !request.reference_images.is_empty()
         || request.base_image_asset_id.is_some()
-        || request.pose_image_asset_id.is_some();
+        || request.pose_image_asset_id.is_some()
+        || request.control_net.is_some();
     let supported_roles: &[&str] = match model.architecture.as_str() {
-        "flux-2" => &["subject", "style", "composition", "palette", "detail"],
-        "stable-diffusion-1" | "stable-diffusion-2" | "stable-diffusion-xl" | "flux-1" => {
-            &["composition"]
-        }
+        "flux-2" | "krea-2" => &["subject", "style", "composition", "palette", "detail"],
+        "stable-diffusion-1" => &["subject"],
+        "stable-diffusion-xl" => &["subject", "style", "composition"],
+        "stable-diffusion-2" | "flux-1" => &["composition"],
         _ => &[],
     };
     if let Some(reference) = request
@@ -2507,7 +2663,8 @@ pub(crate) fn generate(
     }
     let maximum_references = match model.architecture.as_str() {
         "flux-2" => 7,
-        "stable-diffusion-1" | "stable-diffusion-2" | "stable-diffusion-xl" | "flux-1" => 1,
+        "stable-diffusion-1" | "stable-diffusion-xl" | "krea-2" => 3,
+        "stable-diffusion-2" | "flux-1" => 1,
         _ => 0,
     };
     if request.reference_images.len() > maximum_references {
@@ -2519,12 +2676,18 @@ pub(crate) fn generate(
     if request.prompt.is_empty() && !has_conditioning {
         return Err("prompt or supported local image conditioning is required".to_string());
     }
-    if model.architecture == "krea-2" && has_conditioning {
-        return Err(
-            "KREA 2 supports text-to-image only; choose FLUX.2 klein for image conditioning"
-                .to_string(),
-        );
-    }
+    let ip_adapter_path = if !request.reference_images.is_empty()
+        && matches!(
+            model.architecture.as_str(),
+            "stable-diffusion-1" | "stable-diffusion-xl"
+        ) {
+        Some(model_components::ensure_ip_adapter(
+            paths,
+            &model.architecture,
+        )?)
+    } else {
+        None
+    };
     let addons = resolve_addons(paths, &model, &request.model_addons)?;
     let staging = create_staging_directory(paths)?;
     let input_directory = staging.0.join("input");
@@ -2571,31 +2734,47 @@ pub(crate) fn generate(
     } else {
         None
     };
-    let worker_addons = addons
-        .iter()
-        .map(|addon| WorkerAddon {
-            kind: &addon.kind,
-            addon_id: &addon.id,
-            enabled: true,
-            path: &addon.path,
-            digest: &addon.digest,
-            target_components: &addon.target_components,
-            embedding_vectors: &addon.embedding_vectors,
-            lora_profile: addon.lora_profile.as_ref(),
-            model_strength: addon.model_strength,
-            text_encoder_strength: addon.text_encoder_strength,
-            denoising_schedule: addon.denoising_schedule.as_ref(),
-            token: addon.token.as_deref(),
-            placement: addon.placement.as_deref(),
+    let control_input = request
+        .control_net
+        .as_ref()
+        .map(|control| {
+            let model_path =
+                super::controlnet::ensure_model(paths, &model.architecture, &control.kind)?;
+            let (source, image_path) = stage_conditioning_image(
+                paths,
+                &input_directory,
+                &control.image_asset_id,
+                "controlnet",
+            )?;
+            Ok::<_, String>((source, image_path, model_path))
         })
-        .collect();
+        .transpose()?;
+    let worker_addons = addons.iter().map(WorkerAddon::from).collect();
     let mask_image_path = mask_asset_id
         .map(|asset_id| {
             stage_conditioning_image(paths, &input_directory, asset_id, "mask")
                 .map(|(_, path)| path)
         })
         .transpose()?;
+    request
+        .sampling
+        .validate_architecture(&model.architecture)?;
     let worker_request = WorkerGenerationRequest {
+        control_net: request
+            .control_net
+            .as_ref()
+            .zip(control_input.as_ref())
+            .map(
+                |(control, (_, image_path, model_path))| super::controlnet::WorkerControlNet {
+                    kind: &control.kind,
+                    image_path,
+                    model_path,
+                    strength: control.strength,
+                    start: control.start,
+                    end: control.end,
+                },
+            ),
+        sampling: &request.sampling,
         schema_version: WORKER_SCHEMA_VERSION,
         model: WorkerModel {
             id: &model.id,
@@ -2625,6 +2804,7 @@ pub(crate) fn generate(
                 influence: reference.influence,
             })
             .collect(),
+        ip_adapter_path: ip_adapter_path.as_deref(),
         base_image_path: base_image_path.as_deref(),
         edit_mask: request.edit_mask.as_ref(),
         mask_image_path: mask_image_path.as_deref(),
@@ -2640,6 +2820,7 @@ pub(crate) fn generate(
     };
     let encoded = serde_json::to_vec(&worker_request)
         .map_err(|error| format!("failed to encode local Diffusers request: {error}"))?;
+    subject_cutout::release_session()?;
     let output = run_worker(
         &python,
         &script,
@@ -2657,7 +2838,13 @@ pub(crate) fn generate(
         &addons,
     )?;
     let expected_inference_steps =
-        expected_image_inference_steps(model.architecture.as_str(), request.model_policy.as_str())?;
+        request
+            .sampling
+            .num_inference_steps
+            .unwrap_or(expected_image_inference_steps(
+                model.architecture.as_str(),
+                request.model_policy.as_str(),
+            )?);
     if response.model_policy != request.model_policy
         || response.aspect_ratio != request.aspect_ratio
         || response.num_inference_steps != expected_inference_steps
@@ -2677,6 +2864,10 @@ pub(crate) fn generate(
             .map(|(_, source, _)| source.digest.as_str())
             .collect::<Vec<_>>();
         let expected_conditioning = EditConditioningEvidenceExpectation {
+            control_net: request.control_net.as_ref(),
+            control_digest: control_input
+                .as_ref()
+                .map(|(source, _, _)| source.digest.as_str()),
             architecture: &model.architecture,
             references: &request.reference_images,
             reference_digests: &reference_digests,
@@ -2823,6 +3014,14 @@ pub(crate) fn generate(
                     role: "pose".to_string(),
                     influence: request.pose_strength.unwrap_or(1.0),
                 }))
+                .chain(control_input.zip(request.control_net.as_ref()).map(
+                    |((source, _, _), control)| LocalConditioningSource {
+                        asset_id: control.image_asset_id.clone(),
+                        digest: source.digest,
+                        role: format!("controlnet:{}", control.kind),
+                        influence: control.strength,
+                    },
+                ))
                 .collect(),
             outputs: output_provenance,
         },
@@ -2843,7 +3042,16 @@ pub(crate) fn workflow_operation(
     if !script.is_file() {
         return Err("The workflow worker is missing. Repair Media Studio.".into());
     }
-    if command != "prepare-mask" {
+    if command == "depth-map" {
+        request["modelPath"] = serde_json::json!(super::controlnet::ensure_component(
+            paths,
+            "depth-anything-v2-small"
+        )?);
+    }
+    if !matches!(
+        command,
+        "prepare-mask" | "image-mask" | "mask-composite" | "canny"
+    ) {
         let model_path = request["modelPath"]
             .as_str()
             .ok_or("Choose a model first")?;
@@ -3831,7 +4039,23 @@ pub(crate) fn generate_video(
                 .to_string(),
         );
     }
+    let addons = resolve_addons(
+        paths,
+        &InstalledModel {
+            id: request.model_id.clone(),
+            architecture: architecture.to_string(),
+            package_kind: "diffusers-directory".to_string(),
+            path: model_path.clone(),
+            config_path: None,
+            revision: model_revision.to_string(),
+            digest: model_digest.clone(),
+        },
+        &request.model_addons,
+    )?;
     let worker_request = WorkerVideoGenerationRequest {
+        addons: addons.iter().map(WorkerAddon::from).collect(),
+        width: request.width,
+        height: request.height,
         schema_version: WORKER_SCHEMA_VERSION,
         model: WorkerModel {
             id: &request.model_id,
@@ -3864,6 +4088,7 @@ pub(crate) fn generate_video(
     };
     let encoded = serde_json::to_vec(&worker_request)
         .map_err(|error| format!("failed to encode the local video request: {error}"))?;
+    subject_cutout::release_session()?;
     let output = run_worker(
         &python,
         &script,
@@ -3873,6 +4098,14 @@ pub(crate) fn generate_video(
         Some((paths, &request.run_id)),
     )?;
     let response = decode_video_generation_response(&output)?;
+    validate_addon_evidence(
+        &response.addons,
+        &response.prompt,
+        &response.negative_prompt,
+        &request.prompt,
+        &response.negative_prompt,
+        &addons,
+    )?;
     let expected_dimensions = match (
         architecture,
         request.resolution.as_str(),
@@ -3908,11 +4141,19 @@ pub(crate) fn generate_video(
         (_, "quality-768", "21:9") => (768, 336),
         _ => unreachable!("validated video resolution and aspect ratio"),
     };
-    let expected_frame_count = match request.loop_mode.as_str() {
-        "ping-pong" => request.num_frames * 2 - 2,
-        "seamless" => request.num_frames - 1,
-        _ => request.num_frames,
-    };
+    let expected_dimensions = request
+        .width
+        .zip(request.height)
+        .unwrap_or(expected_dimensions);
+    let expected_frame_count =
+        video_loop::output_frame_count(request.num_frames, &request.loop_mode)?;
+    if let Some(composite) = &response.composite_output {
+        video_loop::validate_inspection(
+            composite.loop_boundary_inspection.as_ref(),
+            request.num_frames,
+            &request.loop_mode,
+        )?;
+    }
     let expected_pixel_format = if request.transparent_background {
         "yuva420p"
     } else if request.encoding_quality == "lossless" {
@@ -3935,18 +4176,20 @@ pub(crate) fn generate_video(
     } else {
         "limited"
     };
-    let expected_conditioning_mode = match architecture {
-        "hunyuan-video-1.5-i2v" => "hunyuan-video-1.5-native-first-frame",
-        "framepack-i2v" => "framepack-inverted-anti-drifting-first-last",
-        "ltx-video"
-            if request.model_id == LTX_13B_MODEL_ID && request.resolution != "preview-512" =>
-        {
-            "ltx-native-first-last-keyframes-multiscale"
-        }
-        "ltx-video" => "ltx-native-first-last-keyframes",
-        _ => "first-last-temporal-context-lock-v3",
-    };
+    let expected_conditioning_mode = expected_video_conditioning_mode(
+        architecture,
+        &request.model_id,
+        &request.resolution,
+        &request.loop_mode,
+        first_source.digest == last_source.digest,
+    );
     let expects_loop_seam = request.loop_mode != "none";
+    if response.conditioning_mode != expected_conditioning_mode {
+        return Err(format!(
+            "local video conditioning mismatch: expected {expected_conditioning_mode}, received {}",
+            response.conditioning_mode
+        ));
+    }
     if response.worker_version != runtime.worker_version.as_deref().unwrap_or("")
         || response.packages != runtime.packages
         || response.device != runtime.device.as_deref().unwrap_or("")
@@ -4043,8 +4286,8 @@ pub(crate) fn generate_video(
             response.conv3d_backend.as_str(),
             "aten-native-hip" | "cudnn" | "cpu-native" | "mps-native"
         )
-        || response.conditioning_mode != expected_conditioning_mode
-        || response.negative_prompt_applied != (architecture == "wan-2.2-ti2v")
+        || response.negative_prompt_applied
+            != (architecture == "wan-2.2-ti2v" && response.guidance_scale > 1.0)
         || !response.output.duration_seconds.is_finite()
         || (response.output.duration_seconds
             - f64::from(expected_frame_count) / f64::from(request.fps))
@@ -4098,6 +4341,11 @@ pub(crate) fn generate_video(
             );
         }
     }
+    video_loop::validate_inspection(
+        response.loop_boundary_inspection.as_ref(),
+        request.num_frames,
+        &request.loop_mode,
+    )?;
     if architecture != "wan-2.2-ti2v" {
         if response.endpoint_restoration.is_some() || response.loop_endpoint_restoration.is_some() {
             return Err(
@@ -4110,14 +4358,14 @@ pub(crate) fn generate_video(
             || (request.loop_mode == "seamless") != response.loop_endpoint_restoration.is_some()
         {
             return Err(
-                "local WAN same-endpoint generation returned inconsistent loop restoration"
+                "local WAN same-endpoint generation returned inconsistent loop evidence"
                     .to_string(),
             );
         }
     } else {
         if response.loop_endpoint_restoration.is_some() {
             return Err(
-                "local WAN distinct-endpoint generation returned unexpected loop restoration"
+                "local WAN distinct-endpoint generation returned unexpected loop evidence"
                     .to_string(),
             );
         }
@@ -4272,6 +4520,7 @@ pub(crate) fn generate_video(
             (None, None, None)
         };
     Ok(LocalGeneratedVideo {
+        addons: response.addons,
         digest,
         relative_path: relative_path.to_string_lossy().into_owned(),
         byte_size: bytes.len() as u64,
@@ -4289,6 +4538,7 @@ pub(crate) fn generate_video(
         conditioning_framing: response.conditioning_framing,
         endpoint_restoration: response.endpoint_restoration,
         loop_endpoint_restoration: response.loop_endpoint_restoration,
+        loop_boundary_inspection: response.loop_boundary_inspection,
         model_revision: response.model_revision,
         model_digest: response.model_digest,
         prompt: response.prompt,
@@ -4307,8 +4557,52 @@ pub(crate) fn generate_video(
     })
 }
 
+fn expected_video_conditioning_mode(
+    architecture: &str,
+    model_id: &str,
+    resolution: &str,
+    loop_mode: &str,
+    same_endpoints: bool,
+) -> &'static str {
+    match architecture {
+        "wan-2.2-ti2v" if loop_mode == "seamless" && same_endpoints => {
+            "first-anchor+mobius-latent-shift-v2"
+        }
+        "hunyuan-video-1.5-i2v" => "hunyuan-video-1.5-native-first-frame",
+        "framepack-i2v" => "framepack-inverted-anti-drifting-first-last",
+        "ltx-video" if model_id == LTX_13B_MODEL_ID && resolution != "preview-512" => {
+            "ltx-native-first-last-keyframes-multiscale"
+        }
+        "ltx-video" => "ltx-native-first-last-keyframes",
+        _ => "first-last-temporal-context-lock-v5",
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn wan_conditioning_matches_the_worker_endpoint_strategy() {
+        for loop_mode in ["none", "ping-pong", "seamless"] {
+            for same_endpoints in [false, true] {
+                let expected = if loop_mode == "seamless" && same_endpoints {
+                    "first-anchor+mobius-latent-shift-v2"
+                } else {
+                    "first-last-temporal-context-lock-v5"
+                };
+                assert_eq!(
+                    super::expected_video_conditioning_mode(
+                        "wan-2.2-ti2v",
+                        "local:wan2.2-ti2v-5b",
+                        "preview-512",
+                        loop_mode,
+                        same_endpoints
+                    ),
+                    expected
+                );
+            }
+        }
+    }
+
     use super::*;
 
     fn ready_runtime() -> LocalDiffusersRuntimeStatus {
@@ -4573,6 +4867,8 @@ time.sleep(60)
             end: 0.8,
         };
         let request = WorkerGenerationRequest {
+            control_net: None,
+            sampling: &Default::default(),
             schema_version: WORKER_SCHEMA_VERSION,
             model: WorkerModel {
                 id: "local:test",
@@ -4611,6 +4907,7 @@ time.sleep(60)
                 role: "subject",
                 influence: 1.0,
             }],
+            ip_adapter_path: Some(Path::new("C:/models/components/ip-adapter")),
             base_image_path: None,
             edit_mask: None,
             mask_image_path: None,
@@ -4633,6 +4930,7 @@ time.sleep(60)
             "C:/inputs/reference.png"
         );
         assert_eq!(value["editStrength"], 0.5);
+        assert_eq!(value["ipAdapterPath"], "C:/models/components/ip-adapter");
         assert_eq!(value["maskStrength"], 0.75);
         assert_eq!(value["requireChromaBackground"], true);
         assert_eq!(value["memoryProfile"], "memory-saver");
@@ -4642,6 +4940,9 @@ time.sleep(60)
     #[test]
     fn wan_worker_request_carries_quality_transparency_loop_and_memory_controls() {
         let request = WorkerVideoGenerationRequest {
+            addons: Vec::new(),
+            width: None,
+            height: None,
             schema_version: WORKER_SCHEMA_VERSION,
             model: WorkerModel {
                 id: "local:wan2.2-ti2v-5b",
@@ -4814,7 +5115,9 @@ time.sleep(60)
                         "tensorKey": "<concept>",
                         "vectorCount": 3,
                         "dimension": 768,
-                        "registeredTokens": ["<concept>", "<concept>_1", "<concept>_2"]
+                        "registeredTokens": ["<concept>", "<concept>_1", "<concept>_2"],
+                        "encodedTokenCounts": {"positive": 3, "negative": 3},
+                        "maxSequenceLength": 77
                     }]
                 }),
             ],
@@ -4863,6 +5166,8 @@ time.sleep(60)
         }];
         let reference_digests = [reference_digest.as_str()];
         let reference_expectation = EditConditioningEvidenceExpectation {
+            control_net: None,
+            control_digest: None,
             architecture: "flux-2",
             references: &references,
             reference_digests: &reference_digests,
@@ -4987,6 +5292,108 @@ time.sleep(60)
             serde_json::json!("style");
         response.edit_conditioning.as_mut().unwrap()["sourceTokens"] = serde_json::json!({});
         assert!(validate_edit_conditioning_evidence(&response, &inpaint_expectation).is_err());
+
+        for architecture in ["stable-diffusion-1", "stable-diffusion-xl", "krea-2"] {
+            let expected = EditConditioningEvidenceExpectation {
+                architecture,
+                requires_reference_binding: false,
+                requires_visible_reference_change: false,
+                ..inpaint_expectation
+            };
+            let evidence = response.edit_conditioning.as_mut().unwrap();
+            evidence["sourceTokens"] = serde_json::Value::Null;
+            evidence["referenceBinding"] = serde_json::Value::Null;
+            evidence["changeMap"] = serde_json::Value::Null;
+            evidence["globalEditStrength"] = serde_json::Value::Null;
+            evidence["mode"] = serde_json::json!(if architecture == "krea-2" {
+                "krea2-latent-inpaint-v1"
+            } else {
+                "diffusers-soft-inpaint-v1"
+            });
+            evidence["referenceEncoding"] = serde_json::Value::Null;
+            assert!(validate_edit_conditioning_evidence(&response, &expected).is_err());
+            response.edit_conditioning.as_mut().unwrap()["referenceEncoding"] =
+                serde_json::json!(if architecture == "krea-2" {
+                    "qwen3-vl-v1"
+                } else {
+                    "ip-adapter-plus-v1"
+                });
+            validate_edit_conditioning_evidence(&response, &expected)
+                .expect("References must confirm their image encoder");
+        }
+    }
+
+    #[test]
+    fn controlnet_evidence_requires_the_exact_input_and_schedule() {
+        let control = super::super::controlnet::ControlNetConditioning {
+            image_asset_id: "asset:edges".to_string(),
+            kind: "canny".to_string(),
+            strength: 0.8,
+            start: 0.1,
+            end: 0.85,
+        };
+        let digest = "c".repeat(64);
+        let expected = EditConditioningEvidenceExpectation {
+            control_net: Some(&control),
+            control_digest: Some(&digest),
+            architecture: "stable-diffusion-1",
+            references: &[],
+            reference_digests: &[],
+            base_digest: None,
+            pose_digest: None,
+            has_mask: false,
+            edit_strength: None,
+            mask_strength: None,
+            requires_reference_binding: false,
+            requires_visible_reference_change: false,
+        };
+        let mut response = WorkerGenerationResponse {
+            schema_version: WORKER_SCHEMA_VERSION,
+            worker_version: "test".to_string(),
+            packages: HashMap::new(),
+            device: "cpu".to_string(),
+            device_label: "CPU".to_string(),
+            device_memory_bytes: None,
+            prompt: "castle".to_string(),
+            negative_prompt: String::new(),
+            model_policy: "balanced".to_string(),
+            aspect_ratio: "1:1".to_string(),
+            num_inference_steps: 24,
+            addons: Vec::new(),
+            performance: None,
+            require_chroma_background: false,
+            edit_conditioning: Some(serde_json::json!({
+                "mode": "controlnet-canny",
+                "referenceSources": [],
+                "controlNet": {
+                    "kind": "canny", "imageDigest": digest,
+                    "strength": 0.8, "start": 0.1, "end": 0.85
+                }
+            })),
+            outputs: Vec::new(),
+        };
+        validate_edit_conditioning_evidence(&response, &expected).unwrap();
+        let evidence = response.edit_conditioning.clone().unwrap();
+        for (field, value) in [
+            ("kind", serde_json::json!("depth")),
+            ("imageDigest", serde_json::json!("d".repeat(64))),
+            ("strength", serde_json::json!(1.0)),
+            ("start", serde_json::json!(0.0)),
+            ("end", serde_json::json!(1.0)),
+        ] {
+            response.edit_conditioning = Some(evidence.clone());
+            response.edit_conditioning.as_mut().unwrap()["controlNet"][field] = value;
+            assert!(validate_edit_conditioning_evidence(&response, &expected).is_err());
+        }
+        response.edit_conditioning = Some(evidence);
+        response
+            .edit_conditioning
+            .as_mut()
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove("controlNet");
+        assert!(validate_edit_conditioning_evidence(&response, &expected).is_err());
     }
 
     #[test]

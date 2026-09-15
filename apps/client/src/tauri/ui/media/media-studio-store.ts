@@ -1,3 +1,4 @@
+import { readMediaImageSampling } from "../../../core/media/image-sampling.js";
 import type {
   ImageRecipeSettings,
   MediaAssetCategory,
@@ -67,6 +68,7 @@ export const DEFAULT_IMAGE_RECIPE_SETTINGS = {
 } as const satisfies ImageRecipeSettings;
 
 export const DEFAULT_VIDEO_RECIPE_SETTINGS = {
+  modelAddons: [],
   ...MEDIA_VIDEO_QUALITY_PRESETS[0]!.settings,
   modelId: null,
   aspectRatio: "16:9",
@@ -249,6 +251,7 @@ const normalizeVideoRecipeSettings = (
   );
   return {
     modelId: typeof value.modelId === "string" ? modelId : null,
+    modelAddons: normalizeModelAddons(value.modelAddons),
     aspectRatio: normalizeOneOf(
       value.aspectRatio,
       ["1:1", "16:9", "9:16", "21:9"],
@@ -259,18 +262,21 @@ const normalizeVideoRecipeSettings = (
       ["preview-512", "quality-640", "quality-768"],
       DEFAULT_VIDEO_RECIPE_SETTINGS.resolution,
     ),
+    width: typeof value.width === "number" ? value.width : null,
+    height: typeof value.height === "number" ? value.height : null,
+    seed: typeof value.seed === "number" ? value.seed : null,
     transparentBackground: value.transparentBackground === true,
     loopMode: normalizeOneOf(
       value.loopMode,
-      ["none", "ping-pong", "seamless"],
+      ["none", "ping-pong", "seamless", "crossfade"],
       DEFAULT_VIDEO_RECIPE_SETTINGS.loopMode,
     ),
     fps: Math.round(
       normalizeBoundedNumber(
         value.fps,
         DEFAULT_VIDEO_RECIPE_SETTINGS.fps,
-        8,
-        30,
+        1,
+        60,
       ),
     ),
     numFrames: Math.round(
@@ -487,6 +493,11 @@ export const normalizeImageRecipeSettings = (
       DEFAULT_IMAGE_RECIPE_SETTINGS.memoryProfile,
     ),
     modelAddons: normalizeModelAddons(value.modelAddons),
+    sampling: readMediaImageSampling(
+      typeof value.sampling === "object" && value.sampling !== null
+        ? (value.sampling as Record<string, unknown>)
+        : {},
+    ),
     svgMode: normalizeOneOf<NonNullable<ImageRecipeSettings["svgMode"]>>(
       value.svgMode,
       ["generate", "vectorize"],
@@ -880,8 +891,25 @@ export const normalizeMediaStudioState = (value: unknown): MediaStudioState => {
   };
 };
 
+let currentStudioState: MediaStudioState | null = null;
+let pendingStateSave = Promise.resolve();
+const importedMetadataListeners = new Set<
+  (resourceId: string, metadata: MediaGenerationAssetMetadata) => void
+>();
+
+export const subscribeImportedMediaMetadata = (
+  listener: (
+    resourceId: string,
+    metadata: MediaGenerationAssetMetadata,
+  ) => void,
+): (() => void) => {
+  importedMetadataListeners.add(listener);
+  return () => importedMetadataListeners.delete(listener);
+};
+
 export const loadMediaStudioState = async (): Promise<MediaStudioState> => {
-  return loadStoredValue<MediaStudioState>({
+  if (currentStudioState) return currentStudioState;
+  const stored = await loadStoredValue<MediaStudioState>({
     storageKey: MEDIA_STUDIO_STORAGE_KEY,
     fallback: normalizeMediaStudioState(DEFAULT_MEDIA_STUDIO_STATE),
     normalize: normalizeMediaStudioState,
@@ -889,20 +917,42 @@ export const loadMediaStudioState = async (): Promise<MediaStudioState> => {
     localStorageErrorMessage:
       "Failed to load Media Studio state from localStorage",
   });
+  currentStudioState ??= stored;
+  return currentStudioState;
 };
 
-export const saveMediaStudioState = async (
+export const saveMediaStudioState = (
   state: MediaStudioState,
 ): Promise<void> => {
-  const saved = await saveStoredValue({
-    storageKey: MEDIA_STUDIO_STORAGE_KEY,
-    value: normalizeMediaStudioState(state),
-    tauriErrorMessage: "Failed to persist Media Studio state to Tauri store",
-    localStorageErrorMessage:
-      "Failed to persist Media Studio state to localStorage",
-  });
+  const value = normalizeMediaStudioState(state);
+  currentStudioState = value;
+  const save = async (): Promise<void> => {
+    const saved = await saveStoredValue({
+      storageKey: MEDIA_STUDIO_STORAGE_KEY,
+      value,
+      tauriErrorMessage: "Failed to persist Media Studio state to Tauri store",
+      localStorageErrorMessage:
+        "Failed to persist Media Studio state to localStorage",
+    });
 
-  if (!saved) {
-    throw new Error("Media Studio state could not be persisted.");
-  }
+    if (!saved) {
+      throw new Error("Media Studio state could not be persisted.");
+    }
+  };
+  pendingStateSave = pendingStateSave.then(save, save);
+  return pendingStateSave;
+};
+
+export const saveImportedMediaMetadata = async (
+  resourceId: string,
+  metadata: MediaGenerationAssetMetadata,
+): Promise<void> => {
+  const state = await loadMediaStudioState();
+  const saving = saveMediaStudioState({
+    ...state,
+    assetMetadata: { ...state.assetMetadata, [resourceId]: metadata },
+  });
+  for (const listener of importedMetadataListeners)
+    listener(resourceId, metadata);
+  await saving;
 };
