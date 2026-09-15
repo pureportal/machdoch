@@ -333,6 +333,7 @@ pub fn run() {
             media::media_inspect_civitai_model_addon,
             media::media_download_civitai_model_addon,
             media::media_import_model_addon,
+            media::media_update_model_addon_triggers,
             media::media_plan_model_addon_removal,
             media::media_remove_model_addon,
             media::media_list_assets,

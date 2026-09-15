@@ -3,7 +3,6 @@ import type {
   ImageRecipeSettings,
   MediaFlow,
   MediaGenerationTarget,
-  MediaModelDescriptor,
   MediaStudioState,
   MediaVideoRecipeSettings,
 } from "../../../core/media/contracts.js";
@@ -11,11 +10,44 @@ import {
   createImageEditFlow,
   createImageRecipeFlow,
   createImageToVideoFlow,
+  compileMediaImageOutputBranches,
 } from "../../../core/media/compiler.js";
 import {
   inferMediaVideoAspectRatio,
   isMediaAssetKnownTransparent,
 } from "../../../core/media/video-quality.js";
+
+export const compileBasicImageOutputBranches = (flow: MediaFlow) => {
+  const cutouts = flow.nodes.filter(
+    (node) => node.type === "operation.subject-cutout",
+  );
+  if (cutouts.length === 0) return compileMediaImageOutputBranches(flow);
+  const cutout = cutouts[0]!;
+  const incoming = flow.edges.filter((edge) => edge.toNodeId === cutout.id);
+  const outgoing = flow.edges.filter((edge) => edge.fromNodeId === cutout.id);
+  if (
+    cutouts.length !== 1 ||
+    incoming.length !== 1 ||
+    outgoing.length !== 1 ||
+    flow.nodes.filter((node) => node.type === "output.asset").length !== 1
+  ) {
+    throw new Error("Basic transparency requires one image output.");
+  }
+  return compileMediaImageOutputBranches({
+    ...flow,
+    nodes: flow.nodes.filter((node) => node.id !== cutout.id),
+    edges: [
+      ...flow.edges.filter(
+        (edge) => edge.fromNodeId !== cutout.id && edge.toNodeId !== cutout.id,
+      ),
+      {
+        ...outgoing[0]!,
+        fromNodeId: incoming[0]!.fromNodeId,
+        fromPortId: incoming[0]!.fromPortId,
+      },
+    ],
+  });
+};
 
 export const createBasicMediaVideoFlow = ({
   id,
@@ -91,7 +123,6 @@ interface CreateBasicMediaRecipeFlowInput {
   createdAt: string;
   target: MediaGenerationTarget;
   settings: ImageRecipeSettings;
-  models: readonly MediaModelDescriptor[];
 }
 
 export const createBasicMediaRecipeFlow = ({
@@ -99,26 +130,25 @@ export const createBasicMediaRecipeFlow = ({
   createdAt,
   target,
   settings,
-  models,
 }: CreateBasicMediaRecipeFlowInput): MediaFlow => {
   const [firstReference, ...additionalReferences] = settings.referenceImages;
   const primarySource =
     target === "image" && settings.baseImageAssetId
-      ? { assetId: settings.baseImageAssetId, role: "base" as const }
+      ? {
+          assetId: settings.baseImageAssetId,
+          role: "base" as const,
+          influence: 1,
+        }
       : firstReference
-        ? { assetId: firstReference.assetId, role: firstReference.role }
+        ? firstReference
         : target === "image" && settings.poseImageAssetId
-          ? { assetId: settings.poseImageAssetId, role: "pose" as const }
+          ? {
+              assetId: settings.poseImageAssetId,
+              role: "pose" as const,
+              influence: 1,
+            }
           : null;
-  const configuredModel = settings.modelId
-    ? (models.find((model) => model.id === settings.modelId) ?? null)
-    : null;
-  const sourceRole =
-    (settings.providerPolicy === "remote" ||
-      configuredModel?.target === "remote") &&
-    primarySource?.role !== "pose"
-      ? ("base" as const)
-      : primarySource?.role;
+  const sourceRole = primarySource?.role;
 
   return primarySource && sourceRole && settings.outputFormat !== "svg"
     ? createImageEditFlow({
@@ -130,6 +160,7 @@ export const createBasicMediaRecipeFlow = ({
             : settings,
         sourceAssetId: primarySource.assetId,
         sourceRole,
+        sourceInfluence: primarySource.influence,
         referenceAssets: (target === "image" && settings.baseImageAssetId
           ? settings.referenceImages
           : additionalReferences

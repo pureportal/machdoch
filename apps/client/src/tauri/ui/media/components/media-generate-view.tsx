@@ -1,9 +1,16 @@
+import { MediaAssetBrowser } from "./media-asset-browser";
+import { MediaBasicSamplingOptions } from "./media-basic-sampling-options";
+import {
+  basicImageModelError,
+  basicImageReferenceLimit,
+  basicImageUsesEditStrength,
+} from "../media-basic-image-options";
+import { mediaImageSamplingError } from "../../../../core/media/image-sampling.js";
+import { defaultMediaImageSteps } from "../../../../core/media/image-sampling.js";
 import { MediaSaveAssetButton } from "./media-save-asset-button";
 import { MediaGenerationJobs } from "./media-generation-jobs";
-import { mediaAssetLabel } from "../../../../core/media/asset-label.js";
 import {
   AlertTriangle,
-  Check,
   ChevronDown,
   ImagePlus,
   LoaderCircle,
@@ -15,11 +22,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type JSX } from "react";
 import {
-  createMediaModelAddonSelection,
-  getMediaModelAddonTriggerWords,
   inspectMediaModelAddonCompatibility,
   mediaModelAddonSelectionsEqual,
-  promptContainsMediaModelAddonTrigger,
   reconcileMediaModelAddonSelections,
 } from "../../../../core/media/model-addons.js";
 import { listSelectableMediaModels } from "../../../../core/media/model-library.js";
@@ -28,11 +32,11 @@ import { hasMediaImageMaskContent } from "../../../../core/media/image-mask.js";
 import {
   getMediaReferenceConditioningCapabilities,
   mediaModelSupportsPromptlessConditioning,
-  mediaModelSupportsReferenceRole,
 } from "../../../../core/media/reference-conditioning.js";
 import {
   MEDIA_VIDEO_QUALITY_PRESETS,
   identifyMediaVideoQualityPreset,
+  mediaVideoDimensionsError,
   resolveMediaVideoQualityPresetSettings,
 } from "../../../../core/media/video-quality.js";
 import type {
@@ -43,7 +47,6 @@ import type {
   MediaCapability,
   MediaGenerationAssetMetadata,
   MediaGenerationTarget,
-  MediaModelAddonSelection,
   MediaModelCatalogSnapshot,
   MediaVideoRecipeSettings,
 } from "../../../../core/media/contracts.js";
@@ -53,20 +56,15 @@ import {
   SubmitShortcut,
 } from "../../components/ui/submit-shortcut";
 import { ControlTooltip } from "../../components/ui/tooltip";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "../../components/ui/dialog";
 import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
 import { MediaAssetPreview } from "./media-visual-preview";
 import { MediaModelPicker } from "./media-model-picker";
-import { MediaImageMaskEditor } from "./media-image-mask-editor";
+import { MediaBasicBaseImage } from "./media-basic-base-image";
 import type { MediaGenerationQueueJob } from "../media-generation-queue";
 import { normalizeMediaSubmissionText } from "../media-generation-recipe";
-import { MediaAddonBrowser } from "./media-addon-picker";
+import { MediaAddonDialog } from "./media-addon-dialog";
+import { MediaAddonTriggerWarnings } from "./media-addon-trigger-warnings";
 
 interface MediaGenerateViewProps {
   target: MediaGenerationTarget;
@@ -160,7 +158,7 @@ export const MediaGenerateView = ({
     "reference" | "base" | "pose" | null
   >(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [addonPickerOpen, setAddonPickerOpen] = useState(false);
+  const [maskHasPixels, setMaskHasPixels] = useState(true);
   const visualReferenceAssets = useMemo(
     () => referenceAssets.filter((asset) => asset.kind === "image"),
     [referenceAssets],
@@ -170,11 +168,11 @@ export const MediaGenerateView = ({
   );
   const isSvgVectorization =
     target === "svg" && settings.svgMode === "vectorize";
-  const selectedReferences = settings.referenceImages.flatMap((reference) => {
+  const selectedReferences = settings.referenceImages.map((reference) => {
     const asset = visualReferenceAssets.find(
       (candidate) => candidate.id === reference.assetId,
     );
-    return asset ? [{ asset, reference }] : [];
+    return { asset, reference };
   });
   const baseImageAsset =
     visualReferenceAssets.find(
@@ -239,25 +237,20 @@ export const MediaGenerateView = ({
         ];
   const models = listSelectableMediaModels(catalog.models, {
     target,
-    requiredCapabilities: requiredImageCapabilities,
-    allowedModelIds: target === "video" ? null : availableImageModelIds,
-  })
-    .filter(
-      (model) =>
-        target !== "image" ||
-        (settings.referenceImages.length <=
-          getMediaReferenceConditioningCapabilities(model)
-            .maximumReferenceImages &&
-          settings.referenceImages.every((reference) =>
-            mediaModelSupportsReferenceRole(model, reference.role),
-          )),
-    )
-    .sort((left, right) => {
-      return (
-        Number(right.recommended) - Number(left.recommended) ||
-        left.displayName.localeCompare(right.displayName)
-      );
-    });
+    requiredCapabilities:
+      target === "image" ? undefined : requiredImageCapabilities,
+    allowedModelIds:
+      target === "image"
+        ? directGenerationModelIds
+        : target === "video"
+          ? null
+          : availableImageModelIds,
+  }).sort((left, right) => {
+    return (
+      Number(right.recommended) - Number(left.recommended) ||
+      left.displayName.localeCompare(right.displayName)
+    );
+  });
   const selectedModelId =
     target === "video" ? videoSettings.modelId : settings.modelId;
   const setupModel =
@@ -271,32 +264,83 @@ export const MediaGenerateView = ({
             ),
         );
   const selectedModel =
-    models.find((model) => model.id === selectedModelId) ??
-    (target !== "video"
-      ? models.find((model) => model.id === plan.model?.id)
-      : undefined) ??
-    models[0] ??
-    null;
+    target === "video"
+      ? (models.find((model) => model.id === selectedModelId) ?? null)
+      : ((target === "image" && selectedModelId
+          ? catalog.models.find((model) => model.id === selectedModelId)
+          : models.find((model) => model.id === selectedModelId)) ??
+        models.find((model) => model.id === plan.model?.id) ??
+        models[0] ??
+        null);
   const addonModel =
     target === "video" && settings.referenceImages.length === 0
       ? (catalog.models.find(
           (model) => model.id === settings.modelId && isMediaModelReady(model),
         ) ?? plan.model)
       : selectedModel;
+  const videoAddonModel =
+    target === "video"
+      ? (selectedModel ??
+        plan.runtimeBindings.find((binding) => binding.modality === "video")
+          ?.model ??
+        null)
+      : null;
+  const videoAddons = useMemo(
+    () =>
+      reconcileMediaModelAddonSelections(
+        videoAddonModel,
+        catalog.addons,
+        videoSettings.modelAddons,
+      ),
+    [videoAddonModel, catalog.addons, videoSettings.modelAddons],
+  );
+  useEffect(() => {
+    if (
+      target !== "video" ||
+      mediaModelAddonSelectionsEqual(videoAddons, videoSettings.modelAddons)
+    )
+      return;
+    onVideoSettingsChange({ ...videoSettings, modelAddons: videoAddons });
+  }, [target, videoAddons, videoSettings, onVideoSettingsChange]);
   const referenceCapabilities =
     getMediaReferenceConditioningCapabilities(selectedModel);
   const referenceLimit =
     target === "video" || isSvgVectorization
       ? 1
-      : Math.min(
-          referenceCapabilities.maximumReferenceImages,
-          Math.max(
-            0,
-            8 -
-              (settings.baseImageAssetId ? 1 : 0) -
-              (settings.poseImageAssetId ? 1 : 0),
-          ),
-        );
+      : basicImageReferenceLimit(settings, selectedModel);
+  const modelDisabledReasons = Object.fromEntries(
+    target === "image"
+      ? models.flatMap((model) => {
+          const reason = basicImageModelError(settings, model);
+          return reason ? [[model.id, reason]] : [];
+        })
+      : [],
+  );
+  const imageModelError =
+    target === "image" && selectedModel
+      ? basicImageModelError(settings, selectedModel)
+      : null;
+  const baseImageSupported =
+    selectedModel?.capabilities.includes("image-to-image") === true &&
+    (directReferenceImageModelIds?.includes(selectedModel.id) ?? false) &&
+    (settings.referenceImages.length === 0 ||
+      selectedModel.capabilities.includes("multi-reference-edit"));
+  const maskSupported =
+    selectedModel?.capabilities.includes("masked-image-edit") === true &&
+    (directInpaintingModelIds?.includes(selectedModel.id) ?? false);
+  const missingImage =
+    target === "image" &&
+    [
+      settings.baseImageAssetId,
+      settings.poseImageAssetId,
+      ...settings.referenceImages.map((reference) => reference.assetId),
+    ].some(
+      (id) => id && !visualReferenceAssets.some((asset) => asset.id === id),
+    );
+  const samplingError =
+    target === "image"
+      ? mediaImageSamplingError(settings.sampling ?? {})
+      : null;
   const compatibleAddons = addonModel
     ? catalog.addons.filter(
         (addon) =>
@@ -313,18 +357,6 @@ export const MediaGenerateView = ({
       ),
     [addonModel, catalog.addons, settings.modelAddons],
   );
-  const selectedAddons = new Map(
-    reconciledModelAddons.map((selection) => [selection.addonId, selection]),
-  );
-  const missingTriggers = compatibleAddons.flatMap((addon) => {
-    const selection = selectedAddons.get(addon.id);
-    if (!selection?.enabled) return [];
-    const triggers = getMediaModelAddonTriggerWords(addon);
-    if (promptContainsMediaModelAddonTrigger(settings.prompt, addon)) {
-      return [];
-    }
-    return [{ addon, triggers }];
-  });
   const hasImageConditioning =
     settings.referenceImages.length > 0 ||
     settings.baseImageAssetId !== null ||
@@ -345,6 +377,15 @@ export const MediaGenerateView = ({
     (settings.editMask?.sourceAssetId === settings.baseImageAssetId &&
       hasMediaImageMaskContent(settings.editMask));
   const modelReady = selectedModel !== null && isMediaModelReady(selectedModel);
+  const seamlessSupported =
+    selectedModel?.capabilities.includes("start-end-to-video") === true;
+  const videoLoopError =
+    target === "video" &&
+    selectedModel !== null &&
+    videoSettings.loopMode === "seamless" &&
+    !seamlessSupported
+      ? "This model cannot close a seamless loop. Choose Crossfade or Ping-pong."
+      : null;
   const runtimeReady =
     target === "video" ||
     (availableImageModelIds !== null &&
@@ -356,37 +397,56 @@ export const MediaGenerateView = ({
     ["queued", "running", "canceling"].includes(generationJob.status);
   const generationInProgress = generationPending || runActive;
   const canGenerate =
+    !referenceImportPending &&
+    !imageModelError &&
+    !videoLoopError &&
+    !missingImage &&
+    (target !== "image" ||
+      mediaImageSamplingError(settings.sampling ?? {}) === null) &&
+    (target !== "video" || mediaVideoDimensionsError(videoSettings) === null) &&
     promptReady &&
     svgReferenceReady &&
     baseMaskReady &&
+    (!settings.editMask || maskHasPixels) &&
     modelReady &&
     runtimeReady &&
     planReady &&
     (target !== "video" || videoGenerationSupported) &&
     !settings.qualityGateEnabled &&
     !generationPending;
-  const generationBlockedReason = !svgReferenceReady
-    ? "Choose an image to vectorize"
-    : !baseMaskReady
-      ? "Paint the area to change"
-      : !promptReady
-        ? "Add a prompt"
-        : !selectedModel
-          ? "Choose a model"
-          : !modelReady
-            ? `${selectedModel.displayName} is unavailable`
-            : target !== "video" && availableImageModelIds === null
-              ? "Checking model availability"
-              : !runtimeReady
-                ? "This model cannot run this setup"
-                : target === "video" && !videoGenerationSupported
-                  ? (videoGenerationBlockedReason ??
-                    "Resolve the video generation settings")
-                  : !planReady
-                    ? "Resolve the generation settings"
-                    : settings.qualityGateEnabled
-                      ? "Run quality gates in Advanced"
-                      : null;
+  const generationBlockedReason =
+    (referenceImportPending ? "Adding image" : null) ??
+    imageModelError ??
+    videoLoopError ??
+    samplingError ??
+    (missingImage
+      ? "Remove or replace the unavailable image."
+      : settings.editMask && !maskHasPixels
+        ? "Paint the area to change"
+        : !svgReferenceReady
+          ? "Choose an image to vectorize"
+          : !baseMaskReady
+            ? "Paint the area to change"
+            : !promptReady
+              ? "Add a prompt"
+              : !selectedModel
+                ? "Choose a model"
+                : !modelReady
+                  ? `${selectedModel.displayName} is unavailable`
+                  : target !== "video" && availableImageModelIds === null
+                    ? "Checking model availability"
+                    : !runtimeReady
+                      ? "This model cannot run this setup"
+                      : target === "video" && !videoGenerationSupported
+                        ? (videoGenerationBlockedReason ??
+                          "Resolve the video generation settings")
+                        : !planReady
+                          ? (plan.diagnostics.find(
+                              (diagnostic) => diagnostic.severity === "error",
+                            )?.message ?? "Resolve the generation settings")
+                          : settings.qualityGateEnabled
+                            ? "Run quality gates in Advanced"
+                            : null);
   const resultAssets =
     generationJob?.assets.filter((asset) =>
       generationJob.recipe.target === "video"
@@ -397,22 +457,30 @@ export const MediaGenerateView = ({
     ) ?? [];
   const selectedVideoPreset = MEDIA_VIDEO_QUALITY_PRESETS.find(
     (preset) =>
+      videoSettings.width == null &&
+      videoSettings.height == null &&
       preset.id ===
-      identifyMediaVideoQualityPreset(
-        { ...videoSettings },
-        selectedModel?.architecture,
-      ),
+        identifyMediaVideoQualityPreset(
+          { ...videoSettings },
+          selectedModel?.architecture,
+        ),
   );
   const svgStyle = settings.svgStyle ?? "illustration";
   const svgStyleLabel = `${svgStyle[0].toLocaleUpperCase()}${svgStyle.slice(1)}`;
   const settingsSummary = [
     target === "video"
-      ? videoSettings.aspectRatio
+      ? videoSettings.width && videoSettings.height
+        ? `${videoSettings.width} × ${videoSettings.height}`
+        : videoSettings.aspectRatio
       : target === "svg"
         ? isSvgVectorization
           ? "Vectorize"
           : svgStyleLabel
-        : settings.aspectRatio,
+        : settings.editMask && baseImageAsset
+          ? `${baseImageAsset.width} × ${baseImageAsset.height}`
+          : settings.sampling?.width && settings.sampling.height
+            ? `${settings.sampling.width} × ${settings.sampling.height}`
+            : settings.aspectRatio,
     target === "video"
       ? (selectedVideoPreset?.label ?? "Custom")
       : target === "svg"
@@ -448,35 +516,17 @@ export const MediaGenerateView = ({
     generationJob?.status !== "completed";
 
   useEffect(() => {
+    if (target === "video") return;
     if (!selectedModel || selectedModel.id === selectedModelId) return;
-    if (target === "video") {
-      onVideoSettingsChange({
-        ...videoSettings,
-        modelId: selectedModel.id as MediaVideoRecipeSettings["modelId"],
-      });
-      return;
-    }
+    if (target === "image" && selectedModelId) return;
     onChange({
       ...settings,
       modelId: selectedModel.id,
-      modelAddons: [],
-      referenceImages: settings.referenceImages
-        .filter((reference) =>
-          mediaModelSupportsReferenceRole(selectedModel, reference.role),
-        )
-        .map((reference) => ({ ...reference, influence: 1 })),
     });
-  }, [
-    onChange,
-    onVideoSettingsChange,
-    selectedModel,
-    selectedModelId,
-    settings,
-    target,
-    videoSettings,
-  ]);
+  }, [onChange, selectedModel, selectedModelId, settings, target]);
 
   useEffect(() => {
+    if (target === "video" && settings.referenceImages.length > 0) return;
     if (
       mediaModelAddonSelectionsEqual(
         settings.modelAddons,
@@ -486,71 +536,26 @@ export const MediaGenerateView = ({
       return;
     }
     onChange({ ...settings, modelAddons: reconciledModelAddons });
-  }, [onChange, reconciledModelAddons, settings]);
+  }, [onChange, reconciledModelAddons, settings, target]);
 
   const selectModel = (modelId: string): void => {
     if (target === "video") {
+      const model = models.find((candidate) => candidate.id === modelId);
       onVideoSettingsChange({
         ...videoSettings,
+        ...resolveMediaVideoQualityPresetSettings(
+          selectedVideoPreset ?? MEDIA_VIDEO_QUALITY_PRESETS[0]!,
+          model?.architecture,
+        ),
         modelId: modelId as MediaVideoRecipeSettings["modelId"],
       });
       return;
     }
-    const model = models.find((candidate) => candidate.id === modelId);
+    if (modelDisabledReasons[modelId]) return;
     onChange({
       ...settings,
       modelId,
       modelAddons: [],
-      referenceImages: settings.referenceImages
-        .filter((reference) =>
-          mediaModelSupportsReferenceRole(model ?? null, reference.role),
-        )
-        .map((reference) => ({ ...reference, influence: 1 })),
-    });
-  };
-
-  const toggleAddon = (addonId: string): void => {
-    const addon = catalog.addons.find((candidate) => candidate.id === addonId);
-    if (
-      !addon ||
-      !addonModel ||
-      inspectMediaModelAddonCompatibility(addonModel, addon).status !==
-        "compatible"
-    ) {
-      return;
-    }
-    const existing = selectedAddons.get(addonId);
-    if (existing) {
-      onChange({
-        ...settings,
-        modelAddons: reconciledModelAddons.filter(
-          (selection) => selection.addonId !== addonId,
-        ),
-      });
-      return;
-    }
-    const capability = addonModel?.addonCapabilities.find(
-      (candidate) => candidate.kind === addon.kind,
-    );
-    const activeKindCount = reconciledModelAddons.filter(
-      (selection) => selection.enabled && selection.kind === addon.kind,
-    ).length;
-    if (capability && activeKindCount >= capability.maxActive) return;
-    onChange({
-      ...settings,
-      modelAddons: [
-        ...reconciledModelAddons,
-        createMediaModelAddonSelection(addon),
-      ],
-    });
-  };
-
-  const changeAddonSelection = (selection: MediaModelAddonSelection): void => {
-    onChange({
-      ...settings,
-      modelAddons: reconciledModelAddons.map((candidate) =>
-        candidate.addonId === selection.addonId ? selection : candidate,
-      ),
     });
   };
 
@@ -602,6 +607,43 @@ export const MediaGenerateView = ({
       referenceImages,
     });
   };
+
+  const modelField = (
+    <div className="space-y-2">
+      <label
+        htmlFor="media-quick-model"
+        className="block text-sm font-medium text-slate-200"
+      >
+        Model
+      </label>
+      <MediaModelPicker
+        id="media-quick-model"
+        models={models}
+        value={selectedModel?.id ?? null}
+        placeholder={selectedModel?.displayName ?? "Choose model"}
+        disabledReasons={modelDisabledReasons}
+        assets={referenceAssets}
+        metadata={assetMetadata}
+        categories={categories}
+        onChange={(modelId) => {
+          if (modelId) selectModel(modelId);
+        }}
+        className="w-full"
+      />
+      {models.length === 0 ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onOpenAssets(setupModel?.id)}
+        >
+          {setupModel
+            ? `${setupModel.installed ? "Set up" : "Install"} ${setupModel.displayName}`
+            : "Manage models"}
+        </Button>
+      ) : null}
+    </div>
+  );
 
   return (
     <SubmitShortcut asChild>
@@ -669,6 +711,8 @@ export const MediaGenerateView = ({
                 </div>
               ) : null}
 
+              {target === "image" ? modelField : null}
+
               {!isSvgVectorization ? (
                 <div>
                   <label
@@ -707,350 +751,205 @@ export const MediaGenerateView = ({
                 </div>
               ) : null}
 
-              <section className="space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-sm font-medium text-slate-200">
-                    {referenceHeading}
-                  </h2>
-                  {visualReferenceAssets.length > 0 ? (
-                    <button
-                      type="button"
-                      aria-expanded={assetPicker === "reference"}
-                      onClick={() =>
-                        setAssetPicker((current) =>
-                          current === "reference" ? null : "reference",
-                        )
-                      }
-                      className="shrink-0 text-xs font-medium text-sky-300 hover:text-sky-200"
-                    >
-                      {assetPicker === "reference"
-                        ? "Close"
-                        : "Choose from Assets"}
-                    </button>
-                  ) : null}
-                </div>
-                <div className="flex min-h-11 gap-2 overflow-x-auto pb-1">
-                  {selectedReferences.map(({ asset, reference }, index) => (
-                    <div key={asset.id} className="w-28 shrink-0 space-y-1.5">
-                      <div className="group relative aspect-square overflow-hidden rounded-xl border border-slate-700">
-                        <MediaAssetPreview
-                          asset={asset}
-                          className="h-full w-full"
-                        />
-                        <ControlTooltip
-                          content={`Remove reference ${index + 1}`}
-                        >
-                          <button
-                            type="button"
-                            aria-label={`Remove reference ${index + 1}`}
-                            onClick={() =>
-                              changeReferences(
-                                settings.referenceImages.filter(
-                                  (candidate) => candidate.assetId !== asset.id,
-                                ),
-                              )
-                            }
-                            className="absolute top-1 right-1 rounded-md bg-slate-950/85 p-1 text-slate-200 opacity-80 transition-opacity hover:opacity-100"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </ControlTooltip>
-                      </div>
-                      {target === "image" ? (
-                        <select
-                          aria-label={`Reference ${index + 1} role`}
-                          value={reference.role}
-                          onChange={(event) =>
-                            changeReferences(
-                              settings.referenceImages.map((candidate) =>
-                                candidate.assetId === asset.id
-                                  ? {
-                                      ...candidate,
-                                      role: event.target
-                                        .value as typeof candidate.role,
-                                    }
-                                  : candidate,
-                              ),
-                            )
-                          }
-                          className="h-7 w-full rounded-lg border border-slate-700 bg-slate-950 px-1.5 text-[10px] text-slate-300"
-                        >
-                          {referenceCapabilities.roles.map((role) => (
-                            <option key={role} value={role}>
-                              {role[0]?.toLocaleUpperCase()}
-                              {role.slice(1)}
-                            </option>
-                          ))}
-                        </select>
-                      ) : null}
-                      {target === "image" &&
-                      referenceCapabilities.adjustableInfluence ? (
-                        <label className="block text-[10px] text-slate-500">
-                          <span>
-                            Influence {reference.influence.toFixed(2)}
-                          </span>
-                          <input
-                            aria-label={`Reference ${index + 1} influence`}
-                            type="range"
-                            min={0.1}
-                            max={2}
-                            step={0.05}
-                            value={reference.influence}
-                            onChange={(event) =>
-                              changeReferences(
-                                settings.referenceImages.map((candidate) =>
-                                  candidate.assetId === asset.id
-                                    ? {
-                                        ...candidate,
-                                        influence: Number(event.target.value),
-                                      }
-                                    : candidate,
-                                ),
-                              )
-                            }
-                            className="block w-full accent-sky-400"
-                          />
-                        </label>
-                      ) : null}
-                    </div>
-                  ))}
-                  {settings.referenceImages.length < referenceLimit ? (
-                    <ControlTooltip
-                      content={
-                        referenceImportSupported
-                          ? `Add ${referenceHeading.toLocaleLowerCase()}`
-                          : "Add images in the desktop app"
-                      }
-                    >
-                      <span className="inline-flex">
-                        <button
-                          type="button"
-                          aria-label={`Add ${referenceHeading.toLocaleLowerCase()}`}
-                          onClick={onAddReferenceImages}
-                          disabled={
-                            !referenceImportSupported || referenceImportPending
-                          }
-                          className="flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-slate-700 text-slate-400 transition-colors hover:border-sky-500 hover:text-sky-300 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          {referenceImportPending ? (
-                            <LoaderCircle className="h-5 w-5 animate-spin" />
-                          ) : (
-                            <ImagePlus className="h-5 w-5" />
-                          )}
-                          <span className="text-[10px]">
-                            {referenceImportPending ? "Adding" : "Add image"}
-                          </span>
-                        </button>
-                      </span>
-                    </ControlTooltip>
-                  ) : null}
-                </div>
-                {assetPicker === "reference" ? (
-                  <div className="grid max-h-64 grid-cols-4 gap-2 overflow-y-auto rounded-xl border border-slate-800 bg-slate-900/60 p-2 sm:grid-cols-6">
-                    {visualReferenceAssets.map((asset) => {
-                      const selected = selectedReferenceIds.has(asset.id);
-                      return (
-                        <button
-                          key={asset.id}
-                          type="button"
-                          aria-pressed={selected}
-                          aria-label={`${selected ? "Remove" : "Choose"} ${mediaAssetLabel(asset)}`}
-                          onClick={() =>
-                            selected
-                              ? changeReferences(
-                                  settings.referenceImages.filter(
-                                    (reference) =>
-                                      reference.assetId !== asset.id,
-                                  ),
-                                )
-                              : addReference(asset)
-                          }
-                          className={cn(
-                            "relative aspect-square overflow-hidden rounded-lg border",
-                            selected
-                              ? "border-sky-400 ring-1 ring-sky-400"
-                              : "border-slate-700 hover:border-slate-500",
-                          )}
-                        >
-                          <MediaAssetPreview
-                            asset={asset}
-                            className="h-full w-full"
-                          />
-                          {selected ? (
-                            <Check className="absolute top-1 right-1 h-4 w-4 rounded-full bg-sky-500 p-0.5 text-white" />
-                          ) : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </section>
+              {target === "image" &&
+              (baseImageSupported || settings.baseImageAssetId) ? (
+                <MediaBasicBaseImage
+                  settings={settings}
+                  visualReferenceAssets={visualReferenceAssets}
+                  metadata={assetMetadata}
+                  categories={categories}
+                  baseImageSupported={baseImageSupported}
+                  maskSupported={maskSupported}
+                  referenceImportSupported={referenceImportSupported}
+                  referenceImportPending={referenceImportPending}
+                  assetPickerOpen={assetPicker === "base"}
+                  onAssetPickerChange={(open) =>
+                    setAssetPicker(open ? "base" : null)
+                  }
+                  onAddBaseImage={onAddBaseImage}
+                  onChange={onChange}
+                  onMaskContentChange={setMaskHasPixels}
+                />
+              ) : null}
 
-              {target === "image" ? (
+              {referenceLimit > 0 || selectedReferences.length > 0 ? (
                 <section className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
                     <h2 className="text-sm font-medium text-slate-200">
-                      Base image
+                      {referenceHeading}
                     </h2>
-                    {visualReferenceAssets.some(
-                      (asset) => asset.kind === "image",
-                    ) ? (
+                    {visualReferenceAssets.length > 0 ? (
                       <button
                         type="button"
-                        aria-expanded={assetPicker === "base"}
+                        aria-expanded={assetPicker === "reference"}
                         onClick={() =>
                           setAssetPicker((current) =>
-                            current === "base" ? null : "base",
+                            current === "reference" ? null : "reference",
                           )
                         }
                         className="shrink-0 text-xs font-medium text-sky-300 hover:text-sky-200"
                       >
-                        {assetPicker === "base"
+                        {assetPicker === "reference"
                           ? "Close"
                           : "Choose from Assets"}
                       </button>
                     ) : null}
                   </div>
-                  <div className="flex min-h-11 gap-2">
-                    {baseImageAsset ? (
-                      <div className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-slate-700">
-                        <MediaAssetPreview
-                          asset={baseImageAsset}
-                          className="h-full w-full"
-                        />
-                        <ControlTooltip content="Remove base image">
-                          <button
-                            type="button"
-                            aria-label="Remove base image"
-                            onClick={() =>
-                              onChange({
-                                ...settings,
-                                baseImageAssetId: null,
-                                editMask: null,
-                              })
-                            }
-                            className="absolute top-1 right-1 rounded-md bg-slate-950/85 p-1 text-slate-200"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </ControlTooltip>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        aria-label="Add base image"
-                        onClick={onAddBaseImage}
-                        disabled={
-                          !referenceImportSupported || referenceImportPending
-                        }
-                        className="flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-slate-700 text-slate-400 hover:border-sky-500 hover:text-sky-300 disabled:opacity-40"
+                  <div className="flex min-h-11 gap-2 overflow-x-auto pb-1">
+                    {selectedReferences.map(({ asset, reference }, index) => (
+                      <div
+                        key={reference.assetId}
+                        className="w-28 shrink-0 space-y-1.5"
                       >
-                        <ImagePlus className="h-5 w-5" />
-                        <span className="text-[10px]">Add image</span>
-                      </button>
-                    )}
-                  </div>
-                  {assetPicker === "base" ? (
-                    <div className="grid max-h-64 grid-cols-4 gap-2 overflow-y-auto rounded-xl border border-slate-800 bg-slate-900/60 p-2 sm:grid-cols-6">
-                      {visualReferenceAssets
-                        .filter((asset) => asset.kind === "image")
-                        .map((asset) => (
-                          <button
-                            key={asset.id}
-                            type="button"
-                            aria-pressed={
-                              asset.id === settings.baseImageAssetId
-                            }
-                            aria-label={`Choose base asset ${asset.outputIndex + 1}`}
-                            onClick={() => {
-                              onChange({
-                                ...settings,
-                                baseImageAssetId: asset.id,
-                                poseImageAssetId:
-                                  settings.poseImageAssetId === asset.id
-                                    ? null
-                                    : settings.poseImageAssetId,
-                                referenceImages:
-                                  settings.referenceImages.filter(
-                                    (reference) =>
-                                      reference.assetId !== asset.id,
-                                  ),
-                                editMask: null,
-                                transparentBackground: false,
-                              });
-                              setAssetPicker(null);
-                            }}
-                            className={cn(
-                              "relative aspect-square overflow-hidden rounded-lg border",
-                              asset.id === settings.baseImageAssetId
-                                ? "border-sky-400 ring-1 ring-sky-400"
-                                : "border-slate-700 hover:border-slate-500",
-                            )}
-                          >
+                        <div className="group relative aspect-square overflow-hidden rounded-xl border border-slate-700">
+                          {asset ? (
                             <MediaAssetPreview
                               asset={asset}
                               className="h-full w-full"
                             />
-                          </button>
-                        ))}
-                    </div>
-                  ) : null}
-                  {baseImageAsset ? (
-                    <>
-                      <div className="grid grid-cols-2 rounded-xl border border-slate-800 bg-slate-900/70 p-1">
-                        <button
-                          type="button"
-                          aria-pressed={settings.editMask === null}
-                          onClick={() =>
-                            onChange({ ...settings, editMask: null })
-                          }
-                          className={cn(
-                            "rounded-lg px-3 py-2 text-xs font-medium",
-                            settings.editMask === null
-                              ? "bg-slate-700 text-white"
-                              : "text-slate-400 hover:text-slate-100",
+                          ) : (
+                            <span className="text-xs text-slate-400">
+                              Image unavailable
+                            </span>
                           )}
-                        >
-                          Full image
-                        </button>
-                        <button
-                          type="button"
-                          aria-pressed={settings.editMask !== null}
-                          onClick={() =>
-                            onChange({
-                              ...settings,
-                              editMask:
-                                settings.editMask ??
-                                ({
-                                  schemaVersion: 2,
-                                  sourceAssetId: baseImageAsset.id,
-                                  inverted: false,
-                                  strokes: [],
-                                } as const),
-                              outputFormat: "png",
-                              transparentBackground: false,
-                            })
-                          }
-                          className={cn(
-                            "rounded-lg px-3 py-2 text-xs font-medium",
-                            settings.editMask !== null
-                              ? "bg-slate-700 text-white"
-                              : "text-slate-400 hover:text-slate-100",
-                          )}
-                        >
-                          Mask area
-                        </button>
+                          <ControlTooltip
+                            content={`Remove reference ${index + 1}`}
+                          >
+                            <button
+                              type="button"
+                              aria-label={`Remove reference ${index + 1}`}
+                              onClick={() =>
+                                changeReferences(
+                                  settings.referenceImages.filter(
+                                    (candidate) =>
+                                      candidate.assetId !== reference.assetId,
+                                  ),
+                                )
+                              }
+                              className="absolute top-1 right-1 rounded-md bg-slate-950/85 p-1 text-slate-200 opacity-80 transition-opacity hover:opacity-100"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </ControlTooltip>
+                        </div>
+                        {target === "image" ? (
+                          <select
+                            aria-label={`Reference ${index + 1} role`}
+                            value={reference.role}
+                            onChange={(event) =>
+                              changeReferences(
+                                settings.referenceImages.map((candidate) =>
+                                  candidate.assetId === reference.assetId
+                                    ? {
+                                        ...candidate,
+                                        role: event.target
+                                          .value as typeof candidate.role,
+                                      }
+                                    : candidate,
+                                ),
+                              )
+                            }
+                            className="h-7 w-full rounded-lg border border-slate-700 bg-slate-950 px-1.5 text-[10px] text-slate-300"
+                          >
+                            {referenceCapabilities.roles.map((role) => (
+                              <option key={role} value={role}>
+                                {role[0]?.toLocaleUpperCase()}
+                                {role.slice(1)}
+                              </option>
+                            ))}
+                          </select>
+                        ) : null}
+                        {target === "image" &&
+                        referenceCapabilities.adjustableInfluence ? (
+                          <label className="block text-[10px] text-slate-500">
+                            <span>
+                              Influence {reference.influence.toFixed(2)}
+                            </span>
+                            <input
+                              aria-label={`Reference ${index + 1} influence`}
+                              type="range"
+                              min={0.1}
+                              max={2}
+                              step={0.05}
+                              value={reference.influence}
+                              onChange={(event) =>
+                                changeReferences(
+                                  settings.referenceImages.map((candidate) =>
+                                    candidate.assetId === reference.assetId
+                                      ? {
+                                          ...candidate,
+                                          influence: Number(event.target.value),
+                                        }
+                                      : candidate,
+                                  ),
+                                )
+                              }
+                              className="block w-full accent-sky-400"
+                            />
+                          </label>
+                        ) : null}
                       </div>
-                      {settings.editMask ? (
-                        <MediaImageMaskEditor
-                          asset={baseImageAsset}
-                          value={settings.editMask}
-                          onChange={(editMask) =>
-                            onChange({ ...settings, editMask })
-                          }
-                        />
-                      ) : null}
-                    </>
+                    ))}
+                    {settings.referenceImages.length < referenceLimit ? (
+                      <ControlTooltip
+                        content={
+                          referenceImportSupported
+                            ? `Add ${referenceHeading.toLocaleLowerCase()}`
+                            : "Add images in the desktop app"
+                        }
+                      >
+                        <span className="inline-flex">
+                          <button
+                            type="button"
+                            aria-label={`Add ${referenceHeading.toLocaleLowerCase()}`}
+                            onClick={onAddReferenceImages}
+                            disabled={
+                              !referenceImportSupported ||
+                              referenceImportPending
+                            }
+                            className="flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-slate-700 text-slate-400 transition-colors hover:border-sky-500 hover:text-sky-300 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {referenceImportPending ? (
+                              <LoaderCircle className="h-5 w-5 animate-spin" />
+                            ) : (
+                              <ImagePlus className="h-5 w-5" />
+                            )}
+                            <span className="text-[10px]">
+                              {referenceImportPending ? "Adding" : "Add image"}
+                            </span>
+                          </button>
+                        </span>
+                      </ControlTooltip>
+                    ) : null}
+                  </div>
+                  {assetPicker === "reference" ? (
+                    <MediaAssetBrowser
+                      assets={visualReferenceAssets}
+                      metadata={assetMetadata}
+                      categories={categories}
+                      selectedIds={[...selectedReferenceIds]}
+                      disabledReason={(asset) =>
+                        selectedReferenceIds.has(asset.id)
+                          ? undefined
+                          : asset.id === settings.baseImageAssetId
+                            ? "Already used as the base image"
+                            : asset.id === settings.poseImageAssetId
+                              ? "Already used as the pose image"
+                              : settings.referenceImages.length >=
+                                  referenceLimit
+                                ? "Reference limit reached"
+                                : undefined
+                      }
+                      onSelect={(asset) =>
+                        selectedReferenceIds.has(asset.id)
+                          ? changeReferences(
+                              settings.referenceImages.filter(
+                                (reference) => reference.assetId !== asset.id,
+                              ),
+                            )
+                          : addReference(asset)
+                      }
+                    />
                   ) : null}
                 </section>
               ) : null}
@@ -1183,110 +1082,98 @@ export const MediaGenerateView = ({
                     </div>
                   ) : null}
                   {assetPicker === "pose" ? (
-                    <div className="grid max-h-64 grid-cols-4 gap-2 overflow-y-auto rounded-xl border border-slate-800 bg-slate-900/60 p-2 sm:grid-cols-6">
-                      {visualReferenceAssets
-                        .filter((asset) => asset.kind === "image")
-                        .map((asset) => (
-                          <button
-                            key={asset.id}
-                            type="button"
-                            aria-pressed={
-                              asset.id === settings.poseImageAssetId
-                            }
-                            aria-label={`Choose pose map ${asset.outputIndex + 1}`}
-                            onClick={() => {
-                              onChange({
-                                ...settings,
-                                poseImageAssetId: asset.id,
-                                baseImageAssetId:
-                                  settings.baseImageAssetId === asset.id
-                                    ? null
-                                    : settings.baseImageAssetId,
-                                editMask:
-                                  settings.baseImageAssetId === asset.id
-                                    ? null
-                                    : settings.editMask,
-                                referenceImages:
-                                  settings.referenceImages.filter(
-                                    (reference) =>
-                                      reference.assetId !== asset.id,
-                                  ),
-                              });
-                              setAssetPicker(null);
-                            }}
-                            className={cn(
-                              "relative aspect-square overflow-hidden rounded-lg border",
-                              asset.id === settings.poseImageAssetId
-                                ? "border-sky-400 ring-1 ring-sky-400"
-                                : "border-slate-700 hover:border-slate-500",
-                            )}
-                          >
-                            <MediaAssetPreview
-                              asset={asset}
-                              className="h-full w-full"
-                            />
-                          </button>
-                        ))}
-                    </div>
+                    <MediaAssetBrowser
+                      assets={visualReferenceAssets}
+                      metadata={assetMetadata}
+                      categories={categories}
+                      selectedIds={
+                        settings.poseImageAssetId
+                          ? [settings.poseImageAssetId]
+                          : []
+                      }
+                      onSelect={(asset) => {
+                        onChange({
+                          ...settings,
+                          poseImageAssetId: asset.id,
+                          baseImageAssetId:
+                            settings.baseImageAssetId === asset.id
+                              ? null
+                              : settings.baseImageAssetId,
+                          editMask:
+                            settings.baseImageAssetId === asset.id
+                              ? null
+                              : settings.editMask,
+                          referenceImages: settings.referenceImages.filter(
+                            (reference) => reference.assetId !== asset.id,
+                          ),
+                        });
+                        setAssetPicker(null);
+                      }}
+                    />
                   ) : null}
                 </section>
               ) : null}
 
-              <div className="space-y-2">
-                <label
-                  htmlFor="media-quick-model"
-                  className="block text-sm font-medium text-slate-200"
-                >
-                  Model
-                </label>
-                <MediaModelPicker
-                  id="media-quick-model"
-                  models={models}
-                  value={selectedModel?.id ?? null}
-                  assets={referenceAssets}
-                  metadata={assetMetadata}
-                  onChange={(modelId) => {
-                    if (modelId) selectModel(modelId);
-                  }}
-                  className="w-full"
-                />
-                {models.length === 0 ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onOpenAssets(setupModel?.id)}
-                  >
-                    {setupModel
-                      ? `${setupModel.installed ? "Set up" : "Install"} ${setupModel.displayName}`
-                      : "Manage models"}
-                  </Button>
-                ) : null}
-              </div>
+              {target !== "image" ? modelField : null}
 
-              {missingTriggers.map(({ addon, triggers }) => (
-                <div
-                  key={addon.id}
-                  className="flex items-center gap-3 rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2"
-                >
-                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-300" />
-                  <span className="min-w-0 flex-1 text-xs text-amber-100">
-                    {addon.displayName} needs a trigger word.
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onChange({
-                        ...settings,
-                        prompt: `${settings.prompt.trim()}${settings.prompt.trim() ? ", " : ""}${triggers[0] ?? ""}`,
-                      })
+              {target !== "video" || settings.referenceImages.length === 0 ? (
+                <MediaAddonTriggerWarnings
+                  prompt={settings.prompt}
+                  addons={compatibleAddons}
+                  selections={reconciledModelAddons}
+                  onPromptChange={(prompt) => onChange({ ...settings, prompt })}
+                />
+              ) : null}
+
+              {target === "video" && videoAddonModel ? (
+                <section className="space-y-2 border-t border-slate-800 pt-4">
+                  <h2 className="text-xs font-medium text-slate-300">
+                    Video LoRAs
+                  </h2>
+                  <MediaAddonTriggerWarnings
+                    prompt={settings.prompt}
+                    addons={catalog.addons}
+                    selections={videoAddons}
+                    onPromptChange={(prompt) =>
+                      onChange({ ...settings, prompt })
                     }
-                    className="shrink-0 text-xs font-semibold text-amber-200 hover:text-white"
-                  >
-                    Add {triggers[0]}
-                  </button>
-                </div>
-              ))}
+                  />
+                  <MediaAddonDialog
+                    model={videoAddonModel}
+                    addons={catalog.addons}
+                    assets={referenceAssets}
+                    metadata={assetMetadata}
+                    categories={categories}
+                    selections={videoAddons}
+                    onChange={(modelAddons) =>
+                      onVideoSettingsChange({ ...videoSettings, modelAddons })
+                    }
+                  />
+                </section>
+              ) : null}
+
+              {(target !== "video" || settings.referenceImages.length === 0) &&
+              addonModel &&
+              compatibleAddons.length > 0 ? (
+                <section className="space-y-2 border-t border-slate-800 pt-4">
+                  <h2 className="text-xs font-medium text-slate-300">
+                    {target === "video"
+                      ? "Starting image add-ons"
+                      : "LoRAs and embeddings"}
+                  </h2>
+                  <MediaAddonDialog
+                    model={addonModel}
+                    addons={compatibleAddons}
+                    selections={reconciledModelAddons}
+                    assets={referenceAssets}
+                    metadata={assetMetadata}
+                    categories={categories}
+                    onChange={(modelAddons) =>
+                      onChange({ ...settings, modelAddons })
+                    }
+                  />
+                </section>
+              ) : null}
 
               <section className="rounded-xl border border-slate-800 bg-slate-900/40">
                 <button
@@ -1323,6 +1210,10 @@ export const MediaGenerateView = ({
                             <span>Aspect ratio</span>
                             <select
                               value={videoSettings.aspectRatio}
+                              disabled={
+                                videoSettings.width != null ||
+                                videoSettings.height != null
+                              }
                               onChange={(event) =>
                                 onVideoSettingsChange({
                                   ...videoSettings,
@@ -1353,7 +1244,13 @@ export const MediaGenerateView = ({
                               className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-slate-200"
                             >
                               <option value="none">None</option>
-                              <option value="seamless">Seamless</option>
+                              <option value="crossfade">Crossfade</option>
+                              <option
+                                value="seamless"
+                                disabled={!seamlessSupported}
+                              >
+                                Seamless
+                              </option>
                               <option value="ping-pong">Ping-pong</option>
                             </select>
                           </label>
@@ -1369,6 +1266,8 @@ export const MediaGenerateView = ({
                                 if (!preset) return;
                                 onVideoSettingsChange({
                                   ...videoSettings,
+                                  width: null,
+                                  height: null,
                                   ...resolveMediaVideoQualityPresetSettings(
                                     preset,
                                     selectedModel?.architecture,
@@ -1466,9 +1365,22 @@ export const MediaGenerateView = ({
                       ) : (
                         <>
                           <label className="space-y-1 text-xs text-slate-400">
-                            <span>Aspect ratio</span>
+                            <span>
+                              {settings.editMask
+                                ? "Output size"
+                                : "Aspect ratio"}
+                            </span>
                             <select
-                              value={settings.aspectRatio}
+                              value={
+                                settings.editMask
+                                  ? "original"
+                                  : settings.aspectRatio
+                              }
+                              disabled={
+                                Boolean(settings.editMask) ||
+                                settings.sampling?.width != null ||
+                                settings.sampling?.height != null
+                              }
                               onChange={(event) =>
                                 onChange({
                                   ...settings,
@@ -1478,6 +1390,12 @@ export const MediaGenerateView = ({
                               }
                               className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-slate-200"
                             >
+                              {settings.editMask && baseImageAsset ? (
+                                <option value="original">
+                                  {baseImageAsset.width} ×{" "}
+                                  {baseImageAsset.height}
+                                </option>
+                              ) : null}
                               {(["1:1", "4:5", "16:9", "9:16"] as const).map(
                                 (value) => (
                                   <option key={value}>{value}</option>
@@ -1491,6 +1409,7 @@ export const MediaGenerateView = ({
                               type="number"
                               min={1}
                               max={8}
+                              step={1}
                               value={settings.outputCount}
                               onChange={(event) =>
                                 onChange({
@@ -1499,7 +1418,8 @@ export const MediaGenerateView = ({
                                     8,
                                     Math.max(
                                       1,
-                                      Number(event.target.value) || 1,
+                                      Math.round(Number(event.target.value)) ||
+                                        1,
                                     ),
                                   ),
                                 })
@@ -1507,31 +1427,81 @@ export const MediaGenerateView = ({
                               className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-slate-200"
                             />
                           </label>
-                          {!settings.baseImageAssetId ? (
+                          <>
                             <label className="flex items-center gap-2 text-xs text-slate-300 sm:col-span-2">
                               <input
                                 type="checkbox"
                                 checked={settings.transparentBackground}
+                                disabled={Boolean(settings.editMask)}
+                                title={
+                                  settings.editMask
+                                    ? "Choose Full image to remove the background"
+                                    : undefined
+                                }
                                 onChange={(event) =>
                                   onChange({
                                     ...settings,
                                     transparentBackground: event.target.checked,
+                                    outputFormat:
+                                      event.target.checked &&
+                                      settings.outputFormat === "jpeg"
+                                        ? "png"
+                                        : settings.outputFormat,
                                   })
                                 }
                               />
                               Transparent background
                             </label>
-                          ) : null}
+                          </>
                         </>
                       )}
                     </div>
 
+                    <MediaBasicSamplingOptions
+                      target={target}
+                      settings={settings}
+                      videoSettings={videoSettings}
+                      model={selectedModel}
+                      onChange={onChange}
+                      onVideoChange={onVideoSettingsChange}
+                    />
+                    {target === "video" &&
+                    settings.referenceImages.length === 0 ? (
+                      <div className="space-y-2 border-t border-slate-800 pt-4">
+                        <label
+                          htmlFor="media-starting-image-model"
+                          className="block text-xs text-slate-400"
+                        >
+                          Starting image model
+                        </label>
+                        <MediaModelPicker
+                          id="media-starting-image-model"
+                          models={listSelectableMediaModels(catalog.models, {
+                            target: "image",
+                            requiredCapabilities: ["text-to-image"],
+                            allowedModelIds: directGenerationModelIds,
+                          })}
+                          value={addonModel?.id ?? null}
+                          assets={referenceAssets}
+                          metadata={assetMetadata}
+                          categories={categories}
+                          onChange={(modelId) => {
+                            if (modelId)
+                              onChange({
+                                ...settings,
+                                modelId,
+                                modelAddons: [],
+                                sampling: {},
+                              });
+                          }}
+                          className="w-full"
+                        />
+                      </div>
+                    ) : null}
                     {target === "image" &&
                     selectedModel !== null &&
-                    (settings.baseImageAssetId !== null ||
-                      settings.referenceImages.length > 0) &&
-                    (selectedModel.architecture !== "flux-2" ||
-                      settings.editMask !== null) ? (
+                    selectedModel.target === "local" &&
+                    basicImageUsesEditStrength(settings, selectedModel) ? (
                       <div className="grid gap-3 border-t border-slate-800 pt-4 sm:grid-cols-2">
                         <label className="space-y-1 text-xs text-slate-400 sm:col-span-2">
                           <span>
@@ -1540,7 +1510,16 @@ export const MediaGenerateView = ({
                           </span>
                           <input
                             type="range"
-                            min={0.05}
+                            min={
+                              Math.ceil(
+                                20 /
+                                  (settings.sampling?.numInferenceSteps ??
+                                    defaultMediaImageSteps(
+                                      selectedModel.architecture,
+                                      settings.modelPolicy,
+                                    )),
+                              ) / 20
+                            }
                             max={1}
                             step={0.05}
                             value={settings.editStrength ?? 0.65}
@@ -1561,7 +1540,7 @@ export const MediaGenerateView = ({
                             </span>
                             <input
                               type="range"
-                              min={0}
+                              min={0.05}
                               max={1}
                               step={0.05}
                               value={settings.maskStrength ?? 1}
@@ -1576,85 +1555,6 @@ export const MediaGenerateView = ({
                           </label>
                         ) : null}
                       </div>
-                    ) : null}
-
-                    {(target !== "video" ||
-                      settings.referenceImages.length === 0) &&
-                    addonModel &&
-                    catalog.addons.length > 0 ? (
-                      <section className="space-y-2 border-t border-slate-800 pt-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <h2 className="text-xs font-medium text-slate-300">
-                            Model add-ons
-                          </h2>
-                          <button
-                            type="button"
-                            onClick={() => setAddonPickerOpen(true)}
-                            className="text-xs font-medium text-sky-300 hover:text-sky-200 lg:hidden"
-                          >
-                            Browse
-                          </button>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5 lg:hidden">
-                          {reconciledModelAddons.map((selection) => {
-                            const addon = catalog.addons.find(
-                              (candidate) => candidate.id === selection.addonId,
-                            );
-                            return addon ? (
-                              <button
-                                key={addon.id}
-                                type="button"
-                                onClick={() => toggleAddon(addon.id)}
-                                className="rounded-full border border-sky-400/30 bg-sky-400/10 px-2 py-1 text-[10px] text-sky-100"
-                              >
-                                {addon.displayName} ×
-                              </button>
-                            ) : null;
-                          })}
-                          {reconciledModelAddons.length === 0 ? (
-                            <span className="text-[10px] text-slate-500">
-                              None selected
-                            </span>
-                          ) : null}
-                        </div>
-                        <MediaAddonBrowser
-                          model={addonModel}
-                          addons={compatibleAddons}
-                          selections={reconciledModelAddons}
-                          assets={referenceAssets}
-                          metadata={assetMetadata}
-                          categories={categories}
-                          onToggle={toggleAddon}
-                          onChangeSelection={changeAddonSelection}
-                          onClear={() =>
-                            onChange({ ...settings, modelAddons: [] })
-                          }
-                          className="hidden lg:block"
-                        />
-                        <Dialog
-                          open={addonPickerOpen}
-                          onOpenChange={setAddonPickerOpen}
-                        >
-                          <DialogContent className="max-h-[calc(100%-2rem)] overflow-y-auto border-slate-700 bg-slate-950 text-slate-100 sm:max-w-4xl">
-                            <DialogHeader>
-                              <DialogTitle>Model add-ons</DialogTitle>
-                            </DialogHeader>
-                            <MediaAddonBrowser
-                              model={addonModel}
-                              addons={compatibleAddons}
-                              selections={reconciledModelAddons}
-                              assets={referenceAssets}
-                              metadata={assetMetadata}
-                              categories={categories}
-                              onToggle={toggleAddon}
-                              onChangeSelection={changeAddonSelection}
-                              onClear={() =>
-                                onChange({ ...settings, modelAddons: [] })
-                              }
-                            />
-                          </DialogContent>
-                        </Dialog>
-                      </section>
                     ) : null}
                   </div>
                 ) : null}

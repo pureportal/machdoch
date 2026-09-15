@@ -136,6 +136,12 @@ pub(super) fn generate_image(
         "schemaVersion":1,"runId":request.run_id,"flowId":request.flow_id,"flowRevisionId":request.flow_revision_id,"flowName":flow.name,"planId":request.plan_id,"planSnapshot":request.plan_snapshot,
         "prompt":prompt,"modelId":model_id,"modelLabel":node.label,"outputCount":1,"diagnosticCount":0,"aspectRatio":node.config["aspectRatio"],"outputFormat":node.config["outputFormat"],"modelPolicy":node.config["modelPolicy"],"modelAddons":node.config.get("modelAddons").cloned().unwrap_or(json!([])),"transparentBackground":node.config.get("transparentBackground").and_then(Value::as_bool).unwrap_or(false),"poseImageAssetId":pose,"poseStrength":pose_strength,"referenceImages":references,"baseImageAssetId":base,"editMask":edit_mask,"seed":seed,"negativePrompt":"","editStrength":config_number(node,"editStrength",0.65),"maskStrength":config_number(node,"maskStrength",1.0),"memoryProfile":node.config.get("memoryProfile"),"outputBranches":[]
     })).map_err(|e| e.to_string())?;
+    generation.sampling = super::image_sampling::ImageSampling::from_config(&node.config)?;
+    generation.control_net = match optional_input(flow, values, node, "controlnet")? {
+        Some(WorkflowValue::ControlNet(control)) => Some(control.clone()),
+        Some(_) => return Err("Connect an Apply ControlNet node.".into()),
+        None => None,
+    };
     if generation.pose_image_asset_id.is_some() {
         generation.pose_start = Some(config_number(node, "poseStart", 0.0));
         generation.pose_end = Some(config_number(node, "poseEnd", 1.0));
@@ -168,6 +174,12 @@ pub(super) fn generate_image(
     sources.extend(base);
     sources.extend(pose);
     sources.extend(mask);
+    sources.extend(
+        generation
+            .control_net
+            .as_ref()
+            .map(|control| control.image_asset_id.clone()),
+    );
     database::workflow::publish(
         paths,
         &request.run_id,

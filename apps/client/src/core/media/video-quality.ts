@@ -8,8 +8,33 @@ export type MediaVideoResolution =
   | "preview-512"
   | "quality-640"
   | "quality-768";
-export type MediaVideoLoopMode = "none" | "ping-pong" | "seamless";
+export type MediaVideoLoopMode =
+  | "none"
+  | "ping-pong"
+  | "seamless"
+  | "crossfade";
 export type MediaVideoQualityPresetId = "draft" | "quality" | "maximum";
+
+export const mediaVideoDimensionsError = (config: {
+  width?: unknown;
+  height?: unknown;
+}): string | null => {
+  if ((config.width != null) !== (config.height != null))
+    return "Enter both width and height.";
+  if (
+    [config.width, config.height].some(
+      (value) =>
+        value != null &&
+        (typeof value !== "number" ||
+          !Number.isInteger(value) ||
+          value < 128 ||
+          value > 1536 ||
+          value % 32 !== 0),
+    )
+  )
+    return "Video width and height must be multiples of 32 between 128 and 1536.";
+  return null;
+};
 
 export interface MediaVideoFrameContract {
   minimum: number;
@@ -426,6 +451,7 @@ export const resolveMediaAssetVideoLoopMode = (
   }
   const loopMode = asset.operation.output.loopMode;
   return loopMode === "none" ||
+    loopMode === "crossfade" ||
     loopMode === "ping-pong" ||
     loopMode === "seamless"
     ? loopMode
@@ -471,7 +497,7 @@ export interface MediaVideoDurationFit {
   exact: boolean;
 }
 
-const mediaVideoOutputFrameCount = (
+export const mediaVideoOutputFrameCount = (
   sourceFrameCount: number,
   loopMode: MediaVideoLoopMode,
 ): number =>
@@ -479,7 +505,10 @@ const mediaVideoOutputFrameCount = (
     ? sourceFrameCount * 2 - 2
     : loopMode === "seamless"
       ? sourceFrameCount - 1
-      : sourceFrameCount;
+      : loopMode === "crossfade"
+        ? sourceFrameCount -
+          Math.min(24, Math.floor((sourceFrameCount - 1) / 2))
+        : sourceFrameCount;
 
 export const fitMediaVideoDuration = (
   targetSeconds: number,
@@ -493,7 +522,7 @@ export const fitMediaVideoDuration = (
     !Number.isInteger(fps) ||
     fps <= 0 ||
     fps > 60 ||
-    !["none", "ping-pong", "seamless"].includes(loopMode) ||
+    !["none", "ping-pong", "seamless", "crossfade"].includes(loopMode) ||
     (architecture === "hunyuan-video-1.5-i2v" && loopMode === "seamless")
   ) {
     return null;
@@ -542,11 +571,14 @@ export const summarizeMediaVideoDelivery = (
   const fps = config.fps;
   const encodingQuality = config.encodingQuality;
   if (
+    mediaVideoDimensionsError(config) !== null ||
     !["1:1", "16:9", "9:16", "21:9"].includes(String(aspectRatio)) ||
     !["preview-512", "quality-640", "quality-768"].includes(
       String(resolution),
     ) ||
-    !["none", "ping-pong", "seamless"].includes(String(loopMode)) ||
+    !["none", "ping-pong", "seamless", "crossfade"].includes(
+      String(loopMode),
+    ) ||
     (architecture === "hunyuan-video-1.5-i2v" && loopMode === "seamless") ||
     typeof sourceFrameCount !== "number" ||
     !Number.isInteger(sourceFrameCount) ||
@@ -562,11 +594,14 @@ export const summarizeMediaVideoDelivery = (
   ) {
     return null;
   }
-  const [width, height] = resolveMediaVideoDimensions(
-    aspectRatio as MediaVideoAspectRatio,
-    resolution as MediaVideoResolution,
-    architecture,
-  );
+  const [width, height] =
+    typeof config.width === "number" && typeof config.height === "number"
+      ? [config.width, config.height]
+      : resolveMediaVideoDimensions(
+          aspectRatio as MediaVideoAspectRatio,
+          resolution as MediaVideoResolution,
+          architecture,
+        );
   const outputFrameCount = mediaVideoOutputFrameCount(
     sourceFrameCount,
     loopMode as MediaVideoLoopMode,

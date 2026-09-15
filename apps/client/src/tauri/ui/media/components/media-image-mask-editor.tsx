@@ -1,4 +1,12 @@
-import { Brush, Eraser, Redo2, RotateCcw, Trash2, Undo2 } from "lucide-react";
+import {
+  Brush,
+  Eraser,
+  LoaderCircle,
+  Redo2,
+  RotateCcw,
+  Trash2,
+  Undo2,
+} from "lucide-react";
 import {
   useEffect,
   useMemo,
@@ -25,6 +33,7 @@ interface MediaImageMaskEditorProps {
   asset: MediaAssetRecord;
   value: MediaImageMask | null | undefined;
   onChange: (value: MediaImageMask | null) => void;
+  onSelectionContentChange?: (hasContent: boolean) => void;
   className?: string;
 }
 
@@ -150,11 +159,15 @@ export const MediaImageMaskEditor = ({
   asset,
   value,
   onChange,
+  onSelectionContentChange,
   className,
 }: MediaImageMaskEditorProps): JSX.Element => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageReady, setImageReady] = useState(false);
+  const [previewError, setPreviewError] = useState(false);
+  const [previewAttempt, setPreviewAttempt] = useState(0);
   const [imageSize, setImageSize] = useState({ width: 1, height: 1 });
   const [tool, setTool] = useState<MaskTool>("paint");
   const [preview, setPreview] = useState<MaskPreview>("overlay");
@@ -167,8 +180,8 @@ export const MediaImageMaskEditor = ({
   const [hoverPoint, setHoverPoint] = useState<MediaImageMaskPoint | null>(
     null,
   );
-  const [undoStack, setUndoStack] = useState<MediaImageMaskStroke[][]>([]);
-  const [redoStack, setRedoStack] = useState<MediaImageMaskStroke[][]>([]);
+  const [undoStack, setUndoStack] = useState<MediaImageMask[]>([]);
+  const [redoStack, setRedoStack] = useState<MediaImageMask[]>([]);
   const mask = value?.sourceAssetId === asset.id ? value : null;
   const strokes = mask?.strokes ?? [];
   const inverted = mask?.inverted ?? false;
@@ -181,18 +194,22 @@ export const MediaImageMaskEditor = ({
     let active = true;
     let objectUrl: string | null = null;
     setImageUrl(null);
+    setImageReady(false);
+    setPreviewError(false);
     void readMediaAssetReferencePreview(asset.id, 1_536)
       .then((blob) => {
         if (!active) return;
         objectUrl = URL.createObjectURL(blob);
         setImageUrl(objectUrl);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (active) setPreviewError(true);
+      });
     return () => {
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [asset.id]);
+  }, [asset.id, previewAttempt]);
 
   useEffect(() => {
     setUndoStack([]);
@@ -213,10 +230,13 @@ export const MediaImageMaskEditor = ({
         height: Math.max(1, Math.round(image.height * scale)),
       });
       imageRef.current = image;
+      setImageReady(true);
     };
+    image.onerror = () => setPreviewError(true);
     image.src = imageUrl;
     return () => {
       image.onload = null;
+      image.onerror = null;
       if (imageRef.current === image) imageRef.current = null;
     };
   }, [imageUrl]);
@@ -237,6 +257,14 @@ export const MediaImageMaskEditor = ({
       visibleStrokes,
       inverted,
     );
+    if (!draftStroke && onSelectionContentChange) {
+      const pixels = selection
+        .getContext("2d")
+        ?.getImageData(0, 0, selection.width, selection.height).data;
+      onSelectionContentChange(
+        Boolean(pixels?.some((value, index) => index % 4 === 3 && value > 0)),
+      );
+    }
     if (preview === "overlay") {
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
       const selectionContext = selection.getContext("2d");
@@ -273,6 +301,7 @@ export const MediaImageMaskEditor = ({
     hoverPoint,
     imageSize,
     inverted,
+    onSelectionContentChange,
     preview,
     strokes,
   ]);
@@ -281,9 +310,18 @@ export const MediaImageMaskEditor = ({
     onChange(createMask(asset.id, inverted, next));
   };
 
+  const rememberMask = (): void => {
+    setUndoStack((current) => [
+      ...current.slice(-49),
+      createMask(asset.id, inverted, [...strokes]),
+    ]);
+    setRedoStack([]);
+  };
+
   const beginStroke = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
     if (
       event.button !== 0 ||
+      !imageReady ||
       strokes.length >= MEDIA_IMAGE_MASK_MAX_STROKES ||
       pointCount >= MEDIA_IMAGE_MASK_MAX_POINTS
     ) {
@@ -328,8 +366,7 @@ export const MediaImageMaskEditor = ({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    setUndoStack((current) => [...current.slice(-49), [...strokes]]);
-    setRedoStack([]);
+    rememberMask();
     updateStrokes([...strokes, draftStroke]);
     setDraftStroke(null);
   };
@@ -367,8 +404,11 @@ export const MediaImageMaskEditor = ({
             const previous = undoStack.at(-1);
             if (!previous) return;
             setUndoStack((current) => current.slice(0, -1));
-            setRedoStack((current) => [[...strokes], ...current.slice(0, 49)]);
-            updateStrokes(previous);
+            setRedoStack((current) => [
+              createMask(asset.id, inverted, [...strokes]),
+              ...current.slice(0, 49),
+            ]);
+            onChange(previous);
           }}
         >
           <Undo2 className="h-3.5 w-3.5" />
@@ -383,8 +423,11 @@ export const MediaImageMaskEditor = ({
             const next = redoStack[0];
             if (!next) return;
             setRedoStack((current) => current.slice(1));
-            setUndoStack((current) => [...current.slice(-49), [...strokes]]);
-            updateStrokes(next);
+            setUndoStack((current) => [
+              ...current.slice(-49),
+              createMask(asset.id, inverted, [...strokes]),
+            ]);
+            onChange(next);
           }}
         >
           <Redo2 className="h-3.5 w-3.5" />
@@ -396,8 +439,7 @@ export const MediaImageMaskEditor = ({
           aria-label="Clear mask"
           disabled={strokes.length === 0 && !inverted}
           onClick={() => {
-            setUndoStack((current) => [...current.slice(-49), [...strokes]]);
-            setRedoStack([]);
+            rememberMask();
             onChange(createMask(asset.id, false, []));
           }}
         >
@@ -405,17 +447,49 @@ export const MediaImageMaskEditor = ({
         </Button>
       </div>
 
-      <canvas
-        ref={canvasRef}
-        aria-label="Image edit mask canvas"
-        onPointerDown={beginStroke}
-        onPointerMove={continueStroke}
-        onPointerUp={finishStroke}
-        onPointerCancel={finishStroke}
-        onPointerLeave={() => setHoverPoint(null)}
-        className="block w-full touch-none rounded-xl bg-[linear-gradient(45deg,#1e293b_25%,transparent_25%),linear-gradient(-45deg,#1e293b_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#1e293b_75%),linear-gradient(-45deg,transparent_75%,#1e293b_75%)] bg-[length:16px_16px] bg-[position:0_0,0_8px,8px_-8px,-8px_0] ring-1 ring-inset ring-slate-700"
-        style={{ aspectRatio: `${imageSize.width} / ${imageSize.height}` }}
-      />
+      {previewError ? (
+        <div
+          role="alert"
+          className="flex items-center justify-between text-xs text-slate-300"
+        >
+          <span>Image preview could not be loaded.</span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setPreviewAttempt((value) => value + 1)}
+          >
+            Retry preview
+          </Button>
+        </div>
+      ) : null}
+
+      <div className="relative">
+        {!imageReady && !previewError ? (
+          <div
+            role="status"
+            aria-label="Loading image"
+            className="absolute inset-0 flex items-center justify-center"
+          >
+            <LoaderCircle className="h-5 w-5 animate-spin text-slate-400" />
+          </div>
+        ) : null}
+        <canvas
+          ref={canvasRef}
+          aria-label="Image edit mask canvas"
+          aria-busy={!imageReady && !previewError}
+          onPointerDown={beginStroke}
+          onPointerMove={continueStroke}
+          onPointerUp={finishStroke}
+          onPointerCancel={finishStroke}
+          onPointerLeave={() => setHoverPoint(null)}
+          className="mx-auto block max-h-[55vh] max-w-full touch-none rounded-xl bg-[linear-gradient(45deg,#1e293b_25%,transparent_25%),linear-gradient(-45deg,#1e293b_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#1e293b_75%),linear-gradient(-45deg,transparent_75%,#1e293b_75%)] bg-[length:16px_16px] bg-[position:0_0,0_8px,8px_-8px,-8px_0] ring-1 ring-inset ring-slate-700"
+          style={{
+            aspectRatio: `${imageReady ? imageSize.width : (asset.width ?? 1)} / ${imageReady ? imageSize.height : (asset.height ?? 1)}`,
+            visibility: imageReady ? "visible" : "hidden",
+          }}
+        />
+      </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="space-y-1 text-xs text-slate-400">
@@ -490,10 +564,10 @@ export const MediaImageMaskEditor = ({
             size="sm"
             variant={inverted ? "default" : "outline"}
             aria-pressed={inverted}
-            disabled={strokes.length === 0}
-            onClick={() =>
-              onChange(createMask(asset.id, !inverted, [...strokes]))
-            }
+            onClick={() => {
+              rememberMask();
+              onChange(createMask(asset.id, !inverted, [...strokes]));
+            }}
             className="h-8 px-2.5 text-xs"
           >
             <RotateCcw className="h-3.5 w-3.5" /> Invert

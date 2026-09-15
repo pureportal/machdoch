@@ -86,4 +86,6 @@ export const normalizeMediaImageMask = (
 export const hasMediaImageMaskContent = (
   value: MediaImageMask | null | undefined,
 ): value is MediaImageMask =>
-  value !== null && value !== undefined && value.strokes.length > 0;
+  value !== null &&
+  value !== undefined &&
+  (value.inverted || value.strokes.some((stroke) => stroke.mode === "paint"));

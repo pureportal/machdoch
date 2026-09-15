@@ -30,6 +30,8 @@ describe("built-in media flow templates", () => {
       "upscale-and-animate",
       "refine-selected-edit",
       "refine-edit-boundary",
+      "controlnet-canny",
+      "controlnet-depth",
       "text-to-image-variants",
       "product-cutout-quality",
       "quality-gated-campaign",

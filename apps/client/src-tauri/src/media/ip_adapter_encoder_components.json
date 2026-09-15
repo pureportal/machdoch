@@ -1,0 +1,14 @@
+[
+  {
+    "path": "image_encoder/config.json",
+    "url": "https://huggingface.co/h94/IP-Adapter/resolve/018e402774aeeddd60609b4ecdb7e298259dc729/models/image_encoder/config.json",
+    "bytes": 560,
+    "sha256": "625d37b31afbf2f0792a87846b3654ee23f20568409e35b78a1f795b04e1a7a1"
+  },
+  {
+    "path": "image_encoder/model.safetensors",
+    "url": "https://huggingface.co/h94/IP-Adapter/resolve/018e402774aeeddd60609b4ecdb7e298259dc729/models/image_encoder/model.safetensors",
+    "bytes": 2528373448,
+    "sha256": "6ca9667da1ca9e0b0f75e46bb030f7e011f44f86cbfb8d5a36590fcd7507b030"
+  }
+]

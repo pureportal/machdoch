@@ -25,6 +25,13 @@ export const workflowMaskPort: MediaNodePortDefinition = {
   dataType: "mask",
   required: false,
 };
+export const workflowControlnetPort: MediaNodePortDefinition = {
+  ...image,
+  id: "controlnet",
+  label: "ControlNet",
+  dataType: "controlnet",
+  required: false,
+};
 const field = (
   id: string,
   label: string,
@@ -46,6 +53,141 @@ const choices = (...values: [string, string][]) =>
   values.map(([value, label]) => ({ value, label, description: "" }));
 
 export const WORKFLOW_NODE_DEFINITIONS: readonly MediaNodeDefinition[] = [
+  {
+    type: "operation.image-mask",
+    version: 1,
+    displayName: "Image to mask",
+    summary: "",
+    layer: "operation",
+    category: "Transform",
+    paletteVisibility: "advanced",
+    inputs: [
+      image,
+      { ...image, id: "reference", label: "Mask reference", required: false },
+    ],
+    outputs: [
+      { ...image, required: false },
+      { ...workflowMaskPort, required: true },
+    ],
+    privacyEffects: [],
+    costEffects: [],
+    fields: [
+      field("channel", "Channel", "select", "alpha", {
+        options: choices(
+          ["alpha", "Alpha"],
+          ["luminance", "Luminance"],
+          ["red", "Red"],
+          ["green", "Green"],
+          ["blue", "Blue"],
+        ),
+      }),
+      field("invert", "Invert", "boolean", false),
+    ],
+  },
+  {
+    type: "operation.mask-composite",
+    version: 1,
+    displayName: "Combine masks",
+    summary: "",
+    layer: "operation",
+    category: "Transform",
+    paletteVisibility: "advanced",
+    inputs: [
+      {
+        ...workflowMaskPort,
+        id: "destination",
+        label: "Destination",
+        required: true,
+      },
+      { ...workflowMaskPort, id: "source", label: "Source", required: true },
+    ],
+    outputs: [{ ...workflowMaskPort, required: true }],
+    privacyEffects: [],
+    costEffects: [],
+    fields: [
+      field("operation", "Operation", "select", "add", {
+        options: choices(
+          ["add", "Add"],
+          ["subtract", "Subtract"],
+          ["multiply", "Multiply"],
+        ),
+      }),
+    ],
+  },
+  {
+    type: "operation.canny",
+    version: 1,
+    displayName: "Canny edges",
+    summary: "",
+    layer: "operation",
+    category: "Transform",
+    paletteVisibility: "advanced",
+    inputs: [image],
+    outputs: [image],
+    privacyEffects: [],
+    costEffects: [],
+    fields: [
+      field("lowThreshold", "Low threshold", "number", 100, {
+        min: 0,
+        max: 254,
+        integer: true,
+      }),
+      field("highThreshold", "High threshold", "number", 200, {
+        min: 1,
+        max: 255,
+        integer: true,
+      }),
+    ],
+  },
+  {
+    type: "operation.depth-map",
+    version: 1,
+    displayName: "Depth map",
+    summary: "",
+    layer: "operation",
+    category: "Transform",
+    paletteVisibility: "advanced",
+    inputs: [image],
+    outputs: [image],
+    privacyEffects: [],
+    costEffects: [],
+    fields: [],
+  },
+  {
+    type: "operation.controlnet",
+    version: 1,
+    displayName: "Apply ControlNet",
+    summary: "",
+    layer: "operation",
+    category: "Generation",
+    paletteVisibility: "advanced",
+    inputs: [image],
+    outputs: [{ ...workflowControlnetPort, required: true }],
+    privacyEffects: [],
+    costEffects: [],
+    fields: [
+      field("kind", "Control", "select", "canny", {
+        options: choices(["canny", "Canny"], ["depth", "Depth"]),
+      }),
+      field("strength", "Strength", "number", 1, {
+        min: 0,
+        max: 2,
+        step: 0.05,
+      }),
+      field("start", "Start", "number", 0, {
+        min: 0,
+        max: 0.99,
+        step: 0.05,
+        group: "Expert",
+      }),
+      field("end", "End", "number", 1, {
+        min: 0.01,
+        max: 1,
+        step: 0.05,
+        group: "Expert",
+      }),
+    ],
+  },
   {
     type: "operation.visual-check",
     version: 1,

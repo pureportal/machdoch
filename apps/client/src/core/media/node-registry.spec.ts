@@ -72,7 +72,7 @@ describe("media node registry", () => {
     const flow = createFlow();
 
     expect(validateMediaFlowNodes(flow)).toEqual([]);
-    expect(listMediaNodeDefinitions()).toHaveLength(31);
+    expect(listMediaNodeDefinitions()).toHaveLength(36);
     for (const definition of listMediaNodeDefinitions()) {
       expect(definition.version).toBe(1);
       expect(definition.fields.every((field) => "defaultValue" in field)).toBe(
@@ -587,12 +587,13 @@ describe("media node registry", () => {
       "outputCount",
       "outputFormat",
       "modelId",
+      "modelAddons",
     ]);
     expect(
       listVisibleMediaNodeFields(definition!, config, "Expert").map(
         (field) => field.id,
       ),
-    ).toEqual(["modelAddons", "memoryProfile"]);
+    ).toEqual(["memoryProfile"]);
   });
 
   it("defines human review as a bounded typed pass-through gate", () => {

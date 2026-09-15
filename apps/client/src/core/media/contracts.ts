@@ -187,6 +187,11 @@ export type MediaNodeLayer =
   | "runtime";
 
 export type MediaNodeType =
+  | "operation.image-mask"
+  | "operation.mask-composite"
+  | "operation.canny"
+  | "operation.depth-map"
+  | "operation.controlnet"
   | "operation.visual-check"
   | "operation.prepare-mask"
   | "task.generate-prompt"
@@ -220,6 +225,7 @@ export type MediaNodeType =
   | "output.video";
 
 export type MediaPortDataType =
+  | "controlnet"
   | "mask"
   | "prompt"
   | "image"
@@ -700,7 +706,6 @@ export interface MediaLocalModelImportInspection {
   byteSize: number;
   tensorCount: number;
   headerDigest: string;
-  contentDigest: string;
   duplicate: MediaAssetImportDuplicate | null;
   reviewToken: string;
   suggestedDisplayName: string;
@@ -716,7 +721,6 @@ export interface ImportMediaLocalModelRequest {
   displayName: string;
   architecture: MediaLocalModelArchitecture;
   sourceUrl: string | null;
-  contentDigest: string;
   licenseName: string | null;
   commercialUse: "allowed" | "review-required" | null;
 }
@@ -749,7 +753,6 @@ export interface MediaModelAddonImportInspection {
   byteSize: number;
   tensorCount: number;
   headerDigest: string;
-  contentDigest: string;
   duplicate: MediaAssetImportDuplicate | null;
   reviewToken: string;
   suggestedDisplayName: string;
@@ -775,7 +778,6 @@ export interface ImportMediaModelAddonRequest {
   triggerWords: string[];
   token: string | null;
   sourceUrl: string | null;
-  contentDigest: string;
   licenseName: string | null;
   commercialUse: "allowed" | "review-required" | null;
 }
@@ -1034,6 +1036,7 @@ export interface MediaImageMask {
 }
 
 export interface ImageRecipeSettings {
+  sampling?: import("./image-sampling.js").MediaImageSamplingSettings;
   prompt: string;
   providerPolicy: MediaProviderPolicy;
   modelPolicy: MediaModelPolicy;
@@ -1075,11 +1078,15 @@ export type MediaVideoModelId =
   | "local:wan2.2-ti2v-5b";
 
 export interface MediaVideoRecipeSettings {
+  modelAddons: MediaModelAddonSelection[];
+  width?: number | null;
+  height?: number | null;
+  seed?: number | null;
   modelId: MediaVideoModelId | null;
   aspectRatio: "1:1" | "16:9" | "9:16" | "21:9";
   resolution: "preview-512" | "quality-640" | "quality-768";
   transparentBackground: boolean;
-  loopMode: "none" | "ping-pong" | "seamless";
+  loopMode: "none" | "ping-pong" | "seamless" | "crossfade";
   fps: number;
   numFrames: number;
   numInferenceSteps: number;
@@ -1263,6 +1270,8 @@ export interface MediaExecutionStep {
     | "prepare-mask"
     | "check-image"
     | "upscale-image"
+    | "prepare-control-image"
+    | "apply-controlnet"
     | "repeat-flow"
     | "normalize-prompt"
     | "resolve-asset"
@@ -1764,6 +1773,25 @@ export interface MediaLocalDiffusionGenerationOperation {
   subjectCutout?: MediaSubjectCutoutSummary | null;
 }
 
+export interface MediaVideoLoopBoundaryEvidence {
+  frameIndices: [number, number, number, number];
+  transitionMae: [number, number, number];
+  appearanceRatio: number;
+  alphaTransitionMae: [number, number, number];
+  alphaAppearanceRatio: number;
+  motionMeanPixels: [number, number, number];
+  speedRatio: number;
+  velocityChangeMeanPixels: [number, number];
+  velocityChangeRatio: number;
+  neighborMotionAlignment: number;
+  motionMeasurable: boolean;
+}
+
+export interface MediaVideoLoopBoundaryInspection {
+  generated: MediaVideoLoopBoundaryEvidence[];
+  decoded: MediaVideoLoopBoundaryEvidence[];
+}
+
 export interface MediaLocalWanVideoGenerationOperation {
   kind: "local-wan-video-generation";
   providerId: "local-wan";
@@ -1779,9 +1807,8 @@ export interface MediaLocalWanVideoGenerationOperation {
   performance: Record<string, unknown> | null;
   conv3dBackend: "aten-native-hip" | "cudnn";
   conditioningMode:
-    | "first-last-latent-lock-v1"
-    | "first-last-temporal-vae-lock-v2"
-    | "first-last-temporal-context-lock-v3";
+    | "first-anchor+mobius-latent-shift-v2"
+    | "first-last-temporal-context-lock-v5";
   endpointRestoration: {
     engine: "endpoint-reference-color-and-pixel-restore-v3";
     startFrame: number;
@@ -1794,11 +1821,13 @@ export interface MediaLocalWanVideoGenerationOperation {
     channelOffsets: [number, number, number];
   } | null;
   loopEndpointRestoration: {
-    engine: "exact-source-loop-endpoint-v1";
+    engine: "exact-source-loop-endpoint-v2";
     exactFirstFrame: true;
     exactLastFrame: true;
-    duplicateClosureFrame: true;
+    sourceHasTerminalClosureFrame: true;
+    deliveryDropsTerminalClosureFrame: true;
   } | null;
+  loopBoundaryInspection: MediaVideoLoopBoundaryInspection | null;
   prompt: string;
   negativePrompt: string;
   resolution: "preview-512" | "quality-640" | "quality-768";
@@ -1835,7 +1864,7 @@ export interface MediaLocalWanVideoGenerationOperation {
         decodedAlphaLoopBoundaryContinuityRatio: number;
         decodedRgbEncodingMae: number;
         decodedRgbEncodingMaximumError: number;
-        loopMode: "none" | "ping-pong" | "seamless";
+        loopMode: "none" | "ping-pong" | "seamless" | "crossfade";
         loopEndpointMae: number;
         loopBoundaryReferenceMae: number;
         loopBoundaryContinuityRatio: number;
@@ -1855,7 +1884,8 @@ export interface MediaLocalWanVideoGenerationOperation {
         fps: number;
         durationSeconds: number;
         hasAlpha: false;
-        loopMode: "none" | "ping-pong" | "seamless";
+        loopBoundaryInspection: MediaVideoLoopBoundaryInspection | null;
+        loopMode: "none" | "ping-pong" | "seamless" | "crossfade";
         loopEndpointMae: number;
         loopBoundaryReferenceMae: number;
         loopBoundaryContinuityRatio: number;
@@ -2367,6 +2397,7 @@ export interface EnqueueFixtureRunRequest {
 }
 
 export interface GenerateMediaImagesRequest {
+  sampling?: import("./image-sampling.js").MediaImageSamplingSettings;
   schemaVersion: 1;
   runId: string;
   flowId: string;
@@ -2489,6 +2520,9 @@ export interface GenerateMediaSvgRequest {
 }
 
 export interface GenerateMediaVideoRequest {
+  modelAddons: MediaModelAddonSelection[];
+  width?: number | null;
+  height?: number | null;
   schemaVersion: 1;
   runId: string;
   flowId: string;
@@ -2506,7 +2540,7 @@ export interface GenerateMediaVideoRequest {
   resolution: "preview-512" | "quality-640" | "quality-768";
   outputFormat: "webm";
   transparentBackground: boolean;
-  loopMode: "none" | "ping-pong" | "seamless";
+  loopMode: "none" | "ping-pong" | "seamless" | "crossfade";
   fps: number;
   numFrames: number;
   numInferenceSteps: number;

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { MediaAssetRecord } from "./contracts.js";
 import {
   fitMediaVideoDuration,
+  mediaVideoOutputFrameCount,
   formatMediaAssetAspectRatio,
   identifyMediaVideoQualityPreset,
   inferMediaVideoAspectRatio,
@@ -51,6 +52,36 @@ const videoAsset = (
 });
 
 describe("media video quality helpers", () => {
+  it.each([
+    "framepack-i2v",
+    "hunyuan-video-1.5-i2v",
+    "ltx-video",
+    "wan-2.2-ti2v",
+  ] as const)("fits crossfade duration for %s", (architecture) => {
+    expect(mediaVideoOutputFrameCount(33, "crossfade")).toBe(17);
+    expect(
+      fitMediaVideoDuration(17 / 16, 16, "crossfade", architecture),
+    ).toMatchObject({
+      sourceFrameCount: 33,
+      outputFrameCount: 17,
+      durationSeconds: 17 / 16,
+      exact: true,
+    });
+    expect(
+      summarizeMediaVideoDelivery(
+        {
+          aspectRatio: "16:9",
+          resolution: "preview-512",
+          loopMode: "crossfade",
+          numFrames: 33,
+          fps: 16,
+          encodingQuality: "lossless",
+          transparentBackground: false,
+        },
+        architecture,
+      ),
+    ).toMatchObject({ outputFrameCount: 17, loopMode: "crossfade" });
+  });
   it("maps every native quality canvas without stretching", () => {
     expect(resolveMediaVideoDimensions("16:9", "quality-640")).toEqual([
       640, 352,

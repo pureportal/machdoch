@@ -4,6 +4,7 @@ import {
   formatMediaImageRecipeOutput,
   normalizeMediaFlowForPersistence,
   normalizeMediaSubmissionText,
+  readMediaFlowPrompt,
 } from "./media-generation-recipe";
 import { DEFAULT_MEDIA_STUDIO_STATE } from "./media-studio-store";
 import { createImageRecipeFlow } from "../../../core/media/compiler.js";
@@ -12,6 +13,21 @@ import type { MediaImageOutputBranch } from "../../../core/media/contracts.js";
 import { createConnectedWorkflowTemplates } from "../../../core/media/workflow-templates.js";
 
 describe("media generation text normalization", () => {
+  it("submits the connected prompt when an unrelated source appears first", () => {
+    const flow = createImageRecipeFlow({
+      id: "connected-prompt",
+      createdAt: "2026-09-15T00:00:00.000Z",
+      settings: DEFAULT_MEDIA_STUDIO_STATE.recipe,
+    });
+    const source = flow.nodes.find((node) => node.type === "source.prompt")!;
+    flow.nodes.unshift({
+      ...source,
+      id: "unrelated",
+      config: { prompt: "wrong prompt" },
+    });
+    source.config.prompt = "the connected prompt, pixel";
+    expect(readMediaFlowPrompt(flow)).toBe("the connected prompt, pixel");
+  });
   it("preserves prompt-generation instructions up to their declared limit", () => {
     const flow = structuredClone(
       createConnectedWorkflowTemplates().find(

@@ -1,4 +1,8 @@
-import { readImageRecipeSettings } from "../../../core/media/compiler.js";
+import {
+  readImageRecipeSettings,
+  readModelAddonSelections,
+} from "../../../core/media/compiler.js";
+import { resolveMediaNodePrompt } from "../../../core/media/prompt-resolution.js";
 import type {
   ImageRecipeSettings,
   MediaFlow,
@@ -104,6 +108,7 @@ export const readMediaVideoRecipeSettings = (
   if (!node) return null;
   const config = node.config;
   return {
+    modelAddons: readModelAddonSelections(config.modelAddons ?? []) ?? [],
     modelId:
       typeof config.modelId === "string"
         ? (config.modelId as MediaVideoRecipeSettings["modelId"])
@@ -121,9 +126,14 @@ export const readMediaVideoRecipeSettings = (
       config.resolution === "quality-768"
         ? config.resolution
         : DEFAULT_VIDEO_RECIPE_SETTINGS.resolution,
+    width: typeof config.width === "number" ? config.width : null,
+    height: typeof config.height === "number" ? config.height : null,
+    seed: typeof config.seed === "number" ? config.seed : null,
     transparentBackground: config.transparentBackground === true,
     loopMode:
-      config.loopMode === "ping-pong" || config.loopMode === "seamless"
+      config.loopMode === "ping-pong" ||
+      config.loopMode === "seamless" ||
+      config.loopMode === "crossfade"
         ? config.loopMode
         : "none",
     fps:
@@ -162,9 +172,13 @@ export const readMediaVideoRecipeSettings = (
 };
 
 export const readMediaFlowPrompt = (flow: MediaFlow): string => {
-  const prompt = flow.nodes.find((node) => node.type === "source.prompt")
-    ?.config.prompt;
-  return typeof prompt === "string" ? prompt : "";
+  const task =
+    flow.nodes.find((node) => node.type === "task.generate-video") ??
+    flow.nodes.find(
+      (node) =>
+        node.type === "task.generate-image" || node.type === "task.edit-image",
+    );
+  return task ? (resolveMediaNodePrompt(flow, task.id).prompt ?? "") : "";
 };
 
 export const readMediaFlowImageSettings = (

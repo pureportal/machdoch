@@ -1,14 +1,26 @@
+import { mediaImportQueue } from "./media-import-queue";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
   MediaGenerationQueue,
   type EnqueueMediaGenerationInput,
 } from "./media-generation-queue";
 import { cancelMediaRun, getMediaRunDetail } from "./media-runtime";
+import { generationJobToRunDetail } from "./media-generation-run";
+import type { MediaRunDetail } from "../../../core/media/contracts.js";
 
 export const mediaGenerationQueue = new MediaGenerationQueue({
   readRunDetail: getMediaRunDetail,
   cancelRun: cancelMediaRun,
 });
+
+export const getMediaGenerationRunDetail = (
+  runId: string,
+): Promise<MediaRunDetail> => {
+  const job = mediaGenerationQueue.getJob(runId);
+  return job
+    ? Promise.resolve(generationJobToRunDetail(job))
+    : getMediaRunDetail(runId);
+};
 
 const preparations = new Set<symbol>();
 let activityUpdate = Promise.resolve();
@@ -41,7 +53,9 @@ export const setMediaGenerationPreparing = (
 };
 
 export const hasPendingMediaGeneration = (): boolean =>
-  preparations.size > 0 || mediaGenerationQueue.hasPendingWork();
+  preparations.size > 0 ||
+  mediaGenerationQueue.hasPendingWork() ||
+  mediaImportQueue.hasPendingWork();
 
 export const enqueueMediaGeneration = (input: EnqueueMediaGenerationInput) =>
   mediaGenerationQueue.enqueue({
@@ -56,3 +70,7 @@ mediaGenerationQueue.subscribe(() => {
   void synchronizeMediaActivity();
 });
 void synchronizeMediaActivity();
+
+mediaImportQueue.subscribe(() => {
+  void synchronizeMediaActivity();
+});

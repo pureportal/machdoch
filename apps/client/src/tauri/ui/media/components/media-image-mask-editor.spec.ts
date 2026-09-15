@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createElement } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   MediaAssetRecord,
   MediaImageMask,
@@ -10,7 +10,7 @@ import type {
 import { MediaImageMaskEditor } from "./media-image-mask-editor";
 
 vi.mock("../media-runtime", () => ({
-  readMediaAssetReferencePreview: vi.fn(() => new Promise(() => undefined)),
+  readMediaAssetReferencePreview: vi.fn(async () => new Blob()),
 }));
 
 const asset: MediaAssetRecord = {
@@ -55,13 +55,74 @@ const setCanvasGeometry = (canvas: HTMLCanvasElement): void => {
   });
 };
 
+beforeEach(() => {
+  vi.stubGlobal(
+    "Image",
+    class {
+      width = asset.width;
+      height = asset.height;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      set src(value: string) {
+        if (value) queueMicrotask(() => this.onload?.());
+      }
+    },
+  );
+  vi.stubGlobal(
+    "URL",
+    class extends URL {
+      static override createObjectURL(): string {
+        return "blob:mask-preview";
+      }
+      static override revokeObjectURL(): void {}
+    },
+  );
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
 describe("MediaImageMaskEditor", () => {
-  it("stores scaled pointer coordinates and supports erasing and clearing", () => {
+  it("restores inversion when undoing a clear and supports a full mask", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    const onChange = vi.fn();
+    const empty: MediaImageMask = {
+      schemaVersion: 2,
+      sourceAssetId: asset.id,
+      inverted: false,
+      strokes: [],
+    };
+    const view = render(
+      createElement(MediaImageMaskEditor, { asset, value: empty, onChange }),
+    );
+    await waitFor(() =>
+      expect(
+        screen
+          .getByLabelText("Image edit mask canvas")
+          .getAttribute("aria-busy"),
+      ).toBe("false"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Invert" }));
+    const full = onChange.mock.lastCall?.[0] as MediaImageMask;
+    expect(full.inverted).toBe(true);
+    view.rerender(
+      createElement(MediaImageMaskEditor, { asset, value: full, onChange }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Clear mask" }));
+    view.rerender(
+      createElement(MediaImageMaskEditor, { asset, value: empty, onChange }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Undo mask stroke" }));
+    expect(onChange).toHaveBeenLastCalledWith(full);
+    view.rerender(
+      createElement(MediaImageMaskEditor, { asset, value: full, onChange }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Redo mask stroke" }));
+    expect(onChange).toHaveBeenLastCalledWith(empty);
+  });
+  it("waits for the preview, stores scaled coordinates, and supports erasing and clearing", async () => {
     class TestPointerEvent extends MouseEvent {
       readonly pointerId: number;
 
@@ -80,6 +141,11 @@ describe("MediaImageMaskEditor", () => {
       "Image edit mask canvas",
     ) as HTMLCanvasElement;
     setCanvasGeometry(canvas);
+
+    fireEvent.pointerDown(canvas, { button: 0, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { pointerId: 1 });
+    expect(onChange).not.toHaveBeenCalled();
+    await waitFor(() => expect(canvas.getAttribute("aria-busy")).toBe("false"));
 
     fireEvent.pointerDown(canvas, {
       button: 0,
@@ -131,7 +197,7 @@ describe("MediaImageMaskEditor", () => {
     });
   });
 
-  it("stores graded brush controls in each stroke", () => {
+  it("stores graded brush controls in each stroke", async () => {
     class TestPointerEvent extends MouseEvent {
       readonly pointerId: number;
 
@@ -165,6 +231,7 @@ describe("MediaImageMaskEditor", () => {
       "Image edit mask canvas",
     ) as HTMLCanvasElement;
     setCanvasGeometry(canvas);
+    await waitFor(() => expect(canvas.getAttribute("aria-busy")).toBe("false"));
     fireEvent.pointerDown(canvas, {
       button: 0,
       clientX: 210,

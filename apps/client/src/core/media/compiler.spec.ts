@@ -200,6 +200,118 @@ const SDXL_EMBEDDING = {
 } as const satisfies MediaModelAddonDescriptor;
 
 describe("media flow compiler", () => {
+  it.each([
+    createWanVideoModel(),
+    createLtxVideoModel(),
+    createFramepackVideoModel(),
+    createHunyuanVideoModel(),
+  ])("compiles video LoRAs for $displayName", (sourceModel) => {
+    const model = {
+      ...sourceModel,
+      addonCapabilities: getMediaModelAddonCapabilities(
+        "local-video",
+        sourceModel.architecture,
+      ),
+    };
+    const addon = {
+      ...FLUX_LORA,
+      architecture: model.architecture!,
+      loraProfile: {
+        ...FLUX_LORA.loraProfile,
+        dialect: "diffusers-peft" as const,
+      },
+    };
+    const flow = createImageToVideoFlow({
+      id: "video-addon",
+      createdAt: "2026-09-15T00:00:00.000Z",
+      sourceAssetId: "asset:castle",
+      prompt: "A castle in motion",
+    });
+    const node = flow.nodes.find(
+      (entry) => entry.type === "task.generate-video",
+    )!;
+    node.config.modelId = model.id;
+    const selection = {
+      kind: "lora",
+      addonId: addon.id,
+      enabled: true,
+      modelStrength: 0.6,
+      textEncoderStrength: null,
+      denoisingSchedule: null,
+    };
+    node.config.modelAddons = [selection];
+    const plan = compileMediaFlow({
+      flow,
+      models: [model],
+      addons: [addon],
+      compiledAt: "2026-09-15T00:00:01.000Z",
+    });
+    expect(plan.addons).toEqual([expect.objectContaining({ selection })]);
+    expect(
+      plan.diagnostics.filter((item) => item.code.startsWith("ADDON_")),
+    ).toEqual([]);
+  });
+  it.each([
+    createFramepackVideoModel(),
+    createHunyuanVideoModel(),
+    createLtxVideoModel(),
+    { ...createLtxVideoModel(), id: "local:ltx-video-0.9.8-2b-distilled-fp8" },
+    createWanVideoModel(),
+  ])("keeps crossfade on the selected video model: $id", (model) => {
+    const flow = createImageToVideoFlow({
+      id: `flow:crossfade-${model.id}`,
+      createdAt: "2026-09-15T00:00:00.000Z",
+      sourceAssetId: "asset:opening-frame",
+      prompt: "The teapot gently rocks",
+    });
+    const node = flow.nodes.find((entry) => entry.id === "generate-video")!;
+    node.config = {
+      ...node.config,
+      modelId: model.id,
+      loopMode: "crossfade",
+      numFrames: 33,
+    };
+    const plan = compileMediaFlow({
+      flow,
+      models: [model],
+      compiledAt: "2026-09-15T00:01:00.000Z",
+    });
+    expect(plan.status).toBe("ready");
+    expect(plan.model?.id).toBe(model.id);
+    expect(plan.runtimeBindings).toContainEqual(
+      expect.objectContaining({ requiredCapabilities: ["image-to-video"] }),
+    );
+    expect(node.config.loopMode).toBe("crossfade");
+    expect(
+      plan.steps.some((step) => step.label.includes("crossfade loop")),
+    ).toBe(true);
+  });
+  it.each([
+    "local:hunyuan-video-1.5-i2v-step-distilled",
+    "missing-video-model",
+  ])(
+    "does not replace an incompatible or unavailable selected video model: %s",
+    (modelId) => {
+      const flow = createImageToVideoFlow({
+        id: "flow:pinned-video",
+        createdAt: "2026-09-15T00:00:00.000Z",
+        sourceAssetId: "asset:opening-frame",
+        prompt: "The teapot gently rocks",
+      });
+      const node = flow.nodes.find((entry) => entry.id === "generate-video")!;
+      node.config = { ...node.config, modelId, loopMode: "seamless" };
+      const plan = compileMediaFlow({
+        flow,
+        models: [createHunyuanVideoModel(), createWanVideoModel()],
+        compiledAt: "2026-09-15T00:01:00.000Z",
+      });
+      expect(plan.status).toBe("blocked");
+      expect(plan.model).toBeNull();
+      expect(
+        plan.diagnostics.some((item) => item.code === "MODEL_NOT_FOUND"),
+      ).toBe(true);
+    },
+  );
   it("uses HunyuanVideo for native first-frame motion and model-native sampling", () => {
     const flow = createImageToVideoFlow({
       id: "flow:hunyuan-image-to-video",
@@ -251,6 +363,7 @@ describe("media flow compiler", () => {
         ...(lastFrameAssetId ? { lastFrameAssetId } : {}),
         settings: {
           modelId: null,
+          modelAddons: [],
           aspectRatio: "1:1",
           resolution: "quality-640",
           transparentBackground: false,
@@ -297,6 +410,7 @@ describe("media flow compiler", () => {
         sourceAssetId: "asset:opening-frame",
         settings: {
           modelId: null,
+          modelAddons: [],
           aspectRatio: "1:1",
           resolution: "quality-640",
           transparentBackground: false,
@@ -348,6 +462,8 @@ describe("media flow compiler", () => {
       sourceAssetId: "asset:hero-frame",
       prompt: "A slow push-in as warm practical lights turn on",
     });
+    flow.nodes.find((node) => node.id === "generate-video")!.config.modelId =
+      "local:framepack-i2v-hy-13b";
     const plan = compileMediaFlow({
       flow,
       models: [createFramepackVideoModel(), createLtxVideoModel()],
@@ -401,7 +517,7 @@ describe("media flow compiler", () => {
       numFrames: 33,
       numInferenceSteps: 30,
       guidanceScale: 9,
-      seed: 0,
+      seed: null,
       matteQuality: "production",
       encodingQuality: "lossless",
       memoryProfile: "auto",
@@ -435,6 +551,7 @@ describe("media flow compiler", () => {
               config: {
                 ...node.config,
                 aspectRatio: "21:9",
+                modelId: "local:ltx-video-0.9.8-13b-distilled-fp8",
                 resolution: "quality-768",
                 transparentBackground: false,
                 loopMode: "none",
@@ -721,6 +838,40 @@ describe("media flow compiler", () => {
     expect(plan.steps.map((step) => step.kind)).toContain(
       "resolve-model-addons",
     );
+  });
+
+  it("preserves multiple LoRA IDs, order, and strengths through a recipe and execution plan", () => {
+    const second = {
+      ...FLUX_LORA,
+      id: "addon:lora:second",
+      digest: "f".repeat(64),
+    };
+    const modelAddons = [FLUX_LORA, second].map((addon, index) => ({
+      kind: "lora" as const,
+      addonId: addon.id,
+      enabled: true,
+      modelStrength: index === 0 ? 0.65 : 0.25,
+      textEncoderStrength: null,
+      denoisingSchedule: null,
+    }));
+    const flow = createFlow({
+      ...DEFAULT_SETTINGS,
+      providerPolicy: "local",
+      modelId: "local:flux-2-klein-4b",
+      modelAddons,
+    });
+    expect(readImageRecipeSettings(flow)?.modelAddons).toEqual(modelAddons);
+    const plan = compileMediaFlow({
+      flow,
+      models: createMediaModelCatalog({
+        isOpenAiConfigured: false,
+        isLocalFluxInstalled: true,
+      }),
+      addons: [second, FLUX_LORA],
+      compiledAt: "2026-09-15T00:00:00Z",
+    });
+    expect(plan.status).toBe("ready");
+    expect(plan.addons.map((addon) => addon.selection)).toEqual(modelAddons);
   });
 
   it("accepts exact normalized publisher base-family hints without a warning", () => {
@@ -1386,7 +1537,7 @@ describe("media flow compiler", () => {
     ]);
   });
 
-  it("blocks unsupported KREA image conditioning", () => {
+  it("compiles KREA vision reference conditioning", () => {
     const localFlux = createMediaModelCatalog({
       isOpenAiConfigured: false,
       isLocalFluxInstalled: true,
@@ -1403,7 +1554,7 @@ describe("media flow compiler", () => {
       ),
     } as const satisfies MediaModelDescriptor;
     const flow = createImageEditFlow({
-      id: "flow:krea-unsupported-conditioning",
+      id: "flow:krea-vision-conditioning",
       createdAt: "2026-08-21T00:00:00.000Z",
       sourceAssetId: "asset:subject",
       sourceRole: "subject",
@@ -1421,8 +1572,8 @@ describe("media flow compiler", () => {
       compiledAt: "2026-08-21T00:01:00.000Z",
     });
 
-    expect(plan.status).toBe("blocked");
-    expect(plan.diagnostics).toContainEqual(
+    expect(plan.status).toBe("ready");
+    expect(plan.diagnostics).not.toContainEqual(
       expect.objectContaining({ code: "MODEL_CAPABILITY_UNSUPPORTED" }),
     );
   });

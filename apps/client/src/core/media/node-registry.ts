@@ -12,6 +12,7 @@ import {
   WORKFLOW_NODE_DEFINITIONS,
   WORKFLOW_GATE_FIELDS,
   workflowMaskPort,
+  workflowControlnetPort,
 } from "./workflow-nodes.js";
 
 export type MediaNodeInspectorGroup = "Basic" | "Creative" | "Expert";
@@ -415,7 +416,12 @@ export const MEDIA_NODE_DEFINITIONS = [
     category: "Generation",
     paletteVisibility: "default",
     maxInstances: 8,
-    inputs: [promptPort, optionalImageReferenceInput, seedInput],
+    inputs: [
+      promptPort,
+      optionalImageReferenceInput,
+      seedInput,
+      workflowControlnetPort,
+    ],
     outputs: [imageOutput],
     fields: [
       {
@@ -663,11 +669,33 @@ export const MEDIA_NODE_DEFINITIONS = [
         defaultValue: null,
         examples: [null],
       },
+      ...[
+        { id: "width", label: "Width", min: 256, max: 2048, step: 32 },
+        { id: "height", label: "Height", min: 256, max: 2048, step: 32 },
+        {
+          id: "numInferenceSteps",
+          label: "Sampling steps",
+          min: 1,
+          max: 100,
+          step: 1,
+        },
+        { id: "guidanceScale", label: "Guidance", min: 0, max: 20, step: 0.1 },
+      ].map(
+        (field): MediaNodeFieldDefinition => ({
+          ...field,
+          description: "",
+          group: "Creative",
+          kind: "number",
+          required: false,
+          defaultValue: null,
+          examples: [],
+        }),
+      ),
       {
         id: "modelAddons",
         label: "LoRAs and embeddings",
-        description: "Applied during generation.",
-        group: "Expert",
+        description: "",
+        group: "Basic",
         kind: "addons",
         required: false,
         defaultValue: [],
@@ -720,7 +748,13 @@ export const MEDIA_NODE_DEFINITIONS = [
     category: "Generation",
     paletteVisibility: "default",
     maxInstances: 8,
-    inputs: [promptPort, imageReferenceInput, seedInput, workflowMaskPort],
+    inputs: [
+      promptPort,
+      imageReferenceInput,
+      seedInput,
+      workflowMaskPort,
+      workflowControlnetPort,
+    ],
     outputs: [imageOutput],
     fields: [
       {
@@ -920,11 +954,33 @@ export const MEDIA_NODE_DEFINITIONS = [
         defaultValue: null,
         examples: [null],
       },
+      ...[
+        { id: "width", label: "Width", min: 256, max: 2048, step: 32 },
+        { id: "height", label: "Height", min: 256, max: 2048, step: 32 },
+        {
+          id: "numInferenceSteps",
+          label: "Sampling steps",
+          min: 1,
+          max: 100,
+          step: 1,
+        },
+        { id: "guidanceScale", label: "Guidance", min: 0, max: 20, step: 0.1 },
+      ].map(
+        (field): MediaNodeFieldDefinition => ({
+          ...field,
+          description: "",
+          group: "Creative",
+          kind: "number",
+          required: false,
+          defaultValue: null,
+          examples: [],
+        }),
+      ),
       {
         id: "modelAddons",
         label: "LoRAs and embeddings",
-        description: "Applied during generation.",
-        group: "Expert",
+        description: "",
+        group: "Basic",
         kind: "addons",
         required: false,
         defaultValue: [],
@@ -986,6 +1042,16 @@ export const MEDIA_NODE_DEFINITIONS = [
     outputs: [videoOutput],
     fields: [
       {
+        id: "modelAddons",
+        label: "Video LoRAs",
+        description: "",
+        group: "Basic",
+        kind: "addons",
+        required: false,
+        defaultValue: [],
+        examples: [[]],
+      },
+      {
         id: "providerPolicy",
         label: "Run on",
         description:
@@ -1024,11 +1090,7 @@ export const MEDIA_NODE_DEFINITIONS = [
         defaultValue: "1:1",
         examples: ["1:1", "16:9", "9:16", "21:9"],
         options: [
-          option(
-            "1:1",
-            "1:1 Square",
-            "Preserves a square FLUX source without cropping.",
-          ),
+          option("1:1", "1:1 Square", ""),
           option(
             "16:9",
             "16:9 Landscape",
@@ -1062,6 +1124,21 @@ export const MEDIA_NODE_DEFINITIONS = [
           ),
         ],
       },
+      ...["width", "height"].map(
+        (id): MediaNodeFieldDefinition => ({
+          id,
+          label: id === "width" ? "Width" : "Height",
+          description: "",
+          group: "Creative",
+          kind: "number",
+          required: false,
+          defaultValue: null,
+          min: 128,
+          max: 1536,
+          step: 32,
+          examples: [],
+        }),
+      ),
       {
         id: "resolution",
         label: "Resolution",
@@ -1105,8 +1182,7 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "modelId",
         label: "Model",
-        description:
-          "Use HunyuanVideo 1.5 for one-way first-frame motion, Wan2.2 for circular same-endpoint loops, FramePack for distinct endpoints, LTX 13B as an alternate endpoint model, and LTX 2B on lower-memory hardware.",
+        description: "",
         group: "Basic",
         kind: "model",
         required: true,
@@ -1132,30 +1208,18 @@ export const MEDIA_NODE_DEFINITIONS = [
       },
       {
         id: "loopMode",
-        label: "Loop assembly",
-        description:
-          "None preserves a one-way action; Boomerang appends reversed playback; Seamless generates forward motion between matching endpoints.",
+        label: "Loop",
+        description: "",
         group: "Creative",
         kind: "select",
         required: true,
         defaultValue: "none",
-        examples: ["none", "ping-pong", "seamless"],
+        examples: ["none", "ping-pong", "seamless", "crossfade"],
         options: [
-          option(
-            "none",
-            "One-way shot",
-            "Keep intentional non-looping motion without artificial repetition.",
-          ),
-          option(
-            "ping-pong",
-            "Boomerang (reverses)",
-            "Append the motion in reverse without repeating either turnaround frame. This is not a forward-time seamless loop.",
-          ),
-          option(
-            "seamless",
-            "Forward seamless",
-            "Use matching endpoint inputs to request circular latent denoising, then omit the duplicate closing sample for continuous forward playback.",
-          ),
+          option("none", "None", ""),
+          option("crossfade", "Crossfade", ""),
+          option("ping-pong", "Ping-pong", "Plays forward, then backward."),
+          option("seamless", "Seamless", ""),
         ],
       },
       {
@@ -1223,8 +1287,8 @@ export const MEDIA_NODE_DEFINITIONS = [
           "Explicit deterministic noise seed. Keep this fixed when comparing sampling, conditioning, or quality changes.",
         group: "Expert",
         kind: "number",
-        required: true,
-        defaultValue: 0,
+        required: false,
+        defaultValue: null,
         examples: [0, 72526017],
         min: 0,
         max: 9_007_199_254_740_991,
@@ -2619,11 +2683,12 @@ const validateFieldValue = (
       break;
     case "number":
       isValid =
-        typeof value === "number" &&
-        Number.isFinite(value) &&
-        (!field.integer || Number.isInteger(value)) &&
-        (field.min === undefined || value >= field.min) &&
-        (field.max === undefined || value <= field.max);
+        (!field.required && field.defaultValue === null && value === null) ||
+        (typeof value === "number" &&
+          Number.isFinite(value) &&
+          (!field.integer || Number.isInteger(value)) &&
+          (field.min === undefined || value >= field.min) &&
+          (field.max === undefined || value <= field.max));
       break;
     case "boolean":
       isValid = typeof value === "boolean";
@@ -2731,6 +2796,23 @@ export const validateMediaFlowNode = (
   for (const field of definition.fields) {
     const issue = validateFieldValue(node, field);
     if (issue) issues.push(issue);
+  }
+  if (
+    (node.type === "operation.canny" &&
+      Number(node.config.lowThreshold) >= Number(node.config.highThreshold)) ||
+    (node.type === "operation.controlnet" &&
+      Number(node.config.start) >= Number(node.config.end))
+  ) {
+    issues.push({
+      code: "INVALID_CONFIG_VALUE",
+      severity: "error",
+      nodeId: node.id,
+      fieldId: node.type === "operation.canny" ? "lowThreshold" : "start",
+      message:
+        node.type === "operation.canny"
+          ? "Low threshold must be below High threshold."
+          : "ControlNet Start must be before End.",
+    });
   }
   if (
     node.type === "operation.format-convert" &&

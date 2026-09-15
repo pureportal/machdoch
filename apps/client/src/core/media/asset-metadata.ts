@@ -1,7 +1,4 @@
-import type {
-  MediaGenerationAssetMetadata,
-  MediaModelAddonDescriptor,
-} from "./contracts.js";
+import type { MediaGenerationAssetMetadata } from "./contracts.js";
 
 const normalizeHttpsUrl = (value: string): URL | null => {
   try {
@@ -68,22 +65,6 @@ export const createEmptyMediaGenerationAssetMetadata =
     sampleAssetIds: [],
     sampleImages: [],
   });
-
-export const applyMediaAssetMetadataToAddon = (
-  addon: MediaModelAddonDescriptor,
-  metadata: MediaGenerationAssetMetadata | undefined,
-): MediaModelAddonDescriptor => {
-  if (!metadata) return addon;
-  const triggerWords = parseMediaTriggerWords(metadata.triggerWords);
-  return {
-    ...addon,
-    triggerWords,
-    defaultToken:
-      addon.kind === "textual-inversion"
-        ? (triggerWords[0] ?? null)
-        : addon.defaultToken,
-  };
-};
 
 export const normalizeMediaCivitaiSampleImageUrl = (
   value: string,

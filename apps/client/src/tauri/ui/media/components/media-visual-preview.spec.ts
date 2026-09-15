@@ -33,6 +33,13 @@ const missingAsset: MediaAssetRecord = {
 let intersect: IntersectionObserverCallback;
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(readMediaAssetReferencePreview).mockRejectedValue(
+    new Error("Asset file is unavailable"),
+  );
+  vi.stubGlobal("URL", {
+    createObjectURL: vi.fn(() => "blob:video-preview"),
+    revokeObjectURL: vi.fn(),
+  });
   vi.stubGlobal(
     "IntersectionObserver",
     class {
@@ -59,6 +66,35 @@ const reveal = (): void => {
 };
 
 describe("MediaAssetPreview", () => {
+  it.each(["none", "ping-pong", "seamless", "crossfade"] as const)(
+    "previews %s video with its intended playback mode and alpha backdrop",
+    async (loopMode) => {
+      vi.mocked(readMediaAssetReferencePreview).mockResolvedValue(
+        new Blob([], { type: "video/webm" }),
+      );
+      const asset: MediaAssetRecord = {
+        ...missingAsset,
+        kind: "video",
+        mimeType: "video/webm",
+        operation: {
+          kind: "local-video-generation",
+          output: { hasAlpha: true, loopMode },
+        } as MediaAssetRecord["operation"],
+      };
+      const { unmount } = render(
+        createElement(MediaAssetPreview, { asset, controls: true }),
+      );
+      reveal();
+      const video = (await screen.findByLabelText(
+        "Video 1",
+      )) as HTMLVideoElement;
+      expect(video.loop).toBe(loopMode !== "none");
+      expect(video.controls).toBe(true);
+      expect(video.style.backgroundSize).toBe("16px 16px");
+      unmount();
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:video-preview");
+    },
+  );
   it("replaces an unavailable media file with a failure state", async () => {
     render(createElement(MediaAssetPreview, { asset: missingAsset }));
     reveal();

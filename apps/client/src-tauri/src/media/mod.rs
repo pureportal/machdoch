@@ -1,12 +1,14 @@
 mod analysis;
 mod catalog;
 mod civitai_addon;
+mod controlnet;
 mod database;
 mod error;
 mod executor;
 mod exporting;
 mod flow;
 mod hardware;
+mod image_sampling;
 mod ingest;
 mod local_flow;
 mod model_addon;
@@ -22,6 +24,7 @@ pub(crate) mod runtime_setup;
 mod subject_cutout;
 mod svg;
 mod transform;
+mod video_loop;
 mod worker_output;
 pub(crate) mod workflow;
 pub(crate) mod workflow_models;
@@ -466,7 +469,6 @@ pub(crate) struct MediaLocalModelImportInspection {
     byte_size: u64,
     tensor_count: u32,
     header_digest: String,
-    content_digest: String,
     duplicate: Option<MediaAssetImportDuplicate>,
     review_token: String,
     suggested_display_name: String,
@@ -484,7 +486,6 @@ pub(crate) struct ImportMediaLocalModelRequest {
     display_name: String,
     architecture: String,
     source_url: Option<String>,
-    content_digest: String,
     license_name: Option<String>,
     commercial_use: Option<String>,
 }
@@ -515,7 +516,6 @@ pub(crate) struct MediaModelAddonImportInspection {
     byte_size: u64,
     tensor_count: u32,
     header_digest: String,
-    content_digest: String,
     duplicate: Option<MediaAssetImportDuplicate>,
     review_token: String,
     suggested_display_name: String,
@@ -543,7 +543,6 @@ pub(crate) struct ImportMediaModelAddonRequest {
     trigger_words: Vec<String>,
     token: Option<String>,
     source_url: Option<String>,
-    content_digest: String,
     license_name: Option<String>,
     commercial_use: Option<String>,
 }
@@ -1336,6 +1335,8 @@ pub(crate) struct GenerateMediaImagesRequest {
     model_policy: String,
     #[serde(default)]
     model_addons: Vec<MediaModelAddonSelection>,
+    #[serde(default)]
+    sampling: image_sampling::ImageSampling,
     transparent_background: bool,
     #[serde(default)]
     subject_cutout_model_priority: Vec<String>,
@@ -1345,6 +1346,8 @@ pub(crate) struct GenerateMediaImagesRequest {
     base_image_asset_id: Option<String>,
     edit_mask: Option<MediaImageMask>,
     pose_image_asset_id: Option<String>,
+    #[serde(default)]
+    control_net: Option<controlnet::ControlNetConditioning>,
     pose_strength: Option<f64>,
     pose_start: Option<f64>,
     pose_end: Option<f64>,
@@ -1416,6 +1419,10 @@ impl MediaAnimatedBackgroundConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct GenerateMediaVideoRequest {
+    #[serde(default)]
+    model_addons: Vec<MediaModelAddonSelection>,
+    width: Option<u32>,
+    height: Option<u32>,
     schema_version: u32,
     run_id: String,
     flow_id: String,
@@ -1945,6 +1952,12 @@ impl GenerateMediaImagesRequest {
         }
         self.model_id = required_text("modelId", &self.model_id, 128)?;
         self.model_label = required_text("modelLabel", &self.model_label, 256)?;
+        self.sampling.validate()?;
+        if self.model_id == "openai:gpt-image-2"
+            && self.sampling != image_sampling::ImageSampling::default()
+        {
+            return Err("This model does not support manual sampling settings.".to_string());
+        }
         if self.model_addons.len() > 24 {
             return Err("modelAddons cannot contain more than 24 entries".to_string());
         }
@@ -2099,7 +2112,7 @@ impl GenerateMediaImagesRequest {
         }
         if let Some(mask) = &mut self.edit_mask {
             normalize_media_image_mask(mask, self.base_image_asset_id.as_deref())?;
-            if mask.strokes.is_empty() {
+            if !mask.inverted && !mask.strokes.iter().any(|stroke| stroke.mode == "paint") {
                 return Err("editMask must contain a painted region".to_string());
             }
         }
@@ -2110,6 +2123,15 @@ impl GenerateMediaImagesRequest {
             }
         } else if self.mask_strength.is_some() {
             return Err("maskStrength requires editMask".to_string());
+        }
+        if let Some(control) = &mut self.control_net {
+            control.validate()?;
+            if self.pose_image_asset_id.is_some() {
+                return Err("Use one ControlNet input per image generation.".into());
+            }
+            if self.model_id == "openai:gpt-image-2" {
+                return Err("Choose a local SD1.5 model for ControlNet.".into());
+            }
         }
         if let Some(asset_id) = &mut self.pose_image_asset_id {
             *asset_id = required_text("poseImageAssetId", asset_id, 256)?;
@@ -2141,6 +2163,7 @@ impl GenerateMediaImagesRequest {
         if self.reference_images.len()
             + usize::from(self.base_image_asset_id.is_some())
             + usize::from(self.pose_image_asset_id.is_some())
+            + usize::from(self.control_net.is_some())
             > 8
         {
             return Err("image conditioning cannot contain more than 8 assets".to_string());
@@ -2209,8 +2232,51 @@ impl GenerateMediaImagesRequest {
     }
 }
 
+fn validate_video_dimensions(width: Option<u32>, height: Option<u32>) -> MediaResult<()> {
+    if width.is_some() != height.is_some() {
+        return Err("Enter both video width and height.".to_string());
+    }
+    if [width, height]
+        .into_iter()
+        .flatten()
+        .any(|value| !(128..=1536).contains(&value) || value % 32 != 0)
+    {
+        return Err(
+            "Video width and height must be multiples of 32 between 128 and 1536.".to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn validate_video_model_addons(addons: &mut [MediaModelAddonSelection]) -> MediaResult<()> {
+    if addons.len() > 8 {
+        return Err("Video generation accepts up to eight LoRAs".to_string());
+    }
+    let mut addon_ids = HashSet::new();
+    for addon in addons {
+        addon.validate()?;
+        if !matches!(
+            addon,
+            MediaModelAddonSelection::Lora {
+                text_encoder_strength: None,
+                denoising_schedule: None,
+                ..
+            }
+        ) {
+            return Err(
+                "Video add-ons must be LoRAs with one strength for the entire clip".to_string(),
+            );
+        }
+        if !addon_ids.insert(addon.addon_id().to_string()) {
+            return Err("Select each video LoRA only once".to_string());
+        }
+    }
+    Ok(())
+}
+
 impl GenerateMediaVideoRequest {
     fn validate(&mut self) -> MediaResult<()> {
+        validate_video_model_addons(&mut self.model_addons)?;
         if self.schema_version != 1 {
             return Err("direct video generation requires schemaVersion 1".to_string());
         }
@@ -2252,8 +2318,11 @@ impl GenerateMediaVideoRequest {
         if self.output_format != "webm" {
             return Err("local video output requires the verified WebM container".to_string());
         }
-        if !matches!(self.loop_mode.as_str(), "none" | "ping-pong" | "seamless") {
-            return Err("loopMode must be none, ping-pong, or seamless".to_string());
+        if !matches!(
+            self.loop_mode.as_str(),
+            "none" | "ping-pong" | "seamless" | "crossfade"
+        ) {
+            return Err("loopMode must be none, ping-pong, seamless, or crossfade".to_string());
         }
         if hunyuan_video && self.first_frame_asset_id != self.last_frame_asset_id {
             return Err(
@@ -2273,6 +2342,7 @@ impl GenerateMediaVideoRequest {
                     .to_string(),
             );
         }
+        validate_video_dimensions(self.width, self.height)?;
         if self.fps == 0 || self.fps > 60 {
             return Err("fps must be between 1 and 60".to_string());
         }
@@ -2545,6 +2615,11 @@ impl MediaRunPlanSnapshot {
                 node.r#type.as_str(),
                 "source.prompt"
                     | "task.generate-prompt"
+                    | "operation.canny"
+                    | "operation.image-mask"
+                    | "operation.mask-composite"
+                    | "operation.depth-map"
+                    | "operation.controlnet"
                     | "operation.segment"
                     | "operation.upscale"
                     | "control.repeat"
@@ -2605,6 +2680,8 @@ impl MediaRunPlanSnapshot {
                     | "generate-prompt"
                     | "segment-image"
                     | "upscale-image"
+                    | "prepare-control-image"
+                    | "apply-controlnet"
                     | "repeat-flow"
                     | "check-image"
                     | "prepare-mask"
@@ -2733,6 +2810,7 @@ mod run_plan_contract_tests {
             output_format: "png".to_string(),
             model_policy: "balanced".to_string(),
             model_addons: Vec::new(),
+            sampling: Default::default(),
             transparent_background: false,
             subject_cutout_model_priority: Vec::new(),
             negative_prompt: String::new(),
@@ -2740,6 +2818,7 @@ mod run_plan_contract_tests {
             base_image_asset_id: None,
             edit_mask: None,
             pose_image_asset_id: None,
+            control_net: None,
             pose_strength: None,
             pose_start: None,
             pose_end: None,
@@ -2863,6 +2942,21 @@ mod run_plan_contract_tests {
         random.validate().unwrap();
         random.resolve_seed().unwrap();
         assert!(matches!(random.seed, Some(0..=MAX_IMAGE_GENERATION_SEED)));
+    }
+
+    #[test]
+    fn accepts_a_full_mask_and_rejects_an_empty_selection() {
+        let mut request = image_request();
+        request.base_image_asset_id = Some("asset:base".to_string());
+        request.edit_mask = Some(MediaImageMask {
+            schema_version: 2,
+            source_asset_id: "asset:base".to_string(),
+            inverted: true,
+            strokes: vec![],
+        });
+        assert!(request.validate().is_ok());
+        request.edit_mask.as_mut().unwrap().inverted = false;
+        assert!(request.validate().unwrap_err().contains("painted region"));
     }
 
     #[test]
@@ -3596,12 +3690,10 @@ pub(crate) async fn media_inspect_local_model(
             if let Err(error) = database::ensure_initialized(&paths) {
                 Err(error)
             } else {
-                tauri::async_runtime::spawn_blocking(move || {
-                    model_import::inspect_for_import(&paths, &source_path)
-                })
-                .await
-                .map_err(|error| format!("local model inspection worker failed: {error}"))
-                .and_then(|result| result)
+                tauri::async_runtime::spawn_blocking(move || model_import::inspect(&source_path))
+                    .await
+                    .map_err(|error| format!("local model inspection worker failed: {error}"))
+                    .and_then(|result| result)
             }
         }
         Err(error) => Err(error),
@@ -3676,12 +3768,10 @@ pub(crate) async fn media_inspect_model_addon(
             if let Err(error) = database::ensure_initialized(&paths) {
                 Err(error)
             } else {
-                tauri::async_runtime::spawn_blocking(move || {
-                    model_addon::inspect_for_import(&paths, &source_path)
-                })
-                .await
-                .map_err(|error| format!("model add-on inspection worker failed: {error}"))
-                .and_then(|result| result)
+                tauri::async_runtime::spawn_blocking(move || model_addon::inspect(&source_path))
+                    .await
+                    .map_err(|error| format!("model add-on inspection worker failed: {error}"))
+                    .and_then(|result| result)
             }
         }
         Err(error) => Err(error),
@@ -3767,6 +3857,19 @@ pub(crate) fn media_plan_model_addon_removal(
             Ok(plan)
         })(),
     )
+}
+
+#[tauri::command]
+pub(crate) fn media_update_model_addon_triggers(
+    app: AppHandle,
+    addon_id: String,
+    trigger_words: Vec<String>,
+) -> MediaCommandResult<()> {
+    let result = MediaRuntimePaths::resolve(&app).and_then(|paths| {
+        database::ensure_initialized(&paths)?;
+        model_addon::update_triggers(&paths, &addon_id, &trigger_words)
+    });
+    command_result("media_update_model_addon_triggers", result)
 }
 
 #[tauri::command]
@@ -4277,6 +4380,7 @@ pub(crate) async fn media_generate_video(
             }
         };
         let ending_label = match request.loop_mode.as_str() {
+            "crossfade" => "crossfade-loop",
             "seamless" => "seamless-loop",
             "ping-pong" => "ping-pong-loop",
             _ => "one-way-shot",

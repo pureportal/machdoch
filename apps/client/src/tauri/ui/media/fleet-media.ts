@@ -218,7 +218,6 @@ export async function executeFleetMediaCommand(
     createdAt,
     target: input.target,
     settings: submittedRecipe,
-    models: catalog.models,
   });
   const layout = createMediaFlowLayout(flow);
   const plan = compileMediaFlow({

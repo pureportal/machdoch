@@ -7,6 +7,7 @@ import type {
   MediaProviderCatalogEntry,
   MediaWorkspaceModelDiscovery,
 } from "./contracts.js";
+import { getMediaModelAddonCapabilities } from "./model-addons.js";
 
 export interface MediaDiscoveredRuntimeProfile {
   id: string;
@@ -33,6 +34,7 @@ export interface MediaDiscoveredRuntimeProfile {
     | "runtimeReadinessCheckedAt"
     | "lifecycleCheckedAt"
     | "capabilities"
+    | "addonCapabilities"
   > & {
     installedRevision: string;
   };
@@ -42,11 +44,7 @@ export const matchesMediaDiscoveredModelQuery = (
   artifact: MediaDiscoveredModelArtifact,
   query: string,
 ): boolean => {
-  const terms = query
-    .trim()
-    .toLocaleLowerCase()
-    .split(/\s+/u)
-    .filter(Boolean);
+  const terms = query.trim().toLocaleLowerCase().split(/\s+/u).filter(Boolean);
   if (terms.length === 0) return true;
 
   const searchableText = [
@@ -64,8 +62,7 @@ export const matchesMediaDiscoveredModelQuery = (
   return terms.every((term) => searchableText.includes(term));
 };
 
-const WAN_SOURCE_URL =
-  "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers";
+const WAN_SOURCE_URL = "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers";
 const FRAMEPACK_SOURCE_URL =
   "https://huggingface.co/lllyasviel/FramePackI2V_HY";
 const HUNYUAN_VIDEO_15_SOURCE_URL =
@@ -106,7 +103,8 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         displayName: "Local Video Diffusers",
         target: "local",
         lifecycle: "active",
-        privacySummary: "Prompt text and the opening reference frame remain on this device.",
+        privacySummary:
+          "Prompt text and the opening reference frame remain on this device.",
         staleAfterSeconds: 2_592_000,
         sourceUrl: HUNYUAN_VIDEO_15_SOURCE_URL,
         catalogRevision: "hunyuan-video-1-5-i2v-854c04a",
@@ -122,11 +120,9 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         lifecycleSourceUrl: HUNYUAN_VIDEO_15_SOURCE_URL,
         catalogRevision: "hunyuan-video-1-5-i2v-854c04a",
         bundled: false,
-        installedRevision:
-          "854c04a4c8a53d990b418c7478f0802c0fc8c726",
+        installedRevision: "854c04a4c8a53d990b418c7478f0802c0fc8c726",
         packageType: "diffusers",
         architecture: "hunyuan-video-1.5-i2v",
-        addonCapabilities: [],
         management: {
           acquisition: "workspace-discovery",
           verification: "runtime-probe",
@@ -143,7 +139,8 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         qualityScore: 99,
         minVramGb: 14,
         expectedDownloadGb: 32.3,
-        costHint: "No provider charge; substantial local GPU, RAM, and disk use.",
+        costHint:
+          "No provider charge; substantial local GPU, RAM, and disk use.",
         privacySummary:
           "Prompt text and the opening reference frame remain on this device.",
         limitation:
@@ -178,7 +175,8 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         displayName: "Local Video Diffusers",
         target: "local",
         lifecycle: "active",
-        privacySummary: "Prompt text and reference media remain on this device.",
+        privacySummary:
+          "Prompt text and reference media remain on this device.",
         staleAfterSeconds: 2_592_000,
         sourceUrl: FRAMEPACK_SOURCE_URL,
         catalogRevision: "framepack-i2v-hy-86cef43",
@@ -194,11 +192,9 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         lifecycleSourceUrl: FRAMEPACK_SOURCE_URL,
         catalogRevision: "framepack-i2v-hy-86cef43",
         bundled: false,
-        installedRevision:
-          "86cef4396041b6002c957852daac4c91aaa47c79",
+        installedRevision: "86cef4396041b6002c957852daac4c91aaa47c79",
         packageType: "diffusers",
         architecture: "framepack-i2v",
-        addonCapabilities: [],
         management: {
           acquisition: "workspace-discovery",
           verification: "runtime-probe",
@@ -215,7 +211,8 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         qualityScore: 98,
         minVramGb: 16,
         expectedDownloadGb: 43,
-        costHint: "No provider charge; substantial local GPU, RAM, and disk use.",
+        costHint:
+          "No provider charge; substantial local GPU, RAM, and disk use.",
         privacySummary:
           "Prompt text and both conditioning frames remain on this device.",
         limitation:
@@ -250,7 +247,8 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         displayName: "Local Video Diffusers",
         target: "local",
         lifecycle: "active",
-        privacySummary: "Prompt text and reference media remain on this device.",
+        privacySummary:
+          "Prompt text and reference media remain on this device.",
         staleAfterSeconds: 2_592_000,
         sourceUrl: LTX_SOURCE_URL,
         catalogRevision: "ltx-video-0.9.8-8984fa2",
@@ -266,11 +264,9 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         lifecycleSourceUrl: LTX_SOURCE_URL,
         catalogRevision: "ltx-video-0.9.8-8984fa2",
         bundled: false,
-        installedRevision:
-          "8984fa25007f376c1a299016d0957a37a2f797bb",
+        installedRevision: "8984fa25007f376c1a299016d0957a37a2f797bb",
         packageType: "diffusers",
         architecture: "ltx-video",
-        addonCapabilities: [],
         management: {
           acquisition: "workspace-discovery",
           verification: "runtime-probe",
@@ -287,7 +283,8 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         qualityScore: 94,
         minVramGb: 16,
         expectedDownloadGb: 38.8,
-        costHint: "No provider charge; substantial local GPU, RAM, and disk use.",
+        costHint:
+          "No provider charge; substantial local GPU, RAM, and disk use.",
         privacySummary:
           "Prompt text and all conditioning frames remain on this device.",
         limitation:
@@ -321,7 +318,8 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         displayName: "Local Video Diffusers",
         target: "local",
         lifecycle: "active",
-        privacySummary: "Prompt text and reference media remain on this device.",
+        privacySummary:
+          "Prompt text and reference media remain on this device.",
         staleAfterSeconds: 2_592_000,
         sourceUrl: LTX_SOURCE_URL,
         catalogRevision: "ltx-video-0.9.8-8984fa2",
@@ -337,11 +335,9 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         lifecycleSourceUrl: LTX_SOURCE_URL,
         catalogRevision: "ltx-video-0.9.8-8984fa2",
         bundled: false,
-        installedRevision:
-          "8984fa25007f376c1a299016d0957a37a2f797bb",
+        installedRevision: "8984fa25007f376c1a299016d0957a37a2f797bb",
         packageType: "diffusers",
         architecture: "ltx-video",
-        addonCapabilities: [],
         management: {
           acquisition: "workspace-discovery",
           verification: "runtime-probe",
@@ -409,11 +405,9 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         lifecycleSourceUrl: WAN_SOURCE_URL,
         catalogRevision: "wan2.2-ti2v-5b-b8fff731",
         bundled: false,
-        installedRevision:
-          "b8fff7315c768468a5333511427288870b2e9635",
+        installedRevision: "b8fff7315c768468a5333511427288870b2e9635",
         packageType: "diffusers",
         architecture: "wan-2.2-ti2v",
-        addonCapabilities: [],
         management: {
           acquisition: "workspace-discovery",
           verification: "runtime-probe",
@@ -522,7 +516,9 @@ export const extendMediaCatalogWithWorkspaceDiscovery = ({
     );
   if (matches.length === 0) return catalog;
 
-  const providerIds = new Set(matches.map(({ profile }) => profile.provider.id));
+  const providerIds = new Set(
+    matches.map(({ profile }) => profile.provider.id),
+  );
   const modelIds = new Set(matches.map(({ profile }) => profile.model.id));
   const providers = catalog.providers.filter(
     (provider) => !providerIds.has(provider.id),
@@ -548,8 +544,7 @@ export const extendMediaCatalogWithWorkspaceDiscovery = ({
         : profile.allowCpu === true;
     const memoryCompatible =
       profile.minimumPhysicalMemoryBytes === undefined ||
-      (runtime?.physicalMemoryBytes ?? 0) >=
-        profile.minimumPhysicalMemoryBytes;
+      (runtime?.physicalMemoryBytes ?? 0) >= profile.minimumPhysicalMemoryBytes;
     const runtimeReady =
       installed &&
       runtime?.ready === true &&
@@ -571,11 +566,11 @@ export const extendMediaCatalogWithWorkspaceDiscovery = ({
                 : `${profile.model.displayName} requires at least ${Math.ceil((profile.minimumDeviceMemoryBytes ?? 0) / 1_024 ** 3)} GiB of reported device memory; choose the 2B variant on this adapter.`
               : !memoryCompatible
                 ? `${profile.model.displayName} requires at least ${Math.ceil((profile.minimumPhysicalMemoryBytes ?? 0) / 1_024 ** 3)} GiB of physical memory; choose the 2B variant on this host.`
-            : runtimeDiagnostic(
-                runtime,
-                missingArchitectures,
-                missingCapabilities,
-              );
+                : runtimeDiagnostic(
+                    runtime,
+                    missingArchitectures,
+                    missingCapabilities,
+                  );
 
     const existingProvider = discoveredProviders.get(profile.provider.id);
     discoveredProviders.set(profile.provider.id, {
@@ -592,6 +587,10 @@ export const extendMediaCatalogWithWorkspaceDiscovery = ({
     const { installedRevision, ...modelProfile } = profile.model;
     models.push({
       ...modelProfile,
+      addonCapabilities: getMediaModelAddonCapabilities(
+        modelProfile.providerId,
+        modelProfile.architecture,
+      ),
       configured,
       installed,
       installationStatus: installed ? "installed" : "not-installed",

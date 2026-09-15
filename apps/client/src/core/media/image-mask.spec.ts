@@ -60,5 +60,12 @@ describe("media image masks", () => {
     const empty = { ...mask, strokes: [] };
     expect(isMediaImageMask(empty)).toBe(true);
     expect(hasMediaImageMaskContent(empty)).toBe(false);
+    expect(hasMediaImageMaskContent({ ...empty, inverted: true })).toBe(true);
+    expect(
+      hasMediaImageMaskContent({
+        ...mask,
+        strokes: [{ ...mask.strokes[0]!, mode: "erase" }],
+      }),
+    ).toBe(false);
   });
 });

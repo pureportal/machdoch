@@ -1,0 +1,8 @@
+[
+  {
+    "path": "sd15.safetensors",
+    "url": "https://huggingface.co/h94/IP-Adapter/resolve/018e402774aeeddd60609b4ecdb7e298259dc729/models/ip-adapter-plus_sd15.safetensors",
+    "bytes": 98183288,
+    "sha256": "a1c250be40455cc61a43da1201ec3f1edaea71214865fb47f57927e06cbe4996"
+  }
+]

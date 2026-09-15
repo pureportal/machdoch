@@ -4,6 +4,7 @@ import { useEffect, useId, useState, type JSX } from "react";
 import {
   normalizeMediaExternalLink,
   normalizeMediaTriggerWords,
+  parseMediaTriggerWords,
 } from "../../../../core/media/asset-metadata.js";
 import type {
   MediaAssetCategory,
@@ -18,6 +19,7 @@ interface MediaAssetMetadataEditorProps {
   metadata: MediaGenerationAssetMetadata;
   categories: readonly MediaAssetCategory[];
   showTriggerWords: boolean;
+  triggerWordsLabel?: "Token" | "Trigger words";
   showSourceUrl?: boolean;
   tagLoading?: boolean;
   onChange: (metadata: MediaGenerationAssetMetadata) => void;
@@ -44,6 +46,7 @@ export const MediaAssetMetadataEditor = ({
   metadata,
   categories,
   showTriggerWords,
+  triggerWordsLabel = "Trigger words",
   showSourceUrl = true,
   tagLoading = false,
   onChange,
@@ -51,16 +54,19 @@ export const MediaAssetMetadataEditor = ({
   onManageCategories,
 }: MediaAssetMetadataEditorProps): JSX.Element => {
   const sourceInputId = useId();
-  const [tags, setTags] = useState(metadata.tags.join(", "));
+  const tokenErrorId = useId();
+  const savedTags = metadata.tags.join(", ");
+  const [tags, setTags] = useState(savedTags);
   const [triggerWords, setTriggerWords] = useState(metadata.triggerWords);
+  const [tokenError, setTokenError] = useState<string | null>(null);
   const [sourceUrl, setSourceUrl] = useState(metadata.sourceUrl ?? "");
   const [sourceUrlError, setSourceUrlError] = useState<string | null>(null);
 
-  useEffect(() => setTags(metadata.tags.join(", ")), [metadata.tags]);
-  useEffect(
-    () => setTriggerWords(metadata.triggerWords),
-    [metadata.triggerWords],
-  );
+  useEffect(() => setTags(savedTags), [savedTags, resourceId]);
+  useEffect(() => {
+    setTriggerWords(metadata.triggerWords);
+    setTokenError(null);
+  }, [metadata.triggerWords, resourceId]);
   useEffect(() => {
     setSourceUrl(metadata.sourceUrl ?? "");
     setSourceUrlError(null);
@@ -75,6 +81,15 @@ export const MediaAssetMetadataEditor = ({
 
   const saveTriggerWords = (): void => {
     const normalized = normalizeMediaTriggerWords(triggerWords);
+    const tokens = parseMediaTriggerWords(normalized);
+    if (
+      triggerWordsLabel === "Token" &&
+      (tokens.length !== 1 || /\s/u.test(tokens[0] ?? ""))
+    ) {
+      setTokenError("Enter one token without spaces.");
+      return;
+    }
+    setTokenError(null);
     setTriggerWords(normalized);
     onChange({ ...metadata, triggerWords: normalized });
   };
@@ -129,11 +144,7 @@ export const MediaAssetMetadataEditor = ({
               onChange={(event) => setTags(event.target.value)}
               onBlur={saveTags}
               onKeyDown={(event) => {
-                if (
-                  event.key === "Enter" &&
-                  !event.ctrlKey &&
-                  !event.metaKey
-                ) {
+                if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
                   event.currentTarget.blur();
                 }
               }}
@@ -147,27 +158,35 @@ export const MediaAssetMetadataEditor = ({
       </label>
       {showTriggerWords ? (
         <label className="block space-y-1 text-xs text-slate-400">
-          <span>Trigger words</span>
+          <span id={`${tokenErrorId}-label`}>{triggerWordsLabel}</span>
           <SubmitShortcut
             asChild
             onSubmitShortcut={(event) => event.currentTarget.blur()}
           >
             <input
               value={triggerWords}
-              onChange={(event) => setTriggerWords(event.target.value)}
+              maxLength={triggerWordsLabel === "Token" ? 128 : undefined}
+              aria-invalid={tokenError !== null}
+              aria-labelledby={`${tokenErrorId}-label`}
+              aria-describedby={tokenError ? tokenErrorId : undefined}
+              onChange={(event) => {
+                setTriggerWords(event.target.value);
+                setTokenError(null);
+              }}
               onBlur={saveTriggerWords}
               onKeyDown={(event) => {
-                if (
-                  event.key === "Enter" &&
-                  !event.ctrlKey &&
-                  !event.metaKey
-                ) {
+                if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
                   event.currentTarget.blur();
                 }
               }}
               className="h-9 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 text-slate-100 outline-none focus:border-sky-500"
             />
           </SubmitShortcut>
+          {tokenError ? (
+            <span id={tokenErrorId} role="alert" className="block text-red-300">
+              {tokenError}
+            </span>
+          ) : null}
         </label>
       ) : null}
       {showSourceUrl ? (

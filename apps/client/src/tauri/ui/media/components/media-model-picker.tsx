@@ -2,6 +2,7 @@ import { Check, ChevronDown } from "lucide-react";
 import { useState, type JSX } from "react";
 import { listSelectableMediaModels } from "../../../../core/media/model-library.js";
 import type {
+  MediaAssetCategory,
   MediaAssetRecord,
   MediaGenerationAssetMetadata,
   MediaModelDescriptor,
@@ -21,6 +22,10 @@ import {
 } from "../../components/ui/popover";
 import { cn } from "../../lib/utils";
 import { MediaResourcePreview } from "./media-visual-preview";
+import {
+  MediaResourceFilters,
+  useMediaResourceDiscovery,
+} from "./media-resource-filters";
 
 interface MediaModelPickerProps {
   id?: string;
@@ -28,12 +33,14 @@ interface MediaModelPickerProps {
   value: string | null;
   assets: readonly MediaAssetRecord[];
   metadata: Readonly<Record<string, MediaGenerationAssetMetadata>>;
+  categories: readonly MediaAssetCategory[];
   onChange: (modelId: string | null) => void;
   automaticLabel?: string;
   placeholder?: string;
   disabled?: boolean;
   invalid?: boolean;
   describedBy?: string;
+  disabledReasons?: Readonly<Record<string, string>>;
   compact?: boolean;
   className?: string;
 }
@@ -44,20 +51,30 @@ export const MediaModelPicker = ({
   value,
   assets,
   metadata,
+  categories,
   onChange,
   automaticLabel,
   placeholder = "Choose model",
   disabled = false,
   invalid = false,
   describedBy,
+  disabledReasons,
   compact = false,
   className,
 }: MediaModelPickerProps): JSX.Element => {
   const [open, setOpen] = useState(false);
   const selectableModels = listSelectableMediaModels(models);
+  const discovery = useMediaResourceDiscovery(
+    selectableModels,
+    metadata,
+    categories,
+  );
   const selectedModel =
     selectableModels.find((model) => model.id === value) ?? null;
-  const label = selectedModel?.displayName ?? automaticLabel ?? placeholder;
+  const label =
+    selectedModel?.displayName ??
+    (value === null ? automaticLabel : undefined) ??
+    placeholder;
   const pickerDisabled =
     disabled || (selectableModels.length === 0 && automaticLabel === undefined);
 
@@ -102,18 +119,35 @@ export const MediaModelPicker = ({
       <PopoverContent
         align="start"
         sideOffset={6}
-        className="w-[var(--radix-popover-trigger-width)] min-w-72 overflow-hidden rounded-2xl border-slate-700 bg-slate-950 p-0 shadow-2xl"
+        className="w-[max(24rem,var(--radix-popover-trigger-width))] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border-slate-700 bg-slate-950 p-0 shadow-2xl"
       >
-        <Command className="bg-slate-950 text-slate-100">
-          <CommandInput placeholder="Search models" />
+        <Command shouldFilter={false} className="bg-slate-950 text-slate-100">
+          <CommandInput
+            aria-label="Search models"
+            placeholder="Search models"
+            value={discovery.filters.query}
+            onValueChange={(query) =>
+              discovery.setFilters({ ...discovery.filters, query })
+            }
+          />
+          <div className="p-2" onKeyDown={(event) => event.stopPropagation()}>
+            <MediaResourceFilters
+              label="models"
+              filters={discovery.filters}
+              onChange={discovery.setFilters}
+              categories={categories}
+              tags={discovery.tags}
+              showSearch={false}
+            />
+          </div>
           <CommandList className="max-h-72">
-            <CommandEmpty>No available models</CommandEmpty>
+            <CommandEmpty>No matching models</CommandEmpty>
             <CommandGroup>
               {automaticLabel ? (
                 <CommandItem
                   value={automaticLabel}
                   onSelect={() => {
-                    onChange(null);
+                    if (value !== null) onChange(null);
                     setOpen(false);
                   }}
                   className="min-h-11 cursor-pointer rounded-xl data-[disabled=true]:cursor-not-allowed"
@@ -121,17 +155,18 @@ export const MediaModelPicker = ({
                   <span className="min-w-0 flex-1 truncate">
                     {automaticLabel}
                   </span>
-                  {selectedModel === null ? (
+                  {value === null ? (
                     <Check className="h-4 w-4 text-sky-300" />
                   ) : null}
                 </CommandItem>
               ) : null}
-              {selectableModels.map((model) => (
+              {discovery.visibleResources.map((model) => (
                 <CommandItem
                   key={model.id}
-                  value={`${model.displayName} ${model.family} ${model.id}`}
+                  value={model.id}
+                  disabled={Boolean(disabledReasons?.[model.id])}
                   onSelect={() => {
-                    onChange(model.id);
+                    if (value !== model.id) onChange(model.id);
                     setOpen(false);
                   }}
                   className="min-h-14 cursor-pointer rounded-xl data-[disabled=true]:cursor-not-allowed"
@@ -146,9 +181,16 @@ export const MediaModelPicker = ({
                     <span className="block truncate text-xs font-medium text-slate-100">
                       {model.displayName}
                     </span>
-                    <span className="block truncate text-[10px] text-slate-500">
-                      {model.family} ·{" "}
-                      {model.target === "local" ? "Local" : "Remote"}
+                    <span
+                      className={cn(
+                        "block text-[10px] text-slate-500",
+                        disabledReasons?.[model.id]
+                          ? "whitespace-normal"
+                          : "truncate",
+                      )}
+                    >
+                      {disabledReasons?.[model.id] ??
+                        `${model.family} · ${model.target === "local" ? "Local" : "Remote"}`}
                     </span>
                   </span>
                   {model.id === selectedModel?.id ? (

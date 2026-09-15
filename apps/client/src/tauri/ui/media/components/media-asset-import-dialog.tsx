@@ -104,6 +104,10 @@ const ARCHITECTURES: ReadonlyArray<{
   { value: "stable-diffusion-2", label: "Stable Diffusion 2" },
   { value: "stable-diffusion-1", label: "Stable Diffusion 1" },
   { value: "krea-2", label: "Krea 2" },
+  { value: "wan-2.2-ti2v", label: "WAN 2.2 TI2V" },
+  { value: "ltx-video", label: "LTX Video" },
+  { value: "framepack-i2v", label: "FramePack" },
+  { value: "hunyuan-video-1.5-i2v", label: "HunyuanVideo 1.5" },
 ];
 
 const splitValues = (value: string): string[] =>
@@ -484,7 +488,6 @@ export const MediaAssetImportDialog = ({
           displayName: displayName.trim(),
           architecture,
           sourceUrl: normalizedSourceUrl,
-          contentDigest: inspection.contentDigest,
           licenseName: licenseName.trim() || null,
           commercialUse: commercialUse || null,
         },
@@ -508,7 +511,6 @@ export const MediaAssetImportDialog = ({
             ? (words[0] ?? addonImportInspection.suggestedToken)
             : null,
         sourceUrl: normalizedSourceUrl,
-        contentDigest: addonImportInspection.contentDigest,
         licenseName: licenseName.trim() || null,
         commercialUse: commercialUse || null,
       },
@@ -661,7 +663,16 @@ export const MediaAssetImportDialog = ({
                         className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
                       >
                         <option value="">Select base model</option>
-                        {ARCHITECTURES.map((item) => (
+                        {ARCHITECTURES.filter(
+                          (item) =>
+                            importIsAddon ||
+                            ![
+                              "wan-2.2-ti2v",
+                              "ltx-video",
+                              "framepack-i2v",
+                              "hunyuan-video-1.5-i2v",
+                            ].includes(item.value),
+                        ).map((item) => (
                           <option key={item.value} value={item.value}>
                             {item.label}
                           </option>

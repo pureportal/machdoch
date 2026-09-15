@@ -941,7 +941,7 @@ fn safetensors_artifact(
     let addon_inspection = header
         .as_ref()
         .map_err(Clone::clone)
-        .and_then(|header| model_addon::inspect_header(header, String::new()));
+        .and_then(|header| model_addon::inspect_header(header));
     if let Ok(inspection) = addon_inspection.as_ref() {
         // Prefer the inspected tensor inventory over directory and file naming.
         // This also finds textual-inversion embeddings in arbitrary folders.
@@ -983,7 +983,7 @@ fn safetensors_artifact(
     if let Ok(inspection) = header
         .as_ref()
         .map_err(Clone::clone)
-        .and_then(|header| model_import::inspect_header(header, String::new()))
+        .and_then(|header| model_import::inspect_header(header))
     {
         return Ok(MediaDiscoveredModelArtifact {
             path: path.display().to_string(),

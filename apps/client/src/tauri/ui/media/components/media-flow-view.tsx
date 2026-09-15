@@ -1,3 +1,5 @@
+import { MediaAssetBrowser } from "./media-asset-browser";
+import { MediaNodeAddonField } from "./media-node-addon-field";
 import { mediaAssetLabel } from "../../../../core/media/asset-label.js";
 import { countMediaRunOutputs } from "../../../../core/media/run-library.js";
 import { MediaWorkflowModelField } from "./media-workflow-model-field";
@@ -64,6 +66,7 @@ import {
 } from "react";
 import type {
   MediaCompiledPlan,
+  MediaAssetCategory,
   MediaAssetRecord,
   MediaCapability,
   MediaFlow,
@@ -77,7 +80,6 @@ import type {
   MediaGenerationAssetMetadata,
   MediaImageReferenceRole,
   MediaModelAddonDescriptor,
-  MediaModelAddonSelection,
   MediaModelDescriptor,
   MediaFlowNode,
   MediaFlowRevision,
@@ -86,14 +88,6 @@ import type {
   MediaPortDataType,
   MediaRunDetail,
 } from "../../../../core/media/contracts.js";
-import {
-  createMediaModelAddonSelection,
-  getMediaModelAddonTriggerWords,
-  inspectMediaModelAddonCompatibility,
-  mediaModelAddonSelectionsEqual,
-  promptContainsMediaModelAddonTrigger,
-  reconcileMediaModelAddonSelections,
-} from "../../../../core/media/model-addons.js";
 import { listSelectableMediaModels } from "../../../../core/media/model-library.js";
 import {
   getMediaReferenceConditioningCapabilities,
@@ -123,6 +117,9 @@ import {
 } from "../../../../core/media/node-registry.js";
 import { createMediaFlowRevisionDiff } from "../../../../core/media/revision-diff.js";
 import { resolveMediaFlowVariables } from "../../../../core/media/variables.js";
+import { resolveMediaNodePrompt } from "../../../../core/media/prompt-resolution.js";
+import { readModelAddonSelections } from "../../../../core/media/compiler.js";
+import { MediaAddonTriggerWarnings } from "./media-addon-trigger-warnings";
 import {
   hasMediaImageMaskContent,
   normalizeMediaImageMask,
@@ -143,7 +140,6 @@ import {
 } from "../../../../core/media/video-quality.js";
 import { MediaFlowVariablesPanel } from "./media-flow-variables-panel";
 import { MediaFlowTemplatesPanel } from "./media-flow-templates-panel";
-import { MediaLoraStrengthControl } from "./media-lora-strength-control";
 import {
   projectMediaRunOverlay,
   selectMediaRunOutputAssetForNode,
@@ -191,7 +187,6 @@ import { getDefaultCommandShortcut } from "../../commands/command-defaults";
 import type { CommandDefinition } from "../../commands/command-types";
 import { createMediaNodeCommandPage } from "../media-node-command-page";
 import { normalizeMediaSubmissionText } from "../media-generation-recipe";
-import { MediaResourcePreview } from "./media-visual-preview";
 import { MediaModelPicker } from "./media-model-picker";
 import { MediaImageMaskEditor } from "./media-image-mask-editor";
 import { FlowCanvas } from "../../flow/flow-canvas";
@@ -217,6 +212,7 @@ interface MediaFlowViewProps {
   models: readonly MediaModelDescriptor[];
   addons: readonly MediaModelAddonDescriptor[];
   assetMetadata: Readonly<Record<string, MediaGenerationAssetMetadata>>;
+  categories: readonly MediaAssetCategory[];
   assets?: readonly MediaAssetRecord[];
   onLayoutChange: (layout: MediaFlowLayout) => void;
   onFlowVariablesChange?: (flow: MediaFlow) => void;
@@ -447,6 +443,7 @@ const LAYER_STYLES: Record<MediaNodeLayer, string> = {
 };
 
 const PORT_TONES: Record<MediaPortDataType, FlowPortTone> = {
+  controlnet: "violet",
   mask: "violet",
   prompt: "sky",
   image: "fuchsia",
@@ -457,6 +454,7 @@ const PORT_TONES: Record<MediaPortDataType, FlowPortTone> = {
 };
 
 const PORT_LABELS: Record<MediaPortDataType, string> = {
+  controlnet: "ControlNet",
   mask: "Mask",
   prompt: "Text",
   image: "Image",
@@ -546,10 +544,12 @@ const readNodeDetail = (
   if (delivery) {
     const loop =
       delivery.loopMode === "ping-pong"
-        ? "boomerang · reversed"
+        ? "ping-pong"
         : delivery.loopMode === "seamless"
           ? "seamless"
-          : "one-way";
+          : delivery.loopMode === "crossfade"
+            ? "crossfade"
+            : "one-way";
     return `${delivery.durationSeconds.toFixed(2)}s · ${delivery.outputFrameCount} frames · ${delivery.width}×${delivery.height} · ${loop}`;
   }
   return "";
@@ -913,6 +913,8 @@ const MediaAssetPicker = ({
   currentAssetId,
   currentAsset,
   imageAssets,
+  metadata,
+  categories,
   disabled,
   invalid,
   describedBy,
@@ -923,31 +925,14 @@ const MediaAssetPicker = ({
   currentAssetId: string;
   currentAsset: MediaAssetRecord | null;
   imageAssets: readonly MediaAssetRecord[];
+  metadata: Readonly<Record<string, MediaGenerationAssetMetadata>>;
+  categories: readonly MediaAssetCategory[];
   disabled: boolean;
   invalid: boolean;
   describedBy: string;
   onChange: (assetId: string) => void;
 }): JSX.Element => {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filteredAssets = useMemo(
-    () =>
-      imageAssets.filter((asset, index) => {
-        if (!normalizedQuery) return true;
-        return [
-          mediaAssetLabel(asset, index),
-          asset.id,
-          asset.digest,
-          `${asset.width}x${asset.height}`,
-          ...asset.tags.map((tag) => tag.label),
-        ]
-          .join(" ")
-          .toLocaleLowerCase()
-          .includes(normalizedQuery);
-      }),
-    [imageAssets, normalizedQuery],
-  );
   const currentAssetIndex = currentAsset
     ? imageAssets.findIndex((asset) => asset.id === currentAsset.id)
     : -1;
@@ -958,7 +943,6 @@ const MediaAssetPicker = ({
 
   const handleOpenChange = (nextOpen: boolean): void => {
     setOpen(nextOpen);
-    if (!nextOpen) setQuery("");
   };
 
   return (
@@ -1013,90 +997,27 @@ const MediaAssetPicker = ({
         />
       </button>
 
-      <DialogContent className="max-h-[min(760px,calc(100dvh-28px))] w-[min(720px,calc(100vw-28px))] max-w-none grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-slate-700 bg-slate-950 p-0 text-slate-100 sm:max-w-none">
+      <DialogContent
+        aria-describedby={undefined}
+        className="max-h-[min(760px,calc(100dvh-28px))] w-[min(720px,calc(100vw-28px))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-slate-700 bg-slate-950 p-0 text-slate-100 sm:max-w-none"
+      >
         <DialogHeader className="border-b border-slate-800 px-5 py-4 pr-12">
           <DialogTitle className="text-base">Choose {fieldLabel}</DialogTitle>
-          <DialogDescription className="text-xs text-slate-500">
-            Select an image from the Media Studio library.
-          </DialogDescription>
         </DialogHeader>
-        <SearchField
-          value={query}
-          aria-label={`Search ${fieldLabel} assets`}
-          placeholder="Search images…"
-          onChange={(event) => setQuery(event.target.value)}
-          containerClassName="mx-5 mt-4"
-          iconClassName="size-3.5 text-slate-600"
-          className="h-9 border-slate-700 bg-slate-900/70 text-xs text-slate-100 placeholder:text-slate-600"
-        />
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          {filteredAssets.length > 0 ? (
-            <div
-              role="listbox"
-              aria-label={`${fieldLabel} library images`}
-              className="grid grid-cols-2 gap-3 sm:grid-cols-3"
-            >
-              {filteredAssets.map((asset) => {
-                const assetIndex = imageAssets.findIndex(
-                  (candidate) => candidate.id === asset.id,
-                );
-                const label = mediaAssetLabel(asset, assetIndex);
-                const selected = asset.id === currentAssetId;
-                return (
-                  <button
-                    key={asset.id}
-                    type="button"
-                    role="option"
-                    aria-selected={selected}
-                    aria-label={`Select ${label}, ${asset.width} by ${asset.height}`}
-                    onClick={() => {
-                      onChange(asset.id);
-                      handleOpenChange(false);
-                    }}
-                    className={cn(
-                      "group min-w-0 overflow-hidden rounded-xl border bg-slate-900/45 text-left outline-none transition-colors hover:border-sky-400/45 hover:bg-sky-400/5 focus-visible:ring-2 focus-visible:ring-sky-400/50",
-                      selected
-                        ? "border-sky-400/60 ring-1 ring-sky-400/25"
-                        : "border-slate-800",
-                    )}
-                  >
-                    <span className="relative block aspect-square overflow-hidden bg-slate-900">
-                      <MediaAssetThumbnail
-                        asset={asset}
-                        alt={`${label} thumbnail`}
-                      />
-                      {selected ? (
-                        <span className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-sky-400 text-slate-950 shadow-lg">
-                          <Check aria-hidden="true" className="h-3.5 w-3.5" />
-                        </span>
-                      ) : null}
-                    </span>
-                    <span className="block truncate px-3 pt-2.5 text-xs font-medium text-slate-200">
-                      {label}
-                    </span>
-                    <span className="block px-3 pb-2.5 pt-1 text-[10px] text-slate-500">
-                      {asset.width} × {asset.height}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <EmptyState
-              icon={ImageIcon}
-              title={
-                imageAssets.length === 0
-                  ? "No image assets yet"
-                  : "No matching images"
-              }
-              description={
-                imageAssets.length === 0
-                  ? "Import or generate an image in Media Studio first."
-                  : "Try a different name, tag, id, or size."
-              }
-              role="status"
-            />
-          )}
+        <div className="min-h-0 overflow-y-auto p-5">
+          <MediaAssetBrowser
+            assets={imageAssets}
+            metadata={metadata}
+            categories={categories}
+            selectedIds={currentAssetId ? [currentAssetId] : []}
+            disabledReason={() =>
+              disabled ? "This field is read-only" : undefined
+            }
+            onSelect={(asset) => {
+              onChange(asset.id);
+              handleOpenChange(false);
+            }}
+          />
         </div>
         {currentAssetId ? (
           <DialogFooter className="border-t border-slate-800 px-5 py-3">
@@ -1119,491 +1040,6 @@ const MediaAssetPicker = ({
   );
 };
 
-const readModelAddonSelections = (
-  value: unknown,
-): MediaModelAddonSelection[] => {
-  if (!Array.isArray(value)) return [];
-  return value.filter(
-    (entry): entry is MediaModelAddonSelection =>
-      typeof entry === "object" &&
-      entry !== null &&
-      "kind" in entry &&
-      (entry.kind === "lora" || entry.kind === "textual-inversion") &&
-      "addonId" in entry &&
-      typeof entry.addonId === "string" &&
-      "enabled" in entry &&
-      typeof entry.enabled === "boolean",
-  );
-};
-
-const ModelAddonPicker = ({
-  controlId,
-  model,
-  addons,
-  assets,
-  metadata,
-  value,
-  prompt,
-  disabled,
-  describedBy,
-  onChange,
-  onPromptChange,
-}: {
-  controlId: string;
-  model: MediaModelDescriptor | null;
-  addons: readonly MediaModelAddonDescriptor[];
-  assets: readonly MediaAssetRecord[];
-  metadata: Readonly<Record<string, MediaGenerationAssetMetadata>>;
-  value: unknown;
-  prompt: string;
-  disabled: boolean;
-  describedBy: string;
-  onChange: (value: MediaModelAddonSelection[]) => void;
-  onPromptChange: ((prompt: string) => void) | null;
-}): JSX.Element => {
-  const [query, setQuery] = useState("");
-  const [openControlsId, setOpenControlsId] = useState<string | null>(null);
-  const rawSelections = useMemo(() => readModelAddonSelections(value), [value]);
-  const selections = useMemo(
-    () => reconcileMediaModelAddonSelections(model, addons, rawSelections),
-    [addons, model, rawSelections],
-  );
-  useEffect(() => {
-    if (mediaModelAddonSelectionsEqual(rawSelections, selections)) return;
-    onChange(selections);
-  }, [onChange, rawSelections, selections]);
-  const selectedById = new Map(
-    selections.map((selection) => [selection.addonId, selection]),
-  );
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const modelCompatibleAddons = model
-    ? addons.filter(
-        (addon) =>
-          inspectMediaModelAddonCompatibility(model, addon).status ===
-          "compatible",
-      )
-    : [];
-  const compatibleAddons = model
-    ? modelCompatibleAddons.filter((addon) => {
-        if (!normalizedQuery) return true;
-        return [
-          addon.displayName,
-          addon.architecture,
-          addon.baseModelHint ?? "",
-          ...addon.triggerWords,
-          ...(metadata[addon.id]?.categoryIds ?? []),
-          ...(metadata[addon.id]?.tags ?? []),
-        ]
-          .join(" ")
-          .toLocaleLowerCase()
-          .includes(normalizedQuery);
-      })
-    : [];
-  const missingTriggers = selections.flatMap((selection) => {
-    if (!selection.enabled) return [];
-    const addon = addons.find(
-      (candidate) => candidate.id === selection.addonId,
-    );
-    if (!addon || promptContainsMediaModelAddonTrigger(prompt, addon))
-      return [];
-    const triggers = getMediaModelAddonTriggerWords(addon);
-    return triggers.length > 0 ? [{ addon, trigger: triggers[0]! }] : [];
-  });
-
-  const updateSelection = (
-    addonId: string,
-    update: (selection: MediaModelAddonSelection) => MediaModelAddonSelection,
-  ): void => {
-    onChange(
-      selections.map((selection) =>
-        selection.addonId === addonId ? update(selection) : selection,
-      ),
-    );
-  };
-
-  return (
-    <div
-      id={controlId}
-      aria-describedby={describedBy}
-      className="mt-2 space-y-3"
-    >
-      {model ? (
-        <>
-          {modelCompatibleAddons.length > 0 ? (
-            <div className="relative">
-              <Input
-                value={query}
-                aria-label="Search compatible assets"
-                placeholder="Search assets"
-                disabled={disabled}
-                onChange={(event) => setQuery(event.target.value)}
-                className={cn(
-                  FIELD_CONTROL_CLASS,
-                  selections.length > 0 && "pr-24",
-                )}
-              />
-              {selections.length > 0 ? (
-                <div className="absolute inset-y-0 right-2 flex items-center gap-1.5 text-[9px] text-slate-400">
-                  <span>{selections.length} selected</span>
-                  <button
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => onChange([])}
-                    className="rounded px-1 py-0.5 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50"
-                  >
-                    Clear
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          {compatibleAddons.length > 0 ? (
-            <div className="grid grid-cols-2 gap-2">
-              {compatibleAddons.map((addon) => {
-                const selection = selectedById.get(addon.id);
-                const capability = model.addonCapabilities.find(
-                  (candidate) => candidate.kind === addon.kind,
-                );
-                const activeKindCount = selections.filter(
-                  (candidate) =>
-                    candidate.enabled && candidate.kind === addon.kind,
-                ).length;
-                const atCapacity =
-                  !selection &&
-                  capability !== undefined &&
-                  activeKindCount >= capability.maxActive;
-                return (
-                  <article
-                    key={addon.id}
-                    className={cn(
-                      "relative isolate overflow-hidden rounded-xl border transition-colors",
-                      selection
-                        ? "border-sky-400 bg-sky-400/10"
-                        : "border-slate-800 bg-slate-900/60 hover:border-slate-600",
-                      (disabled || atCapacity) && "opacity-45",
-                    )}
-                  >
-                    <button
-                      type="button"
-                      aria-label={addon.displayName}
-                      aria-pressed={selection !== undefined}
-                      disabled={disabled || atCapacity}
-                      onClick={() =>
-                        onChange(
-                          selection
-                            ? selections.filter(
-                                (candidate) => candidate.addonId !== addon.id,
-                              )
-                            : [
-                                ...selections,
-                                createMediaModelAddonSelection(addon),
-                              ],
-                        )
-                      }
-                      className="block w-full overflow-hidden rounded-xl text-left disabled:cursor-not-allowed"
-                    >
-                      <MediaResourcePreview
-                        resourceId={addon.id}
-                        metadata={metadata}
-                        assets={assets}
-                        className="aspect-[4/3] w-full"
-                      />
-                      <span className="flex items-center gap-2 p-2">
-                        <span className="min-w-0 flex-1 truncate text-[10px] font-medium text-slate-200">
-                          {addon.displayName}
-                        </span>
-                        {selection ? (
-                          <Check className="h-3.5 w-3.5 text-sky-300" />
-                        ) : null}
-                      </span>
-                    </button>
-                    {selection ? (
-                      <div className="absolute inset-x-2 top-2 z-10 max-h-[calc(100%-1rem)] overflow-y-auto rounded-lg border border-sky-300/30 bg-slate-950/92 p-2 shadow-xl backdrop-blur">
-                        <div className="flex items-center gap-1.5">
-                          {selection.kind === "lora" ? (
-                            <MediaLoraStrengthControl
-                              label={addon.displayName}
-                              value={selection.modelStrength}
-                              disabled={disabled}
-                              onChange={(modelStrength) =>
-                                updateSelection(selection.addonId, (current) =>
-                                  current.kind === "lora"
-                                    ? { ...current, modelStrength }
-                                    : current,
-                                )
-                              }
-                            />
-                          ) : (
-                            <select
-                              aria-label={`${addon.displayName} placement`}
-                              value={selection.placement}
-                              disabled={disabled}
-                              onChange={(event) =>
-                                updateSelection(selection.addonId, (current) =>
-                                  current.kind === "textual-inversion"
-                                    ? {
-                                        ...current,
-                                        placement: event.target.value as
-                                          | "positive"
-                                          | "negative"
-                                          | "both",
-                                      }
-                                    : current,
-                                )
-                              }
-                              className="h-7 min-w-0 flex-1 rounded border border-slate-700 bg-slate-950 px-1.5 text-[9px] text-slate-200"
-                            >
-                              <option value="positive">Positive</option>
-                              <option value="negative">Negative</option>
-                              <option value="both">Both</option>
-                            </select>
-                          )}
-                          {selection.kind === "lora" &&
-                          (capability?.supportsSeparateComponentStrengths ||
-                            capability?.supportsDenoisingSchedules) ? (
-                            <ControlTooltip
-                              content={`Adjust ${addon.displayName}`}
-                            >
-                              <button
-                                type="button"
-                                aria-label={`Adjust ${addon.displayName}`}
-                                aria-expanded={openControlsId === addon.id}
-                                disabled={disabled}
-                                onClick={() =>
-                                  setOpenControlsId((current) =>
-                                    current === addon.id ? null : addon.id,
-                                  )
-                                }
-                                className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50"
-                              >
-                                <ChevronDown
-                                  className={cn(
-                                    "h-3.5 w-3.5 transition-transform",
-                                    openControlsId === addon.id && "rotate-180",
-                                  )}
-                                />
-                              </button>
-                            </ControlTooltip>
-                          ) : null}
-                          <ControlTooltip
-                            content={`Remove ${addon.displayName}`}
-                          >
-                            <button
-                              type="button"
-                              aria-label={`Remove ${addon.displayName}`}
-                              disabled={disabled}
-                              onClick={() =>
-                                onChange(
-                                  selections.filter(
-                                    (candidate) =>
-                                      candidate.addonId !== selection.addonId,
-                                  ),
-                                )
-                              }
-                              className="rounded p-1 text-slate-400 hover:bg-rose-400/10 hover:text-rose-200 disabled:opacity-50"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </ControlTooltip>
-                        </div>
-                        {selection.kind === "textual-inversion" ? (
-                          <Input
-                            value={selection.token}
-                            aria-label={`${addon.displayName} token`}
-                            disabled={disabled}
-                            onChange={(event) =>
-                              updateSelection(selection.addonId, (current) =>
-                                current.kind === "textual-inversion"
-                                  ? { ...current, token: event.target.value }
-                                  : current,
-                              )
-                            }
-                            className="mt-2 h-7 text-[9px]"
-                          />
-                        ) : null}
-                        {selection.kind === "lora" &&
-                        openControlsId === addon.id ? (
-                          <div className="mt-2 space-y-2 border-t border-slate-800 pt-2 text-[9px] text-slate-300">
-                            {capability?.supportsSeparateComponentStrengths ? (
-                              <label className="flex items-center gap-2">
-                                <input
-                                  type="checkbox"
-                                  checked={
-                                    selection.textEncoderStrength !== null
-                                  }
-                                  disabled={disabled}
-                                  onChange={(event) =>
-                                    updateSelection(
-                                      selection.addonId,
-                                      (current) =>
-                                        current.kind === "lora"
-                                          ? {
-                                              ...current,
-                                              textEncoderStrength: event.target
-                                                .checked
-                                                ? current.modelStrength
-                                                : null,
-                                            }
-                                          : current,
-                                    )
-                                  }
-                                />
-                                Text strength
-                              </label>
-                            ) : null}
-                            {selection.textEncoderStrength !== null ? (
-                              <label className="block">
-                                <span className="mb-1 flex justify-between">
-                                  <span>Text</span>
-                                  <span>
-                                    {selection.textEncoderStrength.toFixed(2)}
-                                  </span>
-                                </span>
-                                <input
-                                  type="range"
-                                  min={-2}
-                                  max={2}
-                                  step={0.05}
-                                  value={selection.textEncoderStrength}
-                                  disabled={disabled}
-                                  onChange={(event) =>
-                                    updateSelection(
-                                      selection.addonId,
-                                      (current) =>
-                                        current.kind === "lora"
-                                          ? {
-                                              ...current,
-                                              textEncoderStrength: Number(
-                                                event.target.value,
-                                              ),
-                                            }
-                                          : current,
-                                    )
-                                  }
-                                  className="block w-full accent-sky-400"
-                                />
-                              </label>
-                            ) : null}
-                            {capability?.supportsDenoisingSchedules ? (
-                              <label className="flex items-center gap-2">
-                                <input
-                                  type="checkbox"
-                                  checked={selection.denoisingSchedule !== null}
-                                  disabled={disabled}
-                                  onChange={(event) =>
-                                    updateSelection(
-                                      selection.addonId,
-                                      (current) =>
-                                        current.kind === "lora"
-                                          ? {
-                                              ...current,
-                                              denoisingSchedule: event.target
-                                                .checked
-                                                ? { start: 0, end: 1 }
-                                                : null,
-                                            }
-                                          : current,
-                                    )
-                                  }
-                                />
-                                Denoising window
-                              </label>
-                            ) : null}
-                            {selection.denoisingSchedule ? (
-                              <div className="grid grid-cols-2 gap-2">
-                                {(["start", "end"] as const).map((key) => (
-                                  <label key={key}>
-                                    <span className="capitalize">{key}</span>
-                                    <input
-                                      type="number"
-                                      min={
-                                        key === "start"
-                                          ? 0
-                                          : selection.denoisingSchedule!.start +
-                                            0.05
-                                      }
-                                      max={
-                                        key === "start"
-                                          ? selection.denoisingSchedule!.end -
-                                            0.05
-                                          : 1
-                                      }
-                                      step={0.05}
-                                      value={selection.denoisingSchedule![key]}
-                                      disabled={disabled}
-                                      onChange={(event) =>
-                                        updateSelection(
-                                          selection.addonId,
-                                          (current) =>
-                                            current.kind === "lora" &&
-                                            current.denoisingSchedule
-                                              ? {
-                                                  ...current,
-                                                  denoisingSchedule: {
-                                                    ...current.denoisingSchedule,
-                                                    [key]: Number(
-                                                      event.target.value,
-                                                    ),
-                                                  },
-                                                }
-                                              : current,
-                                        )
-                                      }
-                                      className="mt-1 h-7 w-full rounded border border-slate-700 bg-slate-950 px-1.5"
-                                    />
-                                  </label>
-                                ))}
-                              </div>
-                            ) : null}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </article>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="rounded-lg border border-dashed border-slate-800 px-3 py-4 text-center text-[10px] text-slate-500">
-              {normalizedQuery ? "No matching assets" : "No compatible assets"}
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="rounded-lg border border-dashed border-slate-800 px-3 py-4 text-center text-[10px] text-slate-500">
-          Choose a model first
-        </div>
-      )}
-
-      {missingTriggers.map(({ addon, trigger }) => (
-        <div
-          key={addon.id}
-          className="flex items-center gap-2 rounded-lg border border-amber-400/20 bg-amber-400/5 px-2.5 py-2"
-        >
-          <CircleAlert className="h-3.5 w-3.5 shrink-0 text-amber-300" />
-          <span className="min-w-0 flex-1 text-[9px] text-amber-100">
-            {addon.displayName} needs a trigger word
-          </span>
-          {onPromptChange ? (
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() =>
-                onPromptChange(
-                  prompt.trim() ? `${prompt.trim()}, ${trigger}` : trigger,
-                )
-              }
-              className="shrink-0 text-[9px] font-medium text-amber-200 hover:text-amber-100 disabled:opacity-50"
-            >
-              Add {trigger}
-            </button>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  );
-};
-
 const NodeFieldEditor = ({
   node,
   nodes,
@@ -1612,13 +1048,12 @@ const NodeFieldEditor = ({
   addons,
   assets,
   assetMetadata,
+  categories,
   maskAsset,
   resolvedModel,
   requiredModelCapabilities,
   requiredReferenceRoles,
-  generationPrompt,
   referenceRoleValues,
-  onGenerationPromptChange,
   variables,
   issue,
   onChange,
@@ -1631,13 +1066,12 @@ const NodeFieldEditor = ({
   addons: readonly MediaModelAddonDescriptor[];
   assets: readonly MediaAssetRecord[];
   assetMetadata: Readonly<Record<string, MediaGenerationAssetMetadata>>;
+  categories: readonly MediaAssetCategory[];
   maskAsset: MediaAssetRecord | null;
   resolvedModel: MediaModelDescriptor | null;
   requiredModelCapabilities: readonly MediaCapability[];
   requiredReferenceRoles: readonly MediaImageReferenceRole[];
-  generationPrompt: string;
   referenceRoleValues: readonly string[] | null;
-  onGenerationPromptChange: ((prompt: string) => void) | null;
   variables: MediaFlow["variables"];
   issue: MediaNodeValidationIssue | null;
   onChange: (fieldId: string, value: unknown) => void;
@@ -1692,6 +1126,10 @@ const NodeFieldEditor = ({
   const currentModelIsMissing =
     currentModelId !== null &&
     !compatibleModels.some((model) => model.id === currentModelId);
+  const incompatibleVideoModel =
+    node.type === "task.generate-video" && currentModelIsMissing
+      ? models.find((model) => model.id === currentModelId)
+      : null;
   const imageAssets = assets.filter((asset) => asset.kind === "image");
   const currentAssetId = typeof value === "string" ? value : "";
   const currentAsset =
@@ -1802,6 +1240,8 @@ const NodeFieldEditor = ({
           currentAssetId={currentAssetId}
           currentAsset={currentAsset}
           imageAssets={imageAssets}
+          metadata={assetMetadata}
+          categories={categories}
           disabled={field.readOnly === true}
           invalid={issue !== null}
           describedBy={describedBy}
@@ -1836,6 +1276,8 @@ const NodeFieldEditor = ({
           onChange={(event) => {
             if (event.target.value !== "") {
               onChange(field.id, event.target.valueAsNumber);
+            } else if (!field.required && field.defaultValue === null) {
+              onChange(field.id, null);
             }
           }}
           className={FIELD_CONTROL_CLASS}
@@ -1879,18 +1321,17 @@ const NodeFieldEditor = ({
       break;
     case "addons": {
       control = (
-        <ModelAddonPicker
+        <MediaNodeAddonField
           controlId={controlId}
           model={selectedModel}
           addons={addons}
           assets={assets}
           metadata={assetMetadata}
+          categories={categories}
           value={value}
-          prompt={generationPrompt}
           disabled={field.readOnly === true}
           describedBy={describedBy}
           onChange={(selections) => onChange(field.id, selections)}
-          onPromptChange={onGenerationPromptChange}
         />
       );
       break;
@@ -1923,6 +1364,7 @@ const NodeFieldEditor = ({
                     value={modelId}
                     assets={assets}
                     metadata={assetMetadata}
+                    categories={categories}
                     disabled={field.readOnly}
                     compact
                     onChange={(nextModelId) => {
@@ -2044,10 +1486,23 @@ const NodeFieldEditor = ({
         <div className="mt-2">
           <MediaModelPicker
             id={controlId}
-            models={compatibleModels}
+            models={
+              incompatibleVideoModel
+                ? [...compatibleModels, incompatibleVideoModel]
+                : compatibleModels
+            }
+            disabledReasons={
+              incompatibleVideoModel
+                ? {
+                    [incompatibleVideoModel.id]:
+                      "Change the loop or frame inputs to use this model.",
+                  }
+                : undefined
+            }
             value={currentModelId}
             assets={assets}
             metadata={assetMetadata}
+            categories={categories}
             disabled={field.readOnly}
             invalid={issue !== null}
             describedBy={describedBy}
@@ -2061,7 +1516,7 @@ const NodeFieldEditor = ({
             }}
             className="w-full rounded-md"
           />
-          {currentModelIsMissing ? (
+          {currentModelIsMissing && !incompatibleVideoModel ? (
             <p className="mt-1 text-[10px] text-amber-300">
               Choose an available model.
             </p>
@@ -2090,7 +1545,19 @@ const NodeFieldEditor = ({
           )}
         >
           {options?.map((candidate) => (
-            <option key={candidate.value} value={candidate.value}>
+            <option
+              key={candidate.value}
+              value={candidate.value}
+              disabled={
+                node.type === "task.generate-video" &&
+                field.id === "loopMode" &&
+                candidate.value === "seamless" &&
+                !(
+                  models.find((model) => model.id === node.config.modelId) ??
+                  resolvedModel
+                )?.capabilities.includes("start-end-to-video")
+              }
+            >
               {candidate.label}
             </option>
           ))}
@@ -2839,6 +2306,7 @@ const VideoQualityPresetPanel = ({
     fit:
       typeof config.fps === "number" &&
       (config.loopMode === "none" ||
+        config.loopMode === "crossfade" ||
         config.loopMode === "ping-pong" ||
         config.loopMode === "seamless")
         ? fitMediaVideoDuration(
@@ -2851,6 +2319,7 @@ const VideoQualityPresetPanel = ({
   }));
   const smoothDurationFit =
     config.loopMode === "none" ||
+    config.loopMode === "crossfade" ||
     config.loopMode === "ping-pong" ||
     config.loopMode === "seamless"
       ? fitMediaVideoDuration(3, 24, config.loopMode, architecture)
@@ -2910,77 +2379,70 @@ const VideoQualityPresetPanel = ({
             }
             className="shrink-0 rounded-md border border-amber-300/30 bg-amber-300/10 px-2 py-1 font-medium text-amber-100 outline-none hover:bg-amber-300/15 focus-visible:ring-2 focus-visible:ring-amber-300/40"
           >
-            Use native loop model
+            Use WAN
           </button>
         </div>
       ) : null}
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <span className="mr-0.5 text-[9px] font-medium text-slate-500">
-          Fit playback:
-        </span>
-        {durationFits.map(({ targetSeconds, fit }) => {
-          const durationTooltip = fit
-            ? `${fit.sourceFrameCount} source frames produce ${fit.outputFrameCount} frames (${fit.durationSeconds.toFixed(2)} seconds)${fit.exact ? "" : ", closest supported duration"}`
-            : (unsupportedLoopReason ??
-              "Choose a valid frame rate and loop mode first");
+      {durationFits.some(({ fit }) => fit?.exact) ||
+      smoothDurationFit?.exact ? (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="mr-0.5 text-[9px] font-medium text-slate-500">
+            Fit playback:
+          </span>
+          {durationFits.map(({ targetSeconds, fit }) => {
+            if (!fit?.exact) return null;
+            const durationTooltip = `${fit.sourceFrameCount} source frames produce ${fit.outputFrameCount} frames (${fit.durationSeconds.toFixed(2)} seconds)`;
 
-          return (
-            <ControlTooltip key={targetSeconds} content={durationTooltip}>
-              <span className="inline-flex">
-                <button
-                  type="button"
-                  disabled={fit === null}
-                  aria-pressed={
-                    fit !== null && config.numFrames === fit.sourceFrameCount
-                  }
-                  onClick={() => {
-                    if (fit) onApply({ numFrames: fit.sourceFrameCount });
-                  }}
-                  className={cn(
-                    "rounded-md border px-2 py-1 text-[9px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-violet-300/40 disabled:cursor-not-allowed disabled:opacity-40",
-                    fit !== null && config.numFrames === fit.sourceFrameCount
-                      ? "border-emerald-400/35 bg-emerald-400/10 text-emerald-200"
-                      : "border-slate-800 bg-slate-950/55 text-slate-500 hover:border-violet-300/25 hover:text-slate-300",
-                  )}
-                >
-                  {targetSeconds}s
-                  {fit && !fit.exact
-                    ? ` ≈ ${fit.durationSeconds.toFixed(2)}s`
-                    : ""}
-                </button>
-              </span>
-            </ControlTooltip>
-          );
-        })}
-        {smoothDurationFit?.exact ? (
-          <ControlTooltip
-            content={`${smoothDurationFit.sourceFrameCount} source frames produce ${smoothDurationFit.outputFrameCount} frames in 3 seconds at 24 fps`}
-          >
-            <button
-              type="button"
-              aria-pressed={
-                config.fps === 24 &&
-                config.numFrames === smoothDurationFit.sourceFrameCount
-              }
-              onClick={() =>
-                onApply({
-                  fps: 24,
-                  numFrames: smoothDurationFit.sourceFrameCount,
-                })
-              }
-              className={cn(
-                "rounded-md border px-2 py-1 text-[9px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-violet-300/40",
-                config.fps === 24 &&
-                  config.numFrames === smoothDurationFit.sourceFrameCount
-                  ? "border-sky-400/35 bg-sky-400/10 text-sky-200"
-                  : "border-slate-800 bg-slate-950/55 text-slate-500 hover:border-sky-300/25 hover:text-slate-300",
-              )}
+            return (
+              <ControlTooltip key={targetSeconds} content={durationTooltip}>
+                <span className="inline-flex">
+                  <button
+                    type="button"
+                    aria-pressed={config.numFrames === fit.sourceFrameCount}
+                    onClick={() => onApply({ numFrames: fit.sourceFrameCount })}
+                    className={cn(
+                      "rounded-md border px-2 py-1 text-[9px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-violet-300/40 disabled:cursor-not-allowed disabled:opacity-40",
+                      config.numFrames === fit.sourceFrameCount
+                        ? "border-emerald-400/35 bg-emerald-400/10 text-emerald-200"
+                        : "border-slate-800 bg-slate-950/55 text-slate-500 hover:border-violet-300/25 hover:text-slate-300",
+                    )}
+                  >
+                    {targetSeconds}s
+                  </button>
+                </span>
+              </ControlTooltip>
+            );
+          })}
+          {smoothDurationFit?.exact ? (
+            <ControlTooltip
+              content={`${smoothDurationFit.sourceFrameCount} source frames produce ${smoothDurationFit.outputFrameCount} frames in 3 seconds at 24 fps`}
             >
-              3s smooth · 24 fps
-            </button>
-          </ControlTooltip>
-        ) : null}
-      </div>
+              <button
+                type="button"
+                aria-pressed={
+                  config.fps === 24 &&
+                  config.numFrames === smoothDurationFit.sourceFrameCount
+                }
+                onClick={() =>
+                  onApply({
+                    fps: 24,
+                    numFrames: smoothDurationFit.sourceFrameCount,
+                  })
+                }
+                className={cn(
+                  "rounded-md border px-2 py-1 text-[9px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-violet-300/40",
+                  config.fps === 24 &&
+                    config.numFrames === smoothDurationFit.sourceFrameCount
+                    ? "border-sky-400/35 bg-sky-400/10 text-sky-200"
+                    : "border-slate-800 bg-slate-950/55 text-slate-500 hover:border-sky-300/25 hover:text-slate-300",
+                )}
+              >
+                3s · 24 fps
+              </button>
+            </ControlTooltip>
+          ) : null}
+        </div>
+      ) : null}
       {model ? (
         <>
           <p className="mt-2 text-[9px] leading-4 text-violet-200/70">
@@ -3070,16 +2532,9 @@ const VideoKeyframeReviewPanel = ({
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[9px] leading-4 text-slate-500">
-        {nativeFirstFrameOnly
-          ? "Use the same image for both inputs. This model generates the ending."
-          : "The video moves between these images."}
-      </p>
-      {firstFrame.asset &&
-      lastFrame.asset &&
-      firstFrame.asset.digest === lastFrame.asset.digest ? (
-        <p className="mt-1.5 text-[9px] leading-4 text-emerald-300/75">
-          {nativeFirstFrameOnly ? null : "Matching images create a loop."}
+      {nativeFirstFrameOnly ? (
+        <p className="mt-2 text-[9px] leading-4 text-slate-500">
+          Use the same image for both inputs. This model generates the ending.
         </p>
       ) : null}
     </section>
@@ -3095,6 +2550,7 @@ const NodeInspector = ({
   addons,
   assets,
   assetMetadata,
+  categories,
   onNodeConfigChange,
   onNodeConfigPatch,
   onNodeLabelChange,
@@ -3113,6 +2569,7 @@ const NodeInspector = ({
   addons: readonly MediaModelAddonDescriptor[];
   assets: readonly MediaAssetRecord[];
   assetMetadata: Readonly<Record<string, MediaGenerationAssetMetadata>>;
+  categories: readonly MediaAssetCategory[];
   onNodeConfigChange: (nodeId: string, fieldId: string, value: unknown) => void;
   onNodeConfigPatch?: (
     nodeId: string,
@@ -3194,16 +2651,6 @@ const NodeInspector = ({
           : []),
       ]
     : null;
-  const promptEdge = incoming.find((edge) => edge.toPortId === "prompt");
-  const promptSource = promptEdge
-    ? (resolvedFlow.nodes.find((entry) => entry.id === promptEdge.fromNodeId) ??
-      null)
-    : null;
-  const generationPrompt =
-    promptSource?.type === "source.prompt" &&
-    typeof promptSource.config.prompt === "string"
-      ? promptSource.config.prompt
-      : "";
   const imageInputEdges = incoming.filter((edge) => edge.toPortId === "image");
   const imageInputSources = imageInputEdges.flatMap((edge) => {
     const source = resolvedFlow.nodes.find(
@@ -3314,10 +2761,12 @@ const NodeInspector = ({
       : null;
   const videoModel =
     node.type === "task.generate-video"
-      ? (plan.runtimeBindings.find(
+      ? (models.find((model) => model.id === resolvedNode.config.modelId) ??
+        plan.runtimeBindings.find(
           (binding) =>
             binding.nodeId === node.id && binding.modality === "video",
-        )?.model ?? null)
+        )?.model ??
+        null)
       : null;
   const validationIssues = validateMediaFlowNode(resolvedNode);
   const visibleFields = definition
@@ -3534,18 +2983,12 @@ const NodeInspector = ({
                   addons={addons}
                   assets={assets}
                   assetMetadata={assetMetadata}
+                  categories={categories}
                   maskAsset={maskBaseAsset}
                   resolvedModel={resolvedGenerationModel}
                   requiredModelCapabilities={requiredModelCapabilities}
                   requiredReferenceRoles={requiredReferenceRoles}
-                  generationPrompt={generationPrompt}
                   referenceRoleValues={referenceRoleValues}
-                  onGenerationPromptChange={
-                    promptSource?.type === "source.prompt"
-                      ? (prompt) =>
-                          onNodeConfigChange(promptSource.id, "prompt", prompt)
-                      : null
-                  }
                   variables={flow.variables}
                   issue={
                     validationIssues.find(
@@ -4291,6 +3734,7 @@ export const MediaFlowView = ({
   models,
   addons,
   assetMetadata,
+  categories,
   assets = [],
   onLayoutChange,
   onFlowVariablesChange = () => undefined,
@@ -6255,6 +5699,32 @@ export const MediaFlowView = ({
         </div>
       </header>
 
+      {plan.runtimeBindings.map((binding) => {
+        const node = flow.nodes.find((entry) => entry.id === binding.nodeId);
+        if (!node) return null;
+        const resolved = resolveMediaNodePrompt(flow, node.id);
+        if (resolved.prompt === null || !resolved.sourceNodeId) return null;
+        const sourcePrompt = flow.nodes.find(
+          (entry) => entry.id === resolved.sourceNodeId,
+        )?.config.prompt;
+        if (typeof sourcePrompt !== "string") return null;
+        return (
+          <MediaAddonTriggerWarnings
+            key={node.id}
+            prompt={resolved.prompt}
+            sourcePrompt={sourcePrompt}
+            addons={addons}
+            selections={
+              readModelAddonSelections(node.config.modelAddons ?? []) ?? []
+            }
+            disabled={runPending}
+            onPromptChange={(prompt) =>
+              onNodeConfigChange(resolved.sourceNodeId!, "prompt", prompt)
+            }
+          />
+        );
+      })}
+
       {firstPlanError ? (
         <section
           role="alert"
@@ -6498,6 +5968,7 @@ export const MediaFlowView = ({
             addons={addons}
             assets={assets}
             assetMetadata={assetMetadata}
+            categories={categories}
             onNodeConfigChange={onNodeConfigChange}
             onNodeConfigPatch={onNodeConfigPatch}
             onNodeLabelChange={onNodeLabelChange}

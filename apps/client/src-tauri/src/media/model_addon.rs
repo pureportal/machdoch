@@ -41,7 +41,7 @@ pub(crate) fn capabilities_for_model(
     provider_id: &str,
     architecture: Option<&str>,
 ) -> Vec<MediaModelAddonCapability> {
-    if provider_id != "local-diffusers" {
+    if !matches!(provider_id, "local-diffusers" | "local-video" | "local-wan") {
         return Vec::new();
     }
     match architecture {
@@ -88,6 +88,15 @@ pub(crate) fn capabilities_for_model(
             supports_separate_component_strengths: false,
             supports_denoising_schedules: true,
         }],
+        Some("wan-2.2-ti2v" | "ltx-video" | "framepack-i2v" | "hunyuan-video-1.5-i2v") => {
+            vec![MediaModelAddonCapability {
+                kind: "lora".to_string(),
+                target_components: vec!["denoiser".to_string()],
+                max_active: 8,
+                supports_separate_component_strengths: false,
+                supports_denoising_schedules: false,
+            }]
+        }
         Some("flux-1") => vec![
             MediaModelAddonCapability {
                 kind: "lora".to_string(),
@@ -149,7 +158,12 @@ fn lora_pair_dimensions(header: &ParsedSafetensorsHeader, key_fragment: &str) ->
                 let stem = lower_key.strip_suffix(left)?;
                 let paired_key = keys.get(&format!("{stem}{right}"))?;
                 Some((
-                    tensor_last_dimension(header, original_key)?,
+                    header
+                        .tensor_shapes
+                        .get(*original_key)?
+                        .as_array()?
+                        .get(1)?
+                        .as_u64()?,
                     tensor_first_dimension(header, paired_key)?,
                 ))
             })
@@ -158,10 +172,13 @@ fn lora_pair_dimensions(header: &ParsedSafetensorsHeader, key_fragment: &str) ->
 }
 
 fn has_lora_key_fragment(header: &ParsedSafetensorsHeader, fragment: &str) -> bool {
-    header
-        .tensor_keys
-        .iter()
-        .any(|key| key.to_lowercase().contains(fragment))
+    header.tensor_keys.iter().any(|key| {
+        let key = key.to_lowercase();
+        key.contains(fragment)
+            || fragment
+                .strip_prefix("transformer.")
+                .is_some_and(|local| key.starts_with(local))
+    })
 }
 
 fn has_lora_pair(header: &ParsedSafetensorsHeader) -> bool {
@@ -630,6 +647,37 @@ fn detect_embedding_architecture(
 }
 
 fn detect_lora_architecture(header: &ParsedSafetensorsHeader) -> (Option<String>, &'static str) {
+    if has_lora_key_fragment(header, "transformer.transformer_blocks.")
+        && (has_lora_key_fragment(header, ".attn.add_q_proj")
+            || has_lora_key_fragment(header, "transformer.transformer_blocks.53."))
+        && lora_pair_dimensions(header, ".attn.to_q").contains(&(2_048, 2_048))
+        && !has_lora_key_fragment(header, "single_transformer_blocks.")
+    {
+        return (Some("hunyuan-video-1.5-i2v".to_string()), "high");
+    }
+    if has_lora_key_fragment(header, "transformer.transformer_blocks.")
+        && has_lora_key_fragment(header, "transformer.single_transformer_blocks.")
+        && (has_lora_key_fragment(header, "transformer.transformer_blocks.19.")
+            || has_lora_key_fragment(header, "transformer.single_transformer_blocks.39."))
+        && lora_pair_dimensions(header, ".attn.to_q").contains(&(3_072, 3_072))
+    {
+        return (Some("framepack-i2v".to_string()), "high");
+    }
+    if has_lora_key_fragment(header, "transformer.blocks.")
+        && lora_pair_dimensions(header, ".attn1.to_q").contains(&(3_072, 3_072))
+        && lora_pair_dimensions(header, ".attn2.to_k").contains(&(3_072, 3_072))
+    {
+        return (Some("wan-2.2-ti2v".to_string()), "high");
+    }
+    if has_lora_key_fragment(header, "transformer.transformer_blocks.")
+        && !has_lora_key_fragment(header, ".attn.add_q_proj")
+        && !has_lora_key_fragment(header, "single_transformer_blocks.")
+        && lora_pair_dimensions(header, ".attn2.to_k")
+            .iter()
+            .any(|dimensions| matches!(*dimensions, (2_048, 2_048) | (4_096, 4_096)))
+    {
+        return (Some("ltx-video".to_string()), "high");
+    }
     let flux_2_modulation = [
         "double_stream_modulation_img.linear",
         "double_stream_modulation_txt.linear",
@@ -1047,16 +1095,11 @@ fn inspection_review_token(
 
 pub(crate) fn inspect(source_path: &str) -> MediaResult<MediaModelAddonImportInspection> {
     let header = model_import::parse_header(source_path)?;
-    let (content_size, content_digest) = model_import::hash_file(&header.canonical_path)?;
-    if content_size != header.byte_size {
-        return Err("the add-on file changed while it was being inspected".to_string());
-    }
-    inspect_header(&header, content_digest)
+    inspect_header(&header)
 }
 
 pub(super) fn inspect_header(
     header: &ParsedSafetensorsHeader,
-    content_digest: String,
 ) -> MediaResult<MediaModelAddonImportInspection> {
     let detected_kind = detect_kind(&header);
     let (detected_architecture, architecture_confidence) =
@@ -1135,7 +1178,6 @@ pub(super) fn inspect_header(
         byte_size: header.byte_size,
         tensor_count: header.tensor_count,
         header_digest: header.header_digest.clone(),
-        content_digest,
         duplicate: None,
         review_token: inspection_review_token(
             &header,
@@ -1187,7 +1229,8 @@ pub(crate) fn inspect_for_import(
     source_path: &str,
 ) -> MediaResult<MediaModelAddonImportInspection> {
     let mut inspection = inspect(source_path)?;
-    inspection.duplicate = imported_duplicate(paths, &inspection.content_digest)?;
+    let (_, digest) = model_import::hash_file(Path::new(&inspection.source_path))?;
+    inspection.duplicate = imported_duplicate(paths, &digest)?;
     Ok(inspection)
 }
 
@@ -1235,6 +1278,41 @@ fn normalize_trigger_words(values: &[String]) -> MediaResult<Vec<String>> {
     Ok(normalized)
 }
 
+pub(crate) fn update_triggers(
+    paths: &MediaRuntimePaths,
+    addon_id: &str,
+    trigger_words: &[String],
+) -> MediaResult<()> {
+    let connection = database::open(paths)?;
+    let kind: String = connection
+        .query_row(
+            "SELECT kind FROM media_model_addons WHERE id = ?1",
+            [addon_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| format!("failed to read model add-on: {error}"))?
+        .ok_or_else(|| "The model add-on is unavailable. Import it again.".to_string())?;
+    let trigger_words = normalize_trigger_words(trigger_words)?;
+    let token = if kind == "textual-inversion" {
+        if trigger_words.len() != 1 {
+            return Err("An embedding requires exactly one token.".to_string());
+        }
+        validated_token(Some(&trigger_words[0]))?
+    } else {
+        None
+    };
+    let trigger_words = serde_json::to_string(&trigger_words)
+        .map_err(|error| format!("failed to encode model add-on triggers: {error}"))?;
+    connection
+        .execute(
+            "UPDATE media_model_addons SET trigger_words_json = ?2, default_token = ?3 WHERE id = ?1",
+            params![addon_id, trigger_words, token],
+        )
+        .map_err(|error| format!("failed to update model add-on triggers: {error}"))?;
+    Ok(())
+}
+
 #[derive(Debug)]
 struct ValidatedAddonRequest {
     display_name: String,
@@ -1266,9 +1344,6 @@ fn validate_request(
                 .to_string()
         });
     }
-    if !model_import::SUPPORTED_ARCHITECTURES.contains(&request.architecture.as_str()) {
-        return Err("architecture is not a supported local image family".to_string());
-    }
     let capability = capabilities_for_model("local-diffusers", Some(&request.architecture))
         .into_iter()
         .find(|candidate| candidate.kind == request.kind)
@@ -1278,6 +1353,16 @@ fn validate_request(
                 request.architecture, request.kind
             )
         })?;
+    if matches!(
+        request.architecture.as_str(),
+        "wan-2.2-ti2v" | "ltx-video" | "framepack-i2v" | "hunyuan-video-1.5-i2v"
+    ) && inspection.lora_profile.as_ref().is_none_or(|profile| {
+        profile.dialect != "diffusers-peft"
+            || profile.algorithm != "lora"
+            || profile.network_alpha_count != 0
+    }) {
+        return Err("Choose a video LoRA in Diffusers PEFT Safetensors format".to_string());
+    }
     if inspection
         .target_components
         .iter()
@@ -1303,14 +1388,7 @@ fn validate_request(
         .clone()
         .unwrap_or_else(|| "unknown".to_string());
     let source_url = model_import::validated_source_url(request.source_url.as_deref())?;
-    if request.content_digest.len() != 64
-        || !request
-            .content_digest
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
-        return Err("contentDigest must be a lowercase SHA-256 digest".to_string());
-    }
+
     let trigger_words = normalize_trigger_words(&request.trigger_words)?;
     let token = validated_token(request.token.as_deref())?;
     if request.kind == "textual-inversion" && token.is_none() {
@@ -1776,6 +1854,10 @@ pub(crate) fn import_reviewed_with_source(
         token,
         source_url,
     } = validate_request(request, &inspection)?;
+    let (source_size, source_digest) = model_import::hash_file(Path::new(&inspection.source_path))?;
+    if source_size != inspection.byte_size {
+        return Err("the file changed; select it again before importing".to_string());
+    }
     let required_bytes = inspection.byte_size.saturating_mul(105).div_ceil(100);
     let models_root = paths.models_root()?;
     let addons_root = models_root.join("addons");
@@ -1803,7 +1885,7 @@ pub(crate) fn import_reviewed_with_source(
             return Err(error);
         }
     };
-    if digest != request.content_digest {
+    if digest != source_digest {
         let _ = fs::remove_dir_all(&stage_root);
         return Err(
             "the selected add-on file changed; inspect it again before importing".to_string(),
@@ -1988,6 +2070,64 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires an explicit external asset fixture and downloads pinned model components"]
+    fn imports_external_addons_and_provisions_model_dependencies() {
+        let fixture_path =
+            std::env::var("MACHDOCH_MEDIA_ADDON_FIXTURE").expect("external fixture path");
+        let fixture: Value = serde_json::from_slice(&fs::read(fixture_path).unwrap()).unwrap();
+        let paths = MediaRuntimePaths {
+            database: PathBuf::from(fixture["database"].as_str().unwrap()),
+            blobs: PathBuf::from(fixture["blobs"].as_str().unwrap()),
+        };
+        database::initialize(&paths).unwrap();
+        let output = PathBuf::from(fixture["outputDirectory"].as_str().unwrap());
+        fs::create_dir_all(&output).unwrap();
+        let mut imports = Vec::new();
+        for asset in fixture["assets"].as_array().unwrap() {
+            let inspection = inspect(asset["sourcePath"].as_str().unwrap()).unwrap();
+            assert!(inspection.can_import, "{:?}", inspection.blocking_reason);
+            let mut request = asset.clone();
+            request["reviewToken"] = Value::String(inspection.review_token.clone());
+            let request: ImportMediaModelAddonRequest = serde_json::from_value(request).unwrap();
+            let imported = import_reviewed_with_source(&paths, &request, None).unwrap();
+            assert_eq!(imported.architecture, request.architecture);
+            assert_eq!(
+                inspection.architecture_confidence, "high",
+                "{}: {:?}",
+                request.display_name, inspection.detected_architecture
+            );
+            imports.push(serde_json::json!({"inspection": inspection, "imported": imported}));
+        }
+        fs::write(
+            output.join("native-imports.json"),
+            serde_json::to_vec_pretty(&imports).unwrap(),
+        )
+        .unwrap();
+        let mut connection = database::open(&paths).unwrap();
+        catalog::synchronize(&mut connection).unwrap();
+        let snapshot = catalog::snapshot(&connection, &HashSet::new()).unwrap();
+        fs::write(
+            output.join("native-catalog.json"),
+            serde_json::to_vec_pretty(&snapshot).unwrap(),
+        )
+        .unwrap();
+        let component_root = output.join("fresh-sd15-config");
+        super::super::model_components::ensure_sd_config(&component_root, "stable-diffusion-1")
+            .unwrap();
+        assert!(component_root
+            .join("tokenizer/tokenizer_config.json")
+            .is_file());
+        assert!(component_root.join("text_encoder/config.json").is_file());
+        let first = fs::read(component_root.join("model_index.json")).unwrap();
+        super::super::model_components::ensure_sd_config(&component_root, "stable-diffusion-1")
+            .unwrap();
+        assert_eq!(
+            first,
+            fs::read(component_root.join("model_index.json")).unwrap()
+        );
+    }
+
+    #[test]
     fn inspects_kohya_lora_without_loading_tensor_payloads() {
         let path = temp_path("lora");
         write_safetensors(
@@ -2096,6 +2236,27 @@ mod tests {
     }
 
     #[test]
+    fn detects_sd15_locon_cross_attention_from_channels_instead_of_kernel_width() {
+        let path = temp_path("sd15-locon-attention");
+        write_safetensors(
+            &path,
+            serde_json::json!({
+                "lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight": {"dtype": "F32", "shape": [2, 768, 1, 1], "data_offsets": [0, 6144]},
+                "lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_k.lora_up.weight": {"dtype": "F32", "shape": [320, 2, 1, 1], "data_offsets": [6144, 8704]}
+            }),
+            &vec![0; 8704],
+        );
+        let inspection = inspect(path.to_str().unwrap()).unwrap();
+        assert_eq!(
+            inspection.detected_architecture.as_deref(),
+            Some("stable-diffusion-1")
+        );
+        assert_eq!(inspection.architecture_confidence, "high");
+        assert_eq!(inspection.lora_profile.unwrap().algorithm, "locon");
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn detects_flux_2_attention_only_lora_from_fused_projection_shape() {
         let path = temp_path("flux-2-attention-lora");
         write_safetensors(
@@ -2116,6 +2277,70 @@ mod tests {
         assert_eq!(inspection.detected_architecture.as_deref(), Some("flux-2"));
         assert_eq!(inspection.architecture_confidence, "high");
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn detects_video_loras_from_tensor_layouts_without_publisher_metadata() {
+        for (architecture, targets) in [
+            (
+                "wan-2.2-ti2v",
+                vec![
+                    ("blocks.0.attn1.to_q", 3_072, 3_072),
+                    ("blocks.0.attn2.to_k", 3_072, 3_072),
+                ],
+            ),
+            (
+                "ltx-video",
+                vec![("transformer_blocks.0.attn2.to_k", 2_048, 2_048)],
+            ),
+            (
+                "ltx-video",
+                vec![("transformer_blocks.0.attn2.to_k", 4_096, 4_096)],
+            ),
+            (
+                "hunyuan-video-1.5-i2v",
+                vec![
+                    ("transformer_blocks.0.attn.to_q", 2_048, 2_048),
+                    ("transformer_blocks.0.attn.add_q_proj", 2_048, 2_048),
+                ],
+            ),
+            (
+                "framepack-i2v",
+                vec![
+                    ("transformer_blocks.19.attn.to_q", 3_072, 3_072),
+                    ("single_transformer_blocks.39.attn.to_q", 3_072, 3_072),
+                ],
+            ),
+        ] {
+            let path = temp_path(architecture);
+            let mut header = serde_json::Map::new();
+            let mut offset = 0;
+            for (target, input, output) in targets {
+                for (suffix, shape) in [("lora_A", vec![2, input]), ("lora_B", vec![output, 2])] {
+                    let size = shape.iter().product::<usize>() * 4;
+                    header.insert(format!("transformer.{target}.{suffix}.weight"), serde_json::json!({"dtype": "F32", "shape": shape, "data_offsets": [offset, offset + size]}));
+                    offset += size;
+                }
+            }
+            write_safetensors(&path, serde_json::Value::Object(header), &vec![0; offset]);
+            let inspection = inspect(path.to_str().unwrap()).unwrap();
+            assert_eq!(
+                inspection.detected_architecture.as_deref(),
+                Some(architecture)
+            );
+            assert_eq!(inspection.architecture_confidence, "high");
+            assert_eq!(inspection.target_components, vec!["denoiser"]);
+            let provider_id = if architecture == "wan-2.2-ti2v" {
+                "local-wan"
+            } else {
+                "local-video"
+            };
+            assert_eq!(
+                capabilities_for_model(provider_id, Some(architecture))[0].kind,
+                "lora"
+            );
+            fs::remove_file(path).unwrap();
+        }
     }
 
     #[test]
@@ -2310,7 +2535,6 @@ mod tests {
                 trigger_words: Vec::new(),
                 token: Some("<gallery-light>".to_string()),
                 source_url: None,
-                content_digest: inspection.content_digest.clone(),
                 license_name: Some("Publisher terms".to_string()),
                 commercial_use: Some("review-required".to_string()),
             },
@@ -2394,7 +2618,6 @@ mod tests {
                 trigger_words: Vec::new(),
                 token: Some("<gallery-light>".to_string()),
                 source_url: None,
-                content_digest: inspection.content_digest.clone(),
                 license_name: None,
                 commercial_use: None,
             },
@@ -2413,6 +2636,17 @@ mod tests {
         assert_eq!(addon.embedding_vectors, expected_profiles);
         assert_eq!(addon.license.name, "");
         assert_eq!(addon.license.commercial_use, "unknown");
+        assert!(update_triggers(&paths, &result.addon_id, &[]).is_err());
+        assert!(update_triggers(&paths, &result.addon_id, &["invalid token".to_string()]).is_err());
+        update_triggers(&paths, &result.addon_id, &["<edited-style>".to_string()]).unwrap();
+        let reloaded = catalog::snapshot(&connection, &Default::default()).unwrap();
+        let edited = reloaded
+            .addons
+            .iter()
+            .find(|addon| addon.id == result.addon_id)
+            .unwrap();
+        assert_eq!(edited.default_token.as_deref(), Some("<edited-style>"));
+        assert_eq!(edited.trigger_words, vec!["<edited-style>"]);
         let _ = fs::remove_file(source);
         let _ = fs::remove_dir_all(root);
     }
@@ -2457,7 +2691,6 @@ mod tests {
                 trigger_words: vec!["gallerylight".to_string()],
                 token: None,
                 source_url: Some("https://civitai.com/models/123".to_string()),
-                content_digest: inspection.content_digest.clone(),
                 license_name: Some("Publisher terms".to_string()),
                 commercial_use: Some("review-required".to_string()),
             },
@@ -2486,6 +2719,20 @@ mod tests {
         assert_eq!(addon.trigger_words, vec!["gallerylight"]);
         assert_eq!(addon.lora_profile, expected_lora_profile);
         assert_eq!(addon.source_metadata.as_ref(), Some(&source_metadata));
+        update_triggers(
+            &paths,
+            &result.addon_id,
+            &["edited phrase".to_string(), "EDITED PHRASE".to_string()],
+        )
+        .unwrap();
+        let reloaded = catalog::snapshot(&connection, &Default::default()).unwrap();
+        let edited = reloaded
+            .addons
+            .iter()
+            .find(|addon| addon.id == result.addon_id)
+            .unwrap();
+        assert_eq!(edited.trigger_words, vec!["edited phrase"]);
+        assert!(edited.default_token.is_none());
         let removal_plan = plan_removal(&paths, &result.addon_id)
             .expect("reviewed add-on removal should be planned");
         assert!(removal_plan.can_remove);
@@ -2546,7 +2793,6 @@ mod tests {
                 trigger_words: Vec::new(),
                 token: None,
                 source_url: None,
-                content_digest: inspection.content_digest,
                 license_name: Some("Publisher terms".to_string()),
                 commercial_use: Some("review-required".to_string()),
             },
