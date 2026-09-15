@@ -1,8 +1,26 @@
-import type {
-  ChatSessionContextAttachment,
-  ChatSessionRecord,
+import {
+  getSessionOverviewStatus,
+  type ChatSessionContextAttachment,
+  type ChatSessionRecord,
 } from "../../chat-session.model";
+import type { RunningTaskMessageAction } from "../../lib/shell-store";
 import { areContextAttachmentRecordsEqual } from "./session-context-attachments";
+
+export const getSessionMessageRunningAction = (input: {
+  session: ChatSessionRecord;
+  activeTaskId: string | null;
+  unsettledTaskId: string | null;
+  runningAction: RunningTaskMessageAction;
+}): RunningTaskMessageAction | null => {
+  if (
+    getSessionOverviewStatus(input.session) === "running" ||
+    input.activeTaskId
+  ) {
+    return input.runningAction;
+  }
+
+  return input.unsettledTaskId ? "queue" : null;
+};
 
 export interface ComposerClearGuard {
   draft: string;
