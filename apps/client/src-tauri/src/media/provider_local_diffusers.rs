@@ -4693,6 +4693,8 @@ mod tests {
         ));
         fs::create_dir_all(&root).unwrap();
         let marker = root.join("orphaned-child.txt");
+        let child_ready = root.join("child-ready.txt");
+        let release_child = root.join("release-child.txt");
         let script = root.join("worker.py");
         fs::write(
             &script,
@@ -4702,13 +4704,27 @@ import sys
 import time
 
 marker = sys.stdin.read()
+child_code = """
+import pathlib
+import sys
+import time
+
+marker = pathlib.Path(sys.argv[1])
+marker.with_name('child-ready.txt').write_text('ready', encoding='utf-8')
+deadline = time.monotonic() + 15
+while time.monotonic() < deadline:
+    if marker.with_name('release-child.txt').exists():
+        marker.write_text('orphaned', encoding='utf-8')
+        break
+    time.sleep(0.01)
+"""
 subprocess.Popen([
     sys.executable,
     "-I",
     "-c",
-    "import pathlib,sys,time; time.sleep(1.5); pathlib.Path(sys.argv[1]).write_text('orphaned', encoding='utf-8')",
+    child_code,
     marker,
-])
+], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 time.sleep(60)
 "#,
         )
@@ -4720,15 +4736,21 @@ time.sleep(60)
             &script,
             "test-timeout",
             Some(marker_text.as_bytes()),
-            Duration::from_millis(500),
+            Duration::from_secs(2),
             None,
         )
         .unwrap_err();
         assert!(error.contains("execution deadline"), "{error}");
 
+        let descendant_started = child_ready.exists();
+        fs::write(release_child, "release").unwrap();
         thread::sleep(Duration::from_secs(2));
         let descendant_survived = marker.exists();
         let _ = fs::remove_dir_all(root);
+        assert!(
+            descendant_started,
+            "the worker did not start its descendant"
+        );
         assert!(
             !descendant_survived,
             "the worker's descendant survived its process-tree timeout"
