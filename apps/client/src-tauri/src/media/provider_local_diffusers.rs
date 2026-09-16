@@ -4568,6 +4568,7 @@ fn expected_video_conditioning_mode(
         "wan-2.2-ti2v" if loop_mode == "seamless" && same_endpoints => {
             "first-anchor+mobius-latent-shift-v2"
         }
+        "wan-2.2-ti2v" if same_endpoints => "first-frame",
         "hunyuan-video-1.5-i2v" => "hunyuan-video-1.5-native-first-frame",
         "framepack-i2v" => "framepack-inverted-anti-drifting-first-last",
         "ltx-video" if model_id == LTX_13B_MODEL_ID && resolution != "preview-512" => {
@@ -4582,10 +4583,12 @@ fn expected_video_conditioning_mode(
 mod tests {
     #[test]
     fn wan_conditioning_matches_the_worker_endpoint_strategy() {
-        for loop_mode in ["none", "ping-pong", "seamless"] {
+        for loop_mode in ["none", "crossfade", "ping-pong", "seamless"] {
             for same_endpoints in [false, true] {
                 let expected = if loop_mode == "seamless" && same_endpoints {
                     "first-anchor+mobius-latent-shift-v2"
+                } else if same_endpoints {
+                    "first-frame"
                 } else {
                     "first-last-temporal-context-lock-v5"
                 };

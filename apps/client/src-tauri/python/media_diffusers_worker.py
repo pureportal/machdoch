@@ -32,7 +32,7 @@ from typing import Any
 import numpy as np
 from PIL import Image, ImageOps
 
-WORKER_VERSION = "media-diffusers-worker/1.68.0"
+WORKER_VERSION = "media-diffusers-worker/1.72.0"
 # Disk group files contain only checkpoint/adapter tensors. Keep their
 # compatibility identity independent from response/provenance releases until
 # that serialization contract itself changes.
@@ -5813,7 +5813,7 @@ def _load_video_pipeline(
         raise WorkerError(
             "Wan model package is incomplete; missing " + ", ".join(missing)
         )
-    device, _, _ = _device(torch)
+    device, _, device_memory = _device(torch)
     if device != "cuda":
         raise WorkerError("Wan video generation requires a supported GPU runtime")
     if not torch.cuda.is_bf16_supported():
@@ -5871,10 +5871,11 @@ def _load_video_pipeline(
     )
     _enable_wan_last_frame_conditioning(pipeline, torch)
     _enable_wan_circular_denoising(pipeline, torch)
-    if hasattr(pipeline.vae, "enable_tiling"):
-        pipeline.vae.enable_tiling()
+    vae_tiles = _wan_vae_tile_configuration(device_memory)
+    pipeline.vae.enable_tiling(**vae_tiles)
     pipeline._machdoch_wan_performance = performance
     performance["addons"] = applied_addons
+    performance["vaeTileConfiguration"] = vae_tiles
     if hasattr(pipeline, "set_progress_bar_config"):
         pipeline.set_progress_bar_config(
             disable=os.environ.get("MACHDOCH_MEDIA_DEBUG_PROGRESS") != "1"
@@ -6146,19 +6147,41 @@ def _configure_video_conv3d_backend(torch: Any, device: str) -> str:
     return "aten-native-hip"
 
 
+def _wan_generation_dimensions(width: int, height: int) -> tuple[int, int]:
+    scale = max(1.0, math.sqrt(704 * 1280 / (width * height)))
+    return math.ceil(width * scale / 32) * 32, math.ceil(height * scale / 32) * 32
+
+
+def _wan_delivery_frames(frames: list[Any], width: int, height: int) -> list[Any]:
+    return [
+        ImageOps.fit(
+            Image.fromarray(_frame_rgb_array(frame)),
+            (width, height),
+            method=Image.Resampling.LANCZOS,
+        )
+        for frame in frames
+    ]
+
+
+def _wan_vae_tile_configuration(device_memory: int | None) -> dict[str, int]:
+    tile_size = (
+        256 if device_memory is not None and device_memory >= 24 * 1024**3 else 128
+    )
+    stride = tile_size * 3 // 4
+    return {
+        "tile_sample_min_height": tile_size,
+        "tile_sample_min_width": tile_size,
+        "tile_sample_stride_height": stride,
+        "tile_sample_stride_width": stride,
+    }
+
+
 def _video_dimensions(
     aspect_ratio: str,
     resolution: str = "preview-512",
     architecture: str = "wan-2.2-ti2v",
 ) -> tuple[int, int]:
-    """Resolve a native video canvas without stretching or post-generation cropping.
-
-    Every dimension is divisible by WAN's 16-pixel spatial compression factor.
-    The 768 profile remains well below the official 1280x704/24 GiB recipe but
-    gives 2.25x as many pixels as the legacy 512x288 preview on capable consumer
-    adapters. Square is deliberately bounded at 640 for that profile because it
-    otherwise exceeds the 16:9 latent area by 78 percent.
-    """
+    """Resolve requested video output dimensions."""
     profiles = {
         "preview-512": {
             "1:1": (512, 512),
@@ -8714,16 +8737,21 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             "use frame interpolation for a higher delivery rate"
         )
 
+    generation_width, generation_height = (
+        _wan_generation_dimensions(width, height)
+        if architecture == "wan-2.2-ti2v"
+        else (width, height)
+    )
     source, first_frame_framing = _prepare_video_conditioning_frame(
         first_frame_path,
-        width,
-        height,
+        generation_width,
+        generation_height,
         transparent_background,
     )
     last_source, last_frame_framing = _prepare_video_conditioning_frame(
         last_frame_path,
-        width,
-        height,
+        generation_width,
+        generation_height,
         transparent_background,
     )
     same_endpoint = _sha256_file(first_frame_path) == _sha256_file(last_frame_path)
@@ -9107,13 +9135,12 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
         model_ready_at = time.perf_counter()
         wan_loop_shift_skip = 0
         wan_loop_callback = None
-        wan_last_source = last_source
+        wan_last_source = None if same_endpoint else last_source
         if same_endpoint and loop_mode == "seamless":
             num_wan_latent_frames = (num_frames - 1) // 4 + 1
             wan_loop_shift_skip = 6
             while math.gcd(wan_loop_shift_skip, num_wan_latent_frames) != 1:
                 wan_loop_shift_skip -= 1
-            wan_last_source = None
             pipeline._machdoch_wan_loop_shift_index = 0  # noqa: SLF001
 
             def advance_wan_loop_shift(
@@ -9136,8 +9163,8 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             negative_prompt=None,
             prompt_embeds=prompt_embeddings,
             negative_prompt_embeds=negative_prompt_embeddings,
-            width=width,
-            height=height,
+            width=generation_width,
+            height=generation_height,
             num_frames=num_frames,
             num_inference_steps=steps,
             guidance_scale=float(guidance_scale),
@@ -9149,7 +9176,15 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             ),
         )
         performance = pipeline._machdoch_wan_performance  # noqa: SLF001
-        conditioning_mode = pipeline._machdoch_wan_conditioning_mode  # noqa: SLF001
+        performance["samplingCanvas"] = {
+            "width": generation_width,
+            "height": generation_height,
+        }
+        conditioning_mode = (
+            "first-frame"
+            if wan_last_source is None
+            else pipeline._machdoch_wan_conditioning_mode
+        )
         if wan_loop_callback is not None:
             conditioning_mode = "first-anchor+mobius-latent-shift-v2"
             performance["loopDenoising"] = {
@@ -9173,6 +9208,8 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             generated_frames,
             source,
         )
+    if (generation_width, generation_height) != (width, height):
+        generated_frames = _wan_delivery_frames(generated_frames, width, height)
     _progress("Encoding video", 0.94)
     destination, evidence, composite = _encode_video_webm(
         generated_frames,

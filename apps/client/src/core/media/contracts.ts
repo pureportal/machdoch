@@ -1807,6 +1807,7 @@ export interface MediaLocalWanVideoGenerationOperation {
   performance: Record<string, unknown> | null;
   conv3dBackend: "aten-native-hip" | "cudnn";
   conditioningMode:
+    | "first-frame"
     | "first-anchor+mobius-latent-shift-v2"
     | "first-last-temporal-context-lock-v5";
   endpointRestoration: {
