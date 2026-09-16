@@ -4347,13 +4347,7 @@ pub(crate) async fn media_generate_video(
             &["task.generate-video"],
             "running",
             Some("local-video.generate"),
-            Some(
-                if request.model_id == "local:hunyuan-video-1.5-i2v-step-distilled" {
-                    "Generating native first-frame-conditioned video with adaptive component offload"
-                } else {
-                    "Generating native first/last-conditioned video with adaptive model offload"
-                },
-            ),
+            Some("Generating video"),
             Some(0.1),
         )?;
         let generation_app = app.clone();
