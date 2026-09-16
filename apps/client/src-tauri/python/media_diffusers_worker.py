@@ -3726,15 +3726,20 @@ def _framepack_requested_frames(frames: list[Any], num_frames: int) -> list[Any]
         )
     if len(frames) == num_frames:
         return frames
-    if num_frames == 1:
-        return [frames[0]]
     denominator = num_frames - 1
     last_index = len(frames) - 1
-    indices = [
-        (index * last_index + denominator // 2) // denominator
-        for index in range(num_frames)
-    ]
-    return [frames[index] for index in indices]
+    selected = []
+    for index in range(num_frames):
+        left_index, remainder = divmod(index * last_index, denominator)
+        if remainder == 0:
+            selected.append(frames[left_index])
+            continue
+        weight = remainder / denominator
+        left = _frame_rgb_array(frames[left_index]).astype(np.float32)
+        right = _frame_rgb_array(frames[left_index + 1]).astype(np.float32)
+        pixels = (1 - weight) * left + weight * right
+        selected.append(Image.fromarray(np.rint(pixels).astype(np.uint8)))
+    return selected
 
 
 def _validated_framepack_fp8_cache(model_path: Path) -> tuple[Path, list[Path]] | None:
@@ -8915,13 +8920,16 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             generated_frames,
             num_frames,
         )
-        performance["temporalSelection"] = {
-            "engine": "framepack-full-section-nearest-v1",
+        performance["temporalResampling"] = {
+            "engine": "framepack-full-section-linear-v1",
             "decodedSectionFrameCount": decoded_section_frame_count,
-            "selectedFrameCount": len(generated_frames),
+            "outputFrameCount": len(generated_frames),
+            "sourceFramesPerOutputFrame": (decoded_section_frame_count - 1)
+            / (num_frames - 1),
             "preservesFirstFrame": True,
             "preservesLastFrame": True,
-            "synthesizesFrames": False,
+            "synthesizesFrames": (decoded_section_frame_count - 1) % (num_frames - 1)
+            != 0,
         }
         vae.to("cpu")
         torch.cuda.empty_cache()

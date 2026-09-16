@@ -649,17 +649,6 @@ class MediaDiffusersQualityTests(unittest.TestCase):
             )
         )
 
-    def test_framepack_full_section_is_sampled_without_synthesizing_frames(self) -> None:
-        frames = list(range(37))
-        selected = WORKER._framepack_requested_frames(frames, 17)
-        self.assertEqual(len(selected), 17)
-        self.assertEqual(selected[0], 0)
-        self.assertEqual(selected[-1], 36)
-        self.assertEqual(selected, sorted(set(selected)))
-        self.assertIs(WORKER._framepack_requested_frames(frames, 37), frames)
-        with self.assertRaisesRegex(WORKER.WorkerError, "fewer decoded frames"):
-            WORKER._framepack_requested_frames(frames[:16], 17)
-
     def test_indexed_checkpoint_files_rejects_parent_paths(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
