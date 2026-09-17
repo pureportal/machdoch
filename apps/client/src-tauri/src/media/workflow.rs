@@ -1,6 +1,6 @@
 use super::{
     flow::{MediaFlowDocument, MediaFlowNode},
-    provider_openai::GeneratedImageAsset,
+    provider_images::GeneratedImageAsset,
     *,
 };
 use image::DynamicImage;

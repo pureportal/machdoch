@@ -423,7 +423,7 @@ void test("canonicalizes product command values", () => {
   const mediaRun = productCommandSchema.parse({
     kind: "generate-media",
     prompt: " Create a geometric owl ",
-    modelId: " openai:gpt-image-2 ",
+    modelId: " openai:gpt-image-2.5-sunburst ",
     target: "image",
     aspectRatio: "1:1",
     outputCount: 1,
@@ -434,7 +434,7 @@ void test("canonicalizes product command values", () => {
   assert.deepEqual(mediaRun, {
     kind: "generate-media",
     prompt: "Create a geometric owl",
-    modelId: "openai:gpt-image-2",
+    modelId: "openai:gpt-image-2.5-sunburst",
     target: "image",
     aspectRatio: "1:1",
     outputCount: 1,
@@ -462,7 +462,7 @@ void test("requires GenerateMedia output formats compatible with the target", ()
   const command = {
     kind: "generate-media",
     prompt: "Create a geometric owl",
-    modelId: "openai:gpt-image-2",
+    modelId: "openai:gpt-image-2.5-sunburst",
     target: "image",
     aspectRatio: "1:1",
     outputCount: 1,

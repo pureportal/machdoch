@@ -21,7 +21,7 @@ use crate::child_process::{
 
 use super::{
     database, model_addon, model_components, model_import,
-    provider_openai::{self, GeneratedImageAsset},
+    provider_images::{self, GeneratedImageAsset},
     subject_cutout, transform,
     video_loop::{self, VideoLoopBoundaryInspection},
     GenerateMediaImagesRequest, GenerateMediaVideoRequest, MediaAnimatedBackgroundConfig,
@@ -2920,7 +2920,7 @@ pub(crate) fn generate(
         let mut bytes = fs::read(&output_path)
             .map_err(|error| format!("failed to read generated local image: {error}"))?;
         let validated =
-            provider_openai::validate_image(&bytes, &request.output_format, expected_index)?;
+            provider_images::validate_image(&bytes, &request.output_format, expected_index)?;
         if validated.width != worker_output.width || validated.height != worker_output.height {
             return Err("local Diffusers output dimensions do not match its manifest".to_string());
         }
@@ -2940,7 +2940,7 @@ pub(crate) fn generate(
             let final_index = expected_index * request.output_branches.len() + branch_index;
             let processed = transform::process_image_output_branch(&bytes, branch)?;
             let validated =
-                provider_openai::validate_image(&processed.bytes, &branch.format, final_index)?;
+                provider_images::validate_image(&processed.bytes, &branch.format, final_index)?;
             if validated.mime_type != processed.mime_type
                 || validated.width != processed.width
                 || validated.height != processed.height

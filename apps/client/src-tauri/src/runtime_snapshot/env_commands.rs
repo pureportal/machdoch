@@ -84,7 +84,7 @@ fn resolve_configured_binary_path(
     None
 }
 
-pub(super) fn resolve_agent_cli_binary(
+pub(crate) fn resolve_agent_cli_binary(
     provider: &str,
     env: &HashMap<String, String>,
 ) -> Option<PathBuf> {

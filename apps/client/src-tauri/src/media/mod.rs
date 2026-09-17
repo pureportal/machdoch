@@ -16,6 +16,8 @@ mod model_components;
 mod model_discovery;
 mod model_import;
 mod model_install;
+mod provider_codex;
+mod provider_images;
 mod provider_local_diffusers;
 mod provider_mock;
 mod provider_openai;
@@ -252,7 +254,8 @@ fn direct_generation_model_ids(
     local_diffusers: &provider_local_diffusers::LocalDiffusersRuntimeStatus,
 ) -> MediaResult<Vec<String>> {
     let mut model_ids = vec![
-        "openai:gpt-image-2".to_string(),
+        "openai:gpt-image-2.5-sunburst".to_string(),
+        provider_codex::MODEL_ID.to_string(),
         "quiver:arrow-1.1-max".to_string(),
         "quiver:arrow-1.1".to_string(),
         "recraft:recraftv4_1_pro_vector".to_string(),
@@ -273,7 +276,7 @@ fn direct_reference_image_model_ids(
     local_diffusers: &provider_local_diffusers::LocalDiffusersRuntimeStatus,
 ) -> MediaResult<Vec<String>> {
     let mut model_ids = vec![
-        "openai:gpt-image-2".to_string(),
+        "openai:gpt-image-2.5-sunburst".to_string(),
         "quiver:arrow-1.1-max".to_string(),
         "quiver:arrow-1.1".to_string(),
         "recraft:recraftv4_1_pro_vector".to_string(),
@@ -1953,7 +1956,7 @@ impl GenerateMediaImagesRequest {
         self.model_id = required_text("modelId", &self.model_id, 128)?;
         self.model_label = required_text("modelLabel", &self.model_label, 256)?;
         self.sampling.validate()?;
-        if self.model_id == "openai:gpt-image-2"
+        if provider_images::is_remote_image_model(&self.model_id)
             && self.sampling != image_sampling::ImageSampling::default()
         {
             return Err("This model does not support manual sampling settings.".to_string());
@@ -1968,9 +1971,9 @@ impl GenerateMediaImagesRequest {
                 return Err("modelAddons must contain unique add-on identifiers".to_string());
             }
         }
-        if self.model_id == "openai:gpt-image-2" && !self.model_addons.is_empty() {
+        if provider_images::is_remote_image_model(&self.model_id) && !self.model_addons.is_empty() {
             return Err(
-                "GPT Image 2 does not accept LoRA adapters or textual-inversion embeddings"
+                "This model does not accept LoRA adapters or textual-inversion embeddings"
                     .to_string(),
             );
         }
@@ -1980,10 +1983,12 @@ impl GenerateMediaImagesRequest {
         {
             return Err("seed must be a JavaScript-safe non-negative integer".to_string());
         }
-        if self.model_id == "openai:gpt-image-2" && self.seed.is_some() {
-            return Err("GPT Image 2 does not support deterministic seeds".to_string());
+        if provider_images::is_remote_image_model(&self.model_id) && self.seed.is_some() {
+            return Err("This model does not support deterministic seeds".to_string());
         }
-        if self.model_id != "openai:gpt-image-2" && !self.model_id.starts_with("local:") {
+        if !provider_images::is_remote_image_model(&self.model_id)
+            && !self.model_id.starts_with("local:")
+        {
             return Err("selected model is not an executable raster image generator".to_string());
         }
         if !(1..=8).contains(&self.output_count) {
@@ -2029,13 +2034,13 @@ impl GenerateMediaImagesRequest {
         if !matches!(self.output_format.as_str(), "png" | "jpeg" | "webp") {
             return Err("outputFormat must be png, jpeg, or webp".to_string());
         }
-        if self.model_id == "openai:gpt-image-2"
+        if provider_images::is_remote_image_model(&self.model_id)
             && (self.output_branches.len() != 1
                 || !self.output_branches[0].operations.is_empty()
                 || self.output_branches[0].format != self.output_format)
         {
             return Err(
-                "GPT Image 2 requires one direct output branch matching outputFormat".to_string(),
+                "This model requires one direct output branch matching outputFormat".to_string(),
             );
         }
         if self.transparent_background && self.output_format == "jpeg" {
@@ -2060,6 +2065,16 @@ impl GenerateMediaImagesRequest {
             return Err("modelPolicy must be balanced, fast, or quality".to_string());
         }
         self.negative_prompt = self.negative_prompt.trim().to_string();
+        if self.model_id == provider_codex::MODEL_ID
+            && (!self.negative_prompt.is_empty()
+                || !self.reference_images.is_empty()
+                || self.base_image_asset_id.is_some()
+                || self.edit_mask.is_some()
+                || self.pose_image_asset_id.is_some()
+                || self.control_net.is_some())
+        {
+            return Err("Codex CLI supports text-to-image here. Remove image conditioning and the negative prompt.".into());
+        }
         if self.negative_prompt.chars().count() > 8_000 {
             return Err("negativePrompt exceeds 8000 characters".to_string());
         }
@@ -2129,7 +2144,7 @@ impl GenerateMediaImagesRequest {
             if self.pose_image_asset_id.is_some() {
                 return Err("Use one ControlNet input per image generation.".into());
             }
-            if self.model_id == "openai:gpt-image-2" {
+            if provider_images::is_remote_image_model(&self.model_id) {
                 return Err("Choose a local SD1.5 model for ControlNet.".into());
             }
         }
@@ -2183,7 +2198,7 @@ impl GenerateMediaImagesRequest {
             );
         }
         if self.prompt.is_empty()
-            && (self.model_id == "openai:gpt-image-2" || !has_image_conditioning)
+            && (provider_images::is_remote_image_model(&self.model_id) || !has_image_conditioning)
         {
             return Err("prompt or supported local image conditioning is required".to_string());
         }
@@ -2221,7 +2236,7 @@ impl GenerateMediaImagesRequest {
     }
 
     fn resolve_seed(&mut self) -> MediaResult<()> {
-        if self.seed.is_some() {
+        if self.seed.is_some() || provider_images::is_remote_image_model(&self.model_id) {
             return Ok(());
         }
         let mut bytes = [0_u8; 8];
@@ -2906,6 +2921,34 @@ mod run_plan_contract_tests {
     #[test]
     fn accepts_bounded_plan_snapshot_with_valid_node_lineage() {
         assert!(request(snapshot("node:prompt")).validate().is_ok());
+    }
+
+    #[test]
+    fn codex_image_requests_reject_controls_the_cli_cannot_apply() {
+        let mut request = image_request();
+        request.model_id = provider_codex::MODEL_ID.into();
+        request.seed = Some(12);
+        assert!(request
+            .validate()
+            .unwrap_err()
+            .contains("deterministic seeds"));
+        request.seed = None;
+        request.resolve_seed().unwrap();
+        assert_eq!(request.seed, None);
+        request.output_branches[0].output_node_id = "output".into();
+        request.plan_snapshot.nodes.push(semantic_node(
+            "output",
+            "output.asset",
+            "Image",
+            "output",
+        ));
+        request.base_image_asset_id = Some("asset:reference".into());
+        assert!(request.validate().unwrap_err().contains("text-to-image"));
+        request.base_image_asset_id = None;
+        request.negative_prompt = "blurry".into();
+        assert!(request.validate().unwrap_err().contains("negative prompt"));
+        request.negative_prompt.clear();
+        assert!(request.validate().is_ok());
     }
 
     #[test]
@@ -4041,19 +4084,23 @@ pub(crate) async fn media_generate_images(
         let _sleep_inhibition = inhibit_system_sleep_for_media_work(&app)?;
         let paths = MediaRuntimePaths::resolve(&app)?;
         database::ensure_initialized(&paths)?;
-        if request.model_id != "openai:gpt-image-2" {
+        if !provider_images::is_remote_image_model(&request.model_id) {
             return generate_local_diffusers(app.clone(), paths, request.clone()).await;
         }
         let env = crate::runtime_snapshot::load_global_env()?;
-        let api_key = env
-            .get("OPENAI_API_KEY")
-            .map(String::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| {
-                "OpenAI provider is not configured. Save an API key first.".to_string()
-            })?
-            .to_string();
+        let api_key = if request.model_id == provider_codex::MODEL_ID {
+            None
+        } else {
+            Some(
+                env.get("OPENAI_API_KEY")
+                    .map(String::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| {
+                        "OpenAI provider is not configured. Save an API key first.".to_string()
+                    })?,
+            )
+        };
         let begin_paths = paths.clone();
         let begin_request = request.clone();
         let claimed = tauri::async_runtime::spawn_blocking(move || {
@@ -4079,11 +4126,16 @@ pub(crate) async fn media_generate_images(
             IMAGE_TASK_NODE_TYPES,
             "running",
             Some("provider.generate"),
-            Some("Generating images with OpenAI"),
+            Some("Generating images"),
             Some(0.1),
         )?;
 
-        let batch = match provider_openai::generate(&paths, &request, &api_key).await {
+        let generated = if let Some(api_key) = api_key {
+            provider_openai::generate(&paths, &request, api_key).await
+        } else {
+            provider_codex::generate(&paths, &request, &env).await
+        };
+        let batch = match generated {
             Ok(batch) => batch,
             Err(failure) => {
                 let failure_paths = paths.clone();
@@ -4119,7 +4171,7 @@ pub(crate) async fn media_generate_images(
             IMAGE_TASK_NODE_TYPES,
             "completed",
             Some("provider.generate"),
-            Some("OpenAI generation completed"),
+            Some("Image generation completed"),
             Some(0.8),
         )?;
         database::transition_nodes_by_type(
@@ -4816,12 +4868,12 @@ pub(crate) fn media_resolve_provider_review(
                     |row| row.get::<_, String>(0),
                 )
                 .map_err(|error| format!("failed to inspect provider review adapter: {error}"))?;
-            let run_id = if scenario == "openai:gpt-image-2"
+            let run_id = if provider_images::is_remote_image_model(&scenario)
                 || scenario.starts_with("quiver:")
                 || scenario.starts_with("recraft:")
                 || scenario.starts_with("local-svg:")
             {
-                database::resolve_openai_provider_review(
+                database::resolve_synchronous_provider_review(
                     &paths,
                     &request.provider_job_id,
                     &request.action,
@@ -5021,6 +5073,10 @@ pub(crate) fn media_get_model_catalog(
                 .map(|provider_id| required_text("configuredProviderId", &provider_id, 64))
                 .collect::<MediaResult<HashSet<_>>>()?;
             let env = crate::runtime_snapshot::load_global_env()?;
+            configured_provider_ids.remove("codex-cli");
+            if crate::runtime_snapshot::resolve_agent_cli_binary("codex-cli", &env).is_some() {
+                configured_provider_ids.insert("codex-cli".to_string());
+            }
             for (provider_id, env_key) in [
                 ("quiver", "QUIVERAI_API_KEY"),
                 ("recraft", "RECRAFT_API_KEY"),

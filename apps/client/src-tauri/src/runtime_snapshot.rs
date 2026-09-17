@@ -31,6 +31,7 @@ pub(crate) use desktop_settings_commands::{
     load_user_desktop_launch_preferences, load_user_desktop_settings,
 };
 pub(crate) use env::load_global_env;
+pub(crate) use env_commands::resolve_agent_cli_binary;
 pub use mcp_config::McpConfigWriteLock;
 use mcp_config::{
     get_user_mcp_config_path, get_workspace_mcp_config_path, load_mcp_config_document,

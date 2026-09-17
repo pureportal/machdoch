@@ -1,72 +1,24 @@
-use std::{io::Cursor, time::Duration};
+use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use image::{ImageFormat, ImageReader, Limits};
 use reqwest::{multipart, Client, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
 use super::{
     flow::RemoteImageEditFlowPlan,
-    subject_cutout::{self, SubjectCutoutSummary},
-    transform, GenerateMediaImagesRequest, MediaProviderPolicySnapshot, MediaResult,
-    MediaRuntimePaths,
+    provider_images::{publish_image, GeneratedImageBatch, ImageGenerationFailure, MAX_IMAGE_BYTES},
+    GenerateMediaImagesRequest, MediaProviderPolicySnapshot, MediaResult, MediaRuntimePaths,
 };
 
 const OPENAI_IMAGES_ENDPOINT: &str = "https://api.openai.com/v1/images/generations";
 const OPENAI_IMAGE_EDITS_ENDPOINT: &str = "https://api.openai.com/v1/images/edits";
-const OPENAI_IMAGE_MODEL: &str = "gpt-image-2-2026-04-21";
+pub(super) const OPENAI_IMAGE_MODEL: &str = "gpt-image-2.5-sunburst-2026-09-08";
 const ADAPTER_ID: &str = "openai.images";
-const ADAPTER_VERSION: &str = "1.0.0";
-const ENDPOINT_VERSION: &str = "gpt-image-2-2026-04-21";
+const ADAPTER_VERSION: &str = "2.0.0";
+const ENDPOINT_VERSION: &str = OPENAI_IMAGE_MODEL;
 const MAX_RESPONSE_BYTES: usize = 360 * 1024 * 1024;
 const MAX_ERROR_BYTES: usize = 1024 * 1024;
-const MAX_IMAGE_BYTES: usize = 32 * 1024 * 1024;
-const MAX_DIMENSION: u32 = 3_840;
-const MAX_DECODE_ALLOC: u64 = 256 * 1024 * 1024;
-
-#[derive(Debug)]
-pub(crate) struct GeneratedImageAsset {
-    pub(crate) digest: String,
-    pub(crate) relative_path: String,
-    pub(crate) byte_size: u64,
-    pub(crate) mime_type: &'static str,
-    pub(crate) width: u32,
-    pub(crate) height: u32,
-    pub(crate) output_index: u32,
-    pub(crate) subject_cutout: Option<SubjectCutoutSummary>,
-}
-
-#[derive(Debug)]
-pub(crate) struct GeneratedImageBatch {
-    pub(crate) assets: Vec<GeneratedImageAsset>,
-    pub(crate) provider_request_id: Option<String>,
-}
-
-#[derive(Debug)]
-pub(crate) struct OpenAiGenerationFailure {
-    pub(crate) diagnostic: String,
-    pub(crate) acceptance_unknown: bool,
-    pub(crate) provider_request_id: Option<String>,
-}
-
-impl OpenAiGenerationFailure {
-    fn rejected(diagnostic: String, provider_request_id: Option<String>) -> Self {
-        Self {
-            diagnostic,
-            acceptance_unknown: false,
-            provider_request_id,
-        }
-    }
-
-    fn unknown(diagnostic: String, provider_request_id: Option<String>) -> Self {
-        Self {
-            diagnostic,
-            acceptance_unknown: true,
-            provider_request_id,
-        }
-    }
-}
 
 #[derive(Debug, Serialize)]
 struct OpenAiImageGenerationRequest<'a> {
@@ -122,7 +74,7 @@ pub(crate) async fn generate(
     paths: &MediaRuntimePaths,
     request: &GenerateMediaImagesRequest,
     api_key: &str,
-) -> Result<GeneratedImageBatch, OpenAiGenerationFailure> {
+) -> Result<GeneratedImageBatch, ImageGenerationFailure> {
     let client = create_client()?;
     let response = client
         .post(OPENAI_IMAGES_ENDPOINT)
@@ -145,7 +97,7 @@ pub(crate) async fn edit(
     paths: &MediaRuntimePaths,
     plan: &mut RemoteImageEditFlowPlan,
     api_key: &str,
-) -> Result<GeneratedImageBatch, OpenAiGenerationFailure> {
+) -> Result<GeneratedImageBatch, ImageGenerationFailure> {
     let client = create_client()?;
     let mut form = multipart::Form::new()
         .text("model", OPENAI_IMAGE_MODEL)
@@ -162,7 +114,7 @@ pub(crate) async fn edit(
             .file_name(filename)
             .mime_str("image/png")
             .map_err(|error| {
-                OpenAiGenerationFailure::rejected(
+                ImageGenerationFailure::rejected(
                     format!("failed to prepare OpenAI image edit upload: {error}"),
                     None,
                 )
@@ -186,12 +138,12 @@ pub(crate) async fn edit(
     .await
 }
 
-fn create_client() -> Result<Client, OpenAiGenerationFailure> {
+fn create_client() -> Result<Client, ImageGenerationFailure> {
     Client::builder()
         .timeout(Duration::from_secs(300))
         .build()
         .map_err(|error| {
-            OpenAiGenerationFailure::rejected(
+            ImageGenerationFailure::rejected(
                 format!("failed to create OpenAI image client: {error}"),
                 None,
             )
@@ -205,7 +157,7 @@ async fn ingest_response(
     output_format: &str,
     transparent_background: bool,
     subject_cutout_model_priority: &[String],
-) -> Result<GeneratedImageBatch, OpenAiGenerationFailure> {
+) -> Result<GeneratedImageBatch, ImageGenerationFailure> {
     let response = response.map_err(classify_submission_error)?;
 
     let status = response.status();
@@ -220,27 +172,27 @@ async fn ingest_response(
     if !status.is_success() {
         let diagnostic = read_provider_error(response, status).await;
         return Err(if status.is_server_error() {
-            OpenAiGenerationFailure::unknown(diagnostic, provider_request_id)
+            ImageGenerationFailure::unknown(diagnostic, provider_request_id)
         } else {
-            OpenAiGenerationFailure::rejected(diagnostic, provider_request_id)
+            ImageGenerationFailure::rejected(diagnostic, provider_request_id)
         });
     }
 
     let response_bytes = read_response_bytes(response, MAX_RESPONSE_BYTES)
         .await
         .map_err(|diagnostic| {
-            OpenAiGenerationFailure::unknown(diagnostic, provider_request_id.clone())
+            ImageGenerationFailure::unknown(diagnostic, provider_request_id.clone())
         })?;
     let parsed = serde_json::from_slice::<OpenAiImageGenerationResponse>(&response_bytes).map_err(
         |error| {
-            OpenAiGenerationFailure::unknown(
+            ImageGenerationFailure::unknown(
                 format!("OpenAI provider failed to return a valid image response: {error}"),
                 provider_request_id.clone(),
             )
         },
     )?;
     if parsed.data.len() != output_count as usize {
-        return Err(OpenAiGenerationFailure::unknown(
+        return Err(ImageGenerationFailure::unknown(
             format!(
                 "OpenAI provider failed to return the requested image count: received {} after requesting {}",
                 parsed.data.len(),
@@ -258,7 +210,7 @@ async fn ingest_response(
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| {
-                OpenAiGenerationFailure::unknown(
+                ImageGenerationFailure::unknown(
                     format!(
                         "OpenAI provider failed to return image data for output {}",
                         index + 1
@@ -267,7 +219,7 @@ async fn ingest_response(
                 )
             })?;
         if encoded.len() > max_base64_len(MAX_IMAGE_BYTES) {
-            return Err(OpenAiGenerationFailure::unknown(
+            return Err(ImageGenerationFailure::unknown(
                 format!(
                     "OpenAI provider failed output validation: output {} exceeds the {} MB image limit",
                     index + 1,
@@ -276,8 +228,8 @@ async fn ingest_response(
                 provider_request_id,
             ));
         }
-        let mut bytes = BASE64_STANDARD.decode(encoded).map_err(|error| {
-            OpenAiGenerationFailure::unknown(
+        let bytes = BASE64_STANDARD.decode(encoded).map_err(|error| {
+            ImageGenerationFailure::unknown(
                 format!(
                     "OpenAI provider failed output validation for image {}: {error}",
                     index + 1
@@ -286,7 +238,7 @@ async fn ingest_response(
             )
         })?;
         if bytes.is_empty() || bytes.len() > MAX_IMAGE_BYTES {
-            return Err(OpenAiGenerationFailure::unknown(
+            return Err(ImageGenerationFailure::unknown(
                 format!(
                     "OpenAI provider failed output validation: output {} has an invalid encoded size",
                     index + 1
@@ -294,64 +246,19 @@ async fn ingest_response(
                 provider_request_id,
             ));
         }
-        validate_image(&bytes, output_format, index).map_err(|diagnostic| {
-            OpenAiGenerationFailure::unknown(diagnostic, provider_request_id.clone())
+        let asset = publish_image(
+            paths,
+            bytes,
+            output_format,
+            index,
+            transparent_background,
+            subject_cutout_model_priority,
+        )
+        .await
+        .map_err(|diagnostic| {
+            ImageGenerationFailure::unknown(diagnostic, provider_request_id.clone())
         })?;
-        let subject_cutout = if transparent_background {
-            let cutout_paths = paths.clone();
-            let cutout_source = std::mem::take(&mut bytes);
-            let cutout_format = output_format.to_string();
-            let model_priority = subject_cutout_model_priority.to_vec();
-            let transparent = tauri::async_runtime::spawn_blocking(move || {
-                subject_cutout::cutout_encoded(
-                    &cutout_paths,
-                    &cutout_source,
-                    &cutout_format,
-                    &model_priority,
-                )
-            })
-            .await
-            .map_err(|error| {
-                OpenAiGenerationFailure::unknown(
-                    format!(
-                        "OpenAI output {} subject-cutout worker failed: {error}",
-                        index + 1
-                    ),
-                    provider_request_id.clone(),
-                )
-            })?
-            .map_err(|diagnostic| {
-                    OpenAiGenerationFailure::unknown(
-                        format!(
-                            "OpenAI output {} could not be converted to a transparent image: {diagnostic}",
-                            index + 1
-                        ),
-                        provider_request_id.clone(),
-                    )
-                })?;
-            bytes = transparent.bytes;
-            Some(transparent.summary)
-        } else {
-            None
-        };
-        let validated = validate_image(&bytes, output_format, index).map_err(|diagnostic| {
-            OpenAiGenerationFailure::unknown(diagnostic, provider_request_id.clone())
-        })?;
-        let digest = format!("{:x}", Sha256::digest(&bytes));
-        let relative_path = transform::cas_relative_path(&digest);
-        transform::publish_cas_bytes(paths, &relative_path, &digest, &bytes).map_err(
-            |diagnostic| OpenAiGenerationFailure::unknown(diagnostic, provider_request_id.clone()),
-        )?;
-        assets.push(GeneratedImageAsset {
-            digest,
-            relative_path: relative_path.to_string_lossy().into_owned(),
-            byte_size: bytes.len() as u64,
-            mime_type: validated.mime_type,
-            width: validated.width,
-            height: validated.height,
-            output_index: index as u32,
-            subject_cutout,
-        });
+        assets.push(asset);
     }
 
     Ok(GeneratedImageBatch {
@@ -360,7 +267,7 @@ async fn ingest_response(
     })
 }
 
-fn classify_submission_error(error: reqwest::Error) -> OpenAiGenerationFailure {
+fn classify_submission_error(error: reqwest::Error) -> ImageGenerationFailure {
     let diagnostic = if error.is_connect() {
         format!("OpenAI could not be reached before the request was accepted: {error}")
     } else {
@@ -369,9 +276,9 @@ fn classify_submission_error(error: reqwest::Error) -> OpenAiGenerationFailure {
         )
     };
     if error.is_connect() {
-        OpenAiGenerationFailure::rejected(diagnostic, None)
+        ImageGenerationFailure::rejected(diagnostic, None)
     } else {
-        OpenAiGenerationFailure::unknown(diagnostic, None)
+        ImageGenerationFailure::unknown(diagnostic, None)
     }
 }
 
@@ -454,69 +361,6 @@ pub(crate) fn edit_policy_snapshot(plan: &RemoteImageEditFlowPlan) -> MediaProvi
     policy
 }
 
-pub(crate) struct ValidatedImage {
-    pub(crate) mime_type: &'static str,
-    pub(crate) width: u32,
-    pub(crate) height: u32,
-}
-
-pub(crate) fn validate_image(
-    bytes: &[u8],
-    output_format: &str,
-    output_index: usize,
-) -> MediaResult<ValidatedImage> {
-    let expected_format = match output_format {
-        "png" => ImageFormat::Png,
-        "jpeg" => ImageFormat::Jpeg,
-        "webp" => ImageFormat::WebP,
-        _ => {
-            return Err("OpenAI provider failed: image output format is not supported".to_string())
-        }
-    };
-    let guessed = image::guess_format(bytes).map_err(|error| {
-        format!(
-            "OpenAI provider failed output validation: output {} is not a recognized image: {error}",
-            output_index + 1
-        )
-    })?;
-    if guessed != expected_format {
-        return Err(format!(
-            "OpenAI provider failed output validation: output {} did not match the requested format",
-            output_index + 1
-        ));
-    }
-
-    let mut reader = ImageReader::with_format(Cursor::new(bytes), expected_format);
-    let mut limits = Limits::default();
-    limits.max_image_width = Some(MAX_DIMENSION);
-    limits.max_image_height = Some(MAX_DIMENSION);
-    limits.max_alloc = Some(MAX_DECODE_ALLOC);
-    reader.limits(limits);
-    let decoded = reader.decode().map_err(|error| {
-        format!(
-            "OpenAI provider failed bounded image validation for output {}: {error}",
-            output_index + 1
-        )
-    })?;
-    let (width, height) = (decoded.width(), decoded.height());
-    if width == 0 || height == 0 {
-        return Err(format!(
-            "OpenAI provider failed output validation: output {} has invalid dimensions",
-            output_index + 1
-        ));
-    }
-    Ok(ValidatedImage {
-        mime_type: match expected_format {
-            ImageFormat::Png => "image/png",
-            ImageFormat::Jpeg => "image/jpeg",
-            ImageFormat::WebP => "image/webp",
-            _ => unreachable!(),
-        },
-        width,
-        height,
-    })
-}
-
 fn image_size(aspect_ratio: &str) -> &'static str {
     match aspect_ratio {
         "4:5" => "1024x1280",
@@ -597,6 +441,7 @@ mod tests {
     use super::*;
     use crate::media::{
         flow::{RemoteImageEditFlowPlan, RemoteImageEditSource},
+        subject_cutout,
         MediaImageOutputBranch, MediaRunPlanNodeSnapshot, MediaRunPlanSnapshot,
         MediaRunPlanStepSnapshot,
     };
@@ -610,8 +455,8 @@ mod tests {
             flow_name: "Test flow".to_string(),
             plan_id: "plan:test".to_string(),
             prompt: "A precise architectural model".to_string(),
-            model_id: "openai:gpt-image-2".to_string(),
-            model_label: "GPT Image 2".to_string(),
+            model_id: "openai:gpt-image-2.5-sunburst".to_string(),
+            model_label: "GPT Image 2.5 Sunburst".to_string(),
             output_count: 3,
             diagnostic_count: 0,
             aspect_ratio: "16:9".to_string(),
@@ -676,7 +521,7 @@ mod tests {
         assert_eq!(
             mapped,
             json!({
-                "model": "gpt-image-2-2026-04-21",
+                "model": "gpt-image-2.5-sunburst-2026-09-08",
                 "prompt": "A precise architectural model",
                 "n": 3,
                 "size": "1536x864",
@@ -752,8 +597,8 @@ mod tests {
                 .to_string(),
             task_node_id: "edit".to_string(),
             output_node_id: "output".to_string(),
-            model_id: "openai:gpt-image-2".to_string(),
-            model_label: "GPT Image 2".to_string(),
+            model_id: "openai:gpt-image-2.5-sunburst".to_string(),
+            model_label: "GPT Image 2.5 Sunburst".to_string(),
             output_count: 2,
             aspect_ratio: "4:5".to_string(),
             output_format: "png".to_string(),
@@ -798,7 +643,7 @@ mod tests {
         assert_eq!(
             mapped,
             json!({
-                "model": "gpt-image-2-2026-04-21",
+                "model": "gpt-image-2.5-sunburst-2026-09-08",
                 "prompt": plan.provider_prompt.clone(),
                 "n": 2,
                 "size": "1024x1280",

@@ -17,8 +17,10 @@ use super::{
     catalog,
     error::MediaError,
     model_addon,
+    provider_codex,
+    provider_images::{self, GeneratedImageBatch},
     provider_local_diffusers::{LocalGeneratedImageBatch, LocalGeneratedVideo},
-    provider_openai::{self, GeneratedImageBatch},
+    provider_openai,
     provider_svg::{self, GeneratedSvgBatch, SvgReferencePlan},
     transform, EnqueueFixtureRunRequest, GenerateMediaImagesRequest, GenerateMediaSvgRequest,
     GenerateMediaVideoRequest, MediaAssetDeletionImpact, MediaAssetDeletionRequest,
@@ -218,13 +220,13 @@ fn recover_interrupted_runs(connection: &mut Connection) -> MediaResult<Recovery
                 "Generation was interrupted before it started. Run it again.",
                 Some("Generation was interrupted before it started."),
             )
-        } else if executor == "openai-image-api" {
+        } else if matches!(executor.as_str(), "openai-image-api" | "codex-cli-image") {
             (
                 "needs-review",
                 "Provider outcome unknown after interruption",
                 "provider_acceptance_unknown",
                 "The desktop stopped during a paid provider request; the request was not retried automatically.",
-                Some("OpenAI request acceptance is unknown after interruption; retry could create a duplicate provider charge."),
+                Some("Image generation completion is unknown after interruption; retry could use the provider allowance again."),
             )
         } else if executor == "deterministic-fixture" {
             (
@@ -274,12 +276,15 @@ fn recover_interrupted_runs(connection: &mut Connection) -> MediaResult<Recovery
                 params![run_id, status, message, now()],
             )
             .map_err(|error| format!("failed to recover media node executions: {error}"))?;
-        if executor == "openai-image-api" && previous_status != "queued" && !cancel_requested {
+        if matches!(executor.as_str(), "openai-image-api" | "codex-cli-image")
+            && previous_status != "queued"
+            && !cancel_requested
+        {
             transaction
                 .execute(
                     "UPDATE provider_jobs SET status = 'acceptance-unknown', raw_state = 'desktop-interrupted',
                        review_required = 1,
-                       review_reason = 'The desktop stopped after submission began. OpenAI may have accepted or charged the request, and this endpoint has no documented request lookup.',
+                       review_reason = 'The desktop stopped after submission began. The provider may have accepted the request; completion cannot be looked up automatically.',
                        next_poll_at = NULL, updated_at = ?2
                      WHERE run_id = ?1 AND status = 'submitting'",
                     params![run_id, now()],
@@ -1215,7 +1220,19 @@ pub(crate) fn begin_remote_image_generation(
         Some(&request.flow_revision_id),
         Some(&request.plan_snapshot),
     )?;
-    let request_digest = provider_openai::request_digest(request)?;
+    let (request_digest, policy, executor) = if request.model_id == provider_codex::MODEL_ID {
+        (
+            provider_codex::request_digest(request)?,
+            provider_codex::policy_snapshot(),
+            "codex-cli-image",
+        )
+    } else {
+        (
+            provider_openai::request_digest(request)?,
+            provider_openai::policy_snapshot(),
+            "openai-image-api",
+        )
+    };
     let unresolved_job_id = transaction
         .query_row(
             "SELECT id FROM provider_jobs
@@ -1225,10 +1242,10 @@ pub(crate) fn begin_remote_image_generation(
             |row| row.get::<_, String>(0),
         )
         .optional()
-        .map_err(|error| format!("failed to inspect unresolved OpenAI submissions: {error}"))?;
+        .map_err(|error| format!("failed to inspect unresolved image provider submissions: {error}"))?;
     if let Some(job_id) = unresolved_job_id {
         return Err(format!(
-            "A matching OpenAI request ({job_id}) may already have been accepted and charged. Review that provider decision before generating again."
+            "A matching image request ({job_id}) may already have been accepted and charged. Review that provider decision before generating again."
         ));
     }
     let timestamp = now();
@@ -1241,7 +1258,7 @@ pub(crate) fn begin_remote_image_generation(
                output_count, diagnostic_count, progress, current_step, executor, aspect_ratio,
                plan_snapshot_json, flow_revision_id
              ) VALUES (?1, ?2, ?3, ?4, 'running', ?5, ?5, ?6, ?7, 'remote',
-               ?8, ?9, 0.1, 'Generating images', 'openai-image-api', ?10, ?11, ?12)",
+               ?8, ?9, 0.1, 'Generating images', ?13, ?10, ?11, ?12)",
             params![
                 request.run_id,
                 request.flow_id,
@@ -1255,6 +1272,7 @@ pub(crate) fn begin_remote_image_generation(
                 request.aspect_ratio,
                 plan_snapshot_json,
                 request.flow_revision_id,
+                executor,
             ],
         )
         .map_err(|error| format!("failed to register direct image generation: {error}"))?;
@@ -1265,7 +1283,7 @@ pub(crate) fn begin_remote_image_generation(
             &request.flow_id,
             Some(&request.flow_revision_id),
             &request.plan_id,
-            "openai-image-api",
+            executor,
         )?;
         transaction
             .commit()
@@ -1285,8 +1303,8 @@ pub(crate) fn begin_remote_image_generation(
             params![format!("job:{}", request.run_id), request.run_id, timestamp],
         )
         .map_err(|error| format!("failed to register direct image generation job: {error}"))?;
-    let policy_json = serde_json::to_string(&provider_openai::policy_snapshot())
-        .map_err(|error| format!("failed to serialize OpenAI provider policy: {error}"))?;
+    let policy_json = serde_json::to_string(&policy)
+        .map_err(|error| format!("failed to serialize image provider policy: {error}"))?;
     let reconciliation_deadline =
         (Utc::now() + chrono::Duration::days(7)).to_rfc3339_opts(SecondsFormat::Millis, true);
     transaction
@@ -1295,7 +1313,7 @@ pub(crate) fn begin_remote_image_generation(
                id, run_id, attempt, status, raw_state, scenario, request_digest, idempotency_key,
                estimated_cost_min, estimated_cost_max, currency, reconciliation_deadline, policy_json,
                created_at, updated_at
-             ) VALUES (?1, ?2, 1, 'submitting', 'request-dispatched', 'openai:gpt-image-2', ?3, NULL,
+             ) VALUES (?1, ?2, 1, 'submitting', 'request-dispatched', ?7, ?3, NULL,
                0, 0, 'USD', ?4, ?5, ?6, ?6)",
             params![
                 format!("provider:{}:1", request.run_id),
@@ -1304,14 +1322,15 @@ pub(crate) fn begin_remote_image_generation(
                 reconciliation_deadline,
                 policy_json,
                 timestamp,
+                request.model_id,
             ],
         )
-        .map_err(|error| format!("failed to durably prepare OpenAI provider attempt: {error}"))?;
+        .map_err(|error| format!("failed to durably prepare image provider attempt: {error}"))?;
     append_event(
         &transaction,
         &request.run_id,
         "provider_prepared",
-        "A redacted OpenAI request digest and its no-idempotency retry policy were recorded before network submission.",
+        "Image request prepared.",
         Some(0.05),
         Some("provider.prepare"),
     )?;
@@ -1319,7 +1338,7 @@ pub(crate) fn begin_remote_image_generation(
         &transaction,
         &request.run_id,
         "provider_submission_started",
-        "Direct OpenAI image request submission started.",
+        "Image generation started.",
         Some(0.1),
         Some("provider.generate"),
     )?;
@@ -1854,7 +1873,7 @@ pub(crate) fn begin_remote_image_edit(
                id, run_id, attempt, status, raw_state, scenario, request_digest, idempotency_key,
                estimated_cost_min, estimated_cost_max, currency, reconciliation_deadline, policy_json,
                created_at, updated_at
-             ) VALUES (?1, ?2, 1, 'submitting', 'request-dispatched', 'openai:gpt-image-2', ?3, NULL,
+             ) VALUES (?1, ?2, 1, 'submitting', 'request-dispatched', 'openai:gpt-image-2.5-sunburst', ?3, NULL,
                0, 0, 'USD', ?4, ?5, ?6, ?6)",
             params![
                 format!("provider:{}:1", request.run_id),
@@ -1883,7 +1902,7 @@ pub(crate) fn begin_remote_image_edit(
         &transaction,
         &request.run_id,
         "provider_submission_started",
-        "The confirmed reference images are being uploaded to OpenAI for a paid GPT Image 2 edit request.",
+        "The confirmed reference images are being uploaded to OpenAI for a paid GPT Image 2.5 Sunburst edit request.",
         Some(0.1),
         Some("provider.edit"),
     )?;
@@ -2731,14 +2750,14 @@ pub(crate) fn complete_remote_image_generation(
                 params![request.run_id, batch.provider_request_id, timestamp],
             )
             .map_err(|error| {
-                format!("failed to record OpenAI completion after cancellation: {error}")
+                format!("failed to record image provider completion after cancellation: {error}")
             })?;
         finalize_cancellation(&transaction, &request.run_id)?;
         transaction
             .commit()
             .map_err(|error| format!("failed to commit direct generation cancellation: {error}"))?;
         return Err(
-            "OpenAI image generation was canceled after provider completion; outputs were not published"
+            "Image generation was canceled after provider completion; outputs were not published"
                 .to_string(),
         );
     }
@@ -2757,17 +2776,17 @@ pub(crate) fn complete_remote_image_generation(
              WHERE run_id = ?1 AND attempt = 1 AND status = 'submitting'",
             params![request.run_id, batch.provider_request_id, timestamp],
         )
-        .map_err(|error| format!("failed to persist OpenAI provider completion: {error}"))?;
+        .map_err(|error| format!("failed to persist image provider completion: {error}"))?;
     if provider_completion_updated != 1 {
         return Err(
-            "OpenAI provider completion did not match the durable submitting attempt".to_string(),
+            "image provider completion did not match the durable submitting attempt".to_string(),
         );
     }
     append_event(
         &transaction,
         &request.run_id,
         "provider_accepted",
-        "OpenAI completed the direct image request.",
+        "Image generation completed.",
         Some(0.75),
         Some("provider.generate"),
     )?;
@@ -2787,7 +2806,7 @@ pub(crate) fn complete_remote_image_generation(
             .map_err(|error| format!("failed to register generated image blob: {error}"))?;
         let operation_json = serde_json::json!({
             "kind": "remote-image-generation",
-            "providerId": "openai",
+            "providerId": if request.model_id == provider_codex::MODEL_ID { "codex-cli" } else { "openai" },
             "modelId": request.model_id,
             "providerRequestId": batch.provider_request_id,
             "flowRevisionId": request.flow_revision_id,
@@ -3133,7 +3152,7 @@ pub(crate) fn complete_remote_image_edit(
         &transaction,
         &request.run_id,
         "provider_accepted",
-        "OpenAI completed the GPT Image 2 edit request; returned bytes are being validated locally.",
+        "OpenAI completed the GPT Image 2.5 Sunburst edit request; returned bytes are being validated locally.",
         Some(0.75),
         Some("provider.edit"),
     )?;
@@ -3174,7 +3193,7 @@ pub(crate) fn complete_remote_image_edit(
             "kind": "remote-image-edit",
             "providerId": "openai",
             "modelId": plan.model_id,
-            "modelSnapshot": "gpt-image-2-2026-04-21",
+            "modelSnapshot": provider_openai::OPENAI_IMAGE_MODEL,
             "providerRequestId": batch.provider_request_id,
             "flowRevisionId": request.flow_revision_id,
             "taskNodeId": plan.task_node_id,
@@ -3293,13 +3312,13 @@ pub(crate) fn fail_remote_image_generation(
                 .execute(
                     "UPDATE provider_jobs SET status = 'acceptance-unknown', raw_state = 'outcome-unknown',
                        provider_request_id = COALESCE(?2, provider_request_id), review_required = 1,
-                       review_reason = 'OpenAI may have accepted or completed this paid request, but the result could not be durably published. No automatic resubmission is allowed.',
+                       review_reason = 'Image generation may have completed, but its result could not be saved. Review the request before trying again.',
                        error = ?3, next_poll_at = NULL, updated_at = ?4
                      WHERE run_id = ?1 AND attempt = 1 AND status = 'submitting'",
                     params![run_id, provider_request_id, diagnostic, timestamp],
                 )
                 .map_err(|error| {
-                    format!("failed to quarantine uncertain OpenAI submission: {error}")
+                    format!("failed to quarantine uncertain image provider submission: {error}")
                 })?;
         } else {
             transaction
@@ -3310,7 +3329,7 @@ pub(crate) fn fail_remote_image_generation(
                      WHERE run_id = ?1 AND attempt = 1 AND status = 'submitting'",
                     params![run_id, provider_request_id, diagnostic, timestamp],
                 )
-                .map_err(|error| format!("failed to close rejected OpenAI submission: {error}"))?;
+                .map_err(|error| format!("failed to close rejected image provider submission: {error}"))?;
         }
         append_event(
             &transaction,
@@ -3321,9 +3340,9 @@ pub(crate) fn fail_remote_image_generation(
                 "provider_failed"
             },
             if acceptance_unknown {
-                "OpenAI may have accepted or charged the request. Automatic resubmission is blocked until the provider decision is reviewed."
+                "Image generation may have completed. Review the request before trying again."
             } else {
-                "OpenAI rejected the request before returning a publishable image result."
+                "The image provider did not return a usable result."
             },
             None,
             Some("provider.generate"),
@@ -3344,7 +3363,7 @@ pub(crate) fn fail_remote_image_generation(
         .map_err(|error| format!("failed to commit direct generation failure: {error}"))
 }
 
-pub(crate) fn resolve_openai_provider_review(
+pub(crate) fn resolve_synchronous_provider_review(
     paths: &MediaRuntimePaths,
     provider_job_id: &str,
     action: &str,
@@ -3360,7 +3379,7 @@ pub(crate) fn resolve_openai_provider_review(
     let mut connection = open(paths)?;
     let transaction = connection
         .transaction()
-        .map_err(|error| format!("failed to begin OpenAI provider review: {error}"))?;
+        .map_err(|error| format!("failed to begin image provider review: {error}"))?;
     let (run_id, status, scenario) = transaction
         .query_row(
             "SELECT run_id, status, scenario FROM provider_jobs WHERE id = ?1",
@@ -3374,10 +3393,10 @@ pub(crate) fn resolve_openai_provider_review(
             },
         )
         .optional()
-        .map_err(|error| format!("failed to inspect OpenAI provider review: {error}"))?
+        .map_err(|error| format!("failed to inspect image provider review: {error}"))?
         .ok_or_else(|| format!("provider job {provider_job_id} was not found"))?;
     let is_svg_critic = scenario.starts_with("openai:svg-critic:");
-    let is_direct_synchronous_request = scenario == "openai:gpt-image-2"
+    let is_direct_synchronous_request = provider_images::is_remote_image_model(&scenario)
         || is_svg_critic
         || scenario.starts_with("quiver:")
         || scenario.starts_with("recraft:")
@@ -3393,7 +3412,7 @@ pub(crate) fn resolve_openai_provider_review(
             params![run_id],
             |row| row.get::<_, String>(0),
         )
-        .map_err(|error| format!("failed to inspect reviewed OpenAI run: {error}"))?;
+        .map_err(|error| format!("failed to inspect reviewed image run: {error}"))?;
     let timestamp = now();
     let raw_state = if accepted_duplicate_charge_risk {
         "operator-accepted-duplicate-charge-risk"
@@ -3433,7 +3452,7 @@ pub(crate) fn resolve_openai_provider_review(
                error = ?3, completed_at = ?4, updated_at = ?4 WHERE id = ?1",
             params![provider_job_id, raw_state, provider_error, timestamp],
         )
-        .map_err(|error| format!("failed to close OpenAI provider review: {error}"))?;
+        .map_err(|error| format!("failed to close image provider review: {error}"))?;
     if !is_svg_critic || run_status != "completed" {
         finalize_node_executions(&transaction, &run_id, "failed")?;
         transaction
@@ -3442,7 +3461,7 @@ pub(crate) fn resolve_openai_provider_review(
                    updated_at = ?4 WHERE id = ?1",
                 params![run_id, current_step, run_error, timestamp],
             )
-            .map_err(|error| format!("failed to close reviewed OpenAI run: {error}"))?;
+            .map_err(|error| format!("failed to close reviewed image run: {error}"))?;
         transaction
             .execute(
                 "UPDATE jobs SET status = 'failed', finished_at = ?2, heartbeat_at = ?2,
@@ -3461,7 +3480,7 @@ pub(crate) fn resolve_openai_provider_review(
     )?;
     transaction
         .commit()
-        .map_err(|error| format!("failed to commit OpenAI provider review: {error}"))?;
+        .map_err(|error| format!("failed to commit image provider review: {error}"))?;
     Ok(run_id)
 }
 
@@ -3608,8 +3627,8 @@ pub(crate) fn complete_run(paths: &MediaRuntimePaths, run_id: &str) -> MediaResu
             "mock-remote-provider" => {
                 "All provider outputs were ingested into CAS before their retention deadline."
             }
-            "openai-image-api" => {
-                "All OpenAI image outputs passed bounded decode and immutable CAS publication checks."
+            "openai-image-api" | "codex-cli-image" => {
+                "All generated image outputs passed bounded decode and immutable CAS publication checks."
             }
             "openai-image-edit-api" => {
                 "All edited OpenAI image outputs passed bounded decode, lineage, and immutable CAS publication checks."
@@ -6482,7 +6501,7 @@ mod tests {
         let digest = format!("{:x}", Sha256::digest(bytes));
         let relative = crate::media::transform::cas_relative_path(&digest);
         crate::media::transform::publish_cas_bytes(&paths, &relative, &digest, bytes).unwrap();
-        let asset = crate::media::provider_openai::GeneratedImageAsset {
+        let asset = crate::media::provider_images::GeneratedImageAsset {
             digest,
             relative_path: relative.to_string_lossy().into_owned(),
             byte_size: bytes.len() as u64,
@@ -6569,8 +6588,8 @@ mod tests {
             flow_name: "OpenAI fixture".to_string(),
             plan_id: "plan-1".to_string(),
             prompt: "A durable provider request".to_string(),
-            model_id: "openai:gpt-image-2".to_string(),
-            model_label: "GPT Image 2".to_string(),
+            model_id: "openai:gpt-image-2.5-sunburst".to_string(),
+            model_label: "GPT Image 2.5 Sunburst".to_string(),
             output_count: 1,
             diagnostic_count: 0,
             aspect_ratio: "1:1".to_string(),
@@ -6657,8 +6676,8 @@ mod tests {
                 "Preserve the base and apply the style reference\n\nOrdered references".to_string(),
             task_node_id: "edit".to_string(),
             output_node_id: "asset-output".to_string(),
-            model_id: "openai:gpt-image-2".to_string(),
-            model_label: "GPT Image 2".to_string(),
+            model_id: "openai:gpt-image-2.5-sunburst".to_string(),
+            model_label: "GPT Image 2.5 Sunburst".to_string(),
             output_count: 1,
             aspect_ratio: "1:1".to_string(),
             output_format: "png".to_string(),
@@ -7217,7 +7236,7 @@ mod tests {
         assert!(begin_remote_image_generation(&paths, &second)
             .unwrap_err()
             .contains("may already have been accepted and charged"));
-        resolve_openai_provider_review(
+        resolve_synchronous_provider_review(
             &paths,
             &uncertain.provider_jobs[0].id,
             "confirm-not-accepted-and-retry",
@@ -7240,6 +7259,74 @@ mod tests {
     }
 
     #[test]
+    fn codex_images_track_separate_attempts_and_quarantine_interrupted_generation() {
+        let paths = test_paths("codex-provider");
+        initialize(&paths).unwrap();
+        insert_openai_test_revision(&paths);
+        let mut request = openai_request("run:codex:1");
+        request.model_id = provider_codex::MODEL_ID.into();
+        request.model_label = "Codex CLI".into();
+        request.validate().unwrap();
+        assert!(begin_remote_image_generation(&paths, &request).unwrap());
+        assert!(!begin_remote_image_generation(&paths, &request).unwrap());
+        let detail = get_run_detail(&paths, &request.run_id).unwrap();
+        assert_eq!(detail.run.executor, "codex-cli-image");
+        assert_eq!(detail.provider_jobs[0].scenario, provider_codex::MODEL_ID);
+        assert_eq!(detail.provider_jobs[0].policy.adapter_id, "codex-cli.image-generation");
+        assert_eq!(detail.provider_jobs[0].policy.output_visibility, "local-file");
+        assert_ne!(provider_codex::request_digest(&request).unwrap(), provider_openai::request_digest(&request).unwrap());
+        initialize(&paths).unwrap();
+        assert_eq!(get_run_detail(&paths, &request.run_id).unwrap().run.status, "needs-review");
+        request.run_id = "run:codex:2".into();
+        assert!(begin_remote_image_generation(&paths, &request).unwrap_err().contains("may already"));
+        resolve_synchronous_provider_review(&paths, "provider:run:codex:1:1", "confirm-not-accepted-and-retry").unwrap();
+        assert!(begin_remote_image_generation(&paths, &request).unwrap());
+        cleanup(&paths);
+    }
+
+    async fn verify_live_image_generation(use_codex: bool) {
+        let paths = test_paths(if use_codex { "live-codex-image" } else { "live-openai-image" });
+        initialize(&paths).unwrap();
+        insert_openai_test_revision(&paths);
+        let mut request = openai_request("run:live-image");
+        request.prompt = "A blue ceramic mug on a plain white background, no text.".into();
+        request.model_policy = "fast".into();
+        if use_codex {
+            request.model_id = provider_codex::MODEL_ID.into();
+            request.model_label = "Codex CLI".into();
+        }
+        request.validate().unwrap();
+        assert!(begin_remote_image_generation(&paths, &request).unwrap());
+        let env = crate::runtime_snapshot::load_global_env().unwrap();
+        let batch = if use_codex {
+            provider_codex::generate(&paths, &request, &env).await
+        } else {
+            let api_key = env.get("OPENAI_API_KEY").expect("OpenAI API key required for live verification");
+            provider_openai::generate(&paths, &request, api_key).await
+        }.expect("live image generation must succeed");
+        let detail = complete_remote_image_generation(&paths, &request, &batch).unwrap();
+        assert_eq!(detail.run.status, "completed");
+        assert_eq!(detail.assets.len(), 1);
+        let image_path = paths.blobs.join(&batch.assets[0].relative_path);
+        let bytes = fs::read(&image_path).unwrap();
+        assert_eq!(format!("{:x}", Sha256::digest(&bytes)), batch.assets[0].digest);
+        provider_images::validate_image(&bytes, "png", 0).unwrap();
+        println!("{}: {}x{} PNG, {} bytes, saved to {}", request.model_id, batch.assets[0].width, batch.assets[0].height, bytes.len(), image_path.display());
+    }
+
+    #[tokio::test]
+    #[ignore = "Uses the configured OpenAI API key and generates a billable image"]
+    async fn openai_image_generation_live() {
+        verify_live_image_generation(false).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "Uses the signed-in Codex CLI and its image generation allowance"]
+    async fn codex_image_generation_live() {
+        verify_live_image_generation(true).await;
+    }
+
+    #[test]
     fn direct_openai_review_can_accept_duplicate_charge_risk_before_a_new_run() {
         let paths = test_paths("openai-provider-risk-override");
         initialize(&paths).unwrap();
@@ -7257,7 +7344,7 @@ mod tests {
         .unwrap();
 
         let uncertain = get_run_detail(&paths, &first.run_id).unwrap();
-        resolve_openai_provider_review(
+        resolve_synchronous_provider_review(
             &paths,
             &uncertain.provider_jobs[0].id,
             "accept-duplicate-charge-risk-and-retry",
@@ -7290,7 +7377,7 @@ mod tests {
         let immediate = openai_request("run:openai:immediate");
         begin_remote_image_generation(&paths, &immediate).unwrap();
         let immediate_batch = GeneratedImageBatch {
-            assets: vec![provider_openai::GeneratedImageAsset {
+            assets: vec![provider_images::GeneratedImageAsset {
                 digest: "a".repeat(64),
                 relative_path: "aa/immediate.png".to_string(),
                 byte_size: 256,
@@ -7337,7 +7424,7 @@ mod tests {
         begin_remote_image_generation(&paths, &reviewed).unwrap();
         let reviewed_batch = GeneratedImageBatch {
             assets: (0..3)
-                .map(|output_index| provider_openai::GeneratedImageAsset {
+                .map(|output_index| provider_images::GeneratedImageAsset {
                     digest: format!("{}", output_index + 2).repeat(64),
                     relative_path: format!("review/candidate-{output_index}.png"),
                     byte_size: 256,
@@ -7462,7 +7549,7 @@ mod tests {
         ]);
         assert!(begin_local_diffusers_generation(&paths, &request).unwrap());
         let batch = LocalGeneratedImageBatch {
-            assets: vec![provider_openai::GeneratedImageAsset {
+            assets: vec![provider_images::GeneratedImageAsset {
                 digest: "d".repeat(64),
                 relative_path: "dd/local.png".to_string(),
                 byte_size: 512,
@@ -7629,7 +7716,7 @@ mod tests {
         let plan = openai_edit_plan();
         begin_remote_image_edit(&paths, &request, &plan).unwrap();
         let batch = GeneratedImageBatch {
-            assets: vec![provider_openai::GeneratedImageAsset {
+            assets: vec![provider_images::GeneratedImageAsset {
                 digest: "e".repeat(64),
                 relative_path: "ee/output.png".to_string(),
                 byte_size: 256,
@@ -7649,7 +7736,7 @@ mod tests {
         );
         let operation = detail.assets[0].operation.as_ref().unwrap();
         assert_eq!(operation["kind"], "remote-image-edit");
-        assert_eq!(operation["modelSnapshot"], "gpt-image-2-2026-04-21");
+        assert_eq!(operation["modelSnapshot"], "gpt-image-2.5-sunburst-2026-09-08");
         assert_eq!(operation["sources"][0]["role"], "base");
         assert_eq!(operation["sources"][0]["uploadBytes"], 17);
         assert_eq!(operation["metadataStrippedBeforeUpload"], true);
@@ -7812,16 +7899,41 @@ mod tests {
         let initial = get_model_catalog(&paths, &configured).unwrap();
         assert_eq!(initial.schema_version, 1);
         assert_eq!(initial.catalog_revision, catalog::CATALOG_REVISION);
-        assert_eq!(initial.providers.len(), 7);
-        assert_eq!(initial.models.len(), 12);
+        assert_eq!(initial.providers.len(), 8);
+        assert_eq!(initial.models.len(), 13);
         assert!(
             initial
                 .models
                 .iter()
-                .find(|model| model.id == "openai:gpt-image-2")
+                .find(|model| model.id == "openai:gpt-image-2.5-sunburst")
                 .unwrap()
                 .configured
         );
+        let codex = initial
+            .models
+            .iter()
+            .find(|model| model.id == "codex-cli:image-generation")
+            .unwrap();
+        assert!(!codex.configured);
+        assert!(codex.installed);
+        assert_eq!(codex.package_type, "agent-cli");
+        let codex_configured = get_model_catalog(
+            &paths,
+            &HashSet::from(["codex-cli".to_string()]),
+        )
+        .unwrap();
+        assert!(codex_configured
+            .models
+            .iter()
+            .find(|model| model.id == "codex-cli:image-generation")
+            .unwrap()
+            .configured);
+        assert!(!codex_configured
+            .models
+            .iter()
+            .find(|model| model.id == "openai:gpt-image-2.5-sunburst")
+            .unwrap()
+            .configured);
         let flux = initial
             .models
             .iter()

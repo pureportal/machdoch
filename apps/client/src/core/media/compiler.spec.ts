@@ -1033,7 +1033,7 @@ describe("media flow compiler", () => {
     const plan = compileMediaFlow({
       flow: createFlow({
         ...DEFAULT_SETTINGS,
-        modelId: "openai:gpt-image-2",
+        modelId: "openai:gpt-image-2.5-sunburst",
         modelAddons: [
           {
             kind: "lora",
@@ -1171,7 +1171,7 @@ describe("media flow compiler", () => {
     });
 
     expect(plan.status).toBe("ready");
-    expect(plan.model?.id).toBe("openai:gpt-image-2");
+    expect(plan.model?.id).toBe("openai:gpt-image-2.5-sunburst");
     expect(plan.preflight.requiresRemoteRequest).toBe(true);
     expect(plan.steps.map((step) => step.kind)).toEqual([
       "normalize-prompt",
@@ -2460,7 +2460,7 @@ describe("media flow compiler", () => {
       flow: createFlow({
         ...DEFAULT_SETTINGS,
         providerPolicy: "local",
-        modelId: "openai:gpt-image-2",
+        modelId: "openai:gpt-image-2.5-sunburst",
       }),
       models: createMediaModelCatalog({ isOpenAiConfigured: true }),
       compiledAt: "2026-07-14T00:01:00.000Z",
@@ -2509,7 +2509,7 @@ describe("media flow compiler", () => {
   it("allows preview models without lifecycle review while surfacing stale capability snapshots", () => {
     const models = createMediaModelCatalog({ isOpenAiConfigured: true }).map(
       (model) =>
-        model.id === "openai:gpt-image-2"
+        model.id === "openai:gpt-image-2.5-sunburst"
           ? {
               ...model,
               lifecycle: "preview" as const,
@@ -2523,7 +2523,7 @@ describe("media flow compiler", () => {
       compiledAt: "2026-07-14T00:01:00.000Z",
     });
 
-    expect(plan.model?.id).toBe("openai:gpt-image-2");
+    expect(plan.model?.id).toBe("openai:gpt-image-2.5-sunburst");
     expect(plan.diagnostics).not.toContainEqual(
       expect.objectContaining({
         code: "MODEL_LIFECYCLE_REVIEW_REQUIRED",

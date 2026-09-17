@@ -252,7 +252,7 @@ fn agent_cli_command_timeout_stops_descendant_and_joins_pipe_readers() {
         Err(error) => error,
     };
 
-    assert!(error.contains("timed out while discovering agent CLI models"));
+    assert!(error.contains("timed out while running the agent CLI command"));
 
     let descendant_pid = read_descendant_pid(&pid_file);
     let descendant_exited = wait_for_pid_exit(descendant_pid, Duration::from_secs(3));

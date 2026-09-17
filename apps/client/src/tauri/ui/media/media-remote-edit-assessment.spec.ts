@@ -46,7 +46,7 @@ describe("Basic remote edit assessment", () => {
           settings: {
             ...DEFAULT_IMAGE_RECIPE_SETTINGS,
             prompt: "A blue teapot",
-            modelId: "openai:gpt-image-2",
+            modelId: "openai:gpt-image-2.5-sunburst",
             transparentBackground,
             ...input,
           },
@@ -65,7 +65,7 @@ describe("Basic remote edit assessment", () => {
           plan,
           assets: [asset],
           runtimeMode: "native",
-          directReferenceImageModelIds: ["openai:gpt-image-2"],
+          directReferenceImageModelIds: ["openai:gpt-image-2.5-sunburst"],
         });
         expect(result.supported).toBe(true);
         expect(result.manifest[0]?.role).toBe(
@@ -77,7 +77,7 @@ describe("Basic remote edit assessment", () => {
             plan,
             assets: [],
             runtimeMode: "native",
-            directReferenceImageModelIds: ["openai:gpt-image-2"],
+            directReferenceImageModelIds: ["openai:gpt-image-2.5-sunburst"],
           }).supported,
         ).toBe(false);
       }

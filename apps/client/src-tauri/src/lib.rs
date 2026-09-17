@@ -1,3 +1,4 @@
+mod agent_cli;
 mod atomic_file;
 mod child_process;
 mod cooperative_file_lock;

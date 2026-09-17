@@ -8,7 +8,7 @@ use super::{
     MediaModelManagement, MediaProviderCatalogEntry, MediaResult,
 };
 
-pub(crate) const CATALOG_REVISION: &str = "builtin-2026-08-21.8-flux2-inpaint";
+pub(crate) const CATALOG_REVISION: &str = "builtin-2026-09-17-image-2.5-codex";
 const CATALOG_CHECKED_AT: &str = "2026-07-15T00:00:00.000Z";
 const WEEK_SECONDS: u64 = 7 * 24 * 60 * 60;
 const MONTH_SECONDS: u64 = 30 * 24 * 60 * 60;
@@ -99,7 +99,17 @@ const PROVIDERS: &[BuiltinProvider] = &[
         capabilities: IMAGE_GENERATION_CAPABILITIES,
         privacy_summary: "Prompts and explicitly attached reference assets are sent to OpenAI.",
         stale_after_seconds: WEEK_SECONDS,
-        source_url: Some("https://developers.openai.com/api/docs/models/gpt-image-2"),
+        source_url: Some("https://developers.openai.com/api/docs/models/gpt-image-2.5-sunburst"),
+    },
+    BuiltinProvider {
+        id: "codex-cli",
+        display_name: "Codex CLI",
+        target: "remote",
+        lifecycle: "active",
+        capabilities: &["text-to-image"],
+        privacy_summary: "Prompts are sent through the signed-in Codex CLI.",
+        stale_after_seconds: WEEK_SECONDS,
+        source_url: Some("https://learn.chatgpt.com/docs/image-generation"),
     },
     BuiltinProvider {
         id: "quiver",
@@ -159,9 +169,9 @@ const PROVIDERS: &[BuiltinProvider] = &[
 
 const MODELS: &[BuiltinModel] = &[
     BuiltinModel {
-        id: "openai:gpt-image-2",
+        id: "openai:gpt-image-2.5-sunburst",
         provider_id: "openai",
-        display_name: "GPT Image 2",
+        display_name: "GPT Image 2.5 Sunburst",
         family: "OpenAI GPT Image",
         target: "remote",
         lifecycle: "active",
@@ -184,7 +194,34 @@ const MODELS: &[BuiltinModel] = &[
             "Prompt text is sent to OpenAI; no source image is uploaded for text-to-image.",
         limitation: Some("Transparent output requires an explicit background-removal step."),
         stale_after_seconds: WEEK_SECONDS,
-        source_url: Some("https://developers.openai.com/api/docs/models/gpt-image-2"),
+        source_url: Some("https://developers.openai.com/api/docs/models/gpt-image-2.5-sunburst"),
+    },
+    BuiltinModel {
+        id: "codex-cli:image-generation",
+        provider_id: "codex-cli",
+        display_name: "Codex CLI",
+        family: "Codex image generation",
+        target: "remote",
+        lifecycle: "active",
+        capabilities: &["text-to-image"],
+        bundled: false,
+        package_type: "agent-cli",
+        architecture: None,
+        license_name: "OpenAI service terms",
+        license_spdx_id: None,
+        license_source_url: "https://openai.com/policies/service-terms/",
+        license_commercial_use: "provider-terms",
+        license_requires_acceptance: false,
+        recommended: false,
+        speed_score: 0,
+        quality_score: 0,
+        min_vram_gb: None,
+        expected_download_gb: None,
+        cost_hint: Some("Uses the signed-in Codex account's image generation allowance."),
+        privacy_summary: "Prompts are sent through the signed-in Codex CLI.",
+        limitation: None,
+        stale_after_seconds: WEEK_SECONDS,
+        source_url: Some("https://learn.chatgpt.com/docs/image-generation"),
     },
     BuiltinModel {
         id: "quiver:arrow-1.1-max",
@@ -491,6 +528,11 @@ pub(crate) fn synchronize(connection: &mut Connection) -> MediaResult<()> {
         .map_err(|error| format!("failed to begin media catalog synchronization: {error}"))?;
     let synced_at = database::now();
     for provider in PROVIDERS {
+        let checked_at = if matches!(provider.id, "openai" | "codex-cli") {
+            "2026-09-17T00:00:00.000Z"
+        } else {
+            CATALOG_CHECKED_AT
+        };
         let capabilities_json = serde_json::to_string(provider.capabilities)
             .map_err(|error| format!("failed to encode provider capabilities: {error}"))?;
         transaction
@@ -512,7 +554,7 @@ pub(crate) fn synchronize(connection: &mut Connection) -> MediaResult<()> {
                     provider.lifecycle,
                     capabilities_json,
                     provider.privacy_summary,
-                    CATALOG_CHECKED_AT,
+                    checked_at,
                     provider.stale_after_seconds as i64,
                     provider.source_url,
                     CATALOG_REVISION,
@@ -522,6 +564,11 @@ pub(crate) fn synchronize(connection: &mut Connection) -> MediaResult<()> {
             .map_err(|error| format!("failed to synchronize media provider: {error}"))?;
     }
     for model in MODELS {
+        let checked_at = if matches!(model.provider_id, "openai" | "codex-cli") {
+            "2026-09-17T00:00:00.000Z"
+        } else {
+            CATALOG_CHECKED_AT
+        };
         let capabilities_json = serde_json::to_string(model.capabilities)
             .map_err(|error| format!("failed to encode model capabilities: {error}"))?;
         let addon_capabilities_json = serde_json::to_string(&model_addon::capabilities_for_model(
@@ -560,7 +607,7 @@ pub(crate) fn synchronize(connection: &mut Connection) -> MediaResult<()> {
                     model.family,
                     model.target,
                     model.lifecycle,
-                    CATALOG_CHECKED_AT,
+                    checked_at,
                     model.stale_after_seconds as i64,
                     model.source_url,
                     CATALOG_REVISION,
@@ -594,7 +641,7 @@ pub(crate) fn synchronize(connection: &mut Connection) -> MediaResult<()> {
                 params![
                     model.id,
                     model.lifecycle,
-                    CATALOG_CHECKED_AT,
+                    checked_at,
                     model.source_url,
                     CATALOG_REVISION,
                     synced_at,
@@ -896,7 +943,12 @@ pub(crate) fn snapshot(
                     (status == "installed", status, installed_revision)
                 };
                 let user_imported = id.starts_with(model_import::USER_MODEL_ID_PREFIX);
-                let management = if target == "remote" {
+                let management = if provider_id == "codex-cli" {
+                    MediaModelManagement {
+                        acquisition: "external-runtime".to_string(),
+                        verification: "none".to_string(),
+                    }
+                } else if target == "remote" {
                     MediaModelManagement {
                         acquisition: "remote".to_string(),
                         verification: "none".to_string(),

@@ -12,10 +12,26 @@ const models = () =>
   }).models;
 
 describe("media model readiness", () => {
+  it("enables Codex image generation independently of an OpenAI API key", () => {
+    const catalog = createMediaModelCatalogSnapshot({
+      isOpenAiConfigured: false,
+      isCodexCliConfigured: true,
+    });
+    const codex = catalog.models.find(
+      (model) => model.id === "codex-cli:image-generation",
+    )!;
+    expect(isMediaModelReady(codex)).toBe(true);
+    expect(codex.packageType).toBe("agent-cli");
+    expect(codex.capabilities).toEqual(["text-to-image"]);
+    expect(
+      isMediaModelReady(
+        catalog.models.find((model) => model.providerId === "openai")!,
+      ),
+    ).toBe(false);
+    expect(isMediaModelReady({ ...codex, configured: false })).toBe(false);
+  });
   it("uses advertised runtime readiness without provider-name conditionals", () => {
-    const flux = models().find(
-      (model) => model.id === "local:flux-2-klein-4b",
-    );
+    const flux = models().find((model) => model.id === "local:flux-2-klein-4b");
     expect(flux).toBeDefined();
     expect(isMediaModelReady(flux!)).toBe(true);
 
@@ -50,7 +66,7 @@ describe("media model readiness", () => {
     ).toBe("verification-required");
 
     const remote = models().find(
-      (model) => model.id === "openai:gpt-image-2",
+      (model) => model.id === "openai:gpt-image-2.5-sunburst",
     )!;
     expect(inspectMediaModelReadiness(remote).issue).toBe(
       "provider-unconfigured",

@@ -1,5 +1,5 @@
 use super::*;
-use crate::media::{provider_openai::GeneratedImageAsset, ExecuteLocalImageFlowRequest};
+use crate::media::{provider_images::GeneratedImageAsset, ExecuteLocalImageFlowRequest};
 use serde_json::{json, Value};
 
 pub(crate) fn begin(

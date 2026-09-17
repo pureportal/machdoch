@@ -14,7 +14,7 @@ use provider_api::{
 
 mod claude_cli;
 mod codex_cli;
-mod command;
+use crate::agent_cli as command;
 #[cfg(test)]
 mod command_tests;
 mod copilot_cli;

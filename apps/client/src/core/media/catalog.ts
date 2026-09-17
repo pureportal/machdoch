@@ -12,6 +12,7 @@ import {
 
 export interface MediaCatalogAvailability {
   isOpenAiConfigured: boolean;
+  isCodexCliConfigured?: boolean;
   isLocalFluxInstalled?: boolean;
   isLocalBiRefNetInstalled?: boolean;
 }
@@ -28,11 +29,12 @@ const LOCAL_IMAGE_GENERATION_CAPABILITIES = [
 ] as const satisfies readonly MediaCapability[];
 
 export const BUILTIN_MEDIA_CATALOG_REVISION =
-  "builtin-2026-08-21.8-flux2-inpaint";
+  "builtin-2026-09-17-image-2.5-codex";
 export const BUILTIN_MEDIA_CATALOG_CHECKED_AT = "2026-07-14T00:00:00.000Z";
 
 const createProviders = (
   isOpenAiConfigured: boolean,
+  isCodexCliConfigured: boolean,
 ): MediaProviderCatalogEntry[] => [
   {
     id: "local-onnx",
@@ -56,9 +58,23 @@ const createProviders = (
     capabilities: IMAGE_GENERATION_CAPABILITIES,
     privacySummary:
       "Prompts and explicitly attached reference assets are sent to OpenAI.",
-    checkedAt: BUILTIN_MEDIA_CATALOG_CHECKED_AT,
+    checkedAt: "2026-09-17T00:00:00.000Z",
     staleAfterSeconds: 7 * 24 * 60 * 60,
-    sourceUrl: "https://developers.openai.com/api/docs/models/gpt-image-2",
+    sourceUrl:
+      "https://developers.openai.com/api/docs/models/gpt-image-2.5-sunburst",
+    catalogRevision: BUILTIN_MEDIA_CATALOG_REVISION,
+  },
+  {
+    id: "codex-cli",
+    displayName: "Codex CLI",
+    target: "remote",
+    configured: isCodexCliConfigured,
+    lifecycle: "active",
+    capabilities: ["text-to-image"],
+    privacySummary: "Prompts are sent through the signed-in Codex CLI.",
+    checkedAt: "2026-09-17T00:00:00.000Z",
+    staleAfterSeconds: 7 * 24 * 60 * 60,
+    sourceUrl: "https://learn.chatgpt.com/docs/image-generation",
     catalogRevision: BUILTIN_MEDIA_CATALOG_REVISION,
   },
   {
@@ -94,10 +110,11 @@ const createProviders = (
 
 export const createMediaModelCatalogSnapshot = ({
   isOpenAiConfigured,
+  isCodexCliConfigured = false,
   isLocalFluxInstalled = false,
   isLocalBiRefNetInstalled = false,
 }: MediaCatalogAvailability): MediaModelCatalogSnapshot => {
-  const providers = createProviders(isOpenAiConfigured);
+  const providers = createProviders(isOpenAiConfigured, isCodexCliConfigured);
   const configuredProviders = new Set(
     providers
       .filter((provider) => provider.configured)
@@ -105,16 +122,16 @@ export const createMediaModelCatalogSnapshot = ({
   );
   const models: MediaModelDescriptor[] = [
     {
-      id: "openai:gpt-image-2",
+      id: "openai:gpt-image-2.5-sunburst",
       providerId: "openai",
-      displayName: "GPT Image 2",
+      displayName: "GPT Image 2.5 Sunburst",
       family: "OpenAI GPT Image",
       target: "remote",
       lifecycle: "active",
-      lifecycleCheckedAt: BUILTIN_MEDIA_CATALOG_CHECKED_AT,
+      lifecycleCheckedAt: "2026-09-17T00:00:00.000Z",
       lifecycleStaleAfterSeconds: 7 * 24 * 60 * 60,
       lifecycleSourceUrl:
-        "https://developers.openai.com/api/docs/models/gpt-image-2",
+        "https://developers.openai.com/api/docs/models/gpt-image-2.5-sunburst",
       catalogRevision: BUILTIN_MEDIA_CATALOG_REVISION,
       capabilities: IMAGE_GENERATION_CAPABILITIES,
       configured: configuredProviders.has("openai"),
@@ -143,6 +160,41 @@ export const createMediaModelCatalogSnapshot = ({
         "Prompt text is sent to OpenAI; no source image is uploaded for text-to-image.",
       limitation:
         "Transparent output requires an explicit background-removal step.",
+      userImported: false,
+    },
+    {
+      id: "codex-cli:image-generation",
+      providerId: "codex-cli",
+      displayName: "Codex CLI",
+      family: "Codex image generation",
+      target: "remote",
+      lifecycle: "active",
+      lifecycleCheckedAt: "2026-09-17T00:00:00.000Z",
+      lifecycleStaleAfterSeconds: 7 * 24 * 60 * 60,
+      lifecycleSourceUrl: "https://learn.chatgpt.com/docs/image-generation",
+      catalogRevision: BUILTIN_MEDIA_CATALOG_REVISION,
+      capabilities: ["text-to-image"],
+      configured: configuredProviders.has("codex-cli"),
+      installed: true,
+      bundled: false,
+      installationStatus: "remote",
+      packageType: "agent-cli",
+      architecture: null,
+      addonCapabilities: [],
+      management: { acquisition: "external-runtime", verification: "none" },
+      license: {
+        name: "OpenAI service terms",
+        spdxId: null,
+        sourceUrl: "https://openai.com/policies/service-terms/",
+        commercialUse: "provider-terms",
+        requiresAcceptance: false,
+      },
+      recommended: false,
+      speedScore: 0,
+      qualityScore: 0,
+      costHint:
+        "Uses the signed-in Codex account's image generation allowance.",
+      privacySummary: "Prompts are sent through the signed-in Codex CLI.",
       userImported: false,
     },
     {

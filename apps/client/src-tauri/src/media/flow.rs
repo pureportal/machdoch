@@ -866,7 +866,7 @@ pub(crate) fn compile_remote_image_edit_flow(
         .find(|node| !supported.contains(&node.r#type.as_str()))
     {
         return Err(format!(
-            "node {} ({}) is not supported by the one-shot GPT Image 2 edit executor",
+            "node {} ({}) is not supported by the one-shot GPT Image 2.5 Sunburst edit executor",
             node.label, node.r#type
         ));
     }
@@ -923,7 +923,7 @@ pub(crate) fn compile_remote_image_edit_flow(
         .first()
         .is_some_and(|seed| has_exact_edge(&revision.flow, &seed.id, "seed", &task_node.id, "seed"))
     {
-        return Err("GPT Image 2 does not support deterministic seeds".to_string());
+        return Err("GPT Image 2.5 Sunburst does not support deterministic seeds".to_string());
     }
     let expected_edge_count = source_nodes.len() + 2 + usize::from(subject_cutout_node.is_some());
     let has_valid_output_path = subject_cutout_node.map_or_else(
@@ -973,7 +973,7 @@ pub(crate) fn compile_remote_image_edit_flow(
 
     let provider_policy = local_string_config(task_node, "providerPolicy")?;
     if !matches!(provider_policy.as_str(), "auto" | "remote") {
-        return Err("the GPT Image 2 edit executor requires remote provider policy".to_string());
+        return Err("the GPT Image 2.5 Sunburst edit executor requires remote provider policy".to_string());
     }
     let model_id = task_node
         .config
@@ -981,8 +981,8 @@ pub(crate) fn compile_remote_image_edit_flow(
         .and_then(Value::as_str)
         .ok_or_else(|| "the remote edit task requires a pinned modelId".to_string())?
         .to_string();
-    if model_id != "openai:gpt-image-2" {
-        return Err("remote image edit execution currently requires GPT Image 2".to_string());
+    if model_id != "openai:gpt-image-2.5-sunburst" {
+        return Err("remote image edit execution currently requires GPT Image 2.5 Sunburst".to_string());
     }
     if task_node
         .config
@@ -998,7 +998,7 @@ pub(crate) fn compile_remote_image_edit_flow(
         })
     {
         return Err(
-            "GPT Image 2 does not accept LoRA adapters or textual-inversion embeddings".to_string(),
+            "GPT Image 2.5 Sunburst does not accept LoRA adapters or textual-inversion embeddings".to_string(),
         );
     }
     let output_count = local_u32_config(task_node, "outputCount")?;
@@ -1100,7 +1100,7 @@ pub(crate) fn compile_remote_image_edit_flow(
         task_node_id: task_node.id.clone(),
         output_node_id: output_node.id.clone(),
         model_id,
-        model_label: "GPT Image 2".to_string(),
+        model_label: "GPT Image 2.5 Sunburst".to_string(),
         output_count,
         aspect_ratio,
         output_format,
