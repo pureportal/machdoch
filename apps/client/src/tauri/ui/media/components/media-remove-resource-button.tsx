@@ -21,10 +21,12 @@ export const MediaRemoveResourceButton = ({
   id,
   kind,
   onRemoved,
+  disabled = false,
 }: {
   id: string;
   kind: "model" | "addon";
   onRemoved: () => Promise<void>;
+  disabled?: boolean;
 }): JSX.Element => {
   const [plan, setPlan] = useState<
     MediaModelRemovalPlan | MediaModelAddonRemovalPlan | null
@@ -83,7 +85,7 @@ export const MediaRemoveResourceButton = ({
         variant="ghost"
         size="sm"
         className="w-full text-rose-300"
-        disabled={busy}
+        disabled={busy || disabled}
         onClick={() => void review()}
       >
         Remove {kind === "model" ? "model" : "add-on"}

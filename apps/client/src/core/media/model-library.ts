@@ -85,9 +85,7 @@ export const listMediaLibraryModels = (
   models.filter(
     (model) =>
       isMediaGenerationModel(model) &&
-      (model.userImported ||
-        model.management.acquisition === "managed-install" ||
-        (model.target === "local" ? model.installed : model.configured)),
+      (model.target === "local" ? model.installed : model.configured),
   );
 
 const normalizeSearchValue = (value: string): string =>

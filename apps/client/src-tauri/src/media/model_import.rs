@@ -541,8 +541,8 @@ fn imported_duplicate(
         .map_err(|error| format!("failed to inspect duplicate model state: {error}"))
 }
 
-fn krea_runtime_descriptor(paths: &MediaRuntimePaths, source_path: &str) -> MediaResult<Value> {
-    let runtime_root = super::model_components::krea_component_root(paths, source_path)?;
+fn krea_runtime_descriptor(paths: &MediaRuntimePaths) -> MediaResult<Value> {
+    let runtime_root = paths.models_root()?.join("components").join("krea-2");
     let canonical_root = super::model_components::ensure_krea_components(&runtime_root)?;
     Ok(serde_json::json!({
         "schemaVersion": 1,
@@ -558,6 +558,33 @@ fn krea_runtime_descriptor(paths: &MediaRuntimePaths, source_path: &str) -> Medi
             "relativePath": "qwen-image/vae"
         }
     }))
+}
+
+pub(super) fn prepare_model_config(
+    paths: &MediaRuntimePaths,
+    revision_root: &Path,
+    architecture: &str,
+) -> MediaResult<Option<PathBuf>> {
+    let config_root = revision_root.join("config");
+    match architecture {
+        "krea-2" => {
+            let runtime = krea_runtime_descriptor(paths)?;
+            super::runtime_setup::installer::validate_directory(&config_root)?;
+            crate::atomic_file::write_file_atomic(
+                &config_root.join("krea-runtime.json"),
+                &serde_json::to_vec_pretty(&runtime).map_err(|error| {
+                    format!("failed to encode the KREA runtime manifest: {error}")
+                })?,
+                crate::atomic_file::AtomicWriteOptions::default(),
+            )
+            .map_err(|error| format!("failed to publish the KREA runtime manifest: {error}"))?;
+            Ok(Some(config_root))
+        }
+        "stable-diffusion-1" | "stable-diffusion-xl" => {
+            super::model_components::ensure_sd_config(&config_root, architecture).map(Some)
+        }
+        _ => Ok(None),
+    }
 }
 
 pub(super) fn validated_text(
@@ -772,6 +799,12 @@ fn persist_import(
         .map_err(|error| format!("failed to publish imported model readiness: {error}"))?;
     transaction
         .execute(
+            "DELETE FROM media_model_runtime_probes WHERE model_id = ?1",
+            [&model_id],
+        )
+        .map_err(|error| format!("failed to reset imported model verification: {error}"))?;
+    transaction
+        .execute(
             "INSERT OR IGNORE INTO media_model_lifecycle_snapshots(
                model_id, lifecycle, checked_at, source_url, catalog_revision, observed_at
              ) VALUES (?1, 'active', ?2, ?3, ?4, ?2)",
@@ -817,11 +850,6 @@ pub(crate) fn import_reviewed(
             "the selected model file changed; inspect it again before importing".to_string(),
         );
     }
-    let krea_runtime = if request.architecture == "krea-2" {
-        Some(krea_runtime_descriptor(paths, &inspection.source_path)?)
-    } else {
-        None
-    };
     let (source_size, source_digest) = hash_file(Path::new(&inspection.source_path))?;
     if source_size != inspection.byte_size {
         return Err("the file changed; select it again before importing".to_string());
@@ -875,6 +903,11 @@ pub(crate) fn import_reviewed(
         ));
     }
 
+    if let Err(error) = prepare_model_config(paths, &stage_repository, &request.architecture) {
+        fs::remove_dir_all(&stage_root)
+            .map_err(|cleanup| format!("{error}; failed to clean model import: {cleanup}"))?;
+        return Err(error);
+    }
     let model_id = format!("{USER_MODEL_ID_PREFIX}{digest}");
     let slug = format!("user-{}", &digest[..32]);
     let relative_path = format!("packages/{slug}/revisions/{digest}");
@@ -906,28 +939,6 @@ pub(crate) fn import_reviewed(
         fs::rename(&stage_repository, &revision_root)
             .map_err(|error| format!("failed to atomically activate imported model: {error}"))?;
         let _ = fs::remove_dir_all(&stage_root);
-    }
-    if let Some(runtime) = &krea_runtime {
-        let config_root = revision_root.join("config");
-        fs::create_dir_all(&config_root)
-            .map_err(|error| format!("failed to prepare the KREA runtime manifest: {error}"))?;
-        crate::atomic_file::write_file_atomic(
-            &config_root.join("krea-runtime.json"),
-            &serde_json::to_vec_pretty(runtime)
-                .map_err(|error| format!("failed to encode the KREA runtime manifest: {error}"))?,
-            crate::atomic_file::AtomicWriteOptions::default(),
-        )
-        .map_err(|error| format!("failed to publish the KREA runtime manifest: {error}"))?;
-    }
-
-    if matches!(
-        request.architecture.as_str(),
-        "stable-diffusion-1" | "stable-diffusion-xl"
-    ) {
-        super::model_components::ensure_sd_config(
-            &revision_root.join("config"),
-            &request.architecture,
-        )?;
     }
     let imported_at = database::now();
     let active_pointer = serde_json::json!({
@@ -1204,13 +1215,48 @@ mod tests {
         let removal = model_install::remove(
             &paths,
             &RemoveMediaModelRequest {
-                model_id: result.model_id,
+                model_id: result.model_id.clone(),
                 confirmation_token: removal_plan.confirmation_token,
                 confirm_removal: true,
             },
         )
         .expect("imported model should be removed");
         assert_eq!(removal.reclaimed_bytes, result.byte_size);
+        assert!(source.is_file());
+        let package_root = paths
+            .models_root()
+            .unwrap()
+            .join(format!("packages/user-{}", &digest[..32]));
+        assert!(!package_root.exists());
+        for table in [
+            "media_models",
+            "media_model_installations",
+            "media_model_runtime_probes",
+            "media_model_lifecycle_snapshots",
+            "media_model_license_acceptances",
+            "media_model_install_jobs",
+            "media_model_removals",
+        ] {
+            let key = if table == "media_models" {
+                "id"
+            } else {
+                "model_id"
+            };
+            let count: u32 = connection
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM {table} WHERE {key} = ?1"),
+                    [&result.model_id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 0, "{table} retained removed model data");
+        }
+        database::initialize(&paths).unwrap();
+        assert!(!database::get_model_catalog(&paths, &Default::default())
+            .unwrap()
+            .models
+            .iter()
+            .any(|model| model.id == result.model_id));
 
         let _ = fs::remove_file(source);
         let _ = fs::remove_dir_all(root);

@@ -817,14 +817,21 @@ export const MediaStudio = ({
       setVerifyingModelId(model.id);
       try {
         await probeMediaLocalModel(model.id);
-        setRuntimeStatus(await initializeMediaRuntime());
         await refreshModelCatalog();
         setRuntimeError(null);
       } catch (error: unknown) {
         setRuntimeError(normalizeMediaError(error, "probe_local_model"));
+        await refreshModelCatalog();
       } finally {
         setVerifyingModelId(null);
       }
+      void initializeMediaRuntime()
+        .then(setRuntimeStatus)
+        .catch((error: unknown) =>
+          setRuntimeError(
+            normalizeMediaError(error, "initialize_media_runtime"),
+          ),
+        );
     },
     [refreshModelCatalog],
   );
@@ -4788,7 +4795,56 @@ export const MediaStudio = ({
               onUseModel={useModelInCreate}
               onSetupRuntime={() => void runtimeSetup.start()}
               onVerifyModel={(model) => void verifyLocalModel(model)}
-              onRefreshModels={async () => {
+              onRefreshModels={async (removedResourceId) => {
+                if (removedResourceId) {
+                  for (const job of mediaImportQueue.getSnapshot()) {
+                    if (job.resourceId === removedResourceId) {
+                      mediaImportQueue.dismiss(job.id);
+                    }
+                  }
+                  const current = stateRef.current;
+                  const assetMetadata = { ...current.assetMetadata };
+                  delete assetMetadata[removedResourceId];
+                  const next = {
+                    ...current,
+                    assetMetadata,
+                    recipe: {
+                      ...current.recipe,
+                      modelId:
+                        current.recipe.modelId === removedResourceId
+                          ? null
+                          : current.recipe.modelId,
+                      modelAddons: current.recipe.modelAddons.filter(
+                        (addon) => addon.addonId !== removedResourceId,
+                      ),
+                    },
+                    videoRecipe: {
+                      ...current.videoRecipe,
+                      modelId:
+                        current.videoRecipe.modelId === removedResourceId
+                          ? null
+                          : current.videoRecipe.modelId,
+                      modelAddons: current.videoRecipe.modelAddons.filter(
+                        (addon) => addon.addonId !== removedResourceId,
+                      ),
+                    },
+                  };
+                  setState(next);
+                  setModelCatalog((catalog) =>
+                    catalog
+                      ? {
+                          ...catalog,
+                          models: catalog.models.filter(
+                            (model) => model.id !== removedResourceId,
+                          ),
+                          addons: catalog.addons.filter(
+                            (addon) => addon.id !== removedResourceId,
+                          ),
+                        }
+                      : catalog,
+                  );
+                  await saveMediaStudioState(next);
+                }
                 await refreshModelCatalog();
                 setRuntimeStatus(await initializeMediaRuntime());
               }}
