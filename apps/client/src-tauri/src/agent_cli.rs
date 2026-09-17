@@ -9,13 +9,13 @@ use std::{
 
 use crate::child_process::SupervisedChild;
 
-pub(super) const AGENT_CLI_OUTPUT_CAPTURE_LIMIT_BYTES: usize = 1024 * 1024;
-pub(super) const AGENT_CLI_OUTPUT_TRUNCATED_MARKER: &str = "[output truncated after capture limit]";
+pub(crate) const AGENT_CLI_OUTPUT_CAPTURE_LIMIT_BYTES: usize = 1024 * 1024;
+pub(crate) const AGENT_CLI_OUTPUT_TRUNCATED_MARKER: &str = "[output truncated after capture limit]";
 
-pub(super) struct AgentCliCommandOutput {
-    pub(super) exit_code: Option<i32>,
-    pub(super) stdout: String,
-    pub(super) stderr: String,
+pub(crate) struct AgentCliCommandOutput {
+    pub(crate) exit_code: Option<i32>,
+    pub(crate) stdout: String,
+    pub(crate) stderr: String,
 }
 
 fn read_agent_cli_stream(mut stream: impl Read, description: &str) -> Result<String, String> {
@@ -79,7 +79,6 @@ fn join_agent_cli_output(
     stdout_worker: thread::JoinHandle<Result<String, String>>,
     stderr_worker: thread::JoinHandle<Result<String, String>>,
 ) -> Result<(String, String), String> {
-    // Join both readers even if the first one failed.
     let stdout = join_agent_cli_stream_worker(stdout_worker, "stdout");
     let stderr = join_agent_cli_stream_worker(stderr_worker, "stderr");
 
@@ -106,7 +105,7 @@ fn stop_agent_cli_after_wait_error(
     }
 }
 
-pub(super) fn run_agent_cli_command(
+pub(crate) fn run_agent_cli_command(
     executable: &Path,
     args: &[&str],
     env_values: &HashMap<String, String>,
@@ -117,17 +116,25 @@ pub(super) fn run_agent_cli_command(
         .args(args)
         .envs(env_values)
         .env("NO_COLOR", "1")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stdin(Stdio::null());
+    run_agent_cli_process(&mut command, timeout)
+}
 
-    let mut child = SupervisedChild::spawn_with_required_isolation(&mut command)
+pub(crate) fn run_agent_cli_process(
+    command: &mut Command,
+    timeout: Duration,
+) -> Result<AgentCliCommandOutput, String> {
+    let executable = command.get_program().to_owned();
+    let executable = Path::new(&executable);
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    let mut child = SupervisedChild::spawn_with_required_isolation(command)
         .map_err(|error| format!("Failed to start {}: {error}", executable.display()))?;
     let stdout = match child.stdout.take() {
         Some(stdout) => stdout,
         None => {
             return Err(format!(
-                "{} did not expose a stdout stream for agent CLI model discovery.",
+                "{} did not expose an agent CLI stdout stream.",
                 executable.display()
             ));
         }
@@ -136,7 +143,7 @@ pub(super) fn run_agent_cli_command(
         Some(stderr) => stderr,
         None => {
             return Err(format!(
-                "{} did not expose a stderr stream for agent CLI model discovery.",
+                "{} did not expose an agent CLI stderr stream.",
                 executable.display()
             ));
         }
@@ -151,7 +158,7 @@ pub(super) fn run_agent_cli_command(
                 let _ = child.terminate_and_reap();
                 let _ = join_agent_cli_output(stdout_worker, stderr_worker);
                 return Err(format!(
-                    "{} timed out while discovering agent CLI models.",
+                    "{} timed out while running the agent CLI command.",
                     executable.display()
                 ));
             }

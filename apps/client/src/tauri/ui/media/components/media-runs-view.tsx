@@ -90,6 +90,7 @@ const STATUS_STYLES: Record<MediaRunRecord["status"], string> = {
 const EXECUTOR_LABELS: Record<MediaRunDetail["executor"], string> = {
   "deterministic-fixture": "Fixture",
   "openai-image-api": "OpenAI image generation",
+  "codex-cli-image": "Codex CLI image generation",
   "local-import": "Local import",
   "local-transform": "Local transform",
   "local-image-flow": "Local image generation",
@@ -107,7 +108,7 @@ const isRuntimeRun = (run: MediaRunRecord): run is MediaRuntimeRunRecord => {
 
 const canCancelRun = (run: MediaRunDetail): boolean =>
   run.status === "queued" ||
-  (run.executor !== "openai-image-api" &&
+  (!["openai-image-api", "codex-cli-image"].includes(run.executor) &&
     ["running", "waiting-for-review"].includes(run.status));
 
 const formatCreatedAt = (createdAt: string): string => {

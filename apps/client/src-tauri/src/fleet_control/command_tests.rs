@@ -294,7 +294,7 @@ fn ralph_run_commands_reject_duplicate_normalized_parameter_names() {
 fn media_generation_requires_a_complete_bounded_recipe() {
     let event = normalize_command(ProductCommand {
         prompt: Some("Create a blue geometric owl".to_string()),
-        model_id: Some("openai:gpt-image-2".to_string()),
+        model_id: Some("openai:gpt-image-2.5-sunburst".to_string()),
         target: Some("image".to_string()),
         aspect_ratio: Some("1:1".to_string()),
         output_count: Some(2),
@@ -305,12 +305,12 @@ fn media_generation_requires_a_complete_bounded_recipe() {
     .expect("a complete media recipe should normalize");
 
     assert_eq!(event.kind, "generate-media");
-    assert_eq!(event.model_id.as_deref(), Some("openai:gpt-image-2"));
+    assert_eq!(event.model_id.as_deref(), Some("openai:gpt-image-2.5-sunburst"));
     assert_eq!(event.output_count, Some(2));
 
     let error = normalize_command(ProductCommand {
         prompt: Some("Create a blue geometric owl".to_string()),
-        model_id: Some("openai:gpt-image-2".to_string()),
+        model_id: Some("openai:gpt-image-2.5-sunburst".to_string()),
         target: Some("svg".to_string()),
         aspect_ratio: Some("1:1".to_string()),
         output_count: Some(1),

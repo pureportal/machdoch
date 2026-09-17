@@ -73,6 +73,7 @@ export type MediaModelInstallationStatus =
 
 export type MediaModelPackageType =
   | "remote-endpoint"
+  | "agent-cli"
   | "diffusers"
   | "safetensors"
   | "onnx"
@@ -1433,6 +1434,7 @@ export interface MediaRuntimeRunRecord extends MediaRunRecord {
   executor:
     | "deterministic-fixture"
     | "openai-image-api"
+    | "codex-cli-image"
     | "local-import"
     | "local-transform"
     | "local-image-flow"
@@ -1722,7 +1724,7 @@ export interface MediaLocalImageFlowOperation {
 
 export interface MediaRemoteImageGenerationOperation {
   kind: "remote-image-generation";
-  providerId: "openai";
+  providerId: "openai" | "codex-cli";
   modelId: string;
   providerRequestId: string | null;
   flowRevisionId: string;
@@ -2262,7 +2264,8 @@ export type MediaMockProviderScenario =
 
 export type MediaProviderScenario =
   | MediaMockProviderScenario
-  | "openai:gpt-image-2";
+  | "openai:gpt-image-2.5-sunburst"
+  | "codex-cli:image-generation";
 
 export interface MediaProviderPolicySnapshot {
   adapterId: string;
@@ -2277,7 +2280,8 @@ export interface MediaProviderPolicySnapshot {
   outputVisibility:
     | "private-signed-url"
     | "public-link"
-    | "inline-base64-response";
+    | "inline-base64-response"
+    | "local-file";
   publicLinks: boolean;
   noStoreRequested: boolean;
   uploadAssetCount: number;

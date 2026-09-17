@@ -188,7 +188,7 @@ describe("MediaAssetsView asset actions", () => {
       isLocalFluxInstalled: true,
     });
     const providerReady = baseCatalog.models.find(
-      (model) => model.id === "openai:gpt-image-2",
+      (model) => model.id === "openai:gpt-image-2.5-sunburst",
     )!;
     const localModel = baseCatalog.models.find(
       (model) => model.id === "local:flux-2-klein-4b",

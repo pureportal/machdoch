@@ -1939,7 +1939,7 @@ mod tests {
             "tags": ["tag"],
             "provider": "openai",
             "model": "gpt-5.6",
-            "modelId": "openai:gpt-image-2",
+            "modelId": "openai:gpt-image-2.5-sunburst",
             "mode": "machdoch",
             "reasoning": "high",
             "promptEnhancementMode": "web-search",
@@ -2031,7 +2031,7 @@ mod tests {
             "kind": "generate-media",
             "commandId": "media-1",
             "prompt": "Create a geometric owl",
-            "modelId": "openai:gpt-image-2",
+            "modelId": "openai:gpt-image-2.5-sunburst",
             "target": "image",
             "aspectRatio": "1:1",
             "outputCount": 2,
@@ -2041,7 +2041,7 @@ mod tests {
         .expect("media command should decode");
 
         assert_eq!(command.kind, ProductCommandKind::GenerateMedia);
-        assert_eq!(command.model_id.as_deref(), Some("openai:gpt-image-2"));
+        assert_eq!(command.model_id.as_deref(), Some("openai:gpt-image-2.5-sunburst"));
         assert_eq!(command.output_count, Some(2));
         assert_eq!(command.transparent_background, Some(true));
     }
@@ -2151,7 +2151,7 @@ mod tests {
         let media_run = serde_json::from_value::<ProductCommand>(serde_json::json!({
             "kind": "generate-media",
             "prompt": " Create a geometric owl ",
-            "modelId": " openai:gpt-image-2 ",
+            "modelId": " openai:gpt-image-2.5-sunburst ",
             "target": "image",
             "aspectRatio": "1:1",
             "outputCount": 1,
@@ -2161,7 +2161,7 @@ mod tests {
         .expect("padded media command should decode");
 
         assert_eq!(media_run.prompt.as_deref(), Some("Create a geometric owl"));
-        assert_eq!(media_run.model_id.as_deref(), Some("openai:gpt-image-2"));
+        assert_eq!(media_run.model_id.as_deref(), Some("openai:gpt-image-2.5-sunburst"));
     }
 
     #[test]

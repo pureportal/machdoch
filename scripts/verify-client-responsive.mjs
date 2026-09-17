@@ -562,7 +562,7 @@ async function media(page) {
   await page.getByRole("button", { name: "Assets", exact: true }).click();
   await capture(page, "media-assets");
   await page
-    .getByRole("button", { name: "View GPT Image 2", exact: true })
+    .getByRole("button", { name: "View GPT Image 2.5 Sunburst", exact: true })
     .click();
   await capture(page, "media-asset-details");
   await page

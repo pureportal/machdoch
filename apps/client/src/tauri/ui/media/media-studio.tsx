@@ -765,7 +765,7 @@ export const MediaStudio = ({
 
   const configuredProviderIds = useMemo(() => {
     if (runtimeStatus?.mode === "browser-preview") {
-      return ["openai"];
+      return ["openai", "codex-cli"];
     }
     return providerStatuses
       .filter((status) => status.configured)
@@ -775,6 +775,7 @@ export const MediaStudio = ({
     () =>
       createMediaModelCatalogSnapshot({
         isOpenAiConfigured: configuredProviderIds.includes("openai"),
+        isCodexCliConfigured: configuredProviderIds.includes("codex-cli"),
       }),
     [configuredProviderIds],
   );

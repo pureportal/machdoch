@@ -48,9 +48,11 @@ export const generationJobToRunDetail = (
           ? "svg-ai-pipeline"
           : job.recipe.modelId?.startsWith("openai:")
             ? "openai-image-api"
-            : job.recipe.modelId
-              ? "local-image-flow"
-              : "local-analysis",
+            : job.recipe.modelId === "codex-cli:image-generation"
+              ? "codex-cli-image"
+              : job.recipe.modelId
+                ? "local-image-flow"
+                : "local-analysis",
     error: job.error,
     failure: job.failure,
     events: [],

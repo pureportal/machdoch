@@ -119,7 +119,7 @@ const asset = (
   operation: {
     kind: "remote-image-generation",
     providerId: "openai",
-    modelId: "openai:gpt-image-2",
+    modelId: "openai:gpt-image-2.5-sunburst",
     providerRequestId: "request-1",
     flowRevisionId: "revision-1",
     output: { index: outputIndex, outputNodeId },

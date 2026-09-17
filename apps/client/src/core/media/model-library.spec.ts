@@ -70,9 +70,9 @@ describe("matchesMediaModelQuery", () => {
     expect(
       selectable.some((model) => model.id === "local:flux-2-klein-4b"),
     ).toBe(true);
-    expect(selectable.some((model) => model.id === "openai:gpt-image-2")).toBe(
-      false,
-    );
+    expect(
+      selectable.some((model) => model.id === "openai:gpt-image-2.5-sunburst"),
+    ).toBe(false);
     expect(selectable.every((model) => model.configured)).toBe(true);
   });
 
@@ -85,7 +85,7 @@ describe("matchesMediaModelQuery", () => {
       (model) => model.id === "local:flux-2-klein-4b",
     )!;
     const providerReady = configuredCatalog.models.find(
-      (model) => model.id === "openai:gpt-image-2",
+      (model) => model.id === "openai:gpt-image-2.5-sunburst",
     )!;
     const importedReady = {
       ...flux,

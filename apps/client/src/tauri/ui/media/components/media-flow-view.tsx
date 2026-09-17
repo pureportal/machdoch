@@ -6174,7 +6174,7 @@ export const MediaFlowView = ({
           <DialogHeader className="border-b border-slate-800 px-6 py-5 pr-12 text-left">
             <DialogTitle className="flex items-center gap-2 text-lg text-white">
               <ShieldCheck className="h-5 w-5 text-amber-300" />
-              Confirm GPT Image 2 edit
+              Confirm GPT Image 2.5 Sunburst edit
             </DialogTitle>
             <DialogDescription className="text-xs leading-5 text-slate-400">
               {remoteRunMode === "browser-preview"

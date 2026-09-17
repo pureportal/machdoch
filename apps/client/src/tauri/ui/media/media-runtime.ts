@@ -1516,8 +1516,11 @@ export const initializeMediaRuntime = async (): Promise<MediaRuntimeStatus> => {
     ).length,
     storageReady: true,
     mode: "browser-preview",
-    directGenerationModelIds: ["openai:gpt-image-2"],
-    directReferenceImageModelIds: ["openai:gpt-image-2"],
+    directGenerationModelIds: [
+      "openai:gpt-image-2.5-sunburst",
+      "codex-cli:image-generation",
+    ],
+    directReferenceImageModelIds: ["openai:gpt-image-2.5-sunburst"],
     directInpaintingModelIds: [],
     directPoseModelIds: [],
     localDiffusers: {
@@ -1572,6 +1575,7 @@ export const getMediaModelCatalog = async (
   return clone(
     createMediaModelCatalogSnapshot({
       isOpenAiConfigured: normalizedProviderIds.includes("openai"),
+      isCodexCliConfigured: normalizedProviderIds.includes("codex-cli"),
       isLocalFluxInstalled: browserLocalFluxInstalled,
       isLocalBiRefNetInstalled: browserLocalBiRefNetInstalled,
     }),
@@ -3632,7 +3636,7 @@ export const executeMediaRemoteImageEditFlow = async (
     flowName: flow.name,
     planId: request.planId,
     prompt: String(promptNode?.config.prompt ?? "Image edit preview"),
-    modelLabel: "GPT Image 2 · browser fixture",
+    modelLabel: "GPT Image 2.5 Sunburst · browser fixture",
     target: "remote",
     outputCount: Number(editNode?.config.outputCount ?? 1),
     diagnosticCount: 0,

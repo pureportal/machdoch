@@ -24,6 +24,40 @@ import {
 } from "../../../core/media/compiler.js";
 import { readMediaVideoRecipeSettings } from "./media-generation-recipe";
 
+describe("Codex CLI image generation", () => {
+  it("compiles a remote image recipe without an OpenAI API key", () => {
+    const models = createMediaModelCatalogSnapshot({
+      isOpenAiConfigured: false,
+      isCodexCliConfigured: true,
+    }).models;
+    const flow = createBasicMediaRecipeFlow({
+      id: "codex-image",
+      createdAt: "2026-09-17T00:00:00Z",
+      target: "image",
+      settings: {
+        ...DEFAULT_MEDIA_STUDIO_STATE.recipe,
+        prompt: "A blue ceramic mug",
+        providerPolicy: "remote",
+        modelId: "codex-cli:image-generation",
+      },
+    });
+    const plan = compileMediaFlow({
+      flow,
+      models,
+      compiledAt: "2026-09-17T00:00:00Z",
+    });
+    expect(plan.model?.id).toBe("codex-cli:image-generation");
+    expect(
+      plan.diagnostics.filter((diagnostic) => diagnostic.severity === "error"),
+    ).toEqual([]);
+    expect(
+      plan.steps.some(
+        (step) => step.kind === "generate-image" && step.target === "remote",
+      ),
+    ).toBe(true);
+  });
+});
+
 describe("Basic video configuration", () => {
   it("preserves crossfade through saved settings and Basics/Advanced conversion", () => {
     const state = normalizeMediaStudioState({
@@ -252,7 +286,7 @@ describe("createBasicMediaRecipeFlow", () => {
     const remoteModel = createMediaModelCatalogSnapshot({
       isOpenAiConfigured: true,
       isLocalFluxInstalled: false,
-    }).models.find((model) => model.id === "openai:gpt-image-2")!;
+    }).models.find((model) => model.id === "openai:gpt-image-2.5-sunburst")!;
     const state = normalizeMediaStudioState(DEFAULT_MEDIA_STUDIO_STATE);
 
     const flow = createBasicMediaRecipeFlow({

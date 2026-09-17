@@ -304,7 +304,7 @@ export function productFixture() {
         generation: {
           prompt: "A geometric owl made from blue glass",
           target: "image",
-          modelId: "openai:gpt-image-2",
+          modelId: "openai:gpt-image-2.5-sunburst",
           aspectRatio: "1:1",
           outputCount: 2,
           outputFormat: "png",
@@ -313,8 +313,8 @@ export function productFixture() {
         },
         models: [
           {
-            id: "openai:gpt-image-2",
-            label: "GPT Image 2",
+            id: "openai:gpt-image-2.5-sunburst",
+            label: "GPT Image 2.5 Sunburst",
             target: "remote",
             targets: ["image"],
             recommended: true,
@@ -369,7 +369,7 @@ export function productFixture() {
             createdAt: new Date(now - 20_000).toISOString(),
             updatedAt: new Date(now).toISOString(),
             prompt: "A geometric owl made from blue glass",
-            modelLabel: "GPT Image 2",
+            modelLabel: "GPT Image 2.5 Sunburst",
             target: "remote",
             outputCount: 2,
             progress: 0.58,
