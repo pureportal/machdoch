@@ -160,7 +160,6 @@ describe("matchesMediaModelQuery", () => {
       importedReady.id,
       brokenInstalled.id,
       runtimeUnavailable.id,
-      notInstalled.id,
     ]);
   });
 });

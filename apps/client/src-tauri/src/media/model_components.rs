@@ -188,19 +188,3 @@ pub(super) fn ensure_components(root: &Path, manifest: &str) -> MediaResult<Path
     }
     Ok(root)
 }
-
-pub(super) fn krea_component_root(paths: &MediaRuntimePaths, source: &str) -> MediaResult<PathBuf> {
-    let checkpoint = Path::new(source);
-    if let Some(parent) = checkpoint
-        .parent()
-        .filter(|parent| parent.file_name().is_some_and(|name| name == "checkpoints"))
-    {
-        if let Some(family) = parent
-            .parent()
-            .filter(|parent| parent.file_name().is_some_and(|name| name == "krea-2"))
-        {
-            return Ok(family.join("runtime"));
-        }
-    }
-    Ok(paths.models_root()?.join("components").join("krea-2"))
-}

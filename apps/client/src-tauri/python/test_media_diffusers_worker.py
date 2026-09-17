@@ -23,6 +23,24 @@ SPEC.loader.exec_module(WORKER)
 
 
 class MediaDiffusersQualityTests(unittest.TestCase):
+    def test_krea_offload_cache_belongs_to_the_removable_model_package(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoint = root / "model" / "checkpoint.safetensors"
+            checkpoint.parent.mkdir()
+            checkpoint.write_bytes(b"fixture")
+            pipeline = SimpleNamespace(_machdoch_krea_runtime_root=str(root / "shared"))
+            packages = {
+                "torch": SimpleNamespace(__version__="test"),
+                "diffusers": SimpleNamespace(__version__="test"),
+            }
+            with mock.patch.dict("sys.modules", packages):
+                cache, signature = WORKER._krea_disk_cache_directory(
+                    pipeline, {"path": str(checkpoint), "digest": "a" * 64}, []
+                )
+            self.assertEqual(cache.parent, checkpoint.parent.resolve() / "transformer-offload")
+            self.assertEqual(cache.name, signature)
+
     def test_framepack_prompt_subprocess_preserves_embeddings_and_excludes_credentials(self) -> None:
         import torch
         from safetensors.torch import save_file

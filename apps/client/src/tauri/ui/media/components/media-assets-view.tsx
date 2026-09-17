@@ -129,7 +129,7 @@ interface MediaAssetsViewProps {
   onUseModel: (model: MediaModelDescriptor) => void;
   onSetupRuntime: () => void;
   onVerifyModel: (model: MediaModelDescriptor) => void;
-  onRefreshModels: () => Promise<void>;
+  onRefreshModels: (removedResourceId?: string) => Promise<void>;
   onScanModels: () => void;
   runtimeSetup: MediaRuntimeSetupStatus;
   runtimeReady: boolean;
@@ -740,7 +740,7 @@ export const MediaAssetsView = ({
                         variant="outline"
                         size="sm"
                         onClick={() => onVerifyModel(model)}
-                        disabled={setupActive || verifyingModelId === model.id}
+                        disabled={setupActive || verifyingModelId !== null}
                         className="w-full"
                       >
                         {verifyingModelId === model.id
@@ -1015,14 +1015,21 @@ export const MediaAssetsView = ({
                 key={selectedResourceModel.id}
                 id={selectedResourceModel.id}
                 kind="model"
-                onRemoved={onRefreshModels}
+                disabled={verifyingModelId !== null}
+                onRemoved={async () => {
+                  setSelectedResourceId(null);
+                  await onRefreshModels(selectedResourceModel.id);
+                }}
               />
             ) : selectedResourceAddon ? (
               <MediaRemoveResourceButton
                 key={selectedResourceAddon.id}
                 id={selectedResourceAddon.id}
                 kind="addon"
-                onRemoved={onRefreshModels}
+                onRemoved={async () => {
+                  setSelectedResourceId(null);
+                  await onRefreshModels(selectedResourceAddon.id);
+                }}
               />
             ) : null}
             {selectedResourceModel &&
@@ -1093,7 +1100,7 @@ export const MediaAssetsView = ({
                     onClick={() => onVerifyModel(selectedResourceModel)}
                     disabled={
                       setupActive ||
-                      verifyingModelId === selectedResourceModel.id
+                      verifyingModelId !== null
                     }
                     className="w-full"
                   >

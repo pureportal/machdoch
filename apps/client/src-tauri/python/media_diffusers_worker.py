@@ -521,13 +521,18 @@ def _load_krea_transformer(diffusers: Any, torch: Any, checkpoint: Path) -> Any:
 
     with init_empty_weights():
         transformer = diffusers.Krea2Transformer2DModel()
-    expected = set(transformer.state_dict())
+    expected_shapes = {
+        name: tuple(value.shape) for name, value in transformer.state_dict().items()
+    }
+    expected = set(expected_shapes)
     observed: set[str] = set()
     scaled_modules: list[tuple[str, Any]] = []
     with safe_open(str(checkpoint), framework="pt", device="cpu") as tensor_file:
+        checkpoint_keys = tensor_file.keys()
+        checkpoint_key_set = set(checkpoint_keys)
         source_keys = [
             key
-            for key in tensor_file.keys()
+            for key in checkpoint_keys
             if not key.endswith(".comfy_quant") and not key.endswith(".weight_scale")
         ]
         for source_key in source_keys:
@@ -542,7 +547,7 @@ def _load_krea_transformer(diffusers: Any, torch: Any, checkpoint: Path) -> Any:
             value = tensor_file.get_tensor(source_key)
             if destination.endswith("scale_shift_table") and value.ndim == 1:
                 value = value.reshape(-1, 6144)
-            if tuple(value.shape) != tuple(transformer.state_dict()[destination].shape):
+            if tuple(value.shape) != expected_shapes.get(destination):
                 raise WorkerError(
                     f"KREA tensor {source_key} has an incompatible shape for {destination}"
                 )
@@ -561,7 +566,7 @@ def _load_krea_transformer(diffusers: Any, torch: Any, checkpoint: Path) -> Any:
             if is_fp8:
                 scale_key = source_key.removesuffix(".weight") + ".weight_scale"
                 quant_key = source_key.removesuffix(".weight") + ".comfy_quant"
-                if scale_key not in tensor_file.keys() or quant_key not in tensor_file.keys():
+                if scale_key not in checkpoint_key_set or quant_key not in checkpoint_key_set:
                     raise WorkerError(f"KREA FP8 tensor {source_key} has no scale metadata")
                 try:
                     quant = json.loads(
@@ -697,8 +702,8 @@ def _krea_disk_cache_directory(
             sort_keys=True,
         ).encode("utf-8")
     ).hexdigest()
-    runtime_root = Path(pipeline._machdoch_krea_runtime_root).resolve(strict=True)
-    cache_root = runtime_root / "transformer-offload"
+    model_root = _absolute_existing_path(model.get("path"), file=True).parent
+    cache_root = model_root / "transformer-offload"
     return cache_root / signature, signature
 
 
@@ -875,7 +880,7 @@ def _configure_krea_offload(
             model,
             addons,
         )
-        runtime_root = Path(pipeline._machdoch_krea_runtime_root)
+        runtime_root = _absolute_existing_path(model.get("path"), file=True).parent
         disk_cache_hit = _validated_krea_disk_cache(cache_directory, signature)
         if cache_directory.exists() and not disk_cache_hit:
             _remove_incomplete_krea_disk_cache(cache_directory, runtime_root)

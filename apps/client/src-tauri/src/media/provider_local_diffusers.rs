@@ -58,6 +58,10 @@ static RUNTIME_PROBE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static PREFERRED_HIP_VISIBLE_DEVICE: OnceLock<String> = OnceLock::new();
 static VERIFIED_MODEL_FILES: OnceLock<Mutex<HashMap<PathBuf, VerifiedModelFile>>> = OnceLock::new();
 
+#[cfg(test)]
+#[path = "model_verification_tests.rs"]
+mod model_verification_tests;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct VerifiedModelFile {
     expected_digest: String,
@@ -1227,12 +1231,17 @@ fn record_model_probe(
     record: ModelProbeRecord<'_>,
 ) -> MediaResult<()> {
     let connection = database::open(paths)?;
-    connection
+    let updated = connection
         .execute(
             "INSERT INTO media_model_runtime_probes(
                model_id, revision, model_digest, runtime_fingerprint, status,
                worker_version, pipeline_class, device_label, diagnostic, probed_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             ) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10
+               WHERE EXISTS (
+                 SELECT 1 FROM media_model_installations
+                 WHERE model_id = ?1 AND revision = ?2 AND manifest_digest = ?3
+                   AND status = 'installed'
+               )
              ON CONFLICT(model_id) DO UPDATE SET
                revision = excluded.revision,
                model_digest = excluded.model_digest,
@@ -1257,6 +1266,9 @@ fn record_model_probe(
             ],
         )
         .map_err(|error| format!("failed to persist model runtime readiness: {error}"))?;
+    if updated != 1 {
+        return Err("The model changed or was removed during verification.".to_string());
+    }
     Ok(())
 }
 
@@ -1303,21 +1315,35 @@ pub(crate) fn probe_model(
     paths: &MediaRuntimePaths,
     model_id: &str,
 ) -> MediaResult<LocalModelRuntimeProbeResult> {
-    let mut model = installed_model(paths, model_id)?;
-    let checked_at = database::now();
     let script = worker_script(app)?;
     let (runtime, python) = probe_with_python(app, &script);
+    *app.state::<super::MediaRuntimeState>()
+        .local_diffusers_status
+        .lock()
+        .map_err(|_| "Media runtime status is unavailable")? = Some(runtime.clone());
+    probe_model_with_runtime(paths, model_id, &script, &runtime, python.as_deref())
+}
+
+fn probe_model_with_runtime(
+    paths: &MediaRuntimePaths,
+    model_id: &str,
+    script: &Path,
+    runtime: &LocalDiffusersRuntimeStatus,
+    python: Option<&Path>,
+) -> MediaResult<LocalModelRuntimeProbeResult> {
+    let mut model = installed_model(paths, model_id)?;
+    let checked_at = database::now();
     let Some(fingerprint) = runtime_fingerprint(&runtime) else {
         return Ok(LocalModelRuntimeProbeResult {
             schema_version: 1,
             model_id: model.id,
             revision: model.revision,
             status: "unavailable".to_string(),
-            diagnostic: runtime.diagnostic,
+            diagnostic: runtime.diagnostic.clone(),
             checked_at,
-            worker_version: runtime.worker_version,
+            worker_version: runtime.worker_version.clone(),
             pipeline_class: None,
-            device_label: runtime.device_label,
+            device_label: runtime.device_label.clone(),
             components: Vec::new(),
             capabilities: Vec::new(),
         });
@@ -1326,21 +1352,26 @@ pub(crate) fn probe_model(
         "The pinned local Diffusers runtime passed readiness without identifying its interpreter."
             .to_string()
     })?;
-    if model.package_kind == "single-file"
-        && matches!(
-            model.architecture.as_str(),
-            "stable-diffusion-1" | "stable-diffusion-xl"
-        )
-    {
+    if model.package_kind == "single-file" {
         let root = model
             .path
             .parent()
-            .ok_or("Model package has no directory")?
-            .join("config");
-        model.config_path = Some(model_components::ensure_sd_config(
-            &root,
-            &model.architecture,
-        )?);
+            .ok_or("Model package has no directory")?;
+        match model_import::prepare_model_config(paths, root, &model.architecture) {
+            Ok(Some(config)) => model.config_path = Some(config),
+            Ok(None) => {}
+            Err(error) => {
+                return persist_failed_model_probe(
+                    paths,
+                    &model,
+                    &fingerprint,
+                    runtime,
+                    error,
+                    &checked_at,
+                    None,
+                )
+            }
+        }
     }
     let request = WorkerModelProbeRequest {
         schema_version: WORKER_SCHEMA_VERSION,
@@ -1356,14 +1387,27 @@ pub(crate) fn probe_model(
     };
     let encoded = serde_json::to_vec(&request)
         .map_err(|error| format!("failed to encode model readiness request: {error}"))?;
-    let output = run_worker(
+    let output = match run_worker(
         &python,
         &script,
         "probe-model",
         Some(&encoded),
         MODEL_PROBE_TIMEOUT,
         None,
-    )?;
+    ) {
+        Ok(output) => output,
+        Err(error) => {
+            return persist_failed_model_probe(
+                paths,
+                &model,
+                &fingerprint,
+                runtime,
+                error,
+                &checked_at,
+                None,
+            )
+        }
+    };
     let failure = if output.status.success() {
         None
     } else if let Ok(failure) = serde_json::from_slice::<WorkerFailure>(&output.stdout) {
@@ -1407,29 +1451,7 @@ pub(crate) fn probe_model(
             )
         }
     };
-    let expects_textual_inversion = matches!(
-        model.architecture.as_str(),
-        "stable-diffusion-1" | "stable-diffusion-2" | "stable-diffusion-xl" | "flux-1"
-    );
-    let response_is_valid = response.schema_version == WORKER_SCHEMA_VERSION
-        && response.ready
-        && response.worker_version == runtime.worker_version.as_deref().unwrap_or("")
-        && response.packages == runtime.packages
-        && response.architecture == model.architecture
-        && response.device == runtime.device.as_deref().unwrap_or("")
-        && response.device_label == runtime.device_label.as_deref().unwrap_or("")
-        && response.device_memory_bytes == runtime.device_memory_bytes
-        && !response.pipeline_class.trim().is_empty()
-        && response.pipeline_class.len() <= 256
-        && !response.components.is_empty()
-        && response.components.len() <= 64
-        && response.capabilities.contains(&"lora".to_string())
-        && response.capabilities.contains(&"multi-lora".to_string())
-        && (!expects_textual_inversion
-            || response
-                .capabilities
-                .contains(&"textual-inversion".to_string()));
-    if !response_is_valid {
+    if !model_probe_matches_runtime(&model, runtime, &response) {
         return persist_failed_model_probe(
             paths,
             &model,
@@ -1466,6 +1488,36 @@ pub(crate) fn probe_model(
         components: response.components,
         capabilities: response.capabilities,
     })
+}
+
+fn model_probe_matches_runtime(
+    model: &InstalledModel,
+    runtime: &LocalDiffusersRuntimeStatus,
+    response: &WorkerModelProbeResponse,
+) -> bool {
+    let expects_textual_inversion = matches!(
+        model.architecture.as_str(),
+        "stable-diffusion-1" | "stable-diffusion-2" | "stable-diffusion-xl" | "flux-1"
+    );
+    response.schema_version == WORKER_SCHEMA_VERSION
+        && response.ready
+        && response.worker_version == runtime.worker_version.as_deref().unwrap_or("")
+        && response.packages == runtime.packages
+        && response.architecture == model.architecture
+        && response.device == runtime.device.as_deref().unwrap_or("")
+        && stable_device_label(&response.device_label)
+            == stable_device_label(runtime.device_label.as_deref().unwrap_or(""))
+        && response.device_memory_bytes == runtime.device_memory_bytes
+        && !response.pipeline_class.trim().is_empty()
+        && response.pipeline_class.len() <= 256
+        && !response.components.is_empty()
+        && response.components.len() <= 64
+        && response.capabilities.contains(&"lora".to_string())
+        && response.capabilities.contains(&"multi-lora".to_string())
+        && (!expects_textual_inversion
+            || response
+                .capabilities
+                .contains(&"textual-inversion".to_string()))
 }
 
 fn ensure_model_is_probe_ready(

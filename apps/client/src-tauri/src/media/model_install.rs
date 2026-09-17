@@ -314,8 +314,14 @@ fn managed_package_slug(
     let is_builtin = BUILTIN_MANIFESTS
         .iter()
         .any(|manifest| model_id == manifest.model_id && package_slug == manifest.slug);
-    let is_user_import = model_id.starts_with(model_import::USER_MODEL_ID_PREFIX)
-        && package_slug.starts_with("user-");
+    let is_user_import = model_id
+        .strip_prefix(model_import::USER_MODEL_ID_PREFIX)
+        .is_some_and(|digest| {
+            digest.len() == 64
+                && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+                && revision == digest
+                && package_slug == &format!("user-{}", &digest[..32])
+        });
     if !is_builtin && !is_user_import {
         return Err("the installed model path does not match its managed model id".to_string());
     }
@@ -338,7 +344,7 @@ fn managed_installation(
                     i.bytes_on_disk, i.relative_path
              FROM media_models m
              JOIN media_model_installations i ON i.model_id = m.id
-             WHERE m.id = ?1 AND i.status = 'installed'",
+             WHERE m.id = ?1",
             params![model_id],
             |row| {
                 Ok((
@@ -358,9 +364,21 @@ fn managed_installation(
     if installation.1 != "local" || installation.2 {
         return Err("this model is not removable from the local model store".to_string());
     }
-    let relative_path = installation
-        .6
-        .ok_or_else(|| "the installed model has no managed storage path".to_string())?;
+    let relative_path = match installation.6 {
+        Some(path) => path,
+        None => {
+            let slug =
+                if let Some(digest) = model_id.strip_prefix(model_import::USER_MODEL_ID_PREFIX) {
+                    if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                        return Err("the imported model has an invalid identity".to_string());
+                    }
+                    format!("user-{}", &digest[..32])
+                } else {
+                    builtin_manifest(model_id)?.slug.to_string()
+                };
+            format!("packages/{slug}/revisions/{}", installation.3)
+        }
+    };
     let package_slug = managed_package_slug(model_id, &installation.3, &relative_path)?;
     Ok(ManagedInstallation {
         model_id: model_id.to_string(),
@@ -379,6 +397,9 @@ pub(crate) fn installed_builtin_file(
     relative_file: &str,
 ) -> MediaResult<PathBuf> {
     let manifest = builtin_manifest(model_id)?;
+    if !installation_exists(paths, manifest)? {
+        return Err("the model is not currently installed".to_string());
+    }
     let expected = manifest
         .files
         .iter()
@@ -418,7 +439,19 @@ fn safe_relative_path(root: &Path, value: &str) -> MediaResult<PathBuf> {
     {
         return Err("model manifest contains an unsafe file path".to_string());
     }
-    Ok(root.join(relative))
+    let mut path = root.to_path_buf();
+    for component in relative.components() {
+        path.push(component);
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err("model storage contains a symbolic link".to_string());
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("failed to inspect model storage: {error}")),
+        }
+    }
+    Ok(path)
 }
 
 fn installation_exists(
@@ -710,7 +743,7 @@ fn finalize_removal_database(
         .map_err(|error| format!("failed to begin model removal commit: {error}"))?;
     transaction
         .execute(
-            "UPDATE media_model_installations SET status = 'not-installed', bytes_on_disk = 0, installed_at = NULL, verified_at = NULL, relative_path = NULL, error = NULL, updated_at = ?2 WHERE model_id = ?1",
+            "UPDATE media_model_installations SET status = 'removing', updated_at = ?2 WHERE model_id = ?1",
             params![model_id, completed_at],
         )
         .map_err(|error| format!("failed to remove model readiness: {error}"))?;
@@ -723,6 +756,101 @@ fn finalize_removal_database(
     transaction
         .commit()
         .map_err(|error| format!("failed to commit model removal: {error}"))
+}
+
+fn delete_model_data(paths: &MediaRuntimePaths, removal_id: &str) -> MediaResult<()> {
+    let mut connection = database::open(paths)?;
+    let model_id: String = connection
+        .query_row(
+            "SELECT model_id FROM media_model_removals WHERE id = ?1",
+            [removal_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("failed to read model cleanup: {error}"))?;
+    let job_ids = {
+        let mut statement = connection
+            .prepare("SELECT id FROM media_model_install_jobs WHERE model_id = ?1")
+            .map_err(|error| format!("failed to read model installation data: {error}"))?;
+        let rows = statement
+            .query_map([&model_id], |row| row.get::<_, String>(0))
+            .map_err(|error| format!("failed to query model installation data: {error}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("failed to decode model installation data: {error}"))?;
+        rows
+    };
+    let models_root = paths.models_root()?;
+    for job_id in job_ids {
+        for directory in ["staging", "quarantine"] {
+            let path = safe_relative_path(&models_root, &format!("{directory}/{job_id}"))?;
+            if path.exists() {
+                fs::remove_dir_all(path).map_err(|error| {
+                    format!("failed to delete model installation files: {error}")
+                })?;
+            }
+        }
+    }
+    let last_krea_model: bool = connection
+        .query_row(
+            "SELECT architecture = 'krea-2' AND NOT EXISTS (
+           SELECT 1 FROM media_models m JOIN media_model_installations i ON i.model_id = m.id
+           WHERE m.architecture = 'krea-2' AND m.id != ?1 AND i.status IN ('installed', 'removing')
+         ) FROM media_models WHERE id = ?1",
+            [&model_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("failed to inspect shared model components: {error}"))?;
+    if last_krea_model {
+        let components = safe_relative_path(&models_root, "components/krea-2")?;
+        if components.exists() {
+            fs::remove_dir_all(components)
+                .map_err(|error| format!("failed to delete unused model components: {error}"))?;
+        }
+    }
+    let other_trash = {
+        let mut statement = connection
+            .prepare("SELECT trash_relative_path FROM media_model_removals WHERE model_id = ?1")
+            .map_err(|error| format!("failed to inspect model cleanup files: {error}"))?;
+        let rows = statement
+            .query_map([&model_id], |row| row.get::<_, String>(0))
+            .map_err(|error| format!("failed to read model cleanup files: {error}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("failed to decode model cleanup files: {error}"))?;
+        rows
+    };
+    for relative_path in other_trash {
+        if !relative_path.starts_with("trash/model-removal-") {
+            return Err("the model cleanup path is invalid".to_string());
+        }
+        let trash = safe_relative_path(&models_root, &relative_path)?;
+        if trash.exists() {
+            fs::remove_dir_all(trash)
+                .map_err(|error| format!("failed to delete model cleanup files: {error}"))?;
+        }
+    }
+    let transaction = connection
+        .transaction()
+        .map_err(|error| format!("failed to begin model data deletion: {error}"))?;
+    for table in [
+        "media_model_runtime_probes",
+        "media_model_install_jobs",
+        "media_model_license_acceptances",
+        "media_model_lifecycle_snapshots",
+        "media_model_installations",
+        "media_model_removals",
+    ] {
+        transaction
+            .execute(
+                &format!("DELETE FROM {table} WHERE model_id = ?1"),
+                [&model_id],
+            )
+            .map_err(|error| format!("failed to delete model data: {error}"))?;
+    }
+    transaction
+        .execute("DELETE FROM media_models WHERE id = ?1", [&model_id])
+        .map_err(|error| format!("failed to delete model catalog entry: {error}"))?;
+    transaction
+        .commit()
+        .map_err(|error| format!("failed to commit model data deletion: {error}"))
 }
 
 fn cleanup_removal_trash(
@@ -741,12 +869,7 @@ fn cleanup_removal_trash(
             return Ok(true);
         }
     }
-    database::open(paths)?
-        .execute(
-            "UPDATE media_model_removals SET status = 'removed', error = NULL, updated_at = ?2 WHERE id = ?1",
-            params![removal_id, database::now()],
-        )
-        .map_err(|error| format!("failed to finish model cleanup: {error}"))?;
+    delete_model_data(paths, removal_id)?;
     Ok(false)
 }
 
@@ -765,19 +888,42 @@ pub(crate) fn remove(
         return Err("the model has an active installation job and cannot be removed".to_string());
     }
 
+    let pending: bool = database::open(paths)?.query_row(
+        "SELECT EXISTS(SELECT 1 FROM media_model_removals WHERE model_id = ?1 AND status IN ('prepared', 'cleanup-pending'))",
+        [&plan.model_id], |row| row.get(0),
+    ).map_err(|error| format!("failed to inspect pending model removal: {error}"))?;
+    if pending {
+        recover_removals(paths)?;
+        let remaining: bool = database::open(paths)?
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM media_model_removals WHERE model_id = ?1)",
+                [&plan.model_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| format!("failed to inspect model removal result: {error}"))?;
+        if remaining {
+            return Err("Model files could not be deleted. Close programs using the model and retry removal.".to_string());
+        }
+        return Ok(MediaModelRemovalResult {
+            model_id: plan.model_id,
+            revision: plan.revision,
+            removed_at: database::now(),
+            reclaimed_bytes: plan.installed_bytes,
+            cleanup_pending: false,
+        });
+    }
+
     let installation = managed_installation(paths, &plan.model_id)?;
     let removal_id = new_job_id()?.replacen("model-install", "model-removal", 1);
     let relative_path = installation.relative_path;
     let trash_relative_path = format!("trash/{removal_id}");
     let models_root = paths.models_root()?;
-    let source = safe_relative_path(&models_root, &relative_path)?;
+    let source = safe_relative_path(
+        &models_root,
+        &format!("packages/{}", installation.package_slug),
+    )?;
     let trash_root = safe_relative_path(&models_root, &trash_relative_path)?;
     let trash_repository = trash_root.join("repository");
-    if !source.is_dir() {
-        return Err(
-            "the installed model directory is missing; removal was not started".to_string(),
-        );
-    }
     if plan.model_id == BIREFNET_MODEL_ID {
         super::subject_cutout::release_session()?;
     }
@@ -805,19 +951,19 @@ pub(crate) fn remove(
         .commit()
         .map_err(|error| format!("failed to commit model removal reservation: {error}"))?;
 
-    fs::rename(&source, &trash_repository)
-        .map_err(|error| format!("failed to atomically detach model revision: {error}"))?;
-    let active_pointer = models_root
-        .join("packages")
-        .join(&installation.package_slug)
-        .join("active.json");
-    if active_pointer.exists() {
-        fs::rename(&active_pointer, trash_root.join("active.json"))
-            .map_err(|error| format!("failed to detach active model pointer: {error}"))?;
+    if source.exists() {
+        fs::rename(&source, &trash_repository)
+            .map_err(|error| format!("failed to atomically detach model package: {error}"))?;
     }
     let removed_at = database::now();
     finalize_removal_database(paths, &removal_id, &plan.model_id, &removed_at)?;
     let cleanup_pending = cleanup_removal_trash(paths, &removal_id, &trash_root)?;
+    if cleanup_pending {
+        return Err(
+            "Model files could not be deleted. Close programs using the model and retry removal."
+                .to_string(),
+        );
+    }
     Ok(MediaModelRemovalResult {
         model_id: plan.model_id,
         revision: plan.revision,
@@ -835,7 +981,7 @@ pub(crate) fn recover_removals(paths: &MediaRuntimePaths) -> MediaResult<()> {
     let connection = database::open(paths)?;
     let removals = {
         let mut statement = connection
-            .prepare("SELECT id, model_id, revision, status, relative_path, trash_relative_path FROM media_model_removals WHERE status IN ('prepared','cleanup-pending') ORDER BY created_at")
+            .prepare("SELECT id, model_id, revision, status, relative_path, trash_relative_path FROM media_model_removals r WHERE status IN ('prepared','cleanup-pending') OR (status = 'removed' AND EXISTS (SELECT 1 FROM media_model_installations i WHERE i.model_id = r.model_id AND i.status = 'not-installed')) ORDER BY created_at")
             .map_err(|error| format!("failed to prepare model removal recovery: {error}"))?;
         let rows = statement
             .query_map([], |row| {
@@ -856,11 +1002,21 @@ pub(crate) fn recover_removals(paths: &MediaRuntimePaths) -> MediaResult<()> {
     drop(connection);
     let models_root = paths.models_root()?;
     for (removal_id, model_id, revision, status, relative_path, trash_relative_path) in removals {
+        let pending: bool = database::open(paths)?
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM media_model_removals WHERE id = ?1)",
+                [&removal_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| format!("failed to inspect model cleanup state: {error}"))?;
+        if !pending {
+            continue;
+        }
         let package_slug = managed_package_slug(&model_id, &revision, &relative_path)?;
-        let source = safe_relative_path(&models_root, &relative_path)?;
+        let source = safe_relative_path(&models_root, &format!("packages/{package_slug}"))?;
         let trash_root = safe_relative_path(&models_root, &trash_relative_path)?;
         let trash_repository = trash_root.join("repository");
-        if status == "prepared" {
+        if matches!(status.as_str(), "prepared" | "removed") {
             if source.exists() && trash_repository.exists() {
                 return Err(
                     "model removal recovery found both active and detached revisions".to_string(),
@@ -872,21 +1028,6 @@ pub(crate) fn recover_removals(paths: &MediaRuntimePaths) -> MediaResult<()> {
                 })?;
                 fs::rename(&source, &trash_repository)
                     .map_err(|error| format!("failed to recover model removal move: {error}"))?;
-            }
-            if !trash_repository.exists() {
-                return Err(
-                    "model removal recovery could not locate the active or detached revision"
-                        .to_string(),
-                );
-            }
-            let active_pointer = models_root
-                .join("packages")
-                .join(package_slug)
-                .join("active.json");
-            if active_pointer.exists() {
-                fs::rename(&active_pointer, trash_root.join("active.json")).map_err(|error| {
-                    format!("failed to recover active model pointer removal: {error}")
-                })?;
             }
             finalize_removal_database(paths, &removal_id, &model_id, &database::now())?;
         }
@@ -1652,15 +1793,16 @@ mod tests {
         assert_eq!(result.reclaimed_bytes, 7);
         assert!(!revision_root.exists());
         assert!(!package_root.join("active.json").exists());
-        let status = database::open(&paths)
+        assert!(!package_root.exists());
+        let remaining: u32 = database::open(&paths)
             .expect("database should open")
             .query_row(
-                "SELECT status FROM media_model_installations WHERE model_id = ?1",
+                "SELECT COUNT(*) FROM media_model_installations WHERE model_id = ?1",
                 params![FLUX_MANIFEST.model_id],
-                |row| row.get::<_, String>(0),
+                |row| row.get(0),
             )
-            .expect("installation state should remain queryable");
-        assert_eq!(status, "not-installed");
+            .expect("installation state should be deleted");
+        assert_eq!(remaining, 0);
         let _ = fs::remove_dir_all(root);
     }
 }
