@@ -12,8 +12,9 @@ use tauri::{AppHandle, Manager};
 
 pub(crate) mod display_layout;
 pub(crate) mod file_manager;
+pub(crate) mod placement;
 mod shortcut;
-mod startup;
+pub(crate) mod startup;
 mod tray;
 mod window;
 
@@ -24,12 +25,13 @@ pub(crate) use file_manager::{
 #[cfg(test)]
 pub(crate) use shortcut::sync_shortcut_registration;
 pub(crate) use shortcut::{
-    sync_quick_voice_shortcut, sync_quick_voice_shortcut_with_settings, validate_quick_voice_shortcut,
+    sync_quick_voice_shortcut, sync_quick_voice_shortcut_with_settings,
+    validate_quick_voice_shortcut,
 };
 pub(crate) use startup::{
-    apply_startup_mode, current_process_has_administrator_rights,
-    hide_console_window_for_background_ui_launch, relaunch_as_administrator_if_configured,
-    resolve_launch_context, restart_as_administrator_if_needed,
+    current_process_has_administrator_rights, hide_console_window_for_background_ui_launch,
+    relaunch_as_administrator_if_configured, resolve_launch_context,
+    restart_as_administrator_if_needed, StartupState,
 };
 pub(crate) use tray::create_tray;
 pub(crate) use window::{handle_window_event, sync_assistant_bubble_window};

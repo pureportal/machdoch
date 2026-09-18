@@ -1,4 +1,5 @@
-import { Suspense, lazy, type JSX } from "react";
+import { Suspense, lazy, useEffect, type JSX } from "react";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentShellWindowLabel } from "../lib/shell-store";
 import {
   ASSISTANT_BUBBLE_WINDOW_LABEL,
@@ -98,6 +99,17 @@ const WindowLoadingFallback = ({
   return <main className="min-h-screen bg-slate-950 text-slate-50" />;
 };
 
+const MainWindowReady = (): null => {
+  useEffect(() => {
+    if (isTauri()) {
+      void invoke("main_window_ready").catch((error: unknown) => {
+        console.error("Failed to initialize the main window", error);
+      });
+    }
+  }, []);
+  return null;
+};
+
 export const App = (): JSX.Element => {
   const windowLabel = getPreviewWindowLabel();
   const fallback = <WindowLoadingFallback windowLabel={windowLabel} />;
@@ -138,6 +150,7 @@ export const App = (): JSX.Element => {
     <Suspense fallback={fallback}>
       <main className="h-dvh min-h-0 bg-slate-950 text-slate-50 flex flex-col">
         <ChatSession />
+        <MainWindowReady />
       </main>
     </Suspense>
   );

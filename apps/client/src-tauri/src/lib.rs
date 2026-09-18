@@ -27,8 +27,6 @@ mod workspace_run;
 mod workspace_tools;
 
 use tauri::Manager as _;
-#[cfg(desktop)]
-use tauri_plugin_window_state::{Builder as WindowStateBuilder, StateFlags as WindowStateFlags};
 
 const DEVELOPMENT_APP_IDENTIFIER_SUFFIX: &str = ".dev";
 const PRODUCTION_APP_TITLE: &str = "machdoch";
@@ -106,19 +104,6 @@ pub fn run() {
             .build(),
     );
 
-    #[cfg(desktop)]
-    let builder = builder.plugin(
-        WindowStateBuilder::default()
-            .with_filter(|label| label == desktop_shell::MAIN_WINDOW_LABEL)
-            .with_state_flags(
-                WindowStateFlags::POSITION
-                    | WindowStateFlags::SIZE
-                    | WindowStateFlags::MAXIMIZED
-                    | WindowStateFlags::FULLSCREEN,
-            )
-            .build(),
-    );
-
     let mut context = tauri::generate_context!();
 
     {
@@ -137,13 +122,6 @@ pub fn run() {
             .find(|window| window.label == desktop_shell::MAIN_WINDOW_LABEL)
         {
             main_window.title = app_title(is_development).to_string();
-            // Materialize the configured WebView2 window before setup applies
-            // the user's launch policy. An initially invisible configured
-            // window can otherwise remain a non-operational placeholder on
-            // Windows: get_webview_window() finds it, but show(), sizing, and
-            // IPC fail because no webview was created. Setup still hides the
-            // window before the event loop paints when start-in-tray is active.
-            main_window.visible = true;
         }
     }
 
@@ -158,6 +136,8 @@ pub fn run() {
         ))
         .manage(desktop_shell::QuickVoiceShortcutState::default())
         .manage(desktop_shell::display_layout::DisplayLayoutState::default())
+        .manage(desktop_shell::placement::WindowPlacementState::default())
+        .manage(desktop_shell::StartupState::new(launch_context.clone()))
         .manage(fleet::FleetConnectionState::default())
         .manage(fleet_control::FleetControlState::default())
         .manage(media::MediaRuntimeState::default())
@@ -207,8 +187,6 @@ pub fn run() {
                 eprintln!("Failed to initialize workspace run control: {error}");
             }
 
-            desktop_shell::apply_startup_mode(app.handle(), launch_context);
-
             if let Err(error) = desktop_shell::sync_assistant_bubble_window(app.handle()) {
                 eprintln!("Failed to initialize the assistant bubble window: {error}");
             }
@@ -227,6 +205,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
+            desktop_shell::startup::main_window_ready,
             idle_shutdown::supports_idle_shutdown,
             idle_shutdown::get_shutdown_when_idle,
             idle_shutdown::set_window_pending_media_work,
@@ -433,6 +412,7 @@ pub fn run() {
         .expect("error while building machdoch desktop shell")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
+                desktop_shell::placement::save(app);
                 media::model_memory::shutdown();
                 app.state::<desktop_shell::display_layout::DisplayLayoutState>()
                     .shutdown();
