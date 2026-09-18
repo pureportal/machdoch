@@ -8348,6 +8348,8 @@ export const useChatSessionController = (
       isSessionRunning:
         activeSessionExecuting || activeSessionPromptEnhancementBusy,
       bottomRef: state.bottomRef,
+      showScrollToTopButton: state.showScrollToTopButton,
+      onScrollToTop: state.scrollToTop,
       showScrollToNewestButton: state.showScrollToNewestButton,
       onScrollToNewest: state.scrollToNewest,
       onRetryTask: taskSubmission.handleRetryTask,

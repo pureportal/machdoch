@@ -29,6 +29,7 @@ import { FleetManagerPanel } from "./chat-session/components/fleet-manager-panel
 import { ProviderEmptyState } from "./chat-session/components/provider-empty-state";
 import { SchedulerPanel } from "./chat-session/components/scheduler-panel";
 import { ScrollToNewestButton } from "./chat-session/components/scroll-to-newest-button";
+import { ScrollToTopButton } from "./chat-session/components/scroll-to-top-button";
 import { SessionComposer } from "./chat-session/components/session-composer";
 import { SessionHeader } from "./chat-session/components/session-header";
 import { SessionsSidebar } from "./chat-session/components/sessions-sidebar";
@@ -1023,6 +1024,11 @@ export const ChatSession = (): JSX.Element => {
                           {...controller.conversation}
                         />
                       </ScrollArea>
+                      <ScrollToTopButton
+                        visible={controller.conversation.showScrollToTopButton}
+                        onClick={controller.conversation.onScrollToTop}
+                        className="top-4 right-4"
+                      />
                       <ScrollToNewestButton
                         visible={
                           controller.conversation.showScrollToNewestButton

@@ -36,6 +36,7 @@ import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
 import { FilePreviewDialogFallback } from "./chat-session/components/file-preview-dialog-fallback";
 import { MarkdownContent } from "./components/markdown-content";
 import { ScrollToNewestButton } from "./chat-session/components/scroll-to-newest-button";
+import { ScrollToTopButton } from "./chat-session/components/scroll-to-top-button";
 import { CommandProvider } from "./commands/command-context";
 import { getDefaultCommandShortcut } from "./commands/command-defaults";
 import {
@@ -169,6 +170,11 @@ const QuickTaskActivity = ({
           </div>
         )}
       </ScrollArea>
+      <ScrollToTopButton
+        visible={newestMessageScroll.showScrollToTopButton}
+        onClick={newestMessageScroll.scrollToTop}
+        className="right-4 top-3 h-9 w-9"
+      />
       <ScrollToNewestButton
         visible={newestMessageScroll.showScrollToNewestButton}
         onClick={newestMessageScroll.scrollToNewest}
