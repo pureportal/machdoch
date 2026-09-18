@@ -259,7 +259,13 @@ fn classify(operation: &str, diagnostic: &str) -> MediaErrorCode {
     if diagnostic.contains("remote upload") && diagnostic.contains("not allowed") {
         return MediaErrorCode::RemoteUploadNotAllowed;
     }
-    if diagnostic.contains("out of memory") || diagnostic.contains("oom") {
+    if diagnostic.contains("out of memory")
+        || diagnostic.contains("outofmemoryerror")
+        || diagnostic.contains("hiperroroutofmemory")
+        || diagnostic
+            .split(|character: char| !character.is_ascii_alphanumeric())
+            .any(|word| word == "oom")
+    {
         return MediaErrorCode::Oom;
     }
     if diagnostic.contains("timed out") || diagnostic.contains("timeout") {
@@ -562,12 +568,12 @@ fn presentation(
         ),
         Code::Oom => (
             Category::Resource,
-            "The selected workload exceeded available memory.",
+            "Not enough memory. Close other GPU applications, reduce dimensions, or choose a smaller model, then retry.",
             Retry::AfterUserAction,
             vec![Action::new(
                 "open-models",
-                "Review compatibility",
-                "Reduce dimensions or batch size, or choose a compatible model/runtime profile.",
+                "Choose a smaller model",
+                "Select a model that needs less memory.",
             )],
         ),
         Code::WorkerCrashed | Code::WorkerTimeout => (
@@ -687,6 +693,28 @@ fn sanitize_diagnostic(diagnostic: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gpu_memory_errors_offer_recovery_without_matching_unrelated_words() {
+        for diagnostic in [
+            "CUDA out of memory",
+            "HIP out of memory",
+            "MPS backend out of memory",
+            "torch.OutOfMemoryError",
+            "hipErrorOutOfMemory",
+            "OOM",
+        ] {
+            let error = MediaError::from_internal("media_generate_images", diagnostic);
+            assert_eq!(error.code, MediaErrorCode::Oom);
+            assert_eq!(error.retryability, MediaErrorRetryability::AfterUserAction);
+            assert!(error.message.contains("reduce dimensions"));
+        }
+        assert_ne!(
+            MediaError::from_internal("media_generate_images", "Could not generate a room image")
+                .code,
+            MediaErrorCode::Oom
+        );
+    }
 
     #[test]
     fn startup_safety_notices_do_not_hide_generation_device_errors() {

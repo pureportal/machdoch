@@ -433,6 +433,7 @@ pub fn run() {
         .expect("error while building machdoch desktop shell")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
+                media::model_memory::shutdown();
                 app.state::<desktop_shell::display_layout::DisplayLayoutState>()
                     .shutdown();
                 app.state::<workspace_run::WorkspaceRunState>().shutdown();

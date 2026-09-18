@@ -1,23 +1,16 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    io::Write as _,
     path::{Component, Path, PathBuf},
-    process::{Command, Output, Stdio},
+    process::{Command, Output},
     sync::{Mutex, OnceLock},
-    thread,
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, SystemTime},
 };
 
 use rusqlite::{params, OptionalExtension as _};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use tauri::{AppHandle, Manager as _};
-
-use crate::child_process::{
-    assign_child_process_to_kill_on_close_job, configure_child_process_group,
-    terminate_child_process_tree,
-};
 
 use super::{
     database, model_addon, model_components, model_import,
@@ -40,8 +33,6 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(3 * 60);
 const MODEL_PROBE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const GENERATION_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const VIDEO_GENERATION_TIMEOUT: Duration = Duration::from_secs(4 * 60 * 60);
-const MAX_WORKER_RESPONSE_BYTES: usize = 2 * 1_024 * 1_024;
-const MAX_WORKER_DIAGNOSTIC_BYTES: usize = 256 * 1_024;
 const MAX_IMAGE_BYTES: usize = 64 * 1_024 * 1_024;
 const MAX_VIDEO_BYTES: usize = 512 * 1_024 * 1_024;
 const MAX_DECODED_LOOP_CONTINUITY_RATIO: f64 = 1.25;
@@ -661,7 +652,6 @@ fn run_worker(
         .arg("-B")
         .arg("-Xutf8")
         .arg(script)
-        .arg(command)
         .env("HF_HUB_OFFLINE", "1")
         .env("TRANSFORMERS_OFFLINE", "1")
         .env("HF_HUB_DISABLE_TELEMETRY", "1")
@@ -682,109 +672,7 @@ fn run_worker(
             .env("HIP_VISIBLE_DEVICES", index)
             .env("MACHDOCH_MEDIA_CUDA_DEVICE", "0");
     }
-    configure_child_process_group(&mut worker);
-    let mut process = worker
-        .stdin(if stdin.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("failed to start local Diffusers worker: {error}"))?;
-    let _worker_job = assign_child_process_to_kill_on_close_job(&process).map_err(|error| {
-        terminate_child_process_tree(&mut process);
-        let _ = process.wait();
-        format!("failed to isolate local Diffusers worker: {error}")
-    })?;
-    if let Some(input) = stdin {
-        process
-            .stdin
-            .take()
-            .ok_or_else(|| "local Diffusers worker stdin is unavailable".to_string())?
-            .write_all(input)
-            .map_err(|error| format!("failed to write local Diffusers request: {error}"))?;
-    }
-    let started = Instant::now();
-    let (progress_sender, progress_receiver) = std::sync::mpsc::sync_channel(64);
-    let stdout = process
-        .stdout
-        .take()
-        .ok_or("Generation stdout is unavailable")?;
-    let stderr = process
-        .stderr
-        .take()
-        .ok_or("Generation stderr is unavailable")?;
-    let stdout_reader =
-        thread::spawn(move || super::worker_output::drain(stdout, MAX_WORKER_RESPONSE_BYTES, None));
-    let stderr_reader = thread::spawn(move || {
-        super::worker_output::drain(stderr, MAX_WORKER_DIAGNOSTIC_BYTES, Some(progress_sender))
-    });
-    let mut next_cancellation_check = started;
-    loop {
-        for event in progress_receiver.try_iter() {
-            if let Some((paths, run_id)) = cancellation {
-                if database::workflow::progress(paths, run_id, &event.stage, event.progress)? {
-                    continue;
-                }
-                let node_types: &[&str] = if command == "generate-video" {
-                    &["task.generate-video"]
-                } else {
-                    &["task.generate-image", "task.edit-image"]
-                };
-                if let Err(error) = database::transition_nodes_by_type(
-                    paths,
-                    run_id,
-                    node_types,
-                    "running",
-                    Some("generating"),
-                    Some(&event.stage),
-                    Some(event.progress),
-                ) {
-                    terminate_child_process_tree(&mut process);
-                    let _ = process.wait();
-                    return Err(error);
-                }
-            }
-        }
-        if let Some((paths, run_id)) = cancellation {
-            if Instant::now() >= next_cancellation_check {
-                if database::is_cancellation_requested(paths, run_id)? {
-                    terminate_child_process_tree(&mut process);
-                    let _ = process.wait();
-                    return Err("local Diffusers generation was canceled".to_string());
-                }
-                next_cancellation_check = Instant::now() + Duration::from_millis(500);
-            }
-        }
-        match process.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) if started.elapsed() < timeout => thread::sleep(Duration::from_millis(50)),
-            Ok(None) => {
-                terminate_child_process_tree(&mut process);
-                let _ = process.wait();
-                return Err("local Diffusers worker exceeded its execution deadline".to_string());
-            }
-            Err(error) => {
-                terminate_child_process_tree(&mut process);
-                let _ = process.wait();
-                return Err(format!("failed to inspect local Diffusers worker: {error}"));
-            }
-        }
-    }
-    let status = process.wait().map_err(|error| error.to_string())?;
-    let stdout = stdout_reader
-        .join()
-        .map_err(|_| "Generation output reader failed")??;
-    let stderr = stderr_reader
-        .join()
-        .map_err(|_| "Generation diagnostic reader failed")??;
-    Ok(Output {
-        status,
-        stdout,
-        stderr,
-    })
+    super::model_memory::run(worker, command, stdin, timeout, cancellation)
 }
 
 fn probe_with_python(
@@ -4633,6 +4521,7 @@ fn expected_video_conditioning_mode(
 
 #[cfg(test)]
 mod tests {
+    use std::{process::Stdio, thread};
     #[test]
     fn wan_conditioning_matches_the_worker_endpoint_strategy() {
         for loop_mode in ["none", "crossfade", "ping-pong", "seamless"] {

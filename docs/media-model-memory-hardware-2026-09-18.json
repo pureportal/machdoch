@@ -1,0 +1,73 @@
+{
+  "device": "AMD Radeon RX 9070 (cuda:1)",
+  "torch": "2.12.0+rocm7.14.0",
+  "hip": "7.14.60850",
+  "baseline": {
+    "device": "cuda",
+    "freeBytes": 16937648128,
+    "totalBytes": 17095983104,
+    "allocatedBytes": 0,
+    "reservedBytes": 0,
+    "headroomBytes": 1709598310,
+    "pressure": false
+  },
+  "runs": [
+    {
+      "seconds": 47.0,
+      "retentionSeconds": 128.43599999998696,
+      "outputs": [
+        {
+          "index": 0,
+          "fileName": "output-0000.png",
+          "seed": 812,
+          "width": 256,
+          "height": 256
+        }
+      ],
+      "loadingEvents": 1,
+      "memory": {
+        "device": "cuda",
+        "freeBytes": 16571564032,
+        "totalBytes": 17095983104,
+        "allocatedBytes": 79725056,
+        "reservedBytes": 85983232,
+        "headroomBytes": 1709598310,
+        "pressure": false
+      }
+    },
+    {
+      "seconds": 9.328,
+      "retentionSeconds": 128.43599999998696,
+      "outputs": [
+        {
+          "index": 0,
+          "fileName": "output-0000.png",
+          "seed": 813,
+          "width": 256,
+          "height": 256
+        }
+      ],
+      "loadingEvents": 1,
+      "memory": {
+        "device": "cuda",
+        "freeBytes": 16571564032,
+        "totalBytes": 17095983104,
+        "allocatedBytes": 79725056,
+        "reservedBytes": 88080384,
+        "headroomBytes": 1709598310,
+        "pressure": false
+      }
+    }
+  ],
+  "workerExitCode": 0,
+  "afterWorkerExit": {
+    "device": "cuda",
+    "freeBytes": 16937648128,
+    "totalBytes": 17095983104,
+    "allocatedBytes": 0,
+    "reservedBytes": 0,
+    "headroomBytes": 1709598310,
+    "pressure": false
+  },
+  "releasedDriverBytes": 366084096
+}

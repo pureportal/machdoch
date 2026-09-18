@@ -1,10 +1,4 @@
-"""Isolated local Diffusers image and video worker for Media Studio.
-
-The desktop process passes only absolute, application-owned paths. Hub access and
-remote code are disabled before importing ML libraries. The worker emits exactly
-one bounded JSON document on stdout and writes image payloads to a fresh staging
-directory selected by the desktop process.
-"""
+"""Offline Media Studio inference with supervised image-pipeline reuse."""
 
 from __future__ import annotations
 
@@ -28,6 +22,8 @@ import threading
 import traceback
 import types
 from typing import Any
+
+PROCESS_STARTED_AT = time.monotonic()
 
 import numpy as np
 from PIL import Image, ImageOps
@@ -2519,7 +2515,7 @@ def _run_worker_command(arguments: list[str], *, input: str, timeout: float, env
     return subprocess.CompletedProcess(arguments, process.returncode, stdout.decode("utf-8"), diagnostics.decode("utf-8", errors="replace"))
 
 
-def generate(request: dict[str, Any]) -> dict[str, Any]:
+def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
     _progress("Starting image runtime", 0.02)
     if request.get("schemaVersion") != SCHEMA_VERSION:
         raise WorkerError("Unsupported worker request schema")
@@ -2729,6 +2725,18 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
                 .crop(masked_context["bounds"])
                 .resize((width, height), Image.Resampling.LANCZOS)
             )
+    cached = cache.acquire({
+        "model": model,
+        "addons": addons,
+        "inpainting": mask_image is not None,
+        "imageToImage": primary_reference_image is not None,
+        "controlnetPath": str(controlnet_path) if controlnet_path is not None else None,
+        "ipAdapterPath": request.get("ipAdapterPath") if ip_adapter_references else None,
+        "references": [{"role": item["role"], "influence": item["influence"]} for item in references] if ip_adapter_references else [],
+        "width": width,
+        "height": height,
+        "memoryProfile": request.get("memoryProfile"),
+    }) if cache is not None else None
     if architecture == "krea-2":
         config_path = _absolute_existing_path(model.get("configPath"), file=False)
         krea_text_root, _ = _krea_runtime_paths(config_path)
@@ -2738,71 +2746,89 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
             prompt,
             references,
         )
-    _progress("Loading image model", 0.08)
-    pipeline = _load_pipeline(
-        diffusers,
-        torch,
-        model,
-        flux2_inpainting=flux2_inpainting,
-    )
-    if control_image is not None and controlnet_path is not None:
-        pipeline = _controlnet_pipeline(
+    if cached is None:
+        _progress("Loading image model", 0.08)
+        pipeline = _load_pipeline(
             diffusers,
             torch,
+            model,
+            flux2_inpainting=flux2_inpainting,
+        )
+        if control_image is not None and controlnet_path is not None:
+            pipeline = _controlnet_pipeline(
+                diffusers,
+                torch,
+                pipeline,
+                architecture,
+                controlnet_path,
+                primary_reference_image is not None,
+            )
+        if (
+            masked_context is not None
+            and architecture in (
+                "stable-diffusion-1", "stable-diffusion-2", "stable-diffusion-xl", "flux-1",
+            )
+        ):
+            pipeline = diffusers.AutoPipelineForInpainting.from_pipe(pipeline)
+            pipeline.mask_processor.register_to_config(do_binarize=False)
+        elif (
+            primary_reference_image is not None
+            and architecture in (
+                "stable-diffusion-1", "stable-diffusion-2", "stable-diffusion-xl", "flux-1",
+            )
+        ):
+            pipeline = diffusers.AutoPipelineForImage2Image.from_pipe(pipeline)
+        if ip_adapter_references:
+            adapter_root = _absolute_existing_path(request.get("ipAdapterPath"), file=False)
+            _load_image_conditioning().load_ip_adapter(pipeline, adapter_root, architecture, references)
+        vae_decode_evidence = _configure_large_image_vae_decode(
             pipeline,
             architecture,
-            controlnet_path,
-            primary_reference_image is not None,
+            torch,
+            width,
+            height,
         )
-    if (
-        masked_context is not None
-        and architecture
-        in (
-            "stable-diffusion-1",
-            "stable-diffusion-2",
-            "stable-diffusion-xl",
-            "flux-1",
+        vae_decode_evidence["convolutionBackend"] = convolution_backend
+        (
+            prompt, negative_prompt, applied, lora_names, lora_weights, lora_schedules,
+        ) = _apply_addons(
+            pipeline, addons, prompt, negative_prompt
         )
-    ):
-        pipeline = diffusers.AutoPipelineForInpainting.from_pipe(pipeline)
-        pipeline.mask_processor.register_to_config(do_binarize=False)
-    elif (
-        primary_reference_image is not None
-        and architecture
-        in (
-            "stable-diffusion-1",
-            "stable-diffusion-2",
-            "stable-diffusion-xl",
-            "flux-1",
-        )
-    ):
-        pipeline = diffusers.AutoPipelineForImage2Image.from_pipe(pipeline)
-    if ip_adapter_references:
-        adapter_root = _absolute_existing_path(request.get("ipAdapterPath"), file=False)
-        _load_image_conditioning().load_ip_adapter(pipeline, adapter_root, architecture, references)
-    vae_decode_evidence = _configure_large_image_vae_decode(
-        pipeline,
-        architecture,
-        torch,
-        width,
-        height,
-    )
-    vae_decode_evidence["convolutionBackend"] = convolution_backend
-    (
-        prompt,
-        negative_prompt,
-        applied,
-        lora_names,
-        lora_weights,
-        lora_schedules,
-    ) = _apply_addons(
-        pipeline, addons, prompt, negative_prompt
-    )
-    if architecture != "krea-2":
-        if runtime_device == "cuda":
-            pipeline.enable_model_cpu_offload(gpu_id=torch.cuda.current_device(), device="cuda")
+        if architecture != "krea-2":
+            if runtime_device == "cuda":
+                pipeline.enable_model_cpu_offload(gpu_id=torch.cuda.current_device(), device="cuda")
+            else:
+                pipeline.to(runtime_device)
         else:
-            pipeline.to(runtime_device)
+            krea_performance_evidence = _configure_krea_offload(
+                pipeline, torch, model, addons, request.get("memoryProfile"),
+            )
+        if cache is not None:
+            cache.store({
+                "pipeline": pipeline,
+                "vaeDecode": vae_decode_evidence,
+                "addons": applied,
+                "loraNames": lora_names,
+                "loraWeights": lora_weights,
+                "loraSchedules": lora_schedules,
+                "performance": krea_performance_evidence,
+            })
+    else:
+        _progress("Preparing image", 0.08)
+        pipeline = cached["pipeline"]
+        vae_decode_evidence = cached["vaeDecode"]
+        applied = cached["addons"]
+        lora_names = cached["loraNames"]
+        lora_weights = cached["loraWeights"]
+        lora_schedules = cached["loraSchedules"]
+        krea_performance_evidence = cached["performance"]
+        for addon in applied:
+            if addon["kind"] == "textual-inversion":
+                if addon["placement"] in ("positive", "both"):
+                    prompt = _append_token(prompt, addon["token"])
+                if addon["placement"] in ("negative", "both"):
+                    negative_prompt = _append_token(negative_prompt, addon["token"])
+        _verify_embedding_prompt_tokens(pipeline, applied, prompt, negative_prompt)
     edit_strength = request.get("editStrength", 0.5)
     if primary_reference_image is not None:
         if (
@@ -2824,14 +2850,6 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
             has_base_image=base_image is not None,
             references=references,
             require_visible_change=requires_visible_reference_change,
-        )
-    if architecture == "krea-2":
-        krea_performance_evidence = _configure_krea_offload(
-            pipeline,
-            torch,
-            model,
-            addons,
-            request.get("memoryProfile"),
         )
     device, device_label, device_memory = _device(torch)
     call_parameters = inspect.signature(pipeline.__call__).parameters
@@ -3013,6 +3031,7 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
             generated_image = result.images[0]
         publish_image(index, image_seed, generated_image)
 
+    vae_dtype = pipeline.vae.dtype if pending_cpu_decodes else None
     for index, image_seed, latents in pending_cpu_decodes:
         generated_image = _decode_flux2_latents_on_cpu(
             pipeline,
@@ -3020,6 +3039,9 @@ def generate(request: dict[str, Any]) -> dict[str, Any]:
             latents,
         )
         publish_image(index, image_seed, generated_image)
+    if pending_cpu_decodes:
+        pipeline.vae.to(dtype=vae_dtype)
+        pipeline.enable_model_cpu_offload(gpu_id=torch.cuda.current_device(), device="cuda")
     outputs.sort(key=lambda output: output["index"])
     return {
         "schemaVersion": SCHEMA_VERSION,
@@ -9335,6 +9357,11 @@ def _emit(value: dict[str, Any]) -> None:
 def main() -> int:
     command = sys.argv[1] if len(sys.argv) == 2 else ""
     try:
+        if command == "serve":
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            from media_model_server import serve
+
+            return serve(sys.modules[__name__])
         if command == "probe":
             _emit(probe())
             return 0
