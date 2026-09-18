@@ -29,15 +29,21 @@ pub(crate) fn handle_window_event<R: Runtime>(window: &Window<R>, event: &Window
     if matches!(
         event,
         WindowEvent::ScaleFactorChanged { .. } | WindowEvent::Focused(true)
-    ) {
+    ) || (window.label() == MAIN_WINDOW_LABEL
+        && matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_)))
+    {
         if let Some(state) = window
             .app_handle()
             .try_state::<super::display_layout::DisplayLayoutState>()
         {
-            state.window_changed(
-                window.label(),
-                matches!(event, WindowEvent::ScaleFactorChanged { .. }),
-            );
+            if matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_)) {
+                state.refresh();
+            } else {
+                state.window_changed(
+                    window.label(),
+                    matches!(event, WindowEvent::ScaleFactorChanged { .. }),
+                );
+            }
         }
     }
     if window.label() != MAIN_WINDOW_LABEL {
@@ -49,6 +55,9 @@ pub(crate) fn handle_window_event<R: Runtime>(window: &Window<R>, event: &Window
     };
 
     api.prevent_close();
+    if let Some(webview) = window.app_handle().get_webview_window(MAIN_WINDOW_LABEL) {
+        super::placement::capture(&webview);
+    }
     let transfer_state = window
         .app_handle()
         .state::<crate::settings_transfer::SettingsTransferState>();
@@ -287,11 +296,15 @@ pub(super) fn hide_to_tray<R: Runtime>(app: &AppHandle<R>) {
         return;
     };
 
+    super::placement::capture(&window);
     let _ = window.set_skip_taskbar(true);
     let _ = window.hide();
 }
 
 pub(super) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
+    if !app.state::<super::StartupState>().request_reveal() {
+        return;
+    }
     hide_transient_assistant_windows(app);
 
     let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
@@ -299,9 +312,12 @@ pub(super) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     };
 
     let _ = window.set_skip_taskbar(false);
-    let _ = window.show();
-    let _ = window.unminimize();
+    if window.is_minimized().unwrap_or(false) {
+        let _ = window.unminimize();
+    }
     super::display_layout::recover_on_reveal(&window);
+    super::placement::apply_saved_mode(&window);
+    let _ = window.show();
     let _ = window.set_focus();
 }
 

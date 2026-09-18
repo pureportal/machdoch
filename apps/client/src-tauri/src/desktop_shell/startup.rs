@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, sync::Mutex};
 
 #[cfg(target_os = "windows")]
 use std::{ffi::OsStr, os::windows::ffi::OsStrExt};
@@ -42,6 +42,56 @@ pub(crate) fn resolve_launch_context(
         launched_from_autostart: env::args().skip(1).any(|arg| arg == AUTOSTART_LAUNCH_ARG),
         file_manager_invocation,
     }
+}
+
+pub(crate) struct StartupState(Mutex<StartupProgress>);
+
+struct StartupProgress {
+    launch_context: Option<LaunchContext>,
+    ready: bool,
+    reveal_requested: bool,
+}
+
+impl StartupState {
+    pub(crate) fn new(launch_context: LaunchContext) -> Self {
+        Self(Mutex::new(StartupProgress {
+            launch_context: Some(launch_context),
+            ready: false,
+            reveal_requested: false,
+        }))
+    }
+
+    pub(super) fn request_reveal(&self) -> bool {
+        let mut progress = self.0.lock().unwrap();
+        progress.reveal_requested = true;
+        progress.ready
+    }
+}
+
+#[tauri::command]
+pub fn main_window_ready(window: tauri::WebviewWindow) -> Result<(), String> {
+    if window.label() != MAIN_WINDOW_LABEL {
+        return Err("Only the main window can complete desktop startup.".into());
+    }
+    let app = window.app_handle();
+    let state = app.state::<StartupState>();
+    if state.0.lock().unwrap().ready {
+        return Ok(());
+    }
+    if let Err(error) = super::placement::restore(&window) {
+        eprintln!("{error}");
+    }
+    let (launch_context, reveal_requested) = {
+        let mut progress = state.0.lock().unwrap();
+        progress.ready = true;
+        (progress.launch_context.take(), progress.reveal_requested)
+    };
+    if reveal_requested {
+        window::show_main_window(app);
+    } else if let Some(launch_context) = launch_context {
+        apply_startup_mode(app, launch_context);
+    }
+    Ok(())
 }
 
 fn should_hide_console_window_for_launch_args<I, S>(args: I) -> bool
@@ -303,9 +353,7 @@ fn resolve_startup_window_mode(
     StartupWindowMode::OpenWindow
 }
 
-pub(crate) fn apply_startup_mode<R: Runtime>(app: &AppHandle<R>, launch_context: LaunchContext) {
-    window::hide_transient_assistant_windows(app);
-
+fn apply_startup_mode<R: Runtime>(app: &AppHandle<R>, launch_context: LaunchContext) {
     let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
         return;
     };
@@ -323,16 +371,63 @@ pub(crate) fn apply_startup_mode<R: Runtime>(app: &AppHandle<R>, launch_context:
         }
         StartupWindowMode::StartMinimized => {
             let _ = window.set_skip_taskbar(false);
-            let _ = window.show();
             let _ = window.minimize();
+            let _ = window.show();
         }
         StartupWindowMode::OpenWindow => {
             let _ = window.set_skip_taskbar(false);
+            super::placement::apply_saved_mode(&window);
             let _ = window.show();
 
             if !launch_context.launched_from_autostart {
                 let _ = window.set_focus();
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn main_window_starts_hidden_and_out_of_taskbar() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
+        let window = config["app"]["windows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|window| window["label"] == MAIN_WINDOW_LABEL)
+            .unwrap();
+        assert_eq!(window["visible"], false);
+        assert_eq!(window["skipTaskbar"], true);
+    }
+
+    #[test]
+    fn reveal_before_ui_ready_is_deferred_and_remembered() {
+        let state = StartupState::new(LaunchContext::default());
+        assert!(!state.request_reveal());
+        assert!(state.0.lock().unwrap().reveal_requested);
+        state.0.lock().unwrap().ready = true;
+        assert!(state.request_reveal());
+    }
+
+    #[test]
+    fn tray_startup_takes_precedence_over_minimized() {
+        for (minimized, tray, expected) in [
+            (false, false, StartupWindowMode::OpenWindow),
+            (true, false, StartupWindowMode::StartMinimized),
+            (false, true, StartupWindowMode::StartInTray),
+            (true, true, StartupWindowMode::StartInTray),
+        ] {
+            assert_eq!(
+                resolve_startup_window_mode(runtime_snapshot::UserDesktopLaunchPreferences {
+                    autostart_minimized: minimized,
+                    autostart_to_tray: tray,
+                }),
+                expected
+            );
         }
     }
 }

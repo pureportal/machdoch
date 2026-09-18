@@ -119,6 +119,19 @@ fn fit_bounds(window: Bounds, areas: &[Bounds]) -> Option<(Bounds, usize)> {
     ))
 }
 
+fn fit_bounds_with_minimum(window: Bounds, area: Bounds, minimum: PhysicalSize<u32>) -> Bounds {
+    fit_bounds(
+        Bounds {
+            width: window.width.max(minimum.width),
+            height: window.height.max(minimum.height),
+            ..window
+        },
+        &[area],
+    )
+    .expect("one valid work area")
+    .0
+}
+
 fn titlebar_reachable(window: Bounds, areas: &[Bounds]) -> bool {
     let titlebar = Bounds {
         height: window.height.min(32),
@@ -127,6 +140,43 @@ fn titlebar_reachable(window: Bounds, areas: &[Bounds]) -> bool {
     areas.iter().any(|area| {
         titlebar.overlap(*area) >= u64::from(window.width.min(128)) * u64::from(titlebar.height)
     })
+}
+
+fn minimum_size(scale: f64, area: Bounds, frame: PhysicalSize<u32>) -> PhysicalSize<u32> {
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    };
+    PhysicalSize::new(
+        ((960.0 * scale).round() as u32)
+            .min(area.width.saturating_sub(frame.width))
+            .max(1),
+        ((720.0 * scale).round() as u32)
+            .min(area.height.saturating_sub(frame.height))
+            .max(1),
+    )
+}
+
+pub(super) fn main_window_minimum<R: Runtime>(
+    window: &WebviewWindow<R>,
+) -> tauri::Result<PhysicalSize<u32>> {
+    let outer = window.outer_size()?;
+    let inner = window.inner_size()?;
+    let frame = PhysicalSize::new(
+        outer.width.saturating_sub(inner.width),
+        outer.height.saturating_sub(inner.height),
+    );
+    let monitor = window.current_monitor()?.or(window.primary_monitor()?);
+    Ok(
+        match monitor
+            .as_ref()
+            .and_then(|monitor| work_area(monitor).map(|area| (monitor, area)))
+        {
+            Some((monitor, area)) => minimum_size(monitor.scale_factor(), area, frame),
+            None => PhysicalSize::new(960, 720),
+        },
+    )
 }
 
 pub(crate) fn recover_window<R: Runtime>(
@@ -157,29 +207,28 @@ pub(crate) fn recover_window<R: Runtime>(
     };
     let fullscreen = window.is_fullscreen()?;
     let maximized = window.is_maximized()?;
-    // Focus after taskbar restore must rescue an unreachable window without
-    // snapping an intentionally straddled, still-usable window to one monitor.
-    if !fit_visible && titlebar_reachable(current, &areas) {
-        return Ok(());
-    }
     let frame_width = outer.width.saturating_sub(inner.width);
     let frame_height = outer.height.saturating_sub(inner.height);
+    let minimum = if window.label() == MAIN_WINDOW_LABEL {
+        minimum_size(
+            valid[index].0.scale_factor(),
+            areas[index],
+            PhysicalSize::new(frame_width, frame_height),
+        )
+    } else {
+        PhysicalSize::new(1, 1)
+    };
     if window.label() == MAIN_WINDOW_LABEL {
-        let scale = valid[index].0.scale_factor();
-        let scale = if scale.is_finite() && scale > 0.0 {
-            scale
-        } else {
-            1.0
-        };
-        // The usual minimum must yield to the actual usable screen at high DPI.
-        window.set_min_size(Some(PhysicalSize::new(
-            ((960.0 * scale).round() as u32)
-                .min(areas[index].width.saturating_sub(frame_width))
-                .max(1),
-            ((720.0 * scale).round() as u32)
-                .min(areas[index].height.saturating_sub(frame_height))
-                .max(1),
-        )))?;
+        window.set_min_size(Some(minimum))?;
+    }
+    if !fit_visible
+        && titlebar_reachable(current, &areas)
+        && inner.width >= minimum.width
+        && inner.height >= minimum.height
+        && current.width <= areas[index].width
+        && current.height <= areas[index].height
+    {
+        return Ok(());
     }
     if fullscreen || maximized {
         if current.overlap(areas[index]) > 0 {
@@ -192,7 +241,7 @@ pub(crate) fn recover_window<R: Runtime>(
             window.unmaximize()?;
         }
     }
-    let recovered = fit_window_to_area(window, areas[index]);
+    let recovered = fit_window_to_area(window, areas[index], minimum);
     let restored = if fullscreen {
         window.set_fullscreen(true)
     } else if maximized {
@@ -214,7 +263,11 @@ fn read_bounds<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<Bounds> {
     })
 }
 
-fn fit_window_to_area<R: Runtime>(window: &WebviewWindow<R>, area: Bounds) -> tauri::Result<()> {
+fn fit_window_to_area<R: Runtime>(
+    window: &WebviewWindow<R>,
+    area: Bounds,
+    minimum: PhysicalSize<u32>,
+) -> tauri::Result<()> {
     let before = read_bounds(window)?;
     let (target, _) = fit_bounds(before, &[area]).expect("one valid work area");
     if before.x != target.x || before.y != target.y {
@@ -223,11 +276,18 @@ fn fit_window_to_area<R: Runtime>(window: &WebviewWindow<R>, area: Bounds) -> ta
     // Moving across DPI boundaries may resize the window. Preserve that logical
     // size when it fits; use the new frame metrics when it needs to shrink.
     let actual = read_bounds(window)?;
-    let (target, _) = fit_bounds(actual, &[area]).expect("one valid work area");
+    let inner = window.inner_size()?;
+    let frame_width = actual.width.saturating_sub(inner.width);
+    let frame_height = actual.height.saturating_sub(inner.height);
+    let target = fit_bounds_with_minimum(
+        actual,
+        area,
+        PhysicalSize::new(
+            minimum.width.saturating_add(frame_width),
+            minimum.height.saturating_add(frame_height),
+        ),
+    );
     if actual.width != target.width || actual.height != target.height {
-        let inner = window.inner_size()?;
-        let frame_width = actual.width.saturating_sub(inner.width);
-        let frame_height = actual.height.saturating_sub(inner.height);
         window.set_size(PhysicalSize::new(
             target.width.saturating_sub(frame_width).max(1),
             target.height.saturating_sub(frame_height).max(1),
@@ -241,7 +301,7 @@ fn fit_window_to_area<R: Runtime>(window: &WebviewWindow<R>, area: Bounds) -> ta
 
 pub(crate) fn recover_on_reveal<R: Runtime>(window: &WebviewWindow<R>) {
     if let Ok(monitors) = window.available_monitors() {
-        if let Err(error) = recover_window(window, &monitors, true) {
+        if let Err(error) = recover_window(window, &monitors, false) {
             eprintln!(
                 "Failed to recover window {} on an active display: {error}",
                 window.label()
@@ -286,21 +346,36 @@ pub(crate) fn initialize<R: Runtime>(app: &AppHandle<R>) {
                         .lock()
                         .map(|mut labels| std::mem::take(&mut *labels))
                         .unwrap_or_default();
-                    let mut recovered = true;
-                    for window in app.webview_windows().values() {
-                        if !changed && !pending.contains_key(window.label()) {
-                            continue;
-                        }
-                        let fit_visible =
-                            changed || pending.get(window.label()).copied().unwrap_or(false);
-                        if recover_window(window, &monitors, fit_visible).is_err() {
-                            recovered = false;
-                            if let Ok(mut labels) = changed_windows.lock() {
-                                *labels.entry(window.label().to_string()).or_default() |=
-                                    fit_visible;
+                    let fit_changed_layout = changed && !previous.is_empty();
+                    let recovery_app = app.clone();
+                    let retry_windows = changed_windows.clone();
+                    let (sender, receiver) = tokio::sync::oneshot::channel();
+                    let dispatched = app.run_on_main_thread(move || {
+                        let mut recovered = true;
+                        for window in recovery_app.webview_windows().values() {
+                            if !changed && !pending.contains_key(window.label()) {
+                                super::placement::capture(window);
+                                continue;
                             }
+                            let fit_visible = fit_changed_layout
+                                || pending.get(window.label()).copied().unwrap_or(false);
+                            if window.is_visible().unwrap_or(false)
+                                && !window.is_minimized().unwrap_or(true)
+                            {
+                                super::placement::apply_saved_mode(window);
+                            }
+                            if recover_window(window, &monitors, fit_visible).is_err() {
+                                recovered = false;
+                                if let Ok(mut labels) = retry_windows.lock() {
+                                    *labels.entry(window.label().to_string()).or_default() |=
+                                        fit_visible;
+                                }
+                            }
+                            super::placement::capture(window);
                         }
-                    }
+                        let _ = sender.send(recovered);
+                    });
+                    let recovered = dispatched.is_ok() && receiver.await.unwrap_or(false);
                     if recovered {
                         previous = topology;
                         displays_unavailable = false;
@@ -338,6 +413,39 @@ mod tests {
             width,
             height,
         }
+    }
+
+    #[test]
+    fn tiny_saved_window_is_enlarged_and_kept_inside_work_area() {
+        let area = bounds(0, 40, 1920, 1040);
+        let minimum = minimum_size(1.0, area, PhysicalSize::new(0, 0));
+        assert_eq!(
+            fit_bounds_with_minimum(bounds(1700, 900, 176, 40), area, minimum),
+            bounds(960, 360, 960, 720),
+        );
+    }
+
+    #[test]
+    fn high_dpi_minimum_yields_to_small_screen_and_window_frame() {
+        let area = bounds(-1280, 0, 1280, 680);
+        let minimum = minimum_size(2.0, area, PhysicalSize::new(16, 8));
+        assert_eq!(minimum, PhysicalSize::new(1264, 672));
+        assert_eq!(
+            minimum_size(1.5, bounds(0, 0, 2560, 1440), PhysicalSize::new(0, 0)),
+            PhysicalSize::new(1440, 1080)
+        );
+    }
+
+    #[test]
+    fn recovery_preserves_healthy_bounds_and_handles_zero_sizes() {
+        let area = bounds(-1920, 0, 1920, 1040);
+        let minimum = minimum_size(1.0, area, PhysicalSize::new(0, 0));
+        let healthy = bounds(-1700, 120, 1200, 800);
+        assert_eq!(fit_bounds_with_minimum(healthy, area, minimum), healthy);
+        assert_eq!(
+            fit_bounds_with_minimum(bounds(-32000, -32000, 0, 0), area, minimum),
+            bounds(-1920, 0, 960, 720)
+        );
     }
 
     #[test]

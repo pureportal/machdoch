@@ -6,7 +6,8 @@
     "tsBuildInfoFile": "./.cache/tsconfig.logic-test.tsbuildinfo"
   },
   "include": [
-    "src/tauri/ui/**/*.spec.ts"
+    "src/tauri/ui/**/*.spec.ts",
+    "src/tauri/ui/**/*.d.ts"
   ],
   "exclude": []
 }

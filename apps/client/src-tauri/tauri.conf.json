@@ -33,13 +33,13 @@
         "minWidth": 960,
         "minHeight": 720,
         "center": true,
-        "visible": true,
+        "visible": false,
         "preventOverflow": {
           "width": 24,
           "height": 24
         },
         "resizable": true,
-        "skipTaskbar": false,
+        "skipTaskbar": true,
         "decorations": false,
         "transparent": false
       }
