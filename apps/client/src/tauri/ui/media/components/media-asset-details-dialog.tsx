@@ -56,7 +56,7 @@ export const MediaAssetDetailsDialog = ({
           <p className="text-xs text-slate-400">
             {asset.width} × {asset.height}
           </p>
-          <MediaSaveAssetButton key={asset.id} asset={asset} />
+          <MediaSaveAssetButton key={`save-${asset.id}`} asset={asset} />
           {asset.kind === "image" ? (
             <div className="grid gap-2">
               <Button
