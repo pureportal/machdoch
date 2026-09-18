@@ -1,4 +1,5 @@
 import type {
+  MediaAssetRecord,
   MediaRunDetail,
   MediaRunRecord,
   MediaRunPage,
@@ -12,7 +13,9 @@ import {
 } from "./revisioned-library.js";
 
 export const countMediaRunOutputs = (
-  run: Pick<MediaRunDetail, "assets" | "executor">,
+  run: Pick<MediaRunDetail, "executor"> & {
+    assets: readonly MediaAssetRecord[];
+  },
 ): number =>
   run.assets.filter(
     (asset) =>

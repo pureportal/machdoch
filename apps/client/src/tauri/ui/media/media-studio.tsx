@@ -4038,10 +4038,10 @@ export const MediaStudio = ({
       }
       void cancelMediaRun(runId)
         .then((detail) => {
-          ++selectedRunDetailSequence.current;
-          selectedRunIdRef.current = detail.id;
-          setSelectedRunId(detail.id);
-          setSelectedRun(detail);
+          if (selectedRunIdRef.current === detail.id) {
+            ++selectedRunDetailSequence.current;
+            setSelectedRun(detail);
+          }
           return refreshRuntime();
         })
         .catch((error: unknown) => {
@@ -4054,10 +4054,10 @@ export const MediaStudio = ({
     (runId: string) => {
       void retryMediaFixtureRun(runId)
         .then((detail) => {
-          ++selectedRunDetailSequence.current;
-          selectedRunIdRef.current = detail.id;
-          setSelectedRunId(detail.id);
-          setSelectedRun(detail);
+          if (selectedRunIdRef.current === detail.id) {
+            ++selectedRunDetailSequence.current;
+            setSelectedRun(detail);
+          }
           return refreshRuntime();
         })
         .catch((error: unknown) => {
@@ -4073,10 +4073,10 @@ export const MediaStudio = ({
       setRuntimeError(null);
       void resolveMediaProviderReview(providerJobId, action)
         .then((detail) => {
-          ++selectedRunDetailSequence.current;
-          selectedRunIdRef.current = detail.id;
-          setSelectedRunId(detail.id);
-          setSelectedRun(detail);
+          if (selectedRunIdRef.current === detail.id) {
+            ++selectedRunDetailSequence.current;
+            setSelectedRun(detail);
+          }
           return refreshRuntime();
         })
         .catch((error: unknown) => {
@@ -4095,10 +4095,10 @@ export const MediaStudio = ({
       setRuntimeError(null);
       void resolveMediaHumanReview(request)
         .then((detail) => {
-          ++selectedRunDetailSequence.current;
-          selectedRunIdRef.current = detail.id;
-          setSelectedRunId(detail.id);
-          setSelectedRun(detail);
+          if (selectedRunIdRef.current === detail.id) {
+            ++selectedRunDetailSequence.current;
+            setSelectedRun(detail);
+          }
           return refreshRuntime();
         })
         .catch((error: unknown) => {
@@ -4560,6 +4560,18 @@ export const MediaStudio = ({
   );
 
   const persistenceError = saveError ?? loadError;
+  const runInspectorOpen =
+    loaded &&
+    !runtimeLoading &&
+    state.activeSection === "runs" &&
+    (selectedRun !== null || selectedRunLoading);
+  const runtimeErrorNotice = runtimeError ? (
+    <MediaErrorNotice
+      error={runtimeError}
+      onAction={handleRuntimeErrorAction}
+      onDismiss={() => setRuntimeError(null)}
+    />
+  ) : null;
 
   return (
     <main className="m-media-studio-layout">
@@ -4580,13 +4592,7 @@ export const MediaStudio = ({
           onSetup={() => void runtimeSetup.start()}
           onRefresh={() => void runtimeSetup.refresh()}
         />
-        {runtimeError ? (
-          <MediaErrorNotice
-            error={runtimeError}
-            onAction={handleRuntimeErrorAction}
-            onDismiss={() => setRuntimeError(null)}
-          />
-        ) : null}
+        {!runInspectorOpen ? runtimeErrorNotice : null}
         <div className="min-h-0 min-w-0 flex-1">
           {!loaded ? (
             <div role="status" className="p-6 text-sm text-slate-400">
@@ -4868,12 +4874,21 @@ export const MediaStudio = ({
           ) : null}
           {loaded && !runtimeLoading && state.activeSection === "runs" ? (
             <MediaRunsView
+              errorNotice={runtimeErrorNotice}
               runs={combinedRuns}
               assets={runtimeAssets}
               selectedRun={selectedRun}
               selectedRunId={selectedRunId}
               selectedRunLoading={selectedRunLoading}
               selectedRecipe={selectedRunRecipe}
+              onClose={() => {
+                ++selectedRunDetailSequence.current;
+                selectedRunIdRef.current = null;
+                setSelectedRunId(null);
+                setSelectedRun(null);
+                setSelectedRunRecipe(null);
+                setSelectedRunLoading(false);
+              }}
               onCreate={() => selectSection("generate")}
               onSelect={selectRun}
               onCancel={cancelRun}

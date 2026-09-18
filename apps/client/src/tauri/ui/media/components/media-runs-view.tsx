@@ -1,55 +1,42 @@
-import { MediaGenerationEstimate } from "./media-generation-estimate";
+import { Clock3, LoaderCircle, Plus, RotateCw, Search } from "lucide-react";
 import {
-  Ban,
-  CircleX,
-  Clock3,
-  CloudCog,
-  Cpu,
-  FileImage,
-  FileClock,
-  Images,
-  ListTree,
-  LoaderCircle,
-  MessageSquareText,
-  Plus,
-  RadioTower,
-  RotateCw,
-  Search,
-  ShieldAlert,
-  Workflow,
-} from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type JSX } from "react";
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type ReactNode,
+} from "react";
 import type {
   MediaAssetRecord,
   MediaHumanReviewDecisionRequest,
   MediaRunDetail,
   MediaRunRecord,
   MediaProviderReviewAction,
-  MediaRuntimeRunRecord,
 } from "../../../../core/media/contracts.js";
 import { paginateMediaItems } from "../../../../core/media/gallery.js";
-import {
-  countMediaRunOutputs,
-  matchesMediaRunQuery,
-} from "../../../../core/media/run-library.js";
-import { Badge } from "../../components/ui/badge";
-import { useOptionalRegisterCommands } from "../../commands/command-context";
-import { getDefaultCommandShortcut } from "../../commands/command-defaults";
-import type { CommandDefinition } from "../../commands/command-types";
+import { matchesMediaRunQuery } from "../../../../core/media/run-library.js";
 import { Button } from "../../components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "../../components/ui/dialog";
 import { EmptyState } from "../../components/ui/empty-state";
 import { SearchField } from "../../components/ui/search-field";
-import { cn } from "../../lib/utils";
-import { readMediaAssetReferencePreview } from "../media-runtime";
 import type { MediaGenerationRecipeSnapshot } from "../media-generation-queue";
-import { formatMediaImageRecipeOutput } from "../media-generation-recipe";
+import { groupRunsByDate } from "../media-run-presentation";
 import { MediaPagination } from "./media-pagination";
-import { MediaAssetPreview } from "./media-visual-preview";
-import { MediaRunResults } from "./media-run-results";
+import { MediaRunRow } from "./media-run-row";
+import { MEDIA_RUN_STATES } from "./media-run-state";
+import { MediaRunInspector } from "./media-run-inspector";
+import { useMediaRunCommands } from "./use-media-run-commands";
 
 const RUN_HISTORY_PAGE_SIZE = 30;
 
-interface MediaRunsViewProps {
+export interface MediaRunsViewProps {
+  errorNotice?: ReactNode;
   runs: readonly MediaRunRecord[];
   assets: readonly MediaAssetRecord[];
   selectedRun: MediaRunDetail | null;
@@ -58,6 +45,7 @@ interface MediaRunsViewProps {
   onOpenAsset: (asset: MediaAssetRecord) => void;
   selectedRecipe: MediaGenerationRecipeSnapshot | null;
   onCreate: () => void;
+  onClose: () => void;
   onSelect: (runId: string) => void;
   onCancel: (runId: string) => void;
   onRetry: (runId: string) => void;
@@ -73,1230 +61,67 @@ interface MediaRunsViewProps {
   onRefresh: () => void;
 }
 
-const STATUS_STYLES: Record<MediaRunRecord["status"], string> = {
-  draft: "border-slate-600/50 text-slate-400",
-  blocked: "border-rose-400/30 text-rose-300",
-  ready: "border-emerald-400/30 text-emerald-300",
-  queued: "border-amber-400/30 text-amber-300",
-  running: "border-cyan-400/30 text-cyan-300",
-  "needs-review": "border-violet-400/40 text-violet-200",
-  "waiting-for-review": "border-fuchsia-400/40 text-fuchsia-200",
-  canceling: "border-orange-400/30 text-orange-300",
-  completed: "border-lime-400/30 text-lime-300",
-  failed: "border-rose-400/30 text-rose-300",
-  canceled: "border-slate-500/50 text-slate-400",
-};
-
-const EXECUTOR_LABELS: Record<MediaRunDetail["executor"], string> = {
-  "deterministic-fixture": "Fixture",
-  "openai-image-api": "OpenAI image generation",
-  "codex-cli-image": "Codex CLI image generation",
-  "local-import": "Local import",
-  "local-transform": "Local transform",
-  "local-image-flow": "Local image generation",
-  "media-workflow": "Workflow",
-  "local-analysis": "Local analysis",
-  "local-video": "Local video generation",
-  "local-wan-video": "Local WAN video generation",
-  "mock-remote-provider": "Remote adapter",
-  "svg-ai-pipeline": "SVG generation",
-};
-
-const isRuntimeRun = (run: MediaRunRecord): run is MediaRuntimeRunRecord => {
-  return "executor" in run;
-};
-
-const canCancelRun = (run: MediaRunDetail): boolean =>
-  run.status === "queued" ||
-  (!["openai-image-api", "codex-cli-image"].includes(run.executor) &&
-    ["running", "waiting-for-review"].includes(run.status));
-
-const formatCreatedAt = (createdAt: string): string => {
-  const timestamp = Date.parse(createdAt);
-  return Number.isNaN(timestamp)
-    ? createdAt
-    : new Intl.DateTimeFormat(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(timestamp);
-};
-
-const formatEventTime = (createdAt: string): string => {
-  const timestamp = Date.parse(createdAt);
-  return Number.isNaN(timestamp)
-    ? createdAt
-    : new Intl.DateTimeFormat(undefined, { timeStyle: "medium" }).format(
-        timestamp,
-      );
-};
-
-const createReviewDecisionId = (): string => {
-  if (typeof globalThis.crypto?.randomUUID === "function") {
-    return globalThis.crypto.randomUUID();
-  }
-  return `media-review-${Date.now().toString(36)}-${Math.random()
-    .toString(36)
-    .slice(2)}`;
-};
-
-const ReviewAssetPreview = ({
-  asset,
-}: {
-  asset: MediaAssetRecord;
-}): JSX.Element => {
-  const [url, setUrl] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-  const assetId = asset.id;
-
-  useEffect(() => {
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    setUrl(null);
-    setFailed(false);
-    void readMediaAssetReferencePreview(assetId, 384)
-      .then((blob) => {
-        if (cancelled || typeof URL.createObjectURL !== "function") return;
-        objectUrl = URL.createObjectURL(blob);
-        setUrl(objectUrl);
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [assetId]);
-
-  if (url) {
-    return (
-      <img
-        src={url}
-        alt={`Candidate ${asset.outputIndex + 1}, ${asset.width} by ${asset.height}`}
-        className="h-full w-full object-cover"
-      />
-    );
-  }
-  return (
-    <span className="flex h-full items-center justify-center">
-      {failed ? (
-        <FileImage className="h-6 w-6 text-rose-300/60" />
-      ) : (
-        <LoaderCircle className="h-5 w-5 animate-spin text-slate-600" />
-      )}
-    </span>
-  );
-};
-
-export const MediaActivityPreview = ({
-  run,
-  assets,
-}: {
-  run: MediaRunRecord;
-  assets: readonly MediaAssetRecord[];
-}): JSX.Element => {
-  const candidates = assets.filter(
-    (candidate) => candidate.runId === run.id && candidate.kind !== "report",
-  );
-  const asset =
-    isRuntimeRun(run) && run.executor === "media-workflow"
-      ? candidates.sort((left, right) => {
-          const leftFinal =
-            left.operation?.kind === "workflow" &&
-            left.operation.details.finalOutput === true;
-          const rightFinal =
-            right.operation?.kind === "workflow" &&
-            right.operation.details.finalOutput === true;
-          return (
-            Number(rightFinal) - Number(leftFinal) ||
-            right.outputIndex - left.outputIndex
-          );
-        })[0]
-      : candidates[0];
-  if (asset) {
-    return (
-      <MediaAssetPreview
-        asset={asset}
-        className="h-full w-full"
-        fit="contain"
-      />
-    );
-  }
-  const hasReport = assets.some(
-    (candidate) => candidate.runId === run.id && candidate.kind === "report",
-  );
-  if (["queued", "running", "canceling"].includes(run.status)) {
-    return (
-      <div
-        role="status"
-        aria-label={`Generation ${run.status}`}
-        className="flex h-full items-center justify-center bg-slate-900"
-      >
-        <LoaderCircle className="h-6 w-6 animate-spin text-cyan-300" />
-      </div>
-    );
-  }
-  if (run.status === "completed" && hasReport) {
-    return (
-      <div
-        role="img"
-        aria-label="Report generated"
-        className="flex h-full items-center justify-center bg-slate-900"
-      >
-        <FileClock className="h-7 w-7 text-cyan-300" />
-      </div>
-    );
-  }
-  if (run.status === "failed" || run.status === "completed") {
-    return (
-      <div
-        role="img"
-        aria-label={
-          run.status === "failed" ? "Generation failed" : "Output unavailable"
-        }
-        className="flex h-full items-center justify-center bg-rose-950/35"
-      >
-        <CircleX className="h-8 w-8 text-rose-300" />
-      </div>
-    );
-  }
-  return (
-    <div
-      role="img"
-      aria-label="Generation canceled"
-      className="flex h-full items-center justify-center bg-slate-900"
-    >
-      <Ban className="h-7 w-7 text-slate-500" />
-    </div>
-  );
-};
-
-const RunInspector = ({
-  run,
-  onCancel,
-  onRetry,
-  onResolveProviderReview,
-  providerReviewPending,
-  onResolveHumanReview,
-  humanReviewPending,
-  onInspectInFlow,
-  recipe,
-  onReuseSettings,
-  onOpenAsset,
-}: {
-  run: MediaRunDetail;
-  onCancel: (runId: string) => void;
-  onRetry: (runId: string) => void;
-  onResolveProviderReview: MediaRunsViewProps["onResolveProviderReview"];
-  providerReviewPending: boolean;
-  onResolveHumanReview: MediaRunsViewProps["onResolveHumanReview"];
-  humanReviewPending: boolean;
-  onInspectInFlow: MediaRunsViewProps["onInspectInFlow"];
-  recipe: MediaGenerationRecipeSnapshot | null;
-  onReuseSettings: MediaRunsViewProps["onReuseSettings"];
-  onOpenAsset: MediaRunsViewProps["onOpenAsset"];
-}): JSX.Element => {
-  const pendingReview = run.humanReviews.find(
-    (review) => review.status === "pending",
-  );
-  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
-  const [comment, setComment] = useState("");
-  const [decisionId, setDecisionId] = useState(createReviewDecisionId);
-  const [rejectArmed, setRejectArmed] = useState(false);
-  useEffect(() => {
-    setSelectedAssetIds([]);
-    setComment("");
-    setDecisionId(createReviewDecisionId());
-    setRejectArmed(false);
-  }, [pendingReview?.id, run.id]);
-  const canCancel = canCancelRun(run);
-  const canRetry =
-    run.executor === "deterministic-fixture" &&
-    ["failed", "canceled"].includes(run.status) &&
-    run.humanReviews.length === 0;
-  const providerJob = run.providerJobs.at(-1);
-  const planSnapshot = run.planSnapshot;
-  const executorLabel = EXECUTOR_LABELS[run.executor];
-  const reviewAssets = pendingReview
-    ? pendingReview.candidateAssetIds
-        .map((assetId) => run.assets.find((asset) => asset.id === assetId))
-        .filter((asset): asset is MediaAssetRecord => Boolean(asset))
-    : [];
-  const decidedReview = [...run.humanReviews]
-    .reverse()
-    .find(
-      (review) => review.status === "approved" || review.status === "rejected",
-    );
-  const outputStat = pendingReview
-    ? {
-        label: "Candidates",
-        value: `${pendingReview.candidateAssetIds.length} ready`,
-      }
-    : decidedReview
-      ? decidedReview.status === "rejected"
-        ? { label: "Outcome", value: "Rejected" }
-        : {
-            label: "Approved",
-            value: `${decidedReview.selectedAssetIds.length} selected`,
-          }
-      : {
-          label: "Published",
-          value: `${countMediaRunOutputs(run)} / ${run.outputCount}`,
-        };
-  const reviewCommentValid =
-    !pendingReview?.requireComment || comment.trim().length > 0;
-  const toggleReviewAsset = (assetId: string): void => {
-    setRejectArmed(false);
-    setSelectedAssetIds((current) => {
-      if (current.includes(assetId)) {
-        return current.filter((candidate) => candidate !== assetId);
-      }
-      if (!pendingReview || current.length >= pendingReview.maxSelections) {
-        return pendingReview?.maxSelections === 1 ? [assetId] : current;
-      }
-      return [...current, assetId];
-    });
-  };
-  const submitHumanReview = (action: "approve" | "reject"): void => {
-    if (!pendingReview) return;
-    onResolveHumanReview({
-      reviewId: pendingReview.id,
-      decisionId,
-      action,
-      selectedAssetIds: action === "approve" ? selectedAssetIds : [],
-      comment,
-    });
-  };
-  return (
-    <aside
-      aria-label="Run inspector"
-      className="order-first min-h-0 overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900/35 p-5 xl:order-last"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-            <ListTree className="h-4 w-4 text-cyan-300" /> {run.flowName}
-          </div>
-          <p className="mt-1 break-all font-mono text-[10px] text-slate-600">
-            {run.id}
-          </p>
-        </div>
-        <Badge
-          variant="outline"
-          className={cn("capitalize", STATUS_STYLES[run.status])}
-        >
-          {run.status}
-        </Badge>
-      </div>
-
-      <div className="mt-5">
-        <div className="flex items-center justify-between text-[11px]">
-          <span className="text-slate-400">
-            {run.currentStep}
-            <span className="block mt-1">
-              <MediaGenerationEstimate run={run} />
-            </span>
-          </span>
-          <span className="tabular-nums text-slate-500">
-            {Math.round(run.progress * 100)}%
-          </span>
-        </div>
-        <div
-          role="progressbar"
-          aria-label="Run progress"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.round(run.progress * 100)}
-          className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800"
-        >
-          <div
-            className="h-full rounded-full bg-cyan-400 transition-[width] duration-300"
-            style={{ width: `${Math.round(run.progress * 100)}%` }}
-          />
-        </div>
-      </div>
-
-      <div className="mt-5 grid grid-cols-2 gap-2 text-[10px]">
-        <div className="rounded-lg bg-slate-950/60 p-2.5">
-          <span className="text-slate-600">Executor</span>
-          <span className="mt-1 block text-slate-300">{executorLabel}</span>
-        </div>
-        <div className="rounded-lg bg-slate-950/60 p-2.5">
-          <span className="text-slate-600">{outputStat.label}</span>
-          <span className="mt-1 block text-slate-300">{outputStat.value}</span>
-        </div>
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-2">
-        {canCancel ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => onCancel(run.id)}
-          >
-            Cancel run
-          </Button>
-        ) : run.status === "canceling" ? (
-          <Button type="button" variant="outline" size="sm" disabled>
-            Canceling
-          </Button>
-        ) : null}
-        {run.flowRevisionId &&
-        ["failed", "canceled", "blocked"].includes(run.status) ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => onReuseSettings(run.id)}
-          >
-            Edit and rerun
-          </Button>
-        ) : null}
-      </div>
-      <MediaRunResults key={run.id} run={run} onOpenAsset={onOpenAsset} />
-
-      {run.flowRevisionId ? (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => onInspectInFlow(run)}
-          className="mt-3 w-full border-cyan-400/20 bg-cyan-400/5 text-cyan-100 hover:bg-cyan-400/10"
-        >
-          <Workflow className="h-4 w-4" /> Inspect flow
-        </Button>
-      ) : null}
-
-      <section className="mt-4 rounded-xl border border-slate-800 bg-slate-950/35 p-3">
-        <h3 className="text-[11px] font-semibold text-slate-200">Settings</h3>
-        <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-[10px]">
-          <div>
-            <dt className="text-slate-600">Mode</dt>
-            <dd className="capitalize text-slate-300">
-              {recipe?.mode ?? "Saved flow"}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-slate-600">Type</dt>
-            <dd className="uppercase text-slate-300">
-              {recipe?.target ?? "media"}
-            </dd>
-          </div>
-          <div className="col-span-2">
-            <dt className="text-slate-600">Flow</dt>
-            <dd className="truncate text-slate-300">
-              {recipe
-                ? `${recipe.flowName} · revision ${recipe.flowRevisionNumber}`
-                : run.flowName}
-            </dd>
-          </div>
-          <div className="col-span-2">
-            <dt className="text-slate-600">Model</dt>
-            <dd className="truncate text-slate-300">
-              {recipe?.modelLabel ?? run.modelLabel}
-            </dd>
-          </div>
-          {recipe?.imageSettings && recipe.target !== "video" ? (
-            <div className="col-span-2">
-              <dt className="text-slate-600">Output</dt>
-              <dd className="text-slate-300">
-                {formatMediaImageRecipeOutput(
-                  recipe.imageSettings,
-                  recipe.outputBranches,
-                )}
-              </dd>
-            </div>
-          ) : null}
-          {recipe?.videoSettings ? (
-            <div className="col-span-2">
-              <dt className="text-slate-600">Video</dt>
-              <dd className="text-slate-300">
-                WebM · {recipe.videoSettings.numFrames} frames ·{" "}
-                {recipe.videoSettings.fps} fps
-              </dd>
-            </div>
-          ) : null}
-          {recipe && recipe.modelAddons.length > 0 ? (
-            <div className="col-span-2">
-              <dt className="text-slate-600">Add-ons</dt>
-              <dd className="text-slate-300">
-                {recipe.modelAddons.map((addon) => addon.addonId).join(", ")}
-              </dd>
-            </div>
-          ) : null}
-        </dl>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => onReuseSettings(run.id)}
-          className="mt-3 w-full"
-        >
-          Reuse settings
-        </Button>
-      </section>
-
-      {run.failure ? (
-        <section
-          aria-label="Structured run failure"
-          className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/8 p-3"
-        >
-          {run.failure.code === "QUALITY_GATE_FAILED" ? (
-            <details>
-              <summary className="cursor-pointer text-xs text-rose-100">
-                Quality check details
-              </summary>
-              <p className="mt-2 text-xs leading-5 text-rose-100/80">
-                {run.failure.message}
-              </p>
-            </details>
-          ) : (
-            <div className="flex flex-wrap items-center gap-2">
-              <ShieldAlert className="h-3.5 w-3.5 text-rose-200" />
-              <p className="text-[11px] font-semibold text-rose-100">
-                {run.failure.message}
-              </p>
-              <Badge
-                variant="outline"
-                className="border-rose-300/20 font-mono text-[8px] text-rose-200/65"
-              >
-                {run.failure.code}
-              </Badge>
-            </div>
-          )}
-          {run.failure.code !== "QUALITY_GATE_FAILED" ? (
-            <>
-              <p className="mt-1.5 text-[9px] leading-4 text-rose-100/60">
-                {run.failure.partialOutputsExist
-                  ? "Published outputs were preserved."
-                  : "No output was published."}{" "}
-                Retry policy: {run.failure.retryability.replaceAll("-", " ")}.
-              </p>
-              <details className="mt-2 text-[9px] text-slate-500">
-                <summary className="cursor-pointer hover:text-slate-300">
-                  Technical diagnostic
-                </summary>
-                <p className="mt-1.5 break-words rounded-md bg-slate-950/45 p-2 font-mono leading-4 text-slate-400">
-                  {run.failure.technicalDiagnostic}
-                </p>
-              </details>
-            </>
-          ) : null}
-        </section>
-      ) : run.error ? (
-        <div className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/8 p-3 text-xs leading-5 text-rose-200">
-          {run.error}
-        </div>
-      ) : null}
-
-      {run.humanReviews.length > 0 ? (
-        <section
-          aria-labelledby="human-review-heading"
-          className="mt-5 rounded-xl border border-fuchsia-400/20 bg-fuchsia-400/5 p-3.5"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3
-                id="human-review-heading"
-                className="flex items-center gap-2 text-[11px] font-semibold text-fuchsia-100"
-              >
-                <Images className="h-3.5 w-3.5" /> Human review
-              </h3>
-              <p className="mt-1 text-[9px] leading-4 text-slate-500">
-                Decisions are append-only observations. Machine scores and
-                candidate bytes remain unchanged.
-              </p>
-            </div>
-            <Badge
-              variant="outline"
-              className="border-fuchsia-400/25 text-[9px] text-fuchsia-200"
-            >
-              {pendingReview
-                ? "gate " + pendingReview.sequence
-                : "decision recorded"}
-            </Badge>
-          </div>
-
-          {pendingReview ? (
-            <div className="mt-3">
-              <div className="rounded-lg border border-fuchsia-300/15 bg-slate-950/35 p-3">
-                <p className="text-[10px] font-medium leading-4 text-fuchsia-50">
-                  {pendingReview.instructions}
-                </p>
-                <p className="mt-1.5 text-[9px] text-slate-500">
-                  Select 1–{pendingReview.maxSelections}.{" "}
-                  {pendingReview.requireComment
-                    ? "A review note is required."
-                    : "A review note is optional."}
-                </p>
-              </div>
-
-              <div
-                className="mt-3 grid grid-cols-2 gap-2"
-                aria-label="Review candidates"
-              >
-                {reviewAssets.map((asset) => {
-                  const selected = selectedAssetIds.includes(asset.id);
-                  const atLimit =
-                    selectedAssetIds.length >= pendingReview.maxSelections;
-                  return (
-                    <button
-                      key={asset.id}
-                      type="button"
-                      aria-pressed={selected}
-                      aria-label={
-                        "Candidate " +
-                        (asset.outputIndex + 1) +
-                        (selected ? ", selected" : ", not selected")
-                      }
-                      disabled={
-                        humanReviewPending ||
-                        (!selected &&
-                          atLimit &&
-                          pendingReview.maxSelections > 1)
-                      }
-                      onClick={() => toggleReviewAsset(asset.id)}
-                      className={cn(
-                        "group relative overflow-hidden rounded-lg border bg-slate-950/60 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-fuchsia-300/70 disabled:cursor-not-allowed disabled:opacity-45",
-                        selected
-                          ? "border-fuchsia-300/70 ring-1 ring-fuchsia-300/30"
-                          : "border-slate-800 hover:border-fuchsia-300/35",
-                      )}
-                    >
-                      <span className="block aspect-square bg-slate-900">
-                        <ReviewAssetPreview asset={asset} />
-                      </span>
-                      <span className="flex items-center justify-between gap-2 px-2 py-1.5">
-                        <span className="text-[9px] font-medium text-slate-300">
-                          Candidate {asset.outputIndex + 1}
-                        </span>
-                        <span className="font-mono text-[8px] text-slate-600">
-                          {asset.width}×{asset.height}
-                        </span>
-                      </span>
-                      <span
-                        aria-hidden="true"
-                        className={cn(
-                          "absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold shadow-lg backdrop-blur",
-                          selected
-                            ? "border-fuchsia-100/70 bg-fuchsia-300 text-slate-950"
-                            : "border-white/25 bg-slate-950/60 text-transparent",
-                        )}
-                      >
-                        ✓
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <label className="mt-3 block">
-                <span className="flex items-center gap-1.5 text-[9px] font-medium text-slate-400">
-                  <MessageSquareText className="h-3 w-3" /> Review note
-                  {pendingReview.requireComment ? " · required" : " · optional"}
-                </span>
-                <textarea
-                  value={comment}
-                  maxLength={2_000}
-                  disabled={humanReviewPending}
-                  onChange={(event) => {
-                    setComment(event.target.value);
-                    setRejectArmed(false);
-                  }}
-                  placeholder="Record the reason for this decision…"
-                  className="mt-1.5 min-h-20 w-full resize-y rounded-lg border border-slate-700/80 bg-slate-950/65 px-3 py-2 text-[10px] leading-4 text-slate-200 outline-none placeholder:text-slate-700 focus:border-fuchsia-300/55 focus:ring-2 focus:ring-fuchsia-300/15 disabled:opacity-50"
-                />
-              </label>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  disabled={
-                    humanReviewPending ||
-                    selectedAssetIds.length === 0 ||
-                    !reviewCommentValid
-                  }
-                  onClick={() => submitHumanReview("approve")}
-                  className="h-auto min-h-9 whitespace-normal bg-fuchsia-300 px-2 py-2 text-[10px] leading-4 text-slate-950 hover:bg-fuchsia-200"
-                >
-                  {humanReviewPending
-                    ? "Recording…"
-                    : selectedAssetIds.length > 0
-                      ? "Approve " + selectedAssetIds.length
-                      : "Approve selection"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={humanReviewPending || !reviewCommentValid}
-                  onClick={() => {
-                    if (rejectArmed) {
-                      submitHumanReview("reject");
-                    } else {
-                      setRejectArmed(true);
-                    }
-                  }}
-                  className={cn(
-                    "h-auto min-h-9 whitespace-normal px-2 py-2 text-[10px] leading-4",
-                    rejectArmed
-                      ? "border-rose-300/50 bg-rose-400/15 text-rose-100 hover:bg-rose-400/20"
-                      : "border-slate-700 text-slate-400 hover:bg-slate-800",
-                  )}
-                >
-                  {rejectArmed ? "Confirm reject all" : "Reject all candidates"}
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          {run.humanReviews.some(
-            (review) =>
-              review.status === "approved" || review.status === "rejected",
-          ) ? (
-            <ol className="mt-3 space-y-2 border-t border-fuchsia-300/10 pt-3">
-              {run.humanReviews
-                .filter(
-                  (review) =>
-                    review.status === "approved" ||
-                    review.status === "rejected",
-                )
-                .map((review) => (
-                  <li
-                    key={review.id}
-                    className="rounded-lg bg-slate-950/40 p-2.5 text-[9px]"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium capitalize text-slate-300">
-                        Gate {review.sequence} · {review.status}
-                      </span>
-                      <span className="text-slate-600">
-                        {review.selectedAssetIds.length} selected
-                      </span>
-                    </div>
-                    {review.comment ? (
-                      <p className="mt-1.5 whitespace-pre-wrap leading-4 text-slate-500">
-                        {review.comment}
-                      </p>
-                    ) : null}
-                    <p className="mt-1 font-mono text-[8px] text-slate-700">
-                      {review.actor ?? "unknown actor"} · {review.decisionId}
-                    </p>
-                  </li>
-                ))}
-            </ol>
-          ) : null}
-        </section>
-      ) : null}
-
-      {planSnapshot ? (
-        <section
-          aria-labelledby="run-plan-heading"
-          className="mt-5 rounded-xl border border-sky-400/15 bg-sky-400/5 p-3.5"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3
-                id="run-plan-heading"
-                className="flex items-center gap-2 text-[11px] font-semibold text-sky-100"
-              >
-                <Workflow className="h-3.5 w-3.5" /> Expanded execution plan
-              </h3>
-              <p className="mt-1 text-[9px] leading-4 text-slate-500">
-                Semantic intent is stored separately from runtime preparation.
-              </p>
-            </div>
-            <Badge
-              variant="outline"
-              className="border-sky-400/20 text-[9px] text-sky-200"
-            >
-              {planSnapshot.nodes.length} nodes · {planSnapshot.steps.length}{" "}
-              steps
-            </Badge>
-          </div>
-          {run.executor === "deterministic-fixture" ? (
-            <p
-              role="note"
-              className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/8 px-3 py-2 text-[9px] leading-4 text-amber-100/80"
-            >
-              Fixture evidence only: remote, paid, and model steps below
-              describe the pinned plan but were not submitted or executed. The
-              stored images came from the deterministic fixture executor.
-            </p>
-          ) : run.executor === "mock-remote-provider" ? (
-            <p
-              role="note"
-              className="mt-3 rounded-lg border border-violet-300/20 bg-violet-300/8 px-3 py-2 text-[9px] leading-4 text-violet-100/80"
-            >
-              Provider durability simulation: this run exercises submission and
-              reconciliation states against the built-in mock adapter; it does
-              not contact or charge a third party.
-            </p>
-          ) : null}
-          <ol className="mt-3 space-y-2.5" aria-label="Expanded plan nodes">
-            {planSnapshot.nodes.map((node) => {
-              const nodeSteps = planSnapshot.steps.filter(
-                (step) => step.sourceNodeId === node.id,
-              );
-              return (
-                <li
-                  key={node.id}
-                  className="rounded-lg border border-slate-800/80 bg-slate-950/45 p-2.5"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="break-words text-[10px] leading-4 font-semibold text-slate-200">
-                        {node.label}
-                      </p>
-                      <p className="mt-0.5 font-mono text-[8px] text-slate-600">
-                        {node.type} · {node.layer}
-                      </p>
-                    </div>
-                    <span className="shrink-0 rounded-md bg-slate-900 px-1.5 py-1 text-[8px] text-slate-500">
-                      {nodeSteps.length} step{nodeSteps.length === 1 ? "" : "s"}
-                    </span>
-                  </div>
-                  {nodeSteps.length > 0 ? (
-                    <ol className="mt-2 space-y-1.5 border-l border-sky-400/15 pl-2.5">
-                      {nodeSteps.map((step) => (
-                        <li key={step.id} className="text-[9px] leading-4">
-                          <div className="flex items-start justify-between gap-2">
-                            <span className="text-slate-400">{step.label}</span>
-                            <span className="shrink-0 text-slate-600">
-                              {step.target}
-                            </span>
-                          </div>
-                          {step.sideEffect ? (
-                            <span className="mt-0.5 inline-flex rounded border border-amber-300/15 px-1.5 text-[8px] text-amber-200/60">
-                              {step.sideEffect.replaceAll("-", " ")}
-                            </span>
-                          ) : step.cacheable ? (
-                            <span className="mt-0.5 inline-flex text-[8px] text-slate-700">
-                              cacheable
-                            </span>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ol>
-                  ) : (
-                    <p className="mt-2 text-[8px] text-slate-700">
-                      Intent-only node; no separate runtime preparation.
-                    </p>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
-          <p className="mt-3 border-t border-sky-300/10 pt-2.5 font-mono text-[8px] text-slate-700">
-            {run.flowRevisionId
-              ? `revision ${run.flowRevisionId} · `
-              : "unrevisioned run · "}
-            flow {planSnapshot.flowFingerprint.slice(0, 16)}… · schema{" "}
-            {planSnapshot.schemaVersion}
-          </p>
-        </section>
-      ) : null}
-
-      {providerJob ? (
-        <section
-          aria-labelledby="provider-decision-heading"
-          className="mt-5 rounded-xl border border-violet-400/15 bg-violet-400/5 p-3.5"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3
-                id="provider-decision-heading"
-                className="flex items-center gap-2 text-[11px] font-semibold text-violet-100"
-              >
-                <CloudCog className="h-3.5 w-3.5" /> Provider decision
-              </h3>
-              <p className="mt-1 font-mono text-[9px] text-slate-600">
-                attempt {providerJob.attempt} · {providerJob.id}
-              </p>
-            </div>
-            <Badge
-              variant="outline"
-              className="border-violet-400/25 text-[9px] text-violet-200"
-            >
-              {providerJob.status}
-            </Badge>
-          </div>
-
-          {providerJob.reviewRequired ? (
-            <div className="mt-3 rounded-lg border border-amber-300/25 bg-amber-300/8 p-3">
-              <p className="flex items-center gap-2 text-[11px] font-semibold text-amber-100">
-                <ShieldAlert className="h-3.5 w-3.5" /> Duplicate-charge guard
-              </p>
-              <p className="mt-1.5 text-[10px] leading-4 text-amber-100/70">
-                {providerJob.reviewReason} No automatic submission will occur.
-              </p>
-              {providerJob.policy.idempotencyMode !== "none" ? (
-                <Button
-                  type="button"
-                  disabled={providerReviewPending}
-                  onClick={() =>
-                    onResolveProviderReview(providerJob.id, "reconcile-only")
-                  }
-                  className="mt-3 h-8 w-full bg-violet-300 text-[10px] text-slate-950 hover:bg-violet-200"
-                >
-                  {providerReviewPending
-                    ? "Reconciling…"
-                    : "Lookup original request"}
-                </Button>
-              ) : (
-                <p className="mt-2 text-[9px] leading-4 text-amber-100/60">
-                  This endpoint has no documented request lookup. Check the
-                  provider usage dashboard before closing this guard.
-                </p>
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={providerReviewPending}
-                onClick={() =>
-                  onResolveProviderReview(
-                    providerJob.id,
-                    "confirm-not-accepted-and-retry",
-                  )
-                }
-                className="mt-1 h-auto w-full whitespace-normal px-2 py-2 text-[9px] leading-4 text-amber-200/70 hover:bg-amber-300/8 hover:text-amber-100"
-              >
-                {providerJob.policy.idempotencyMode === "none"
-                  ? "I confirmed no charge — allow a new Generate"
-                  : "I confirmed it was not accepted — create a new paid attempt"}
-              </Button>
-              {providerJob.policy.idempotencyMode === "none" ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={providerReviewPending}
-                  onClick={() =>
-                    onResolveProviderReview(
-                      providerJob.id,
-                      "accept-duplicate-charge-risk-and-retry",
-                    )
-                  }
-                  className="mt-1 h-auto w-full whitespace-normal border border-rose-300/15 px-2 py-2 text-[9px] leading-4 text-rose-200/70 hover:bg-rose-300/8 hover:text-rose-100"
-                >
-                  Accept possible duplicate charge — allow a new Generate
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
-
-          <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[9px]">
-            <div>
-              <dt className="text-slate-600">Adapter</dt>
-              <dd className="mt-0.5 text-slate-300">
-                {providerJob.policy.adapterId} · v
-                {providerJob.policy.adapterVersion}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-600">Endpoint / region</dt>
-              <dd className="mt-0.5 text-slate-300">
-                {providerJob.policy.endpointVersion} ·{" "}
-                {providerJob.policy.region}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-600">Maximum exposure</dt>
-              <dd className="mt-0.5 text-slate-300">
-                {providerJob.estimatedCostMax > 0
-                  ? `${providerJob.currency} ${providerJob.estimatedCostMax.toFixed(2)}`
-                  : "Provider calculator"}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-600">Idempotency</dt>
-              <dd className="mt-0.5 text-slate-300">
-                {providerJob.policy.idempotencyMode}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-600">Output visibility</dt>
-              <dd className="mt-0.5 text-slate-300">
-                {providerJob.policy.outputVisibility.replaceAll("-", " ")}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-600">Provider retention</dt>
-              <dd className="mt-0.5 text-slate-300">
-                {providerJob.policy.outputRetentionSeconds === null
-                  ? "Not asserted by provider"
-                  : providerJob.policy.outputRetentionSeconds > 0
-                    ? `${Math.round(providerJob.policy.outputRetentionSeconds / 60)} min output`
-                    : "No retained provider output"}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-600">Uploads</dt>
-              <dd className="mt-0.5 text-slate-300">
-                {providerJob.policy.uploadAssetCount} assets ·{" "}
-                {providerJob.policy.uploadBytes} B
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-600">Last provider state</dt>
-              <dd className="mt-0.5 text-slate-300">
-                {providerJob.rawState ?? "not submitted"}
-              </dd>
-            </div>
-          </dl>
-          <div className="mt-3 border-t border-violet-300/10 pt-3 text-[9px] leading-4 text-slate-500">
-            <p>{providerJob.policy.retryPolicy}</p>
-            <p className="mt-1">{providerJob.policy.cancellationSemantics}</p>
-            <p className="mt-1 font-mono text-slate-600">
-              request sha256 {providerJob.requestDigest.slice(0, 16)}… ·{" "}
-              {providerJob.pollAttempts} polls
-            </p>
-          </div>
-        </section>
-      ) : null}
-
-      <ol className="mt-5 space-y-0" aria-label="Run events">
-        {run.events.map((event, index) => (
-          <li key={event.id} className="relative flex gap-3 pb-4 last:pb-0">
-            {index < run.events.length - 1 ? (
-              <span className="absolute left-[7px] top-4 h-full w-px bg-slate-800" />
-            ) : null}
-            <span
-              className={cn(
-                "relative mt-1 h-[15px] w-[15px] shrink-0 rounded-full border-4 border-slate-900",
-                event.kind === "run_failed"
-                  ? "bg-rose-400"
-                  : event.kind === "run_completed"
-                    ? "bg-lime-400"
-                    : "bg-sky-400",
-              )}
-            />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-start justify-between gap-2">
-                <span className="text-[11px] font-medium text-slate-300">
-                  {event.kind.replaceAll("_", " ")}
-                </span>
-                <span className="shrink-0 text-[9px] text-slate-700">
-                  {formatEventTime(event.createdAt)}
-                </span>
-              </div>
-              <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                {event.message}
-              </p>
-            </div>
-          </li>
-        ))}
-      </ol>
-
-      {canRetry ? (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => onRetry(run.id)}
-          className="mt-5 w-full border-sky-400/20 bg-sky-400/5 text-sky-200 hover:bg-sky-400/10"
-        >
-          <RotateCw className="h-4 w-4" /> Retry and reuse published outputs
-        </Button>
-      ) : null}
-    </aside>
-  );
-};
-
-export const MediaRunsView = ({
-  runs,
-  assets,
-  selectedRun,
-  selectedRunId,
-  selectedRunLoading,
-  onOpenAsset,
-  selectedRecipe,
-  onCreate,
-  onSelect,
-  onCancel,
-  onRetry,
-  onResolveProviderReview,
-  providerReviewPending,
-  onResolveHumanReview,
-  humanReviewPending,
-  onInspectInFlow,
-  onReuseSettings,
-  onRefresh,
-}: MediaRunsViewProps): JSX.Element => {
+export const MediaRunsView = (props: MediaRunsViewProps): JSX.Element => {
+  const {
+    runs,
+    assets,
+    selectedRun,
+    selectedRunId,
+    selectedRunLoading,
+    onCreate,
+    onSelect,
+    onClose,
+    onRefresh,
+  } = props;
   const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("all");
   const [runPage, setRunPage] = useState(1);
   const runListRef = useRef<HTMLDivElement | null>(null);
+  const selectedRowRef = useRef<HTMLElement | null>(null);
   const filteredRuns = useMemo(
-    () => runs.filter((run) => matchesMediaRunQuery(run, query)),
-    [query, runs],
+    () =>
+      runs
+        .filter(
+          (run) =>
+            (status === "all" || run.status === status) &&
+            matchesMediaRunQuery(run, query),
+        )
+        .sort(
+          (left, right) =>
+            right.createdAt.localeCompare(left.createdAt) ||
+            right.id.localeCompare(left.id),
+        ),
+    [runs, query, status],
   );
-  const runPagination = useMemo(
+  const pagination = useMemo(
     () => paginateMediaItems(filteredRuns, runPage, RUN_HISTORY_PAGE_SIZE),
     [filteredRuns, runPage],
   );
+  const groups = groupRunsByDate(pagination.items);
+  const assetsByRun = useMemo(() => {
+    const grouped = new Map<string, MediaAssetRecord[]>();
+    for (const asset of assets) {
+      const group = grouped.get(asset.runId);
+      if (group) group.push(asset);
+      else grouped.set(asset.runId, [asset]);
+    }
+    return grouped;
+  }, [assets]);
 
   useEffect(() => {
-    const normalizedPage = runPagination.page || 1;
-    if (runPage !== normalizedPage) setRunPage(normalizedPage);
-  }, [runPage, runPagination.page]);
-
-  const revealRunPage = (page: number): void => {
-    setRunPage(page);
-    window.requestAnimationFrame(() => {
-      runListRef.current?.focus({ preventScroll: true });
-      runListRef.current?.scrollTo({ top: 0 });
-    });
-  };
-  const runsCommandStateRef = useRef({
-    onCancel,
-    onCreate,
-    onInspectInFlow,
-    onRefresh,
-    onRetry,
-    onSelect,
-    runs,
-    selectedRun,
-  });
-  runsCommandStateRef.current = {
-    onCancel,
-    onCreate,
-    onInspectInFlow,
-    onRefresh,
-    onRetry,
-    onSelect,
-    runs,
-    selectedRun,
-  };
-  const runCommands = useMemo<readonly CommandDefinition[]>(
-    () => [
-      {
-        id: "media.activity.recipe.new",
-        title: "New media recipe",
-        group: "Media Activity",
-        scope: { kind: "view", ownerId: "media" },
-        shortcuts: [
-          {
-            chord: getDefaultCommandShortcut("media.activity.recipe.new"),
-            runtimes: ["tauri"],
-            allowIn: [
-              "document",
-              "text-entry",
-              "interactive-control",
-              "command-surface",
-            ],
-          },
-        ],
-        palette: "visible",
-        execute: () => runsCommandStateRef.current.onCreate(),
-      },
-      {
-        id: "media.activity.refresh",
-        title: "Refresh media runs",
-        group: "Media Activity",
-        scope: { kind: "view", ownerId: "media" },
-        palette: "visible",
-        execute: () => runsCommandStateRef.current.onRefresh(),
-      },
-      {
-        id: "media.activity.run.open",
-        title: "Open media run",
-        group: "Media Activity",
-        scope: { kind: "view", ownerId: "media" },
-        palette: "visible",
-        availability: () =>
-          runsCommandStateRef.current.runs.some(isRuntimeRun)
-            ? { state: "enabled" }
-            : { state: "disabled", reason: "No runtime runs" },
-        children: () => ({
-          id: "media-activity-run-open",
-          title: "Open media run",
-          searchPlaceholder: "Choose run",
-          groups: [
-            {
-              id: "runs",
-              items: runsCommandStateRef.current.runs
-                .filter(isRuntimeRun)
-                .map((run) => ({
-                  id: run.id,
-                  title: run.flowName,
-                  keywords: [run.prompt, run.status, run.modelLabel],
-                  current:
-                    runsCommandStateRef.current.selectedRun?.id === run.id,
-                  execute: () => runsCommandStateRef.current.onSelect(run.id),
-                })),
-            },
-          ],
-        }),
-      },
-      {
-        id: "media.activity.run.inspect-flow",
-        title: "Inspect selected run in workflow",
-        group: "Media Activity",
-        scope: { kind: "view", ownerId: "media" },
-        palette: "visible",
-        availability: () =>
-          runsCommandStateRef.current.selectedRun?.planSnapshot
-            ? { state: "enabled" }
-            : {
-                state: "disabled",
-                reason: "The selected run has no workflow snapshot",
-              },
-        execute: () => {
-          const run = runsCommandStateRef.current.selectedRun;
-          if (run?.planSnapshot)
-            runsCommandStateRef.current.onInspectInFlow(run);
-        },
-      },
-      {
-        id: "media.activity.run.cancel",
-        title: "Cancel selected run",
-        group: "Media Activity",
-        scope: { kind: "view", ownerId: "media" },
-        palette: "visible",
-        availability: () => {
-          const run = runsCommandStateRef.current.selectedRun;
-          return run && canCancelRun(run)
-            ? { state: "enabled" }
-            : {
-                state: "disabled",
-                reason: "The selected run cannot be canceled",
-              };
-        },
-        execute: () => {
-          const run = runsCommandStateRef.current.selectedRun;
-          if (run) runsCommandStateRef.current.onCancel(run.id);
-        },
-      },
-      {
-        id: "media.activity.run.retry",
-        title: "Retry selected run",
-        group: "Media Activity",
-        scope: { kind: "view", ownerId: "media" },
-        palette: "visible",
-        availability: () => {
-          const run = runsCommandStateRef.current.selectedRun;
-          return run &&
-            run.executor === "deterministic-fixture" &&
-            ["failed", "canceled"].includes(run.status) &&
-            run.humanReviews.length === 0
-            ? { state: "enabled" }
-            : {
-                state: "disabled",
-                reason: "The selected run cannot be retried",
-              };
-        },
-        execute: () => {
-          const run = runsCommandStateRef.current.selectedRun;
-          if (run) runsCommandStateRef.current.onRetry(run.id);
-        },
-      },
-    ],
-    [runsCommandStateRef],
-  );
-  useOptionalRegisterCommands(runCommands);
+    setRunPage(pagination.page || 1);
+  }, [pagination.page]);
+  useEffect(() => {
+    runListRef.current?.scrollTo({ top: 0 });
+  }, [query, status, pagination.page]);
+  useMediaRunCommands(props);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-slate-950 px-5 py-6 sm:px-7 sm:py-7">
+    <div className="@container flex h-full min-h-0 min-w-0 flex-col bg-slate-950 px-4 py-5 sm:px-7 sm:py-7">
       <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <h1 className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-            <FileClock className="h-4 w-4 text-amber-300" /> Run history
+        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+          <h1 className="text-lg font-semibold tracking-tight text-slate-100">
+            Run history
           </h1>
           <div className="flex items-center gap-2">
             <Button
@@ -1305,209 +130,193 @@ export const MediaRunsView = ({
               size="icon"
               aria-label="Refresh runs"
               onClick={onRefresh}
-              className="text-slate-500 hover:bg-slate-900 hover:text-slate-200"
             >
-              <RotateCw className="h-4 w-4" />
+              <RotateCw className="size-4" />
             </Button>
             <Button
               onClick={onCreate}
-              className="bg-sky-500 text-slate-950 hover:bg-sky-400"
+              className="bg-sky-400 text-slate-950 hover:bg-sky-300"
             >
-              <Plus className="h-4 w-4" /> New recipe
+              <Plus className="size-4" />
+              New recipe
             </Button>
           </div>
-        </div>
-
+        </header>
         {runs.length > 0 ? (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="mt-5 flex shrink-0 flex-wrap items-center gap-3">
             <SearchField
               aria-label="Search run history"
-              placeholder="Search workflow, prompt, model, or status…"
+              placeholder="Search runs"
               value={query}
               onChange={(event) => {
                 setQuery(event.currentTarget.value);
                 setRunPage(1);
               }}
-              containerClassName="w-full sm:w-80"
-              iconClassName="text-slate-600"
-              className="border-slate-800 bg-slate-900/50 text-slate-300 placeholder:text-slate-600"
+              containerClassName="min-w-0 basis-full @min-[480px]:basis-64 @min-[480px]:max-w-sm @min-[480px]:flex-1"
+              className="border-slate-800 bg-slate-900/50 text-slate-200 placeholder:text-slate-400"
             />
-            <span
-              aria-live="polite"
-              className="text-[10px] tabular-nums text-slate-600"
+            <select
+              aria-label="Filter runs by status"
+              value={status}
+              onChange={(event) => {
+                setStatus(event.currentTarget.value);
+                setRunPage(1);
+              }}
+              className="h-9 min-w-0 rounded-md border border-slate-800 bg-slate-900/50 px-3 text-xs text-slate-300 outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
             >
-              {filteredRuns.length} of {runs.length} runs
+              <option value="all">All statuses</option>
+              {Object.entries(MEDIA_RUN_STATES).map(([value, state]) => (
+                <option key={value} value={value}>
+                  {state.label}
+                </option>
+              ))}
+            </select>
+            <span
+              role="status"
+              className="ml-auto text-xs tabular-nums text-slate-400"
+            >
+              {query.trim() || status !== "all"
+                ? `${filteredRuns.length} of ${runs.length}`
+                : runs.length}{" "}
+              {runs.length === 1 ? "run" : "runs"}
             </span>
           </div>
         ) : null}
-
         {runs.length === 0 ? (
           <EmptyState
             icon={Clock3}
             title="No runs yet"
             titleAs="h2"
             size="large"
-            className="mt-8 min-h-96 flex-1 rounded-3xl bg-slate-900/15"
+            className="mt-6 min-h-0 flex-1 border-0 bg-transparent"
           />
         ) : (
-          <div
-            className={cn(
-              "mt-6 grid min-h-0 flex-1 gap-4 overflow-y-auto xl:overflow-hidden",
-              (selectedRun || selectedRunLoading) &&
-                "xl:grid-cols-[minmax(0,1fr)_360px]",
-            )}
-          >
+          <>
             <div
               ref={runListRef}
               tabIndex={-1}
-              className="min-h-0 overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-sky-400/35"
+              aria-label="Run history list"
+              className="mt-5 min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
             >
-              <MediaPagination
-                page={runPagination.page}
-                pageCount={runPagination.pageCount}
-                firstItemNumber={runPagination.firstItemNumber}
-                lastItemNumber={runPagination.lastItemNumber}
-                totalItems={runPagination.totalItems}
-                itemLabel="runs"
-                onPageChange={revealRunPage}
-                className="sticky top-0 z-10 mb-3 bg-slate-950/95 backdrop-blur"
-              />
-              <div className="overflow-hidden rounded-2xl border border-slate-800">
-                {runPagination.items.map((run) => {
-                  const runtimeRun = isRuntimeRun(run);
-                  const selected = selectedRunId === run.id;
-                  const content = (
-                    <>
-                      <div className="mb-4 aspect-[3/1] overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
-                        <MediaActivityPreview run={run} assets={assets} />
-                      </div>
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h2 className="min-w-0 break-words text-sm font-semibold text-slate-100">
-                              {run.flowName}
-                            </h2>
-                            <span
-                              className={cn(
-                                "inline-flex items-center gap-1.5 text-[11px] capitalize",
-                                STATUS_STYLES[run.status],
-                              )}
-                            >
-                              <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                              {run.status}
-                            </span>
-                          </div>
-                          {run.prompt && run.prompt !== run.flowName ? (
-                            <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-400">
-                              {run.prompt}
-                            </p>
-                          ) : null}
-                        </div>
-                        <div className="text-right text-[10px] text-slate-600">
-                          {formatCreatedAt(run.createdAt)}
-                        </div>
-                      </div>
-                      {runtimeRun ? (
-                        <div className="mt-4">
-                          <div className="flex items-center justify-between text-[10px] text-slate-600">
-                            <span className="min-w-0 break-words pr-2">
-                              {run.currentStep}
-                            </span>
-                            <span className="shrink-0 tabular-nums">
-                              {Math.round(run.progress * 100)}%
-                            </span>
-                          </div>
-                          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-slate-800">
-                            <div
-                              className="h-full rounded-full bg-cyan-400 transition-[width]"
-                              style={{
-                                width: `${Math.round(run.progress * 100)}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      ) : null}
-                      <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[11px] text-slate-500">
-                        <span className="flex items-center gap-1.5">
-                          <Cpu className="h-3.5 w-3.5" /> {run.modelLabel}
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <RadioTower className="h-3.5 w-3.5" />
-                          {run.target ?? "unresolved"}
-                        </span>
-                        <span>
-                          {runtimeRun && run.executor === "media-workflow"
-                            ? `Published ${countMediaRunOutputs({
-                                executor: run.executor,
-                                assets: assets.filter(
-                                  (asset) => asset.runId === run.id,
-                                ),
-                              })} / ${run.outputCount}`
-                            : `${run.outputCount} outputs`}
-                        </span>
-                        {run.diagnosticCount > 0 ? (
-                          <span>{run.diagnosticCount} diagnostics</span>
-                        ) : null}
-                      </div>
-                    </>
-                  );
-
-                  return runtimeRun ? (
-                    <button
-                      key={run.id}
+              {groups.map((group) => (
+                <section
+                  key={group.date}
+                  aria-label={group.label}
+                  className="mb-5 last:mb-0"
+                >
+                  <h2 className="sticky top-0 z-10 border-b border-slate-800 bg-slate-950 px-2 py-2.5 text-xs font-medium text-slate-400 @min-[680px]:px-3">
+                    {group.label}
+                  </h2>
+                  <div>
+                    {group.runs.map((run) => (
+                      <MediaRunRow
+                        key={run.id}
+                        run={run}
+                        assets={assetsByRun.get(run.id) ?? []}
+                        selected={selectedRunId === run.id}
+                        onSelect={(runId) => {
+                          selectedRowRef.current =
+                            document.activeElement instanceof HTMLElement
+                              ? document.activeElement
+                              : null;
+                          onSelect(runId);
+                        }}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))}
+              {filteredRuns.length === 0 ? (
+                <EmptyState
+                  icon={Search}
+                  title="No matching runs"
+                  role="status"
+                  className="min-h-52 border-0 bg-transparent"
+                  action={
+                    <Button
                       type="button"
-                      aria-pressed={selected}
-                      onClick={() => onSelect(run.id)}
-                      className={cn(
-                        "block w-full border-b border-slate-800/80 bg-slate-900/25 p-5 text-left outline-none transition-colors last:border-b-0 hover:bg-slate-900/45 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400/60",
-                        selected && "bg-slate-900/65",
-                      )}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setQuery("");
+                        setStatus("all");
+                        setRunPage(1);
+                      }}
                     >
-                      {content}
-                    </button>
-                  ) : (
-                    <article
-                      key={run.id}
-                      className="border-b border-slate-800/80 bg-slate-900/25 p-5 last:border-b-0"
-                    >
-                      {content}
-                    </article>
-                  );
-                })}
-                {filteredRuns.length === 0 ? (
-                  <EmptyState
-                    icon={Search}
-                    title={`No runs match “${query.trim()}”.`}
-                    role="status"
-                    className="min-h-52 rounded-none border-0 bg-transparent"
-                  />
-                ) : null}
-              </div>
+                      Clear filters
+                    </Button>
+                  }
+                />
+              ) : null}
             </div>
-            {selectedRunLoading ? (
-              <aside
-                role="status"
-                className="order-first rounded-2xl border border-slate-800 p-5 text-sm text-slate-400 xl:order-last"
-              >
-                Loading run…
-              </aside>
-            ) : selectedRun ? (
-              <RunInspector
-                run={selectedRun}
-                onCancel={onCancel}
-                onRetry={onRetry}
-                onResolveProviderReview={onResolveProviderReview}
-                providerReviewPending={providerReviewPending}
-                onResolveHumanReview={onResolveHumanReview}
-                humanReviewPending={humanReviewPending}
-                onInspectInFlow={onInspectInFlow}
-                onOpenAsset={onOpenAsset}
-                recipe={selectedRecipe}
-                onReuseSettings={onReuseSettings}
-              />
-            ) : null}
-          </div>
+            <MediaPagination
+              page={pagination.page}
+              pageCount={pagination.pageCount}
+              firstItemNumber={pagination.firstItemNumber}
+              lastItemNumber={pagination.lastItemNumber}
+              totalItems={pagination.totalItems}
+              itemLabel="runs"
+              onPageChange={(page) => {
+                setRunPage(page);
+                runListRef.current?.focus({ preventScroll: true });
+              }}
+              className="mt-3 shrink-0"
+            />
+          </>
         )}
+        <Dialog
+          open={selectedRunLoading || selectedRun !== null}
+          onOpenChange={(open) => {
+            if (!open) onClose();
+          }}
+        >
+          <DialogContent
+            aria-describedby={undefined}
+            className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden border-slate-800 bg-slate-950 p-0 text-slate-100 sm:max-w-3xl"
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              const target = selectedRowRef.current;
+              if (target?.isConnected) target.focus({ preventScroll: true });
+              else runListRef.current?.focus({ preventScroll: true });
+            }}
+          >
+            <DialogHeader className="shrink-0 border-b border-slate-800 px-5 py-4 pr-12 text-left sm:px-6 sm:pr-12">
+              <DialogTitle className="text-base leading-6">
+                {selectedRunLoading ? "Run details" : selectedRun?.flowName}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="min-h-0 overflow-y-auto overscroll-contain">
+              {props.errorNotice}
+              {selectedRunLoading ? (
+                <div
+                  role="status"
+                  className="flex items-center gap-2 p-6 text-sm text-slate-400"
+                >
+                  <LoaderCircle className="size-4 motion-safe:animate-spin" />
+                  Loading run…
+                </div>
+              ) : selectedRun ? (
+                <MediaRunInspector
+                  {...props}
+                  key={selectedRun.id}
+                  run={selectedRun}
+                  onOpenAsset={(asset) => {
+                    onClose();
+                    props.onOpenAsset(asset);
+                  }}
+                  onInspectInFlow={(run) => {
+                    onClose();
+                    props.onInspectInFlow(run);
+                  }}
+                  onReuseSettings={(runId) => {
+                    onClose();
+                    props.onReuseSettings(runId);
+                  }}
+                />
+              ) : null}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
