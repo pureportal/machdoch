@@ -16,6 +16,8 @@ mod model_components;
 mod model_discovery;
 mod model_import;
 mod model_install;
+pub(crate) mod model_memory;
+mod model_worker;
 mod provider_codex;
 mod provider_images;
 mod provider_local_diffusers;

@@ -2,6 +2,7 @@ use std::{
     collections::{HashSet, VecDeque},
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
+    time::{Duration, Instant},
 };
 
 use image::{imageops, DynamicImage, GrayImage, Luma, Rgba, RgbaImage};
@@ -27,9 +28,25 @@ const MAX_ENCODED_BYTES: u64 = 64 * 1_024 * 1_024;
 struct CachedSession {
     model_path: PathBuf,
     session: Session,
+    expires_at: Instant,
+    retention: Duration,
 }
 
 static SESSION: OnceLock<Mutex<Option<CachedSession>>> = OnceLock::new();
+
+pub(super) fn release_expired_session() {
+    let Some(cache) = SESSION.get() else {
+        return;
+    };
+    let Ok(mut cache) = cache.try_lock() else {
+        return;
+    };
+    if cache.as_ref().is_some_and(|cached| {
+        Instant::now() >= cached.expires_at || super::model_memory::system_memory_pressure()
+    }) {
+        *cache = None;
+    }
+}
 
 pub(crate) fn release_session() -> MediaResult<()> {
     let Some(cache) = SESSION.get() else {
@@ -123,49 +140,64 @@ fn create_session(model_path: &Path) -> MediaResult<Session> {
 }
 
 fn infer_logits(model_path: &Path, input: Vec<f32>) -> MediaResult<Vec<f32>> {
+    super::model_memory::start()?;
     let cache = SESSION.get_or_init(|| Mutex::new(None));
     let mut cache = cache
         .lock()
         .map_err(|_| "the BiRefNet inference session is unavailable".to_string())?;
     if cache
         .as_ref()
-        .is_none_or(|cached| cached.model_path != model_path)
+        .is_none_or(|cached| cached.model_path != model_path || Instant::now() >= cached.expires_at)
     {
         // Release the previous model before loading its replacement so their
         // weights and worker pools do not coexist at peak memory usage.
         *cache = None;
+        let started = Instant::now();
+        let session = create_session(model_path)?;
+        let retention =
+            (started.elapsed() * 4).clamp(Duration::from_secs(120), Duration::from_secs(600));
         *cache = Some(CachedSession {
             model_path: model_path.to_path_buf(),
-            session: create_session(model_path)?,
+            session,
+            retention,
+            expires_at: Instant::now() + retention,
         });
     }
-    let cached = cache
-        .as_mut()
-        .ok_or_else(|| "the BiRefNet inference session was not initialized".to_string())?;
-    let tensor = Tensor::from_array((
-        [1_usize, 3, INPUT_SIZE as usize, INPUT_SIZE as usize],
-        input.into_boxed_slice(),
-    ))
-    .map_err(|error| format!("failed to prepare the BiRefNet input tensor: {error}"))?;
-    let outputs = cached
-        .session
-        .run(ort::inputs![tensor])
-        .map_err(|error| format!("BiRefNet inference failed: {error}"))?;
-    let output = outputs
-        .values()
-        .last()
-        .ok_or_else(|| "BiRefNet returned no matte output".to_string())?;
-    let (_, logits) = output
-        .try_extract_tensor::<f32>()
-        .map_err(|error| format!("BiRefNet returned an invalid matte tensor: {error}"))?;
-    let expected = (INPUT_SIZE * INPUT_SIZE) as usize;
-    if logits.len() != expected {
-        return Err(format!(
-            "BiRefNet returned {} matte values; expected {expected}",
-            logits.len()
-        ));
+    let result = (|| {
+        let cached = cache
+            .as_mut()
+            .ok_or_else(|| "the BiRefNet inference session was not initialized".to_string())?;
+        let tensor = Tensor::from_array((
+            [1_usize, 3, INPUT_SIZE as usize, INPUT_SIZE as usize],
+            input.into_boxed_slice(),
+        ))
+        .map_err(|error| format!("failed to prepare the BiRefNet input tensor: {error}"))?;
+        let outputs = cached
+            .session
+            .run(ort::inputs![tensor])
+            .map_err(|error| format!("BiRefNet inference failed: {error}"))?;
+        let output = outputs
+            .values()
+            .last()
+            .ok_or_else(|| "BiRefNet returned no matte output".to_string())?;
+        let (_, logits) = output
+            .try_extract_tensor::<f32>()
+            .map_err(|error| format!("BiRefNet returned an invalid matte tensor: {error}"))?;
+        let expected = (INPUT_SIZE * INPUT_SIZE) as usize;
+        if logits.len() != expected {
+            return Err(format!(
+                "BiRefNet returned {} matte values; expected {expected}",
+                logits.len()
+            ));
+        }
+        Ok(logits.to_vec())
+    })();
+    if result.is_err() {
+        *cache = None;
+    } else if let Some(cached) = cache.as_mut() {
+        cached.expires_at = Instant::now() + cached.retention;
     }
-    Ok(logits.to_vec())
+    result
 }
 
 fn normalized_input(source: &DynamicImage) -> Vec<f32> {

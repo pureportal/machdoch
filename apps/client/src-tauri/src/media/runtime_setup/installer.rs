@@ -188,6 +188,7 @@ pub(crate) fn install(
     let guard = RUNTIME_USE
         .write()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    super::super::model_memory::release_idle()?;
     process::run(
         uv_command(&uv, &root).args([
             "python",

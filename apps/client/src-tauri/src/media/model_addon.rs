@@ -1688,6 +1688,7 @@ pub(crate) fn remove(
     if !plan.can_remove {
         return Err("active runs still reference this model add-on".to_string());
     }
+    super::model_memory::release_idle()?;
     let addon = managed_addon_for_removal(paths, &plan.addon_id)?;
     let expected_relative_path = format!("addons/sha256/{}", addon.digest);
     if addon.relative_path != expected_relative_path {

@@ -887,6 +887,7 @@ pub(crate) fn remove(
     if !plan.can_remove {
         return Err("the model has an active installation job and cannot be removed".to_string());
     }
+    super::model_memory::release_idle()?;
 
     let pending: bool = database::open(paths)?.query_row(
         "SELECT EXISTS(SELECT 1 FROM media_model_removals WHERE model_id = ?1 AND status IN ('prepared', 'cleanup-pending'))",
