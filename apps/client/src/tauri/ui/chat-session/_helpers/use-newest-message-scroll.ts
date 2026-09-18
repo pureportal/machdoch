@@ -3,10 +3,10 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type RefObject,
+  type RefCallback,
 } from "react";
 
-const SCROLL_TO_NEWEST_THRESHOLD_PX = 8;
+const SCROLL_EDGE_THRESHOLD_PX = 8;
 
 const getScrollDistanceToBottom = (
   scrollViewport: HTMLElement,
@@ -23,7 +23,7 @@ const isScrollViewportNearBottom = (
 ): boolean => {
   return (
     getScrollDistanceToBottom(scrollViewport, scrollHeight, clientHeight) <=
-    SCROLL_TO_NEWEST_THRESHOLD_PX
+    SCROLL_EDGE_THRESHOLD_PX
   );
 };
 
@@ -53,7 +53,9 @@ const findScrollViewport = (bottomElement: HTMLElement): HTMLElement | null => {
 };
 
 export interface NewestMessageScrollController {
-  bottomRef: RefObject<HTMLDivElement | null>;
+  bottomRef: RefCallback<HTMLDivElement>;
+  showScrollToTopButton: boolean;
+  scrollToTop: () => void;
   showScrollToNewestButton: boolean;
   scrollToNewest: () => void;
 }
@@ -67,16 +69,16 @@ export const useNewestMessageScroll = ({
   resetKey,
   contentKey,
 }: UseNewestMessageScrollOptions): NewestMessageScrollController => {
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const [bottomElement, setBottomElement] = useState<HTMLDivElement | null>(
+    null,
+  );
   const [showScrollToNewestButton, setShowScrollToNewestButton] =
     useState(false);
+  const [showScrollToTopButton, setShowScrollToTopButton] = useState(false);
   const lastScrollMetricsRef = useRef<ScrollViewportMetrics | null>(null);
-  const lastScrollResetKeyRef = useRef<string | null>(null);
   const isScrollPinnedToNewestRef = useRef(true);
 
-  const scrollToNewest = useCallback((): void => {
-    const bottomElement = bottomRef.current;
-
+  const scrollToTop = useCallback((): void => {
     if (!bottomElement) {
       return;
     }
@@ -84,9 +86,25 @@ export const useNewestMessageScroll = ({
     const scrollViewport = findScrollViewport(bottomElement);
 
     if (!scrollViewport) {
-      bottomElement.scrollIntoView({ block: "end" });
-      isScrollPinnedToNewestRef.current = true;
-      setShowScrollToNewestButton(false);
+      return;
+    }
+
+    scrollViewport.scrollTop = 0;
+    const isPinnedToNewest = isScrollViewportNearBottom(scrollViewport);
+    lastScrollMetricsRef.current = getScrollViewportMetrics(scrollViewport);
+    isScrollPinnedToNewestRef.current = isPinnedToNewest;
+    setShowScrollToNewestButton(!isPinnedToNewest);
+    setShowScrollToTopButton(false);
+  }, [bottomElement]);
+
+  const scrollToNewest = useCallback((): void => {
+    if (!bottomElement) {
+      return;
+    }
+
+    const scrollViewport = findScrollViewport(bottomElement);
+
+    if (!scrollViewport) {
       return;
     }
 
@@ -94,52 +112,32 @@ export const useNewestMessageScroll = ({
     lastScrollMetricsRef.current = getScrollViewportMetrics(scrollViewport);
     isScrollPinnedToNewestRef.current = true;
     setShowScrollToNewestButton(false);
-  }, []);
+    setShowScrollToTopButton(
+      scrollViewport.scrollTop > SCROLL_EDGE_THRESHOLD_PX,
+    );
+  }, [bottomElement]);
 
   useLayoutEffect(() => {
-    const bottomElement = bottomRef.current;
+    isScrollPinnedToNewestRef.current = true;
+    lastScrollMetricsRef.current = null;
+    setShowScrollToNewestButton(false);
+    setShowScrollToTopButton(false);
 
     if (!bottomElement) {
-      isScrollPinnedToNewestRef.current = true;
-      lastScrollResetKeyRef.current = resetKey;
-      lastScrollMetricsRef.current = null;
-      setShowScrollToNewestButton(false);
       return;
     }
 
     const scrollViewport = findScrollViewport(bottomElement);
 
     if (!scrollViewport) {
-      bottomElement.scrollIntoView({ block: "end" });
-      isScrollPinnedToNewestRef.current = true;
-      lastScrollResetKeyRef.current = resetKey;
-      lastScrollMetricsRef.current = null;
-      setShowScrollToNewestButton(false);
       return;
     }
 
-    const previousScrollMetrics =
-      lastScrollResetKeyRef.current === resetKey
-        ? lastScrollMetricsRef.current
-        : null;
-    const wasNearBottom =
-      previousScrollMetrics === null ||
-      isScrollViewportNearBottom(
-        scrollViewport,
-        previousScrollMetrics.scrollHeight,
-        previousScrollMetrics.clientHeight,
-      );
-
-    lastScrollResetKeyRef.current = resetKey;
+    scrollViewportToBottom(scrollViewport);
     lastScrollMetricsRef.current = getScrollViewportMetrics(scrollViewport);
-    isScrollPinnedToNewestRef.current = wasNearBottom;
-    setShowScrollToNewestButton(!wasNearBottom);
-
-    if (wasNearBottom) {
-      scrollViewportToBottom(scrollViewport);
-      lastScrollMetricsRef.current = getScrollViewportMetrics(scrollViewport);
-      setShowScrollToNewestButton(false);
-    }
+    setShowScrollToTopButton(
+      scrollViewport.scrollTop > SCROLL_EDGE_THRESHOLD_PX,
+    );
 
     const updateScrollPinnedState = (): void => {
       const isPinnedToNewest = isScrollViewportNearBottom(scrollViewport);
@@ -147,6 +145,9 @@ export const useNewestMessageScroll = ({
       isScrollPinnedToNewestRef.current = isPinnedToNewest;
       lastScrollMetricsRef.current = getScrollViewportMetrics(scrollViewport);
       setShowScrollToNewestButton(!isPinnedToNewest);
+      setShowScrollToTopButton(
+        scrollViewport.scrollTop > SCROLL_EDGE_THRESHOLD_PX,
+      );
     };
     const resizeObserver =
       typeof ResizeObserver === "undefined"
@@ -179,12 +180,10 @@ export const useNewestMessageScroll = ({
       scrollViewport.removeEventListener("scroll", updateScrollPinnedState);
       resizeObserver?.disconnect();
     };
-  }, [resetKey]);
+  }, [bottomElement, resetKey]);
 
   useLayoutEffect(() => {
-    const bottomElement = bottomRef.current;
-
-    if (!bottomElement || lastScrollResetKeyRef.current !== resetKey) {
+    if (!bottomElement) {
       return;
     }
 
@@ -202,10 +201,15 @@ export const useNewestMessageScroll = ({
     }
 
     lastScrollMetricsRef.current = getScrollViewportMetrics(scrollViewport);
-  }, [contentKey, resetKey]);
+    setShowScrollToTopButton(
+      scrollViewport.scrollTop > SCROLL_EDGE_THRESHOLD_PX,
+    );
+  }, [bottomElement, contentKey, resetKey]);
 
   return {
-    bottomRef,
+    bottomRef: setBottomElement,
+    showScrollToTopButton,
+    scrollToTop,
     showScrollToNewestButton,
     scrollToNewest,
   };

@@ -5,7 +5,7 @@
   useRef,
   useState,
   type Dispatch,
-  type RefObject,
+  type RefCallback,
   type SetStateAction,
 } from "react";
 import {
@@ -2346,7 +2346,9 @@ export interface ChatSessionShellStateController {
   renameValue: string;
   promptHistoryIndex: number | null;
   draftBeforeHistory: string;
-  bottomRef: RefObject<HTMLDivElement | null>;
+  bottomRef: RefCallback<HTMLDivElement>;
+  showScrollToTopButton: boolean;
+  scrollToTop: () => void;
   showScrollToNewestButton: boolean;
   scrollToNewest: () => void;
   setCatalogOpen: Dispatch<SetStateAction<boolean>>;
@@ -3477,6 +3479,8 @@ export const useChatSessionShellState = (
     promptHistoryIndex,
     draftBeforeHistory,
     bottomRef: newestMessageScroll.bottomRef,
+    showScrollToTopButton: newestMessageScroll.showScrollToTopButton,
+    scrollToTop: newestMessageScroll.scrollToTop,
     showScrollToNewestButton: newestMessageScroll.showScrollToNewestButton,
     scrollToNewest: newestMessageScroll.scrollToNewest,
     setCatalogOpen,

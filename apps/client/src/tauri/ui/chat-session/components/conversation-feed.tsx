@@ -23,7 +23,7 @@ import {
   useState,
   type JSX,
   type MouseEvent,
-  type RefObject,
+  type Ref,
 } from "react";
 import { useOptionalRegisterCommands } from "../../commands/command-context";
 import {
@@ -88,7 +88,7 @@ export interface ConversationFeedProps {
   workspaceRoot?: string | null;
   aiContextMessageLimit?: number;
   isSessionRunning?: boolean;
-  bottomRef: RefObject<HTMLDivElement | null>;
+  bottomRef: Ref<HTMLDivElement>;
   onRetryTask: (message: ChatSessionMessage) => void;
   onRetryMessage?: (message: ChatSessionMessage) => boolean;
   onEditMessage?: (message: ChatSessionMessage, content: string) => boolean;
@@ -850,13 +850,12 @@ export const ConversationFeed = ({
   }, [navigationScrollTargetId, renderedMessageLimit, visibleMessages]);
 
   useLayoutEffect(() => {
-    const bottomElement = bottomRef.current;
-    const scrollViewport = bottomElement?.closest<HTMLElement>(
-      '[data-slot="scroll-area-viewport"]',
-    );
     const firstMessageElement = messageElementsRef.current
       .values()
       .next().value;
+    const scrollViewport = firstMessageElement?.closest<HTMLElement>(
+      '[data-slot="scroll-area-viewport"]',
+    );
 
     if (
       !scrollViewport ||
@@ -933,7 +932,7 @@ export const ConversationFeed = ({
         window.cancelAnimationFrame(animationFrameId);
       }
     };
-  }, [bottomRef, navigationMessageIds, renderedMessageLimit]);
+  }, [navigationMessageIds, renderedMessageLimit]);
 
   const openMessageContextMenu = useCallback(
     (
