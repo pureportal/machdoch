@@ -1385,7 +1385,7 @@ fn model_probe_matches_runtime(
 ) -> bool {
     let expects_textual_inversion = matches!(
         model.architecture.as_str(),
-        "stable-diffusion-1" | "stable-diffusion-2" | "stable-diffusion-xl" | "flux-1"
+        "stable-diffusion-1" | "stable-diffusion-2" | "stable-diffusion-xl" | "pony" | "flux-1"
     );
     response.schema_version == WORKER_SCHEMA_VERSION
         && response.ready
@@ -1515,7 +1515,8 @@ fn resolve_addons(
         let path = resolve_managed_addon_file(&models_root, &row.8)?;
         let tensor_profile =
             model_addon::verify_managed_addon_header(&path, &row.0, &row.6, row.7.max(0) as u64)?;
-        if tensor_profile.architecture != model.architecture
+        if model_import::pipeline_architecture(&tensor_profile.architecture)
+            != model_import::pipeline_architecture(&model.architecture)
             || tensor_profile.target_components != target_components
             || tensor_profile.embedding_vectors != embedding_vectors
             || tensor_profile.lora_profile != lora_profile
@@ -1766,6 +1767,7 @@ pub(crate) fn runnable_reference_model_ids(
                     "stable-diffusion-1"
                         | "stable-diffusion-2"
                         | "stable-diffusion-xl"
+                        | "pony"
                         | "flux-1"
                         | "flux-2"
                         | "krea-2"
@@ -1794,6 +1796,7 @@ pub(crate) fn runnable_inpainting_model_ids(
                     "stable-diffusion-1"
                         | "stable-diffusion-2"
                         | "stable-diffusion-xl"
+                        | "pony"
                         | "flux-1"
                         | "flux-2"
                         | "krea-2"
@@ -1810,7 +1813,7 @@ fn openpose_controlnet_path(
     let profile = match architecture {
         "stable-diffusion-1" => "sd15",
         "stable-diffusion-2" => "sd2",
-        "stable-diffusion-xl" => "sdxl",
+        "stable-diffusion-xl" | "pony" => "sdxl",
         _ => return Ok(None),
     };
     let root = paths.models_root()?;
@@ -2372,7 +2375,7 @@ fn validate_edit_conditioning_evidence(
         None
     } else {
         match expected.architecture {
-            "stable-diffusion-1" | "stable-diffusion-xl" => Some("ip-adapter-plus-v1"),
+            "stable-diffusion-1" | "stable-diffusion-xl" | "pony" => Some("ip-adapter-plus-v1"),
             "krea-2" => Some("qwen3-vl-v1"),
             _ => None,
         }
@@ -2587,7 +2590,7 @@ pub(crate) fn generate(
     let supported_roles: &[&str] = match model.architecture.as_str() {
         "flux-2" | "krea-2" => &["subject", "style", "composition", "palette", "detail"],
         "stable-diffusion-1" => &["subject"],
-        "stable-diffusion-xl" => &["subject", "style", "composition"],
+        "stable-diffusion-xl" | "pony" => &["subject", "style", "composition"],
         "stable-diffusion-2" | "flux-1" => &["composition"],
         _ => &[],
     };
@@ -2603,7 +2606,7 @@ pub(crate) fn generate(
     }
     let maximum_references = match model.architecture.as_str() {
         "flux-2" => 7,
-        "stable-diffusion-1" | "stable-diffusion-xl" | "krea-2" => 3,
+        "stable-diffusion-1" | "stable-diffusion-xl" | "pony" | "krea-2" => 3,
         "stable-diffusion-2" | "flux-1" => 1,
         _ => 0,
     };
@@ -2619,7 +2622,7 @@ pub(crate) fn generate(
     let ip_adapter_path = if !request.reference_images.is_empty()
         && matches!(
             model.architecture.as_str(),
-            "stable-diffusion-1" | "stable-diffusion-xl"
+            "stable-diffusion-1" | "stable-diffusion-xl" | "pony"
         ) {
         Some(model_components::ensure_ip_adapter(
             paths,

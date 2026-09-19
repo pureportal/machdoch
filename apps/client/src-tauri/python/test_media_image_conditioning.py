@@ -32,6 +32,8 @@ class ImageConditioningTests(unittest.TestCase):
         torch.testing.assert_close(result["latents"], torch.tensor([[[2.0, 11.5, 20.0]]]))
 
     def test_sdxl_roles_use_different_attention_blocks(self):
+        for role in ("subject", "style", "composition"):
+            self.assertEqual(CONDITIONING.ip_adapter_scale("pony", role, 0.8), CONDITIONING.ip_adapter_scale("stable-diffusion-xl", role, 0.8))
         self.assertEqual(CONDITIONING.ip_adapter_scale("stable-diffusion-xl", "style", 0.8), {"up": {"block_0": [0.0, 0.8, 0.0]}})
         self.assertEqual(CONDITIONING.ip_adapter_scale("stable-diffusion-xl", "composition", 0.8), {"down": {"block_2": [0.0, 0.8]}})
         self.assertAlmostEqual(CONDITIONING.ip_adapter_scale("stable-diffusion-1", "subject", 1), 0.7)

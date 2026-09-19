@@ -23,6 +23,24 @@ SPEC.loader.exec_module(WORKER)
 
 
 class MediaDiffusersQualityTests(unittest.TestCase):
+    def test_pony_loads_the_sdxl_pipeline_offline(self) -> None:
+        loader = mock.Mock(return_value=SimpleNamespace())
+        diffusers = SimpleNamespace(StableDiffusionXLPipeline=SimpleNamespace(from_single_file=loader))
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / "pony.safetensors"
+            checkpoint.write_bytes(b"fixture")
+            config = Path(directory) / "config"
+            config.mkdir()
+            with mock.patch.object(WORKER, "_device", return_value=("cpu", "CPU", None)), mock.patch.object(WORKER, "_pipeline_dtype", return_value="float32"):
+                pipeline = WORKER._load_pipeline(diffusers, SimpleNamespace(), {
+                    "architecture": "pony",
+                    "packageKind": "single-file",
+                    "path": str(checkpoint),
+                    "configPath": str(config),
+                })
+            self.assertIs(pipeline, loader.return_value)
+            loader.assert_called_once_with(str(checkpoint), torch_dtype="float32", local_files_only=True, use_safetensors=True, config=str(config))
+
     def test_krea_offload_cache_belongs_to_the_removable_model_package(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -79,3 +79,17 @@ export const normalizeMediaCivitaiSampleImageUrl = (
   }
   return url.href;
 };
+
+export const normalizeMediaAssetTags = (value: string): string[] => {
+  const tags: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of value.split(/[,\r\n]+/u)) {
+    if (tags.length >= 24) break;
+    const normalized = candidate.replaceAll(/\s+/gu, " ").trim().slice(0, 64);
+    const comparisonValue = normalized.toLocaleLowerCase();
+    if (!normalized || seen.has(comparisonValue)) continue;
+    seen.add(comparisonValue);
+    tags.push(normalized);
+  }
+  return tags;
+};

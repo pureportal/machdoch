@@ -1779,14 +1779,10 @@ export const planMediaModelAddonRemoval = async (
   });
 };
 
-export const updateMediaModelAddonTriggers = async (
-  addonId: string,
-  triggerWords: string[],
+export const updateMediaModelResource = async (
+  request: import("../../../core/media/contracts.js").UpdateMediaModelResourceRequest,
 ): Promise<void> => {
-  await invoke<void>("media_update_model_addon_triggers", {
-    addonId,
-    triggerWords,
-  });
+  await invoke<void>("media_update_model_resource", { request });
 };
 
 export const removeMediaModelAddon = async (

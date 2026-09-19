@@ -32,7 +32,6 @@ import {
   type JSX,
 } from "react";
 import { createMediaModelCatalogSnapshot } from "../../../core/media/catalog.js";
-import { parseMediaTriggerWords } from "../../../core/media/asset-metadata.js";
 import type { MediaAssetImportProgress } from "../../../core/media/asset-import.js";
 import { extendMediaCatalogWithWorkspaceDiscovery } from "../../../core/media/discovered-model-profiles.js";
 import {
@@ -186,7 +185,7 @@ import {
   importMediaFlow,
   importMediaLocalModel,
   importMediaModelAddon,
-  updateMediaModelAddonTriggers,
+  updateMediaModelResource,
   inspectMediaFlowImport,
   listMediaFlows,
   listMediaAssets,
@@ -4458,40 +4457,14 @@ export const MediaStudio = ({
   );
   const updateAssetMetadata = useCallback(
     (resourceId: string, metadata: MediaGenerationAssetMetadata): void => {
-      const addon = activeModelCatalog.addons.find(
-        (entry) => entry.id === resourceId,
-      );
-      const saveMetadata = (): void => {
-        setState((current) => ({
-          ...current,
-          assetMetadata: {
-            ...current.assetMetadata,
-            [resourceId]: addon ? { ...metadata, triggerWords: "" } : metadata,
-          },
-        }));
-      };
-      const triggerWords = parseMediaTriggerWords(metadata.triggerWords);
-      const savedTriggers =
-        addon?.kind === "textual-inversion"
-          ? [addon.defaultToken ?? ""]
-          : addon?.triggerWords;
-      saveMetadata();
-      if (
-        !addon ||
-        JSON.stringify(triggerWords) === JSON.stringify(savedTriggers)
-      ) {
-        return;
-      }
-      void updateMediaModelAddonTriggers(resourceId, triggerWords)
-        .then(refreshModelCatalog)
-        .catch((error: unknown) =>
-          setRuntimeError(
-            normalizeMediaError(error, "update_model_addon_triggers"),
-          ),
-        );
+      setState((current) => ({
+        ...current,
+        assetMetadata: { ...current.assetMetadata, [resourceId]: metadata },
+      }));
     },
-    [activeModelCatalog.addons, refreshModelCatalog],
+    [],
   );
+
   const updateAssetCategoryState = useCallback(
     (
       categories: MediaAssetCategory[],
@@ -4860,6 +4833,24 @@ export const MediaStudio = ({
               verifyingModelId={verifyingModelId}
               onUseAddon={useAddonInCreate}
               onUpdateTags={updateAssetTags}
+              onSaveResource={async (resourceId, request, metadata) => {
+                if (request) await updateMediaModelResource(request);
+                const addon = activeModelCatalog.addons.some(
+                  (entry) => entry.id === resourceId,
+                );
+                const next = {
+                  ...stateRef.current,
+                  assetMetadata: {
+                    ...stateRef.current.assetMetadata,
+                    [resourceId]: addon
+                      ? { ...metadata, triggerWords: "" }
+                      : metadata,
+                  },
+                };
+                setState(next);
+                await saveMediaStudioState(next);
+                if (request) await refreshModelCatalog();
+              }}
               onUpdateMetadata={updateAssetMetadata}
               onCategoryStateChange={updateAssetCategoryState}
               onUseAsReference={useAssetAsCreateReference}

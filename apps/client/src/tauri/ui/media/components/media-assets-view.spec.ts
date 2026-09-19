@@ -13,6 +13,7 @@ import { createMediaModelCatalogSnapshot } from "../../../../core/media/catalog.
 import type {
   MediaAssetDeletionImpact,
   MediaAssetRecord,
+  MediaModelAddonDescriptor,
 } from "../../../../core/media/contracts.js";
 import { MediaAssetsView } from "./media-assets-view";
 import { EMPTY_MEDIA_RUNTIME_SETUP } from "../media-runtime-setup";
@@ -118,10 +119,299 @@ const createProps = (overrides: Partial<Props> = {}): Props => ({
   onPlanAssetDeletion: vi.fn(async () => deletionImpact),
   onDeleteAsset: vi.fn(async () => undefined),
   onUpdateTags: vi.fn(),
+  onSaveResource: vi.fn(async () => undefined),
   onUpdateMetadata: vi.fn(),
   onCategoryStateChange: vi.fn(),
   tagLoadingAssetId: null,
   ...overrides,
+});
+
+describe("MediaAssetsView discovery", () => {
+  const catalog = createMediaModelCatalogSnapshot({
+    isOpenAiConfigured: true,
+    isLocalFluxInstalled: true,
+  });
+  const localModel = catalog.models.find(
+    (model) => model.id === "local:flux-2-klein-4b",
+  )!;
+  const remoteModel = catalog.models.find(
+    (model) => model.id === "openai:gpt-image-2.5-sunburst",
+  )!;
+  const media: MediaAssetRecord[] = [
+    {
+      ...asset,
+      id: "added:old",
+      operation: { kind: "local-import" as const, sourceFileName: "Apple.png" },
+      createdAt: "2026-09-01T12:00:00",
+      byteSize: 100,
+    },
+    {
+      ...asset,
+      id: "generated:old",
+      operation: {
+        kind: "workflow" as const,
+        sourceNodeId: "image",
+        iteration: 0,
+        details: {},
+      },
+      createdAt: "2026-09-01T12:00:00",
+      outputIndex: 0,
+    },
+    {
+      ...asset,
+      id: "added:new",
+      operation: { kind: "local-import" as const, sourceFileName: "Zebra.jpg" },
+      createdAt: "2026-09-19T12:00:00",
+      width: 1920,
+      height: 1080,
+      mimeType: "image/jpeg",
+      byteSize: 200,
+    },
+    {
+      ...asset,
+      id: "generated:new",
+      operation: {
+        kind: "workflow" as const,
+        sourceNodeId: "image",
+        iteration: 0,
+        details: {},
+      },
+      createdAt: "2026-09-19T12:00:00",
+      outputIndex: 1,
+    },
+  ];
+  const visibleNames = () =>
+    screen
+      .getAllByRole("button", { name: /^View / })
+      .map((button) => button.getAttribute("aria-label"));
+  const change = (label: string, value: string) =>
+    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+
+  it("uses name order for models and newest order within separate media groups", () => {
+    render(
+      createElement(
+        MediaAssetsView,
+        createProps({
+          assets: media,
+          catalog: {
+            ...catalog,
+            models: [
+              { ...localModel, id: "z", displayName: "Zebra model" },
+              { ...localModel, id: "a", displayName: "Alpha model" },
+            ],
+          },
+        }),
+      ),
+    );
+    expect(visibleNames()).toEqual([
+      "View Alpha model",
+      "View Zebra model",
+      "View Image 2",
+      "View Image 1",
+      "View Zebra.jpg",
+      "View Apple.png",
+    ]);
+    expect(screen.getByRole("heading", { name: "Generations" })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Uploads and imports" }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Images" }));
+    expect(visibleNames()).toEqual([
+      "View Image 2",
+      "View Image 1",
+      "View Zebra.jpg",
+      "View Apple.png",
+    ]);
+    change("Sort assets", "oldest");
+    expect(visibleNames()).toEqual([
+      "View Image 1",
+      "View Image 2",
+      "View Apple.png",
+      "View Zebra.jpg",
+    ]);
+    change("Sort assets", "name");
+    expect(visibleNames()).toEqual([
+      "View Image 1",
+      "View Image 2",
+      "View Apple.png",
+      "View Zebra.jpg",
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Models" }));
+    expect(visibleNames()).toEqual(["View Alpha model", "View Zebra model"]);
+    change("Sort assets", "name-desc");
+    expect(visibleNames()).toEqual(["View Zebra model", "View Alpha model"]);
+  });
+
+  it("combines media filters and clears them without leaving hidden model results", () => {
+    render(
+      createElement(
+        MediaAssetsView,
+        createProps({
+          assets: media,
+          catalog: { ...catalog, models: [localModel] },
+        }),
+      ),
+    );
+    fireEvent.click(screen.getByText("Filters", { selector: "summary" }));
+    change("Media source", "added");
+    change("Media orientation", "landscape");
+    change("Media format", "image/jpeg");
+    change("Media date from", "2026-09-19");
+    change("Media date to", "2026-09-19");
+    expect(visibleNames()).toEqual(["View Zebra.jpg"]);
+    expect(screen.queryByRole("heading", { name: "Generations" })).toBeNull();
+    change("Media orientation", "portrait");
+    expect(screen.getByText("No matching assets")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(visibleNames()).toHaveLength(5);
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
+  });
+
+  it.each([
+    ["Videos", "video", "video/webm"],
+    ["SVGs", "vector", "image/svg+xml"],
+  ] as const)(
+    "sorts %s by add date and resets media filters when changing types",
+    (label, kind, mimeType) => {
+      const assets: MediaAssetRecord[] = [
+        {
+          ...asset,
+          id: "old",
+          kind,
+          mimeType,
+          createdAt: "2026-09-01T12:00:00",
+          operation: { kind: "local-import", sourceFileName: "Alpha" },
+        },
+        {
+          ...asset,
+          id: "new",
+          kind,
+          mimeType,
+          createdAt: "2026-09-19T12:00:00",
+          operation: { kind: "local-import", sourceFileName: "Zebra" },
+        },
+      ];
+      render(createElement(MediaAssetsView, createProps({ assets })));
+      fireEvent.click(screen.getByText("Filters", { selector: "summary" }));
+      change("Media source", "generated");
+      expect(screen.getByText("No matching assets")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: label }));
+      expect(visibleNames()).toEqual(["View Zebra", "View Alpha"]);
+      change("Sort assets", "oldest");
+      expect(visibleNames()).toEqual(["View Alpha", "View Zebra"]);
+    },
+  );
+
+  it("filters models by location and readiness and excludes removed catalog entries", () => {
+    render(
+      createElement(
+        MediaAssetsView,
+        createProps({
+          assets: [],
+          catalog: {
+            ...catalog,
+            models: [
+              localModel,
+              remoteModel,
+              {
+                ...remoteModel,
+                id: "removed",
+                displayName: "GPT Image 2",
+                lifecycle: "removed",
+              },
+              {
+                ...localModel,
+                id: "unverified",
+                displayName: "Unverified import",
+                userImported: true,
+                runtimeReadiness: "unverified",
+              },
+            ],
+          },
+        }),
+      ),
+    );
+    expect(screen.queryByText("GPT Image 2")).toBeNull();
+    expect(screen.queryByText("Choose an active compatible model.")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Models" }));
+    fireEvent.click(screen.getByText("Filters", { selector: "summary" }));
+    change("Model location", "local");
+    change("Model readiness", "needs-attention");
+    expect(visibleNames()).toEqual(["View Unverified import"]);
+    change("Model readiness", "ready");
+    expect(visibleNames()).toEqual([`View ${localModel.displayName}`]);
+    change("Model location", "remote");
+    expect(visibleNames()).toEqual([`View ${remoteModel.displayName}`]);
+  });
+
+  it("defaults LoRAs and embeddings to names and offers import-date and file-size sorting", () => {
+    const addon: MediaModelAddonDescriptor = {
+      id: "lora:z",
+      kind: "lora",
+      displayName: "Zebra",
+      architecture: "flux-2",
+      architectureConfidence: "high",
+      format: "safetensors",
+      targetComponents: ["denoiser"],
+      embeddingVectors: [],
+      loraProfile: null,
+      baseModelHint: null,
+      triggerWords: [],
+      defaultToken: null,
+      digest: "a".repeat(64),
+      headerDigest: "b".repeat(64),
+      byteSize: 200,
+      relativePath: "zebra.safetensors",
+      sourceUrl: null,
+      license: localModel.license,
+      importedAt: "2026-09-19T12:00:00Z",
+    };
+    render(
+      createElement(
+        MediaAssetsView,
+        createProps({
+          assets: [],
+          catalog: {
+            ...catalog,
+            models: [],
+            addons: [
+              addon,
+              {
+                ...addon,
+                id: "lora:a",
+                displayName: "Alpha",
+                byteSize: 100,
+                importedAt: "2026-09-01T12:00:00Z",
+              },
+              {
+                ...addon,
+                id: "embedding:z",
+                kind: "textual-inversion",
+                displayName: "Zebra embedding",
+              },
+              {
+                ...addon,
+                id: "embedding:a",
+                kind: "textual-inversion",
+                displayName: "Alpha embedding",
+              },
+            ],
+          },
+        }),
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "LoRAs" }));
+    expect(visibleNames()).toEqual(["View Alpha", "View Zebra"]);
+    change("Sort assets", "newest");
+    expect(visibleNames()).toEqual(["View Zebra", "View Alpha"]);
+    change("Sort assets", "smallest");
+    expect(visibleNames()).toEqual(["View Alpha", "View Zebra"]);
+    fireEvent.click(screen.getByRole("button", { name: "Embeddings" }));
+    expect(visibleNames()).toEqual([
+      "View Alpha embedding",
+      "View Zebra embedding",
+    ]);
+  });
 });
 
 afterEach(() => {
@@ -129,6 +419,48 @@ afterEach(() => {
 });
 
 describe("MediaAssetsView asset actions", () => {
+  it("opens a full model edit dialog from the context menu and persists edits", async () => {
+    const catalog = createMediaModelCatalogSnapshot({
+      isOpenAiConfigured: false,
+      isLocalFluxInstalled: true,
+    });
+    const model = {
+      ...catalog.models.find((entry) => entry.id === "local:flux-2-klein-4b")!,
+      id: "local:user:edit",
+      displayName: "Editable checkpoint",
+      userImported: true,
+    };
+    const props = createProps({ catalog: { ...catalog, models: [model] } });
+    render(createElement(MediaAssetsView, props));
+    fireEvent.contextMenu(
+      screen.getByRole("button", { name: "View Editable checkpoint" }),
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit model" });
+    fireEvent.change(within(dialog).getByLabelText("Name"), {
+      target: { value: "Updated checkpoint" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Model type"), {
+      target: { value: "stable-diffusion-xl" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Save changes" }),
+    );
+    await waitFor(() =>
+      expect(props.onSaveResource).toHaveBeenCalledWith(
+        model.id,
+        expect.objectContaining({
+          displayName: "Updated checkpoint",
+          architecture: "stable-diffusion-xl",
+        }),
+        expect.any(Object),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Edit model" })).toBeNull(),
+    );
+  });
+
   it("opens asset inspection as a dialog with edit, reference, animation, and save actions", () => {
     const props = createProps();
     render(createElement(MediaAssetsView, props));
@@ -359,5 +691,48 @@ describe("MediaAssetsView asset actions", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
     expect(onRetryPersistence).toHaveBeenCalledOnce();
+  });
+});
+
+describe("asset copy actions", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("copies the imported name and ID without opening the asset", async () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const namedAsset: MediaAssetRecord = {
+      ...asset,
+      operation: {
+        kind: "local-import",
+        sourceFileName: "Full asset name.png",
+      },
+    };
+    render(
+      createElement(MediaAssetsView, createProps({ assets: [namedAsset] })),
+    );
+    const preview = screen.getByRole("button", {
+      name: "View Full asset name.png",
+    });
+    fireEvent.contextMenu(preview);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Copy name" }));
+    expect(writeText).toHaveBeenCalledWith("Full asset name.png");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    preview.focus();
+    fireEvent.keyDown(preview, { key: "F10", shiftKey: true });
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Copy asset ID" }),
+    );
+    expect(writeText).toHaveBeenLastCalledWith(asset.id);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

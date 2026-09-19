@@ -58,6 +58,7 @@ export const getMediaReferenceConditioningCapabilities = (
         promptless: true,
       };
     case "stable-diffusion-xl":
+    case "pony":
       return {
         roles: ["subject", "style", "composition"],
         maximumReferenceImages: 3,

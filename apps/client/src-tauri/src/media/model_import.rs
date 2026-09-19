@@ -26,6 +26,7 @@ pub(super) const SUPPORTED_ARCHITECTURES: &[&str] = &[
     "stable-diffusion-1",
     "stable-diffusion-2",
     "stable-diffusion-xl",
+    "pony",
     "stable-diffusion-3",
     "flux-1",
     "flux-2",
@@ -52,14 +53,14 @@ pub(super) struct ParsedSafetensorsHeader {
     pub(super) header_digest: String,
 }
 
-struct ArchitectureProfile {
-    family: &'static str,
-    min_vram_gb: f64,
-    speed_score: u32,
-    quality_score: u32,
+pub(super) struct ArchitectureProfile {
+    pub(super) family: &'static str,
+    pub(super) min_vram_gb: f64,
+    pub(super) speed_score: u32,
+    pub(super) quality_score: u32,
 }
 
-fn architecture_profile(architecture: &str) -> Option<ArchitectureProfile> {
+pub(super) fn architecture_profile(architecture: &str) -> Option<ArchitectureProfile> {
     match architecture {
         "stable-diffusion-1" => Some(ArchitectureProfile {
             family: "Stable Diffusion 1.x",
@@ -73,8 +74,12 @@ fn architecture_profile(architecture: &str) -> Option<ArchitectureProfile> {
             speed_score: 80,
             quality_score: 75,
         }),
-        "stable-diffusion-xl" => Some(ArchitectureProfile {
-            family: "Stable Diffusion XL",
+        "stable-diffusion-xl" | "pony" => Some(ArchitectureProfile {
+            family: if architecture == "pony" {
+                "Pony"
+            } else {
+                "Stable Diffusion XL"
+            },
             min_vram_gb: 8.0,
             speed_score: 70,
             quality_score: 84,
@@ -110,10 +115,17 @@ fn architecture_profile(architecture: &str) -> Option<ArchitectureProfile> {
 pub(crate) fn capabilities_for_architecture(architecture: &str) -> &'static [&'static str] {
     match architecture {
         "stable-diffusion-2" | "flux-1" => IMAGE_EDIT_CAPABILITIES,
-        "stable-diffusion-1" | "stable-diffusion-xl" | "flux-2" | "krea-2" => {
+        "stable-diffusion-1" | "stable-diffusion-xl" | "pony" | "flux-2" | "krea-2" => {
             MULTI_IMAGE_CAPABILITIES
         }
         _ => TEXT_TO_IMAGE_CAPABILITIES,
+    }
+}
+
+pub(super) fn pipeline_architecture(architecture: &str) -> &str {
+    match architecture {
+        "pony" => "stable-diffusion-xl",
+        _ => architecture,
     }
 }
 
@@ -580,7 +592,7 @@ pub(super) fn prepare_model_config(
             .map_err(|error| format!("failed to publish the KREA runtime manifest: {error}"))?;
             Ok(Some(config_root))
         }
-        "stable-diffusion-1" | "stable-diffusion-xl" => {
+        "stable-diffusion-1" | "stable-diffusion-xl" | "pony" => {
             super::model_components::ensure_sd_config(&config_root, architecture).map(Some)
         }
         _ => Ok(None),
@@ -1119,6 +1131,97 @@ mod tests {
         let _ = fs::remove_file(path);
     }
 
+    #[test]
+    fn edits_imported_model_details_and_resets_changed_architecture_verification() {
+        let source = temp_path("edit");
+        let (root, paths) = test_paths("edit");
+        fs::create_dir_all(&root).unwrap();
+        write_safetensors(
+            &source,
+            serde_json::json!({
+                "conditioner.embedders.1.model.weight": {
+                    "dtype": "F32", "shape": [1], "data_offsets": [0, 4]
+                }
+            }),
+            &[0, 0, 0, 0],
+        );
+        database::initialize(&paths).unwrap();
+        let inspection = inspect(source.to_string_lossy().as_ref()).unwrap();
+        let result = import_reviewed(
+            &paths,
+            &ImportMediaLocalModelRequest {
+                source_path: inspection.source_path,
+                review_token: inspection.review_token,
+                display_name: "Original".to_string(),
+                architecture: "stable-diffusion-xl".to_string(),
+                source_url: Some("https://example.com/original".to_string()),
+                license_name: None,
+                commercial_use: None,
+            },
+        )
+        .unwrap();
+        let mut connection = database::open(&paths).unwrap();
+        connection.execute("INSERT INTO media_model_runtime_probes
+            (model_id, revision, model_digest, runtime_fingerprint, status, worker_version, diagnostic, probed_at)
+            VALUES (?1, 'revision', 'digest', 'runtime', 'ready', 'worker', 'Ready', '2026-09-19')",
+            [&result.model_id]).unwrap();
+        let mut edit = super::super::model_resource_edit::UpdateMediaModelResourceRequest {
+            resource_id: result.model_id.clone(),
+            display_name: "Renamed".to_string(),
+            architecture: "stable-diffusion-xl".to_string(),
+            source_url: None,
+            license_name: Some("MIT".to_string()),
+            commercial_use: Some("allowed".to_string()),
+            trigger_words: vec![],
+        };
+        super::super::model_resource_edit::update(&paths, &edit).unwrap();
+        let probe_count = || {
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM media_model_runtime_probes WHERE model_id = ?1",
+                    [&result.model_id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap()
+        };
+        assert_eq!(probe_count(), 1);
+        edit.architecture = "stable-diffusion-3".to_string();
+        super::super::model_resource_edit::update(&paths, &edit).unwrap();
+        assert_eq!(probe_count(), 0);
+        catalog::synchronize(&mut connection).unwrap();
+        let snapshot = catalog::snapshot(&connection, &Default::default()).unwrap();
+        let model = snapshot
+            .models
+            .iter()
+            .find(|model| model.id == result.model_id)
+            .unwrap();
+        assert_eq!(model.display_name, "Renamed");
+        assert_eq!(model.architecture.as_deref(), Some("stable-diffusion-3"));
+        assert_eq!(model.family, "Stable Diffusion 3");
+        assert_eq!(model.license.name, "MIT");
+        assert_eq!(model.license.commercial_use, "allowed");
+        assert!(model.lifecycle_source_url.is_none());
+        assert_eq!(model.capabilities, vec!["text-to-image"]);
+        edit.display_name = "Must not save".to_string();
+        edit.source_url = Some("file:///invalid".to_string());
+        assert!(super::super::model_resource_edit::update(&paths, &edit).is_err());
+        edit.source_url = None;
+        edit.architecture = "unknown".to_string();
+        assert!(super::super::model_resource_edit::update(&paths, &edit).is_err());
+        let saved_name: String = connection
+            .query_row(
+                "SELECT display_name FROM media_models WHERE id = ?1",
+                [&result.model_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(saved_name, "Renamed");
+        edit.resource_id = "local:flux-2-klein-4b".to_string();
+        assert!(super::super::model_resource_edit::update(&paths, &edit).is_err());
+        drop(connection);
+        fs::remove_file(source).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn imports_catalogs_and_removes_a_reviewed_checkpoint() {
         let source = temp_path("managed");

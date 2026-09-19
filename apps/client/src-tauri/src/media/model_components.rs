@@ -116,7 +116,7 @@ pub(super) fn ensure_krea_components(root: &Path) -> MediaResult<PathBuf> {
 pub(super) fn ensure_sd_config(root: &Path, architecture: &str) -> MediaResult<PathBuf> {
     let manifest = match architecture {
         "stable-diffusion-1" => include_str!("sd15_components.json"),
-        "stable-diffusion-xl" => include_str!("sdxl_components.json"),
+        "stable-diffusion-xl" | "pony" => include_str!("sdxl_components.json"),
         _ => return Err("Unsupported Stable Diffusion component family".to_string()),
     };
     ensure_components(root, manifest)
@@ -128,7 +128,7 @@ pub(super) fn ensure_ip_adapter(
 ) -> MediaResult<PathBuf> {
     let manifest = match architecture {
         "stable-diffusion-1" => include_str!("ip_adapter_sd15_components.json"),
-        "stable-diffusion-xl" => include_str!("ip_adapter_sdxl_components.json"),
+        "stable-diffusion-xl" | "pony" => include_str!("ip_adapter_sdxl_components.json"),
         _ => return Err("Unsupported image adapter family".to_string()),
     };
     let root = paths.models_root()?.join("components").join("ip-adapter");

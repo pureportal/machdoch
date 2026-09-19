@@ -78,7 +78,11 @@ export const getMediaModelAddonCapabilities = (
     architecture === null
   )
     return [];
-  return ARCHITECTURE_ADDON_CAPABILITIES[architecture] ?? [];
+  return (
+    ARCHITECTURE_ADDON_CAPABILITIES[
+      architecture === "pony" ? "stable-diffusion-xl" : architecture
+    ] ?? []
+  );
 };
 
 export interface MediaModelAddonCompatibility {

@@ -61,7 +61,7 @@ pub(crate) fn capabilities_for_model(
                 supports_denoising_schedules: false,
             },
         ],
-        Some("stable-diffusion-xl") => vec![
+        Some("stable-diffusion-xl" | "pony") => vec![
             MediaModelAddonCapability {
                 kind: "lora".to_string(),
                 target_components: vec![
@@ -929,6 +929,15 @@ pub(crate) fn reconcile_managed_addon_profiles(
                 let architecture = profile
                     .architecture
                     .filter(|_| profile.architecture_confidence == "high")
+                    .map(|architecture| {
+                        if model_import::pipeline_architecture(&architecture)
+                            == model_import::pipeline_architecture(&stored_architecture)
+                        {
+                            stored_architecture.clone()
+                        } else {
+                            architecture
+                        }
+                    })
                     .unwrap_or_else(|| stored_architecture.clone());
                 (
                     architecture,
@@ -1278,38 +1287,66 @@ fn normalize_trigger_words(values: &[String]) -> MediaResult<Vec<String>> {
     Ok(normalized)
 }
 
-pub(crate) fn update_triggers(
+pub(crate) fn update_details(
     paths: &MediaRuntimePaths,
-    addon_id: &str,
-    trigger_words: &[String],
+    request: &super::model_resource_edit::UpdateMediaModelResourceRequest,
 ) -> MediaResult<()> {
     let connection = database::open(paths)?;
-    let kind: String = connection
+    let (kind, relative_path, digest): (String, String, String) = connection
         .query_row(
-            "SELECT kind FROM media_model_addons WHERE id = ?1",
-            [addon_id],
-            |row| row.get(0),
+            "SELECT kind, relative_path, digest FROM media_model_addons WHERE id = ?1",
+            [&request.resource_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
         .map_err(|error| format!("failed to read model add-on: {error}"))?
-        .ok_or_else(|| "The model add-on is unavailable. Import it again.".to_string())?;
-    let trigger_words = normalize_trigger_words(trigger_words)?;
+        .ok_or_else(|| "The model add-on is unavailable. Refresh the library.".to_string())?;
+    let path = managed_addon_file(paths, &relative_path, &digest)?;
+    let inspection = inspect(path.to_string_lossy().as_ref())?;
     let token = if kind == "textual-inversion" {
-        if trigger_words.len() != 1 {
-            return Err("An embedding requires exactly one token.".to_string());
+        if request.trigger_words.len() != 1 {
+            return Err("Enter one embedding token without spaces.".to_string());
         }
-        validated_token(Some(&trigger_words[0]))?
+        request.trigger_words.first().cloned()
     } else {
         None
     };
-    let trigger_words = serde_json::to_string(&trigger_words)
+    let validated = validate_request(
+        &ImportMediaModelAddonRequest {
+            source_path: inspection.source_path.clone(),
+            review_token: inspection.review_token.clone(),
+            display_name: request.display_name.clone(),
+            kind,
+            architecture: request.architecture.clone(),
+            source_url: request.source_url.clone(),
+            license_name: request.license_name.clone(),
+            commercial_use: request.commercial_use.clone(),
+            trigger_words: request.trigger_words.clone(),
+            token,
+        },
+        &inspection,
+    )?;
+    let trigger_words = serde_json::to_string(&validated.trigger_words)
         .map_err(|error| format!("failed to encode model add-on triggers: {error}"))?;
     connection
         .execute(
-            "UPDATE media_model_addons SET trigger_words_json = ?2, default_token = ?3 WHERE id = ?1",
-            params![addon_id, trigger_words, token],
+            "UPDATE media_model_addons SET display_name = ?2, architecture = ?3, source_url = ?4,
+         license_name = ?5, license_source_url = ?6, license_commercial_use = ?7,
+         trigger_words_json = ?8, default_token = ?9, updated_at = ?10 WHERE id = ?1",
+            params![
+                request.resource_id,
+                validated.display_name,
+                request.architecture,
+                validated.source_url,
+                validated.license_name,
+                validated.source_url.as_deref().unwrap_or(""),
+                validated.commercial_use,
+                trigger_words,
+                validated.token,
+                database::now()
+            ],
         )
-        .map_err(|error| format!("failed to update model add-on triggers: {error}"))?;
+        .map_err(|error| format!("failed to save model add-on: {error}"))?;
     Ok(())
 }
 
@@ -1334,7 +1371,11 @@ fn validate_request(
         return Err("the selected add-on kind does not match the inspected tensors".to_string());
     }
     if inspection.detected_architecture.as_deref().is_some()
-        && inspection.detected_architecture.as_deref() != Some(request.architecture.as_str())
+        && inspection
+            .detected_architecture
+            .as_deref()
+            .map(model_import::pipeline_architecture)
+            != Some(model_import::pipeline_architecture(&request.architecture))
     {
         return Err(if request.kind == "textual-inversion" {
             "the selected architecture does not match the embedding tensor dimensions and encoder slots"
@@ -2637,15 +2678,33 @@ mod tests {
         assert_eq!(addon.embedding_vectors, expected_profiles);
         assert_eq!(addon.license.name, "");
         assert_eq!(addon.license.commercial_use, "unknown");
-        assert!(update_triggers(&paths, &result.addon_id, &[]).is_err());
-        assert!(update_triggers(&paths, &result.addon_id, &["invalid token".to_string()]).is_err());
-        update_triggers(&paths, &result.addon_id, &["<edited-style>".to_string()]).unwrap();
+        let mut edit = super::super::model_resource_edit::UpdateMediaModelResourceRequest {
+            resource_id: result.addon_id.clone(),
+            display_name: "Edited embedding".to_string(),
+            architecture: "stable-diffusion-1".to_string(),
+            source_url: Some("https://example.com/embedding".to_string()),
+            license_name: Some("MIT".to_string()),
+            commercial_use: Some("allowed".to_string()),
+            trigger_words: vec![],
+        };
+        assert!(update_details(&paths, &edit).is_err());
+        edit.trigger_words = vec!["invalid token".to_string()];
+        assert!(update_details(&paths, &edit).is_err());
+        edit.trigger_words = vec!["<edited-style>".to_string()];
+        edit.architecture = "stable-diffusion-xl".to_string();
+        assert!(update_details(&paths, &edit).is_err());
+        edit.architecture = "stable-diffusion-1".to_string();
+        update_details(&paths, &edit).unwrap();
         let reloaded = catalog::snapshot(&connection, &Default::default()).unwrap();
         let edited = reloaded
             .addons
             .iter()
             .find(|addon| addon.id == result.addon_id)
             .unwrap();
+        assert_eq!(edited.display_name, "Edited embedding");
+        assert_eq!(edited.source_url.as_deref(), Some("https://example.com/embedding"));
+        assert_eq!(edited.license.name, "MIT");
+        assert_eq!(edited.license.commercial_use, "allowed");
         assert_eq!(edited.default_token.as_deref(), Some("<edited-style>"));
         assert_eq!(edited.trigger_words, vec!["<edited-style>"]);
         let _ = fs::remove_file(source);
@@ -2654,6 +2713,15 @@ mod tests {
 
     #[test]
     fn imports_and_catalogs_a_reviewed_lora() {
+        import_and_edit_sdxl_lora("stable-diffusion-xl", "pony");
+    }
+
+    #[test]
+    fn imports_and_catalogs_a_reviewed_pony_lora() {
+        import_and_edit_sdxl_lora("pony", "stable-diffusion-xl");
+    }
+
+    fn import_and_edit_sdxl_lora(architecture: &str, edited_architecture: &str) {
         let source = temp_path("managed-lora");
         let (root, paths) = test_paths("managed-lora");
         fs::create_dir_all(&root).expect("store should be created");
@@ -2664,18 +2732,19 @@ mod tests {
                     "ss_network_module": "networks.lora",
                     "ss_base_model_version": "sdxl_base_v1-0"
                 },
-                "lora_unet_block.lora_up.weight": {
+                "lora_unet_attn2_to_k.lora_up.weight": {
                     "dtype": "F32", "shape": [1, 1], "data_offsets": [0, 4]
                 },
-                "lora_unet_block.lora_down.weight": {
-                    "dtype": "F32", "shape": [1, 1], "data_offsets": [4, 8]
+                "lora_unet_attn2_to_k.lora_down.weight": {
+                    "dtype": "F32", "shape": [1, 2048], "data_offsets": [4, 8196]
                 }
             }),
-            &[0; 8],
+            &[0; 8196],
         );
         database::initialize(&paths).expect("database should initialize");
         let inspection =
             inspect(source.to_string_lossy().as_ref()).expect("inspection should pass");
+        assert_eq!(inspection.architecture_confidence, "high");
         let expected_lora_profile = inspection.lora_profile.clone();
         let source_metadata = serde_json::json!({
             "provider": "civitai",
@@ -2688,7 +2757,7 @@ mod tests {
                 review_token: inspection.review_token,
                 display_name: "Gallery light".to_string(),
                 kind: "lora".to_string(),
-                architecture: "stable-diffusion-xl".to_string(),
+                architecture: architecture.to_string(),
                 trigger_words: vec!["gallerylight".to_string()],
                 token: None,
                 source_url: Some("https://civitai.com/models/123".to_string()),
@@ -2716,22 +2785,30 @@ mod tests {
             .find(|addon| addon.id == result.addon_id)
             .expect("add-on should be cataloged");
         assert_eq!(addon.kind, "lora");
-        assert_eq!(addon.architecture, "stable-diffusion-xl");
+        assert_eq!(addon.architecture, architecture);
         assert_eq!(addon.trigger_words, vec!["gallerylight"]);
         assert_eq!(addon.lora_profile, expected_lora_profile);
         assert_eq!(addon.source_metadata.as_ref(), Some(&source_metadata));
-        update_triggers(
-            &paths,
-            &result.addon_id,
-            &["edited phrase".to_string(), "EDITED PHRASE".to_string()],
-        )
-        .unwrap();
+        update_details(&paths, &super::super::model_resource_edit::UpdateMediaModelResourceRequest {
+            resource_id: result.addon_id.clone(),
+            display_name: "Edited LoRA".to_string(),
+            architecture: edited_architecture.to_string(),
+            source_url: None,
+            license_name: None,
+            commercial_use: None,
+            trigger_words: vec!["edited phrase".to_string(), "EDITED PHRASE".to_string()],
+        }).unwrap();
+        reconcile_managed_addon_profiles(&paths, &mut connection).unwrap();
         let reloaded = catalog::snapshot(&connection, &Default::default()).unwrap();
         let edited = reloaded
             .addons
             .iter()
             .find(|addon| addon.id == result.addon_id)
             .unwrap();
+        assert_eq!(edited.display_name, "Edited LoRA");
+        assert_eq!(edited.architecture, edited_architecture);
+        assert!(edited.source_url.is_none());
+        assert_eq!(edited.source_metadata.as_ref(), Some(&source_metadata));
         assert_eq!(edited.trigger_words, vec!["edited phrase"]);
         assert!(edited.default_token.is_none());
         let removal_plan = plan_removal(&paths, &result.addon_id)

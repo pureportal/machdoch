@@ -1,4 +1,5 @@
-import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Dialog, DialogContent, DialogTitle } from "../../components/ui/dialog";
+import { Check, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState, type JSX } from "react";
 import {
   addMediaAssetCategory,
@@ -94,30 +95,18 @@ export const MediaCategoryManagerDialog = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="media-category-manager-title"
-        className="flex max-h-[calc(100dvh-2rem)] min-w-0 w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl"
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent
+        aria-describedby={undefined}
+        className="z-[80] flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden rounded-2xl border-slate-700 bg-slate-950 p-0 text-slate-100 sm:max-w-lg"
       >
-        <header className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
-          <h1
-            id="media-category-manager-title"
-            className="text-sm font-semibold text-slate-100"
-          >
-            Categories
-          </h1>
-          <ControlTooltip content="Close">
-            <button
-              type="button"
-              aria-label="Close categories"
-              onClick={onClose}
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </ControlTooltip>
+        <header className="border-b border-slate-800 px-5 py-4 pr-12">
+          <DialogTitle>Categories</DialogTitle>
         </header>
         <SubmitShortcut asChild>
           <div className="flex gap-2 border-b border-slate-800 p-4">
@@ -265,7 +254,7 @@ export const MediaCategoryManagerDialog = ({
             {error}
           </p>
         ) : null}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };

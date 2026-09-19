@@ -72,6 +72,7 @@ SUPPORTED_ARCHITECTURES = (
     "stable-diffusion-1",
     "stable-diffusion-2",
     "stable-diffusion-xl",
+    "pony",
     "stable-diffusion-3",
     "flux-1",
     "flux-2",
@@ -87,6 +88,7 @@ NATIVE_MASKED_EDIT_ARCHITECTURES = frozenset(
         "stable-diffusion-1",
         "stable-diffusion-2",
         "stable-diffusion-xl",
+        "pony",
         "flux-1",
         "krea-2",
     }
@@ -96,6 +98,7 @@ NATIVE_REFERENCE_ROLES = {
     "stable-diffusion-1": frozenset({"subject"}),
     "stable-diffusion-2": frozenset({"composition"}),
     "stable-diffusion-xl": frozenset({"subject", "style", "composition"}),
+    "pony": frozenset({"subject", "style", "composition"}),
     "flux-1": frozenset({"composition"}),
     "krea-2": frozenset({"subject", "style", "composition", "palette", "detail"}),
 }
@@ -961,6 +964,7 @@ def _load_pipeline(
             "stable-diffusion-1": "StableDiffusionPipeline",
             "stable-diffusion-2": "StableDiffusionPipeline",
             "stable-diffusion-xl": "StableDiffusionXLPipeline",
+            "pony": "StableDiffusionXLPipeline",
             "stable-diffusion-3": "StableDiffusion3Pipeline",
             "flux-1": "FluxPipeline",
             "flux-2": "Flux2Pipeline",
@@ -1088,6 +1092,7 @@ def probe_model(request: dict[str, Any]) -> dict[str, Any]:
             "stable-diffusion-1",
             "stable-diffusion-2",
             "stable-diffusion-xl",
+            "pony",
             "flux-1",
         ):
             required_methods.append("load_textual_inversion")
@@ -2442,9 +2447,11 @@ def _controlnet_pipeline(
         ("stable-diffusion-1", False): "StableDiffusionControlNetPipeline",
         ("stable-diffusion-2", False): "StableDiffusionControlNetPipeline",
         ("stable-diffusion-xl", False): "StableDiffusionXLControlNetPipeline",
+        ("pony", False): "StableDiffusionXLControlNetPipeline",
         ("stable-diffusion-1", True): "StableDiffusionControlNetImg2ImgPipeline",
         ("stable-diffusion-2", True): "StableDiffusionControlNetImg2ImgPipeline",
         ("stable-diffusion-xl", True): "StableDiffusionXLControlNetImg2ImgPipeline",
+        ("pony", True): "StableDiffusionXLControlNetImg2ImgPipeline",
     }.get((architecture, image_to_image))
     pipeline_class = getattr(diffusers, class_name or "", None)
     if pipeline_class is None or not hasattr(pipeline_class, "from_pipe"):
@@ -2653,19 +2660,20 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
             "stable-diffusion-1",
             "stable-diffusion-2",
             "stable-diffusion-xl",
+            "pony",
         ):
             raise WorkerError("OpenPose control requires a Stable Diffusion ControlNet family")
     conditioned_images = ([base_image] if base_image is not None else []) + [
         reference["image"] for reference in references
     ]
-    ip_adapter_references = architecture in ("stable-diffusion-1", "stable-diffusion-xl") and bool(references)
+    ip_adapter_references = architecture in ("stable-diffusion-1", "stable-diffusion-xl", "pony") and bool(references)
     if not ip_adapter_references and any(
         reference["influence"] != 1.0 for reference in references
     ):
         raise WorkerError("This local runtime requires reference influence 1")
     if architecture in ("stable-diffusion-2", "flux-1") and len(conditioned_images) > 1:
         raise WorkerError(f"{architecture} accepts one reference or base image")
-    if architecture in ("stable-diffusion-1", "stable-diffusion-xl", "krea-2") and len(references) > 3:
+    if architecture in ("stable-diffusion-1", "stable-diffusion-xl", "pony", "krea-2") and len(references) > 3:
         raise WorkerError(f"{architecture} accepts at most three reference images")
     if not prompt and not conditioned_images and control_image is None:
         raise WorkerError("prompt or image conditioning is required")
@@ -2706,7 +2714,7 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
             height,
             16 if architecture in ("flux-2", "krea-2") else 8,
             mask_image,
-            upscale_crop=architecture in ("stable-diffusion-1", "stable-diffusion-xl"),
+            upscale_crop=architecture in ("stable-diffusion-1", "stable-diffusion-xl", "pony"),
         )
         if mask_image is not None
         and base_original is not None
@@ -2766,7 +2774,7 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         if (
             masked_context is not None
             and architecture in (
-                "stable-diffusion-1", "stable-diffusion-2", "stable-diffusion-xl", "flux-1",
+                "stable-diffusion-1", "stable-diffusion-2", "stable-diffusion-xl", "pony", "flux-1",
             )
         ):
             pipeline = diffusers.AutoPipelineForInpainting.from_pipe(pipeline)
@@ -2774,7 +2782,7 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         elif (
             primary_reference_image is not None
             and architecture in (
-                "stable-diffusion-1", "stable-diffusion-2", "stable-diffusion-xl", "flux-1",
+                "stable-diffusion-1", "stable-diffusion-2", "stable-diffusion-xl", "pony", "flux-1",
             )
         ):
             pipeline = diffusers.AutoPipelineForImage2Image.from_pipe(pipeline)

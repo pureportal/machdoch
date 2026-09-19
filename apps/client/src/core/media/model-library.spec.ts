@@ -154,6 +154,7 @@ describe("matchesMediaModelQuery", () => {
         brokenInstalled,
         runtimeUnavailable,
         notInstalled,
+        removed,
       ]).map((model) => model.id),
     ).toEqual([
       providerReady.id,
