@@ -4,9 +4,25 @@ import {
   reconcileWorkspaceTreeFocus,
   resolveWorkspaceMarkdownPath,
   workspacePathParent,
+  workspaceEntryAbsolutePath,
 } from "./workspace-tools-model";
 
 describe("workspace tools model", () => {
+  it("copies absolute paths using the workspace path separators", () => {
+    expect(workspaceEntryAbsolutePath("C:\\work\\", "src/index.ts")).toBe(
+      "C:\\work\\src\\index.ts",
+    );
+    expect(
+      workspaceEntryAbsolutePath("\\\\server\\share", "src/index.ts"),
+    ).toBe("\\\\server\\share\\src\\index.ts");
+    expect(workspaceEntryAbsolutePath("/work", "src/index.ts")).toBe(
+      "/work/src/index.ts",
+    );
+    expect(workspaceEntryAbsolutePath("/", "index.ts")).toBe("/index.ts");
+    expect(workspaceEntryAbsolutePath("C:/work", "src/index.ts")).toBe(
+      "C:/work/src/index.ts",
+    );
+  });
   it("normalizes workspace parents across path separators", () => {
     expect(workspacePathParent("README.md")).toBe(".");
     expect(workspacePathParent("src/tauri/ui.tsx")).toBe("src/tauri");

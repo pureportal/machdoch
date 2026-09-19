@@ -1,3 +1,4 @@
+import { CopyContextMenu } from "../components/ui/copy-context-menu";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   ArrowDownToLine,
@@ -1718,9 +1719,18 @@ export const WorkspaceManager = ({
                   <h2 className="truncate text-base font-semibold text-slate-100">
                     {getManagedWorkspaceName(selectedWorkspace)}
                   </h2>
-                  <p className="mt-1 break-all font-mono text-xs text-slate-500">
-                    {selectedWorkspace.root}
-                  </p>
+                  <CopyContextMenu
+                    values={[
+                      {
+                        label: "Copy workspace path",
+                        value: selectedWorkspace.root,
+                      },
+                    ]}
+                  >
+                    <p className="mt-1 break-all font-mono text-xs text-slate-500">
+                      {selectedWorkspace.root}
+                    </p>
+                  </CopyContextMenu>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -2214,12 +2224,30 @@ export const WorkspaceManager = ({
                                       className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-slate-800 px-3 py-2"
                                     >
                                       <GitBranch className="size-3.5 shrink-0 text-slate-500" />
-                                      <span className="min-w-0 flex-1 truncate text-sm text-slate-200">
-                                        {branch.name}
-                                      </span>
-                                      <code className="text-[11px] text-slate-600">
-                                        {branch.commit}
-                                      </code>
+                                      <CopyContextMenu
+                                        values={[
+                                          {
+                                            label: "Copy branch name",
+                                            value: branch.name,
+                                          },
+                                        ]}
+                                      >
+                                        <span className="min-w-0 flex-1 truncate text-sm text-slate-200">
+                                          {branch.name}
+                                        </span>
+                                      </CopyContextMenu>
+                                      <CopyContextMenu
+                                        values={[
+                                          {
+                                            label: "Copy commit",
+                                            value: branch.commit,
+                                          },
+                                        ]}
+                                      >
+                                        <code className="text-[11px] text-slate-600">
+                                          {branch.commit}
+                                        </code>
+                                      </CopyContextMenu>
                                       {branch.current ? (
                                         <Badge variant="outline">Current</Badge>
                                       ) : (
@@ -2256,12 +2284,30 @@ export const WorkspaceManager = ({
                                         className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-800 px-3 py-2"
                                       >
                                         <Network className="size-3.5 shrink-0 text-slate-500" />
-                                        <span className="min-w-0 flex-1 truncate text-sm text-slate-200">
-                                          {branch.name}
-                                        </span>
-                                        <code className="text-[11px] text-slate-600">
-                                          {branch.commit}
-                                        </code>
+                                        <CopyContextMenu
+                                          values={[
+                                            {
+                                              label: "Copy branch name",
+                                              value: branch.name,
+                                            },
+                                          ]}
+                                        >
+                                          <span className="min-w-0 flex-1 truncate text-sm text-slate-200">
+                                            {branch.name}
+                                          </span>
+                                        </CopyContextMenu>
+                                        <CopyContextMenu
+                                          values={[
+                                            {
+                                              label: "Copy commit",
+                                              value: branch.commit,
+                                            },
+                                          ]}
+                                        >
+                                          <code className="text-[11px] text-slate-600">
+                                            {branch.commit}
+                                          </code>
+                                        </CopyContextMenu>
                                         <Button
                                           size="sm"
                                           variant="ghost"
@@ -2341,9 +2387,22 @@ export const WorkspaceManager = ({
                                       <p className="text-sm font-medium text-slate-200">
                                         {remote.name}
                                       </p>
-                                      <p className="mt-1 break-all font-mono text-xs text-slate-500">
-                                        {remote.fetchUrl ?? remote.pushUrl}
-                                      </p>
+                                      <CopyContextMenu
+                                        values={[
+                                          {
+                                            label: "Copy fetch URL",
+                                            value: remote.fetchUrl ?? "",
+                                          },
+                                          {
+                                            label: "Copy push URL",
+                                            value: remote.pushUrl ?? "",
+                                          },
+                                        ]}
+                                      >
+                                        <p className="mt-1 break-all font-mono text-xs text-slate-500">
+                                          {remote.fetchUrl ?? remote.pushUrl}
+                                        </p>
+                                      </CopyContextMenu>
                                     </div>
                                     <Button
                                       size="icon"

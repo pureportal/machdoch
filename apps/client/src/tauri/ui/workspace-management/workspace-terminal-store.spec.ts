@@ -59,6 +59,7 @@ const xtermState = vi.hoisted(() => ({
   fit: vi.fn(),
   writes: [] as Array<string | Uint8Array>,
   autoProcessWrites: true,
+  selection: "",
   elements: [] as Array<{
     parentElement: unknown;
     isConnected: boolean;
@@ -172,10 +173,10 @@ vi.mock("@xterm/xterm", () => ({
       }
     }
     hasSelection(): boolean {
-      return false;
+      return xtermState.selection.length > 0;
     }
     getSelection(): string {
-      return "";
+      return xtermState.selection;
     }
     paste(data: string): void {
       this.state.pasted.push(data);
@@ -236,6 +237,7 @@ describe("WorkspaceTerminalStore shell startup", () => {
     xtermState.instances.length = 0;
     xtermState.elements.length = 0;
     xtermState.autoProcessWrites = true;
+    xtermState.selection = "";
   });
 
   it("falls back when the preferred shell cannot stay running", async () => {
@@ -265,6 +267,84 @@ describe("WorkspaceTerminalStore shell startup", () => {
         error: null,
       }),
     ]);
+  });
+
+  it("pastes into the requested terminal and discards clipboard reads after restart", async () => {
+    runtimeMocks.startWorkspaceTerminal.mockResolvedValue({
+      sessionId: "terminal-session",
+      shellId: "windows-powershell",
+      processId: 42,
+    });
+    const clipboard = createDeferred<string>();
+    const readText = vi
+      .fn()
+      .mockResolvedValueOnce("first\nsecond")
+      .mockReturnValueOnce(clipboard.promise);
+    vi.stubGlobal("navigator", { clipboard: { readText } });
+    try {
+      const store = new WorkspaceTerminalStore("C:/Workspace");
+      await store.initialize();
+      const id = store.getSnapshot().activeTerminalId!;
+      await store.pasteToTerminal(id);
+      expect(xtermState.instances[0]?.pasted).toEqual(["first\nsecond"]);
+      const paste = store.pasteToTerminal(id);
+      await store.startActiveTerminal();
+      clipboard.resolve("stale input");
+      await paste;
+      expect(xtermState.instances[0]?.pasted).toEqual(["first\nsecond"]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("reports keyboard clipboard failures without marking the running terminal unavailable", async () => {
+    runtimeMocks.startWorkspaceTerminal.mockResolvedValue({
+      sessionId: "terminal-session",
+      shellId: "windows-powershell",
+      processId: 42,
+    });
+    vi.stubGlobal("navigator", {
+      clipboard: {
+        readText: vi.fn().mockRejectedValue(new Error("Denied")),
+        writeText: vi.fn().mockRejectedValue(new Error("Denied")),
+      },
+    });
+    try {
+      const store = new WorkspaceTerminalStore("C:/Workspace");
+      await store.initialize();
+      const keyHandler = xtermState.instances[0]!.keyHandler!;
+      const keyEvent = {
+        type: "keydown",
+        ctrlKey: true,
+        shiftKey: true,
+        altKey: false,
+        metaKey: false,
+      };
+      expect(keyHandler({ ...keyEvent, key: "v" } as KeyboardEvent)).toBe(
+        false,
+      );
+      await vi.waitFor(() =>
+        expect(store.getSnapshot().terminals[0]?.error).toContain(
+          "Could not paste",
+        ),
+      );
+      store.dismissActiveError();
+      xtermState.selection = "selected output";
+      expect(keyHandler({ ...keyEvent, key: "c" } as KeyboardEvent)).toBe(
+        false,
+      );
+      await vi.waitFor(() =>
+        expect(store.getSnapshot().terminals[0]?.error).toContain(
+          "Could not copy",
+        ),
+      );
+      expect(store.getSnapshot().terminals[0]?.status).toBe("running");
+      expect(
+        keyHandler({ ...keyEvent, shiftKey: false, key: "c" } as KeyboardEvent),
+      ).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("detaches the terminal element when its workspace view unmounts", async () => {

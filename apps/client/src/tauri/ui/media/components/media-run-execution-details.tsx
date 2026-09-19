@@ -1,3 +1,4 @@
+import { CopyContextMenu } from "../../components/ui/copy-context-menu";
 import { CloudCog, ShieldAlert } from "lucide-react";
 import type { JSX } from "react";
 import type {
@@ -127,9 +128,13 @@ export const MediaRunExecutionDetails = ({
               >
                 <CloudCog className="h-3.5 w-3.5" /> Provider decision
               </h3>
-              <p className="mt-1 font-mono text-xs text-slate-400">
-                attempt {providerJob.attempt} · {providerJob.id}
-              </p>
+              <CopyContextMenu
+                values={[{ label: "Copy job ID", value: providerJob.id }]}
+              >
+                <p className="mt-1 font-mono text-xs text-slate-400">
+                  attempt {providerJob.attempt} · {providerJob.id}
+                </p>
+              </CopyContextMenu>
             </div>
             <Badge
               variant="outline"

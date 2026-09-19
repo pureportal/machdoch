@@ -11513,7 +11513,7 @@ export const RalphFlowEditor = ({
                               <DropdownMenuContent
                                 align="start"
                                 sideOffset={5}
-                                className="z-[90] min-w-[var(--radix-dropdown-menu-trigger-width)] rounded-md border border-slate-700 bg-slate-950 p-1 text-slate-100 shadow-xl shadow-black/30"
+                                className="z-[90] min-w-[var(--radix-dropdown-menu-trigger-width)]"
                               >
                                 {selectedBlockProviderOptions.map(
                                   (provider) => {
@@ -11592,7 +11592,7 @@ export const RalphFlowEditor = ({
                               <DropdownMenuContent
                                 align="start"
                                 sideOffset={5}
-                                className="z-[90] min-w-[var(--radix-dropdown-menu-trigger-width)] rounded-md border border-slate-700 bg-slate-950 p-1 text-slate-100 shadow-xl shadow-black/30"
+                                className="z-[90] min-w-[var(--radix-dropdown-menu-trigger-width)]"
                               >
                                 {selectedBlockProviderOption === "default" ? (
                                   <DropdownMenuItem
@@ -12112,7 +12112,7 @@ export const RalphFlowEditor = ({
                                 <DropdownMenuContent
                                   align="start"
                                   sideOffset={5}
-                                  className="z-[90] min-w-[var(--radix-dropdown-menu-trigger-width)] rounded-md border border-slate-700 bg-slate-950 p-1 text-slate-100 shadow-xl shadow-black/30"
+                                  className="z-[90] min-w-[var(--radix-dropdown-menu-trigger-width)]"
                                 >
                                   {routeOptions.map((option) => {
                                     const active =
@@ -12215,7 +12215,7 @@ export const RalphFlowEditor = ({
                               <DropdownMenuContent
                                 align="start"
                                 sideOffset={5}
-                                className="z-[90] min-w-[var(--radix-dropdown-menu-trigger-width)] rounded-md border border-slate-700 bg-slate-950 p-1 text-slate-100 shadow-xl shadow-black/30"
+                                className="z-[90] min-w-[var(--radix-dropdown-menu-trigger-width)]"
                               >
                                 {routeTargets.map((target) => {
                                   const active = target.id === selectedEdge.to;

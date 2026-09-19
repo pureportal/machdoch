@@ -11,7 +11,7 @@ import {
   within,
 } from "@testing-library/react";
 import { createElement } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type ProductComposer = NonNullable<ProductShell["composer"]>;
 
@@ -88,7 +88,13 @@ const ralph = (overrides: Partial<ProductRalph> = {}): ProductRalph => ({
   ...overrides,
 });
 
-afterEach(() => cleanup());
+beforeEach(() => {
+  document.body.classList.add("machdoch-product");
+});
+afterEach(() => {
+  cleanup();
+  document.body.classList.remove("machdoch-product");
+});
 
 describe("shared Fleet RALPH UI", () => {
   it("validates typed variables before dispatching a run", async () => {

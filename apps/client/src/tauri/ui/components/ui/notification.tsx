@@ -1,3 +1,4 @@
+import { CopyContextMenu } from "./copy-context-menu";
 import {
   CircleAlert,
   CircleCheck,
@@ -115,9 +116,25 @@ export const AppNotification = ({
           id={titleId}
           className="flex flex-wrap items-center gap-2 text-xs font-semibold leading-5"
         >
-          {title ?? meta.title}
+          {typeof title === "string" ? (
+            <CopyContextMenu values={[{ label: "Copy message", value: title }]}>
+              <span>{title}</span>
+            </CopyContextMenu>
+          ) : (
+            (title ?? meta.title)
+          )}
         </div>
-        <div className="text-xs leading-5 text-current/80">{children}</div>
+        <div className="app-readable text-xs leading-5 text-current/80">
+          {typeof children === "string" ? (
+            <CopyContextMenu
+              values={[{ label: "Copy message", value: children }]}
+            >
+              <span>{children}</span>
+            </CopyContextMenu>
+          ) : (
+            children
+          )}
+        </div>
       </div>
       {onDismiss ? (
         <ControlTooltip content={dismissLabel}>

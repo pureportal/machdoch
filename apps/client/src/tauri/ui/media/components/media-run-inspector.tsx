@@ -1,3 +1,4 @@
+import { CopyContextMenu } from "../../components/ui/copy-context-menu";
 import { RotateCw, Workflow } from "lucide-react";
 import type { JSX } from "react";
 import type { MediaRunDetail } from "../../../../core/media/contracts.js";
@@ -80,9 +81,11 @@ export const MediaRunInspector = ({
         </time>
       </div>
       {run.prompt && run.prompt !== run.flowName ? (
-        <p className="mt-5 whitespace-pre-wrap break-words text-sm leading-6 text-slate-200">
-          {run.prompt}
-        </p>
+        <CopyContextMenu values={[{ label: "Copy prompt", value: run.prompt }]}>
+          <p className="mt-5 whitespace-pre-wrap break-words text-sm leading-6 text-slate-200">
+            {run.prompt}
+          </p>
+        </CopyContextMenu>
       ) : null}
       <div className="mt-5 flex flex-wrap gap-2">
         {canCancelMediaRun(run) ? (

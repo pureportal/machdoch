@@ -1,5 +1,11 @@
 import {
-  ChevronRight,
+  RalphContextMenuButton,
+  RalphAddBlockContextMenuButton,
+  RalphCanvasSubmenu,
+  renderWorkflowBlockButtons,
+  renderMcpBlockButtons,
+} from "./ralph-context-menu-controls";
+import {
   ClipboardPaste,
   Copy,
   FolderOpen,
@@ -8,9 +14,8 @@ import {
   Plus,
   Route,
   Trash2,
-  type LucideIcon,
 } from "lucide-react";
-import type { JSX, ReactNode } from "react";
+import type { JSX } from "react";
 
 import type {
   RalphBlockType,
@@ -19,11 +24,8 @@ import type {
   RalphFlowSummary,
   RalphPosition,
 } from "../../../../core/ralph.js";
-import { cn } from "../../lib/utils";
-import { getBlockTone } from "../_helpers/get-ralph-block-visual.helper";
 import { getFlowSummaryScope } from "../_helpers/upsert-flow-summary.helper";
 import {
-  MCP_BLOCK_ACTIONS,
   RALPH_CONTEXT_MENU_MARGIN,
   RALPH_CONTEXT_MENU_WIDTH,
   RALPH_CONTEXT_SUBMENU_WIDTH,
@@ -55,14 +57,6 @@ export interface RalphFlowListMenu {
   left: number;
   top: number;
   flow: RalphFlowSummary;
-}
-
-interface RalphCanvasMenuButtonOptions {
-  disabled?: boolean;
-  danger?: boolean;
-  icon?: LucideIcon;
-  iconClassName?: string;
-  key?: string;
 }
 
 interface RalphFlowListContextMenuProps {
@@ -98,113 +92,6 @@ interface RalphCanvasContextMenuProps {
   removeEdge: (edgeId: string) => void;
 }
 
-export const RalphContextMenuButton = ({
-  label,
-  onClick,
-  options = {},
-}: {
-  label: string;
-  onClick: () => void;
-  options?: RalphCanvasMenuButtonOptions;
-}): JSX.Element => {
-  const Icon = options.icon;
-
-  return (
-    <button
-      key={options.key}
-      type="button"
-      role="menuitem"
-      disabled={options.disabled}
-      onClick={onClick}
-      className={cn(
-        "flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium outline-none",
-        options.disabled
-          ? "cursor-not-allowed text-slate-600"
-          : options.danger
-            ? "text-rose-100 hover:bg-rose-500/10"
-            : "text-slate-200 hover:bg-slate-800",
-      )}
-    >
-      {Icon ? (
-        <Icon className={cn("h-3.5 w-3.5 shrink-0", options.iconClassName)} />
-      ) : null}
-      <span className="min-w-0 truncate">{label}</span>
-    </button>
-  );
-};
-
-export const RalphAddBlockContextMenuButton = ({
-  label,
-  type,
-  onClick,
-  menuKey,
-}: {
-  label: string;
-  type: RalphBlockType;
-  onClick: () => void;
-  menuKey?: string;
-}): JSX.Element => {
-  const tone = getBlockTone(type);
-
-  return (
-    <RalphContextMenuButton
-      label={label}
-      onClick={onClick}
-      options={{
-        key: menuKey,
-        icon: tone.icon,
-        iconClassName: tone.badgeClassName,
-      }}
-    />
-  );
-};
-
-export const RalphCanvasSubmenu = ({
-  label,
-  children,
-  icon: Icon,
-  iconClassName,
-  side = "right",
-}: {
-  label: string;
-  children: ReactNode;
-  icon?: LucideIcon;
-  iconClassName?: string;
-  side?: "left" | "right";
-}): JSX.Element => {
-  return (
-    <div className="group/submenu relative" role="none">
-      <button
-        type="button"
-        role="menuitem"
-        aria-haspopup="menu"
-        onClick={(event) => event.preventDefault()}
-        className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium text-slate-200 outline-none hover:bg-slate-800 focus:bg-slate-800"
-      >
-        {Icon ? (
-          <Icon className={cn("h-3.5 w-3.5 shrink-0", iconClassName)} />
-        ) : null}
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        <ChevronRight
-          className={cn(
-            "h-3.5 w-3.5 shrink-0 text-slate-500",
-            side === "left" && "rotate-180",
-          )}
-        />
-      </button>
-      <div
-        role="menu"
-        className={cn(
-          "invisible pointer-events-none absolute top-0 z-[140] max-h-[min(24rem,calc(100vh-1rem))] w-56 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950 p-1.5 opacity-0 shadow-2xl shadow-black/45 [scrollbar-width:thin] group-hover/submenu:pointer-events-auto group-hover/submenu:visible group-hover/submenu:opacity-100 group-focus-within/submenu:pointer-events-auto group-focus-within/submenu:visible group-focus-within/submenu:opacity-100",
-          side === "left" ? "right-full mr-1" : "left-full ml-1",
-        )}
-      >
-        {children}
-      </div>
-    </div>
-  );
-};
-
 export const RalphFlowListContextMenu = ({
   flowListMenu,
   workspaceRoot,
@@ -227,9 +114,13 @@ export const RalphFlowListContextMenu = ({
   const activeFlowRuns = getFlowActiveRuns(flow);
   const baseDisabled = !workspaceRoot || !flow.path || loading;
   const isSelectedOpenFlow =
-    selectedId === flow.id && selectedScope === flowScope && draftFlow?.id === flow.id;
+    selectedId === flow.id &&
+    selectedScope === flowScope &&
+    draftFlow?.id === flow.id;
   const mutationDisabled =
-    baseDisabled || activeFlowRuns.length > 0 || isGenerationTargetingFlow(flow);
+    baseDisabled ||
+    activeFlowRuns.length > 0 ||
+    isGenerationTargetingFlow(flow);
   const deleteDisabled =
     !workspaceRoot ||
     loading ||
@@ -241,7 +132,7 @@ export const RalphFlowListContextMenu = ({
   return (
     <div
       role="menu"
-      className="fixed z-[130] w-56 rounded-lg border border-slate-700 bg-slate-950 p-1.5 shadow-2xl shadow-black/45"
+      className="fixed z-[130] w-56 app-menu-surface"
       style={{ left: flowListMenu.left, top: flowListMenu.top }}
       onMouseDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
@@ -250,7 +141,7 @@ export const RalphFlowListContextMenu = ({
         event.stopPropagation();
       }}
     >
-      <div className="min-w-0 px-2 pb-1 pt-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+      <div className="app-menu-label min-w-0">
         <span className="block truncate">{flow.name}</span>
       </div>
       <RalphContextMenuButton
@@ -262,7 +153,7 @@ export const RalphFlowListContextMenu = ({
           iconClassName: "text-cyan-300",
         }}
       />
-      <div className="my-1 h-px bg-slate-800" />
+      <div className="app-menu-separator" />
       <RalphContextMenuButton
         label="Copy to global"
         onClick={() => void copyOrMoveFlowToScope(flow, globalScope, "copy")}
@@ -281,7 +172,7 @@ export const RalphFlowListContextMenu = ({
           iconClassName: "text-emerald-300",
         }}
       />
-      <div className="my-1 h-px bg-slate-800" />
+      <div className="app-menu-separator" />
       <RalphContextMenuButton
         label="Move to global"
         onClick={() => void copyOrMoveFlowToScope(flow, globalScope, "move")}
@@ -300,7 +191,7 @@ export const RalphFlowListContextMenu = ({
           iconClassName: "text-emerald-300",
         }}
       />
-      <div className="my-1 h-px bg-slate-800" />
+      <div className="app-menu-separator" />
       <RalphContextMenuButton
         label="Delete"
         onClick={() => void deleteFlow(flow)}
@@ -309,36 +200,6 @@ export const RalphFlowListContextMenu = ({
     </div>
   );
 };
-
-export const renderWorkflowBlockButtons = (
-  addBlock: (type: RalphBlockType) => void,
-): JSX.Element => (
-  <>
-    <RalphAddBlockContextMenuButton label="Prompt" type="PROMPT" onClick={() => addBlock("PROMPT")} />
-    <RalphAddBlockContextMenuButton label="Validator" type="VALIDATOR" onClick={() => addBlock("VALIDATOR")} />
-    <RalphAddBlockContextMenuButton label="Decision" type="DECISION" onClick={() => addBlock("DECISION")} />
-    <RalphAddBlockContextMenuButton label="Pack" type="PACK" onClick={() => addBlock("PACK")} />
-    <RalphAddBlockContextMenuButton label="Utility" type="UTILITY" onClick={() => addBlock("UTILITY")} />
-    <RalphAddBlockContextMenuButton label="Media Flow" type="MEDIA_FLOW" onClick={() => addBlock("MEDIA_FLOW")} />
-    <RalphAddBlockContextMenuButton label="End" type="END" onClick={() => addBlock("END")} />
-  </>
-);
-
-export const renderMcpBlockButtons = (
-  addBlock: (type: RalphBlockType) => void,
-): JSX.Element => (
-  <>
-    {MCP_BLOCK_ACTIONS.map((action) => (
-      <RalphAddBlockContextMenuButton
-        key={action.type}
-        label={action.label}
-        type={action.type}
-        onClick={() => addBlock(action.type)}
-        menuKey={action.type}
-      />
-    ))}
-  </>
-);
 
 export const RalphCanvasContextMenu = ({
   canvasMenu,
@@ -360,11 +221,12 @@ export const RalphCanvasContextMenu = ({
 
   const menuBlock =
     canvasMenu.type === "node"
-      ? draftFlow?.blocks.find((block) => block.id === canvasMenu.blockId) ?? null
+      ? (draftFlow?.blocks.find((block) => block.id === canvasMenu.blockId) ??
+        null)
       : null;
   const menuEdge =
     canvasMenu.type === "edge"
-      ? draftFlow?.edges.find((edge) => edge.id === canvasMenu.edgeId) ?? null
+      ? (draftFlow?.edges.find((edge) => edge.id === canvasMenu.edgeId) ?? null)
       : null;
   const submenuSide =
     typeof window !== "undefined" &&
@@ -379,23 +241,23 @@ export const RalphCanvasContextMenu = ({
   return (
     <div
       role="menu"
-      className="fixed z-[120] w-56 overflow-visible rounded-lg border border-slate-700 bg-slate-950 p-1.5 shadow-2xl shadow-black/45"
+      className="fixed z-[120] w-56 overflow-visible app-menu-surface"
       style={{ left: canvasMenu.left, top: canvasMenu.top }}
       onMouseDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
     >
       {canvasMenu.type === "pane" ? (
         <>
-          <div className="px-2 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Canvas
-          </div>
+          <div className="app-menu-label">Canvas</div>
           <RalphCanvasSubmenu
             label="Add block"
             icon={Plus}
             iconClassName="text-cyan-300"
             side={submenuSide}
           >
-            {renderWorkflowBlockButtons((type) => addBlock(type, canvasMenu.position))}
+            {renderWorkflowBlockButtons((type) =>
+              addBlock(type, canvasMenu.position),
+            )}
           </RalphCanvasSubmenu>
           <RalphCanvasSubmenu
             label="Add visual"
@@ -403,8 +265,16 @@ export const RalphCanvasContextMenu = ({
             iconClassName="text-slate-300"
             side={submenuSide}
           >
-            <RalphAddBlockContextMenuButton label="Note" type="NOTE" onClick={() => addBlock("NOTE", canvasMenu.position)} />
-            <RalphAddBlockContextMenuButton label="Group" type="GROUP" onClick={() => addBlock("GROUP", canvasMenu.position)} />
+            <RalphAddBlockContextMenuButton
+              label="Note"
+              type="NOTE"
+              onClick={() => addBlock("NOTE", canvasMenu.position)}
+            />
+            <RalphAddBlockContextMenuButton
+              label="Group"
+              type="GROUP"
+              onClick={() => addBlock("GROUP", canvasMenu.position)}
+            />
           </RalphCanvasSubmenu>
           <RalphCanvasSubmenu
             label="Add MCP"
@@ -412,9 +282,11 @@ export const RalphCanvasContextMenu = ({
             iconClassName="text-violet-300"
             side={submenuSide}
           >
-            {renderMcpBlockButtons((type) => addBlock(type, canvasMenu.position))}
+            {renderMcpBlockButtons((type) =>
+              addBlock(type, canvasMenu.position),
+            )}
           </RalphCanvasSubmenu>
-          <div className="my-1 border-t border-slate-800" />
+          <div className="app-menu-separator" />
           <RalphContextMenuButton
             label="Paste block"
             onClick={() => pasteCopiedBlock(canvasMenu.position)}
@@ -443,9 +315,7 @@ export const RalphCanvasContextMenu = ({
 
       {canvasMenu.type === "edge" && menuEdge ? (
         <>
-          <div className="px-2 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Route {menuEdge.fromOutput}
-          </div>
+          <div className="app-menu-label">Route {menuEdge.fromOutput}</div>
           <RalphContextMenuButton
             label="Remove route"
             onClick={() => removeEdge(menuEdge.id)}

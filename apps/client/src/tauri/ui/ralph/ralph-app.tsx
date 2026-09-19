@@ -142,7 +142,7 @@ const RuntimeModelPicker = ({
         <DropdownMenuContent
           align="start"
           sideOffset={5}
-          className="z-[90] w-72 rounded-md border border-slate-700 bg-slate-950 p-1 text-slate-100 shadow-xl shadow-black/30"
+          className="z-[90] w-72"
         >
           <div className="px-2 pb-1 pt-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
             Provider
@@ -231,7 +231,7 @@ const RuntimeModelPicker = ({
           <DropdownMenuContent
             align="start"
             sideOffset={5}
-            className="z-[90] min-w-[var(--radix-dropdown-menu-trigger-width)] rounded-md border border-slate-700 bg-slate-950 p-1 text-slate-100 shadow-xl shadow-black/30"
+            className="z-[90] min-w-[var(--radix-dropdown-menu-trigger-width)]"
           >
             {providers.map((nextProvider) => {
               const active = nextProvider === provider;
@@ -284,7 +284,7 @@ const RuntimeModelPicker = ({
           <DropdownMenuContent
             align="start"
             sideOffset={5}
-            className="z-[90] min-w-[var(--radix-dropdown-menu-trigger-width)] rounded-md border border-slate-700 bg-slate-950 p-1 text-slate-100 shadow-xl shadow-black/30"
+            className="z-[90] min-w-[var(--radix-dropdown-menu-trigger-width)]"
           >
             {models.map((entry) => {
               const active = entry.id === model;

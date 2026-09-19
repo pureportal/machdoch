@@ -84,7 +84,7 @@ export const EmptyState = ({
         {description ? (
           <p
             data-slot="empty-state-description"
-            className="text-xs leading-5 text-slate-500"
+            className="app-readable text-xs leading-5 text-slate-500"
           >
             {description}
           </p>

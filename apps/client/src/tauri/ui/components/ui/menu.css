@@ -1,0 +1,99 @@
+.app-menu-surface {
+  border: 1px solid var(--app-border-strong);
+  border-radius: 0.5rem;
+  background: var(--app-surface-raised);
+  color: var(--app-text);
+  padding: 0.375rem;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 24%);
+  max-width: calc(100dvw - 1rem);
+  overscroll-behavior: contain;
+}
+
+.app-menu-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2rem;
+  border-radius: 0.25rem;
+  padding: 0.375rem 0.5rem;
+  color: var(--app-text);
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-align: left;
+  outline: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.app-menu-item:is(
+  :hover,
+  :focus-visible,
+  [data-highlighted],
+  [data-state="open"]
+) {
+  background: var(--app-hover);
+}
+
+.app-menu-item:is(:disabled, [data-disabled], [aria-disabled="true"]) {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.app-menu-item[data-inset="true"],
+.app-menu-label[data-inset="true"] {
+  padding-left: 2rem;
+}
+
+.app-menu-item[data-variant="destructive"] {
+  color: var(--app-red-500);
+}
+
+.app-menu-item[data-variant="destructive"]:is(
+  :hover,
+  :focus-visible,
+  [data-highlighted]
+) {
+  background: color-mix(in srgb, var(--app-red-500) 12%, transparent);
+}
+
+.app-menu-item svg {
+  flex-shrink: 0;
+  width: 0.875rem;
+  height: 0.875rem;
+  pointer-events: none;
+}
+
+.app-menu-item[data-variant="destructive"] svg {
+  color: currentColor;
+}
+
+.app-menu-label {
+  padding: 0.25rem 0.5rem;
+  color: var(--app-text-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.app-menu-separator {
+  height: 1px;
+  margin: 0.25rem 0;
+  background: var(--app-border);
+}
+
+.app-menu-shortcut {
+  margin-left: auto;
+  color: var(--app-text-muted);
+  font-size: 0.6875rem;
+}
+
+.app-copyable,
+.app-copyable :where(*) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.app-copyable:focus-visible {
+  outline: 2px solid var(--app-sky-500);
+  outline-offset: 2px;
+}

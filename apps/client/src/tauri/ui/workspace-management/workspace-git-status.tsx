@@ -1,3 +1,4 @@
+import { CopyContextMenu } from "../components/ui/copy-context-menu";
 import {
   Check,
   ChevronRight,
@@ -44,33 +45,35 @@ const DiffPatch = ({ patch }: { patch: WorkspaceGitPatch }): JSX.Element => (
         <span className="text-[10px] text-slate-500">Binary</span>
       ) : null}
     </header>
-    <pre
-      tabIndex={0}
-      aria-label={`${patchLabel(patch)} diff`}
-      className="max-h-96 overflow-auto py-2 text-[11px] leading-5 text-slate-400 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-sky-500/70"
-    >
-      <code>
-        {(patch.content || "No textual diff available.")
-          .split(/\r?\n/u)
-          .map((line, index) => {
-            const tone = workspaceDiffLineTone(line);
-            return (
-              <span
-                key={`${index}:${line.slice(0, 24)}`}
-                className={cn(
-                  "block min-w-max px-3",
-                  tone === "addition" && "bg-emerald-950/35 text-emerald-300",
-                  tone === "deletion" && "bg-red-950/35 text-red-300",
-                  tone === "hunk" && "text-sky-300",
-                  tone === "header" && "text-slate-500",
-                )}
-              >
-                {line || " "}
-              </span>
-            );
-          })}
-      </code>
-    </pre>
+    <CopyContextMenu values={[{ label: "Copy diff", value: patch.content }]}>
+      <pre
+        tabIndex={0}
+        aria-label={`${patchLabel(patch)} diff`}
+        className="max-h-96 overflow-auto py-2 text-[11px] leading-5 text-slate-400 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-sky-500/70"
+      >
+        <code>
+          {(patch.content || "No textual diff available.")
+            .split(/\r?\n/u)
+            .map((line, index) => {
+              const tone = workspaceDiffLineTone(line);
+              return (
+                <span
+                  key={`${index}:${line.slice(0, 24)}`}
+                  className={cn(
+                    "block min-w-max px-3",
+                    tone === "addition" && "bg-emerald-950/35 text-emerald-300",
+                    tone === "deletion" && "bg-red-950/35 text-red-300",
+                    tone === "hunk" && "text-sky-300",
+                    tone === "header" && "text-slate-500",
+                  )}
+                >
+                  {line || " "}
+                </span>
+              );
+            })}
+        </code>
+      </pre>
+    </CopyContextMenu>
     {patch.truncated ? (
       <p
         role="status"
@@ -93,40 +96,50 @@ const ChangeRow = ({
 }): JSX.Element => {
   const label = workspaceGitChangeLabel(change);
   return (
-    <button
-      type="button"
-      aria-expanded={selected}
-      aria-label={`View diff for ${change.path}, ${label}`}
-      onClick={onSelect}
-      className={cn(
-        "flex w-full min-w-0 items-center gap-2 border-b border-slate-900 px-3 py-2.5 text-left outline-none last:border-b-0 hover:bg-slate-900/70 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-sky-500/70",
-        selected && "bg-sky-950/30",
-      )}
+    <CopyContextMenu
+      selectable={false}
+      values={[
+        { label: "Copy relative path", value: change.path },
+        ...(change.originalPath
+          ? [{ label: "Copy original path", value: change.originalPath }]
+          : []),
+      ]}
     >
-      <code
+      <button
+        type="button"
+        aria-expanded={selected}
+        aria-label={`View diff for ${change.path}, ${label}`}
+        onClick={onSelect}
         className={cn(
-          "w-7 shrink-0 whitespace-pre text-xs",
-          change.conflicted ? "text-red-300" : "text-sky-300",
+          "flex w-full min-w-0 items-center gap-2 border-b border-slate-900 px-3 py-2.5 text-left outline-none last:border-b-0 hover:bg-slate-900/70 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-sky-500/70",
+          selected && "bg-sky-950/30",
         )}
-        aria-hidden="true"
       >
-        {change.status}
-      </code>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate font-mono text-xs text-slate-300">
-          {change.path}
+        <code
+          className={cn(
+            "w-7 shrink-0 whitespace-pre text-xs",
+            change.conflicted ? "text-red-300" : "text-sky-300",
+          )}
+          aria-hidden="true"
+        >
+          {change.status}
+        </code>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-mono text-xs text-slate-300">
+            {change.path}
+          </span>
+          <span className="mt-0.5 block truncate text-[10px] text-slate-500">
+            {change.originalPath ? `${change.originalPath} → ${label}` : label}
+          </span>
         </span>
-        <span className="mt-0.5 block truncate text-[10px] text-slate-500">
-          {change.originalPath ? `${change.originalPath} → ${label}` : label}
-        </span>
-      </span>
-      <ChevronRight
-        className={cn(
-          "size-3.5 shrink-0 text-slate-600 transition-transform",
-          selected && "rotate-90 text-sky-400",
-        )}
-      />
-    </button>
+        <ChevronRight
+          className={cn(
+            "size-3.5 shrink-0 text-slate-600 transition-transform",
+            selected && "rotate-90 text-sky-400",
+          )}
+        />
+      </button>
+    </CopyContextMenu>
   );
 };
 

@@ -1,3 +1,4 @@
+import { CopyContextMenu } from "../components/ui/copy-context-menu";
 import {
   ChevronDown,
   CircleAlert,
@@ -139,15 +140,20 @@ const ConfigurationSummary = ({
             </span>
           ) : null}
           {urls.map((url) => (
-            <button
+            <CopyContextMenu
               key={url}
-              type="button"
-              className="inline-flex max-w-full items-center gap-1 text-sky-300 outline-none hover:text-sky-200 focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-sky-500"
-              onClick={() => onOpenUrl(url)}
+              selectable={false}
+              values={[{ label: "Copy URL", value: url }]}
             >
-              <span className="truncate">{url}</span>
-              <ExternalLink aria-hidden="true" className="size-3 shrink-0" />
-            </button>
+              <button
+                type="button"
+                className="inline-flex max-w-full items-center gap-1 text-sky-300 outline-none hover:text-sky-200 focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-sky-500"
+                onClick={() => onOpenUrl(url)}
+              >
+                <span className="truncate">{url}</span>
+                <ExternalLink aria-hidden="true" className="size-3 shrink-0" />
+              </button>
+            </CopyContextMenu>
           ))}
         </div>
       ) : null}

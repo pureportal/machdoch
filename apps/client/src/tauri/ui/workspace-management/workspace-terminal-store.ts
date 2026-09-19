@@ -1,3 +1,4 @@
+import { copyText } from "../lib/clipboard";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import {
@@ -218,16 +219,13 @@ class WorkspaceTerminalSession {
       if (!terminalClipboardShortcut) return true;
       if (key === "c") {
         if (this.terminal.hasSelection()) {
-          void navigator.clipboard?.writeText(this.terminal.getSelection());
+          void this.copySelection();
           return false;
         }
         return !event.metaKey;
       }
       if (key === "v") {
-        void navigator.clipboard
-          ?.readText()
-          .then((text) => this.terminal.paste(text))
-          .catch(() => {});
+        void this.pasteFromClipboard();
         return false;
       }
       return true;
@@ -284,6 +282,33 @@ class WorkspaceTerminalSession {
       if (focus) this.terminal.focus();
     } catch {
       // A later ResizeObserver callback retries once layout is measurable.
+    }
+  }
+
+  getSelection(): string {
+    return this.terminal.getSelection();
+  }
+
+  private async copySelection(): Promise<void> {
+    try {
+      await copyText(this.terminal.getSelection());
+    } catch (failure) {
+      if (this.disposed) return;
+      this.error = errorMessage(failure);
+      this.onChange();
+    }
+  }
+
+  async pasteFromClipboard(): Promise<void> {
+    const generation = this.generation;
+    try {
+      const text = await navigator.clipboard.readText();
+      if (this.disposed || generation !== this.generation) return;
+      this.terminal.paste(text);
+    } catch {
+      if (this.disposed || generation !== this.generation) return;
+      this.error = "Could not paste. Check clipboard access and try again.";
+      this.onChange();
     }
   }
 
@@ -1019,6 +1044,20 @@ export class WorkspaceTerminalStore {
 
   unmountTerminal(terminalId: string): void {
     this.terminals.find((terminal) => terminal.id === terminalId)?.unmount();
+  }
+
+  getTerminalSelection(terminalId: string): string {
+    return (
+      this.terminals
+        .find((terminal) => terminal.id === terminalId)
+        ?.getSelection() ?? ""
+    );
+  }
+
+  async pasteToTerminal(terminalId: string): Promise<void> {
+    await this.terminals
+      .find((terminal) => terminal.id === terminalId)
+      ?.pasteFromClipboard();
   }
 
   fitActiveTerminal(focus = false): void {
