@@ -1,6 +1,10 @@
 mod analysis;
 mod catalog;
 mod civitai_addon;
+mod civitai_catalog;
+mod civitai_compatibility;
+mod civitai_download;
+pub(crate) mod civitai_commands;
 mod controlnet;
 mod database;
 mod error;
@@ -3758,7 +3762,11 @@ pub(crate) async fn media_import_local_model(
                 Err(error)
             } else {
                 tauri::async_runtime::spawn_blocking(move || {
-                    model_import::import_reviewed(&paths, &request)
+                    let result = model_import::import_reviewed(&paths, &request)?;
+                    if let Err(error) = civitai_addon::remove_staged_source_after_import(&paths, &request.source_path) {
+                        eprintln!("Could not clean Civitai download after import: {error}");
+                    }
+                    Ok(result)
                 })
                 .await
                 .map_err(|error| format!("local model import worker failed: {error}"))
@@ -3833,24 +3841,6 @@ pub(crate) async fn media_inspect_civitai_model_addon(
         "media_inspect_civitai_model_addon",
         civitai_addon::inspect_source(&source).await,
     )
-}
-
-#[tauri::command]
-pub(crate) async fn media_download_civitai_model_addon(
-    app: AppHandle,
-    request: civitai_addon::DownloadMediaCivitaiModelAddonRequest,
-) -> MediaCommandResult<MediaModelAddonImportInspection> {
-    let result = match MediaRuntimePaths::resolve(&app) {
-        Ok(paths) => {
-            if let Err(error) = database::ensure_initialized(&paths) {
-                Err(error)
-            } else {
-                civitai_addon::download_reviewed(&paths, &request).await
-            }
-        }
-        Err(error) => Err(error),
-    };
-    command_result("media_download_civitai_model_addon", result)
 }
 
 #[tauri::command]

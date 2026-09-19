@@ -10,25 +10,24 @@ use sha2::{Digest as _, Sha256};
 use tokio::io::AsyncWriteExt as _;
 
 use super::{
-    database, hardware, model_addon, model_import, MediaModelAddonImportInspection, MediaResult,
-    MediaRuntimePaths,
+    civitai_compatibility, database, model_addon, model_import, MediaResult, MediaRuntimePaths,
 };
 
 const API_ORIGIN: &str = "https://civitai.com";
 const MAX_API_RESPONSE_BYTES: usize = 8 * 1_024 * 1_024;
-const MAX_ADDON_BYTES: u64 = 4 * 1_024 * 1_024 * 1_024;
+pub(super) const MAX_RESOURCE_BYTES: u64 = 64 * 1_024 * 1_024 * 1_024;
 const MAX_SOURCE_CHARS: usize = 2_048;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MediaCivitaiModelAddonFileInspection {
-    id: u64,
-    name: String,
-    byte_size: u64,
-    sha256: String,
-    pickle_scan_result: String,
-    virus_scan_result: String,
-    scanned_at: Option<String>,
+    pub(super) id: u64,
+    pub(super) name: String,
+    pub(super) byte_size: u64,
+    pub(super) sha256: String,
+    pub(super) pickle_scan_result: String,
+    pub(super) virus_scan_result: String,
+    pub(super) scanned_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -45,12 +44,16 @@ pub(crate) struct MediaCivitaiLicenseClaims {
 pub(crate) struct MediaCivitaiModelAddonInspection {
     schema_version: u32,
     can_download: bool,
+    can_enrich: bool,
+    resource_type: String,
+    tags: Vec<String>,
+    sample_images: Vec<super::civitai_catalog::CivitaiPreview>,
     blocking_reason: Option<String>,
     review_token: String,
     observed_at: String,
     source_url: String,
     air: Option<String>,
-    model_id: u64,
+    pub(super) model_id: u64,
     version_id: u64,
     model_name: String,
     version_name: String,
@@ -80,6 +83,8 @@ struct StoredCivitaiSourceMetadata {
 pub(crate) struct DownloadMediaCivitaiModelAddonRequest {
     source: String,
     review_token: String,
+    file_id: u64,
+    pub(super) operation_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,6 +114,8 @@ struct CivitaiModelResponse {
     #[serde(rename = "type")]
     model_type: String,
     #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
     nsfw: bool,
     #[serde(default)]
     poi: bool,
@@ -126,6 +133,7 @@ struct CivitaiModelResponse {
 #[serde(rename_all = "camelCase")]
 struct CivitaiFileMetadata {
     format: Option<String>,
+    fp: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -141,6 +149,7 @@ struct CivitaiFile {
     name: String,
     #[serde(rename = "type")]
     file_type: String,
+    #[serde(rename = "sizeKB")]
     size_kb: f64,
     #[serde(default)]
     primary: bool,
@@ -156,21 +165,24 @@ struct CivitaiFile {
 #[serde(rename_all = "camelCase")]
 struct CivitaiModelVersionResponse {
     id: u64,
-    model_id: u64,
+    pub(super) model_id: u64,
     name: String,
     base_model: Option<String>,
+    base_model_type: Option<String>,
     #[serde(default)]
     trained_words: Vec<String>,
     air: Option<String>,
     status: Option<String>,
     #[serde(default)]
     files: Vec<CivitaiFile>,
+    #[serde(default)]
+    images: Vec<super::civitai_catalog::CivitaiPreview>,
 }
 
 #[derive(Debug, Clone)]
-struct SelectedFile {
-    public: MediaCivitaiModelAddonFileInspection,
-    download_url: Url,
+pub(super) struct SelectedFile {
+    pub(super) public: MediaCivitaiModelAddonFileInspection,
+    pub(super) download_url: Url,
 }
 
 #[derive(Debug, Clone)]
@@ -225,15 +237,12 @@ fn parse_full_air(source: &str) -> MediaResult<Option<SourceSelector>> {
         return Err("Only Civitai AIR identifiers can be imported here".to_string());
     }
     let declared_kind = match parts[3].to_ascii_lowercase().as_str() {
-        "lora" => Some("lora".to_string()),
+        "checkpoint" => Some("checkpoint".to_string()),
+        "lora" | "locon" | "dora" => Some("lora".to_string()),
         "embedding" | "textualinversion" | "textual-inversion" => {
             Some("textual-inversion".to_string())
         }
-        _ => {
-            return Err(
-                "Only LoRA and textual-inversion Civitai AIR identifiers are supported".to_string(),
-            )
-        }
+        _ => return Err("Use a checkpoint, LoRA, or embedding AIR identifier".to_string()),
     };
     let ids = parts[5].split('@').collect::<Vec<_>>();
     if ids.len() != 2 {
@@ -258,12 +267,15 @@ fn parse_url_source(source: &str) -> MediaResult<SourceSelector> {
         "Enter a Civitai model URL, model id, modelId@versionId, or full AIR identifier".to_string()
     })?;
     if url.scheme() != "https"
-        || !matches!(url.host_str(), Some("civitai.com" | "www.civitai.com"))
+        || !matches!(
+            url.host_str(),
+            Some("civitai.com" | "www.civitai.com" | "civitai.red" | "www.civitai.red")
+        )
         || !url.username().is_empty()
         || url.password().is_some()
         || url.port().is_some()
     {
-        return Err("Only canonical HTTPS URLs on civitai.com are accepted".to_string());
+        return Err("Enter an HTTPS model link from civitai.com or civitai.red".to_string());
     }
     let segments = url
         .path_segments()
@@ -324,7 +336,7 @@ fn parse_source(source: &str) -> MediaResult<SourceSelector> {
     parse_url_source(source)
 }
 
-fn metadata_client() -> MediaResult<Client> {
+pub(super) fn metadata_client() -> MediaResult<Client> {
     Client::builder()
         .redirect(Policy::none())
         .connect_timeout(Duration::from_secs(10))
@@ -334,21 +346,28 @@ fn metadata_client() -> MediaResult<Client> {
         .map_err(|error| format!("failed to prepare Civitai metadata client: {error}"))
 }
 
-async fn fetch_json<T: DeserializeOwned>(client: &Client, url: Url) -> MediaResult<T> {
-    let mut response = client
+pub(super) async fn fetch_json<T: DeserializeOwned>(client: &Client, url: Url) -> MediaResult<T> {
+    let mut request = client
         .get(url)
-        .header(reqwest::header::ACCEPT, "application/json")
+        .header(reqwest::header::ACCEPT, "application/json");
+    if let Some(token) = super::civitai_catalog::api_key()? {
+        request = request.bearer_auth(token);
+    }
+    let mut response = request
         .send()
         .await
         .map_err(|error| format!("Civitai metadata request failed: {error}"))?;
     match response.status() {
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-            return Err(
-                "This Civitai item requires authentication or is not publicly downloadable. Download it from Civitai yourself, then use Import LoRA / embedding."
-                    .to_string(),
-            )
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => return Err(
+            "Civitai denied access. Connect an API key with access to this resource and try again."
+                .to_string(),
+        ),
+        StatusCode::TOO_MANY_REQUESTS => {
+            return Err("Civitai rate limit reached. Wait a minute and try again.".to_string())
         }
-        StatusCode::NOT_FOUND => return Err("The Civitai model or version was not found".to_string()),
+        StatusCode::NOT_FOUND => {
+            return Err("The Civitai model or version was not found".to_string())
+        }
         status if !status.is_success() => {
             return Err(format!("Civitai metadata request returned HTTP {status}"))
         }
@@ -378,42 +397,9 @@ async fn fetch_json<T: DeserializeOwned>(client: &Client, url: Url) -> MediaResu
         .map_err(|error| format!("Civitai returned malformed model metadata: {error}"))
 }
 
-fn api_url(path: &str) -> MediaResult<Url> {
+pub(super) fn api_url(path: &str) -> MediaResult<Url> {
     Url::parse(&format!("{API_ORIGIN}{path}"))
         .map_err(|error| format!("failed to build Civitai API URL: {error}"))
-}
-
-fn kind_for_model_type(model_type: &str) -> Option<String> {
-    match model_type.to_ascii_lowercase().as_str() {
-        "lora" => Some("lora".to_string()),
-        "textualinversion" | "textual-inversion" | "embedding" => {
-            Some("textual-inversion".to_string())
-        }
-        _ => None,
-    }
-}
-
-fn architecture_for_base_model(base_model: Option<&str>) -> Option<String> {
-    let value = base_model?.to_ascii_lowercase();
-    if value.contains("flux.2") || value.contains("flux 2") {
-        Some("flux-2".to_string())
-    } else if value.contains("flux.1") || value.contains("flux 1") {
-        Some("flux-1".to_string())
-    } else if value.contains("sdxl")
-        || value.contains("stable diffusion xl")
-        || value.contains("pony")
-        || value.contains("illustrious")
-    {
-        Some("stable-diffusion-xl".to_string())
-    } else if value.contains("sd 3") || value.contains("stable diffusion 3") {
-        Some("stable-diffusion-3".to_string())
-    } else if value.contains("sd 2") || value.contains("stable diffusion 2") {
-        Some("stable-diffusion-2".to_string())
-    } else if value.contains("sd 1") || value.contains("stable diffusion 1") {
-        Some("stable-diffusion-1".to_string())
-    } else {
-        None
-    }
 }
 
 fn commercial_use_claim(value: Option<&Value>) -> Option<Vec<String>> {
@@ -432,7 +418,7 @@ fn commercial_use_claim(value: Option<&Value>) -> Option<Vec<String>> {
 
 fn expected_file_size(size_kb: f64) -> Option<u64> {
     let bytes = size_kb * 1_024.0;
-    (bytes.is_finite() && bytes >= 1.0 && bytes <= MAX_ADDON_BYTES as f64)
+    (bytes.is_finite() && bytes >= 1.0 && bytes <= MAX_RESOURCE_BYTES as f64)
         .then(|| bytes.round() as u64)
 }
 
@@ -441,10 +427,21 @@ fn is_sha256(value: &str) -> bool {
 }
 
 fn validated_download_url(value: &str) -> Option<Url> {
-    let url = Url::parse(value).ok()?;
+    let mut url = Url::parse(value).ok()?;
+    if matches!(url.host_str(), Some("civitai.red" | "www.civitai.red")) {
+        url.set_host(Some("civitai.com")).ok()?;
+    }
     (url.scheme() == "https"
-        && matches!(url.host_str(), Some("civitai.com" | "www.civitai.com"))
+        && matches!(
+            url.host_str(),
+            Some("civitai.com" | "www.civitai.com" | "civitai.red" | "www.civitai.red")
+        )
         && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && !url
+            .query_pairs()
+            .any(|(key, _)| key.eq_ignore_ascii_case("token"))
         && url.path().starts_with("/api/download/models/"))
     .then_some(url)
 }
@@ -460,10 +457,12 @@ fn safe_file(file: &CivitaiFile) -> Option<SelectedFile> {
     let pickle_scan_result = file.pickle_scan_result.as_deref()?;
     let virus_scan_result = file.virus_scan_result.as_deref()?;
     let format = file.metadata.as_ref()?.format.as_deref()?;
-    if !file.file_type.eq_ignore_ascii_case("Model")
-        || !file.name.to_ascii_lowercase().ends_with(".safetensors")
-        || !format.eq_ignore_ascii_case("SafeTensor")
-        || !pickle_scan_result.eq_ignore_ascii_case("Success")
+    if !civitai_compatibility::supports_file(
+        &file.file_type,
+        &file.name,
+        Some(format),
+        file.metadata.as_ref()?.fp.as_deref(),
+    ) || !pickle_scan_result.eq_ignore_ascii_case("Success")
         || !virus_scan_result.eq_ignore_ascii_case("Success")
         || !is_sha256(&sha256)
     {
@@ -576,8 +575,10 @@ fn build_inspection(
     model: CivitaiModelResponse,
     version: CivitaiModelVersionResponse,
 ) -> ResolvedInspection {
-    let kind = kind_for_model_type(&model.model_type);
-    let architecture = architecture_for_base_model(version.base_model.as_deref());
+    let kind = civitai_compatibility::kind_for_model_type(&model.model_type).map(ToOwned::to_owned);
+    let architecture =
+        civitai_compatibility::architecture_for_base_model(version.base_model.as_deref())
+            .map(ToOwned::to_owned);
     let license_claims = MediaCivitaiLicenseClaims {
         allow_no_credit: model.allow_no_credit,
         allow_commercial_use: commercial_use_claim(model.allow_commercial_use.as_ref()),
@@ -589,7 +590,7 @@ fn build_inspection(
     let mut blocking_reason = selected_file_result.err();
     if kind.is_none() {
         blocking_reason = Some(format!(
-            "Civitai reports this item as {}, not a LoRA or textual-inversion embedding",
+            "Civitai reports this item as {}, not a checkpoint, LoRA, or embedding",
             model.model_type
         ));
     } else if selector.declared_kind.as_deref().is_some()
@@ -597,36 +598,28 @@ fn build_inspection(
     {
         blocking_reason =
             Some("The AIR add-on kind does not match Civitai's current model metadata".to_string());
-    } else if architecture.is_none() {
-        blocking_reason = Some(
-            "This Civitai base model is not mapped to a supported SD or FLUX family. Download the file yourself and use local import only if you can confirm compatibility."
-                .to_string(),
-        );
-    } else if kind.as_deref() == Some("textual-inversion")
-        && !matches!(
-            architecture.as_deref(),
-            Some("stable-diffusion-1" | "stable-diffusion-2" | "stable-diffusion-xl" | "flux-1")
-        )
+    } else if !civitai_compatibility::supports_resource(
+        &model.model_type,
+        version.base_model.as_deref(),
+    ) || !civitai_compatibility::supports_version_type(version.base_model_type.as_deref())
     {
-        blocking_reason = Some(format!(
-            "{} textual-inversion embeddings are not supported by the managed Diffusers runtime",
-            version.base_model.as_deref().unwrap_or("This base model")
-        ));
+        blocking_reason = Some(
+            "This Civitai version cannot be used in Machdoch. Choose another version.".to_string(),
+        );
     } else if model
         .availability
         .as_deref()
         .map(|value| !value.eq_ignore_ascii_case("Public"))
-        .unwrap_or(true)
+        .unwrap_or(false)
+        && super::civitai_catalog::api_key().ok().flatten().is_none()
     {
-        blocking_reason = Some(
-            "This Civitai item is not publicly available. Download it while signed in, then import the local safetensors file."
-                .to_string(),
-        );
+        blocking_reason =
+            Some("Connect an API key with access to this resource to download it.".to_string());
     } else if version
         .status
         .as_deref()
         .map(|value| !value.eq_ignore_ascii_case("Published"))
-        .unwrap_or(true)
+        .unwrap_or(false)
     {
         blocking_reason = Some("This Civitai version is not published".to_string());
     }
@@ -646,8 +639,14 @@ fn build_inspection(
         warnings.push("Civitai marks this model as depicting a real person (POI).".to_string());
     }
     let source_url = format!(
-        "https://civitai.com/models/{}?modelVersionId={}",
-        model.id, version.id
+        "https://{}/models/{}?modelVersionId={}",
+        if model.nsfw {
+            "civitai.red"
+        } else {
+            "civitai.com"
+        },
+        model.id,
+        version.id
     );
     let token = review_token(
         &model,
@@ -660,6 +659,16 @@ fn build_inspection(
     ResolvedInspection {
         public: MediaCivitaiModelAddonInspection {
             schema_version: 1,
+            can_enrich: true,
+            resource_type: model.model_type.clone(),
+            tags: model.tags.clone(),
+            sample_images: version
+                .images
+                .iter()
+                .filter(|image| image.is_valid())
+                .take(12)
+                .cloned()
+                .collect(),
             can_download: blocking_reason.is_none(),
             blocking_reason,
             review_token: token,
@@ -670,7 +679,7 @@ fn build_inspection(
             version_id: version.id,
             model_name: model.name,
             version_name: version.name,
-            kind,
+            kind: kind.filter(|value| value != "checkpoint"),
             base_model: version.base_model,
             suggested_architecture: architecture,
             trained_words: version.trained_words,
@@ -687,7 +696,7 @@ fn build_inspection(
     }
 }
 
-async fn resolve_source(source: &str) -> MediaResult<ResolvedInspection> {
+async fn resolve_source(source: &str, file_id: Option<u64>) -> MediaResult<ResolvedInspection> {
     let selector = parse_source(source)?;
     let client = metadata_client()?;
     let mut model = if let Some(model_id) = selector.model_id {
@@ -710,7 +719,7 @@ async fn resolve_source(source: &str) -> MediaResult<ResolvedInspection> {
     let version_id = version_id.ok_or_else(|| {
         "The Civitai model has no published version available for review".to_string()
     })?;
-    let version = fetch_json::<CivitaiModelVersionResponse>(
+    let mut version = fetch_json::<CivitaiModelVersionResponse>(
         &client,
         api_url(&format!("/api/v1/model-versions/{version_id}"))?,
     )
@@ -738,168 +747,28 @@ async fn resolve_source(source: &str) -> MediaResult<ResolvedInspection> {
     if model.id != version.model_id {
         return Err("Civitai returned inconsistent model metadata".to_string());
     }
+    if let Some(file_id) = file_id {
+        version.files.retain(|file| file.id == file_id);
+        if version.files.is_empty() {
+            return Err("The selected Civitai file is no longer available".to_string());
+        }
+    }
     Ok(build_inspection(&selector, model, version))
 }
 
 pub(crate) async fn inspect_source(source: &str) -> MediaResult<MediaCivitaiModelAddonInspection> {
-    resolve_source(source).await.map(|resolved| resolved.public)
-}
-
-fn is_allowed_download_redirect(url: &Url) -> bool {
-    if url.scheme() != "https" || url.port().is_some() {
-        return false;
-    }
-    match url.host_str() {
-        Some("civitai.com" | "www.civitai.com") => true,
-        Some(host) => {
-            host.starts_with("civitai-delivery-worker-prod.")
-                && host.ends_with(".r2.cloudflarestorage.com")
-        }
-        None => false,
-    }
-}
-
-fn download_client() -> MediaResult<Client> {
-    Client::builder()
-        .redirect(Policy::custom(|attempt| {
-            if attempt.previous().len() >= 3 || !is_allowed_download_redirect(attempt.url()) {
-                attempt.stop()
-            } else {
-                attempt.follow()
-            }
-        }))
-        .connect_timeout(Duration::from_secs(15))
-        .timeout(Duration::from_secs(30 * 60))
-        .user_agent("machdoch-media-studio/1.0")
-        .build()
-        .map_err(|error| format!("failed to prepare Civitai download client: {error}"))
-}
-
-async fn download_selected(
-    paths: &MediaRuntimePaths,
-    selected: &SelectedFile,
-) -> MediaResult<String> {
-    let models_root = paths.models_root()?;
-    let imports_root = models_root.join("civitai-imports");
-    tokio::fs::create_dir_all(&imports_root)
+    resolve_source(source, None)
         .await
-        .map_err(|error| format!("failed to prepare Civitai import storage: {error}"))?;
-    let required_bytes = selected.public.byte_size.saturating_mul(105).div_ceil(100);
-    if hardware::available_storage_bytes(&imports_root).map(|available| available < required_bytes)
-        == Some(true)
-    {
-        return Err("The Media Studio model volume does not have enough free space".to_string());
-    }
-    let destination_root = imports_root.join("sha256").join(&selected.public.sha256);
-    let destination = destination_root.join("addon.safetensors");
-    if destination.exists() {
-        let destination_for_hash = destination.clone();
-        let (bytes, digest) = tauri::async_runtime::spawn_blocking(move || {
-            model_import::hash_file(&destination_for_hash)
-        })
-        .await
-        .map_err(|error| format!("Civitai cache verification worker failed: {error}"))??;
-        if bytes == selected.public.byte_size && digest == selected.public.sha256 {
-            return Ok(destination.to_string_lossy().into_owned());
-        }
-        return Err(
-            "The managed Civitai download cache conflicts with the reviewed SHA-256".to_string(),
-        );
-    }
-
-    let import_id = model_import::new_import_id()?;
-    let staging_root = imports_root.join("staging");
-    tokio::fs::create_dir_all(&staging_root)
-        .await
-        .map_err(|error| format!("failed to prepare Civitai download staging: {error}"))?;
-    let partial = staging_root.join(format!("{import_id}.safetensors.part"));
-    let client = download_client()?;
-    let mut response = client
-        .get(selected.download_url.clone())
-        .header(reqwest::header::ACCEPT, "application/octet-stream")
-        .send()
-        .await
-        .map_err(|error| format!("Civitai add-on download failed: {error}"))?;
-    match response.status() {
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-            return Err(
-                "Civitai requires a signed-in account for this download. Download it in your browser, then use Import LoRA / embedding."
-                    .to_string(),
-            )
-        }
-        status if !status.is_success() => {
-            return Err(format!("Civitai add-on download returned HTTP {status}"))
-        }
-        _ => {}
-    }
-    if !is_allowed_download_redirect(response.url()) {
-        return Err("Civitai redirected the download to an unapproved host".to_string());
-    }
-    if response
-        .content_length()
-        .map(|value| value != selected.public.byte_size)
-        == Some(true)
-    {
-        return Err("Civitai download size does not match the reviewed file metadata".to_string());
-    }
-    let mut file = tokio::fs::OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(&partial)
-        .await
-        .map_err(|error| format!("failed to create Civitai download staging file: {error}"))?;
-    let mut hasher = Sha256::new();
-    let mut byte_size = 0_u64;
-    let download_result: MediaResult<()> = async {
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|error| format!("failed while streaming Civitai add-on bytes: {error}"))?
-        {
-            byte_size = byte_size.saturating_add(chunk.len() as u64);
-            if byte_size > selected.public.byte_size || byte_size > MAX_ADDON_BYTES {
-                return Err("The Civitai download exceeded the reviewed size limit".to_string());
-            }
-            hasher.update(&chunk);
-            file.write_all(&chunk)
-                .await
-                .map_err(|error| format!("failed to write Civitai add-on staging data: {error}"))?;
-        }
-        file.flush()
-            .await
-            .map_err(|error| format!("failed to flush Civitai add-on staging data: {error}"))?;
-        file.sync_all().await.map_err(|error| {
-            format!("failed to synchronize Civitai add-on staging data: {error}")
-        })?;
-        Ok(())
-    }
-    .await;
-    drop(file);
-    if let Err(error) = download_result {
-        let _ = tokio::fs::remove_file(&partial).await;
-        return Err(error);
-    }
-    let digest = format!("{:x}", hasher.finalize());
-    if byte_size != selected.public.byte_size || digest != selected.public.sha256 {
-        let _ = tokio::fs::remove_file(&partial).await;
-        return Err(
-            "The downloaded Civitai bytes failed SHA-256 or byte-size verification".to_string(),
-        );
-    }
-    tokio::fs::create_dir_all(&destination_root)
-        .await
-        .map_err(|error| format!("failed to prepare verified Civitai cache entry: {error}"))?;
-    tokio::fs::rename(&partial, &destination)
-        .await
-        .map_err(|error| format!("failed to publish verified Civitai download: {error}"))?;
-    Ok(destination.to_string_lossy().into_owned())
+        .map(|resolved| resolved.public)
 }
 
 pub(crate) async fn download_reviewed(
     paths: &MediaRuntimePaths,
     request: &DownloadMediaCivitaiModelAddonRequest,
-) -> MediaResult<MediaModelAddonImportInspection> {
-    let resolved = resolve_source(&request.source).await?;
+    app: &tauri::AppHandle,
+) -> MediaResult<super::civitai_catalog::CivitaiDownloadedResource> {
+    let resolved = resolve_source(&request.source, Some(request.file_id)).await?;
+    super::civitai_catalog::report_progress(app, &request.operation_id, 0, 1)?;
     if request.review_token != resolved.public.review_token {
         return Err(
             "The Civitai model metadata changed after review. Inspect the URL or AIR again before downloading."
@@ -914,7 +783,28 @@ pub(crate) async fn download_reviewed(
     let selected = resolved
         .selected_file
         .ok_or_else(|| "The reviewed Civitai file is no longer available".to_string())?;
-    let source_path = download_selected(paths, &selected).await?;
+    let source_path =
+        super::civitai_download::download_selected(paths, &selected, |received, total| {
+            super::civitai_catalog::report_progress(app, &request.operation_id, received, total)
+        })
+        .await?;
+    write_staged_source_metadata(paths, &source_path, &resolved.public).await?;
+    if resolved
+        .public
+        .resource_type
+        .eq_ignore_ascii_case("checkpoint")
+    {
+        let inspection_path = source_path.clone();
+        let model =
+            tauri::async_runtime::spawn_blocking(move || model_import::inspect(&inspection_path))
+                .await
+                .map_err(|error| format!("Model inspection failed: {error}"))??;
+        return Ok(super::civitai_catalog::CivitaiDownloadedResource {
+            model: Some(model),
+            addon: None,
+            metadata: resolved.public,
+        });
+    }
     let inspection_path = source_path.clone();
     let inspection_paths = paths.clone();
     let inspection = tauri::async_runtime::spawn_blocking(move || {
@@ -929,7 +819,11 @@ pub(crate) async fn download_reviewed(
         );
     }
     write_staged_source_metadata(paths, &source_path, &resolved.public).await?;
-    Ok(inspection)
+    Ok(super::civitai_catalog::CivitaiDownloadedResource {
+        model: None,
+        addon: Some(inspection),
+        metadata: resolved.public,
+    })
 }
 
 fn staged_source_entry(
@@ -1052,6 +946,7 @@ pub(crate) fn remove_staged_source_after_import(
 
 #[cfg(test)]
 mod tests {
+    use super::super::civitai_download::is_allowed_download_redirect;
     use super::*;
 
     fn fixture_file(id: u64, primary: bool) -> CivitaiFile {
@@ -1066,6 +961,7 @@ mod tests {
             scanned_at: Some("2026-07-15T00:00:00Z".to_string()),
             metadata: Some(CivitaiFileMetadata {
                 format: Some("SafeTensor".to_string()),
+                fp: Some("fp16".to_string()),
             }),
             hashes: Some(CivitaiFileHashes {
                 sha256: Some("a".repeat(64)),
@@ -1085,6 +981,7 @@ mod tests {
                 id: 122_359,
                 name: "Detail Tweaker XL".to_string(),
                 model_type: "LORA".to_string(),
+                tags: vec![],
                 nsfw: false,
                 poi: false,
                 creator: Some(CivitaiCreator {
@@ -1102,13 +999,60 @@ mod tests {
                 model_id: 122_359,
                 name: "Detail Tweaker XL".to_string(),
                 base_model: Some("SDXL 1.0".to_string()),
+                base_model_type: None,
                 trained_words: vec!["add_detail".to_string()],
                 air: Some("urn:air:sdxl:lora:civitai:122359@135867".to_string()),
                 status: Some("Published".to_string()),
                 files: vec![fixture_file(135_867, true)],
+                images: vec![],
             },
         )
         .public
+    }
+
+    #[test]
+    fn inspection_enforces_the_same_compatibility_as_browsing() {
+        for (model_type, base_model, version_type, supported) in [
+            ("LORA", "Pony", "Standard", true),
+            ("DoRA", "NoobAI", "Standard", true),
+            ("Checkpoint", "Krea 2", "Standard", true),
+            ("Checkpoint", "SDXL 1.0", "Refiner", false),
+            ("LORA", "Flux.1 Kontext", "Standard", false),
+            ("LORA", "Flux.2 Klein 9B", "Standard", false),
+            ("LORA", "Pony V7", "Standard", false),
+            ("TextualInversion", "SD 3.5", "Standard", false),
+            ("Checkpoint", "Wan Video 2.2 TI2V-5B", "Standard", false),
+            ("LORA", "Wan Video 2.2 TI2V-5B", "Standard", true),
+        ] {
+            let model = serde_json::from_value(serde_json::json!({
+                "id": 1, "name": "Model", "type": model_type
+            }))
+            .unwrap();
+            let mut version: CivitaiModelVersionResponse =
+                serde_json::from_value(serde_json::json!({
+                    "id": 2, "modelId": 1, "name": "Version", "baseModel": base_model,
+                    "baseModelType": version_type
+                }))
+                .unwrap();
+            version.files = vec![fixture_file(3, true)];
+            let inspection = build_inspection(
+                &SourceSelector {
+                    model_id: Some(1),
+                    version_id: Some(2),
+                    declared_kind: None,
+                },
+                model,
+                version,
+            )
+            .public;
+            assert_eq!(
+                inspection.can_download, supported,
+                "{model_type} {base_model} {version_type}"
+            );
+        }
+        let mut file = fixture_file(1, true);
+        file.metadata.as_mut().unwrap().fp = Some("nf4".into());
+        assert!(safe_file(&file).is_none());
     }
 
     #[test]
@@ -1133,6 +1077,122 @@ mod tests {
         assert!(parse_source("https://example.com/models/122359").is_err());
     }
 
+    #[tokio::test]
+    #[ignore]
+    async fn civitai_live_download_and_import_embedding() {
+        let resolved = resolve_source("7808@9208", Some(8955)).await.unwrap();
+        assert!(
+            resolved.public.can_download,
+            "{:?}",
+            resolved.public.blocking_reason
+        );
+        let root = std::env::temp_dir().join(format!(
+            "machdoch-civitai-live-{}",
+            model_import::new_import_id().unwrap()
+        ));
+        let paths = MediaRuntimePaths {
+            database: root.join("media.sqlite3"),
+            blobs: root.join("blobs"),
+        };
+        database::ensure_initialized(&paths).unwrap();
+        let selected = resolved.selected_file.unwrap();
+        assert!(selected.public.byte_size < 1024 * 1024);
+        let source =
+            super::super::civitai_download::download_selected(&paths, &selected, |_, _| Ok(()))
+                .await
+                .unwrap();
+        let inspection = model_addon::inspect_for_import(&paths, &source).unwrap();
+        assert!(inspection.can_import, "{:?}", inspection.blocking_reason);
+        assert_eq!(
+            inspection.detected_kind.as_deref(),
+            Some("textual-inversion")
+        );
+        write_staged_source_metadata(&paths, &source, &resolved.public)
+            .await
+            .unwrap();
+        let source_metadata = read_staged_source_metadata(&paths, &source).unwrap();
+        let imported = model_addon::import_reviewed_with_source(
+            &paths,
+            &super::super::ImportMediaModelAddonRequest {
+                source_path: source.clone(),
+                review_token: inspection.review_token,
+                display_name: resolved.public.model_name,
+                kind: "textual-inversion".into(),
+                architecture: "stable-diffusion-1".into(),
+                trigger_words: vec!["easynegative".into()],
+                token: Some("easynegative".into()),
+                source_url: Some(resolved.public.source_url),
+                license_name: None,
+                commercial_use: None,
+            },
+            source_metadata.as_ref(),
+        )
+        .unwrap();
+        assert_eq!(imported.digest, selected.public.sha256);
+        remove_staged_source_after_import(&paths, &source).unwrap();
+        assert!(!Path::new(&source).exists());
+        assert!(root.starts_with(std::env::temp_dir()));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn accepts_red_and_checkpoint_air_but_rejects_untrusted_sources() {
+        assert_eq!(
+            parse_source("https://civitai.red/models/12?modelVersionId=34")
+                .unwrap()
+                .version_id,
+            Some(34)
+        );
+        assert_eq!(
+            parse_source("urn:air:sdxl:checkpoint:civitai:12@34")
+                .unwrap()
+                .declared_kind
+                .as_deref(),
+            Some("checkpoint")
+        );
+        for url in [
+            "https://civitai.red.evil.test/models/12",
+            "https://user:password@civitai.red/models/12",
+            "http://civitai.red/models/12",
+            "https://civitai.com:8443/models/12",
+        ] {
+            assert!(parse_source(url).is_err());
+        }
+        assert!(
+            validated_download_url("https://civitai.com/api/download/models/1?token=secret")
+                .is_none()
+        );
+        assert_eq!(
+            validated_download_url("https://civitai.red/api/download/models/1")
+                .unwrap()
+                .host_str(),
+            Some("civitai.com")
+        );
+    }
+
+    #[test]
+    fn reads_api_size_kb_and_supports_checkpoint_sizes() {
+        let file: CivitaiFile = serde_json::from_value(serde_json::json!({
+            "id": 123, "name": "model.safetensors", "type": "Model", "sizeKB": 6_291_456.0,
+            "primary": true, "pickleScanResult": "Success", "virusScanResult": "Success",
+            "metadata": {"format": "SafeTensor"}, "hashes": {"SHA256": "a".repeat(64)},
+            "downloadUrl": "https://civitai.com/api/download/models/123"
+        }))
+        .unwrap();
+        assert_eq!(
+            safe_file(&file).unwrap().public.byte_size,
+            6 * 1024 * 1024 * 1024
+        );
+        assert_eq!(
+            civitai_compatibility::kind_for_model_type("Checkpoint"),
+            Some("checkpoint")
+        );
+        assert_eq!(
+            civitai_compatibility::kind_for_model_type("LoCon"),
+            Some("lora")
+        );
+    }
+
     #[test]
     fn selects_only_scanned_safetensors_model_files() {
         let selected = select_file(&[fixture_file(135_867, true)])
@@ -1153,20 +1213,10 @@ mod tests {
     }
 
     #[test]
-    fn maps_current_supported_base_families_conservatively() {
-        assert_eq!(
-            architecture_for_base_model(Some("Pony")),
-            Some("stable-diffusion-xl".to_string())
-        );
-        assert_eq!(
-            architecture_for_base_model(Some("Flux.1 D")),
-            Some("flux-1".to_string())
-        );
-        assert_eq!(architecture_for_base_model(Some("Unknown Lab Model")), None);
-    }
-
-    #[test]
     fn only_allows_civitai_and_pinned_delivery_redirect_hosts() {
+        assert!(is_allowed_download_redirect(
+            &Url::parse("https://b2.civitai.com/file.safetensors").unwrap()
+        ));
         assert!(is_allowed_download_redirect(
             &Url::parse("https://civitai.com/api/download/models/1").expect("valid URL")
         ));
@@ -1231,4 +1281,27 @@ mod tests {
 
         std::fs::remove_dir_all(root).expect("fixture should be cleaned");
     }
+}
+
+pub(super) async fn inspect_file(
+    source: &str,
+    file_id: u64,
+) -> MediaResult<MediaCivitaiModelAddonInspection> {
+    resolve_source(source, Some(file_id))
+        .await
+        .map(|resolved| resolved.public)
+}
+
+pub(super) async fn source_ids(source: &str) -> MediaResult<(u64, Option<u64>)> {
+    let selector = parse_source(source)?;
+    if let Some(model_id) = selector.model_id {
+        return Ok((model_id, selector.version_id));
+    }
+    let version_id = selector.version_id.ok_or("Missing Civitai model version")?;
+    let version: CivitaiModelVersionResponse = fetch_json(
+        &metadata_client()?,
+        api_url(&format!("/api/v1/model-versions/{version_id}"))?,
+    )
+    .await?;
+    Ok((version.model_id, Some(version_id)))
 }
