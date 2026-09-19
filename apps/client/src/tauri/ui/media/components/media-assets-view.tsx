@@ -1,3 +1,4 @@
+import { CivitaiBrowserDialog } from "./civitai-browser-dialog";
 import { MediaModelEditDialog } from "./media-model-edit-dialog";
 import {
   discoverMediaResources,
@@ -46,6 +47,7 @@ import {
 import {
   createEmptyMediaGenerationAssetMetadata,
   normalizeMediaTriggerWords,
+  isMediaCivitaiSourceUrl,
 } from "../../../../core/media/asset-metadata.js";
 import { listMediaLibraryModels } from "../../../../core/media/model-library.js";
 import type { MediaAssetImportProgress } from "../../../../core/media/asset-import.js";
@@ -256,6 +258,8 @@ export const MediaAssetsView = ({
   );
   const [categoryFilterIds, setCategoryFilterIds] = useState<string[]>([]);
   const [importOpen, setImportOpen] = useState(false);
+  const [civitaiOpen, setCivitaiOpen] = useState(false);
+  const [civitaiSource, setCivitaiSource] = useState("");
   const [importPath, setImportPath] = useState<string | undefined>();
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(
@@ -650,6 +654,16 @@ export const MediaAssetsView = ({
           disabled={!importSupported}
         >
           <Import className="h-4 w-4" /> Import
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            setCivitaiSource("");
+            setCivitaiOpen(true);
+          }}
+        >
+          Browse Civitai
         </Button>
         <Button
           type="button"
@@ -1177,6 +1191,21 @@ export const MediaAssetsView = ({
             >
               <Pencil className="h-4 w-4" /> Edit details
             </Button>
+            {selectedResourceId && metadata[selectedResourceId]?.sourceUrl &&
+            isMediaCivitaiSourceUrl(metadata[selectedResourceId]!.sourceUrl!) ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  setCivitaiSource(metadata[selectedResourceId]!.sourceUrl!);
+                  setSelectedResourceId(null);
+                  setCivitaiOpen(true);
+                }}
+              >
+                Browse versions on Civitai
+              </Button>
+            ) : null}
             {selectedResourceModel?.installed &&
             ["managed-install", "file-import"].includes(
               selectedResourceModel.management.acquisition,
@@ -1354,6 +1383,23 @@ export const MediaAssetsView = ({
         </MediaAssetDetailsDialog>
       ) : null}
 
+      {civitaiOpen ? (
+        <CivitaiBrowserDialog
+          onClose={() => setCivitaiOpen(false)}
+          initialSource={civitaiSource}
+          onImportSampleUrl={onImportSampleUrl}
+          onImportModel={onImportModel}
+          onImportAddon={onImportAddon}
+          installedHashes={new Set(
+            [
+              ...catalog.models.map((model) => model.installedRevision),
+              ...catalog.addons.map((addon) => addon.digest),
+            ]
+              .filter((value): value is string => Boolean(value))
+              .map((value) => value.toLowerCase()),
+          )}
+        />
+      ) : null}
       {importOpen ? (
         <MediaAssetImportDialog
           initialPath={importPath}
