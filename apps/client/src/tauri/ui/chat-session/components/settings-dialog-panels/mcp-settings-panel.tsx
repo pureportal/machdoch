@@ -1,3 +1,4 @@
+import { CopyContextMenu } from "../../../components/ui/copy-context-menu";
 import {
   AlertTriangle,
   ChevronDown,
@@ -1897,9 +1898,18 @@ export const McpSettingsPanel = ({
               <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-slate-300">
                 Raw discovery output
               </summary>
-              <pre className="max-h-80 overflow-auto border-t border-slate-800 p-3 text-xs leading-5 text-slate-200">
-                {setup.discoveryOutput}
-              </pre>
+              <CopyContextMenu
+                values={[
+                  {
+                    label: "Copy discovery output",
+                    value: setup.discoveryOutput,
+                  },
+                ]}
+              >
+                <pre className="max-h-80 overflow-auto border-t border-slate-800 p-3 text-xs leading-5 text-slate-200">
+                  {setup.discoveryOutput}
+                </pre>
+              </CopyContextMenu>
             </details>
           ) : null}
         </PanelBlock>
@@ -2045,9 +2055,18 @@ export const McpSettingsPanel = ({
         </PanelBlock>
 
         <PanelBlock title="Selected server JSON">
-          <pre className="max-h-80 overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs leading-5 text-slate-200">
-            {JSON.stringify(selectedServer, null, 2)}
-          </pre>
+          <CopyContextMenu
+            values={[
+              {
+                label: "Copy server JSON",
+                value: JSON.stringify(selectedServer, null, 2),
+              },
+            ]}
+          >
+            <pre className="max-h-80 overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs leading-5 text-slate-200">
+              {JSON.stringify(selectedServer, null, 2)}
+            </pre>
+          </CopyContextMenu>
         </PanelBlock>
       </div>
     );

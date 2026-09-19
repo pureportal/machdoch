@@ -1,5 +1,13 @@
 import type { WorkspaceDirectoryEntry } from "../runtime";
 
+export const workspaceEntryAbsolutePath = (
+  root: string,
+  relativePath: string,
+): string => {
+  const separator = root.includes("\\") ? "\\" : "/";
+  return `${root.replace(/[\\/]$/u, "")}${separator}${relativePath.replaceAll("/", separator)}`;
+};
+
 export const workspacePathParent = (path: string): string => {
   const normalized = path.replaceAll("\\", "/");
   const separator = normalized.lastIndexOf("/");

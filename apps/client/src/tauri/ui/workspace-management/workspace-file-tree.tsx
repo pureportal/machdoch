@@ -1,3 +1,4 @@
+import { CopyContextMenu } from "../components/ui/copy-context-menu";
 import {
   Check,
   ChevronDown,
@@ -54,6 +55,7 @@ import {
   isWorkspaceFile,
   reconcileWorkspaceTreeFocus,
   workspacePathParent,
+  workspaceEntryAbsolutePath,
 } from "./workspace-tools-model";
 import {
   startExclusiveWorkspaceOperation,
@@ -692,55 +694,70 @@ export const WorkspaceFileTree = ({
           const selected = selectedEntry?.path === entry.path;
           return (
             <Fragment key={entry.path}>
-              <button
-                ref={(element) => {
-                  if (element) rowRefs.current.set(entry.path, element);
-                  else rowRefs.current.delete(entry.path);
-                }}
-                type="button"
-                role="treeitem"
-                aria-level={level}
-                aria-selected={selected}
-                aria-expanded={directory ? expanded : undefined}
-                tabIndex={
-                  focusedPath === entry.path ||
-                  (!focusedPath && selected) ||
-                  (!focusedPath &&
-                    !selectedEntry &&
-                    visibleEntries[0]?.entry.path === entry.path)
-                    ? 0
-                    : -1
-                }
-                onFocus={() => setFocusedPath(entry.path)}
-                onClick={() => activateEntry(entry)}
-                onKeyDown={(event) => handleTreeKeyDown(event, entry)}
-                className={cn(
-                  "group flex h-7 w-full min-w-0 items-center gap-1.5 rounded-md pr-2 text-left text-xs outline-none",
-                  "focus-visible:ring-1 focus-visible:ring-sky-400/70",
-                  selected
-                    ? "bg-sky-500/12 text-sky-100"
-                    : "text-slate-400 hover:bg-slate-900/75 hover:text-slate-200",
-                )}
-                style={{ paddingLeft: `${6 + (level - 1) * 16}px` }}
+              <CopyContextMenu
+                selectable={false}
+                values={[
+                  { label: "Copy relative path", value: entry.path },
+                  {
+                    label: "Copy full path",
+                    value: workspaceEntryAbsolutePath(
+                      workspaceRoot,
+                      entry.path,
+                    ),
+                  },
+                  { label: "Copy name", value: entry.name },
+                ]}
               >
-                <span className="grid size-3.5 shrink-0 place-items-center text-slate-600">
-                  {directory ? (
-                    expanded ? (
-                      <ChevronDown className="size-3" />
-                    ) : (
-                      <ChevronRight className="size-3" />
-                    )
-                  ) : null}
-                </span>
-                <Icon
+                <button
+                  ref={(element) => {
+                    if (element) rowRefs.current.set(entry.path, element);
+                    else rowRefs.current.delete(entry.path);
+                  }}
+                  type="button"
+                  role="treeitem"
+                  aria-level={level}
+                  aria-selected={selected}
+                  aria-expanded={directory ? expanded : undefined}
+                  tabIndex={
+                    focusedPath === entry.path ||
+                    (!focusedPath && selected) ||
+                    (!focusedPath &&
+                      !selectedEntry &&
+                      visibleEntries[0]?.entry.path === entry.path)
+                      ? 0
+                      : -1
+                  }
+                  onFocus={() => setFocusedPath(entry.path)}
+                  onClick={() => activateEntry(entry)}
+                  onKeyDown={(event) => handleTreeKeyDown(event, entry)}
                   className={cn(
-                    "size-3.5 shrink-0",
-                    directory ? "text-sky-400/80" : "text-slate-500",
-                    entry.kind === "symlink" && "text-violet-400/80",
+                    "group flex h-7 w-full min-w-0 items-center gap-1.5 rounded-md pr-2 text-left text-xs outline-none",
+                    "focus-visible:ring-1 focus-visible:ring-sky-400/70",
+                    selected
+                      ? "bg-sky-500/12 text-sky-100"
+                      : "text-slate-400 hover:bg-slate-900/75 hover:text-slate-200",
                   )}
-                />
-                <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-              </button>
+                  style={{ paddingLeft: `${6 + (level - 1) * 16}px` }}
+                >
+                  <span className="grid size-3.5 shrink-0 place-items-center text-slate-600">
+                    {directory ? (
+                      expanded ? (
+                        <ChevronDown className="size-3" />
+                      ) : (
+                        <ChevronRight className="size-3" />
+                      )
+                    ) : null}
+                  </span>
+                  <Icon
+                    className={cn(
+                      "size-3.5 shrink-0",
+                      directory ? "text-sky-400/80" : "text-slate-500",
+                      entry.kind === "symlink" && "text-violet-400/80",
+                    )}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+                </button>
+              </CopyContextMenu>
               {directory && expanded
                 ? renderDirectory(entry.path, level + 1)
                 : null}

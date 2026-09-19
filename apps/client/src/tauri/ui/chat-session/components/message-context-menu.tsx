@@ -49,6 +49,14 @@ export const MessageContextMenu = ({
     left: target.left,
     top: target.top,
   });
+  const [selection] = useState(() => {
+    const selected = window.getSelection();
+    return selected &&
+      target.bubble.contains(selected.anchorNode) &&
+      target.bubble.contains(selected.focusNode)
+      ? selected.toString()
+      : "";
+  });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -103,6 +111,15 @@ export const MessageContextMenu = ({
   }, [onClose]);
 
   const actions: MessageAction[] = [
+    ...(selection
+      ? [
+          {
+            label: "Copy selection",
+            icon: Copy,
+            execute: () => copyMessageText(selection),
+          },
+        ]
+      : []),
     ...(target.canSaveAsContextPack && onSaveAsContextPack
       ? [
           {
@@ -171,7 +188,7 @@ export const MessageContextMenu = ({
       role="menu"
       aria-label="Message actions"
       aria-busy={pending}
-      className="app-message-context-menu fixed z-[140] w-[196px] max-h-[calc(100dvh-16px)] max-w-[calc(100vw-16px)] overflow-y-auto rounded-lg border border-slate-700 bg-slate-950 p-1.5 text-slate-100 shadow-2xl shadow-black/45"
+      className="app-message-context-menu fixed z-[140] w-[196px] max-h-[calc(100dvh-16px)] max-w-[calc(100vw-16px)] overflow-y-auto app-menu-surface"
       style={position}
       onPointerDown={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
@@ -208,7 +225,7 @@ export const MessageContextMenu = ({
         items[next]?.focus();
       }}
     >
-      <div className="min-w-0 px-2 pb-1 pt-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+      <div className="app-menu-label min-w-0">
         <span className="block truncate">
           {target.message.role === "agent" ? "Assistant" : "User"} message
         </span>
@@ -220,7 +237,7 @@ export const MessageContextMenu = ({
           role="menuitem"
           disabled={pending}
           onClick={() => void executeAction(action)}
-          className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium text-slate-200 outline-none hover:bg-slate-800 focus:bg-slate-800 disabled:opacity-50"
+          className="app-menu-item w-full"
         >
           <action.icon
             aria-hidden="true"

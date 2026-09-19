@@ -3,6 +3,7 @@
 @import "@machdoch/product-ui/theme.css";
 @import "@machdoch/product-ui/primitives.css";
 @import "./responsive.css";
+@import "./components/ui/menu.css";
 @source "../ui";
 @source "./";
 @custom-variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *));
@@ -177,6 +178,17 @@ body {
 :where(.app-markdown) * {
   -webkit-user-select: text;
   user-select: text;
+}
+
+:where(pre, code, [role="alert"], .app-readable),
+:where(pre, [role="alert"], .app-readable) :where(*) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.app-readable :where(button, button *, summary, summary *) {
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .app-thinking-panel,

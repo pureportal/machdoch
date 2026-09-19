@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "../styles.css";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { App } from "./app";
+import { preserveNativeContextMenu } from "../lib/native-context-menu";
 
 declare const __MACHDOCH_DEVELOPMENT__: boolean;
 
@@ -27,10 +28,7 @@ if (!rootElement) {
 document.addEventListener(
   "contextmenu",
   (event) => {
-    if (
-      event.target instanceof Element &&
-      event.target.closest("[data-app-context-menu-trigger]")
-    ) {
+    if (preserveNativeContextMenu(event.target)) {
       return;
     }
 

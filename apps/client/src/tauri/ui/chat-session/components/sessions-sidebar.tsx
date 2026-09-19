@@ -19,15 +19,11 @@ import {
   useCallback,
   useEffect,
   Fragment,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type JSX,
-  type MouseEvent,
-  type ReactPortal,
 } from "react";
-import { createPortal } from "react-dom";
 
 const INITIAL_RENDERED_SESSION_LIMIT = 100;
 const RENDERED_SESSION_PAGE_SIZE = 100;
@@ -54,12 +50,16 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu";
+import {
+  ContextActionMenu,
+  openContextMenuFromButton,
+} from "../../components/ui/context-action-menu";
+import { copyText } from "../../lib/clipboard";
 import { EmptyState } from "../../components/ui/empty-state";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { SearchField } from "../../components/ui/search-field";
 import { useOptionalRegisterCommands } from "../../commands/command-context";
 import type { CommandDefinition } from "../../commands/command-types";
-import { useCommandOverlay } from "../../commands/use-command-overlay";
 import {
   Tooltip,
   TooltipContent,
@@ -92,85 +92,17 @@ import {
   type WorkspaceSelectOption,
 } from "./workspace-select";
 
-const SESSION_CONTEXT_MENU_MARGIN = 8;
-
 interface SessionActionItem {
   id: "reset-time" | "move-to-top" | "pin" | "duplicate" | "archive" | "delete";
   label: string;
   icon: LucideIcon;
-  iconClassName: string;
   onSelect: () => void;
-}
-
-type SessionContextMenuAnchor =
-  | {
-      kind: "pointer";
-      left: number;
-      top: number;
-    }
-  | {
-      kind: "dropdown";
-      right: number;
-      preferredTop: number;
-      fallbackBottom: number;
-    };
-
-interface SessionContextMenuState {
-  sessionId: string;
-  anchor: SessionContextMenuAnchor;
 }
 
 const createSessionProjectOptionLabel = (
   project: SessionHistoryProjectFacet,
 ): string => {
   return `${project.label} (${project.count})`;
-};
-
-const clampMenuCoordinate = (
-  coordinate: number,
-  menuSize: number,
-  viewportSize: number,
-): number => {
-  const maxCoordinate = Math.max(
-    SESSION_CONTEXT_MENU_MARGIN,
-    viewportSize - menuSize - SESSION_CONTEXT_MENU_MARGIN,
-  );
-
-  return Math.min(
-    Math.max(coordinate, SESSION_CONTEXT_MENU_MARGIN),
-    maxCoordinate,
-  );
-};
-
-const createSessionContextMenuAnchor = (
-  event: MouseEvent<HTMLElement>,
-): SessionContextMenuAnchor => {
-  return {
-    kind: "pointer",
-    left: event.clientX,
-    top: event.clientY,
-  };
-};
-
-const createSessionDropdownMenuAnchor = (
-  trigger: HTMLElement,
-): SessionContextMenuAnchor => {
-  const triggerRect = trigger.getBoundingClientRect();
-  const cardRect =
-    trigger
-      .closest<HTMLElement>(".app-session-card")
-      ?.getBoundingClientRect() ?? null;
-  const horizontalAnchor =
-    cardRect && (cardRect.width > 0 || cardRect.height > 0)
-      ? cardRect
-      : triggerRect;
-
-  return {
-    kind: "dropdown",
-    right: horizontalAnchor.right,
-    preferredTop: triggerRect.bottom + 4,
-    fallbackBottom: triggerRect.top - 4,
-  };
 };
 
 export const createSessionActionItems = ({
@@ -213,7 +145,6 @@ export const createSessionActionItems = ({
       id: "reset-time",
       label: "Reset Time",
       icon: RotateCcw,
-      iconClassName: "text-slate-400",
       onSelect: () => onResetSessionTime(sessionId),
     });
   }
@@ -223,7 +154,6 @@ export const createSessionActionItems = ({
       id: "move-to-top",
       label: "Move To Top",
       icon: ArrowUpToLine,
-      iconClassName: "text-slate-400",
       onSelect: () => onMoveSessionToTop(sessionId),
     });
   }
@@ -233,7 +163,6 @@ export const createSessionActionItems = ({
       id: "pin",
       label: isPinned ? "Unpin" : "Pin",
       icon: Pin,
-      iconClassName: isPinned ? "text-amber-300" : "text-slate-400",
       onSelect: () => onTogglePinnedSession(sessionId),
     });
   }
@@ -243,7 +172,6 @@ export const createSessionActionItems = ({
       id: "duplicate",
       label: "Duplicate",
       icon: Copy,
-      iconClassName: "text-slate-400",
       onSelect: () => onDuplicateSession(sessionId),
     });
   }
@@ -253,7 +181,6 @@ export const createSessionActionItems = ({
       id: "archive",
       label: "Archive",
       icon: Archive,
-      iconClassName: "text-slate-400",
       onSelect: () => onArchiveSession(sessionId),
     });
   }
@@ -263,127 +190,11 @@ export const createSessionActionItems = ({
       id: "delete",
       label: "Delete",
       icon: Trash2,
-      iconClassName: "text-rose-300",
       onSelect: () => onDeleteSession(sessionId),
     });
   }
 
   return items;
-};
-
-const SessionContextActionMenu = ({
-  actions,
-  anchor,
-  onClose,
-  title,
-}: {
-  actions: SessionActionItem[];
-  anchor: SessionContextMenuAnchor;
-  onClose: () => void;
-  title: string;
-}): JSX.Element | ReactPortal => {
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useLayoutEffect(() => {
-    const menu = menuRef.current;
-
-    if (!menu) {
-      return;
-    }
-
-    const updatePosition = (): void => {
-      const menuRect = menu.getBoundingClientRect();
-      const preferredLeft =
-        anchor.kind === "pointer" ? anchor.left : anchor.right - menuRect.width;
-      const preferredTop =
-        anchor.kind === "pointer" ? anchor.top : anchor.preferredTop;
-      const hasBottomRoom =
-        preferredTop + menuRect.height + SESSION_CONTEXT_MENU_MARGIN <=
-        window.innerHeight;
-      const resolvedTop =
-        anchor.kind === "dropdown" && !hasBottomRoom
-          ? anchor.fallbackBottom - menuRect.height
-          : preferredTop;
-
-      menu.style.left = `${clampMenuCoordinate(
-        preferredLeft,
-        menuRect.width,
-        window.innerWidth,
-      )}px`;
-      menu.style.top = `${clampMenuCoordinate(
-        resolvedTop,
-        menuRect.height,
-        window.innerHeight,
-      )}px`;
-      menu.style.visibility = "visible";
-    };
-    updatePosition();
-    let frame: number | undefined;
-    const schedule = (): void => {
-      if (frame !== undefined) return;
-      frame = window.requestAnimationFrame(() => {
-        frame = undefined;
-        updatePosition();
-      });
-    };
-    window.addEventListener("resize", schedule);
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(schedule);
-    observer?.observe(menu);
-    return () => {
-      window.removeEventListener("resize", schedule);
-      observer?.disconnect();
-      if (frame !== undefined) window.cancelAnimationFrame(frame);
-    };
-  }, [actions.length, anchor]);
-
-  const menu = (
-    <div
-      ref={menuRef}
-      role="menu"
-      aria-label={`Session actions for ${title}`}
-      className="app-session-context-menu pointer-events-auto fixed z-[140] w-[192px] max-w-[calc(100dvw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain rounded-lg border border-slate-700 bg-slate-950 p-1.5 text-slate-100 shadow-2xl shadow-black/45"
-      style={{ visibility: "hidden" }}
-      onPointerDown={(event) => event.stopPropagation()}
-      onMouseDown={(event) => event.stopPropagation()}
-      onClick={(event) => event.stopPropagation()}
-      onContextMenu={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-      }}
-    >
-      <div className="min-w-0 px-2 pb-1 pt-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
-        <span className="block truncate">{title}</span>
-      </div>
-      {actions.map((action) => {
-        const ActionIcon = action.icon;
-
-        return (
-          <button
-            key={action.id}
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              action.onSelect();
-              onClose();
-            }}
-            className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium text-slate-200 outline-none hover:bg-slate-800 focus:bg-slate-800"
-          >
-            <ActionIcon
-              className={cn("h-3.5 w-3.5 shrink-0", action.iconClassName)}
-            />
-            <span className="min-w-0 flex-1 truncate">{action.label}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-
-  return typeof document === "undefined"
-    ? menu
-    : createPortal(menu, document.body);
 };
 
 export interface SessionsSidebarProps {
@@ -451,8 +262,6 @@ export const SessionsSidebar = ({
 }: SessionsSidebarProps): JSX.Element => {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [retentionNow, setRetentionNow] = useState(() => Date.now());
-  const [sessionContextMenu, setSessionContextMenu] =
-    useState<SessionContextMenuState | null>(null);
   const [renderedSessionLimit, setRenderedSessionLimit] = useState(
     INITIAL_RENDERED_SESSION_LIMIT,
   );
@@ -537,60 +346,6 @@ export const SessionsSidebar = ({
     [onSessionStatusFiltersChange, selectedStatusFilters],
   );
 
-  const closeSessionContextMenu = useCallback((): void => {
-    setSessionContextMenu(null);
-  }, []);
-  useCommandOverlay({
-    open: sessionContextMenu !== null,
-    id: "sessions-context-menu",
-    kind: "non-modal",
-    dismiss: closeSessionContextMenu,
-  });
-
-  const openSessionContextMenu = useCallback(
-    (
-      event: MouseEvent<HTMLElement>,
-      session: ChatSessionRecord,
-      actions: SessionActionItem[],
-    ): void => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (actions.length === 0) {
-        setSessionContextMenu(null);
-        return;
-      }
-
-      setSessionContextMenu({
-        sessionId: session.id,
-        anchor: createSessionContextMenuAnchor(event),
-      });
-    },
-    [],
-  );
-
-  const openSessionDropdownMenu = useCallback(
-    (
-      event: MouseEvent<HTMLElement>,
-      session: ChatSessionRecord,
-      actions: SessionActionItem[],
-    ): void => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (actions.length === 0) {
-        setSessionContextMenu(null);
-        return;
-      }
-
-      setSessionContextMenu({
-        sessionId: session.id,
-        anchor: createSessionDropdownMenuAnchor(event.currentTarget),
-      });
-    },
-    [],
-  );
-
   useEffect(() => {
     const intervalId = window.setInterval(() => {
       setRetentionNow(Date.now());
@@ -601,61 +356,6 @@ export const SessionsSidebar = ({
     };
   }, []);
 
-  useEffect(() => {
-    if (!sessionContextMenu) {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.defaultPrevented) return;
-      if (event.key === "Escape") {
-        closeSessionContextMenu();
-      }
-    };
-
-    document.addEventListener("pointerdown", closeSessionContextMenu);
-    document.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("resize", closeSessionContextMenu);
-    window.addEventListener("scroll", closeSessionContextMenu, true);
-
-    return () => {
-      document.removeEventListener("pointerdown", closeSessionContextMenu);
-      document.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("resize", closeSessionContextMenu);
-      window.removeEventListener("scroll", closeSessionContextMenu, true);
-    };
-  }, [closeSessionContextMenu, sessionContextMenu]);
-
-  const contextMenuSession = sessionContextMenu
-    ? (filteredSessions.find(
-        (session) => session.id === sessionContextMenu.sessionId,
-      ) ?? null)
-    : null;
-  const contextMenuSessionTitle = contextMenuSession
-    ? getSessionTitle(contextMenuSession)
-    : "";
-  const contextMenuSessionIsQuick = contextMenuSession
-    ? isQuickVoiceSession(contextMenuSession)
-    : false;
-  const contextMenuSessionActions = contextMenuSession
-    ? createSessionActionItems({
-        sessionId: contextMenuSession.id,
-        canDuplicate: canDuplicateSession(contextMenuSession),
-        canPin: canPinSession(contextMenuSession),
-        isPinned: isSessionPinnedInSidebar(contextMenuSession),
-        isQuickSession: contextMenuSessionIsQuick,
-        showArchiveAction: canArchiveSession(contextMenuSession),
-        showDeleteAction:
-          getSessionOverviewStatus(contextMenuSession) === "empty" &&
-          canDeleteSession(contextMenuSession),
-        onArchiveSession,
-        onDeleteSession,
-        onDuplicateSession,
-        onMoveSessionToTop,
-        onResetSessionTime,
-        onTogglePinnedSession,
-      })
-    : [];
   const sidebarCommands = useMemo<readonly CommandDefinition[]>(
     () => [
       {
@@ -1178,171 +878,176 @@ export const SessionsSidebar = ({
                         <span className="h-px flex-1 bg-gradient-to-r from-slate-800/20 via-slate-800 to-slate-800/20" />
                       </div>
                     ) : null}
-                    <div
-                      onContextMenu={(event) =>
-                        openSessionContextMenu(
-                          event,
-                          session,
-                          sessionActionItems,
-                        )
-                      }
-                      className={cn(
-                        "app-session-card group relative flex min-h-[3.15rem] items-start overflow-hidden rounded-lg border px-2.5 pt-1.5 pb-2 transition-colors",
-                        hasUnreadCompletion && "app-session-card--needs-read",
-                        isActive
-                          ? "border-sky-500/30 bg-sky-500/10 shadow-lg shadow-sky-950/20"
-                          : "border-slate-800 bg-slate-950/70 hover:border-slate-700 hover:bg-slate-950",
-                        archived &&
-                          (isActive
-                            ? "border-dashed"
-                            : "border-dashed opacity-80"),
-                      )}
+                    <ContextActionMenu
+                      label={`Session actions for ${sessionTitle}`}
+                      actions={[
+                        {
+                          label: "Copy title",
+                          icon: Copy,
+                          onSelect: () => copyText(sessionTitle),
+                        },
+                        {
+                          label: "Copy session ID",
+                          icon: Copy,
+                          onSelect: () => copyText(session.id),
+                        },
+                        ...sessionActionItems.map((action) => ({
+                          label: action.label,
+                          icon: action.icon,
+                          destructive: action.id === "delete",
+                          onSelect: action.onSelect,
+                        })),
+                      ]}
                     >
-                      <button
-                        type="button"
-                        aria-label={`Open session ${sessionTitle}${
-                          hasUnreadCompletion ? ", new reply ready" : ""
-                        }`}
-                        onClick={() => onActivateSession(session.id)}
-                        className="app-session-open-button min-w-0 flex-1 text-left"
+                      <div
+                        tabIndex={-1}
+                        className={cn(
+                          "app-session-card group relative flex min-h-[3.15rem] items-start overflow-hidden rounded-lg border px-2.5 pt-1.5 pb-2 transition-colors",
+                          hasUnreadCompletion && "app-session-card--needs-read",
+                          isActive
+                            ? "border-sky-500/30 bg-sky-500/10 shadow-lg shadow-sky-950/20"
+                            : "border-slate-800 bg-slate-950/70 hover:border-slate-700 hover:bg-slate-950",
+                          archived &&
+                            (isActive
+                              ? "border-dashed"
+                              : "border-dashed opacity-80"),
+                        )}
                       >
-                        <div
-                          className={cn(
-                            "flex w-full min-w-0 items-start gap-2",
-                            hasSessionActionMenu && "pr-6",
-                          )}
-                        >
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div
-                                aria-label={`Session status: ${statusMeta.label}`}
-                                className={cn(
-                                  "app-session-status-icon flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
-                                  statusMeta.containerClassName,
-                                )}
-                              >
-                                <SessionStatusIcon
-                                  className={cn(
-                                    "h-3 w-3",
-                                    statusMeta.iconClassName,
-                                  )}
-                                />
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent side="top">
-                              {statusMeta.label}
-                            </TooltipContent>
-                          </Tooltip>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex min-w-0 items-center gap-1.5">
-                              {isPinned ? (
-                                <Pin className="h-3.5 w-3.5 shrink-0 text-amber-300" />
-                              ) : null}
-                              {archived ? (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span
-                                      aria-label="Archived session"
-                                      className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-slate-500"
-                                    >
-                                      <Archive className="h-3.5 w-3.5" />
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="top">
-                                    Archived
-                                  </TooltipContent>
-                                </Tooltip>
-                              ) : null}
-                              <p
-                                className={cn(
-                                  "app-session-title min-w-0 truncate text-sm font-semibold leading-5 placeholder:text-slate-500",
-                                  archived
-                                    ? "text-slate-300"
-                                    : "text-slate-100",
-                                )}
-                              >
-                                {sessionTitle}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="app-session-meta mt-0.5 flex w-full min-w-0 items-center justify-between gap-2 text-[10px] font-medium tracking-wide text-slate-500 uppercase">
-                          <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                            {primaryTag ? (
-                              <span className="app-session-tag-chip max-w-20 shrink-0 truncate rounded-full border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[9px] font-medium text-slate-500">
-                                {extraTagCount > 0
-                                  ? `${primaryTag} +${extraTagCount}`
-                                  : primaryTag}
-                              </span>
-                            ) : null}
-                            <span className="min-w-0 truncate">
-                              {createSessionSubtitle(session)}
-                            </span>
-                          </span>
-                          <span className="shrink-0">
-                            {formatSessionTimestamp(
-                              getSessionTimestamp(session),
-                            )}
-                          </span>
-                        </div>
-                      </button>
-
-                      {hasSessionActionMenu ? (
-                        <Button
+                        <button
                           type="button"
-                          size="icon"
-                          variant="ghost"
-                          aria-label={`Session actions for ${sessionTitle}`}
-                          tooltip="Session actions"
-                          aria-haspopup="menu"
-                          aria-expanded={
-                            sessionContextMenu?.sessionId === session.id
-                              ? "true"
-                              : "false"
-                          }
-                          onClick={(event) =>
-                            openSessionDropdownMenu(
-                              event,
-                              session,
-                              sessionActionItems,
-                            )
-                          }
-                          className="app-session-card-action-button absolute top-1.5 right-1.5 h-5 w-5 rounded-md border border-transparent bg-transparent text-slate-500 opacity-0 transition-[background-color,border-color,color,opacity] duration-150 ease-out hover:border-slate-700 hover:bg-slate-900/80 hover:text-slate-100 group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100"
-                        >
-                          <Ellipsis className="h-3.5 w-3.5" />
-                        </Button>
-                      ) : null}
-                      {retentionProgress ? (
-                        <div
-                          aria-label={`${
-                            retentionProgress.phase === "archive"
-                              ? "Auto-archive"
-                              : "Auto-delete"
-                          } progress for ${sessionTitle}`}
-                          className={cn(
-                            "app-session-retention-progress pointer-events-none absolute inset-x-0 bottom-0 h-[2px] overflow-hidden",
-                            retentionProgress.phase === "archive"
-                              ? "bg-slate-800/80"
-                              : "bg-transparent",
-                          )}
+                          aria-label={`Open session ${sessionTitle}${
+                            hasUnreadCompletion ? ", new reply ready" : ""
+                          }`}
+                          onClick={() => onActivateSession(session.id)}
+                          className="app-session-open-button min-w-0 flex-1 text-left"
                         >
                           <div
                             className={cn(
-                              "h-full transition-[width] duration-500",
-                              retentionProgress.phase === "archive"
-                                ? "bg-sky-400/70"
-                                : "bg-rose-300/45",
+                              "flex w-full min-w-0 items-start gap-2",
+                              hasSessionActionMenu && "pr-6",
                             )}
-                            style={{
-                              width: `${Math.round(
-                                retentionProgress.progress * 100,
-                              )}%`,
-                            }}
-                          />
-                        </div>
-                      ) : null}
-                    </div>
+                          >
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div
+                                  aria-label={`Session status: ${statusMeta.label}`}
+                                  className={cn(
+                                    "app-session-status-icon flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
+                                    statusMeta.containerClassName,
+                                  )}
+                                >
+                                  <SessionStatusIcon
+                                    className={cn(
+                                      "h-3 w-3",
+                                      statusMeta.iconClassName,
+                                    )}
+                                  />
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                {statusMeta.label}
+                              </TooltipContent>
+                            </Tooltip>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                {isPinned ? (
+                                  <Pin className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+                                ) : null}
+                                {archived ? (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span
+                                        aria-label="Archived session"
+                                        className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-slate-500"
+                                      >
+                                        <Archive className="h-3.5 w-3.5" />
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top">
+                                      Archived
+                                    </TooltipContent>
+                                  </Tooltip>
+                                ) : null}
+                                <p
+                                  className={cn(
+                                    "app-session-title min-w-0 truncate text-sm font-semibold leading-5 placeholder:text-slate-500",
+                                    archived
+                                      ? "text-slate-300"
+                                      : "text-slate-100",
+                                  )}
+                                >
+                                  {sessionTitle}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="app-session-meta mt-0.5 flex w-full min-w-0 items-center justify-between gap-2 text-[10px] font-medium tracking-wide text-slate-500 uppercase">
+                            <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                              {primaryTag ? (
+                                <span className="app-session-tag-chip max-w-20 shrink-0 truncate rounded-full border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[9px] font-medium text-slate-500">
+                                  {extraTagCount > 0
+                                    ? `${primaryTag} +${extraTagCount}`
+                                    : primaryTag}
+                                </span>
+                              ) : null}
+                              <span className="min-w-0 truncate">
+                                {createSessionSubtitle(session)}
+                              </span>
+                            </span>
+                            <span className="shrink-0">
+                              {formatSessionTimestamp(
+                                getSessionTimestamp(session),
+                              )}
+                            </span>
+                          </div>
+                        </button>
+
+                        {hasSessionActionMenu ? (
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            aria-label={`Session actions for ${sessionTitle}`}
+                            tooltip="Session actions"
+                            aria-haspopup="menu"
+                            onClick={openContextMenuFromButton}
+                            className="app-session-card-action-button absolute top-1.5 right-1.5 h-5 w-5 rounded-md border border-transparent bg-transparent text-slate-500 opacity-0 transition-[background-color,border-color,color,opacity] duration-150 ease-out hover:border-slate-700 hover:bg-slate-900/80 hover:text-slate-100 group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100"
+                          >
+                            <Ellipsis className="h-3.5 w-3.5" />
+                          </Button>
+                        ) : null}
+                        {retentionProgress ? (
+                          <div
+                            aria-label={`${
+                              retentionProgress.phase === "archive"
+                                ? "Auto-archive"
+                                : "Auto-delete"
+                            } progress for ${sessionTitle}`}
+                            className={cn(
+                              "app-session-retention-progress pointer-events-none absolute inset-x-0 bottom-0 h-[2px] overflow-hidden",
+                              retentionProgress.phase === "archive"
+                                ? "bg-slate-800/80"
+                                : "bg-transparent",
+                            )}
+                          >
+                            <div
+                              className={cn(
+                                "h-full transition-[width] duration-500",
+                                retentionProgress.phase === "archive"
+                                  ? "bg-sky-400/70"
+                                  : "bg-rose-300/45",
+                              )}
+                              style={{
+                                width: `${Math.round(
+                                  retentionProgress.progress * 100,
+                                )}%`,
+                              }}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                    </ContextActionMenu>
                   </Fragment>
                 );
               })}
@@ -1369,16 +1074,6 @@ export const SessionsSidebar = ({
           )}
         </div>
       </ScrollArea>
-      {sessionContextMenu &&
-      contextMenuSession &&
-      contextMenuSessionActions.length > 0 ? (
-        <SessionContextActionMenu
-          actions={contextMenuSessionActions}
-          anchor={sessionContextMenu.anchor}
-          onClose={closeSessionContextMenu}
-          title={contextMenuSessionTitle}
-        />
-      ) : null}
     </aside>
   );
 };

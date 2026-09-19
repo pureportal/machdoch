@@ -1,3 +1,4 @@
+import { CopyContextMenu } from "../components/ui/copy-context-menu";
 import { ArrowDown, TerminalSquare } from "lucide-react";
 import {
   useLayoutEffect,
@@ -119,61 +120,75 @@ export const WorkspaceRunOutput = ({
           </Button>
         ) : null}
       </div>
-      <div
-        ref={outputRef}
-        role="log"
-        aria-label={`${status.configuration.name} output`}
-        aria-live="off"
-        tabIndex={0}
-        onScroll={handleScroll}
-        className={cn(
-          "app-workspace-run-output cursor-text select-text overflow-y-auto border-t border-slate-800 bg-slate-950 px-3 py-2 font-mono text-[11px] leading-5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500/70",
-          compact
-            ? "max-h-[min(13rem,32vh)] min-h-24"
-            : "max-h-[min(22rem,42vh)] min-h-32",
-        )}
+      <CopyContextMenu
+        values={[
+          {
+            label: "Copy output",
+            value: visibleLogs
+              .map(
+                ({ label, entry }) =>
+                  `${showsTaskLabels ? `[${label}] ` : ""}${entry.stream !== "stdout" ? `[${entry.stream}] ` : ""}${entry.line}`,
+              )
+              .join("\n"),
+          },
+        ]}
       >
-        {visibleLogs.length === 0 ? (
-          <span className="text-slate-600">No output yet</span>
-        ) : (
-          visibleLogs.map(({ configurationId, label, entry }) => (
-            <div
-              key={entry.sequence}
-              className="flex min-w-0 items-start gap-1.5"
-            >
-              {showsTaskLabels ? (
-                <span className="shrink-0 text-slate-600">[{label}]</span>
-              ) : null}
-              {entry.stream !== "stdout" ? (
+        <div
+          ref={outputRef}
+          role="log"
+          aria-label={`${status.configuration.name} output`}
+          aria-live="off"
+          tabIndex={0}
+          onScroll={handleScroll}
+          className={cn(
+            "app-workspace-run-output cursor-text select-text overflow-y-auto border-t border-slate-800 bg-slate-950 px-3 py-2 font-mono text-[11px] leading-5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500/70",
+            compact
+              ? "max-h-[min(13rem,32vh)] min-h-24"
+              : "max-h-[min(22rem,42vh)] min-h-32",
+          )}
+        >
+          {visibleLogs.length === 0 ? (
+            <span className="text-slate-600">No output yet</span>
+          ) : (
+            visibleLogs.map(({ configurationId, label, entry }) => (
+              <div
+                key={entry.sequence}
+                className="flex min-w-0 items-start gap-1.5"
+              >
+                {showsTaskLabels ? (
+                  <span className="shrink-0 text-slate-600">[{label}]</span>
+                ) : null}
+                {entry.stream !== "stdout" ? (
+                  <span
+                    className={cn(
+                      "shrink-0",
+                      entry.stream === "stderr"
+                        ? "text-red-400"
+                        : "text-slate-600",
+                    )}
+                  >
+                    [{entry.stream}]
+                  </span>
+                ) : null}
                 <span
+                  data-configuration-id={configurationId}
+                  data-stream={entry.stream}
                   className={cn(
-                    "shrink-0",
+                    "min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]",
                     entry.stream === "stderr"
-                      ? "text-red-400"
-                      : "text-slate-600",
+                      ? "text-red-300"
+                      : entry.stream === "system"
+                        ? "text-slate-500"
+                        : "text-slate-300",
                   )}
                 >
-                  [{entry.stream}]
+                  {entry.line || " "}
                 </span>
-              ) : null}
-              <span
-                data-configuration-id={configurationId}
-                data-stream={entry.stream}
-                className={cn(
-                  "min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]",
-                  entry.stream === "stderr"
-                    ? "text-red-300"
-                    : entry.stream === "system"
-                      ? "text-slate-500"
-                      : "text-slate-300",
-                )}
-              >
-                {entry.line || " "}
-              </span>
-            </div>
-          ))
-        )}
-      </div>
+              </div>
+            ))
+          )}
+        </div>
+      </CopyContextMenu>
     </div>
   );
 };

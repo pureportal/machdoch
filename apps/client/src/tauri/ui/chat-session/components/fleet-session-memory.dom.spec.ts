@@ -100,6 +100,18 @@ const snapshot: ProductSnapshot = {
 };
 
 beforeEach(() => {
+  Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
+    configurable: true,
+    value: vi.fn(function (this: HTMLDialogElement) {
+      this.open = true;
+    }),
+  });
+  Object.defineProperty(HTMLDialogElement.prototype, "close", {
+    configurable: true,
+    value: vi.fn(function (this: HTMLDialogElement) {
+      this.open = false;
+    }),
+  });
   vi.stubGlobal(
     "matchMedia",
     vi.fn((media: string) => ({
@@ -113,6 +125,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  Reflect.deleteProperty(HTMLDialogElement.prototype, "showModal");
+  Reflect.deleteProperty(HTMLDialogElement.prototype, "close");
   vi.unstubAllGlobals();
 });
 

@@ -1,6 +1,10 @@
+import { ContextActionMenu } from "../components/ui/context-action-menu";
+import { copyText } from "../lib/clipboard";
 import "@xterm/xterm/css/xterm.css";
 import {
   CircleDot,
+  Copy,
+  ClipboardPaste,
   ChevronDown,
   ChevronUp,
   Eraser,
@@ -110,15 +114,38 @@ const WorkspaceTerminalViewport = ({
   }, [store, terminal.id]);
 
   return (
-    <div
-      data-command-focus="terminal"
-      role="tabpanel"
-      aria-label={terminal.label}
-      hidden={!active}
-      ref={containerRef}
-      className="h-full w-full overflow-hidden px-2 py-1.5 [&_.xterm]:h-full [&_.xterm-viewport]:!overflow-y-auto"
-      onMouseDown={() => store.fitActiveTerminal(true)}
-    />
+    <ContextActionMenu
+      label="Terminal actions"
+      preserveEditing={false}
+      actions={() => {
+        const selection = store.getTerminalSelection(terminal.id);
+        return [
+          {
+            label: "Copy selection",
+            icon: Copy,
+            disabled: !selection,
+            onSelect: () => copyText(selection),
+          },
+          {
+            label: "Paste",
+            icon: ClipboardPaste,
+            onSelect: () => store.pasteToTerminal(terminal.id),
+          },
+        ];
+      }}
+    >
+      <div
+        data-command-focus="terminal"
+        role="tabpanel"
+        aria-label={terminal.label}
+        hidden={!active}
+        ref={containerRef}
+        className="h-full w-full overflow-hidden px-2 py-1.5 [&_.xterm]:h-full [&_.xterm-viewport]:!overflow-y-auto"
+        onMouseDown={(event) => {
+          if (event.button === 0) store.fitActiveTerminal(true);
+        }}
+      />
+    </ContextActionMenu>
   );
 };
 
