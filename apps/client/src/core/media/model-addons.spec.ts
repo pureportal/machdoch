@@ -210,6 +210,45 @@ describe("media model add-on compatibility", () => {
     isLocalFluxInstalled: true,
   }).models.find((model) => model.id === "local:flux-2-klein-4b")!;
 
+  it.each(["pony", "stable-diffusion-xl"] as const)(
+    "keeps %s LoRAs separate when selecting and switching models",
+    (architecture) => {
+      const model = {
+        ...fluxModel,
+        architecture,
+        addonCapabilities: getMediaModelAddonCapabilities(
+          "local-diffusers",
+          architecture,
+        ),
+      };
+      const matching = { ...addon, architecture, baseModelHint: null };
+      const other = {
+        ...matching,
+        id: "addon:other-family",
+        architecture:
+          architecture === "pony"
+            ? ("stable-diffusion-xl" as const)
+            : ("pony" as const),
+      };
+      expect(inspectMediaModelAddonCompatibility(model, matching).status).toBe(
+        "compatible",
+      );
+      expect(inspectMediaModelAddonCompatibility(model, other).status).toBe(
+        "incompatible",
+      );
+      expect(
+        reconcileMediaModelAddonSelections(
+          model,
+          [matching, other],
+          [
+            createMediaModelAddonSelection(matching),
+            createMediaModelAddonSelection(other),
+          ],
+        ),
+      ).toEqual([createMediaModelAddonSelection(matching)]);
+    },
+  );
+
   it("accepts only a high-confidence tensor match for the selected architecture", () => {
     expect(inspectMediaModelAddonCompatibility(fluxModel, addon).status).toBe(
       "compatible",

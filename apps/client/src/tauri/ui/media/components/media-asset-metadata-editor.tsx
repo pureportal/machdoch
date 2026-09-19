@@ -2,6 +2,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { ExternalLink, LoaderCircle } from "lucide-react";
 import { useEffect, useId, useState, type JSX } from "react";
 import {
+  normalizeMediaAssetTags,
   normalizeMediaExternalLink,
   normalizeMediaTriggerWords,
   parseMediaTriggerWords,
@@ -26,20 +27,6 @@ interface MediaAssetMetadataEditorProps {
   onTagsChange?: (tags: string[]) => void;
   onManageCategories: () => void;
 }
-
-const normalizeTags = (value: string): string[] => {
-  const tags: string[] = [];
-  const seen = new Set<string>();
-  for (const candidate of value.split(/[,\r\n]+/u)) {
-    if (tags.length >= 24) break;
-    const normalized = candidate.replaceAll(/\s+/gu, " ").trim().slice(0, 64);
-    const comparisonValue = normalized.toLocaleLowerCase();
-    if (!normalized || seen.has(comparisonValue)) continue;
-    seen.add(comparisonValue);
-    tags.push(normalized);
-  }
-  return tags;
-};
 
 export const MediaAssetMetadataEditor = ({
   resourceId,
@@ -73,7 +60,7 @@ export const MediaAssetMetadataEditor = ({
   }, [metadata.sourceUrl, resourceId]);
 
   const saveTags = (): void => {
-    const normalized = normalizeTags(tags);
+    const normalized = normalizeMediaAssetTags(tags);
     setTags(normalized.join(", "));
     onChange({ ...metadata, tags: normalized });
     onTagsChange?.(normalized);

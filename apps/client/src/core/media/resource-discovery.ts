@@ -13,7 +13,13 @@ export type MediaLibraryResource =
   | MediaModelAddonDescriptor
   | MediaAssetRecord;
 
-export type MediaResourceSort = "name" | "name-desc" | "newest";
+export type MediaResourceSort =
+  | "name"
+  | "name-desc"
+  | "newest"
+  | "oldest"
+  | "largest"
+  | "smallest";
 
 export interface MediaResourceFilters {
   query: string;
@@ -129,15 +135,29 @@ export const discoverMediaResources = <T extends MediaLibraryResource>(
       );
     })
     .sort((left, right) => {
-      if (filters.sort === "newest") {
-        const date = (resource: MediaLibraryResource): string =>
-          "createdAt" in resource
-            ? resource.createdAt
-            : "importedAt" in resource
-              ? resource.importedAt
-              : "";
-        const byDate = date(right).localeCompare(date(left));
-        if (byDate) return byDate;
+      if (filters.sort === "newest" || filters.sort === "oldest") {
+        const date = (resource: MediaLibraryResource): number => {
+          const value =
+            "createdAt" in resource
+              ? resource.createdAt
+              : "importedAt" in resource
+                ? resource.importedAt
+                : "";
+          return Date.parse(value);
+        };
+        const leftDate = date(left);
+        const rightDate = date(right);
+        if (Number.isFinite(leftDate) !== Number.isFinite(rightDate)) {
+          return Number.isFinite(leftDate) ? -1 : 1;
+        }
+        const byDate = leftDate - rightDate;
+        if (byDate) return filters.sort === "newest" ? -byDate : byDate;
+      }
+      if (filters.sort === "largest" || filters.sort === "smallest") {
+        const bySize =
+          ("byteSize" in left ? left.byteSize : 0) -
+          ("byteSize" in right ? right.byteSize : 0);
+        if (bySize) return filters.sort === "largest" ? -bySize : bySize;
       }
       const byName = mediaResourceName(left).localeCompare(
         mediaResourceName(right),

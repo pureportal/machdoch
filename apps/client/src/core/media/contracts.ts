@@ -98,6 +98,7 @@ export type MediaBuiltinLocalModelArchitecture =
   | "stable-diffusion-1"
   | "stable-diffusion-2"
   | "stable-diffusion-xl"
+  | "pony"
   | "stable-diffusion-3"
   | "flux-1"
   | "flux-2"
@@ -724,6 +725,16 @@ export interface ImportMediaLocalModelRequest {
   sourceUrl: string | null;
   licenseName: string | null;
   commercialUse: "allowed" | "review-required" | null;
+}
+
+export interface UpdateMediaModelResourceRequest {
+  resourceId: string;
+  displayName: string;
+  architecture: MediaLocalModelArchitecture;
+  sourceUrl: string | null;
+  licenseName: string | null;
+  commercialUse: "allowed" | "review-required" | null;
+  triggerWords: string[];
 }
 
 export interface MediaLocalModelImportResult {

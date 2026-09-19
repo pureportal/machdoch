@@ -104,6 +104,36 @@ beforeEach(() => {
 });
 
 describe("MediaAssetImportDialog", () => {
+  it("imports an SDXL checkpoint with the selected Pony base model", async () => {
+    const props = createProps();
+    runtimeMocks.openDialog.mockResolvedValue(inspection.sourcePath);
+    const view = render(createElement(MediaAssetImportDialog, props));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Drop or select a file" }),
+    );
+    await waitFor(() => expect(props.onInspectModel).toHaveBeenCalledOnce());
+    view.rerender(
+      createElement(MediaAssetImportDialog, {
+        ...props,
+        modelInspection: {
+          ...inspection,
+          detectedArchitecture: "stable-diffusion-xl",
+        },
+      }),
+    );
+    expect(screen.getByRole("option", { name: "Pony (SDXL)" })).toBeTruthy();
+    fireEvent.change(screen.getByRole("combobox", { name: "Base model" }), {
+      target: { value: "pony" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Import model" }));
+    await waitFor(() =>
+      expect(props.onImportModel).toHaveBeenCalledWith(
+        expect.objectContaining({ architecture: "pony" }),
+        expect.anything(),
+      ),
+    );
+  });
+
   it("prefills filename metadata and imports without license declarations", async () => {
     const onInspectModel = vi.fn();
     const onImportModel = vi.fn(async () => true);

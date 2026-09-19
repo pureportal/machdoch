@@ -2647,6 +2647,7 @@ const NodeInspector = ({
           "stable-diffusion-1",
           "stable-diffusion-2",
           "stable-diffusion-xl",
+          "pony",
         ].includes(referenceRoleModel.architecture ?? "")
           ? ["pose"]
           : []),

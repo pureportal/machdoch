@@ -283,6 +283,7 @@ export const AppRail = ({
               onClick={() => onSelectApp("media")}
               shortcutId="app.view.media"
             />
+            <Separator className="my-1 w-8 bg-slate-900" />
             <AppRailButton
               label="Instructions"
               icon={FileSliders}
@@ -290,7 +291,6 @@ export const AppRail = ({
               onClick={() => onSelectApp("instructions")}
               shortcutId="app.view.instructions"
             />
-            <Separator className="my-1 w-8 bg-slate-900" />
             <AppRailButton
               label="Workspace Management"
               icon={FolderGit2}

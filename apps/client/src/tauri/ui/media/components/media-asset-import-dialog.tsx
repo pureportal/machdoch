@@ -1,3 +1,4 @@
+import { MEDIA_MODEL_ARCHITECTURES } from "../../../../core/media/model-architectures.js";
 import { getCurrentWindow, type DragDropEvent } from "@tauri-apps/api/window";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Eye, FileUp, Import, LoaderCircle, Upload, X } from "lucide-react";
@@ -91,23 +92,6 @@ const IMPORT_EXTENSIONS = [
   "webp",
   "webm",
   "svg",
-];
-
-const ARCHITECTURES: ReadonlyArray<{
-  value: MediaLocalModelArchitecture;
-  label: string;
-}> = [
-  { value: "flux-1", label: "FLUX.1" },
-  { value: "flux-2", label: "FLUX.2" },
-  { value: "stable-diffusion-xl", label: "SDXL" },
-  { value: "stable-diffusion-3", label: "Stable Diffusion 3" },
-  { value: "stable-diffusion-2", label: "Stable Diffusion 2" },
-  { value: "stable-diffusion-1", label: "Stable Diffusion 1" },
-  { value: "krea-2", label: "Krea 2" },
-  { value: "wan-2.2-ti2v", label: "WAN 2.2 TI2V" },
-  { value: "ltx-video", label: "LTX Video" },
-  { value: "framepack-i2v", label: "FramePack" },
-  { value: "hunyuan-video-1.5-i2v", label: "HunyuanVideo 1.5" },
 ];
 
 const splitValues = (value: string): string[] =>
@@ -663,7 +647,7 @@ export const MediaAssetImportDialog = ({
                         className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
                       >
                         <option value="">Select base model</option>
-                        {ARCHITECTURES.filter(
+                        {MEDIA_MODEL_ARCHITECTURES.filter(
                           (item) =>
                             importIsAddon ||
                             ![

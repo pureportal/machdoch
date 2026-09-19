@@ -85,6 +85,7 @@ export const listMediaLibraryModels = (
   models.filter(
     (model) =>
       isMediaGenerationModel(model) &&
+      model.lifecycle !== "removed" &&
       (model.target === "local" ? model.installed : model.configured),
   );
 

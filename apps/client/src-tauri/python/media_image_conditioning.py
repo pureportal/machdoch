@@ -20,7 +20,7 @@ KREA_TAP_LAYERS = (2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35)
 def ip_adapter_scale(architecture: str, role: str, influence: float) -> Any:
     if role == "subject":
         return influence * 0.7
-    if architecture == "stable-diffusion-xl":
+    if architecture in ("stable-diffusion-xl", "pony"):
         if role == "style":
             return {"up": {"block_0": [0.0, influence, 0.0]}}
         if role == "composition":
@@ -34,6 +34,7 @@ def load_ip_adapter(
     weights = {
         "stable-diffusion-1": "sd15.safetensors",
         "stable-diffusion-xl": "sdxl.safetensors",
+        "pony": "sdxl.safetensors",
     }[architecture]
     pipeline.remove_all_hooks()
     pipeline.load_ip_adapter(

@@ -1,3 +1,4 @@
+import { MediaModelEditDialog } from "./media-model-edit-dialog";
 import {
   discoverMediaResources,
   listMediaResourceTags,
@@ -8,17 +9,36 @@ import { MediaAssetDetailsDialog } from "./media-asset-details-dialog";
 import { MediaModelInstallDialog } from "./media-model-install-dialog";
 import { MediaRemoveResourceButton } from "./media-remove-resource-button";
 import {
+  Copy,
   FileImage,
   FileType,
   Import,
   MoreVertical,
+  Pencil,
   Play,
   Search,
   Trash2,
   Video,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type JSX } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type JSX,
+} from "react";
+import {
+  EMPTY_MEDIA_ASSET_FILTERS,
+  matchesMediaAssetFilters,
+  mediaAssetOrigin,
+} from "../../../../core/media/asset-discovery.js";
+import {
+  EMPTY_MEDIA_LIBRARY_MODEL_FILTERS,
+  MediaAssetsFilters,
+  type MediaAssetTypeFilter,
+} from "./media-assets-filters";
 import {
   mediaAssetCategoryNames,
   matchesMediaAssetCategoryFilter,
@@ -49,6 +69,7 @@ import type {
   MediaModelAddonImportInspection,
   MediaModelCatalogSnapshot,
   MediaModelDescriptor,
+  UpdateMediaModelResourceRequest,
 } from "../../../../core/media/contracts.js";
 import { Button } from "../../components/ui/button";
 import { ControlTooltip } from "../../components/ui/tooltip";
@@ -59,12 +80,10 @@ import {
   DialogTitle,
 } from "../../components/ui/dialog";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "../../components/ui/dropdown-menu";
+  ContextActionMenu,
+  openContextMenuFromButton,
+} from "../../components/ui/context-action-menu";
+import { copyText } from "../../lib/clipboard";
 import { cn } from "../../lib/utils";
 import { MediaAssetImportDialog } from "./media-asset-import-dialog";
 import { MediaAssetMetadataEditor } from "./media-asset-metadata-editor";
@@ -79,15 +98,6 @@ import {
   MediaAssetPreview,
   MediaResourcePreview,
 } from "./media-visual-preview";
-
-type AssetFilter =
-  | "all"
-  | "model"
-  | "lora"
-  | "embedding"
-  | "image"
-  | "video"
-  | "svg";
 
 interface MediaAssetsViewProps {
   discoveredFiles: readonly import("../../../../core/media/contracts.js").MediaDiscoveredModelArtifact[];
@@ -144,6 +154,11 @@ interface MediaAssetsViewProps {
   onPlanAssetDeletion: (assetId: string) => Promise<MediaAssetDeletionImpact>;
   onDeleteAsset: (impact: MediaAssetDeletionImpact) => Promise<void>;
   onUpdateTags: (update: MediaAssetTagUpdate) => void;
+  onSaveResource: (
+    resourceId: string,
+    request: UpdateMediaModelResourceRequest | null,
+    metadata: MediaGenerationAssetMetadata,
+  ) => Promise<void>;
   onUpdateMetadata: (
     resourceId: string,
     metadata: MediaGenerationAssetMetadata,
@@ -155,7 +170,7 @@ interface MediaAssetsViewProps {
   tagLoadingAssetId: string | null;
 }
 
-const FILTERS: ReadonlyArray<{ id: AssetFilter; label: string }> = [
+const FILTERS: ReadonlyArray<{ id: MediaAssetTypeFilter; label: string }> = [
   { id: "all", label: "All" },
   { id: "model", label: "Models" },
   { id: "lora", label: "LoRAs" },
@@ -220,6 +235,7 @@ export const MediaAssetsView = ({
   onPlanAssetDeletion,
   onDeleteAsset,
   onUpdateTags,
+  onSaveResource,
   onUpdateMetadata,
   onCategoryStateChange,
   tagLoadingAssetId,
@@ -229,11 +245,15 @@ export const MediaAssetsView = ({
     runtimeSetup.phase === "ready"
       ? "Set up Media Studio"
       : mediaRuntimeSetupLabel(runtimeSetup);
-  const [filter, setFilter] = useState<AssetFilter>("all");
+  const [filter, setFilter] = useState<MediaAssetTypeFilter>("all");
   const [query, setQuery] = useState("");
   const [tagFilter, setTagFilter] = useState("all");
   const [architectureFilter, setArchitectureFilter] = useState("all");
-  const [sort, setSort] = useState<MediaResourceSort>("name");
+  const [sort, setSort] = useState<MediaResourceSort | "default">("default");
+  const [mediaFilters, setMediaFilters] = useState(EMPTY_MEDIA_ASSET_FILTERS);
+  const [modelFilters, setModelFilters] = useState(
+    EMPTY_MEDIA_LIBRARY_MODEL_FILTERS,
+  );
   const [categoryFilterIds, setCategoryFilterIds] = useState<string[]>([]);
   const [importOpen, setImportOpen] = useState(false);
   const [importPath, setImportPath] = useState<string | undefined>();
@@ -244,7 +264,42 @@ export const MediaAssetsView = ({
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(
     null,
   );
-  const [contextAssetId, setContextAssetId] = useState<string | null>(null);
+  const [editingResourceId, setEditingResourceId] = useState<string | null>(
+    null,
+  );
+  const editingResource = libraryResource(editingResourceId);
+  function libraryResource(id: string | null) {
+    return (
+      catalog.models.find((model) => model.id === id) ??
+      catalog.addons.find((addon) => addon.id === id) ??
+      null
+    );
+  }
+  const editResource = (id: string) => {
+    setSelectedResourceId(null);
+    setSelectedAssetId(null);
+    setEditingResourceId(id);
+  };
+  const resourceMetadata = (id: string): MediaGenerationAssetMetadata => {
+    const resource = libraryResource(id);
+    const addon = resource && "kind" in resource ? resource : null;
+    return {
+      ...createEmptyMediaGenerationAssetMetadata(),
+      ...metadata[id],
+      triggerWords: addon
+        ? addon.kind === "textual-inversion"
+          ? (addon.defaultToken ?? "")
+          : normalizeMediaTriggerWords(addon.triggerWords)
+        : (metadata[id]?.triggerWords ?? ""),
+      sourceUrl: metadata[id]
+        ? metadata[id].sourceUrl
+        : (addon?.sourceUrl ??
+          (resource && "lifecycleSourceUrl" in resource
+            ? resource.lifecycleSourceUrl
+            : null) ??
+          null),
+    };
+  };
   const [deletionImpact, setDeletionImpact] =
     useState<MediaAssetDeletionImpact | null>(null);
   const [deletionPending, setDeletionPending] = useState(false);
@@ -260,20 +315,7 @@ export const MediaAssetsView = ({
   const selectedResourceAddon =
     catalog.addons.find((addon) => addon.id === selectedResourceId) ?? null;
   const selectedResourceMetadata = selectedResourceId
-    ? {
-        ...createEmptyMediaGenerationAssetMetadata(),
-        ...metadata[selectedResourceId],
-        triggerWords: selectedResourceAddon
-          ? selectedResourceAddon.kind === "textual-inversion"
-            ? (selectedResourceAddon.defaultToken ?? "")
-            : normalizeMediaTriggerWords(selectedResourceAddon.triggerWords)
-          : (metadata[selectedResourceId]?.triggerWords ?? ""),
-        sourceUrl:
-          metadata[selectedResourceId]?.sourceUrl ??
-          selectedResourceAddon?.sourceUrl ??
-          selectedResourceModel?.lifecycleSourceUrl ??
-          null,
-      }
+    ? resourceMetadata(selectedResourceId)
     : null;
   const selectedAssetMetadata = selectedAsset
     ? (metadata[selectedAsset.id] ?? createEmptyMediaGenerationAssetMetadata())
@@ -291,14 +333,35 @@ export const MediaAssetsView = ({
       metadata[resourceId]?.categoryIds ?? [],
       categoryFilterIds,
     );
-  const resourceFilters = { query, tag: tagFilter, categoryId: "all", sort };
+  const resourceFilters = {
+    query,
+    tag: tagFilter,
+    categoryId: "all",
+    sort: sort === "default" ? ("name" as const) : sort,
+  };
   const resourceTypesOnly = ["model", "lora", "embedding"].includes(filter);
+  const mediaFilterCount = Object.entries(mediaFilters).filter(
+    ([key, value]) =>
+      value !== EMPTY_MEDIA_ASSET_FILTERS[key as keyof typeof mediaFilters],
+  ).length;
+  const activeFilterCount =
+    Number(query.trim().length > 0) +
+    Number(tagFilter !== "all") +
+    Number(categoryFilterIds.length > 0) +
+    (resourceTypesOnly
+      ? Number(architectureFilter !== "all")
+      : mediaFilterCount) +
+    (filter === "model"
+      ? Number(modelFilters.target !== "all") +
+        Number(modelFilters.readiness !== "all")
+      : 0);
+  const showResources = resourceTypesOnly || mediaFilterCount === 0;
   const matchesArchitecture = (architecture: string | null): boolean =>
     !resourceTypesOnly ||
     architectureFilter === "all" ||
     architecture === architectureFilter;
   const visibleModels =
-    filter === "all" || filter === "model"
+    showResources && (filter === "all" || filter === "model")
       ? discoverMediaResources(
           libraryModels,
           metadata,
@@ -307,39 +370,61 @@ export const MediaAssetsView = ({
         ).filter(
           (model) =>
             matchesCategoryFilter(model.id) &&
-            matchesArchitecture(model.architecture),
+            matchesArchitecture(model.architecture) &&
+            (filter !== "model" ||
+              ((modelFilters.target === "all" ||
+                model.target === modelFilters.target) &&
+                (modelFilters.readiness === "all" ||
+                  isMediaModelReady(model) ===
+                    (modelFilters.readiness === "ready")))),
         )
       : [];
-  const visibleAddons = ["all", "lora", "embedding"].includes(filter)
-    ? discoverMediaResources(
-        catalog.addons,
-        metadata,
-        categories,
-        resourceFilters,
-      ).filter(
-        (addon) =>
-          matchesCategoryFilter(addon.id) &&
-          matchesArchitecture(addon.architecture) &&
-          (filter === "all" ||
-            (filter === "lora"
-              ? addon.kind === "lora"
-              : addon.kind === "textual-inversion")),
-      )
-    : [];
-  const visibleMedia = discoverMediaResources(
-    assets,
-    metadata,
-    categories,
-    resourceFilters,
-  ).filter(
+  const visibleAddons =
+    showResources && ["all", "lora", "embedding"].includes(filter)
+      ? discoverMediaResources(
+          catalog.addons,
+          metadata,
+          categories,
+          resourceFilters,
+        ).filter(
+          (addon) =>
+            matchesCategoryFilter(addon.id) &&
+            matchesArchitecture(addon.architecture) &&
+            (filter === "all" ||
+              (filter === "lora"
+                ? addon.kind === "lora"
+                : addon.kind === "textual-inversion")),
+        )
+      : [];
+  const visibleMedia = discoverMediaResources(assets, metadata, categories, {
+    ...resourceFilters,
+    sort: sort === "default" ? "newest" : sort,
+  }).filter(
     (asset) =>
       matchesCategoryFilter(asset.id) &&
+      matchesMediaAssetFilters(asset, mediaFilters) &&
       (filter === "all"
         ? asset.kind !== "report"
         : filter === "svg"
           ? asset.kind === "vector"
           : asset.kind === filter),
   );
+  const mediaGroups = [
+    {
+      id: "generated",
+      label: "Generations",
+      assets: visibleMedia.filter(
+        (asset) => mediaAssetOrigin(asset) === "generated",
+      ),
+    },
+    {
+      id: "added",
+      label: "Uploads and imports",
+      assets: visibleMedia.filter(
+        (asset) => mediaAssetOrigin(asset) === "added",
+      ),
+    },
+  ];
   const filteredTypeResources =
     filter === "model"
       ? libraryModels
@@ -365,6 +450,26 @@ export const MediaAssetsView = ({
   ].sort();
   const totalVisible =
     visibleModels.length + visibleAddons.length + visibleMedia.length;
+  const formats = [
+    ...new Set(
+      assets
+        .filter(
+          (asset) =>
+            asset.kind !== "report" &&
+            (filter === "all" ||
+              asset.kind === (filter === "svg" ? "vector" : filter)),
+        )
+        .map((asset) => asset.mimeType),
+    ),
+  ].sort();
+  const clearFilters = () => {
+    setQuery("");
+    setTagFilter("all");
+    setCategoryFilterIds([]);
+    setArchitectureFilter("all");
+    setMediaFilters(EMPTY_MEDIA_ASSET_FILTERS);
+    setModelFilters(EMPTY_MEDIA_LIBRARY_MODEL_FILTERS);
+  };
 
   const showResource = useCallback(
     (resourceId: string): boolean => {
@@ -382,7 +487,9 @@ export const MediaAssetsView = ({
       setCategoryFilterIds([]);
       setTagFilter("all");
       setArchitectureFilter("all");
-      setSort("name");
+      setSort("default");
+      setMediaFilters(EMPTY_MEDIA_ASSET_FILTERS);
+      setModelFilters(EMPTY_MEDIA_LIBRARY_MODEL_FILTERS);
       requestAnimationFrame(() =>
         cardRefs.current[resourceId]?.scrollIntoView?.({ block: "center" }),
       );
@@ -400,7 +507,9 @@ export const MediaAssetsView = ({
     setCategoryFilterIds([]);
     setTagFilter("all");
     setArchitectureFilter("all");
-    setSort("name");
+    setSort("default");
+    setMediaFilters(EMPTY_MEDIA_ASSET_FILTERS);
+    setModelFilters(EMPTY_MEDIA_LIBRARY_MODEL_FILTERS);
     requestAnimationFrame(() =>
       cardRefs.current[openAssetId]?.scrollIntoView?.({ block: "center" }),
     );
@@ -429,7 +538,6 @@ export const MediaAssetsView = ({
   };
 
   const requestAssetDeletion = async (assetId: string): Promise<void> => {
-    setContextAssetId(null);
     setDeletionError(null);
     setDeletionPending(true);
     try {
@@ -508,13 +616,29 @@ export const MediaAssetsView = ({
         <select
           aria-label="Sort assets"
           value={sort}
-          onChange={(event) => setSort(event.target.value as MediaResourceSort)}
+          onChange={(event) =>
+            setSort(event.target.value as MediaResourceSort | "default")
+          }
           className="h-10 rounded-xl border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200"
         >
-          <option value="name">Name A–Z</option>
+          <option value="default">
+            {filter === "all"
+              ? "Default order"
+              : resourceTypesOnly
+                ? "Name A–Z"
+                : "Newest first"}
+          </option>
+          {!resourceTypesOnly ? <option value="name">Name A–Z</option> : null}
           <option value="name-desc">Name Z–A</option>
-          {filter !== "all" && filter !== "model" ? (
-            <option value="newest">Newest first</option>
+          {filter !== "model" ? (
+            <>
+              {resourceTypesOnly || filter === "all" ? (
+                <option value="newest">Newest first</option>
+              ) : null}
+              <option value="oldest">Oldest first</option>
+              <option value="largest">Largest files first</option>
+              <option value="smallest">Smallest files first</option>
+            </>
           ) : null}
         </select>
         <Button
@@ -561,8 +685,10 @@ export const MediaAssetsView = ({
             aria-pressed={filter === item.id}
             onClick={() => {
               setFilter(item.id);
-              if (item.id === "all" || item.id === "model")
-                setSort((current) => (current === "newest" ? "name" : current));
+              setSort("default");
+              setArchitectureFilter("all");
+              setMediaFilters(EMPTY_MEDIA_ASSET_FILTERS);
+              setModelFilters(EMPTY_MEDIA_LIBRARY_MODEL_FILTERS);
             }}
             className={cn(
               "shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium",
@@ -576,33 +702,27 @@ export const MediaAssetsView = ({
         ))}
       </div>
 
-      {resourceTypesOnly ? (
-        <div className="border-b border-slate-800 px-5 py-2">
-          <select
-            aria-label="Base model family"
-            value={architectureFilter}
-            onChange={(event) => setArchitectureFilter(event.target.value)}
-            className="h-9 max-w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200"
-          >
-            <option value="all">All model families</option>
-            {architectureFilter !== "all" &&
-            !architectures.some(
-              (architecture) => architecture === architectureFilter,
-            ) ? (
-              <option value={architectureFilter}>{architectureFilter}</option>
-            ) : null}
-            {architectures.map((architecture) => (
-              <option key={architecture} value={architecture}>
-                {libraryModels.find(
-                  (model) => model.architecture === architecture,
-                )?.family ?? architecture}
-              </option>
-            ))}
-          </select>
-        </div>
-      ) : null}
+      <MediaAssetsFilters
+        type={filter}
+        media={mediaFilters}
+        onMediaChange={setMediaFilters}
+        models={modelFilters}
+        onModelsChange={setModelFilters}
+        formats={formats}
+        architecture={architectureFilter}
+        onArchitectureChange={setArchitectureFilter}
+        architectures={architectures.map((architecture) => ({
+          id: architecture,
+          label:
+            libraryModels.find((model) => model.architecture === architecture)
+              ?.family ?? architecture,
+        }))}
+        activeCount={activeFilterCount}
+        onClear={clearFilters}
+      />
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
         {discoveredFiles.some((file) => file.status === "importable") &&
+        showResources &&
         ["all", "model", "lora", "embedding"].includes(filter) ? (
           <details className="mb-4 rounded-xl border border-slate-800 p-3">
             <summary className="cursor-pointer text-sm text-slate-300">
@@ -613,6 +733,12 @@ export const MediaAssetsView = ({
                 (file) =>
                   file.status === "importable" &&
                   resourceMatches([file.displayName, file.relativePath], query),
+              )
+              .sort((left, right) =>
+                left.displayName.localeCompare(right.displayName, undefined, {
+                  numeric: true,
+                  sensitivity: "base",
+                }),
               )
               .map((file) => (
                 <div key={file.path} className="mt-3 flex items-center gap-3">
@@ -636,12 +762,7 @@ export const MediaAssetsView = ({
         ) : null}
         {totalVisible === 0 ? (
           <div className="flex min-h-72 items-center justify-center rounded-2xl border border-dashed border-slate-800 text-sm text-slate-500">
-            {query ||
-            categoryFilterIds.length > 0 ||
-            tagFilter !== "all" ||
-            (resourceTypesOnly && architectureFilter !== "all")
-              ? "No matching assets"
-              : "Import an asset"}
+            {activeFilterCount > 0 ? "No matching assets" : "Import an asset"}
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4 md:grid-cols-3 2xl:grid-cols-4">
@@ -655,101 +776,126 @@ export const MediaAssetsView = ({
               const readiness = describeMediaModelReadiness(model);
               const categorySummary = categoryNamesFor(model.id).join(", ");
               return (
-                <article
+                <ContextActionMenu
                   key={model.id}
-                  ref={(element) => {
-                    cardRefs.current[model.id] = element;
-                  }}
-                  className={cn(
-                    "overflow-hidden rounded-2xl border bg-slate-900/55",
-                    selectedResourceId === model.id
-                      ? "border-sky-400"
-                      : "border-slate-800",
-                  )}
+                  label="Model actions"
+                  actions={[
+                    {
+                      label: "Edit",
+                      icon: Pencil,
+                      onSelect: () => editResource(model.id),
+                    },
+                    {
+                      label: "Copy name",
+                      icon: Copy,
+                      onSelect: () => copyText(model.displayName),
+                    },
+                  ]}
                 >
-                  <button
-                    type="button"
-                    aria-label={`View ${model.displayName}`}
-                    onClick={() => {
-                      setSelectedAssetId(null);
-                      setSelectedResourceId(model.id);
+                  <article
+                    ref={(element) => {
+                      cardRefs.current[model.id] = element;
                     }}
-                    className="block w-full"
+                    className={cn(
+                      "relative overflow-hidden rounded-2xl border bg-slate-900/55",
+                      selectedResourceId === model.id
+                        ? "border-sky-400"
+                        : "border-slate-800",
+                    )}
                   >
-                    <MediaResourcePreview
-                      resourceId={model.id}
-                      metadata={metadata}
-                      assets={assets}
-                      className="aspect-[4/3] w-full"
-                    />
-                  </button>
-                  <div className="space-y-2 p-3">
-                    <div>
-                      <h2 className="truncate text-sm font-semibold text-slate-100">
-                        {model.displayName}
-                      </h2>
-                      <p className="truncate text-xs text-slate-500">
-                        {categorySummary ||
-                          (model.runtimeReadiness === "runtime-unavailable"
-                            ? model.family
-                            : readiness?.action) ||
-                          model.family}
-                      </p>
+                    <button
+                      type="button"
+                      aria-label={`Actions for ${model.displayName}`}
+                      aria-haspopup="menu"
+                      onClick={openContextMenuFromButton}
+                      className="absolute right-2 top-2 z-10 rounded-lg bg-slate-950/85 p-1.5 text-slate-200 hover:bg-slate-900"
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`View ${model.displayName}`}
+                      onClick={() => {
+                        setSelectedAssetId(null);
+                        setSelectedResourceId(model.id);
+                      }}
+                      className="block w-full"
+                    >
+                      <MediaResourcePreview
+                        resourceId={model.id}
+                        metadata={metadata}
+                        assets={assets}
+                        className="aspect-[4/3] w-full"
+                      />
+                    </button>
+                    <div className="space-y-2 p-3">
+                      <div>
+                        <h2 className="truncate text-sm font-semibold text-slate-100">
+                          {model.displayName}
+                        </h2>
+                        <p className="truncate text-xs text-slate-500">
+                          {categorySummary ||
+                            (model.runtimeReadiness === "runtime-unavailable"
+                              ? model.family
+                              : readiness?.action) ||
+                            model.family}
+                        </p>
+                      </div>
+                      {!model.installed &&
+                      model.management.acquisition === "managed-install" ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => setInstallModel(model)}
+                          disabled={!importSupported}
+                        >
+                          Install model
+                        </Button>
+                      ) : ready ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onUseModel(model)}
+                          disabled={setupActive && model.target === "local"}
+                          className="w-full"
+                        >
+                          Use model
+                        </Button>
+                      ) : model.runtimeReadiness === "runtime-unavailable" &&
+                        !runtimeReady &&
+                        model.providerId === "local-diffusers" ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={onSetupRuntime}
+                          disabled={setupActive || !importSupported}
+                          className="w-full"
+                        >
+                          {setupLabel}
+                        </Button>
+                      ) : model.runtimeReadiness !== "runtime-unavailable" &&
+                        model.installed &&
+                        model.management.verification !== "none" ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onVerifyModel(model)}
+                          disabled={setupActive || verifyingModelId !== null}
+                          className="w-full"
+                        >
+                          {verifyingModelId === model.id
+                            ? "Verifying…"
+                            : "Verify model"}
+                        </Button>
+                      ) : null}
                     </div>
-                    {!model.installed &&
-                    model.management.acquisition === "managed-install" ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="w-full"
-                        onClick={() => setInstallModel(model)}
-                        disabled={!importSupported}
-                      >
-                        Install model
-                      </Button>
-                    ) : ready ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => onUseModel(model)}
-                        disabled={setupActive && model.target === "local"}
-                        className="w-full"
-                      >
-                        Use model
-                      </Button>
-                    ) : model.runtimeReadiness === "runtime-unavailable" &&
-                      !runtimeReady &&
-                      model.providerId === "local-diffusers" ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={onSetupRuntime}
-                        disabled={setupActive || !importSupported}
-                        className="w-full"
-                      >
-                        {setupLabel}
-                      </Button>
-                    ) : model.runtimeReadiness !== "runtime-unavailable" &&
-                      model.installed &&
-                      model.management.verification !== "none" ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => onVerifyModel(model)}
-                        disabled={setupActive || verifyingModelId !== null}
-                        className="w-full"
-                      >
-                        {verifyingModelId === model.id
-                          ? "Verifying…"
-                          : "Verify model"}
-                      </Button>
-                    ) : null}
-                  </div>
-                </article>
+                  </article>
+                </ContextActionMenu>
               );
             })}
             {filter === "all" && visibleAddons.length > 0 ? (
@@ -760,205 +906,237 @@ export const MediaAssetsView = ({
             {visibleAddons.map((addon) => {
               const compatible = addonCompatible(addon.id);
               return (
-                <article
+                <ContextActionMenu
                   key={addon.id}
-                  ref={(element) => {
-                    cardRefs.current[addon.id] = element;
-                  }}
-                  className={cn(
-                    "overflow-hidden rounded-2xl border bg-slate-900/55",
-                    selectedResourceId === addon.id
-                      ? "border-sky-400"
-                      : "border-slate-800",
-                  )}
+                  label="Model actions"
+                  actions={[
+                    {
+                      label: "Edit",
+                      icon: Pencil,
+                      onSelect: () => editResource(addon.id),
+                    },
+                    {
+                      label: "Copy name",
+                      icon: Copy,
+                      onSelect: () => copyText(addon.displayName),
+                    },
+                  ]}
                 >
-                  <button
-                    type="button"
-                    aria-label={`View ${addon.displayName}`}
-                    onClick={() => {
-                      setSelectedAssetId(null);
-                      setSelectedResourceId(addon.id);
+                  <article
+                    ref={(element) => {
+                      cardRefs.current[addon.id] = element;
                     }}
-                    className="block w-full"
+                    className={cn(
+                      "relative overflow-hidden rounded-2xl border bg-slate-900/55",
+                      selectedResourceId === addon.id
+                        ? "border-sky-400"
+                        : "border-slate-800",
+                    )}
                   >
-                    <MediaResourcePreview
-                      resourceId={addon.id}
-                      metadata={metadata}
-                      assets={assets}
-                      className="aspect-[4/3] w-full"
-                    />
-                  </button>
-                  <div className="space-y-2 p-3">
-                    <div>
-                      <h2 className="truncate text-sm font-semibold text-slate-100">
-                        {addon.displayName}
-                      </h2>
-                      <p className="truncate text-xs text-slate-500">
-                        {categoryNamesFor(addon.id).join(", ") ||
-                          addon.architecture}
-                      </p>
+                    <button
+                      type="button"
+                      aria-label={`Actions for ${addon.displayName}`}
+                      aria-haspopup="menu"
+                      onClick={openContextMenuFromButton}
+                      className="absolute right-2 top-2 z-10 rounded-lg bg-slate-950/85 p-1.5 text-slate-200 hover:bg-slate-900"
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`View ${addon.displayName}`}
+                      onClick={() => {
+                        setSelectedAssetId(null);
+                        setSelectedResourceId(addon.id);
+                      }}
+                      className="block w-full"
+                    >
+                      <MediaResourcePreview
+                        resourceId={addon.id}
+                        metadata={metadata}
+                        assets={assets}
+                        className="aspect-[4/3] w-full"
+                      />
+                    </button>
+                    <div className="space-y-2 p-3">
+                      <div>
+                        <h2 className="truncate text-sm font-semibold text-slate-100">
+                          {addon.displayName}
+                        </h2>
+                        <p className="truncate text-xs text-slate-500">
+                          {categoryNamesFor(addon.id).join(", ") ||
+                            addon.architecture}
+                        </p>
+                      </div>
+                      {compatible ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onUseAddon(addon.id)}
+                          className="w-full"
+                        >
+                          Add to create
+                        </Button>
+                      ) : null}
                     </div>
-                    {compatible ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => onUseAddon(addon.id)}
-                        className="w-full"
-                      >
-                        Add to create
-                      </Button>
-                    ) : null}
-                  </div>
-                </article>
+                  </article>
+                </ContextActionMenu>
               );
             })}
-            {filter === "all" && visibleMedia.length > 0 ? (
-              <h2 className="col-span-full text-sm font-medium text-slate-300">
-                Media
-              </h2>
-            ) : null}
-            {visibleMedia.map((asset) => (
-              <article
-                key={asset.id}
-                ref={(element) => {
-                  cardRefs.current[asset.id] = element;
-                }}
-                className={cn(
-                  "relative overflow-hidden rounded-2xl border bg-slate-900/55",
-                  selectedAssetId === asset.id
-                    ? "border-sky-400"
-                    : "border-slate-800",
-                )}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  setContextAssetId(asset.id);
-                }}
-              >
-                <DropdownMenu
-                  open={contextAssetId === asset.id}
-                  onOpenChange={(open) =>
-                    setContextAssetId(open ? asset.id : null)
-                  }
-                >
-                  <ControlTooltip content="Asset actions">
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        aria-label="Asset actions"
-                        className="absolute right-2 top-2 z-10 rounded-lg bg-slate-950/85 p-1.5 text-slate-200 hover:bg-slate-900"
-                      >
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
-                    </DropdownMenuTrigger>
-                  </ControlTooltip>
-                  <DropdownMenuContent align="end">
-                    {asset.kind === "image" ? (
-                      <DropdownMenuItem onSelect={() => onEditImage(asset)}>
-                        Edit image
-                      </DropdownMenuItem>
-                    ) : null}
-                    {asset.kind === "image" ? (
-                      <DropdownMenuItem
-                        onSelect={() => onUseAsReference(asset)}
-                      >
-                        Use as reference
-                      </DropdownMenuItem>
-                    ) : null}
-                    {asset.kind === "image" ? (
-                      <DropdownMenuItem onSelect={() => onAnimateImage(asset)}>
-                        Animate image
-                      </DropdownMenuItem>
-                    ) : null}
-                    {asset.kind === "image" ? (
-                      <DropdownMenuItem
-                        onSelect={() => onOpenVideoAsFlow(asset)}
-                      >
-                        Animate in Advanced
-                      </DropdownMenuItem>
-                    ) : null}
-                    {asset.operation?.kind !== "local-import" ? (
-                      <>
-                        <DropdownMenuItem
-                          onSelect={() => onInspectSettings(asset.runId)}
-                        >
-                          View settings
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => onReuseSettings(asset.runId)}
-                        >
-                          Reuse settings
-                        </DropdownMenuItem>
-                      </>
-                    ) : null}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onSelect={() => void requestAssetDeletion(asset.id)}
+            {mediaGroups
+              .filter((group) => group.assets.length > 0)
+              .map((group) => (
+                <Fragment key={group.id}>
+                  <h2 className="col-span-full text-sm font-medium text-slate-300">
+                    {group.label}
+                  </h2>
+                  {group.assets.map((asset) => (
+                    <ContextActionMenu
+                      key={asset.id}
+                      label="Asset actions"
+                      actions={[
+                        {
+                          label: "Copy name",
+                          icon: Copy,
+                          onSelect: () => copyText(mediaAssetLabel(asset)),
+                        },
+                        {
+                          label: "Copy asset ID",
+                          icon: Copy,
+                          onSelect: () => copyText(asset.id),
+                        },
+                        ...(asset.kind === "image"
+                          ? [
+                              {
+                                label: "Edit image",
+                                onSelect: () => onEditImage(asset),
+                              },
+                              {
+                                label: "Use as reference",
+                                onSelect: () => onUseAsReference(asset),
+                              },
+                              {
+                                label: "Animate image",
+                                onSelect: () => onAnimateImage(asset),
+                              },
+                              {
+                                label: "Animate in Advanced",
+                                onSelect: () => onOpenVideoAsFlow(asset),
+                              },
+                            ]
+                          : []),
+                        ...(asset.operation?.kind !== "local-import"
+                          ? [
+                              {
+                                label: "View settings",
+                                onSelect: () => onInspectSettings(asset.runId),
+                              },
+                              {
+                                label: "Reuse settings",
+                                onSelect: () => onReuseSettings(asset.runId),
+                              },
+                            ]
+                          : []),
+                        {
+                          label: "Delete asset",
+                          icon: Trash2,
+                          destructive: true,
+                          onSelect: () => requestAssetDeletion(asset.id),
+                        },
+                      ]}
                     >
-                      <Trash2 /> Delete asset
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <button
-                  type="button"
-                  aria-label={`View ${mediaAssetLabel(asset)}`}
-                  onClick={() => {
-                    setSelectedResourceId(null);
-                    setSelectedAssetId(asset.id);
-                  }}
-                  className="block w-full"
-                >
-                  <MediaAssetPreview
-                    asset={asset}
-                    className="aspect-[4/3] w-full"
-                  />
-                </button>
-                <div className="space-y-2 p-3">
-                  <div className="flex items-center gap-2">
-                    {asset.kind === "video" ? (
-                      <Video className="h-4 w-4 text-emerald-300" />
-                    ) : asset.kind === "vector" ? (
-                      <FileType className="h-4 w-4 text-violet-300" />
-                    ) : (
-                      <FileImage className="h-4 w-4 text-sky-300" />
-                    )}
-                    <span className="truncate text-xs text-slate-400">
-                      {asset.width} × {asset.height}
-                    </span>
-                  </div>
-                  {categoryNamesFor(asset.id).length > 0 ? (
-                    <p className="truncate text-[10px] text-slate-500">
-                      {categoryNamesFor(asset.id).join(", ")}
-                    </p>
-                  ) : null}
-                  <div className="flex gap-2">
-                    {asset.kind === "image" ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => onUseAsReference(asset)}
-                        className="flex-1"
+                      <article
+                        tabIndex={-1}
+                        ref={(element) => {
+                          cardRefs.current[asset.id] = element;
+                        }}
+                        className={cn(
+                          "relative overflow-hidden rounded-2xl border bg-slate-900/55",
+                          selectedAssetId === asset.id
+                            ? "border-sky-400"
+                            : "border-slate-800",
+                        )}
                       >
-                        Use as reference
-                      </Button>
-                    ) : null}
-                    {asset.kind === "image" ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onAnimateImage(asset)}
-                        aria-label="Animate image"
-                      >
-                        <Play className="h-4 w-4" />
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
-              </article>
-            ))}
+                        <ControlTooltip content="Asset actions">
+                          <button
+                            type="button"
+                            aria-label="Asset actions"
+                            aria-haspopup="menu"
+                            onClick={openContextMenuFromButton}
+                            className="absolute right-2 top-2 z-10 rounded-lg bg-slate-950/85 p-1.5 text-slate-200 hover:bg-slate-900"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </button>
+                        </ControlTooltip>
+                        <button
+                          type="button"
+                          aria-label={`View ${mediaAssetLabel(asset)}`}
+                          onClick={() => {
+                            setSelectedResourceId(null);
+                            setSelectedAssetId(asset.id);
+                          }}
+                          className="block w-full"
+                        >
+                          <MediaAssetPreview
+                            asset={asset}
+                            className="aspect-[4/3] w-full"
+                          />
+                        </button>
+                        <div className="space-y-2 p-3">
+                          <div className="flex items-center gap-2">
+                            {asset.kind === "video" ? (
+                              <Video className="h-4 w-4 text-emerald-300" />
+                            ) : asset.kind === "vector" ? (
+                              <FileType className="h-4 w-4 text-violet-300" />
+                            ) : (
+                              <FileImage className="h-4 w-4 text-sky-300" />
+                            )}
+                            <span className="truncate text-xs text-slate-400">
+                              {asset.width} × {asset.height}
+                            </span>
+                          </div>
+                          <time
+                            dateTime={asset.createdAt}
+                            className="block text-xs text-slate-500"
+                          >
+                            {new Date(asset.createdAt).toLocaleString()}
+                          </time>
+                          {categoryNamesFor(asset.id).length > 0 ? (
+                            <p className="truncate text-[10px] text-slate-500">
+                              {categoryNamesFor(asset.id).join(", ")}
+                            </p>
+                          ) : null}
+                          <div className="flex gap-2">
+                            {asset.kind === "image" ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => onUseAsReference(asset)}
+                                className="flex-1"
+                              >
+                                Use as reference
+                              </Button>
+                            ) : null}
+                            {asset.kind === "image" ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onAnimateImage(asset)}
+                                aria-label="Animate image"
+                              >
+                                <Play className="h-4 w-4" />
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                      </article>
+                    </ContextActionMenu>
+                  ))}
+                </Fragment>
+              ))}
           </div>
         )}
       </div>
@@ -989,24 +1167,16 @@ export const MediaAssetsView = ({
             className="mb-3 aspect-video w-full rounded-xl"
           />
           <div className="space-y-3">
-            <MediaAssetMetadataEditor
-              key={selectedResourceId}
-              resourceId={selectedResourceId ?? ""}
-              metadata={selectedResourceMetadata}
-              categories={categories}
-              showTriggerWords
-              triggerWordsLabel={
-                selectedResourceAddon?.kind === "textual-inversion"
-                  ? "Token"
-                  : "Trigger words"
-              }
-              onChange={(nextMetadata) => {
-                if (selectedResourceId) {
-                  onUpdateMetadata(selectedResourceId, nextMetadata);
-                }
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                if (selectedResourceId) editResource(selectedResourceId);
               }}
-              onManageCategories={() => setCategoryManagerOpen(true)}
-            />
+            >
+              <Pencil className="h-4 w-4" /> Edit details
+            </Button>
             {selectedResourceModel?.installed &&
             ["managed-install", "file-import"].includes(
               selectedResourceModel.management.acquisition,
@@ -1098,10 +1268,7 @@ export const MediaAssetsView = ({
                     variant="outline"
                     size="sm"
                     onClick={() => onVerifyModel(selectedResourceModel)}
-                    disabled={
-                      setupActive ||
-                      verifyingModelId !== null
-                    }
+                    disabled={setupActive || verifyingModelId !== null}
                     className="w-full"
                   >
                     {verifyingModelId === selectedResourceModel.id
@@ -1124,6 +1291,23 @@ export const MediaAssetsView = ({
             ) : null}
           </div>
         </aside>
+      ) : null}
+
+      {editingResource ? (
+        <MediaModelEditDialog
+          key={editingResource.id}
+          resource={editingResource}
+          metadata={resourceMetadata(editingResource.id)}
+          categories={categories}
+          assets={assets}
+          onSave={(request, nextMetadata) =>
+            onSaveResource(editingResource.id, request, nextMetadata)
+          }
+          onImportMedia={onImportMedia}
+          onImportSampleUrl={onImportSampleUrl}
+          onManageCategories={() => setCategoryManagerOpen(true)}
+          onClose={() => setEditingResourceId(null)}
+        />
       ) : null}
 
       {installModel ? (

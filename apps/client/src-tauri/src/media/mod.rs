@@ -15,6 +15,7 @@ mod model_addon;
 mod model_components;
 mod model_discovery;
 mod model_import;
+mod model_resource_edit;
 mod model_install;
 pub(crate) mod model_memory;
 mod model_worker;
@@ -3905,16 +3906,19 @@ pub(crate) fn media_plan_model_addon_removal(
 }
 
 #[tauri::command]
-pub(crate) fn media_update_model_addon_triggers(
+pub(crate) fn media_update_model_resource(
     app: AppHandle,
-    addon_id: String,
-    trigger_words: Vec<String>,
+    request: model_resource_edit::UpdateMediaModelResourceRequest,
 ) -> MediaCommandResult<()> {
-    let result = MediaRuntimePaths::resolve(&app).and_then(|paths| {
+    let result = (|| {
+        if app.state::<MediaRuntimeState>().active_count() > 0 {
+            return Err("Wait for generation to finish, then save the model.".to_string());
+        }
+        let paths = MediaRuntimePaths::resolve(&app)?;
         database::ensure_initialized(&paths)?;
-        model_addon::update_triggers(&paths, &addon_id, &trigger_words)
-    });
-    command_result("media_update_model_addon_triggers", result)
+        model_resource_edit::update(&paths, &request)
+    })();
+    command_result("media_update_model_resource", result)
 }
 
 #[tauri::command]
