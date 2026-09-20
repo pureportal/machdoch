@@ -37,6 +37,7 @@ import {
   loadCivitaiPreferences,
   saveCivitaiPreferences,
 } from "../civitai-preferences";
+import { MediaImportJobs } from "./media-import-jobs";
 import { CivitaiSettingsPanel } from "./civitai-settings-panel";
 
 const fieldClass =
@@ -74,7 +75,6 @@ export function CivitaiBrowserDialog({
   const [selected, setSelected] = useState<CivitaiModel | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
@@ -263,7 +263,7 @@ export function CivitaiBrowserDialog({
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open && !busy) onClose();
+        if (!open) onClose();
       }}
     >
       <DialogContent
@@ -283,7 +283,6 @@ export function CivitaiBrowserDialog({
                 type="button"
                 variant="ghost"
                 size="sm"
-                disabled={busy}
                 aria-label="Civitai settings"
                 onClick={() => setConnectionOpen((value) => !value)}
               >
@@ -295,7 +294,6 @@ export function CivitaiBrowserDialog({
                 variant="ghost"
                 size="icon"
                 aria-label="Close Civitai"
-                disabled={busy}
                 onClick={onClose}
               >
                 <X className="h-4 w-4" />
@@ -303,6 +301,7 @@ export function CivitaiBrowserDialog({
             </div>
           </div>
         </DialogHeader>
+        <MediaImportJobs downloadsOnly />
         {!selected && (
           <form
             className="shrink-0 space-y-3 border-b border-slate-800 p-4"
@@ -501,10 +500,8 @@ export function CivitaiBrowserDialog({
                 setSelected(null);
                 setError(null);
               }}
-              onBusyChange={setBusy}
               onOpenSettings={() => setConnectionOpen(true)}
               connectionRevision={refresh}
-              onImported={onClose}
               {...importActions}
             />
           ) : (

@@ -325,6 +325,7 @@ pub fn run() {
             media::civitai_commands::media_civitai_options,
             media::civitai_commands::media_get_civitai_model,
             media::civitai_commands::media_inspect_civitai_file,
+            media::civitai_commands::media_civitai_storage,
             media::civitai_commands::media_connect_civitai,
             media::civitai_commands::media_civitai_connection,
             media::civitai_commands::media_download_civitai_resource,

@@ -7,6 +7,18 @@ use super::{
 };
 
 #[tauri::command]
+pub(crate) fn media_civitai_storage(
+    app: AppHandle,
+    file_bytes: u64,
+) -> MediaCommandResult<super::civitai_storage::CivitaiStorage> {
+    command_result(
+        "media_civitai_storage",
+        MediaRuntimePaths::resolve(&app)
+            .and_then(|paths| super::civitai_storage::inspect(&paths, file_bytes)),
+    )
+}
+
+#[tauri::command]
 pub(crate) async fn media_search_civitai(
     request: civitai_catalog::CivitaiSearchRequest,
 ) -> MediaCommandResult<civitai_catalog::CivitaiSearchPage> {

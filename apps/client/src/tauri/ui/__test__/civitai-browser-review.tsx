@@ -19,6 +19,7 @@ const state = {
   copied: [] as string[],
   downloadMode: "complete" as "complete" | "hold" | "error" | "auth",
   failSearch: false,
+  freeBytes: 100 * 1024 ** 3,
   connected: localStorage.getItem("civitai-test-connected") === "true",
 };
 Object.assign(window, { isTauri: true, civitaiReview: state });
@@ -272,6 +273,35 @@ mockIPC(
         matchedVersionId: /^[a-f\d]{64}$/iu.test(source) ? 12 : null,
       };
     }
+    if (command === "media_civitai_storage") {
+      const requiredBytes = Math.ceil(Number(args.fileBytes) * 2.1);
+      const blockingReason =
+        state.freeBytes < requiredBytes
+          ? "Not enough free space. Free up space and retry."
+          : null;
+      return {
+        freeBytes: state.freeBytes,
+        requiredBytes,
+        blockingReason,
+        warning:
+          !blockingReason && state.freeBytes - requiredBytes < 5 * 1024 ** 3
+            ? "Low disk space: less than 5 GB will remain during this import."
+            : null,
+      };
+    }
+    if (
+      command === "media_import_local_model" ||
+      command === "media_import_model_addon"
+    ) {
+      const kind = command === "media_import_local_model" ? "model" : "addon";
+      state.imports.push({ kind, request: args.request, metadata: null });
+      return {
+        modelId: `model-${state.imports.length}`,
+        addonId: `addon-${state.imports.length}`,
+      };
+    }
+    if (command === "media_read_studio_state") return {};
+    if (command === "media_write_studio_state") return;
     if (command === "media_inspect_civitai_file")
       return inspection(String(args.source), Number(args.fileId));
     if (command === "media_download_civitai_resource") {
@@ -335,14 +365,6 @@ function Review() {
           <CivitaiBrowserDialog
             installedHashes={new Set()}
             onClose={() => setOpen(false)}
-            onImportModel={async (request, metadata) => {
-              state.imports.push({ kind: "model", request, metadata });
-              return true;
-            }}
-            onImportAddon={async (request, metadata) => {
-              state.imports.push({ kind: "addon", request, metadata });
-              return true;
-            }}
             onImportSampleUrl={async () =>
               ({ asset: { id: "preview" } }) as never
             }

@@ -1,11 +1,13 @@
 use super::{
     civitai_addon::{SelectedFile, MAX_RESOURCE_BYTES},
-    hardware, model_import, MediaResult, MediaRuntimePaths,
+    civitai_storage, model_import, MediaResult, MediaRuntimePaths,
 };
 use reqwest::{redirect::Policy, Client, StatusCode, Url};
 use sha2::{Digest as _, Sha256};
 use std::time::Duration;
 use tokio::io::AsyncWriteExt as _;
+
+static DOWNLOAD_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 pub(super) fn is_allowed_download_redirect(url: &Url) -> bool {
     if url.scheme() != "https"
@@ -48,8 +50,19 @@ fn download_client() -> MediaResult<Client> {
 pub(super) async fn download_selected(
     paths: &MediaRuntimePaths,
     selected: &SelectedFile,
-    progress: impl Fn(u64, u64) -> MediaResult<()>,
+    progress: impl Fn(u64, u64, Option<civitai_storage::CivitaiStorage>) -> MediaResult<()>,
 ) -> MediaResult<String> {
+    let lock = DOWNLOAD_LOCK.lock();
+    tokio::pin!(lock);
+    let _download_guard = loop {
+        tokio::select! {
+            guard = &mut lock => break guard,
+            _ = tokio::time::sleep(Duration::from_millis(200)) => {
+                progress(0, selected.public.byte_size, None)?;
+            }
+        }
+    };
+    progress(0, selected.public.byte_size, None)?;
     let models_root = paths.models_root()?;
     let imports_root = models_root.join("civitai-imports");
     tokio::fs::create_dir_all(&imports_root)
@@ -72,12 +85,11 @@ pub(super) async fn download_selected(
         );
     }
 
-    let required_bytes = selected.public.byte_size.saturating_mul(210).div_ceil(100);
-    if hardware::available_storage_bytes(&imports_root).map(|available| available < required_bytes)
-        == Some(true)
-    {
-        return Err("The Media Studio model volume does not have enough free space".to_string());
+    let storage = civitai_storage::check(&imports_root, selected.public.byte_size, 0)?;
+    if let Some(reason) = &storage.blocking_reason {
+        return Err(reason.clone());
     }
+    progress(0, selected.public.byte_size, Some(storage))?;
     let import_id = model_import::new_import_id()?;
     let staging_root = imports_root.join("staging");
     tokio::fs::create_dir_all(&staging_root)
@@ -91,10 +103,16 @@ pub(super) async fn download_selected(
     if let Some(token) = super::civitai_catalog::api_key()? {
         request = request.bearer_auth(token);
     }
-    let mut response = request
-        .send()
-        .await
-        .map_err(|error| format!("Civitai download failed: {}", error.without_url()))?;
+    let response = request.send();
+    tokio::pin!(response);
+    let mut response = loop {
+        tokio::select! {
+            result = &mut response => break result.map_err(|error| format!("Civitai download failed: {}", error.without_url()))?,
+            _ = tokio::time::sleep(Duration::from_millis(200)) => {
+                progress(0, selected.public.byte_size, None)?;
+            }
+        }
+    };
     match response.status() {
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
             return Err(
@@ -117,6 +135,11 @@ pub(super) async fn download_selected(
     {
         return Err("Civitai download size does not match the reviewed file metadata".to_string());
     }
+    let storage = civitai_storage::check(&imports_root, selected.public.byte_size, 0)?;
+    if let Some(reason) = &storage.blocking_reason {
+        return Err(reason.clone());
+    }
+    progress(0, selected.public.byte_size, Some(storage))?;
     let mut file = tokio::fs::OpenOptions::new()
         .create_new(true)
         .write(true)
@@ -125,27 +148,36 @@ pub(super) async fn download_selected(
         .map_err(|error| format!("failed to create Civitai download staging file: {error}"))?;
     let mut hasher = Sha256::new();
     let mut byte_size = 0_u64;
+    let mut last_storage_check = std::time::Instant::now();
     let download_result: MediaResult<()> = async {
         loop {
             let chunk = tokio::select! {
                 chunk = response.chunk() => chunk.map_err(|error| format!("Civitai download interrupted: {}", error.without_url()))?,
                 _ = tokio::time::sleep(Duration::from_millis(200)) => {
-                    progress(byte_size, selected.public.byte_size)?;
+                    progress(byte_size, selected.public.byte_size, None)?;
                     continue;
                 }
             };
             let Some(chunk) = chunk else { break; };
-            progress(byte_size, selected.public.byte_size)?;
+            progress(byte_size, selected.public.byte_size, None)?;
             byte_size = byte_size.saturating_add(chunk.len() as u64);
             if byte_size > selected.public.byte_size.saturating_add(16) || byte_size > MAX_RESOURCE_BYTES {
                 return Err("The Civitai download exceeded the reviewed size limit".to_string());
+            }
+            if last_storage_check.elapsed() >= Duration::from_secs(1) {
+                let storage = civitai_storage::check(&imports_root, selected.public.byte_size, byte_size.saturating_sub(chunk.len() as u64))?;
+                if let Some(reason) = &storage.blocking_reason {
+                    return Err(reason.clone());
+                }
+                progress(byte_size, selected.public.byte_size, Some(storage))?;
+                last_storage_check = std::time::Instant::now();
             }
             hasher.update(&chunk);
             file.write_all(&chunk)
                 .await
                 .map_err(|error| format!("failed to write Civitai add-on staging data: {error}"))?;
         }
-        progress(selected.public.byte_size, selected.public.byte_size)?;
+        progress(selected.public.byte_size, selected.public.byte_size, None)?;
         file.flush()
             .await
             .map_err(|error| format!("failed to flush Civitai add-on staging data: {error}"))?;
@@ -174,4 +206,34 @@ pub(super) async fn download_selected(
         .await
         .map_err(|error| format!("failed to publish verified Civitai download: {error}"))?;
     Ok(destination.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn queued_download_can_cancel_while_another_transfer_holds_the_lock() {
+        let _active = DOWNLOAD_LOCK.lock().await;
+        let root = std::env::temp_dir().join("machdoch-civitai-wait-test");
+        let paths = MediaRuntimePaths {
+            database: root.join("media.sqlite3"),
+            blobs: root.join("blobs"),
+        };
+        let selected = SelectedFile {
+            public: serde_json::from_value(serde_json::json!({
+                "id": 1, "name": "model.safetensors", "byteSize": 1000,
+                "sha256": "a".repeat(64), "pickleScanResult": "Success", "virusScanResult": "Success", "scannedAt": null
+            })).unwrap(),
+            download_url: Url::parse("https://civitai.com/api/download/models/1").unwrap(),
+        };
+        let result = tokio::time::timeout(
+            Duration::from_secs(2),
+            download_selected(&paths, &selected, |_, _, _| {
+                Err("Download cancelled".to_string())
+            }),
+        )
+        .await;
+        assert_eq!(result.unwrap().unwrap_err(), "Download cancelled");
+    }
 }

@@ -113,6 +113,14 @@ export interface CivitaiDownloadProgress {
   operationId: string;
   received: number;
   total: number;
+  storage?: CivitaiStorage | null;
+}
+
+export interface CivitaiStorage {
+  freeBytes: number;
+  requiredBytes: number;
+  warning: string | null;
+  blockingReason: string | null;
 }
 
 export const CIVITAI_DEFAULT_SEARCH: CivitaiSearch = {

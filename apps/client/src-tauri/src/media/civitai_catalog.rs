@@ -432,6 +432,7 @@ pub(super) fn report_progress(
     operation_id: &str,
     received: u64,
     total: u64,
+    storage: Option<super::civitai_storage::CivitaiStorage>,
 ) -> MediaResult<()> {
     let mut downloads = DOWNLOADS
         .lock()
@@ -440,8 +441,8 @@ pub(super) fn report_progress(
         if *cancelled {
             return Err("Download cancelled".to_string());
         }
-        if last_update.elapsed().as_millis() >= 200 || received == total {
-            app.emit("media-civitai-download-progress", serde_json::json!({"operationId": operation_id, "received": received, "total": total}))
+        if storage.is_some() || last_update.elapsed().as_millis() >= 200 || received == total {
+            app.emit("media-civitai-download-progress", serde_json::json!({"operationId": operation_id, "received": received, "total": total, "storage": storage}))
                 .map_err(|error| format!("Could not report download progress: {error}"))?;
             *last_update = Instant::now();
         }

@@ -302,9 +302,17 @@ pub(crate) fn available_storage_bytes(path: &Path) -> Option<u64> {
         .map(|_| available)
 }
 
-#[cfg(not(windows))]
-pub(crate) fn available_storage_bytes(_path: &Path) -> Option<u64> {
-    None
+#[cfg(unix)]
+pub(crate) fn available_storage_bytes(path: &Path) -> Option<u64> {
+    use std::{ffi::CString, mem::MaybeUninit, os::unix::ffi::OsStrExt};
+
+    let path = CString::new(path.as_os_str().as_bytes()).ok()?;
+    let mut storage = MaybeUninit::<libc::statvfs>::uninit();
+    if unsafe { libc::statvfs(path.as_ptr(), storage.as_mut_ptr()) } != 0 {
+        return None;
+    }
+    let storage = unsafe { storage.assume_init() };
+    Some((storage.f_bavail as u64).saturating_mul(storage.f_frsize as u64))
 }
 
 #[cfg(test)]

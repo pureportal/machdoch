@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { openUrl } from "../media-platform";
 import {
   ArrowLeft,
@@ -9,38 +9,24 @@ import {
   ImageOff,
   LoaderCircle,
 } from "lucide-react";
-import type {
-  MediaAssetImportResult,
-  ImportMediaLocalModelRequest,
-  ImportMediaModelAddonRequest,
-  MediaGenerationAssetMetadata,
-} from "../../../../core/media/contracts.js";
+import type { MediaAssetImportResult } from "../../../../core/media/contracts.js";
 import {
   civitaiFileSize,
-  civitaiImportMetadata,
-  civitaiImportArchitecture,
   civitaiModelUrl,
   civitaiVisibleImages,
-  type CivitaiDownloadProgress,
+  type CivitaiStorage,
   type CivitaiInspection,
   type CivitaiModel,
 } from "../../../../core/media/civitai.js";
-import { parseMediaTriggerWords } from "../../../../core/media/asset-metadata.js";
 import { SearchableSelect } from "../../components/ui/searchable-select";
 import { Button } from "../../components/ui/button";
 import { copyText } from "../../lib/clipboard";
 import { civitaiRuntime } from "../civitai-runtime";
+import { enqueueCivitaiDownload } from "../civitai-download-queue";
+import { mediaImportQueue } from "../media-import-queue";
 
 export interface CivitaiImportActions {
   onImportSampleUrl: (url: string) => Promise<MediaAssetImportResult | null>;
-  onImportModel: (
-    request: ImportMediaLocalModelRequest,
-    metadata: MediaGenerationAssetMetadata,
-  ) => Promise<boolean>;
-  onImportAddon: (
-    request: ImportMediaModelAddonRequest,
-    metadata: MediaGenerationAssetMetadata,
-  ) => Promise<boolean>;
 }
 
 export function CivitaiModelDetail({
@@ -49,12 +35,8 @@ export function CivitaiModelDetail({
   mature,
   installedHashes,
   onBack,
-  onBusyChange,
-  onImported,
   onOpenSettings,
   connectionRevision,
-  onImportModel,
-  onImportAddon,
   onImportSampleUrl,
 }: CivitaiImportActions & {
   model: CivitaiModel;
@@ -62,8 +44,6 @@ export function CivitaiModelDetail({
   mature: boolean;
   installedHashes: ReadonlySet<string>;
   onBack: () => void;
-  onBusyChange: (busy: boolean) => void;
-  onImported: () => void;
   onOpenSettings: () => void;
   connectionRevision: number;
 }) {
@@ -83,16 +63,21 @@ export function CivitaiModelDetail({
   const [inspecting, setInspecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
-  const [busy, setBusy] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
-  const [progress, setProgress] = useState<CivitaiDownloadProgress | null>(
-    null,
+  const [storage, setStorage] = useState<CivitaiStorage | null>(null);
+  const jobs = useSyncExternalStore(
+    mediaImportQueue.subscribe,
+    mediaImportQueue.getSnapshot,
+  );
+  const queued = jobs.some(
+    (job) =>
+      job.downloadKey === file?.hashes?.SHA256?.toLowerCase() &&
+      job.downloadKey &&
+      !["failed", "cancelled"].includes(job.status),
   );
   const [previewIndex, setPreviewIndex] = useState(0);
   const [savingPreview, setSavingPreview] = useState(false);
   const [savedPreviews, setSavedPreviews] = useState<string[]>([]);
   const [copied, setCopied] = useState<string | null>(null);
-  const operation = useRef<string | null>(null);
   const images = civitaiVisibleImages(model, version, mature);
   const preview = images[previewIndex] ?? images[0];
   const source = civitaiModelUrl(model, version?.id);
@@ -111,6 +96,7 @@ export function CivitaiModelDetail({
   useEffect(() => {
     let active = true;
     setInspection(null);
+    setStorage(null);
     setError(null);
     if (!file) {
       setInspecting(false);
@@ -119,8 +105,12 @@ export function CivitaiModelDetail({
     setInspecting(true);
     void civitaiRuntime
       .inspect(source, file.id)
-      .then((value) => {
+      .then(async (value) => {
         if (active) setInspection(value);
+        if (value.canDownload && value.file) {
+          const available = await civitaiRuntime.storage(value.file.byteSize);
+          if (active) setStorage(available);
+        }
       })
       .catch((failure: Error) => {
         if (active) setError(failure.message);
@@ -142,98 +132,29 @@ export function CivitaiModelDetail({
     }
   };
 
-  const download = async () => {
+  const download = () => {
     if (
       !inspection?.canDownload ||
       !file ||
-      busy ||
+      queued ||
+      !storage ||
+      storage.blockingReason ||
       inspection.file?.id !== file.id ||
       inspection.versionId !== version?.id
     )
       return;
-    const operationId = crypto.randomUUID();
-    operation.current = operationId;
-    setBusy(true);
-    onBusyChange(true);
-    setError(null);
-    setProgress(null);
-    setCancelling(false);
-    let unlisten: (() => void) | undefined;
-    try {
-      unlisten = await civitaiRuntime.progress((value) => {
-        if (value.operationId === operationId) setProgress(value);
-      });
-      const downloaded = await civitaiRuntime.download(
-        source,
-        file.id,
-        inspection.reviewToken,
-        operationId,
-      );
-      const local = downloaded.model ?? downloaded.addon;
-      if (!local?.canImport)
-        throw new Error(
-          local?.blockingReason ?? "This file cannot be imported.",
-        );
-      const architecture = civitaiImportArchitecture(
-        local.detectedArchitecture,
-        downloaded.metadata.suggestedArchitecture,
-      );
-      if (!architecture)
-        throw new Error(
-          "The model architecture could not be identified. Import the file locally to choose its architecture.",
-        );
-      const metadata = civitaiImportMetadata(downloaded.metadata, images);
-      const common = {
-        sourcePath: local.sourcePath,
-        reviewToken: local.reviewToken,
-        displayName: `${model.name} · ${version?.name ?? downloaded.metadata.versionName}`,
-        architecture,
-        sourceUrl: downloaded.metadata.sourceUrl,
-        licenseName: null,
-        commercialUse: null,
-      };
-      const words = parseMediaTriggerWords(metadata.triggerWords);
-      const accepted = downloaded.model
-        ? await onImportModel(common, metadata)
-        : await onImportAddon(
-            {
-              ...common,
-              kind: downloaded.addon!.detectedKind!,
-              triggerWords: words,
-              token:
-                downloaded.addon!.detectedKind === "textual-inversion"
-                  ? (downloaded.addon!.suggestedToken ?? words[0] ?? null)
-                  : null,
-            },
-            metadata,
-          );
-      if (accepted) onImported();
-    } catch (failure) {
-      setError((failure as Error).message);
-    } finally {
-      unlisten?.();
-      operation.current = null;
-      setBusy(false);
-      onBusyChange(false);
-      setCancelling(false);
-    }
-  };
-
-  const cancel = async () => {
-    if (!operation.current) return;
-    setCancelling(true);
-    try {
-      await civitaiRuntime.cancel(operation.current);
-    } catch (failure) {
-      setError((failure as Error).message);
-      setCancelling(false);
-    }
+    enqueueCivitaiDownload({
+      label: `${model.name} · ${version?.name ?? inspection.versionName}`,
+      source,
+      inspection,
+      images,
+    });
   };
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Button variant="ghost" size="sm" onClick={onBack} disabled={busy}>
+        <Button variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeft className="h-4 w-4" /> Results
         </Button>
         <Button
@@ -363,7 +284,7 @@ export function CivitaiModelDetail({
             <SearchableSelect
               label="Version"
               value={String(version?.id ?? "")}
-              disabled={busy}
+
               options={model.modelVersions.map((item) => ({
                 value: String(item.id),
                 label: item.name,
@@ -381,7 +302,7 @@ export function CivitaiModelDetail({
               <SearchableSelect
                 label="File"
                 value={String(file?.id ?? "")}
-                disabled={busy}
+
                 options={files.map((item) => ({
                   value: String(item.id),
                   label: `${item.name} \u00b7 ${civitaiFileSize(item.sizeKB * 1024)}`,
@@ -521,15 +442,13 @@ export function CivitaiModelDetail({
                   Open settings
                 </Button>
               )}
-              {!busy && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setRetry((value) => value + 1)}
-                >
-                  Retry
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setRetry((value) => value + 1)}
+              >
+                Retry
+              </Button>
             </div>
           )}
           {!files.length ? (
@@ -554,57 +473,51 @@ export function CivitaiModelDetail({
         </div>
       </div>
       <div className="sticky -bottom-4 -mx-4 border-t border-slate-800 bg-slate-950 px-4 py-3 sm:-bottom-5 sm:-mx-5 sm:px-5">
-        {busy ? (
-          <div className="space-y-2" role="status">
-            <div className="flex items-center gap-2 text-sm">
-              <LoaderCircle className="h-4 w-4 animate-spin" />
-              {cancelling
-                ? "Cancelling…"
-                : progress && progress.received >= progress.total
-                  ? "Verifying file…"
-                  : "Downloading…"}
-            </div>
-            <progress
-              aria-label="Download progress"
-              value={progress?.received ?? 0}
-              max={progress?.total || file!.sizeKB * 1024}
-              className="h-2 w-full accent-sky-400"
-            />
-            {progress && (
-              <p className="text-xs text-slate-400">
-                {civitaiFileSize(progress.received)} /{" "}
-                {civitaiFileSize(progress.total)}
-              </p>
-            )}
+        {!queued && storage?.blockingReason ? (
+          <div className="mb-3 space-y-2">
+            <p role="alert" className="text-sm text-rose-300">
+              {storage.blockingReason}
+            </p>
             <Button
               variant="outline"
               size="sm"
-              disabled={cancelling}
-              onClick={() => void cancel()}
+              onClick={() => setRetry((value) => value + 1)}
             >
-              Cancel download
+              Check space again
             </Button>
           </div>
-        ) : (
-          <Button
-            className="w-full"
-            disabled={installed || inspecting || !inspection?.canDownload}
-            onClick={() => void download()}
-          >
-            {inspecting ? (
-              <LoaderCircle className="h-4 w-4 animate-spin" />
-            ) : installed ? (
-              <Check className="h-4 w-4" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-            {installed
-              ? "In library"
-              : inspecting
-                ? "Checking file…"
+        ) : !queued && storage?.warning ? (
+          <p role="status" className="mb-3 text-sm text-amber-200">
+            {storage.warning}
+          </p>
+        ) : null}
+        <Button
+          className="w-full"
+          disabled={
+            installed ||
+            queued ||
+            inspecting ||
+            !inspection?.canDownload ||
+            !storage ||
+            Boolean(storage.blockingReason)
+          }
+          onClick={download}
+        >
+          {inspecting ? (
+            <LoaderCircle className="h-4 w-4 animate-spin" />
+          ) : installed ? (
+            <Check className="h-4 w-4" />
+          ) : (
+            <Download className="h-4 w-4" />
+          )}
+          {installed
+            ? "In library"
+            : inspecting
+              ? "Checking file…"
+              : queued
+                ? "In download queue"
                 : `Download & import${file ? ` · ${civitaiFileSize(file.sizeKB * 1024)}` : ""}`}
-          </Button>
-        )}{" "}
+        </Button>
       </div>
     </div>
   );

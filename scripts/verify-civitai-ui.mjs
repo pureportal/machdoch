@@ -283,19 +283,51 @@ try {
     window.civitaiReview.downloadMode = "hold";
   });
   await page.getByRole("button", { name: /Download & import/ }).click();
-  await page.getByRole("progressbar", { name: "Download progress" }).waitFor();
+  await page.getByRole("progressbar").waitFor();
   assert.equal(
     await page
       .getByRole("button", { name: "Close Civitai", exact: true })
-      .isDisabled(),
+      .isEnabled(),
     true,
   );
   await page.keyboard.press("Escape");
-  assert.equal(await page.getByRole("dialog").count(), 1);
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
   await page
-    .getByRole("button", { name: "Cancel download", exact: true })
+    .getByRole("button", { name: "Browse Civitai", exact: true })
     .click();
-  await page.getByText("Download cancelled", { exact: true }).waitFor();
+  await page.getByRole("progressbar").waitFor();
+  await page
+    .getByRole("button", { name: "View Studio XL", exact: true })
+    .click();
+  await page.getByRole("button", { name: /Download & import/ }).click();
+  await page.getByText("queued", { exact: true }).waitFor();
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.civitaiReview.requests.filter(
+          ({ command }) => command === "media_download_civitai_resource",
+        ).length,
+    ),
+    1,
+  );
+  await page.screenshot({
+    path: resolve(output, "download-queue-desktop.png"),
+  });
+  await page
+    .getByRole("button", { name: "Cancel", exact: true })
+    .nth(1)
+    .click();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.waitForFunction(
+    () =>
+      [...document.querySelectorAll('[role="status"]')].filter(
+        (node) => node.textContent === "cancelled",
+      ).length === 2,
+  );
+  await page.getByRole("button", { name: "Results", exact: true }).click();
+  await page
+    .getByRole("button", { name: "View Watercolor Landscapes", exact: true })
+    .click();
   await page.evaluate(() => {
     window.civitaiReview.downloadMode = "error";
   });
@@ -308,32 +340,45 @@ try {
   await page.evaluate(() => {
     window.civitaiReview.downloadMode = "complete";
   });
-  await page.getByRole("button", { name: /Download & import/ }).click();
-  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await page.getByText("Imported", { exact: true }).waitFor();
   const imported = await page.evaluate(() => window.civitaiReview.imports[0]);
   assert.equal(imported.kind, "addon");
   assert.equal(imported.request.reviewToken, "local-review");
   assert.deepEqual(imported.request.triggerWords, ["watercolor", "soft edges"]);
-  assert.equal(imported.metadata.sampleImages.length, 2);
   checks.push(
-    "Progress, close protection, cancellation, hash failure, enriched import callback",
+    "Background download survives closing and reopening; queue stays serial; waiting and active transfers cancel; failures retry",
   );
-  await page
-    .getByRole("button", { name: "Browse Civitai", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Results", exact: true }).click();
+  await page.evaluate(() => {
+    window.civitaiReview.freeBytes = 1;
+  });
   await page
     .getByRole("button", { name: "View Studio XL", exact: true })
     .click();
+  await page.getByText(/Not enough free space/).waitFor();
+  assert.equal(
+    await page.getByRole("button", { name: /Download & import/ }).isDisabled(),
+    true,
+  );
+  await page.evaluate(() => {
+    window.civitaiReview.freeBytes = 2 * 1024 ** 3;
+  });
+  await page
+    .getByRole("button", { name: "Check space again", exact: true })
+    .click();
+  await page.getByText(/Low disk space/).waitFor();
+  await page.screenshot({ path: resolve(output, "low-disk-space.png") });
   await page.evaluate(() => {
     window.civitaiReview.downloadMode = "auth";
   });
   await page.getByRole("button", { name: /Download & import/ }).click();
+  await page.getByText(/Civitai denied this download/).waitFor();
   await page
-    .getByRole("button", { name: "Open settings", exact: true })
+    .getByRole("button", { name: "Civitai settings", exact: true })
     .click();
   await page.getByLabel("Civitai API key").fill("replacement-test-key");
   await page.getByRole("button", { name: "Save key", exact: true }).click();
-  await page.getByLabel("Civitai API key").waitFor({ state: "visible" });
   await page.waitForFunction(
     () => document.querySelector('input[type="password"]').value === "",
   );
@@ -342,12 +387,18 @@ try {
   await page.evaluate(() => {
     window.civitaiReview.downloadMode = "complete";
   });
-  await page.getByRole("button", { name: /Download & import/ }).click();
-  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await page.waitForFunction(() => window.civitaiReview.imports.length === 2);
   assert.equal(
     await page.evaluate(() => window.civitaiReview.imports.at(-1).kind),
     "model",
   );
+  checks.push(
+    "Insufficient space blocks downloads; low-space warning is visible; authentication failure recovers",
+  );
+  await page
+    .getByRole("button", { name: "Close Civitai", exact: true })
+    .click();
   await page
     .getByRole("button", { name: "Browse Civitai", exact: true })
     .click();

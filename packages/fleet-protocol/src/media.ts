@@ -39,6 +39,7 @@ export const mediaCommands = [
   "media_import_model_addon",
   "media_initialize_runtime",
   "media_inspect_civitai_file",
+  "media_civitai_storage",
   "media_inspect_civitai_model_addon",
   "media_inspect_flow_import",
   "media_inspect_hardware",
