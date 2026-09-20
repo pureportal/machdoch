@@ -28,7 +28,7 @@ PROCESS_STARTED_AT = time.monotonic()
 import numpy as np
 from PIL import Image, ImageOps
 
-WORKER_VERSION = "media-diffusers-worker/1.72.0"
+WORKER_VERSION = "media-diffusers-worker/1.73.0"
 # Disk group files contain only checkpoint/adapter tensors. Keep their
 # compatibility identity independent from response/provenance releases until
 # that serialization contract itself changes.
@@ -81,6 +81,7 @@ SUPPORTED_ARCHITECTURES = (
     "krea-2",
     "ltx-video",
     "wan-2.2-ti2v",
+    "intro-svg",
 )
 NATIVE_MASKED_EDIT_ARCHITECTURES = frozenset(
     {
@@ -132,6 +133,8 @@ BASE_CAPABILITIES = (
     "source-anchored-articulated-loop",
     "source-anchored-wind-fabric",
     "periodic-wind-streaks",
+    "text-to-svg",
+    "image-to-svg",
 )
 
 # Never resolve model components or custom Python code over the network.
@@ -996,6 +999,17 @@ def _load_pipeline(
     return pipeline
 
 
+def _svg_model_module() -> Any:
+    specification = importlib.util.spec_from_file_location(
+        "media_svg_model", Path(__file__).with_name("media_svg_model.py")
+    )
+    if specification is None or specification.loader is None:
+        raise WorkerError("SVG loading is unavailable. Repair the media runtime.")
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return module
+
+
 def probe_model(request: dict[str, Any]) -> dict[str, Any]:
     if request.get("schemaVersion") != SCHEMA_VERSION:
         raise WorkerError("Unsupported worker request schema")
@@ -1007,7 +1021,12 @@ def probe_model(request: dict[str, Any]) -> dict[str, Any]:
     pipeline_class_name = None
     component_names = None
     probe_diagnostic = None
-    if architecture == "framepack-i2v":
+    if architecture == "intro-svg":
+        pipeline, _ = _svg_model_module().load_model(model, torch)
+        component_names = ["model", "processor"]
+        required_methods = []
+        capabilities = ["text-to-svg", "image-to-svg"]
+    elif architecture == "framepack-i2v":
         pipeline, _, _, _, _ = _load_framepack_pipeline(
             diffusers,
             torch,
@@ -5834,20 +5853,17 @@ def _load_video_pipeline(
         raise WorkerError(
             "The local video adapter supports only Wan2.2 TI2V 5B Diffusers packages"
         )
-    if _required_text(model, "packageKind", 64) != "diffusers-directory":
-        raise WorkerError("Wan video generation requires a Diffusers directory")
-    model_path = _absolute_existing_path(model.get("path"), file=False)
-    required = (
-        model_path / "model_index.json",
-        model_path / "transformer" / "diffusion_pytorch_model.safetensors.index.json",
-        model_path / "text_encoder" / "model.safetensors.index.json",
-        model_path / "vae" / "diffusion_pytorch_model.safetensors",
+    specification = importlib.util.spec_from_file_location(
+        "media_wan_loading", Path(__file__).with_name("media_wan_loading.py")
     )
-    missing = [path.relative_to(model_path).as_posix() for path in required if not path.is_file()]
-    if missing:
-        raise WorkerError(
-            "Wan model package is incomplete; missing " + ", ".join(missing)
-        )
+    if specification is None or specification.loader is None:
+        raise WorkerError("Wan loading is unavailable. Repair the media runtime.")
+    loading = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(loading)
+    try:
+        model_path, checkpoint = loading.wan_model_paths(model)
+    except ValueError as error:
+        raise WorkerError(str(error)) from error
     device, _, device_memory = _device(torch)
     if device != "cuda":
         raise WorkerError("Wan video generation requires a supported GPU runtime")
@@ -5861,15 +5877,7 @@ def _load_video_pipeline(
             negative_prompt,
         )
     )
-    transformer = diffusers.WanTransformer3DModel.from_pretrained(
-        str(model_path),
-        subfolder="transformer",
-        torch_dtype=torch.bfloat16,
-        local_files_only=True,
-        use_safetensors=True,
-        trust_remote_code=False,
-        low_cpu_mem_usage=True,
-    )
+    transformer = loading.load_wan_transformer(diffusers, torch, model_path, checkpoint)
     applied_addons = _load_video_addons(transformer, addons or [])
     # Offload the 9.3 GB BF16 denoiser before loading the 2.6 GB FP32 VAE. This
     # ordering prevents their initialization peaks from overlapping on 32 GB
@@ -9394,6 +9402,13 @@ def main() -> int:
                 raise WorkerError("Worker request must be a JSON object")
             _emit(generate_video(request))
             return 0
+        if command == "generate-svg":
+            request = json.load(sys.stdin)
+            if not isinstance(request, dict):
+                raise WorkerError("Worker request must be a JSON object")
+            torch, _ = _runtime()
+            _emit(_svg_model_module().generate(request, torch))
+            return 0
         if command == "render-source-anchored-loop":
             request = json.load(sys.stdin)
             if not isinstance(request, dict):
@@ -9426,7 +9441,7 @@ def main() -> int:
             return 0
         raise WorkerError(
             "Expected exactly one command: probe, verify-runtime, probe-model, generate, "
-            "generate-video, or render-source-anchored-loop"
+            "generate-video, generate-svg, or render-source-anchored-loop"
         )
     except WorkerError as error:
         _emit(

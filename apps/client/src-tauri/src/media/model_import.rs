@@ -31,6 +31,7 @@ pub(super) const SUPPORTED_ARCHITECTURES: &[&str] = &[
     "flux-1",
     "flux-2",
     "krea-2",
+    "wan-2.2-ti2v",
 ];
 const TEXT_TO_IMAGE_CAPABILITIES: &[&str] = &["text-to-image"];
 const IMAGE_EDIT_CAPABILITIES: &[&str] = &["text-to-image", "image-to-image", "masked-image-edit"];
@@ -49,6 +50,7 @@ pub(super) struct ParsedSafetensorsHeader {
     pub(super) tensor_count: u32,
     pub(super) tensor_keys: Vec<String>,
     pub(super) tensor_shapes: Map<String, Value>,
+    tensor_dtypes: Vec<String>,
     pub(super) metadata: Map<String, Value>,
     pub(super) header_digest: String,
 }
@@ -62,6 +64,12 @@ pub(super) struct ArchitectureProfile {
 
 pub(super) fn architecture_profile(architecture: &str) -> Option<ArchitectureProfile> {
     match architecture {
+        "wan-2.2-ti2v" => Some(ArchitectureProfile {
+            family: "Wan2.2 TI2V 5B",
+            min_vram_gb: 24.0,
+            speed_score: 45,
+            quality_score: 88,
+        }),
         "stable-diffusion-1" => Some(ArchitectureProfile {
             family: "Stable Diffusion 1.x",
             min_vram_gb: 4.0,
@@ -114,6 +122,14 @@ pub(super) fn architecture_profile(architecture: &str) -> Option<ArchitecturePro
 
 pub(crate) fn capabilities_for_architecture(architecture: &str) -> &'static [&'static str] {
     match architecture {
+        "wan-2.2-ti2v" => &[
+            "text-to-video",
+            "image-to-video",
+            "start-end-to-video",
+            "transparent-output",
+            "alpha-video",
+            "video-composite",
+        ],
         "stable-diffusion-2" | "flux-1" => IMAGE_EDIT_CAPABILITIES,
         "stable-diffusion-1" | "stable-diffusion-xl" | "pony" | "flux-2" | "krea-2" => {
             MULTI_IMAGE_CAPABILITIES
@@ -196,6 +212,7 @@ pub(super) fn parse_header(source_path: &str) -> MediaResult<ParsedSafetensorsHe
     let data_byte_size = byte_size.saturating_sub(8 + header_length);
     let mut tensor_keys = Vec::new();
     let mut tensor_shapes = Map::new();
+    let mut tensor_dtypes = Vec::new();
     let mut safetensors_metadata = Map::new();
     let mut maximum_end_offset = 0_u64;
 
@@ -251,6 +268,7 @@ pub(super) fn parse_header(source_path: &str) -> MediaResult<ParsedSafetensorsHe
         }
         maximum_end_offset = maximum_end_offset.max(end);
         tensor_keys.push(key.clone());
+        tensor_dtypes.push(descriptor["dtype"].as_str().unwrap().to_string());
         tensor_shapes.insert(key.clone(), Value::Array(shape.clone()));
     }
     if tensor_keys.is_empty() {
@@ -278,6 +296,7 @@ pub(super) fn parse_header(source_path: &str) -> MediaResult<ParsedSafetensorsHe
         tensor_count,
         tensor_keys,
         tensor_shapes,
+        tensor_dtypes,
         metadata: safetensors_metadata,
         header_digest: sha256_hex(&header_bytes),
     })
@@ -312,9 +331,36 @@ fn cross_attention_width(header: &ParsedSafetensorsHeader) -> Option<u64> {
     })
 }
 
+fn is_wan_ti2v_checkpoint(header: &ParsedSafetensorsHeader) -> bool {
+    if header
+        .tensor_dtypes
+        .iter()
+        .any(|dtype| !["F16", "F32", "BF16"].contains(&dtype.as_str()))
+    {
+        return false;
+    }
+    ["", "model.diffusion_model."].iter().any(|prefix| {
+        header
+            .tensor_shapes
+            .get(&format!("{prefix}patch_embedding.weight"))
+            == Some(&serde_json::json!([3072, 48, 1, 2, 2]))
+            && header
+                .tensor_keys
+                .iter()
+                .any(|key| key.starts_with(&format!("{prefix}blocks.29.")))
+            && !header
+                .tensor_keys
+                .iter()
+                .any(|key| key.starts_with(&format!("{prefix}blocks.30.")))
+    })
+}
+
 pub(super) fn detect_architecture(
     header: &ParsedSafetensorsHeader,
 ) -> (Option<String>, &'static str) {
+    if is_wan_ti2v_checkpoint(header) {
+        return (Some("wan-2.2-ti2v".to_string()), "high");
+    }
     let metadata = metadata_text(header);
     let explicit = [
         ("krea-2", ["krea-2", "krea2", "krea 2"].as_slice()),
@@ -491,6 +537,9 @@ pub(super) fn inspect_header(
                 .to_string(),
         );
     }
+    if detected_architecture.as_deref() == Some("wan-2.2-ti2v") {
+        warnings.push("Import also downloads the Wan text encoder, tokenizer, scheduler, and VAE (about 13.2 GB).".to_string());
+    }
     let is_component = header
         .tensor_keys
         .iter()
@@ -579,6 +628,11 @@ pub(super) fn prepare_model_config(
 ) -> MediaResult<Option<PathBuf>> {
     let config_root = revision_root.join("config");
     match architecture {
+        "wan-2.2-ti2v" => super::model_components::ensure_components(
+            &config_root,
+            include_str!("wan_components.json"),
+        )
+        .map(Some),
         "krea-2" => {
             let runtime = krea_runtime_descriptor(paths)?;
             super::runtime_setup::installer::validate_directory(&config_root)?;
@@ -728,7 +782,7 @@ fn persist_import(
     imported_at: &str,
 ) -> MediaResult<()> {
     let profile = architecture_profile(&request.architecture)
-        .ok_or_else(|| "architecture is not a supported local image family".to_string())?;
+        .ok_or_else(|| "architecture is not a supported local model family".to_string())?;
     let source_url = validated_source_url(request.source_url.as_deref())?;
     let license_name =
         validated_optional_text("licenseName", request.license_name.as_deref(), 256)?;
@@ -838,7 +892,7 @@ pub(crate) fn import_reviewed(
     request: &ImportMediaLocalModelRequest,
 ) -> MediaResult<MediaLocalModelImportResult> {
     if !SUPPORTED_ARCHITECTURES.contains(&request.architecture.as_str()) {
-        return Err("architecture is not a supported local image family".to_string());
+        return Err("architecture is not a supported local model family".to_string());
     }
     if request
         .commercial_use
@@ -852,6 +906,11 @@ pub(crate) fn import_reviewed(
     validated_source_url(request.source_url.as_deref())?;
 
     let inspection = inspect(&request.source_path)?;
+    if request.architecture == "wan-2.2-ti2v"
+        && !is_wan_ti2v_checkpoint(&parse_header(&request.source_path)?)
+    {
+        return Err("Select a Wan 2.2 TI2V-5B checkpoint. Other Wan variants and quantized weights require a different loader.".to_string());
+    }
     if !inspection.can_import {
         return Err(inspection.blocking_reason.unwrap_or_else(|| {
             "the selected safetensors file cannot be imported as a complete model".to_string()
@@ -866,7 +925,16 @@ pub(crate) fn import_reviewed(
     if source_size != inspection.byte_size {
         return Err("the file changed; select it again before importing".to_string());
     }
-    let required_bytes = inspection.byte_size.saturating_mul(105).div_ceil(100);
+    let component_bytes = if request.architecture == "wan-2.2-ti2v" {
+        super::model_components::manifest_bytes(include_str!("wan_components.json"))?
+    } else {
+        0
+    };
+    let required_bytes = inspection
+        .byte_size
+        .saturating_mul(105)
+        .div_ceil(100)
+        .saturating_add(component_bytes);
     let models_root = paths.models_root()?;
     fs::create_dir_all(&models_root)
         .map_err(|error| format!("failed to prepare model storage: {error}"))?;
@@ -981,7 +1049,7 @@ pub(crate) fn import_reviewed(
         &imported_at,
     )?;
     let profile = architecture_profile(&request.architecture)
-        .ok_or_else(|| "architecture is not a supported local image family".to_string())?;
+        .ok_or_else(|| "architecture is not a supported local model family".to_string())?;
     Ok(MediaLocalModelImportResult {
         schema_version: 1,
         model_id,
@@ -1035,6 +1103,40 @@ mod tests {
         bytes.extend(header);
         bytes.extend(data);
         fs::write(path, bytes).expect("fixture should be written");
+    }
+
+    #[test]
+    fn identifies_wan_ti2v_by_tensor_geometry_and_rejects_other_variants() {
+        let path = temp_path("wan-geometry");
+        write_safetensors(
+            &path,
+            serde_json::json!({
+                "patch_embedding.weight": {"dtype": "BF16", "shape": [3072, 48, 1, 2, 2], "data_offsets": [0, 1]},
+                "blocks.29.self_attn.q.weight": {"dtype": "BF16", "shape": [3072, 3072], "data_offsets": [1, 2]}
+            }),
+            &[0, 0],
+        );
+        let mut header = parse_header(path.to_str().unwrap()).unwrap();
+        assert_eq!(
+            detect_architecture(&header).0.as_deref(),
+            Some("wan-2.2-ti2v")
+        );
+        header.tensor_shapes.insert(
+            "patch_embedding.weight".into(),
+            serde_json::json!([5120, 16, 1, 2, 2]),
+        );
+        assert!(!is_wan_ti2v_checkpoint(&header));
+        header.tensor_shapes.insert(
+            "patch_embedding.weight".into(),
+            serde_json::json!([3072, 48, 1, 2, 2]),
+        );
+        header
+            .tensor_keys
+            .push("blocks.30.self_attn.q.weight".into());
+        assert!(!is_wan_ti2v_checkpoint(&header));
+        assert!(capabilities_for_architecture("wan-2.2-ti2v").contains(&"image-to-video"));
+        assert!(!capabilities_for_architecture("wan-2.2-ti2v").contains(&"text-to-image"));
+        fs::remove_file(path).unwrap();
     }
 
     #[test]

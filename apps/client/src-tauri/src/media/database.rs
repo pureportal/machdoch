@@ -3269,6 +3269,29 @@ pub(crate) fn fail_remote_image_generation(
         .transaction()
         .map_err(|error| format!("failed to begin direct generation failure update: {error}"))?;
     let timestamp = now();
+    let canceled = !acceptance_unknown
+        && transaction
+            .query_row(
+                "SELECT cancel_requested FROM runs WHERE id = ?1",
+                [run_id],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(|error| format!("failed to inspect generation cancellation: {error}"))?;
+    if canceled {
+        finalize_cancellation(&transaction, run_id)?;
+        transaction
+            .execute(
+                "UPDATE provider_jobs SET status = 'canceled', raw_state = 'canceled',
+                   review_required = 0, review_reason = NULL, error = NULL,
+                   completed_at = ?2, updated_at = ?2
+                 WHERE run_id = ?1 AND status = 'submitting'",
+                params![run_id, timestamp],
+            )
+            .map_err(|error| format!("failed to close canceled generation: {error}"))?;
+        return transaction
+            .commit()
+            .map_err(|error| format!("failed to commit generation cancellation: {error}"));
+    }
     let run_status = if acceptance_unknown {
         "needs-review"
     } else {
@@ -7260,6 +7283,28 @@ mod tests {
     }
 
     #[test]
+    fn stopped_local_svg_generation_records_cancellation_without_provider_review() {
+        let paths = test_paths("stopped-generation");
+        initialize(&paths).unwrap();
+        insert_openai_test_revision(&paths);
+        let mut request = svg_request("run:canceled-generation");
+        request.flow_revision_id = "revision:openai-test".into();
+        request.model_id = "local-svg:IntroSVG-Qwen2.5-VL-7B".into();
+        request.critic_enabled = false;
+        begin_remote_svg_generation(&paths, &request, &SvgReferencePlan::default()).unwrap();
+        request_cancellation(&paths, &request.run_id).unwrap();
+        fail_remote_image_generation(&paths, &request.run_id, "Worker stopped", false, None)
+            .unwrap();
+
+        let detail = get_run_detail(&paths, &request.run_id).unwrap();
+        assert_eq!(detail.run.status, "canceled");
+        assert_eq!(detail.provider_jobs[0].status, "canceled");
+        assert_eq!(detail.provider_jobs[0].policy.adapter_id, "local.transformers-svg");
+        assert!(!detail.provider_jobs[0].review_required);
+        cleanup(&paths);
+    }
+
+    #[test]
     fn codex_images_track_separate_attempts_and_quarantine_interrupted_generation() {
         let paths = test_paths("codex-provider");
         initialize(&paths).unwrap();
@@ -7901,7 +7946,13 @@ mod tests {
         assert_eq!(initial.schema_version, 1);
         assert_eq!(initial.catalog_revision, catalog::CATALOG_REVISION);
         assert_eq!(initial.providers.len(), 8);
-        assert_eq!(initial.models.len(), 13);
+        assert_eq!(initial.models.len(), 14);
+        for id in ["local:wan2.2-ti2v-5b", "local-svg:IntroSVG-Qwen2.5-VL-7B"] {
+            let model = initial.models.iter().find(|model| model.id == id).unwrap();
+            assert_eq!(model.management.acquisition, "managed-install");
+            assert_eq!(model.management.verification, "model-probe");
+            assert!(!model.installed);
+        }
         assert!(
             initial
                 .models

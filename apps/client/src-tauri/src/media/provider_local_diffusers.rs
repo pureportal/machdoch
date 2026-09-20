@@ -1063,6 +1063,7 @@ fn installed_model(paths: &MediaRuntimePaths, model_id: &str) -> MediaResult<Ins
     let package_root = safe_managed_path(&paths.models_root()?, &relative_path)?;
     let (package_kind, path, config_path) = match row.2.as_str() {
         "diffusers" => ("diffusers-directory".to_string(), package_root, None),
+        "transformers" => ("transformers-directory".to_string(), package_root, None),
         "safetensors" => (
             "single-file".to_string(),
             safe_managed_path(&package_root, "checkpoint.safetensors")?,
@@ -1083,7 +1084,7 @@ fn installed_model(paths: &MediaRuntimePaths, model_id: &str) -> MediaResult<Ins
         .map_err(|error| format!("failed to inspect local model package: {error}"))?;
     if metadata.file_type().is_symlink()
         || (package_kind == "single-file" && !metadata.is_file())
-        || (package_kind == "diffusers-directory" && !metadata.is_dir())
+        || (package_kind != "single-file" && !metadata.is_dir())
     {
         return Err("the installed model package has an unsafe shape".to_string());
     }
@@ -1400,8 +1401,13 @@ fn model_probe_matches_runtime(
         && response.pipeline_class.len() <= 256
         && !response.components.is_empty()
         && response.components.len() <= 64
-        && response.capabilities.contains(&"lora".to_string())
-        && response.capabilities.contains(&"multi-lora".to_string())
+        && (if model.architecture == "intro-svg" {
+            response.capabilities.contains(&"text-to-svg".to_string())
+                && response.capabilities.contains(&"image-to-svg".to_string())
+        } else {
+            response.capabilities.contains(&"lora".to_string())
+                && response.capabilities.contains(&"multi-lora".to_string())
+        })
         && (!expects_textual_inversion
             || response
                 .capabilities
@@ -1771,6 +1777,7 @@ pub(crate) fn runnable_reference_model_ids(
                         | "flux-1"
                         | "flux-2"
                         | "krea-2"
+                        | "intro-svg"
                 )
             })
         })
@@ -2971,6 +2978,57 @@ pub(crate) fn generate(
     })
 }
 
+pub(crate) fn generate_svg(
+    app: &AppHandle,
+    paths: &MediaRuntimePaths,
+    run_id: &str,
+    model_id: &str,
+    mut request: serde_json::Value,
+) -> MediaResult<Vec<String>> {
+    let script = worker_script(app)?;
+    let (runtime, python) = ready_runtime(app, &script)?;
+    let model = installed_model(paths, model_id)?;
+    if model.architecture != "intro-svg" {
+        return Err("Choose a supported SVG model".to_string());
+    }
+    ensure_model_is_probe_ready(paths, &model, &runtime)?;
+    request["model"] = serde_json::to_value(WorkerModel {
+        id: &model.id,
+        architecture: &model.architecture,
+        package_kind: &model.package_kind,
+        path: &model.path,
+        config_path: None,
+        revision: &model.revision,
+        digest: &model.digest,
+    })
+    .map_err(|error| error.to_string())?;
+    subject_cutout::release_session()?;
+    let output = run_worker(
+        &python,
+        &script,
+        "generate-svg",
+        Some(&serde_json::to_vec(&request).map_err(|error| error.to_string())?),
+        Duration::from_secs(3600),
+        Some((paths, run_id)),
+    )?;
+    if !output.status.success() {
+        let failure = serde_json::from_slice::<WorkerFailure>(&output.stdout)
+            .map(|failure| failure.error)
+            .unwrap_or_else(|_| "SVG generation failed".to_string());
+        return Err(worker_failure_with_diagnostics(failure, &output.stderr));
+    }
+    #[derive(Deserialize)]
+    struct SvgResponse {
+        candidates: Vec<String>,
+    }
+    let response: SvgResponse = serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("SVG worker returned invalid output: {error}"))?;
+    if response.candidates.is_empty() || response.candidates.len() > 6 {
+        return Err("SVG worker returned an invalid candidate count".to_string());
+    }
+    Ok(response.candidates)
+}
+
 pub(crate) fn workflow_operation(
     app: &AppHandle,
     paths: &MediaRuntimePaths,
@@ -3876,30 +3934,70 @@ pub(crate) fn generate_video(
 ) -> MediaResult<LocalGeneratedVideo> {
     let script = worker_script(app)?;
     let (runtime, python) = ready_runtime(app, &script)?;
-    let (architecture, model_revision, model_path, model_digest) = match request.model_id.as_str() {
-        HUNYUAN_VIDEO_15_MODEL_ID => {
-            let (path, digest) = resolve_hunyuan_video_15_model(&request.workspace_root)?;
-            (
-                "hunyuan-video-1.5-i2v",
-                HUNYUAN_VIDEO_15_MODEL_REVISION,
-                path,
-                digest,
-            )
-        }
-        FRAMEPACK_MODEL_ID => {
-            let (path, digest) = resolve_framepack_model(&request.workspace_root)?;
-            ("framepack-i2v", FRAMEPACK_MODEL_REVISION, path, digest)
-        }
-        LTX_13B_MODEL_ID | LTX_2B_MODEL_ID => {
-            let (path, digest) = resolve_ltx_model(&request.workspace_root)?;
-            ("ltx-video", LTX_MODEL_REVISION, path, digest)
-        }
-        "local:wan2.2-ti2v-5b" => {
-            let (path, digest) = resolve_wan_model(&request.workspace_root)?;
-            ("wan-2.2-ti2v", WAN_MODEL_REVISION, path, digest)
-        }
-        _ => return Err("The selected model is not an executable local video variant".to_string()),
+    let managed_model = if request.model_id.starts_with(model_import::USER_MODEL_ID_PREFIX)
+        || (request.model_id == "local:wan2.2-ti2v-5b"
+            && database::open(paths)?.query_row(
+                "SELECT EXISTS(SELECT 1 FROM media_model_installations WHERE model_id = ?1 AND status = 'installed')",
+                [&request.model_id], |row| row.get::<_, bool>(0),
+            ).map_err(|error| error.to_string())?)
+    {
+        Some(installed_model(paths, &request.model_id)?)
+    } else {
+        None
     };
+    if managed_model
+        .as_ref()
+        .is_some_and(|model| model.architecture != "wan-2.2-ti2v")
+    {
+        return Err("The selected checkpoint is not a supported video model".to_string());
+    }
+    if let Some(model) = &managed_model {
+        ensure_model_is_probe_ready(paths, model, &runtime)?;
+    }
+    let (architecture, model_revision, model_path, model_digest) =
+        if let Some(model) = &managed_model {
+            (
+                model.architecture.as_str(),
+                model.revision.as_str(),
+                model.path.clone(),
+                model.digest.clone(),
+            )
+        } else {
+            match request.model_id.as_str() {
+                HUNYUAN_VIDEO_15_MODEL_ID => {
+                    let (path, digest) = resolve_hunyuan_video_15_model(&request.workspace_root)?;
+                    (
+                        "hunyuan-video-1.5-i2v",
+                        HUNYUAN_VIDEO_15_MODEL_REVISION,
+                        path,
+                        digest,
+                    )
+                }
+                FRAMEPACK_MODEL_ID => {
+                    let (path, digest) = resolve_framepack_model(&request.workspace_root)?;
+                    ("framepack-i2v", FRAMEPACK_MODEL_REVISION, path, digest)
+                }
+                LTX_13B_MODEL_ID | LTX_2B_MODEL_ID => {
+                    let (path, digest) = resolve_ltx_model(&request.workspace_root)?;
+                    ("ltx-video", LTX_MODEL_REVISION, path, digest)
+                }
+                "local:wan2.2-ti2v-5b" => {
+                    let (path, digest) = resolve_wan_model(&request.workspace_root)?;
+                    ("wan-2.2-ti2v", WAN_MODEL_REVISION, path, digest)
+                }
+                _ => {
+                    return Err(
+                        "The selected model is not an executable local video variant".to_string(),
+                    )
+                }
+            }
+        };
+    let package_kind = managed_model
+        .as_ref()
+        .map_or("diffusers-directory", |model| model.package_kind.as_str());
+    let config_path = managed_model
+        .as_ref()
+        .and_then(|model| model.config_path.as_deref());
     if !runtime.ready
         || !runtime.architectures.contains(&architecture.to_string())
         || !runtime.capabilities.contains(&"image-to-video".to_string())
@@ -3987,9 +4085,9 @@ pub(crate) fn generate_video(
         &InstalledModel {
             id: request.model_id.clone(),
             architecture: architecture.to_string(),
-            package_kind: "diffusers-directory".to_string(),
+            package_kind: package_kind.to_string(),
             path: model_path.clone(),
-            config_path: None,
+            config_path: config_path.map(Path::to_path_buf),
             revision: model_revision.to_string(),
             digest: model_digest.clone(),
         },
@@ -4003,9 +4101,9 @@ pub(crate) fn generate_video(
         model: WorkerModel {
             id: &request.model_id,
             architecture,
-            package_kind: "diffusers-directory",
+            package_kind,
             path: &model_path,
-            config_path: None,
+            config_path,
             revision: model_revision,
             digest: &model_digest,
         },

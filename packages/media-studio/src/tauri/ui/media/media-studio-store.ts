@@ -251,7 +251,12 @@ const normalizeVideoRecipeSettings = (
     "local:hunyuan-video-1.5-i2v-step-distilled",
   );
   return {
-    modelId: typeof value.modelId === "string" ? modelId : null,
+    modelId:
+      typeof value.modelId === "string"
+        ? /^local:user:[a-f0-9]{64}$/u.test(value.modelId)
+          ? (value.modelId as `local:user:${string}`)
+          : modelId
+        : null,
     modelAddons: normalizeModelAddons(value.modelAddons),
     aspectRatio: normalizeOneOf(
       value.aspectRatio,

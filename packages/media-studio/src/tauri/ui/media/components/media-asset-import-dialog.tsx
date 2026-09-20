@@ -653,7 +653,6 @@ export const MediaAssetImportDialog = ({
                           (item) =>
                             importIsAddon ||
                             ![
-                              "wan-2.2-ti2v",
                               "ltx-video",
                               "framepack-i2v",
                               "hunyuan-video-1.5-i2v",

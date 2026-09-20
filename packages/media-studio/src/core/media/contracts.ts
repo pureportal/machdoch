@@ -75,6 +75,7 @@ export type MediaModelPackageType =
   | "remote-endpoint"
   | "agent-cli"
   | "diffusers"
+  | "transformers"
   | "safetensors"
   | "onnx"
   | "native-utility";
@@ -1087,7 +1088,8 @@ export type MediaVideoModelId =
   | "local:hunyuan-video-1.5-i2v-step-distilled"
   | "local:ltx-video-0.9.8-13b-distilled-fp8"
   | "local:ltx-video-0.9.8-2b-distilled-fp8"
-  | "local:wan2.2-ti2v-5b";
+  | "local:wan2.2-ti2v-5b"
+  | `local:user:${string}`;
 
 export interface MediaVideoRecipeSettings {
   modelAddons: MediaModelAddonSelection[];

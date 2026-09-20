@@ -396,6 +396,12 @@ export function CivitaiModelDetail({
               </Button>
             </details>
           )}
+          {model.type === "Checkpoint" &&
+            version?.baseModel === "Wan Video 2.2 TI2V-5B" && (
+              <p className="text-sm text-slate-400">
+                Also downloads 13.2 GB of model components.
+              </p>
+            )}
           {inspection?.licenseClaims && (
             <details className="text-xs text-slate-400">
               <summary className="cursor-pointer">

@@ -15,6 +15,29 @@ const baseCatalog = () =>
     isOpenAiConfigured: false,
   });
 
+it.each(["installed", "downloading", "failed"] as const)(
+  "preserves a %s managed Wan installation when workspace discovery finds another copy",
+  (status) => {
+    const catalog = baseCatalog();
+    const managed = catalog.models.find(
+      (model) => model.id === "local:wan2.2-ti2v-5b",
+    )!;
+    managed.installed = status === "installed";
+    managed.installationStatus = status;
+    const extended = extendMediaCatalogWithWorkspaceDiscovery({
+      catalog,
+      discovery: discovery(),
+      runtime: runtime(),
+    });
+    expect(extended.models.find((model) => model.id === managed.id)).toBe(
+      managed,
+    );
+    expect(
+      extended.models.filter((model) => model.id === managed.id),
+    ).toHaveLength(1);
+  },
+);
+
 const discovery = (
   status: MediaWorkspaceModelDiscovery["entries"][number]["status"] = "ready",
 ): MediaWorkspaceModelDiscovery => ({
@@ -322,7 +345,7 @@ describe("discovered media runtime profiles", () => {
     ).toContain("30 GiB of physical memory");
   });
 
-  it("does not claim an incomplete workspace package is installed", () => {
+  it("keeps managed installation available when a workspace package is incomplete", () => {
     const catalog = extendMediaCatalogWithWorkspaceDiscovery({
       catalog: baseCatalog(),
       discovery: discovery("incomplete"),
@@ -334,14 +357,14 @@ describe("discovered media runtime profiles", () => {
 
     expect(model).toMatchObject({
       installed: false,
-      configured: false,
+      configured: true,
       installationStatus: "not-installed",
       runtimeReadiness: "unverified",
-      runtimeReadinessDiagnostic: "Workspace package diagnostic.",
+      management: { acquisition: "managed-install" },
     });
   });
 
-  it("blocks an ambiguous package selection unless the preferred path exists", () => {
+  it("offers managed installation instead of selecting an ambiguous workspace package", () => {
     const ambiguousDiscovery = discovery();
     ambiguousDiscovery.entries = [
       {
@@ -372,12 +395,10 @@ describe("discovered media runtime profiles", () => {
 
     expect(model).toMatchObject({
       installed: false,
-      configured: false,
+      configured: true,
       runtimeReadiness: "unverified",
+      management: { acquisition: "managed-install" },
     });
-    expect(model?.runtimeReadinessDiagnostic).toContain(
-      "Multiple compatible packages",
-    );
   });
 
   it("aggregates multiple model profiles behind one provider entry", () => {

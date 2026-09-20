@@ -271,7 +271,6 @@ fn direct_generation_model_ids(
         "quiver:arrow-1.1".to_string(),
         "recraft:recraftv4_1_pro_vector".to_string(),
         "recraft:recraftv4_1_vector".to_string(),
-        "local-svg:IntroSVG-Qwen2.5-VL-7B".to_string(),
         "local-svg:InternSVG-8B".to_string(),
         "local-svg:VFIG-4B".to_string(),
     ];
@@ -292,7 +291,6 @@ fn direct_reference_image_model_ids(
         "quiver:arrow-1.1".to_string(),
         "recraft:recraftv4_1_pro_vector".to_string(),
         "recraft:recraftv4_1_vector".to_string(),
-        "local-svg:IntroSVG-Qwen2.5-VL-7B".to_string(),
         "local-svg:InternSVG-8B".to_string(),
         "local-svg:VFIG-4B".to_string(),
     ];
@@ -2329,6 +2327,7 @@ impl GenerateMediaVideoRequest {
             && !hunyuan_video
             && !ltx_video
             && self.model_id != "local:wan2.2-ti2v-5b"
+            && !self.model_id.starts_with(model_import::USER_MODEL_ID_PREFIX)
         {
             return Err("selected model is not an executable local video adapter".to_string());
         }
@@ -4599,7 +4598,7 @@ pub(crate) async fn media_generate_svg(
             Some(0.1),
         )?;
 
-        let batch = match provider_svg::generate(&paths, &request, reference_plan.as_ref(), &env)
+        let batch = match provider_svg::generate(&app, &paths, &request, reference_plan.as_ref(), &env)
             .await
         {
             Ok(batch) => batch,

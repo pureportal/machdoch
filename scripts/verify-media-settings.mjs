@@ -160,6 +160,44 @@ try {
     checks.push(
       `${fleet ? "Fleet" : "Client"}: full reload with a delayed catalog retains settings; Assets filters survive navigation`,
     );
+    await page.getByRole("button", { name: "Assets", exact: true }).click();
+    await page.getByRole("button", { name: "Models", exact: true }).click();
+    for (const name of ["Wan2.2 TI2V 5B", "IntroSVG 7B"]) {
+      await page.getByLabel("Search assets", { exact: true }).fill(name);
+      const card = page
+        .locator("article")
+        .filter({
+          has: page.getByRole("button", { name: `View ${name}`, exact: true }),
+        });
+      await card
+        .getByRole("button", { name: "Install model", exact: true })
+        .click();
+      const installDialog = page.getByRole("dialog", {
+        name: `Install ${name}`,
+        exact: true,
+      });
+      await installDialog.getByText(/GB download/).waitFor();
+      assert.equal(
+        await installDialog
+          .getByRole("button", { name: "Install model", exact: true })
+          .isEnabled(),
+        true,
+      );
+      await page.screenshot({
+        path: resolve(
+          output,
+          `${fleet ? "fleet" : "client"}-${name.startsWith("Wan") ? "wan" : "svg"}-install.png`,
+        ),
+      });
+      await installDialog
+        .getByRole("button", { name: "Close", exact: true })
+        .first()
+        .click();
+    }
+    checks.push(
+      `${fleet ? "Fleet" : "Client"}: Wan and SVG models offer installation with download size and disk requirements`,
+    );
+    await page.getByRole("button", { name: "Basic", exact: true }).click();
     for (const width of [390, 320]) {
       await page.setViewportSize({ width, height: 844 });
       await page
@@ -206,7 +244,15 @@ try {
     checks.push(
       `${fleet ? "Fleet" : "Client"}: 390px and 320px LoRA search, selection and dialog layout pass without horizontal overflow`,
     );
-    assert.equal(await page.getByRole("button", { name: "Dismiss Media Studio error", exact: true }).count(), 0);
+    assert.equal(
+      await page
+        .getByRole("button", {
+          name: "Dismiss Media Studio error",
+          exact: true,
+        })
+        .count(),
+      0,
+    );
     assert.deepEqual(errors, []);
     await page.close();
   }
