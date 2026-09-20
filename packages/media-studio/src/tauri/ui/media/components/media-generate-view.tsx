@@ -1,3 +1,4 @@
+import { useMediaViewPreference } from "../use-media-view-preference";
 import { MediaAssetBrowser } from "./media-asset-browser";
 import { MediaBasicSamplingOptions } from "./media-basic-sampling-options";
 import {
@@ -23,7 +24,6 @@ import {
 import { useEffect, useMemo, useState, type JSX } from "react";
 import {
   inspectMediaModelAddonCompatibility,
-  mediaModelAddonSelectionsEqual,
   reconcileMediaModelAddonSelections,
 } from "../../../../core/media/model-addons.js";
 import { listSelectableMediaModels } from "../../../../core/media/model-library.js";
@@ -157,7 +157,10 @@ export const MediaGenerateView = ({
   const [assetPicker, setAssetPicker] = useState<
     "reference" | "base" | "pose" | null
   >(null);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useMediaViewPreference(
+    "optionsExpanded",
+    false,
+  );
   const [maskHasPixels, setMaskHasPixels] = useState(true);
   const visualReferenceAssets = useMemo(
     () => referenceAssets.filter((asset) => asset.kind === "image"),
@@ -294,14 +297,6 @@ export const MediaGenerateView = ({
       ),
     [videoAddonModel, catalog.addons, videoSettings.modelAddons],
   );
-  useEffect(() => {
-    if (
-      target !== "video" ||
-      mediaModelAddonSelectionsEqual(videoAddons, videoSettings.modelAddons)
-    )
-      return;
-    onVideoSettingsChange({ ...videoSettings, modelAddons: videoAddons });
-  }, [target, videoAddons, videoSettings, onVideoSettingsChange]);
   const referenceCapabilities =
     getMediaReferenceConditioningCapabilities(selectedModel);
   const referenceLimit =
@@ -518,25 +513,12 @@ export const MediaGenerateView = ({
   useEffect(() => {
     if (target === "video") return;
     if (!selectedModel || selectedModel.id === selectedModelId) return;
-    if (target === "image" && selectedModelId) return;
+    if (selectedModelId) return;
     onChange({
       ...settings,
       modelId: selectedModel.id,
     });
   }, [onChange, selectedModel, selectedModelId, settings, target]);
-
-  useEffect(() => {
-    if (target === "video" && settings.referenceImages.length > 0) return;
-    if (
-      mediaModelAddonSelectionsEqual(
-        settings.modelAddons,
-        reconciledModelAddons,
-      )
-    ) {
-      return;
-    }
-    onChange({ ...settings, modelAddons: reconciledModelAddons });
-  }, [onChange, reconciledModelAddons, settings, target]);
 
   const selectModel = (modelId: string): void => {
     if (target === "video") {
@@ -548,6 +530,11 @@ export const MediaGenerateView = ({
           model?.architecture,
         ),
         modelId: modelId as MediaVideoRecipeSettings["modelId"],
+        modelAddons: reconcileMediaModelAddonSelections(
+          model ?? null,
+          catalog.addons,
+          videoSettings.modelAddons,
+        ),
       });
       return;
     }
@@ -555,7 +542,11 @@ export const MediaGenerateView = ({
     onChange({
       ...settings,
       modelId,
-      modelAddons: [],
+      modelAddons: reconcileMediaModelAddonSelections(
+        models.find((model) => model.id === modelId) ?? null,
+        catalog.addons,
+        settings.modelAddons,
+      ),
     });
   };
 
@@ -1159,7 +1150,12 @@ export const MediaGenerateView = ({
                   <h2 className="text-xs font-medium text-slate-300">
                     {target === "video"
                       ? "Starting image add-ons"
-                      : "LoRAs and embeddings"}
+                      : addonModel.addonCapabilities.some(
+                            (capability) =>
+                              capability.kind === "textual-inversion",
+                          )
+                        ? "LoRAs and embeddings"
+                        : "LoRAs"}
                   </h2>
                   <MediaAddonDialog
                     model={addonModel}
@@ -1490,7 +1486,13 @@ export const MediaGenerateView = ({
                               onChange({
                                 ...settings,
                                 modelId,
-                                modelAddons: [],
+                                modelAddons: reconcileMediaModelAddonSelections(
+                                  models.find(
+                                    (model) => model.id === modelId,
+                                  ) ?? null,
+                                  catalog.addons,
+                                  settings.modelAddons,
+                                ),
                                 sampling: {},
                               });
                           }}

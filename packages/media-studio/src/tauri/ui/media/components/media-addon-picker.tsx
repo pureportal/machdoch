@@ -1,3 +1,4 @@
+import { useMediaViewPreference } from "../use-media-view-preference";
 import { Check, SlidersHorizontal, X } from "lucide-react";
 import { useState, type JSX } from "react";
 import {
@@ -52,8 +53,11 @@ export const MediaAddonBrowser = ({
   onClear,
   className,
 }: MediaAddonBrowserProps): JSX.Element => {
-  const [selectedOnly, setSelectedOnly] = useState(false);
-  const [type, setType] = useState<AddonTypeFilter>("all");
+  const [selectedOnly, setSelectedOnly] = useMediaViewPreference(
+    "addonSelectedOnly",
+    false,
+  );
+  const [type, setType] = useMediaViewPreference("addonType", "all");
   const showTypeFilter = model.addonCapabilities.length > 1;
   const [openControlsId, setOpenControlsId] = useState<string | null>(null);
   const reconciledSelections = reconcileMediaModelAddonSelections(
@@ -65,10 +69,18 @@ export const MediaAddonBrowser = ({
     (addon) =>
       inspectMediaModelAddonCompatibility(model, addon).status === "compatible",
   );
+  const addonFilters = useMediaViewPreference("addonFilters", {
+    query: "",
+    categoryId: "all",
+    tag: "all",
+    sort: "name",
+  });
   const discovery = useMediaResourceDiscovery(
     compatibleAddons,
     metadata,
     categories,
+    "name",
+    addonFilters,
   );
   const visibleAddons = discovery.visibleResources.filter(
     (addon) =>
@@ -101,6 +113,28 @@ export const MediaAddonBrowser = ({
         <span className="text-xs text-slate-400" aria-live="polite">
           {reconciledSelections.length} selected
         </span>
+        {discovery.filters.query ||
+        discovery.filters.categoryId !== "all" ||
+        discovery.filters.tag !== "all" ||
+        selectedOnly ||
+        type !== "all" ? (
+          <button
+            type="button"
+            className="text-xs text-slate-300 hover:text-white"
+            onClick={() => {
+              discovery.setFilters({
+                ...discovery.filters,
+                query: "",
+                categoryId: "all",
+                tag: "all",
+              });
+              setSelectedOnly(false);
+              setType("all");
+            }}
+          >
+            Reset filters
+          </button>
+        ) : null}
         {reconciledSelections.length > 0 ? (
           <button
             type="button"
@@ -125,7 +159,7 @@ export const MediaAddonBrowser = ({
         ) : null}
       </div>
 
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,12rem),1fr))] gap-2">
+      <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
         {visibleAddons.map((addon) => {
           const selection = reconciledSelections.find(
             (candidate) => candidate.addonId === addon.id,
@@ -146,9 +180,9 @@ export const MediaAddonBrowser = ({
               aria-pressed={selection !== undefined}
               disabled={atCapacity}
               onClick={() => onToggle(addon.id)}
-              className="block w-full overflow-hidden rounded-xl text-left"
+              className="flex w-full items-center gap-3 overflow-hidden rounded-xl p-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400"
             >
-              <div className="aspect-[4/3] bg-slate-900">
+              <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-slate-800">
                 <MediaResourcePreview
                   resourceId={addon.id}
                   metadata={metadata}
@@ -156,12 +190,12 @@ export const MediaAddonBrowser = ({
                   className="h-full w-full"
                 />
               </div>
-              <div className="flex items-center gap-2 p-2">
+              <div className="flex min-w-0 flex-1 items-center gap-2">
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-medium text-slate-200">
+                  <span className="block break-words text-sm font-medium leading-5 text-slate-200">
                     {addon.displayName}
                   </span>
-                  <span className="block text-[9px] text-slate-500">
+                  <span className="mt-1 block text-xs text-slate-400">
                     {[
                       addonTypeLabel(addon.kind),
                       ...(metadata[addon.id]?.tags ?? []).slice(0, 2),
@@ -196,7 +230,7 @@ export const MediaAddonBrowser = ({
               )}
 
               {selection ? (
-                <div className="border-t border-slate-800 bg-slate-950/90 p-2">
+                <div className="border-t border-slate-800 bg-slate-950/60 p-3">
                   <div className="flex items-center gap-2">
                     {selection.kind === "lora" ? (
                       <>
@@ -220,9 +254,9 @@ export const MediaAddonBrowser = ({
                                 current === addon.id ? null : addon.id,
                               )
                             }
-                            className="rounded-md p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-100"
                           >
-                            <SlidersHorizontal className="h-3.5 w-3.5" />
+                            <SlidersHorizontal className="h-4 w-4" />
                           </button>
                         </ControlTooltip>
                       </>
@@ -237,7 +271,7 @@ export const MediaAddonBrowser = ({
                               .value as typeof selection.placement,
                           })
                         }
-                        className="h-7 min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-950 px-1.5 text-[9px] text-slate-200"
+                        className="h-9 min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-950 px-1.5 text-xs text-slate-200"
                       >
                         <option value="positive">Positive</option>
                         <option value="negative">Negative</option>
@@ -249,9 +283,9 @@ export const MediaAddonBrowser = ({
                         type="button"
                         aria-label={`Remove ${addon.displayName}`}
                         onClick={() => onToggle(addon.id)}
-                        className="rounded-md p-1 text-slate-400 hover:bg-rose-400/10 hover:text-rose-200"
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-400/10 hover:text-rose-200"
                       >
-                        <X className="h-3.5 w-3.5" />
+                        <X className="h-4 w-4" />
                       </button>
                     </ControlTooltip>
                   </div>
@@ -269,7 +303,7 @@ export const MediaAddonBrowser = ({
                     />
                   ) : null}
                   {selection.kind === "lora" && openControlsId === addon.id ? (
-                    <div className="mt-2 space-y-2 border-t border-slate-800 pt-2 text-[9px] text-slate-300">
+                    <div className="mt-3 space-y-3 border-t border-slate-800 pt-2 text-xs text-slate-300">
                       {capability?.supportsSeparateComponentStrengths ? (
                         <label className="flex items-center gap-2">
                           <input
@@ -356,7 +390,7 @@ export const MediaAddonBrowser = ({
                                     },
                                   })
                                 }
-                                className="mt-1 h-7 w-full rounded border border-slate-700 bg-slate-950 px-1.5"
+                                className="mt-1 h-9 w-full rounded border border-slate-700 bg-slate-950 px-1.5"
                               />
                             </label>
                           ))}

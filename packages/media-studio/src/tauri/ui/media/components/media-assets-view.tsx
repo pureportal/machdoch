@@ -1,3 +1,4 @@
+import { useMediaViewPreference } from "../use-media-view-preference";
 import { CivitaiBrowserDialog } from "./civitai-browser-dialog";
 import { MediaModelEditDialog } from "./media-model-edit-dialog";
 import {
@@ -247,16 +248,26 @@ export const MediaAssetsView = ({
     runtimeSetup.phase === "ready"
       ? "Set up Media Studio"
       : mediaRuntimeSetupLabel(runtimeSetup);
-  const [filter, setFilter] = useState<MediaAssetTypeFilter>("all");
-  const [query, setQuery] = useState("");
-  const [tagFilter, setTagFilter] = useState("all");
-  const [architectureFilter, setArchitectureFilter] = useState("all");
-  const [sort, setSort] = useState<MediaResourceSort | "default">("default");
-  const [mediaFilters, setMediaFilters] = useState(EMPTY_MEDIA_ASSET_FILTERS);
-  const [modelFilters, setModelFilters] = useState(
+  const [filter, setFilter] = useMediaViewPreference("assetType", "all");
+  const [query, setQuery] = useMediaViewPreference("assetQuery", "");
+  const [tagFilter, setTagFilter] = useMediaViewPreference("assetTag", "all");
+  const [architectureFilter, setArchitectureFilter] = useMediaViewPreference(
+    "assetArchitecture",
+    "all",
+  );
+  const [sort, setSort] = useMediaViewPreference("assetSort", "default");
+  const [mediaFilters, setMediaFilters] = useMediaViewPreference(
+    "assetMediaFilters",
+    EMPTY_MEDIA_ASSET_FILTERS,
+  );
+  const [modelFilters, setModelFilters] = useMediaViewPreference(
+    "assetModelFilters",
     EMPTY_MEDIA_LIBRARY_MODEL_FILTERS,
   );
-  const [categoryFilterIds, setCategoryFilterIds] = useState<string[]>([]);
+  const [categoryFilterIds, setCategoryFilterIds] = useMediaViewPreference(
+    "assetCategories",
+    [],
+  );
   const [importOpen, setImportOpen] = useState(false);
   const [civitaiOpen, setCivitaiOpen] = useState(false);
   const [civitaiSource, setCivitaiSource] = useState("");
@@ -1191,8 +1202,11 @@ export const MediaAssetsView = ({
             >
               <Pencil className="h-4 w-4" /> Edit details
             </Button>
-            {selectedResourceId && metadata[selectedResourceId]?.sourceUrl &&
-            isMediaCivitaiSourceUrl(metadata[selectedResourceId]!.sourceUrl!) ? (
+            {selectedResourceId &&
+            metadata[selectedResourceId]?.sourceUrl &&
+            isMediaCivitaiSourceUrl(
+              metadata[selectedResourceId]!.sourceUrl!,
+            ) ? (
               <Button
                 type="button"
                 variant="outline"
@@ -1390,14 +1404,16 @@ export const MediaAssetsView = ({
           onImportSampleUrl={onImportSampleUrl}
           onImportModel={onImportModel}
           onImportAddon={onImportAddon}
-          installedHashes={new Set(
-            [
-              ...catalog.models.map((model) => model.installedRevision),
-              ...catalog.addons.map((addon) => addon.digest),
-            ]
-              .filter((value): value is string => Boolean(value))
-              .map((value) => value.toLowerCase()),
-          )}
+          installedHashes={
+            new Set(
+              [
+                ...catalog.models.map((model) => model.installedRevision),
+                ...catalog.addons.map((addon) => addon.digest),
+              ]
+                .filter((value): value is string => Boolean(value))
+                .map((value) => value.toLowerCase()),
+            )
+          }
         />
       ) : null}
       {importOpen ? (

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { Plus, SlidersHorizontal, X } from "lucide-react";
 import type {
   MediaAssetCategory,
   MediaAssetRecord,
@@ -20,6 +20,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../../components/ui/dialog";
+import { MediaLoraStrengthControl } from "./media-lora-strength-control";
 import { MediaAddonBrowser } from "./media-addon-picker";
 
 export const MediaAddonDialog = ({
@@ -79,17 +80,18 @@ export const MediaAddonDialog = ({
             disabled={disabled}
             aria-label={`Choose ${title}`}
           >
-            Choose add-ons{selected.length ? ` (${selected.length})` : ""}
+            <Plus className="h-4 w-4" />
+            Add {title}
           </Button>
         </DialogTrigger>
         <DialogContent
           aria-describedby={undefined}
-          className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden border-slate-700 bg-slate-950 text-slate-100 sm:max-w-4xl"
+          className="flex h-[min(48rem,calc(100dvh-2rem))] flex-col gap-0 overflow-hidden border-slate-700 bg-slate-950 p-0 text-slate-100 sm:max-w-3xl"
         >
-          <DialogHeader>
+          <DialogHeader className="border-b border-slate-800 px-5 py-4">
             <DialogTitle>{title}</DialogTitle>
           </DialogHeader>
-          <div className="min-h-0 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
             <MediaAddonBrowser
               model={model}
               addons={addons}
@@ -110,7 +112,7 @@ export const MediaAddonDialog = ({
               onClear={() => onChange([])}
             />
           </div>
-          <div className="flex justify-end border-t border-slate-800 pt-3">
+          <div className="flex justify-end border-t border-slate-800 px-5 py-3">
             <Button type="button" onClick={() => setOpen(false)}>
               Done
             </Button>
@@ -118,7 +120,7 @@ export const MediaAddonDialog = ({
         </DialogContent>
       </Dialog>
       {selected.length ? (
-        <ul className="flex flex-wrap gap-1.5">
+        <ul className="space-y-2">
           {selected.map((selection) => {
             const addon = addons.find(
               (candidate) => candidate.id === selection.addonId,
@@ -126,22 +128,48 @@ export const MediaAddonDialog = ({
             return (
               <li
                 key={selection.addonId}
-                className="flex max-w-full items-center gap-1 rounded-lg border border-sky-400/30 bg-sky-400/10 py-1 pl-2 pr-1 text-xs text-sky-100"
+                className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-700/70 bg-slate-900/60 p-3"
               >
-                <span className="min-w-0 truncate">
-                  {addon.displayName} ·{" "}
-                  {selection.kind === "lora"
-                    ? selection.modelStrength
-                    : selection.placement}
-                </span>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => setOpen(true)}
+                  aria-label={`Edit ${addon.displayName}`}
+                  className="flex min-w-0 flex-1 basis-28 items-center gap-2 text-left text-sm font-medium text-slate-200 hover:text-sky-300"
+                >
+                  <SlidersHorizontal className="h-4 w-4 shrink-0 text-slate-400" />
+                  <span className="break-words">{addon.displayName}</span>
+                </button>
+                {selection.kind === "lora" ? (
+                  <div className="w-36 max-w-full shrink-0">
+                    <MediaLoraStrengthControl
+                      label={addon.displayName}
+                      value={selection.modelStrength}
+                      disabled={disabled}
+                      onChange={(modelStrength) =>
+                        onChange(
+                          selected.map((candidate) =>
+                            candidate.addonId === selection.addonId
+                              ? { ...selection, modelStrength }
+                              : candidate,
+                          ),
+                        )
+                      }
+                    />
+                  </div>
+                ) : (
+                  <span className="text-xs capitalize text-slate-400">
+                    {selection.placement}
+                  </span>
+                )}
                 <button
                   type="button"
                   disabled={disabled}
                   aria-label={`Remove ${addon.displayName}`}
                   onClick={() => toggle(addon.id)}
-                  className="rounded p-1 hover:bg-slate-800"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-400/10 hover:text-rose-200"
                 >
-                  <X className="h-3 w-3" />
+                  <X className="h-4 w-4" />
                 </button>
               </li>
             );

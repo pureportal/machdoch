@@ -206,6 +206,7 @@ const createQueuedRun = (): MediaGenerationQueueJob => ({
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
 });
 
 describe("MediaGenerateView", () => {
@@ -800,7 +801,7 @@ describe("MediaGenerateView", () => {
     expect(onOpenAssets).not.toHaveBeenCalled();
   });
 
-  it("prunes stale add-ons that cannot run on the selected model", () => {
+  it("preserves saved add-ons when the current catalog cannot resolve them", () => {
     const incompatible = {
       ...addon,
       id: "addon:stale-krea",
@@ -832,11 +833,45 @@ describe("MediaGenerateView", () => {
       ),
     );
 
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ modelAddons: [] }),
-    );
+    expect(onChange).not.toHaveBeenCalled();
     expect(screen.queryByText("1 selected")).toBeNull();
   });
+
+  it.each(["image", "video"] as const)(
+    "keeps %s LoRAs while the catalog loads",
+    (target) => {
+      const selection = createMediaModelAddonSelection(addon);
+      const onChange = vi.fn();
+      const onVideoSettingsChange = vi.fn();
+      const props = createProps({
+        target,
+        settings: {
+          ...baseState.recipe,
+          modelId: imageModel.id,
+          modelAddons: [selection],
+        },
+        videoSettings: {
+          ...baseState.videoRecipe,
+          modelId: "local:wan2.2-ti2v-5b",
+          modelAddons: [selection],
+        },
+        catalog: { ...catalog, models: [], addons: [] },
+        onChange,
+        onVideoSettingsChange,
+      });
+      const view = render(createElement(MediaGenerateView, props));
+      expect(onChange).not.toHaveBeenCalled();
+      expect(onVideoSettingsChange).not.toHaveBeenCalled();
+      view.rerender(
+        createElement(MediaGenerateView, {
+          ...props,
+          catalog: { ...catalog, addons: [addon] },
+        }),
+      );
+      expect(onChange).not.toHaveBeenCalled();
+      expect(onVideoSettingsChange).not.toHaveBeenCalled();
+    },
+  );
 
   it("keeps the active job type when the editor switches to video", () => {
     render(
