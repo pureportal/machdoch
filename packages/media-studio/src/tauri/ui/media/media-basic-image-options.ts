@@ -8,6 +8,50 @@ import {
 } from "../../../core/media/reference-conditioning.js";
 import { defaultMediaImageSteps } from "../../../core/media/image-sampling.js";
 
+export const reconcileBasicImageModelSettings = (
+  settings: ImageRecipeSettings,
+  model: MediaModelDescriptor,
+): { settings: ImageRecipeSettings; changes: string[] } => {
+  const next = { ...settings, modelId: model.id };
+  const changes: string[] = [];
+  if (model.target === "remote") {
+    if (Object.values(settings.sampling ?? {}).some((value) => value != null)) {
+      next.sampling = {};
+      changes.push("Custom sampling reset to model defaults.");
+    }
+    if (settings.seed != null) {
+      next.seed = null;
+      changes.push("Seed reset to random.");
+    }
+  } else {
+    const sampling = { ...settings.sampling };
+    if (
+      model.architecture === "flux-2" &&
+      sampling.numInferenceSteps != null &&
+      sampling.numInferenceSteps !== 4
+    ) {
+      sampling.numInferenceSteps = null;
+      changes.push("Sampling steps set to 4.");
+    }
+    if (
+      (model.architecture === "flux-2" || model.architecture === "krea-2") &&
+      sampling.guidanceScale != null
+    ) {
+      sampling.guidanceScale = null;
+      changes.push("Guidance reset to model default.");
+    }
+    if (changes.length > 0) next.sampling = sampling;
+  }
+  if (
+    (model.target === "remote" || model.architecture !== "krea-2") &&
+    (settings.memoryProfile ?? "auto") !== "auto"
+  ) {
+    next.memoryProfile = "auto";
+    changes.push("Memory set to Automatic.");
+  }
+  return { settings: next, changes };
+};
+
 export const basicImageReferenceLimit = (
   settings: ImageRecipeSettings,
   model: MediaModelDescriptor | null,

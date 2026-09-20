@@ -1,10 +1,12 @@
 import { useMediaViewPreference } from "../use-media-view-preference";
 import { MediaAssetBrowser } from "./media-asset-browser";
+import { MediaBasicImageOutputOptions } from "./media-basic-image-output-options";
 import { MediaBasicSamplingOptions } from "./media-basic-sampling-options";
 import {
   basicImageModelError,
   basicImageReferenceLimit,
   basicImageUsesEditStrength,
+  reconcileBasicImageModelSettings,
 } from "../media-basic-image-options";
 import { mediaImageSamplingError } from "../../../../core/media/image-sampling.js";
 import { defaultMediaImageSteps } from "../../../../core/media/image-sampling.js";
@@ -51,6 +53,7 @@ import type {
   MediaVideoRecipeSettings,
 } from "../../../../core/media/contracts.js";
 import { Button } from "../../components/ui/button";
+import { AppNotification } from "../../components/ui/notification";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
@@ -162,6 +165,9 @@ export const MediaGenerateView = ({
     false,
   );
   const [maskHasPixels, setMaskHasPixels] = useState(true);
+  const [modelSettingsNotice, setModelSettingsNotice] = useState<string | null>(
+    null,
+  );
   const visualReferenceAssets = useMemo(
     () => referenceAssets.filter((asset) => asset.kind === "image"),
     [referenceAssets],
@@ -306,7 +312,10 @@ export const MediaGenerateView = ({
   const modelDisabledReasons = Object.fromEntries(
     target === "image"
       ? models.flatMap((model) => {
-          const reason = basicImageModelError(settings, model);
+          const reason = basicImageModelError(
+            reconcileBasicImageModelSettings(settings, model).settings,
+            model,
+          );
           return reason ? [[model.id, reason]] : [];
         })
       : [],
@@ -521,6 +530,7 @@ export const MediaGenerateView = ({
   }, [onChange, selectedModel, selectedModelId, settings, target]);
 
   const selectModel = (modelId: string): void => {
+    setModelSettingsNotice(null);
     if (target === "video") {
       const model = models.find((candidate) => candidate.id === modelId);
       onVideoSettingsChange({
@@ -539,15 +549,22 @@ export const MediaGenerateView = ({
       return;
     }
     if (modelDisabledReasons[modelId]) return;
+    const model = models.find((candidate) => candidate.id === modelId) ?? null;
+    const reconciled =
+      target === "image" && model
+        ? reconcileBasicImageModelSettings(settings, model)
+        : { settings, changes: [] };
     onChange({
-      ...settings,
+      ...reconciled.settings,
       modelId,
       modelAddons: reconcileMediaModelAddonSelections(
-        models.find((model) => model.id === modelId) ?? null,
+        model,
         catalog.addons,
         settings.modelAddons,
       ),
     });
+    if (reconciled.changes.length > 0)
+      setModelSettingsNotice(reconciled.changes.join(" "));
   };
 
   const changeReferences = (
@@ -621,6 +638,15 @@ export const MediaGenerateView = ({
         }}
         className="w-full"
       />
+      {modelSettingsNotice ? (
+        <AppNotification
+          tone="info"
+          title="Model settings updated"
+          onDismiss={() => setModelSettingsNotice(null)}
+        >
+          {modelSettingsNotice}
+        </AppNotification>
+      ) : null}
       {models.length === 0 ? (
         <Button
           type="button"
@@ -1177,15 +1203,17 @@ export const MediaGenerateView = ({
                   aria-expanded={advancedOpen}
                   aria-controls="media-basic-options"
                   onClick={() => setAdvancedOpen((open) => !open)}
-                  className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left"
+                  className="flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3.5 text-left transition-colors hover:bg-slate-800/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400/60"
                 >
                   <span className="flex items-center gap-2 text-sm font-medium text-slate-300">
                     <SlidersHorizontal className="h-4 w-4" /> More options
                   </span>
                   <span className="flex min-w-0 items-center gap-2">
-                    <span className="truncate text-[10px] text-slate-500">
-                      {settingsSummary}
-                    </span>
+                    {!advancedOpen ? (
+                      <span className="truncate text-xs text-slate-400">
+                        {settingsSummary}
+                      </span>
+                    ) : null}
                     <ChevronDown
                       className={cn(
                         "h-4 w-4 shrink-0 text-slate-500 transition-transform",
@@ -1197,270 +1225,196 @@ export const MediaGenerateView = ({
                 {advancedOpen ? (
                   <div
                     id="media-basic-options"
-                    className="space-y-4 border-t border-slate-800 p-3"
+                    className="@container/options space-y-5 border-t border-slate-800 p-4"
                   >
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      {target === "video" ? (
-                        <>
-                          <label className="space-y-1 text-xs text-slate-400">
-                            <span>Aspect ratio</span>
-                            <select
-                              value={videoSettings.aspectRatio}
-                              disabled={
-                                videoSettings.width != null ||
-                                videoSettings.height != null
-                              }
-                              onChange={(event) =>
-                                onVideoSettingsChange({
-                                  ...videoSettings,
-                                  aspectRatio: event.target
-                                    .value as MediaVideoRecipeSettings["aspectRatio"],
-                                })
-                              }
-                              className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-slate-200"
-                            >
-                              {(["1:1", "16:9", "9:16", "21:9"] as const).map(
-                                (value) => (
-                                  <option key={value}>{value}</option>
-                                ),
-                              )}
-                            </select>
-                          </label>
-                          <label className="space-y-1 text-xs text-slate-400">
-                            <span>Loop</span>
-                            <select
-                              value={videoSettings.loopMode}
-                              onChange={(event) =>
-                                onVideoSettingsChange({
-                                  ...videoSettings,
-                                  loopMode: event.target
-                                    .value as MediaVideoRecipeSettings["loopMode"],
-                                })
-                              }
-                              className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-slate-200"
-                            >
-                              <option value="none">None</option>
-                              <option value="crossfade">Crossfade</option>
-                              <option
-                                value="seamless"
-                                disabled={!seamlessSupported}
-                              >
-                                Seamless
-                              </option>
-                              <option value="ping-pong">Ping-pong</option>
-                            </select>
-                          </label>
-                          <label className="space-y-1 text-xs text-slate-400">
-                            <span>Quality</span>
-                            <select
-                              value={selectedVideoPreset?.id ?? "custom"}
-                              onChange={(event) => {
-                                const preset = MEDIA_VIDEO_QUALITY_PRESETS.find(
-                                  (candidate) =>
-                                    candidate.id === event.target.value,
-                                );
-                                if (!preset) return;
-                                onVideoSettingsChange({
-                                  ...videoSettings,
-                                  width: null,
-                                  height: null,
-                                  ...resolveMediaVideoQualityPresetSettings(
-                                    preset,
-                                    selectedModel?.architecture,
-                                  ),
-                                });
-                              }}
-                              className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-slate-200"
-                            >
-                              {!selectedVideoPreset ? (
-                                <option value="custom" disabled>
-                                  Custom
-                                </option>
-                              ) : null}
-                              {MEDIA_VIDEO_QUALITY_PRESETS.map((preset) => (
-                                <option key={preset.id} value={preset.id}>
-                                  {preset.label}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="flex items-center gap-2 self-end pb-2 text-xs text-slate-300">
-                            <input
-                              type="checkbox"
-                              checked={videoSettings.transparentBackground}
-                              onChange={(event) =>
-                                onVideoSettingsChange({
-                                  ...videoSettings,
-                                  transparentBackground: event.target.checked,
-                                })
-                              }
-                            />
-                            Transparent background
-                          </label>
-                        </>
-                      ) : target === "svg" ? (
-                        <>
-                          {!isSvgVectorization ? (
-                            <label className="space-y-1 text-xs text-slate-400">
-                              <span>Style</span>
-                              <select
-                                value={svgStyle}
-                                onChange={(event) =>
-                                  onChange({
-                                    ...settings,
-                                    svgStyle: event.target
-                                      .value as ImageRecipeSettings["svgStyle"],
-                                  })
-                                }
-                                className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-slate-200"
-                              >
-                                <option value="illustration">
-                                  Illustration
-                                </option>
-                                <option value="icon">Icon</option>
-                                <option value="logo">Logo</option>
-                                <option value="diagram">Diagram</option>
-                                <option value="technical">Technical</option>
-                              </select>
-                            </label>
-                          ) : null}
-                          <label className="space-y-1 text-xs text-slate-400">
-                            <span>Aspect ratio</span>
-                            <select
-                              value={settings.aspectRatio}
-                              onChange={(event) =>
-                                onChange({
-                                  ...settings,
-                                  aspectRatio: event.target
-                                    .value as ImageRecipeSettings["aspectRatio"],
-                                })
-                              }
-                              className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-slate-200"
-                            >
-                              {(["1:1", "4:5", "16:9", "9:16"] as const).map(
-                                (value) => (
-                                  <option key={value}>{value}</option>
-                                ),
-                              )}
-                            </select>
-                          </label>
-                          <label className="flex items-center gap-2 self-end pb-2 text-xs text-slate-300">
-                            <input
-                              type="checkbox"
-                              checked={settings.transparentBackground}
-                              onChange={(event) =>
-                                onChange({
-                                  ...settings,
-                                  transparentBackground: event.target.checked,
-                                })
-                              }
-                            />
-                            Transparent background
-                          </label>
-                        </>
+                    <div
+                      className={
+                        target === "image"
+                          ? "grid items-start gap-6 @min-[42rem]/options:has-[[data-sampling-options]]:grid-cols-2"
+                          : "space-y-4"
+                      }
+                    >
+                      {target === "image" ? (
+                        <MediaBasicImageOutputOptions
+                          settings={settings}
+                          baseImageAsset={baseImageAsset ?? null}
+                          onChange={onChange}
+                        />
                       ) : (
-                        <>
-                          <label className="space-y-1 text-xs text-slate-400">
-                            <span>
-                              {settings.editMask
-                                ? "Output size"
-                                : "Aspect ratio"}
-                            </span>
-                            <select
-                              value={
-                                settings.editMask
-                                  ? "original"
-                                  : settings.aspectRatio
-                              }
-                              disabled={
-                                Boolean(settings.editMask) ||
-                                settings.sampling?.width != null ||
-                                settings.sampling?.height != null
-                              }
-                              onChange={(event) =>
-                                onChange({
-                                  ...settings,
-                                  aspectRatio: event.target
-                                    .value as ImageRecipeSettings["aspectRatio"],
-                                })
-                              }
-                              className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-slate-200"
-                            >
-                              {settings.editMask && baseImageAsset ? (
-                                <option value="original">
-                                  {baseImageAsset.width} ×{" "}
-                                  {baseImageAsset.height}
-                                </option>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          {target === "video" ? (
+                            <>
+                              <label className="space-y-1 text-xs text-slate-400">
+                                <span>Aspect ratio</span>
+                                <select
+                                  value={videoSettings.aspectRatio}
+                                  disabled={
+                                    videoSettings.width != null ||
+                                    videoSettings.height != null
+                                  }
+                                  onChange={(event) =>
+                                    onVideoSettingsChange({
+                                      ...videoSettings,
+                                      aspectRatio: event.target
+                                        .value as MediaVideoRecipeSettings["aspectRatio"],
+                                    })
+                                  }
+                                  className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-slate-200"
+                                >
+                                  {(
+                                    ["1:1", "16:9", "9:16", "21:9"] as const
+                                  ).map((value) => (
+                                    <option key={value}>{value}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="space-y-1 text-xs text-slate-400">
+                                <span>Loop</span>
+                                <select
+                                  value={videoSettings.loopMode}
+                                  onChange={(event) =>
+                                    onVideoSettingsChange({
+                                      ...videoSettings,
+                                      loopMode: event.target
+                                        .value as MediaVideoRecipeSettings["loopMode"],
+                                    })
+                                  }
+                                  className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-slate-200"
+                                >
+                                  <option value="none">None</option>
+                                  <option value="crossfade">Crossfade</option>
+                                  <option
+                                    value="seamless"
+                                    disabled={!seamlessSupported}
+                                  >
+                                    Seamless
+                                  </option>
+                                  <option value="ping-pong">Ping-pong</option>
+                                </select>
+                              </label>
+                              <label className="space-y-1 text-xs text-slate-400">
+                                <span>Quality</span>
+                                <select
+                                  value={selectedVideoPreset?.id ?? "custom"}
+                                  onChange={(event) => {
+                                    const preset =
+                                      MEDIA_VIDEO_QUALITY_PRESETS.find(
+                                        (candidate) =>
+                                          candidate.id === event.target.value,
+                                      );
+                                    if (!preset) return;
+                                    onVideoSettingsChange({
+                                      ...videoSettings,
+                                      width: null,
+                                      height: null,
+                                      ...resolveMediaVideoQualityPresetSettings(
+                                        preset,
+                                        selectedModel?.architecture,
+                                      ),
+                                    });
+                                  }}
+                                  className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-slate-200"
+                                >
+                                  {!selectedVideoPreset ? (
+                                    <option value="custom" disabled>
+                                      Custom
+                                    </option>
+                                  ) : null}
+                                  {MEDIA_VIDEO_QUALITY_PRESETS.map((preset) => (
+                                    <option key={preset.id} value={preset.id}>
+                                      {preset.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="flex items-center gap-2 self-end pb-2 text-xs text-slate-300">
+                                <input
+                                  type="checkbox"
+                                  checked={videoSettings.transparentBackground}
+                                  onChange={(event) =>
+                                    onVideoSettingsChange({
+                                      ...videoSettings,
+                                      transparentBackground:
+                                        event.target.checked,
+                                    })
+                                  }
+                                />
+                                Transparent background
+                              </label>
+                            </>
+                          ) : target === "svg" ? (
+                            <>
+                              {!isSvgVectorization ? (
+                                <label className="space-y-1 text-xs text-slate-400">
+                                  <span>Style</span>
+                                  <select
+                                    value={svgStyle}
+                                    onChange={(event) =>
+                                      onChange({
+                                        ...settings,
+                                        svgStyle: event.target
+                                          .value as ImageRecipeSettings["svgStyle"],
+                                      })
+                                    }
+                                    className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-slate-200"
+                                  >
+                                    <option value="illustration">
+                                      Illustration
+                                    </option>
+                                    <option value="icon">Icon</option>
+                                    <option value="logo">Logo</option>
+                                    <option value="diagram">Diagram</option>
+                                    <option value="technical">Technical</option>
+                                  </select>
+                                </label>
                               ) : null}
-                              {(["1:1", "4:5", "16:9", "9:16"] as const).map(
-                                (value) => (
-                                  <option key={value}>{value}</option>
-                                ),
-                              )}
-                            </select>
-                          </label>
-                          <label className="space-y-1 text-xs text-slate-400">
-                            <span>Outputs</span>
-                            <input
-                              type="number"
-                              min={1}
-                              max={8}
-                              step={1}
-                              value={settings.outputCount}
-                              onChange={(event) =>
-                                onChange({
-                                  ...settings,
-                                  outputCount: Math.min(
-                                    8,
-                                    Math.max(
-                                      1,
-                                      Math.round(Number(event.target.value)) ||
-                                        1,
-                                    ),
-                                  ),
-                                })
-                              }
-                              className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-slate-200"
-                            />
-                          </label>
-                          <>
-                            <label className="flex items-center gap-2 text-xs text-slate-300 sm:col-span-2">
-                              <input
-                                type="checkbox"
-                                checked={settings.transparentBackground}
-                                disabled={Boolean(settings.editMask)}
-                                title={
-                                  settings.editMask
-                                    ? "Choose Full image to remove the background"
-                                    : undefined
-                                }
-                                onChange={(event) =>
-                                  onChange({
-                                    ...settings,
-                                    transparentBackground: event.target.checked,
-                                    outputFormat:
-                                      event.target.checked &&
-                                      settings.outputFormat === "jpeg"
-                                        ? "png"
-                                        : settings.outputFormat,
-                                  })
-                                }
-                              />
-                              Transparent background
-                            </label>
-                          </>
-                        </>
+                              <label className="space-y-1 text-xs text-slate-400">
+                                <span>Aspect ratio</span>
+                                <select
+                                  value={settings.aspectRatio}
+                                  onChange={(event) =>
+                                    onChange({
+                                      ...settings,
+                                      aspectRatio: event.target
+                                        .value as ImageRecipeSettings["aspectRatio"],
+                                    })
+                                  }
+                                  className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-slate-200"
+                                >
+                                  {(
+                                    ["1:1", "4:5", "16:9", "9:16"] as const
+                                  ).map((value) => (
+                                    <option key={value}>{value}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="flex items-center gap-2 self-end pb-2 text-xs text-slate-300">
+                                <input
+                                  type="checkbox"
+                                  checked={settings.transparentBackground}
+                                  onChange={(event) =>
+                                    onChange({
+                                      ...settings,
+                                      transparentBackground:
+                                        event.target.checked,
+                                    })
+                                  }
+                                />
+                                Transparent background
+                              </label>
+                            </>
+                          ) : null}
+                        </div>
                       )}
+                      <MediaBasicSamplingOptions
+                        target={target}
+                        settings={settings}
+                        videoSettings={videoSettings}
+                        model={selectedModel}
+                        onChange={onChange}
+                        onVideoChange={onVideoSettingsChange}
+                      />
                     </div>
-
-                    <MediaBasicSamplingOptions
-                      target={target}
-                      settings={settings}
-                      videoSettings={videoSettings}
-                      model={selectedModel}
-                      onChange={onChange}
-                      onVideoChange={onVideoSettingsChange}
-                    />
                     {target === "video" &&
                     settings.referenceImages.length === 0 ? (
                       <div className="space-y-2 border-t border-slate-800 pt-4">
