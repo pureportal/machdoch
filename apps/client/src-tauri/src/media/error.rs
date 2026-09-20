@@ -146,7 +146,9 @@ impl MediaError {
             schema_version: 1,
             code,
             category,
-            message: if cause.contains("cannot fit all vectors for") {
+            message: if operation.contains("civitai") {
+                sanitize_diagnostic(&diagnostic)
+            } else if cause.contains("cannot fit all vectors for") {
                 "Prompt is too long for the selected embeddings. Shorten it or remove an embedding."
                     .to_string()
             } else if cause.contains("negative embeddings need guidance above 1") {
@@ -214,7 +216,10 @@ fn classify(operation: &str, diagnostic: &str) -> MediaErrorCode {
     if diagnostic.contains("model") && diagnostic.contains("not installed") {
         return MediaErrorCode::ModelNotInstalled;
     }
-    if diagnostic.contains("model access") && diagnostic.contains("denied") {
+    if (diagnostic.contains("model access") && diagnostic.contains("denied"))
+        || (operation.contains("civitai")
+            && (diagnostic.contains("denied") || diagnostic.contains("rejected the api key")))
+    {
         return MediaErrorCode::ModelAccessDenied;
     }
     if diagnostic.contains("provider") && diagnostic.contains("not configured") {
@@ -312,6 +317,7 @@ fn classify(operation: &str, diagnostic: &str) -> MediaErrorCode {
     if diagnostic.contains("no space")
         || diagnostic.contains("disk full")
         || diagnostic.contains("insufficient space")
+        || diagnostic.contains("not have enough free space")
     {
         return MediaErrorCode::DiskFull;
     }
@@ -692,6 +698,19 @@ fn sanitize_diagnostic(diagnostic: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn civitai_download_errors_keep_the_recovery_instruction() {
+        let diagnostic = "Civitai denied this download. Save an API key with access to this model in Settings, then try again.";
+        let error = super::MediaError::from_internal("media_download_civitai_resource", diagnostic);
+        assert_eq!(error.code, super::MediaErrorCode::ModelAccessDenied);
+        assert_eq!(error.message, diagnostic);
+        let error = super::MediaError::from_internal(
+            "media_download_civitai_resource",
+            "The Media Studio model volume does not have enough free space",
+        );
+        assert_eq!(error.code, super::MediaErrorCode::DiskFull);
+    }
+
     use super::*;
 
     #[test]

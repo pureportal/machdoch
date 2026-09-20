@@ -55,12 +55,6 @@ pub(super) async fn download_selected(
     tokio::fs::create_dir_all(&imports_root)
         .await
         .map_err(|error| format!("failed to prepare Civitai import storage: {error}"))?;
-    let required_bytes = selected.public.byte_size.saturating_mul(210).div_ceil(100);
-    if hardware::available_storage_bytes(&imports_root).map(|available| available < required_bytes)
-        == Some(true)
-    {
-        return Err("The Media Studio model volume does not have enough free space".to_string());
-    }
     let destination_root = imports_root.join("sha256").join(&selected.public.sha256);
     let destination = destination_root.join("addon.safetensors");
     if destination.exists() {
@@ -78,6 +72,12 @@ pub(super) async fn download_selected(
         );
     }
 
+    let required_bytes = selected.public.byte_size.saturating_mul(210).div_ceil(100);
+    if hardware::available_storage_bytes(&imports_root).map(|available| available < required_bytes)
+        == Some(true)
+    {
+        return Err("The Media Studio model volume does not have enough free space".to_string());
+    }
     let import_id = model_import::new_import_id()?;
     let staging_root = imports_root.join("staging");
     tokio::fs::create_dir_all(&staging_root)
@@ -98,12 +98,12 @@ pub(super) async fn download_selected(
     match response.status() {
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
             return Err(
-                "Civitai denied this download. Connect an API key with access to this resource and try again."
+                "Civitai denied this download. Save an API key with access to this model in Settings, then try again."
                     .to_string(),
             )
         }
         status if !status.is_success() => {
-            return Err(format!("Civitai add-on download returned HTTP {status}"))
+            return Err(format!("Civitai download returned HTTP {status}"))
         }
         _ => {}
     }
