@@ -302,16 +302,25 @@ fn filter_resources(model: &mut CivitaiCatalogModel, base_model: &str) {
             return false;
         }
         version.files.retain(|file| {
-            civitai_compatibility::supports_file(
-                &file.file_type,
-                &file.name,
-                file.metadata
+            civitai_addon::verified_file_size(
+                file.size_kb,
+                file.hashes
                     .as_ref()
-                    .and_then(|metadata| metadata.format.as_deref()),
-                file.metadata
-                    .as_ref()
-                    .and_then(|metadata| metadata.fp.as_deref()),
+                    .and_then(|hashes| hashes.sha256.as_deref()),
+                file.pickle_scan_result.as_deref(),
+                file.virus_scan_result.as_deref(),
             )
+            .is_some()
+                && civitai_compatibility::supports_file(
+                    &file.file_type,
+                    &file.name,
+                    file.metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.format.as_deref()),
+                    file.metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.fp.as_deref()),
+                )
         });
         !version.files.is_empty()
     });
@@ -455,7 +464,7 @@ mod tests {
     use super::*;
 
     fn fixture_model() -> CivitaiCatalogModel {
-        serde_json::from_value(serde_json::json!({
+        let mut model: CivitaiCatalogModel = serde_json::from_value(serde_json::json!({
             "id": 1, "name": "Mixed families", "type": "LORA",
             "modelVersions": [
                 {"id": 10, "name": "Unsupported", "baseModel": "Flux.1 Kontext", "files": [
@@ -474,7 +483,64 @@ mod tests {
                     {"id": 106, "name": "model.safetensors", "type": "Model", "sizeKB": 100, "metadata": {"format": "SafeTensor"}}
                 ]}
             ]
-        })).unwrap()
+        })).unwrap();
+        for version in &mut model.model_versions {
+            for file in &mut version.files {
+                file.hashes = Some(CivitaiHashes {
+                    sha256: Some("a".repeat(64)),
+                });
+                file.pickle_scan_result = Some("Success".into());
+                file.virus_scan_result = Some("Success".into());
+            }
+        }
+        model
+    }
+
+    #[test]
+    fn removes_files_that_download_inspection_would_reject() {
+        for (field, value) in [
+            ("hashes", serde_json::Value::Null),
+            ("hashes", serde_json::json!({"SHA256": "invalid"})),
+            ("pickleScanResult", serde_json::Value::Null),
+            ("pickleScanResult", serde_json::json!("Danger")),
+            ("virusScanResult", serde_json::json!("Pending")),
+            ("sizeKB", serde_json::json!(0)),
+            ("sizeKB", serde_json::json!(67_108_865)),
+        ] {
+            let mut model = fixture_model();
+            let version = model
+                .model_versions
+                .iter_mut()
+                .find(|version| version.id == 12)
+                .unwrap();
+            let mut file = serde_json::to_value(&version.files[0]).unwrap();
+            file[field] = value;
+            version.files[0] = serde_json::from_value(file).unwrap();
+            filter_resources(&mut model, "");
+            assert_eq!(model.model_versions.len(), 1, "{field}");
+            assert_eq!(model.model_versions[0].id, 11, "{field}");
+        }
+    }
+
+    #[test]
+    fn removes_versions_without_checkpoint_components_or_video_adapter_support() {
+        for (model_type, base_model) in [
+            ("Checkpoint", "Flux.1 D"),
+            ("Checkpoint", "SD 2.1"),
+            ("Checkpoint", "SD 3.5 Large"),
+            ("DoRA", "Wan Video 2.2 TI2V-5B"),
+            ("LoCon", "LTXV"),
+            ("LORA", "SDXL 1.0 LCM"),
+            ("LORA", "Flux.2 Klein 4B-base"),
+        ] {
+            let mut model = fixture_model();
+            model.model_type = model_type.into();
+            for version in &mut model.model_versions {
+                version.base_model = Some(base_model.into());
+            }
+            filter_resources(&mut model, "");
+            assert!(model.model_versions.is_empty(), "{model_type} {base_model}");
+        }
     }
 
     #[test]
@@ -526,7 +592,7 @@ mod tests {
         });
         assert_eq!(
             options.model_types,
-            vec!["Checkpoint", "LORA", "DoRA", "TextualInversion"]
+            vec!["Checkpoint", "LORA", "TextualInversion"]
         );
         assert_eq!(
             options.base_models,
@@ -536,7 +602,7 @@ mod tests {
             options.base_models_by_type["TextualInversion"],
             vec!["Pony", "NoobAI"]
         );
-        assert!(!options.base_models_by_type["Checkpoint"]
+        assert!(options.base_models_by_type["Checkpoint"]
             .contains(&"Wan Video 2.2 TI2V-5B".to_string()));
     }
 
@@ -597,6 +663,88 @@ mod tests {
         request.model_type = "TextualInversion".into();
         request.base_model = "Krea 2".into();
         assert!(search_url(&request).is_err());
+    }
+
+    #[test]
+    fn options_queries_and_results_apply_the_same_runtime_restrictions() {
+        let bases = [
+            "SD 1.5",
+            "SD 2.1",
+            "SD 3.5 Large",
+            "SDXL 1.0",
+            "Illustrious",
+            "NoobAI",
+            "Pony",
+            "Krea 2",
+            "Flux.1 D",
+            "Flux.2 Klein 4B",
+            "Wan Video 2.2 TI2V-5B",
+            "LTXV",
+            "SDXL Lightning",
+            "SD 1.5 LCM",
+            "Flux.2 Klein 4B-base",
+            "Wan Video 2.2 I2V-A14B",
+            "Wan-Alpha",
+        ];
+        let options = supported_options(CivitaiEnums {
+            model_types: civitai_compatibility::MODEL_TYPES
+                .iter()
+                .map(|value| value.to_string())
+                .collect(),
+            base_models: bases.iter().map(|value| value.to_string()).collect(),
+        });
+        assert_eq!(
+            options.base_models_by_type["Checkpoint"],
+            vec![
+                "SD 1.5",
+                "SDXL 1.0",
+                "Illustrious",
+                "NoobAI",
+                "Pony",
+                "Krea 2",
+                "Wan Video 2.2 TI2V-5B"
+            ]
+        );
+        for model_type in civitai_compatibility::MODEL_TYPES {
+            let mut request: CivitaiSearchRequest = serde_json::from_value(serde_json::json!({
+                "query": "", "modelType": model_type, "baseModel": "", "sort": "Newest",
+                "period": "AllTime", "tag": "", "username": "", "contentMode": "normal",
+                "favorites": false, "cursor": null
+            }))
+            .unwrap();
+            let url = search_url(&request).unwrap();
+            let queried_bases: Vec<_> = url
+                .query_pairs()
+                .filter(|(key, _)| key == "baseModels")
+                .map(|(_, value)| value.into_owned())
+                .collect();
+            for base in bases {
+                let advertised =
+                    options.base_models_by_type[*model_type].contains(&base.to_string());
+                assert_eq!(
+                    queried_bases.contains(&base.to_string()),
+                    advertised,
+                    "{model_type} {base}"
+                );
+                request.base_model = base.into();
+                assert_eq!(
+                    search_url(&request).is_ok(),
+                    advertised,
+                    "{model_type} {base}"
+                );
+                let mut model = fixture_model();
+                model.model_type = model_type.to_string();
+                for version in &mut model.model_versions {
+                    version.base_model = Some(base.into());
+                }
+                filter_resources(&mut model, base);
+                assert_eq!(
+                    !model.model_versions.is_empty(),
+                    advertised,
+                    "{model_type} {base}"
+                );
+            }
+        }
     }
 
     #[tokio::test]

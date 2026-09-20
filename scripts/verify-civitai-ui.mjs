@@ -88,6 +88,10 @@ try {
   const baseModelList = page.getByRole("listbox");
   await baseModelList.waitFor();
   assert.equal(
+    await page.locator('[data-option-value="Flux.2 Klein 4B-base"]').count(),
+    0,
+  );
+  assert.equal(
     await baseModelList.evaluate(
       (element) => element.scrollHeight > element.clientHeight,
     ),
@@ -138,6 +142,7 @@ try {
   await page
     .getByRole("combobox", { name: "Resource type", exact: true })
     .click();
+  assert.equal(await page.locator('[data-option-value="DoRA"]').count(), 0);
   await page
     .getByRole("combobox", { name: "Search resource type", exact: true })
     .fill("unmatched-resource");
@@ -156,8 +161,16 @@ try {
     await page
       .getByRole("combobox", { name: "Base model", exact: true })
       .innerText(),
-    "All base models",
+    "Wan Video 2.2 TI2V-5B",
   );
+  await page.getByRole("combobox", { name: "Base model", exact: true }).click();
+  assert.equal(
+    await page.locator('[data-option-value="Wan Video 2.2 TI2V-5B"]').count(),
+    1,
+  );
+  assert.equal(await page.locator('[data-option-value="Flux.1 D"]').count(), 0);
+  await page.keyboard.press("Escape");
+  await select("Resource type", "LoCon");
   await page.getByRole("combobox", { name: "Base model", exact: true }).click();
   assert.equal(
     await page.locator('[data-option-value="Wan Video 2.2 TI2V-5B"]').count(),
@@ -657,6 +670,53 @@ try {
     .selectOption("normal");
   checks.push(
     "Reopening and reloading restores every filter before the first search; saved keys stay masked and can be removed",
+  );
+  for (const [modelType, baseModel, expectedType] of [
+    ["DoRA", "SDXL Lightning", ""],
+    ["Checkpoint", "Flux.1 D", "Checkpoint"],
+  ]) {
+    await page
+      .getByRole("button", { name: "Close Civitai", exact: true })
+      .click();
+    await page.evaluate(
+      ({ modelType, baseModel, fleet }) => {
+        localStorage.setItem(
+          `${fleet ? "fleet:review-host:" : ""}machdoch.media.civitai-browser`,
+          JSON.stringify({
+            query: "catalog support audit",
+            modelType,
+            baseModel,
+          }),
+        );
+      },
+      { modelType, baseModel, fleet },
+    );
+    await page.reload();
+    await page.addStyleTag({ content: css });
+    await page.addScriptTag({ content: script });
+    await page.waitForFunction(() =>
+      window.civitaiReview.requests.some(
+        ({ command }) => command === "media_search_civitai",
+      ),
+    );
+    const request = await page.evaluate(
+      () =>
+        window.civitaiReview.requests.find(
+          ({ command }) => command === "media_search_civitai",
+        ).args.request,
+    );
+    assert.equal(request.modelType, expectedType);
+    assert.equal(request.baseModel, "");
+    assert.equal(request.query, "catalog support audit");
+  }
+  await page
+    .getByRole("button", { name: "Clear filters", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "View Watercolor Landscapes", exact: true })
+    .waitFor();
+  checks.push(
+    "Removed resource types and incompatible saved bases reset before searching, preserving the query",
   );
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: resolve(output, "catalog-mobile.png") });
