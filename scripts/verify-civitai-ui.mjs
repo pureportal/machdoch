@@ -84,6 +84,35 @@ try {
   );
   await page.screenshot({ path: resolve(output, "catalog-desktop.png") });
   checks.push("Catalog renders, focuses search, and displays previews");
+  await page.getByRole("combobox", { name: "Base model", exact: true }).click();
+  const baseModelList = page.getByRole("listbox");
+  await baseModelList.waitFor();
+  assert.equal(
+    await baseModelList.evaluate(
+      (element) => element.scrollHeight > element.clientHeight,
+    ),
+    true,
+  );
+  await baseModelList.hover();
+  await page.mouse.wheel(0, 400);
+  await page.waitForFunction(
+    () => document.querySelector('[role="listbox"]')?.scrollTop > 0,
+  );
+  await page.mouse.wheel(0, -1000);
+  await page.waitForFunction(
+    () => document.querySelector('[role="listbox"]')?.scrollTop === 0,
+  );
+  await page.keyboard.press("Escape");
+  await baseModelList.waitFor({ state: "hidden" });
+  assert.equal(
+    await page
+      .getByRole("combobox", { name: "Base model", exact: true })
+      .evaluate((element) => element === document.activeElement),
+    true,
+  );
+  checks.push(
+    "Base-model dropdown scrolls with the wheel in both directions and restores focus",
+  );
   const select = async (label, value, search) => {
     await page.getByRole("combobox", { name: label, exact: true }).click();
     const option = page.locator(

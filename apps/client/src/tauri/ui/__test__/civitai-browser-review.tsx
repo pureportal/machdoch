@@ -161,6 +161,12 @@ mockIPC(
       return {
         modelTypes: ["Checkpoint", "LORA", "LoCon", "DoRA", "TextualInversion"],
         baseModels: [
+          "Flux.1 S",
+          "Flux.1 Krea",
+          "Flux.2 Klein 4B",
+          "Flux.2 Klein 4B-base",
+          "Illustrious",
+          "Pony",
           "SDXL 1.0",
           "SD 1.5",
           "Flux.1 D",
