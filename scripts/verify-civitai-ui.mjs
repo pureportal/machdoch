@@ -179,15 +179,59 @@ try {
   await page
     .getByRole("button", { name: "View More Watercolors", exact: true })
     .waitFor();
-  await page.getByLabel("Mature content").check();
+  await page
+    .getByRole("combobox", { name: "Content", exact: true })
+    .selectOption("all");
   await page
     .getByRole("button", { name: "View Mature catalog fixture", exact: true })
     .waitFor();
-  await page.getByLabel("Mature content").uncheck();
+  await page
+    .getByRole("button", { name: "View Watercolor Landscapes", exact: true })
+    .waitFor();
+  await page
+    .getByRole("combobox", { name: "Content", exact: true })
+    .selectOption("mature");
+  await page
+    .getByRole("button", { name: "View Mature catalog fixture", exact: true })
+    .waitFor();
+  assert.equal(await page.getByRole("button", { name: /^View / }).count(), 1);
+  await page.getByRole("button", { name: "Load more", exact: true }).click();
+  await page
+    .getByRole("button", { name: "View More mature models", exact: true })
+    .waitFor();
+  assert.equal(await page.getByRole("button", { name: /^View / }).count(), 2);
+  await page
+    .getByRole("button", { name: "Close Civitai", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Browse Civitai", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "View Mature catalog fixture", exact: true })
+    .waitFor();
+  assert.equal(
+    await page
+      .getByRole("combobox", { name: "Content", exact: true })
+      .inputValue(),
+    "mature",
+  );
+  await page.getByLabel("Search Civitai").fill("1");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByText("No matching models", { exact: true }).waitFor();
+  await page.getByLabel("Search Civitai").fill("");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page
+    .getByRole("button", { name: "View Mature catalog fixture", exact: true })
+    .waitFor();
+  await page
+    .getByRole("combobox", { name: "Content", exact: true })
+    .selectOption("normal");
   await page
     .getByRole("button", { name: "View Mature catalog fixture", exact: true })
     .waitFor({ state: "hidden" });
-  checks.push("Cursor pagination and mature-content switching");
+  checks.push(
+    "All three content modes, mature-only pagination, direct lookup filtering, and saved selection",
+  );
   await page.getByRole("button", { name: "Filters", exact: true }).click();
   await page.getByLabel("My favorites").click();
   await page.getByLabel("Civitai API key").fill("test-session-key");
@@ -381,7 +425,10 @@ try {
     [null, "age-2", "age-3"],
   );
   assert.ok(
-    ageRequests.every(({ period, nsfw }) => period === "AllTime" && !nsfw),
+    ageRequests.every(
+      ({ period, contentMode }) =>
+        period === "AllTime" && contentMode === "normal",
+    ),
   );
   await page.screenshot({ path: resolve(output, "age-search-desktop.png") });
   if (
@@ -480,7 +527,9 @@ try {
   await select("Resource type", "Checkpoint", "Check");
   await select("Base model", "SDXL 1.0", "sdxl");
   await select("Sort Civitai results", "Newest", "new");
-  await page.getByLabel("Mature content").check();
+  await page
+    .getByRole("combobox", { name: "Content", exact: true })
+    .selectOption("all");
   if (
     (await page
       .getByRole("button", { name: "Filters", exact: true })
@@ -507,7 +556,12 @@ try {
       .innerText(),
     "Checkpoint",
   );
-  assert.equal(await page.getByLabel("Mature content").isChecked(), true);
+  assert.equal(
+    await page
+      .getByRole("combobox", { name: "Content", exact: true })
+      .inputValue(),
+    "all",
+  );
   await page.reload();
   await page.addStyleTag({ content: css });
   await page.addScriptTag({ content: script });
@@ -528,7 +582,7 @@ try {
     period: "Year",
     tag: "style",
     username: "artist",
-    nsfw: true,
+    contentMode: "all",
     favorites: true,
     cursor: null,
   });
@@ -547,7 +601,9 @@ try {
   await page
     .getByRole("button", { name: "Clear filters", exact: true })
     .click();
-  await page.getByLabel("Mature content").uncheck();
+  await page
+    .getByRole("combobox", { name: "Content", exact: true })
+    .selectOption("normal");
   checks.push(
     "Reopening and reloading restores every filter before the first search; saved keys stay masked and can be removed",
   );

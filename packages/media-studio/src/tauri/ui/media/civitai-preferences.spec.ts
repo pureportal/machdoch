@@ -9,7 +9,7 @@ describe("Civitai preferences", () => {
       query: "Age",
       modelType: "LORA",
       baseModel: "SDXL 1.0",
-      nsfw: true,
+      contentMode: "all",
       favorites: true,
       period: "Year",
       tag: "style",
@@ -24,11 +24,20 @@ describe("Civitai preferences", () => {
     ).toEqual(saved);
   });
 
+  it.each(["normal", "all", "mature"] as const)(
+    "restores %s content",
+    (contentMode) => {
+      expect(normalizeCivitaiPreferences({ contentMode }).contentMode).toBe(
+        contentMode,
+      );
+    },
+  );
+
   it("rejects malformed values and unknown sort and period choices", () => {
     expect(normalizeCivitaiPreferences(null)).toEqual(CIVITAI_DEFAULT_SEARCH);
     expect(
       normalizeCivitaiPreferences({
-        nsfw: "false",
+        contentMode: "invalid",
         favorites: 1,
         query: {},
         sort: "invalid",

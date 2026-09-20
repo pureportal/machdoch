@@ -6,7 +6,7 @@ Open **Media Studio → Assets → Browse Civitai**. Existing Civitai-linked ass
 
 - Catalog search with cursor pagination, resource type, base model, sort, period, creator, tag, and account favorites. Resource types and base models come from Civitai's live enum endpoint, restricted by the shared native compatibility policy. Base-model choices follow the selected resource type.
 - Lookup by model link, version/download link, numeric ID, AIR identifier, or SHA-256. Hash and version lookups preserve the requested version.
-- `civitai.com` and `civitai.red` links. Mature content is an explicit browsing choice; model and preview ratings are both respected.
+- `civitai.com` and `civitai.red` links. Content choices are Normal, Normal + Mature, and Mature only. Mature only includes models flagged mature by Civitai; Normal also hides mature previews.
 - Preview galleries, preview saving to the media library, example prompt copying, trigger-word copying, publisher descriptions, tags, file details, publisher permissions, and direct source links.
 - Version and file selection, installed-file detection by hash, and checkpoint/LoRA/embedding imports with source links, tags, previews, and trigger words.
 - API-key management in Settings and the Civitai settings dialog. Validated keys persist in the host user-config directory (`civitai.json`), using the same atomic writes and file permissions as other user credentials. The UI receives connection status only; keys are sent to Civitai through Authorization headers, never download URLs. Keys can be replaced or removed.

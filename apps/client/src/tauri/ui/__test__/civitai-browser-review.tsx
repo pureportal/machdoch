@@ -208,7 +208,7 @@ mockIPC(
     if (command === "media_search_civitai") {
       const request = args.request as {
         query: string;
-        nsfw: boolean;
+        contentMode: "normal" | "all" | "mature";
         cursor: string | null;
         modelType: string;
         period: string;
@@ -243,10 +243,16 @@ mockIPC(
         await new Promise((resolve) => setTimeout(resolve, 700));
         return { items: [], nextCursor: "stale-page" };
       }
-      const items = request.nsfw ? [...models, matureModel] : models;
+      const items = [...models, matureModel].filter(
+        (item) =>
+          request.contentMode === "all" ||
+          (request.contentMode === "mature" ? item.nsfw : !item.nsfw),
+      );
       return {
         items: request.cursor
-          ? [model(9, "More Watercolors")]
+          ? request.contentMode === "mature"
+            ? [{ ...matureModel, id: 11, name: "More mature models" }]
+            : [model(9, "More Watercolors")]
           : items.filter(
               (model) => !request.modelType || model.type === request.modelType,
             ),
