@@ -1,37 +1,27 @@
-use super::{model_addon, model_import};
+use super::model_addon;
 
-pub(super) const MODEL_TYPES: &[&str] =
-    &["Checkpoint", "LORA", "LoCon", "DoRA", "TextualInversion"];
+pub(super) const MODEL_TYPES: &[&str] = &["Checkpoint", "LORA", "LoCon", "TextualInversion"];
 
 pub(super) const BASE_MODELS: &[(&str, &str)] = &[
     ("SD 1.4", "stable-diffusion-1"),
     ("SD 1.5", "stable-diffusion-1"),
-    ("SD 1.5 LCM", "stable-diffusion-1"),
-    ("SD 1.5 Hyper", "stable-diffusion-1"),
     ("SD 2.0", "stable-diffusion-2"),
     ("SD 2.0 768", "stable-diffusion-2"),
     ("SD 2.1", "stable-diffusion-2"),
     ("SD 2.1 768", "stable-diffusion-2"),
     ("SDXL 0.9", "stable-diffusion-xl"),
     ("SDXL 1.0", "stable-diffusion-xl"),
-    ("SDXL 1.0 LCM", "stable-diffusion-xl"),
-    ("SDXL Lightning", "stable-diffusion-xl"),
-    ("SDXL Hyper", "stable-diffusion-xl"),
-    ("SDXL Turbo", "stable-diffusion-xl"),
-    ("SDXL Distilled", "stable-diffusion-xl"),
     ("Illustrious", "stable-diffusion-xl"),
     ("NoobAI", "stable-diffusion-xl"),
     ("Pony", "pony"),
     ("SD 3", "stable-diffusion-3"),
     ("SD 3.5", "stable-diffusion-3"),
     ("SD 3.5 Large", "stable-diffusion-3"),
-    ("SD 3.5 Large Turbo", "stable-diffusion-3"),
     ("SD 3.5 Medium", "stable-diffusion-3"),
     ("Flux.1 S", "flux-1"),
     ("Flux.1 D", "flux-1"),
     ("Flux.1 Krea", "flux-1"),
     ("Flux.2 Klein 4B", "flux-2"),
-    ("Flux.2 Klein 4B-base", "flux-2"),
     ("Krea 2", "krea-2"),
     ("Wan Video 2.2 TI2V-5B", "wan-2.2-ti2v"),
     ("LTXV", "ltx-video"),
@@ -40,7 +30,7 @@ pub(super) const BASE_MODELS: &[(&str, &str)] = &[
 pub(super) fn kind_for_model_type(model_type: &str) -> Option<&'static str> {
     match model_type {
         "Checkpoint" => Some("checkpoint"),
-        "LORA" | "LoCon" | "DoRA" => Some("lora"),
+        "LORA" | "LoCon" => Some("lora"),
         "TextualInversion" => Some("textual-inversion"),
         _ => None,
     }
@@ -61,11 +51,14 @@ pub(super) fn supports_resource(model_type: &str, base_model: Option<&str>) -> b
     let Some(kind) = kind_for_model_type(model_type) else {
         return false;
     };
-    if architecture == "flux-2" {
-        return kind == "lora";
-    }
     if kind == "checkpoint" {
-        return model_import::SUPPORTED_ARCHITECTURES.contains(&architecture);
+        return matches!(
+            architecture,
+            "stable-diffusion-1" | "stable-diffusion-xl" | "pony" | "krea-2" | "wan-2.2-ti2v"
+        );
+    }
+    if matches!(architecture, "wan-2.2-ti2v" | "ltx-video") {
+        return model_type == "LORA";
     }
     model_addon::capabilities_for_model("local-diffusers", Some(architecture))
         .iter()
@@ -127,22 +120,94 @@ mod tests {
 
     #[test]
     fn limits_types_to_their_importer_and_runtime() {
-        assert!(supports_resource("DoRA", Some("SDXL 1.0")));
+        assert!(!supports_resource("DoRA", Some("SDXL 1.0")));
         assert!(supports_resource("TextualInversion", Some("Pony")));
         assert!(!supports_resource("TextualInversion", Some("SD 3.5")));
         assert!(!supports_resource("VAE", Some("SDXL 1.0")));
-        for name in [
-            "Wan Video 2.2 TI2V-5B",
-            "LTXV",
-            "Flux.2 Klein 4B",
-            "Flux.2 Klein 4B-base",
-        ] {
+        assert!(supports_resource(
+            "Checkpoint",
+            Some("Wan Video 2.2 TI2V-5B")
+        ));
+        for name in ["LTXV", "Flux.2 Klein 4B"] {
             assert!(supports_resource("LORA", Some(name)), "{name}");
             assert!(!supports_resource("Checkpoint", Some(name)), "{name}");
             assert!(!supports_resource("TextualInversion", Some(name)), "{name}");
         }
         assert!(!supports_resource("Checkpoint", Some("Flux.2 D")));
         assert!(!supports_resource("LORA", Some("Flux.2 D")));
+    }
+
+    #[test]
+    fn checkpoints_require_managed_components_for_offline_loading() {
+        for base in [
+            "SD 1.4",
+            "SD 1.5",
+            "SDXL 0.9",
+            "SDXL 1.0",
+            "Illustrious",
+            "NoobAI",
+            "Pony",
+            "Krea 2",
+            "Wan Video 2.2 TI2V-5B",
+        ] {
+            assert!(supports_resource("Checkpoint", Some(base)), "{base}");
+        }
+        for base in [
+            "SD 2.0",
+            "SD 2.0 768",
+            "SD 2.1",
+            "SD 2.1 768",
+            "SD 3",
+            "SD 3.5",
+            "SD 3.5 Large",
+            "SD 3.5 Medium",
+            "Flux.1 S",
+            "Flux.1 D",
+            "Flux.1 Krea",
+            "Flux.2 Klein 4B",
+            "LTXV",
+        ] {
+            assert!(!supports_resource("Checkpoint", Some(base)), "{base}");
+            assert!(supports_resource("LORA", Some(base)), "{base}");
+        }
+    }
+
+    #[test]
+    fn video_runners_accept_standard_loras_only() {
+        for base in ["Wan Video 2.2 TI2V-5B", "LTXV"] {
+            assert!(supports_resource("LORA", Some(base)), "{base}");
+            for model_type in ["LoCon", "DoRA", "TextualInversion"] {
+                assert!(
+                    !supports_resource(model_type, Some(base)),
+                    "{model_type} {base}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn excludes_variants_without_matching_runtime_profiles() {
+        for base in [
+            "SD 1.5 LCM",
+            "SD 1.5 Hyper",
+            "SDXL 1.0 LCM",
+            "SDXL Lightning",
+            "SDXL Hyper",
+            "SDXL Turbo",
+            "SDXL Distilled",
+            "SD 3.5 Large Turbo",
+            "Flux.2 Klein 4B-base",
+            "Wan Video 2.2 I2V-A14B",
+            "Wan Video 2.2 T2V-A14B",
+            "Wan-Alpha",
+        ] {
+            for model_type in MODEL_TYPES {
+                assert!(
+                    !supports_resource(model_type, Some(base)),
+                    "{model_type} {base}"
+                );
+            }
+        }
     }
 
     #[test]

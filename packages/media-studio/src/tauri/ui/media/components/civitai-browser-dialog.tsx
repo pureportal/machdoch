@@ -218,8 +218,22 @@ export function CivitaiBrowserDialog({
   };
 
   useEffect(() => {
-    if (ready && !selected) void load(filters);
-  }, [filters, refresh, ready]);
+    if (!ready || selected || options.modelTypes.length === 0) return;
+    const modelType = options.modelTypes.includes(filters.modelType)
+      ? filters.modelType
+      : "";
+    const availableBases = modelType
+      ? (options.baseModelsByType[modelType] ?? [])
+      : options.baseModels;
+    const baseModel = availableBases.includes(filters.baseModel)
+      ? filters.baseModel
+      : "";
+    if (modelType !== filters.modelType || baseModel !== filters.baseModel) {
+      setFilters({ ...filters, modelType, baseModel, cursor: null });
+      return;
+    }
+    void load(filters);
+  }, [filters, refresh, ready, options]);
 
   const update = (patch: Partial<CivitaiSearch>) =>
     setFilters((value) => ({ ...value, ...patch, cursor: null }));

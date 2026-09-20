@@ -160,12 +160,11 @@ mockIPC(
     if (command === "plugin:store|save") return;
     if (command === "media_civitai_options")
       return {
-        modelTypes: ["Checkpoint", "LORA", "LoCon", "DoRA", "TextualInversion"],
+        modelTypes: ["Checkpoint", "LORA", "LoCon", "TextualInversion"],
         baseModels: [
           "Flux.1 S",
           "Flux.1 Krea",
           "Flux.2 Klein 4B",
-          "Flux.2 Klein 4B-base",
           "Illustrious",
           "Pony",
           "SDXL 1.0",
@@ -175,7 +174,7 @@ mockIPC(
           "Wan Video 2.2 TI2V-5B",
         ],
         baseModelsByType: {
-          Checkpoint: ["SDXL 1.0", "SD 1.5", "Flux.1 D", "Krea 2"],
+          Checkpoint: ["SDXL 1.0", "SD 1.5", "Krea 2", "Wan Video 2.2 TI2V-5B"],
           LORA: [
             "SDXL 1.0",
             "SD 1.5",
@@ -183,20 +182,7 @@ mockIPC(
             "Krea 2",
             "Wan Video 2.2 TI2V-5B",
           ],
-          LoCon: [
-            "SDXL 1.0",
-            "SD 1.5",
-            "Flux.1 D",
-            "Krea 2",
-            "Wan Video 2.2 TI2V-5B",
-          ],
-          DoRA: [
-            "SDXL 1.0",
-            "SD 1.5",
-            "Flux.1 D",
-            "Krea 2",
-            "Wan Video 2.2 TI2V-5B",
-          ],
+          LoCon: ["SDXL 1.0", "SD 1.5", "Flux.1 D", "Krea 2"],
           TextualInversion: ["SDXL 1.0", "SD 1.5", "Flux.1 D"],
         },
       };

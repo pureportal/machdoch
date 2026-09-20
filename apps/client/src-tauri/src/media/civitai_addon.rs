@@ -426,6 +426,21 @@ fn is_sha256(value: &str) -> bool {
     value.len() == 64 && value.chars().all(|character| character.is_ascii_hexdigit())
 }
 
+pub(super) fn verified_file_size(
+    size_kb: f64,
+    sha256: Option<&str>,
+    pickle_scan: Option<&str>,
+    virus_scan: Option<&str>,
+) -> Option<u64> {
+    if !sha256.is_some_and(is_sha256)
+        || !pickle_scan.is_some_and(|value| value.eq_ignore_ascii_case("Success"))
+        || !virus_scan.is_some_and(|value| value.eq_ignore_ascii_case("Success"))
+    {
+        return None;
+    }
+    expected_file_size(size_kb)
+}
+
 fn validated_download_url(value: &str) -> Option<Url> {
     let mut url = Url::parse(value).ok()?;
     if matches!(url.host_str(), Some("civitai.red" | "www.civitai.red")) {
@@ -447,7 +462,14 @@ fn validated_download_url(value: &str) -> Option<Url> {
 }
 
 fn safe_file(file: &CivitaiFile) -> Option<SelectedFile> {
-    let byte_size = expected_file_size(file.size_kb)?;
+    let byte_size = verified_file_size(
+        file.size_kb,
+        file.hashes
+            .as_ref()
+            .and_then(|hashes| hashes.sha256.as_deref()),
+        file.pickle_scan_result.as_deref(),
+        file.virus_scan_result.as_deref(),
+    )?;
     let sha256 = file
         .hashes
         .as_ref()?
@@ -462,10 +484,7 @@ fn safe_file(file: &CivitaiFile) -> Option<SelectedFile> {
         &file.name,
         Some(format),
         file.metadata.as_ref()?.fp.as_deref(),
-    ) || !pickle_scan_result.eq_ignore_ascii_case("Success")
-        || !virus_scan_result.eq_ignore_ascii_case("Success")
-        || !is_sha256(&sha256)
-    {
+    ) {
         return None;
     }
     Some(SelectedFile {
@@ -785,7 +804,13 @@ pub(crate) async fn download_reviewed(
         .ok_or_else(|| "The reviewed Civitai file is no longer available".to_string())?;
     let source_path =
         super::civitai_download::download_selected(paths, &selected, |received, total, storage| {
-            super::civitai_catalog::report_progress(app, &request.operation_id, received, total, storage)
+            super::civitai_catalog::report_progress(
+                app,
+                &request.operation_id,
+                received,
+                total,
+                storage,
+            )
         })
         .await?;
     write_staged_source_metadata(paths, &source_path, &resolved.public).await?;
@@ -1014,15 +1039,24 @@ mod tests {
     fn inspection_enforces_the_same_compatibility_as_browsing() {
         for (model_type, base_model, version_type, supported) in [
             ("LORA", "Pony", "Standard", true),
-            ("DoRA", "NoobAI", "Standard", true),
+            ("DoRA", "NoobAI", "Standard", false),
             ("Checkpoint", "Krea 2", "Standard", true),
             ("Checkpoint", "SDXL 1.0", "Refiner", false),
             ("LORA", "Flux.1 Kontext", "Standard", false),
             ("LORA", "Flux.2 Klein 9B", "Standard", false),
             ("LORA", "Pony V7", "Standard", false),
             ("TextualInversion", "SD 3.5", "Standard", false),
-            ("Checkpoint", "Wan Video 2.2 TI2V-5B", "Standard", false),
+            ("Checkpoint", "Wan Video 2.2 TI2V-5B", "Standard", true),
             ("LORA", "Wan Video 2.2 TI2V-5B", "Standard", true),
+            ("DoRA", "Wan Video 2.2 TI2V-5B", "Standard", false),
+            ("LoCon", "LTXV", "Standard", false),
+            ("Checkpoint", "Flux.1 D", "Standard", false),
+            ("Checkpoint", "SD 2.1", "Standard", false),
+            ("Checkpoint", "SD 3.5 Large", "Standard", false),
+            ("LORA", "Flux.1 D", "Standard", true),
+            ("Checkpoint", "SDXL Lightning", "Standard", false),
+            ("LORA", "SD 1.5 LCM", "Standard", false),
+            ("LORA", "Flux.2 Klein 4B-base", "Standard", false),
         ] {
             let model = serde_json::from_value(serde_json::json!({
                 "id": 1, "name": "Model", "type": model_type
