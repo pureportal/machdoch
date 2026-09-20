@@ -9,7 +9,9 @@ Open **Media Studio → Assets → Browse Civitai**. Existing Civitai-linked ass
 - `civitai.com` and `civitai.red` links. Mature content is an explicit browsing choice; model and preview ratings are both respected.
 - Preview galleries, preview saving to the media library, example prompt copying, trigger-word copying, publisher descriptions, tags, file details, publisher permissions, and direct source links.
 - Version and file selection, installed-file detection by hash, and checkpoint/LoRA/embedding imports with source links, tags, previews, and trigger words.
-- Session API-key connection and disconnection. The native process holds the key in memory and sends it through an Authorization header. It is never written to Media Studio settings or download URLs.
+- API-key management in Settings and the Civitai settings dialog. Validated keys persist in the host user-config directory (`civitai.json`), using the same atomic writes and file permissions as other user credentials. The UI receives connection status only; keys are sent to Civitai through Authorization headers, never download URLs. Keys can be replaced or removed.
+- Browser query, Mature content, resource type, base model, sorting, period, tag, creator, and favorites persist across reopening and reload. Desktop uses the shell store; Fleet browser preferences are scoped to the selected host. Pagination cursors and API keys are excluded.
+- Searchable type, base-model, sort, period, version, and file selectors support typing, arrow keys, Enter, and Escape. The import action stays visible while scrolling model details.
 - Downloads with progress, cancellation, storage checks, scan checks, SHA-256 verification, safetensors inspection, and cleanup after import. Retry can reuse a verified staged file. Imports enter the existing library import queue.
 - Loading, empty, disconnected, blocked-file, rate-limit, download-failure, and retry states. Older search responses cannot overwrite a newer search.
 
@@ -21,7 +23,7 @@ Open **Media Studio → Assets → Browse Civitai**. Existing Civitai-linked ass
 | Model versions | Exact file selection, hashes, previews, trained words, availability, and license claims |
 | Version by hash | Identify an existing file without downloading it again |
 | Download endpoint | Native streaming download with integrity verification |
-| Account and favorites | Validate a session API key and browse bookmarks |
+| Account and favorites | Validate a saved API key and browse bookmarks |
 | Images | Version-provided previews and generation prompts; selected previews use the existing image importer |
 | OAuth | Investigated; requires a registered Civitai application and callback configuration, neither supplied in this workspace |
 | Collections, vault, publishing, and paid generation | Separate account-management and remote-generation features; this change does not mutate Civitai account content or spend Buzz |
@@ -32,9 +34,9 @@ References: [site API](https://developer.civitai.com/site/), [models](https://gi
 
 ## Boundaries
 
-- Network operations and downloads require the desktop runtime. The browser preview displays this limitation.
+- Network operations and downloads run on the desktop or connected Fleet host. Browser-only previews need a host.
 - Managed imports use scanned safetensors files and the architectures already supported by Media Studio. Unsupported types, versions, specialized pipelines, file formats, and declared quantizations are excluded from browsing and direct lookups. Native inspection enforces the same policy before downloading.
-- A key lasts until disconnect or application exit. OAuth and persistent credential storage are not implemented.
+- Credentials are stored on each host. Existing session-only keys must be saved once in Settings. OAuth is not implemented.
 - Preview URLs remain remote unless the user saves a preview. No publisher HTML is rendered as active markup.
 - Download cancellation removes partial files. Downloads do not resume partial byte ranges across application restarts.
 - No real account credentials were available. Authenticated favorites and mature-account access were tested with IPC fixtures, not a live account.
@@ -81,3 +83,19 @@ The reported `Age` search reproduced against the public API: `period=Month` retu
 Playwright covers these cases with mocked IPC, alongside the existing desktop/mobile and accessibility checks. A live native regression checks both `Age` and `age slider` for compatible LoRA results with mature content disabled. The compatibility and file-format policy is unchanged.
 
 Verification: 19 native Civitai tests passed, including live search and download/import checks. `Age` returned 23 compatible models, including 8 age slider LoRAs; `age slider` returned 13 compatible models, including 10 age slider LoRAs. The five Civitai helper tests, UI TypeScript, targeted lint, and Playwright passed. Desktop/mobile screenshots were inspected; the accessibility report contained no violations. Browser interaction checks use mocked IPC, while native tests use the public API without account credentials.
+
+## Persistence and download investigation (2026-09-20)
+
+Public catalog visibility does not guarantee anonymous download access. A live request for Animagine XL V3.1 (version 403131, file 325600) returned HTTP 401 immediately; Juggernaut XL and SD XL returned normal delivery redirects. The original integration discarded credentials on host restart and replaced useful Civitai errors with generic Media Studio messages. Credentials now survive restarts and Fleet worker processes. Authentication errors preserve the recovery instruction and open Settings without losing the selected model. Verified cached downloads are checked before the free-space check, so reuse does not require enough space for another download.
+
+The exact checkpoint from the reported failure was not identified. Live account-restricted access remains unverified without credentials.
+
+Additional checks:
+
+- 477 shared Media Studio tests passed; desktop and shared-package TypeScript and lint passed.
+- Desktop and Fleet Media Studio production builds passed.
+- `node scripts/verify-civitai-ui.mjs` and `node scripts/verify-civitai-ui.mjs --fleet`: keyboard search and selection, every persisted filter before the first post-reload search, masked saved-key status/removal, download authentication recovery, cancellation, hash failures, imports, pagination, race handling, and desktop/mobile screenshots. No page errors or serious/critical accessibility findings.
+- `node --import @oxc-node/core/register scripts/verify-fleet-media.mjs`: built Fleet iframe, generation pages, Assets, Civitai, and mobile navigation passed with a fixture host.
+- Native persistence tests cover reading after save, replacement, and removal; live public API and embedding download/import checks passed. A real DreamShaper checkpoint (model 4384, version 128713, file 93211; 2,132,625,894 bytes) also passed full download, SHA-256 verification, architecture inspection, and library import in an isolated temporary library. Test files were removed afterward.
+
+Reports and screenshots: `apps/client/.cache/civitai-review/`, `apps/client/.cache/civitai-review-fleet/`, and `.cache/fleet-media-review/`.
