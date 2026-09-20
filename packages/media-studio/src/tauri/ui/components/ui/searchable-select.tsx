@@ -29,7 +29,7 @@ export function SearchableSelect({
   const input = useRef<HTMLInputElement>(null);
   const listId = useId();
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover modal open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
