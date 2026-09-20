@@ -1,8 +1,97 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_MEDIA_STUDIO_STATE,
   normalizeImageRecipeSettings,
   normalizeMediaStudioState,
 } from "./media-studio-store";
+
+it("round-trips complete image, video, SVG and add-on settings", () => {
+  const recipe = {
+    ...DEFAULT_MEDIA_STUDIO_STATE.recipe,
+    prompt: "Keep my complete setup",
+    modelId: "imported:portrait",
+    providerPolicy: "local",
+    modelPolicy: "balanced",
+    aspectRatio: "4:5",
+    outputCount: 3,
+    outputFormat: "webp",
+    transparentBackground: true,
+    qualityGateEnabled: true,
+    referenceImages: [{ assetId: "reference", role: "style", influence: 0.6 }],
+    baseImageAssetId: "base",
+    poseImageAssetId: "pose",
+    poseStrength: 0.75,
+    poseStart: 0.1,
+    poseEnd: 0.8,
+    editStrength: 0.45,
+    maskStrength: 0.9,
+    seed: 4281,
+    requireChromaBackground: true,
+    memoryProfile: "memory-saver",
+    sampling: {
+      width: 768,
+      height: 1024,
+      numInferenceSteps: 28,
+      guidanceScale: 5.5,
+    },
+    modelAddons: [
+      {
+        kind: "lora",
+        addonId: "portrait",
+        enabled: true,
+        modelStrength: 0.65,
+        textEncoderStrength: -0.4,
+        denoisingSchedule: { start: 0.15, end: 0.85 },
+      },
+      {
+        kind: "textual-inversion",
+        addonId: "embedding",
+        enabled: false,
+        token: "<portrait>",
+        placement: "negative",
+      },
+    ],
+    svgMode: "vectorize",
+    svgAutoCrop: false,
+    svgTargetSize: 2048,
+    svgStyle: "technical",
+    svgTextPolicy: "outlines",
+    svgCandidateCount: 8,
+    svgCriticEnabled: true,
+  };
+  const videoRecipe = {
+    ...DEFAULT_MEDIA_STUDIO_STATE.videoRecipe,
+    modelId: "local:wan2.2-ti2v-5b",
+    modelAddons: recipe.modelAddons.slice(0, 1),
+    aspectRatio: "9:16",
+    resolution: "quality-768",
+    width: 768,
+    height: 1024,
+    seed: 913,
+    transparentBackground: true,
+    loopMode: "crossfade",
+    fps: 24,
+    numFrames: 81,
+    numInferenceSteps: 30,
+    guidanceScale: 6,
+    matteQuality: "production",
+    encodingQuality: "lossless",
+    memoryProfile: "maximum-speed",
+  };
+  const restored = normalizeMediaStudioState(
+    JSON.parse(
+      JSON.stringify({
+        ...DEFAULT_MEDIA_STUDIO_STATE,
+        target: "video",
+        recipe,
+        videoRecipe,
+      }),
+    ),
+  );
+  expect(restored.recipe).toEqual(recipe);
+  expect(restored.videoRecipe).toEqual(videoRecipe);
+  expect(restored.target).toBe("video");
+});
 
 describe("image recipe normalization", () => {
   it("normalizes unsafe recipe values into bounded settings", () => {

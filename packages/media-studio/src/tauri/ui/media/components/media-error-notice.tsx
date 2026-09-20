@@ -30,7 +30,7 @@ export const MediaErrorNotice = ({
     dismissAfterMs={null}
     dismissLabel="Dismiss Media Studio error"
     onDismiss={onDismiss}
-    className="mx-5 mt-4 shrink-0 shadow-lg shadow-slate-950/20"
+    className="mx-5 mt-4 w-auto shrink-0 shadow-lg shadow-slate-950/20"
   >
     {error.partialOutputsExist ? (
       <p className="mt-1.5 text-xs text-rose-100/65">

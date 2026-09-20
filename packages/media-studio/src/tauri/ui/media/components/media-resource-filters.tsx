@@ -17,13 +17,21 @@ export const useMediaResourceDiscovery = <T extends MediaLibraryResource>(
   metadata: Readonly<Record<string, MediaGenerationAssetMetadata>>,
   categories: readonly MediaAssetCategory[],
   initialSort: MediaResourceSort = "name",
+  controlledFilters?: readonly [
+    ResourceFilters,
+    (filters: ResourceFilters) => void,
+  ],
 ) => {
-  const [filters, setFilters] = useState<ResourceFilters>({
+  const [localFilters, setLocalFilters] = useState<ResourceFilters>({
     query: "",
     categoryId: "all",
     tag: "all",
     sort: initialSort,
   });
+  const [filters, setFilters] = controlledFilters ?? [
+    localFilters,
+    setLocalFilters,
+  ];
   const visibleResources = useMemo(
     () => discoverMediaResources(resources, metadata, categories, filters),
     [resources, metadata, categories, filters],
@@ -68,7 +76,7 @@ export const MediaResourceFilters = ({
       onChange={(event) =>
         onChange({ ...filters, categoryId: event.target.value })
       }
-      className="h-9 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200"
+      className="h-9 min-w-0 flex-1 basis-[calc(50%-0.25rem)] rounded-lg sm:basis-0 border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200"
     >
       <option value="all">All categories</option>
       <option value="uncategorized">Uncategorised</option>
@@ -84,7 +92,7 @@ export const MediaResourceFilters = ({
       aria-label={`${label} tag`}
       value={filters.tag}
       onChange={(event) => onChange({ ...filters, tag: event.target.value })}
-      className="h-9 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200"
+      className="h-9 min-w-0 flex-1 basis-[calc(50%-0.25rem)] rounded-lg sm:basis-0 border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200"
     >
       <option value="all">All tags</option>
       {filters.tag !== "all" && !tags.includes(filters.tag) ? (
@@ -102,7 +110,7 @@ export const MediaResourceFilters = ({
       onChange={(event) =>
         onChange({ ...filters, sort: event.target.value as MediaResourceSort })
       }
-      className="h-9 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200"
+      className="h-9 min-w-0 flex-1 basis-[calc(50%-0.25rem)] rounded-lg sm:basis-0 border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200"
     >
       <option value="name">Name A–Z</option>
       <option value="name-desc">Name Z–A</option>

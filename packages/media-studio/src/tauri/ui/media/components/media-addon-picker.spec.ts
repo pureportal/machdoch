@@ -132,7 +132,10 @@ const props = {
   onClear: vi.fn(),
 };
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  window.localStorage.clear();
+});
 
 describe("MediaAddonBrowser", () => {
   it("matches words across names, tags, category names, and trigger words", () => {
@@ -256,6 +259,18 @@ describe("MediaAddonBrowser", () => {
         screen.getByRole("button", { name: "Choose LoRAs and embeddings" }),
       );
       dialog = screen.getByRole("dialog", { name: "LoRAs and embeddings" });
+      expect(
+        (within(dialog).getByLabelText("add-ons category") as HTMLSelectElement)
+          .value,
+      ).toBe("style");
+      expect(
+        (within(dialog).getByLabelText("Selected only") as HTMLInputElement)
+          .checked,
+      ).toBe(true);
+      fireEvent.change(within(dialog).getByLabelText("add-ons category"), {
+        target: { value: "all" },
+      });
+      fireEvent.click(within(dialog).getByLabelText("Selected only"));
       expect(
         within(dialog)
           .getByRole("button", { name: "Portrait Detail" })

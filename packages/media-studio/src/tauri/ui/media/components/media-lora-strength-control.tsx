@@ -21,7 +21,7 @@ export const MediaLoraStrengthControl = ({
   disabled = false,
   onChange,
 }: MediaLoraStrengthControlProps): JSX.Element => (
-  <label className="min-w-0 flex-1 text-[9px] text-slate-300">
+  <div className="min-w-0 flex-1 text-xs text-slate-300">
     <span className="mb-1 flex items-center justify-between gap-2">
       <span>Strength</span>
       <input
@@ -33,7 +33,7 @@ export const MediaLoraStrengthControl = ({
         value={value}
         disabled={disabled}
         onChange={(event) => updateStrength(event.target.value, onChange)}
-        className="h-5 w-12 rounded border border-slate-700 bg-slate-950 px-1 text-right text-[9px] text-slate-100 outline-none focus:border-sky-400 disabled:opacity-50"
+        className="h-7 w-16 rounded border border-slate-700 bg-slate-950 px-1 text-right text-xs text-slate-100 outline-none focus:border-sky-400 disabled:opacity-50"
       />
     </span>
     <input
@@ -45,7 +45,7 @@ export const MediaLoraStrengthControl = ({
       value={value}
       disabled={disabled}
       onChange={(event) => updateStrength(event.target.value, onChange)}
-      className="block w-full accent-sky-400 disabled:opacity-50"
+      className="block h-5 w-full accent-sky-400 disabled:opacity-50"
     />
-  </label>
+  </div>
 );

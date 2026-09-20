@@ -416,6 +416,7 @@ describe("MediaAssetsView discovery", () => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  window.localStorage.clear();
 });
 
 describe("MediaAssetsView asset actions", () => {

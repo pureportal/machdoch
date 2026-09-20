@@ -1,3 +1,4 @@
+import { useMediaStudioAutosave } from "./use-media-studio-autosave";
 import { assessRemoteEditExecution } from "./media-remote-edit-assessment";
 import { useMediaGenerationTiming } from "./use-media-generation-timing";
 import { basicImageReferenceLimit } from "./media-basic-image-options";
@@ -18,10 +19,7 @@ import { useMediaGenerationPreparation } from "./use-media-generation-preparatio
 import { useMediaRuntimeSetup } from "./use-media-runtime-setup";
 import { MediaRuntimeSetupNotice } from "./components/media-runtime-setup-notice";
 import { MediaStudioNavigation } from "@machdoch/product-ui";
-import {
-  open as openDialog,
-  save as saveDialog,
-} from "./media-platform";
+import { open as openDialog, save as saveDialog } from "./media-platform";
 import {
   useCallback,
   useEffect,
@@ -41,6 +39,7 @@ import {
 import {
   createMediaModelAddonSelection,
   isMediaModelAddonSelectable,
+  reconcileMediaModelAddonSelections,
 } from "../../../core/media/model-addons.js";
 import { getMediaModelPrimaryGenerationTarget } from "../../../core/media/model-library.js";
 import {
@@ -506,7 +505,8 @@ export const MediaStudio = ({
   stateRef.current = state;
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const { error: saveError, retry: retryMediaStudioStateSave } =
+    useMediaStudioAutosave(state, loaded && loadError === null);
   const [runtimeStatus, setRuntimeStatus] = useState<MediaRuntimeStatus | null>(
     null,
   );
@@ -596,7 +596,6 @@ export const MediaStudio = ({
   const semanticUndoStack = useRef<MediaFlow[]>([]);
   const semanticRedoStack = useRef<MediaFlow[]>([]);
   const [, setSemanticHistoryRevision] = useState(0);
-  const latestSaveSequence = useRef(0);
   const runtimeRefreshSequence = useRef(0);
   const selectedRunDetailSequence = useRef(0);
   const selectedRunIdRef = useRef<string | null>(selectedRunId);
@@ -870,22 +869,6 @@ export const MediaStudio = ({
     [refreshModelCatalog],
   );
 
-  const retryMediaStudioStateSave = useCallback(async (): Promise<void> => {
-    const saveSequence = ++latestSaveSequence.current;
-    try {
-      await saveMediaStudioState(stateRef.current);
-      if (latestSaveSequence.current === saveSequence) setSaveError(null);
-    } catch (error: unknown) {
-      if (latestSaveSequence.current === saveSequence) {
-        setSaveError(
-          error instanceof Error
-            ? error.message
-            : "Media Studio settings could not be saved.",
-        );
-      }
-    }
-  }, []);
-
   const inspectModelImportPath = useCallback(
     (path: string): void => {
       if (modelImportLoading || addonImportLoading) return;
@@ -1154,33 +1137,6 @@ export const MediaStudio = ({
       if (timeout !== null) window.clearTimeout(timeout);
     };
   }, [flowRunOverlayId, presentRunFailure]);
-
-  useEffect(() => {
-    if (!loaded) {
-      return;
-    }
-
-    const saveSequence = ++latestSaveSequence.current;
-    const timeout = window.setTimeout(() => {
-      void saveMediaStudioState(state)
-        .then(() => {
-          if (latestSaveSequence.current === saveSequence) {
-            setSaveError(null);
-          }
-        })
-        .catch((error: unknown) => {
-          if (latestSaveSequence.current === saveSequence) {
-            setSaveError(
-              error instanceof Error
-                ? error.message
-                : "Media Studio settings could not be saved.",
-            );
-          }
-        });
-    }, 250);
-
-    return () => window.clearTimeout(timeout);
-  }, [loaded, state]);
 
   const discoveredModelCatalog = useMemo<MediaModelCatalogSnapshot>(
     () =>
@@ -1812,7 +1768,14 @@ export const MediaStudio = ({
         recipe: {
           ...current.recipe,
           modelId: target === "video" ? current.recipe.modelId : model.id,
-          modelAddons: target === "video" ? current.recipe.modelAddons : [],
+          modelAddons:
+            target === "video"
+              ? current.recipe.modelAddons
+              : reconcileMediaModelAddonSelections(
+                  model,
+                  activeModelCatalog.addons,
+                  current.recipe.modelAddons,
+                ),
           outputFormat:
             target === "svg"
               ? "svg"
@@ -1835,7 +1798,7 @@ export const MediaStudio = ({
             : current.videoRecipe,
       }));
     },
-    [],
+    [activeModelCatalog.addons],
   );
   const useAddonInCreate = useCallback(
     (addonId: string): void => {

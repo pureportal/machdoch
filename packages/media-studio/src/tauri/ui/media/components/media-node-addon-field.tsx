@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type JSX } from "react";
+import { useMemo, type JSX } from "react";
 import type {
   MediaAssetCategory,
   MediaAssetRecord,
@@ -7,10 +7,7 @@ import type {
   MediaModelAddonSelection,
   MediaModelDescriptor,
 } from "../../../../core/media/contracts.js";
-import {
-  mediaModelAddonSelectionsEqual,
-  reconcileMediaModelAddonSelections,
-} from "../../../../core/media/model-addons.js";
+import { reconcileMediaModelAddonSelections } from "../../../../core/media/model-addons.js";
 import { MediaAddonDialog } from "./media-addon-dialog";
 import { readModelAddonSelections } from "../../../../core/media/compiler.js";
 
@@ -45,10 +42,6 @@ export const MediaNodeAddonField = ({
     () => reconcileMediaModelAddonSelections(model, addons, rawSelections),
     [addons, model, rawSelections],
   );
-  useEffect(() => {
-    if (mediaModelAddonSelectionsEqual(rawSelections, selections)) return;
-    onChange(selections);
-  }, [onChange, rawSelections, selections]);
 
   return (
     <div
