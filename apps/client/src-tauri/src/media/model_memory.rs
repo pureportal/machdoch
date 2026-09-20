@@ -87,15 +87,7 @@ pub(super) fn run(
             command: command.into(),
             input: input.map(Vec::from),
             timeout,
-            cancellation: cancellation.map(|(paths, run)| {
-                (
-                    MediaRuntimePaths {
-                        database: paths.database.clone(),
-                        blobs: paths.blobs.clone(),
-                    },
-                    run.into(),
-                )
-            }),
+            cancellation: cancellation.map(|(paths, run)| (paths.clone(), run.into())),
             result,
         }))
         .map_err(|_| "Model memory monitor stopped")?;

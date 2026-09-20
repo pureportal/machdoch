@@ -37,6 +37,7 @@ impl Fixture {
         let source = root.join("source.png");
         fs::write(&source, PNG).unwrap();
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("runtime/media.sqlite3"),
             blobs: root.join("runtime/blobs"),
         };

@@ -41,6 +41,7 @@ import {
   SETTINGS_SECTIONS,
   type SettingsSection,
 } from "../_helpers/session-shell";
+import { AssetStorageSettingsPanel } from "./settings-dialog-panels/asset-storage-settings-panel";
 import { AgentLimitsSettingsPanel } from "./settings-dialog-panels/agent-limits-settings-panel";
 import { AppearanceSettingsPanel } from "./settings-dialog-panels/appearance-settings-panel";
 import { DesktopSettingsPanel } from "./settings-dialog-panels/desktop-settings-panel";
@@ -139,6 +140,8 @@ const renderSettingsPanel = ({
   voiceSetup,
 }: SettingsDialogProps): JSX.Element => {
   switch (settingsSection) {
+    case "asset-storage":
+      return <AssetStorageSettingsPanel />;
     case "civitai":
       return <CivitaiSettingsPanel />;
     case "providers":

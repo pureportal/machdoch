@@ -2,6 +2,7 @@ import {
   ArrowLeftRight,
   Brain,
   Gauge,
+  HardDrive,
   KeyRound,
   Monitor,
   Network,
@@ -41,6 +42,7 @@ export interface SettingsDialogSectionDefinition {
 const SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
   providers: KeyRound,
   civitai: KeyRound,
+  "asset-storage": HardDrive,
   "web-search": Search,
   mcp: Network,
   agent: Gauge,

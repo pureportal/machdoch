@@ -4751,6 +4751,7 @@ time.sleep(60)
             std::process::id()
         ));
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("media.sqlite3"),
             blobs: root.join("blobs"),
         };
@@ -5376,6 +5377,7 @@ time.sleep(60)
             std::process::id()
         ));
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("media.sqlite3"),
             blobs: root.join("blobs").join("sha256"),
         };

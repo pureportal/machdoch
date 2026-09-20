@@ -9,6 +9,7 @@ fn worker_start_failure_is_persisted_and_removed_models_cannot_be_verified() {
         database::now().replace(':', "-")
     ));
     let paths = MediaRuntimePaths {
+        _storage_lease: None,
         database: root.join("media.sqlite3"),
         blobs: root.join("blobs/sha256"),
     };
@@ -139,6 +140,7 @@ fn playwright_model_store() {
     let python = PathBuf::from(std::env::var("MACHDOCH_MODEL_TEST_PYTHON").expect("pinned Python"));
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("python/media_diffusers_worker.py");
     let paths = MediaRuntimePaths {
+        _storage_lease: None,
         database: root.join("media.sqlite3"),
         blobs: root.join("blobs/sha256"),
     };

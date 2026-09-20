@@ -1133,6 +1133,7 @@ mod tests {
         let root = test_root();
         fs::create_dir_all(&root).unwrap();
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("runtime").join("media.sqlite3"),
             blobs: root.join("runtime").join("blobs"),
         };
@@ -1296,6 +1297,7 @@ mod tests {
         let root = test_root();
         fs::create_dir_all(&root).unwrap();
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("runtime").join("media.sqlite3"),
             blobs: root.join("runtime").join("blobs"),
         };
@@ -1458,6 +1460,7 @@ mod tests {
         let root = test_root();
         fs::create_dir_all(&root).unwrap();
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("runtime").join("media.sqlite3"),
             blobs: root.join("runtime").join("blobs"),
         };
@@ -1614,6 +1617,7 @@ mod tests {
         let root = test_root();
         fs::create_dir_all(&root).unwrap();
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("runtime").join("media.sqlite3"),
             blobs: root.join("runtime").join("blobs"),
         };

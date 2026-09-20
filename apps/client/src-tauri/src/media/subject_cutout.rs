@@ -563,6 +563,7 @@ mod tests {
                 .as_nanos()
         ));
         MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("runtime").join("media.sqlite3"),
             blobs: root.join("runtime").join("blobs"),
         }

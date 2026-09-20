@@ -217,6 +217,7 @@ mod tests {
         let _active = DOWNLOAD_LOCK.lock().await;
         let root = std::env::temp_dir().join("machdoch-civitai-wait-test");
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("media.sqlite3"),
             blobs: root.join("blobs"),
         };
