@@ -62,6 +62,8 @@
       "python/media_video_loop.py": "python/media_video_loop.py",
       "python/media_video_io.py": "python/media_video_io.py",
       "python/media_video_addons.py": "python/media_video_addons.py",
+      "python/media_wan_loading.py": "python/media_wan_loading.py",
+      "python/media_svg_model.py": "python/media_svg_model.py",
       "python/media_image_addons.py": "python/media_image_addons.py",
       "python/media_workflow_worker.py": "python/media_workflow_worker.py",
       "python/media_visual_check.py": "python/media_visual_check.py",

@@ -136,6 +136,32 @@ async function start() {
         await new Promise((resolve) => setTimeout(resolve, 900));
         return catalog;
       }
+      if (command === "media_plan_model_install") {
+        const model = catalog.models.find(
+          (model) => model.id === args.modelId,
+        )!;
+        const totalBytes = (model.expectedDownloadGb ?? 0) * 1024 ** 3;
+        return {
+          schemaVersion: 1,
+          modelId: model.id,
+          displayName: model.displayName,
+          revision: "review",
+          manifestDigest: "a".repeat(64),
+          licenseDigest: "b".repeat(64),
+          reviewToken: "c".repeat(64),
+          sourceUrl: model.license.sourceUrl,
+          targetLabel: "models",
+          files: [],
+          excludedPaths: [],
+          totalBytes,
+          requiredWorkingBytes: totalBytes * 1.12,
+          availableBytes: 100 * 1024 ** 3,
+          hasSufficientSpace: true,
+          alreadyInstalled: false,
+          license: model.license,
+          warnings: [],
+        };
+      }
       if (command === "media_get_runtime_setup")
         return {
           phase: "ready",

@@ -161,6 +161,24 @@ describe("matchesMediaModelQuery", () => {
       importedReady.id,
       brokenInstalled.id,
       runtimeUnavailable.id,
+      notInstalled.id,
     ]);
+  });
+
+  it("offers managed video and SVG downloads before installation without making them selectable", () => {
+    const models = createMediaModelCatalogSnapshot({
+      isOpenAiConfigured: false,
+    }).models;
+    const downloadableIds = [
+      "local:wan2.2-ti2v-5b",
+      "local-svg:IntroSVG-Qwen2.5-VL-7B",
+    ];
+    const library = listMediaLibraryModels(models);
+    const selectable = listSelectableMediaModels(models);
+
+    for (const id of downloadableIds) {
+      expect(library.some((model) => model.id === id)).toBe(true);
+      expect(selectable.some((model) => model.id === id)).toBe(false);
+    }
   });
 });

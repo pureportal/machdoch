@@ -188,3 +188,13 @@ pub(super) fn ensure_components(root: &Path, manifest: &str) -> MediaResult<Path
     }
     Ok(root)
 }
+
+pub(super) fn manifest_bytes(manifest: &str) -> MediaResult<u64> {
+    let files: Vec<ComponentFile> =
+        serde_json::from_str(manifest).map_err(|error| error.to_string())?;
+    files.iter().try_fold(0_u64, |total, file| {
+        total
+            .checked_add(file.bytes)
+            .ok_or_else(|| "Model component size exceeds the supported limit".to_string())
+    })
+}

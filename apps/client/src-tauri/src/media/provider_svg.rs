@@ -225,6 +225,7 @@ pub(crate) struct CriticVerdict {
 }
 
 pub(crate) async fn generate(
+    app: &tauri::AppHandle,
     paths: &MediaRuntimePaths,
     request: &GenerateMediaSvgRequest,
     reference_plan: &SvgReferencePlan,
@@ -239,6 +240,28 @@ pub(crate) async fn generate(
         generate_quiver(&client, request, reference_plan, env).await?
     } else if request.model_id.starts_with("recraft:") {
         generate_recraft(&client, request, env).await?
+    } else if request.model_id == "local-svg:IntroSVG-Qwen2.5-VL-7B" {
+        let app = app.clone();
+        let paths = paths.clone();
+        let run_id = request.run_id.clone();
+        let model_id = request.model_id.clone();
+        let input = serde_json::json!({
+            "prompt": format!("{}\n\nDesign request:\n{}", provider_instructions(request, reference_plan), request.prompt),
+            "candidateCount": request.candidate_count,
+            "modelPolicy": request.model_policy,
+            "references": reference_plan.sources.iter().map(|source| BASE64_STANDARD.encode(&source.upload_bytes)).collect::<Vec<_>>(),
+        });
+        let candidates = tauri::async_runtime::spawn_blocking(move || {
+            super::provider_local_diffusers::generate_svg(&app, &paths, &run_id, &model_id, input)
+        })
+        .await
+        .map_err(|error| SvgGenerationFailure::rejected(error.to_string(), None))?
+        .map_err(|error| SvgGenerationFailure::rejected(error, None))?;
+        RawSvgBatch {
+            candidates: candidates.into_iter().map(String::into_bytes).collect(),
+            provider_request_id: None,
+            provider_credits: None,
+        }
     } else if request.model_id.starts_with("local-svg:") {
         generate_local(&client, request, reference_plan, env).await?
     } else {
@@ -692,13 +715,14 @@ async fn generate_local(
     }
     let url = format!("{endpoint}/v1/chat/completions");
     let local_model = match request.model_id.as_str() {
-        "local-svg:IntroSVG-Qwen2.5-VL-7B" => "gitcat404/IntroSVG-Qwen2.5-VL-7B",
         "local-svg:InternSVG-8B" => "InternSVG/InternSVG-8B",
         "local-svg:VFIG-4B" => "XunmeiLiu/VFIG-4B",
-        _ => request
-            .model_id
-            .strip_prefix("local-svg:")
-            .unwrap_or("gitcat404/IntroSVG-Qwen2.5-VL-7B"),
+        _ => {
+            return Err(SvgGenerationFailure::rejected(
+                "Choose a supported SVG model",
+                None,
+            ))
+        }
     };
     let instruction = format!(
         "{}\n\nDesign request:\n{}",
@@ -1574,6 +1598,11 @@ pub(crate) fn policy_snapshot(
 ) -> MediaProviderPolicySnapshot {
     let (adapter_id, endpoint_version, output_visibility) =
         match (request.model_id.as_str(), request.mode.as_str()) {
+            ("local-svg:IntroSVG-Qwen2.5-VL-7B", _) => (
+                "local.transformers-svg",
+                "generate-svg",
+                "local-file",
+            ),
             (model, "vectorize") if model.starts_with("quiver:") => (
                 "quiver.svg-vectorize",
                 "v1/svgs/vectorizations",
@@ -1602,14 +1631,20 @@ pub(crate) fn policy_snapshot(
         adapter_id: adapter_id.to_string(),
         adapter_version: "1.2.0".to_string(),
         endpoint_version: endpoint_version.to_string(),
-        region: if request.model_id.starts_with("local-svg:") {
+        region: if request.model_id == "local-svg:IntroSVG-Qwen2.5-VL-7B" {
+            "local-device".to_string()
+        } else if request.model_id.starts_with("local-svg:") {
             "local-loopback".to_string()
         } else {
             "provider-managed".to_string()
         },
         idempotency_mode: "none".to_string(),
         retry_policy: "Possible provider acceptance is quarantined; paid SVG submissions are never retried automatically without reconciliation.".to_string(),
-        cancellation_semantics: "Synchronous provider work cannot be canceled after acceptance; outputs are published only after local validation.".to_string(),
+        cancellation_semantics: if request.model_id == "local-svg:IntroSVG-Qwen2.5-VL-7B" {
+            "Cancellation stops the local worker; outputs are published only after local validation.".to_string()
+        } else {
+            "Synchronous provider work cannot be canceled after acceptance; outputs are published only after local validation.".to_string()
+        },
         input_retention_seconds: None,
         output_retention_seconds: None,
         output_visibility: output_visibility.to_string(),

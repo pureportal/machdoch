@@ -5,6 +5,16 @@ import {
   normalizeMediaStudioState,
 } from "./media-studio-store";
 
+it("keeps an imported video checkpoint when restoring saved settings", () => {
+  const modelId = `local:user:${"a".repeat(64)}`;
+  const restored = normalizeMediaStudioState({
+    ...DEFAULT_MEDIA_STUDIO_STATE,
+    target: "video",
+    videoRecipe: { ...DEFAULT_MEDIA_STUDIO_STATE.videoRecipe, modelId },
+  });
+  expect(restored.videoRecipe.modelId).toBe(modelId);
+});
+
 it("round-trips complete image, video, SVG and add-on settings", () => {
   const recipe = {
     ...DEFAULT_MEDIA_STUDIO_STATE.recipe,

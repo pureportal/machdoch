@@ -504,6 +504,16 @@ export const extendMediaCatalogWithWorkspaceDiscovery = ({
   if (!discovery) return catalog;
 
   const matches = profiles
+    .filter(
+      (profile) =>
+        !catalog.models.some(
+          (model) =>
+            model.id === profile.model.id &&
+            (model.installed ||
+              (model.management.acquisition === "managed-install" &&
+                model.installationStatus !== "not-installed")),
+        ),
+    )
     .map((profile) => ({ profile, ...selectArtifact(discovery, profile) }))
     .filter(
       (
@@ -513,6 +523,15 @@ export const extendMediaCatalogWithWorkspaceDiscovery = ({
         artifact: MediaDiscoveredModelArtifact;
         ambiguousReadyPaths: readonly string[];
       } => match.artifact !== null,
+    )
+    .filter(
+      ({ profile, artifact, ambiguousReadyPaths }) =>
+        (artifact.status === "ready" && ambiguousReadyPaths.length === 0) ||
+        !catalog.models.some(
+          (model) =>
+            model.id === profile.model.id &&
+            model.management.acquisition === "managed-install",
+        ),
     );
   if (matches.length === 0) return catalog;
 

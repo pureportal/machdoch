@@ -5,6 +5,7 @@ import type {
   MediaProviderCatalogEntry,
 } from "./contracts.js";
 import { getMediaModelAddonCapabilities } from "./model-addons.js";
+import { createManagedGenerationModels } from "./managed-generation-models.js";
 import {
   LOCAL_BIREFNET_MODEL_ID,
   LOCAL_BORDER_MATTE_MODEL_ID,
@@ -83,7 +84,19 @@ const createProviders = (
     target: "local",
     configured: true,
     lifecycle: "active",
-    capabilities: LOCAL_IMAGE_GENERATION_CAPABILITIES,
+    capabilities: [
+      ...LOCAL_IMAGE_GENERATION_CAPABILITIES,
+      "text-to-video",
+      "image-to-video",
+      "start-end-to-video",
+      "transparent-output",
+      "alpha-video",
+      "video-composite",
+      "text-to-svg",
+      "image-to-svg",
+      "guided-svg-generation",
+      "svg-structure-evaluation",
+    ],
     privacySummary: "Prompts and pixels remain on this device.",
     checkedAt: BUILTIN_MEDIA_CATALOG_CHECKED_AT,
     staleAfterSeconds: 30 * 24 * 60 * 60,
@@ -383,7 +396,10 @@ export const createMediaModelCatalogSnapshot = ({
     catalogRevision: BUILTIN_MEDIA_CATALOG_REVISION,
     observedAt: new Date().toISOString(),
     providers,
-    models,
+    models: [
+      ...models,
+      ...createManagedGenerationModels(BUILTIN_MEDIA_CATALOG_REVISION),
+    ],
     addons: [],
   };
 };

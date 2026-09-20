@@ -1,0 +1,92 @@
+[
+  {
+    "path": "README.md",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers/resolve/b8fff7315c768468a5333511427288870b2e9635/README.md",
+    "bytes": 17633,
+    "sha256": "b7120bb210ab14defe6cabd7ac4bf568d0f5fde42f88ea4ac3cfec9516dc2c0c"
+  },
+  {
+    "path": "model_index.json",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers/resolve/b8fff7315c768468a5333511427288870b2e9635/model_index.json",
+    "bytes": 499,
+    "sha256": "6a72faeb564b0e894aea8fc4ef27241106eb739e8584e869b61589a65473add7"
+  },
+  {
+    "path": "scheduler/scheduler_config.json",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers/resolve/b8fff7315c768468a5333511427288870b2e9635/scheduler/scheduler_config.json",
+    "bytes": 820,
+    "sha256": "571a3eed68bcd943a61b9fea8efa9e141472216ada59f928c8b5128ce24b32e0"
+  },
+  {
+    "path": "text_encoder/config.json",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers/resolve/b8fff7315c768468a5333511427288870b2e9635/text_encoder/config.json",
+    "bytes": 855,
+    "sha256": "a2bcb24699f6c009a2427432bdd483ef8b2b42a712abc9503759cdc77d171f07"
+  },
+  {
+    "path": "text_encoder/model-00001-of-00003.safetensors",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers/resolve/b8fff7315c768468a5333511427288870b2e9635/text_encoder/model-00001-of-00003.safetensors",
+    "bytes": 4935812536,
+    "sha256": "a8e861969c7433e707cc5a74065d795d36cca07ec96eb6763eb4083df7248f58"
+  },
+  {
+    "path": "text_encoder/model-00002-of-00003.safetensors",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers/resolve/b8fff7315c768468a5333511427288870b2e9635/text_encoder/model-00002-of-00003.safetensors",
+    "bytes": 4983103192,
+    "sha256": "d57d948ece4837d850b7a859a4415121d57cacf8b9ee1d4db200c67f592902d7"
+  },
+  {
+    "path": "text_encoder/model-00003-of-00003.safetensors",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers/resolve/b8fff7315c768468a5333511427288870b2e9635/text_encoder/model-00003-of-00003.safetensors",
+    "bytes": 1442935480,
+    "sha256": "0da9ee284e21d1406df708788db1d502d95d75f69faa25cd26151bf8829b7c5f"
+  },
+  {
+    "path": "text_encoder/model.safetensors.index.json",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers/resolve/b8fff7315c768468a5333511427288870b2e9635/text_encoder/model.safetensors.index.json",
+    "bytes": 22476,
+    "sha256": "31c4c7bcce679eaa0dd4667462394ddb013dc2f748e0bffc893dc9146a320dab"
+  },
+  {
+    "path": "tokenizer/special_tokens_map.json",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers/resolve/b8fff7315c768468a5333511427288870b2e9635/tokenizer/special_tokens_map.json",
+    "bytes": 7079,
+    "sha256": "456b58fd240a06c743a7c2cf8008bec501240d68ebd1fc4018ea569505fea270"
+  },
+  {
+    "path": "tokenizer/spiece.model",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers/resolve/b8fff7315c768468a5333511427288870b2e9635/tokenizer/spiece.model",
+    "bytes": 4548313,
+    "sha256": "e3909a67b780650b35cf529ac782ad2b6b26e6d1f849d3fbb6a872905f452458"
+  },
+  {
+    "path": "tokenizer/tokenizer.json",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers/resolve/b8fff7315c768468a5333511427288870b2e9635/tokenizer/tokenizer.json",
+    "bytes": 16837459,
+    "sha256": "20a46ac256746594ed7e1e3ef733b83fbc5a6f0922aa7480eda961743de080ef"
+  },
+  {
+    "path": "tokenizer/tokenizer_config.json",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers/resolve/b8fff7315c768468a5333511427288870b2e9635/tokenizer/tokenizer_config.json",
+    "bytes": 61758,
+    "sha256": "1d8d2a216bf8e70ac15b7ddcea566c4dd0433c024b39a58ca5e4c66bd78defbd"
+  },
+  {
+    "path": "transformer/config.json",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers/resolve/b8fff7315c768468a5333511427288870b2e9635/transformer/config.json",
+    "bytes": 495,
+    "sha256": "dc00d9866e72cf77db6b531aaa33be4dc7148fef9338442bd0ae9181f7075e9b"
+  },
+  {
+    "path": "vae/config.json",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers/resolve/b8fff7315c768468a5333511427288870b2e9635/vae/config.json",
+    "bytes": 1701,
+    "sha256": "d996c340fe9a7df5d7371f76a7d8d6956f6c98256080074d8434fa5eeac11360"
+  },
+  {
+    "path": "vae/diffusion_pytorch_model.safetensors",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers/resolve/b8fff7315c768468a5333511427288870b2e9635/vae/diffusion_pytorch_model.safetensors",
+    "bytes": 2818777808,
+    "sha256": "62cd18f19438e35b32ac63020e2852f566e9b02f46b6cdbd87972a356e3c6f4b"
+  }
+]

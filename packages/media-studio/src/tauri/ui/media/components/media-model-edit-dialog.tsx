@@ -98,12 +98,9 @@ export const MediaModelEditDialog = ({
   const architectures = MEDIA_MODEL_ARCHITECTURES.filter(
     (item) =>
       addon ||
-      ![
-        "wan-2.2-ti2v",
-        "ltx-video",
-        "framepack-i2v",
-        "hunyuan-video-1.5-i2v",
-      ].includes(item.value),
+      !["ltx-video", "framepack-i2v", "hunyuan-video-1.5-i2v"].includes(
+        item.value,
+      ),
   );
 
   const save = async (): Promise<void> => {

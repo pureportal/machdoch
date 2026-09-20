@@ -4295,6 +4295,7 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                 && !hunyuan_video
                 && !ltx_video
                 && model_id != "local:wan2.2-ti2v-5b"
+                && !model_id.starts_with(super::model_import::USER_MODEL_ID_PREFIX)
             {
                 return Err(format!(
                     "flow node {} must pin an executable local video model",

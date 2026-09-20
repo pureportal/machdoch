@@ -213,7 +213,17 @@ const BIREFNET_MANIFEST: BuiltinModelManifest = BuiltinModelManifest {
     excluded_paths: BIREFNET_EXCLUDED_PATHS,
 };
 
-const BUILTIN_MANIFESTS: &[&BuiltinModelManifest] = &[&FLUX_MANIFEST, &BIREFNET_MANIFEST];
+#[path = "model_install_svg.rs"]
+mod svg;
+#[path = "model_install_wan.rs"]
+mod wan;
+
+const BUILTIN_MANIFESTS: &[&BuiltinModelManifest] = &[
+    &FLUX_MANIFEST,
+    &BIREFNET_MANIFEST,
+    &wan::WAN_MANIFEST,
+    &svg::SVG_MANIFEST,
+];
 
 fn builtin_manifest(model_id: &str) -> MediaResult<&'static BuiltinModelManifest> {
     BUILTIN_MANIFESTS
@@ -1730,6 +1740,41 @@ mod tests {
         assert!(safe_relative_path(root, "../secrets.txt").is_err());
         assert!(safe_relative_path(root, "tokenizer\\..\\secrets.txt").is_err());
         assert!(safe_relative_path(root, "/absolute/file").is_err());
+    }
+
+    #[test]
+    fn video_and_svg_download_plans_include_complete_pinned_packages() {
+        let (root, paths) = test_paths("video-svg-plan");
+        database::initialize(&paths).unwrap();
+        for (id, files) in [
+            (
+                "local:wan2.2-ti2v-5b",
+                vec![
+                    "transformer/config.json",
+                    "text_encoder/model.safetensors.index.json",
+                    "vae/diffusion_pytorch_model.safetensors",
+                ],
+            ),
+            (
+                "local-svg:IntroSVG-Qwen2.5-VL-7B",
+                vec![
+                    "model.safetensors.index.json",
+                    "preprocessor_config.json",
+                    "chat_template.json",
+                ],
+            ),
+        ] {
+            let planned = plan(&paths, id).unwrap();
+            assert!(planned.total_bytes > 10_000_000_000);
+            assert!(!planned.already_installed);
+            for path in files {
+                assert!(planned.files.iter().any(|file| file.path == path));
+            }
+            assert!(planned.files.iter().all(|file| file.sha256.len() == 64
+                && !file.path.ends_with(".py")
+                && !file.path.ends_with(".bin")));
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

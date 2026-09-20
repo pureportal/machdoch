@@ -212,7 +212,8 @@ const EXECUTABLE_LOCAL_VIDEO_MODEL_IDS: ReadonlySet<string> = new Set([
 const isExecutableLocalVideoModelId = (
   modelId: string,
 ): modelId is GenerateMediaVideoRequest["modelId"] =>
-  EXECUTABLE_LOCAL_VIDEO_MODEL_IDS.has(modelId);
+  EXECUTABLE_LOCAL_VIDEO_MODEL_IDS.has(modelId) ||
+  /^local:user:[a-f0-9]{64}$/u.test(modelId);
 
 const createIdentityImageOutputBranch = (
   format: MediaImageOutputBranch["format"],
