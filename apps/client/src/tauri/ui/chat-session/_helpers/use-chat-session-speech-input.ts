@@ -7,7 +7,7 @@ import type {
 import {
   resolveAppNotificationDismissMs,
   scheduleAppNotificationDismiss,
-} from "../../components/ui/notification-lifecycle";
+} from "@machdoch/media-studio/tauri/ui/components/ui/notification-lifecycle.js";
 import {
   getConfiguredSpeechToTextProvider,
   getRecordingErrorMessage,

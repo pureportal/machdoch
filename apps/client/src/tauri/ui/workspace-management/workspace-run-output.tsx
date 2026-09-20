@@ -1,4 +1,4 @@
-import { CopyContextMenu } from "../components/ui/copy-context-menu";
+import { CopyContextMenu } from "@machdoch/media-studio/tauri/ui/components/ui/copy-context-menu.js";
 import { ArrowDown, TerminalSquare } from "lucide-react";
 import {
   useLayoutEffect,
@@ -9,8 +9,8 @@ import {
   type UIEvent,
 } from "react";
 import type { WorkspaceRunConfigurationStatus } from "../../../shared/workspace-run.js";
-import { Button } from "../components/ui/button";
-import { cn } from "../lib/utils";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   collectWorkspaceRunLogs,
   workspaceRunConfigurationLabel,

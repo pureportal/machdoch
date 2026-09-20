@@ -1,13 +1,13 @@
 import { Server } from "lucide-react";
 import { useEffect, useState, type JSX } from "react";
-import { Button } from "../../components/ui/button";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "../../components/ui/dialog";
-import { Input } from "../../components/ui/input";
+} from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import {
   enrollFleetManager,
   getFleetConnectionStatus,

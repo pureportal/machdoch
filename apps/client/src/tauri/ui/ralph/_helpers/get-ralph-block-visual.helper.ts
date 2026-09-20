@@ -30,7 +30,7 @@ import type {
   RalphFlowBlock,
   RalphUtilityType,
 } from "../../../../core/ralph.js";
-import type { FlowPortTone } from "../../flow/flow-theme";
+import type { FlowPortTone } from "@machdoch/media-studio/tauri/ui/flow/flow-theme.js";
 
 export interface RalphBlockVisual {
   icon: LucideIcon;

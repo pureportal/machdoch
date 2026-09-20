@@ -62,13 +62,13 @@ import {
 import {
   useOptionalCommandShortcut,
   useOptionalRegisterCommands,
-} from "../commands/command-context";
-import { getDefaultCommandShortcut } from "../commands/command-defaults";
-import { useCommandOverlay } from "../commands/use-command-overlay";
+} from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
+import { getDefaultCommandShortcut } from "@machdoch/media-studio/tauri/ui/commands/command-defaults.js";
+import { useCommandOverlay } from "@machdoch/media-studio/tauri/ui/commands/use-command-overlay.js";
 import type {
   CommandDefinition,
   CommandPageItem,
-} from "../commands/command-types";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 import {
   createImageInputUnsupportedModelMessage,
   getSupportedImageInputExtensions,
@@ -77,7 +77,7 @@ import {
 import type {
   MediaFlowHead,
   MediaFlowRevision,
-} from "../../../core/media/contracts.js";
+} from "@machdoch/media-studio/core/media/contracts.js";
 import {
   createImportedRalphStarterFlow,
   createUpgradedRalphStarterFlowWithReport,
@@ -147,9 +147,9 @@ import {
   type RalphRunDetailResult,
 } from "../runtime";
 import { subscribeToSettingsImport } from "../settings-transfer";
-import { Button } from "../components/ui/button";
-import { EmptyState } from "../components/ui/empty-state";
-import { ControlTooltip } from "../components/ui/tooltip";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
+import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import {
   ContextAttachmentMenuButton,
   ContextAttachmentsList,
@@ -160,20 +160,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
-import { Input } from "../components/ui/input";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "../components/ui/popover";
+} from "@machdoch/media-studio/tauri/ui/components/ui/popover.js";
 import { ScrollArea } from "../components/ui/scroll-area";
-import { SearchField } from "../components/ui/search-field";
+import { SearchField } from "@machdoch/media-studio/tauri/ui/components/ui/search-field.js";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
-} from "../components/ui/submit-shortcut";
-import { Textarea } from "../components/ui/textarea";
-import { cn } from "../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
+import { Textarea } from "@machdoch/media-studio/tauri/ui/components/ui/textarea.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   getReasoningModesForProvider,
   normalizeReasoningModeForProvider,
@@ -391,11 +391,11 @@ import {
   type RalphRunPanelTab,
 } from "./_helpers/ralph-flow-editor-options.helper";
 import { RALPH_NODE_TYPES } from "./components/ralph-flow-canvas-elements";
-import { FlowCanvas } from "../flow/flow-canvas";
+import { FlowCanvas } from "@machdoch/media-studio/tauri/ui/flow/flow-canvas.js";
 import {
   FLOW_CANVAS_FIT_MAX_ZOOM,
   FLOW_CANVAS_FIT_PADDING,
-} from "../flow/flow-theme";
+} from "@machdoch/media-studio/tauri/ui/flow/flow-theme.js";
 import {
   RalphInspectorDetails,
   RalphInspectorField,
@@ -1588,7 +1588,7 @@ export const RalphFlowEditor = ({
     const request = ++mediaFlowCatalogRequestRef.current;
     setMediaFlowCatalogLoading(true);
     setMediaFlowCatalogError(null);
-    void import("../media/media-runtime")
+    void import("@machdoch/media-studio/tauri/ui/media/media-runtime.js")
       .then(async ({ getMediaFlow, listMediaFlows }) => {
         const heads = await listMediaFlows();
         const selectedHead = heads.find(

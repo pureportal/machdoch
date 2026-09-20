@@ -25,10 +25,10 @@ import {
   openWorkspaceMarkdownLinkTarget,
   type WorkspaceMarkdownLinkOpenHandler,
 } from "./workspace-markdown-links";
-import { cn } from "../lib/utils";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { MermaidDiagram } from "./mermaid-diagram";
-import { Button } from "./ui/button";
-import { ControlTooltip } from "./ui/tooltip";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 
 export interface MarkdownContentProps {
   content: string;

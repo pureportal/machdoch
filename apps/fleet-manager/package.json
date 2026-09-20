@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "next build",
+    "build": "pnpm --filter @machdoch/client build:fleet-media && next build",
     "check": "pnpm run lint && pnpm run typecheck && pnpm run test",
-    "dev": "nodemon src/server.ts dev",
+    "dev": "pnpm --filter @machdoch/client build:fleet-media && nodemon src/server.ts dev",
     "format": "oxfmt src next.config.ts postcss.config.mjs package.json tsconfig.json components.json",
     "lint": "oxlint src next.config.ts",
     "lint:fix": "oxlint --fix src next.config.ts",

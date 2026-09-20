@@ -4,7 +4,7 @@ import { reconcileRecoveredTaskResults } from "./recovered-task-result";
 import { useAutomaticChatWork } from "./use-automatic-chat-work";
 import { useShutdownWhenIdle } from "../../app-shell/use-shutdown-when-idle";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MediaAssetReference } from "../../../../core/media/contracts.js";
+import type { MediaAssetReference } from "@machdoch/media-studio/core/media/contracts.js";
 import {
   createImageInputUnsupportedModelMessage,
   getImageInputMediaTypeForPath,
@@ -21,7 +21,7 @@ import type {
   AgentModelImageMediaType,
   TaskExecutionProgress,
 } from "../../../../core/types.js";
-import { scheduleAppNotificationDismiss } from "../../components/ui/notification-lifecycle";
+import { scheduleAppNotificationDismiss } from "@machdoch/media-studio/tauri/ui/components/ui/notification-lifecycle.js";
 import {
   applySessionRetentionPolicy,
   canDeleteSession,
@@ -70,7 +70,7 @@ import {
   saveRunningTaskMessageAction,
   type RunningTaskMessageAction,
 } from "../../lib/shell-store";
-import { readMediaAssetReferencePreview } from "../../media/media-runtime";
+import { readMediaAssetReferencePreview } from "@machdoch/media-studio/tauri/ui/media/media-runtime.js";
 import { type RuntimeProvider } from "../../model-catalog";
 import {
   runInternalDesktopTask,

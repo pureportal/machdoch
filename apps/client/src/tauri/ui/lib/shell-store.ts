@@ -25,7 +25,7 @@ import {
   getLocalStorage,
   loadStoredValue,
   saveStoredValue,
-} from "./_helpers/shell-store-storage.helper";
+} from "@machdoch/media-studio/tauri/ui/lib/_helpers/shell-store-storage.helper.js";
 import {
   beginCrossWindowOperation,
   releaseCrossWindowOperation,
@@ -58,11 +58,11 @@ export {
   getCurrentShellWindowLabel,
   subscribeToAppearanceSettingsChanged,
   subscribeToShellStateChanged,
-} from "./_helpers/shell-store-storage.helper";
+} from "@machdoch/media-studio/tauri/ui/lib/_helpers/shell-store-storage.helper.js";
 export type {
   AppearanceSettingsChangedPayload,
   ShellStateChangedPayload,
-} from "./_helpers/shell-store-storage.helper";
+} from "@machdoch/media-studio/tauri/ui/lib/_helpers/shell-store-storage.helper.js";
 
 const SHELL_STATE_WRITE_LOCK_KEY = "machdoch.desktop.shell-state-snapshot";
 const BROWSER_SHELL_SNAPSHOT_STORAGE_KEY =

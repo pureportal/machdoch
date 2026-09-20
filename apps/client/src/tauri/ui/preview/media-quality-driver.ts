@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { compileMediaFlow } from "../../../core/media/compiler.js";
-import { extendMediaCatalogWithWorkspaceDiscovery } from "../../../core/media/discovered-model-profiles.js";
+import { compileMediaFlow } from "@machdoch/media-studio/core/media/compiler.js";
+import { extendMediaCatalogWithWorkspaceDiscovery } from "@machdoch/media-studio/core/media/discovered-model-profiles.js";
 import type {
   MediaFlowHistory,
   MediaAssetImportResult,
@@ -10,7 +10,7 @@ import type {
   MediaRuntimeStatus,
   MediaWorkspaceModelDiscovery,
   SaveMediaFlowRevisionResult,
-} from "../../../core/media/contracts.js";
+} from "@machdoch/media-studio/core/media/contracts.js";
 
 const workspaceRoot = "C:\\Development\\machdoch";
 const witchFlowId = "flow:anime-witch-production-spellcast-v2";

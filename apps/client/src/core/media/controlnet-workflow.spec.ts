@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createMediaModelCatalogSnapshot } from "./catalog.js";
-import { compileMediaFlow } from "./compiler.js";
-import { createConnectedWorkflowTemplates } from "./workflow-templates.js";
+import { createMediaModelCatalogSnapshot } from "@machdoch/media-studio/core/media/catalog.js";
+import { compileMediaFlow } from "@machdoch/media-studio/core/media/compiler.js";
+import { createConnectedWorkflowTemplates } from "@machdoch/media-studio/core/media/workflow-templates.js";
 import {
   createDefaultMediaNodeConfig,
   validateMediaFlowDocument,
-} from "./node-registry.js";
+} from "@machdoch/media-studio/core/media/node-registry.js";
 
 const catalog = createMediaModelCatalogSnapshot({
   isOpenAiConfigured: false,

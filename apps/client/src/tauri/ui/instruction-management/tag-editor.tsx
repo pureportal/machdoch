@@ -12,13 +12,13 @@ import {
   instructionTagKey,
   normalizeInstructionTag,
 } from "../../../core/instruction-system/tag-rules.js";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
-} from "../components/ui/submit-shortcut";
-import { ControlTooltip } from "../components/ui/tooltip";
+} from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
+import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 
 export const TagEditor = ({
   value,

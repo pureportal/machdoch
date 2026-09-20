@@ -25,25 +25,25 @@ import {
   type MouseEvent,
   type Ref,
 } from "react";
-import { useOptionalRegisterCommands } from "../../commands/command-context";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import {
   asPaletteCommands,
   type CommandDefinition,
   type CommandPageItem,
-} from "../../commands/command-types";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 import {
   isPromptEnhancementPlaceholderMessage,
   type ChatSessionContextAttachment,
   type ChatSessionMessage,
 } from "../../chat-session.model";
 import { Avatar } from "../../components/ui/avatar";
-import { Button } from "../../components/ui/button";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
-} from "../../components/ui/submit-shortcut";
-import { Textarea } from "../../components/ui/textarea";
-import { cn } from "../../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
+import { Textarea } from "@machdoch/media-studio/tauri/ui/components/ui/textarea.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { TaskThinkingPanel } from "../../task-thinking-panel";
 import {
   clampAiContextMessageLimit,

@@ -12,7 +12,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { JSX } from "react";
-import { Button } from "../components/ui/button";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,10 +24,10 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "../components/ui/tooltip";
-import { cn } from "../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import type { MainAppId } from "../lib/shell-store";
-import { useCommandShortcut } from "../commands/command-context";
+import { useCommandShortcut } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 
 declare const __MACHDOCH_VERSION__: string | undefined;
 

@@ -6,12 +6,12 @@ import {
   useState,
   type JSX,
 } from "react";
-import { getDefaultCommandShortcut } from "../commands/command-defaults";
-import { useOptionalRegisterCommands } from "../commands/command-context";
+import { getDefaultCommandShortcut } from "@machdoch/media-studio/tauri/ui/commands/command-defaults.js";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import {
   asPaletteCommands,
   type CommandDefinition,
-} from "../commands/command-types";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 import type { WorkspaceDirectoryEntry } from "../runtime";
 import { WorkspaceFileTree } from "./workspace-file-tree";
 import { WorkspaceFileViewer } from "./workspace-file-viewer";

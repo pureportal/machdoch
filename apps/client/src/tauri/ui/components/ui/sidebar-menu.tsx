@@ -4,9 +4,9 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "radix-ui";
 import * as React from "react";
 
-import { cn } from "../../lib/utils";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { Skeleton } from "./skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "./tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { useSidebar } from "./sidebar-provider";
 
 const sidebarMenuButtonVariants = cva(

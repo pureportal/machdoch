@@ -1,3 +1,4 @@
+import { CivitaiSettingsPanel } from "@machdoch/media-studio/tauri/ui/media/components/civitai-settings-panel.js";
 import { isTauri } from "@tauri-apps/api/core";
 import { AlertTriangle, LoaderCircle, X, type LucideIcon } from "lucide-react";
 import {
@@ -9,24 +10,24 @@ import {
   type JSX,
   type KeyboardEvent,
 } from "react";
-import { Button } from "../../components/ui/button";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "../../components/ui/dialog";
+} from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
-} from "../../components/ui/submit-shortcut";
-import { useOptionalRegisterCommands } from "../../commands/command-context";
+} from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import {
   asPaletteCommands,
   type CommandDefinition,
   type CommandPageItem,
-} from "../../commands/command-types";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 import { getProviderLabel } from "../../model-catalog";
 import {
   getUserApiKeyProviderLabel,
@@ -138,6 +139,8 @@ const renderSettingsPanel = ({
   voiceSetup,
 }: SettingsDialogProps): JSX.Element => {
   switch (settingsSection) {
+    case "civitai":
+      return <CivitaiSettingsPanel />;
     case "providers":
       return <ProviderSettingsPanel setup={providerSetup} />;
 

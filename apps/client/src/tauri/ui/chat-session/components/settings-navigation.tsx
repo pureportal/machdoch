@@ -19,10 +19,10 @@ import {
   type KeyboardEvent,
   type RefObject,
 } from "react";
-import { Button } from "../../components/ui/button";
-import { SearchField } from "../../components/ui/search-field";
-import { SubmitShortcut } from "../../components/ui/submit-shortcut";
-import { cn } from "../../lib/utils";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { SearchField } from "@machdoch/media-studio/tauri/ui/components/ui/search-field.js";
+import { SubmitShortcut } from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import type {
   SettingsSection,
   SettingsSectionGroup,
@@ -40,6 +40,7 @@ export interface SettingsDialogSectionDefinition {
 
 const SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
   providers: KeyRound,
+  civitai: KeyRound,
   "web-search": Search,
   mcp: Network,
   agent: Gauge,

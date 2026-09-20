@@ -11,18 +11,18 @@ import type {
   TaskExecutionFileChanges,
   TaskExecutionChangedLineRange,
 } from "../../../../core/types.js";
-import { Button } from "../../components/ui/button";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "../../components/ui/popover";
-import { ControlTooltip } from "../../components/ui/tooltip";
+} from "@machdoch/media-studio/tauri/ui/components/ui/popover.js";
+import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import {
   normalizeTaskExecutionChangedLineRange,
   normalizeTaskExecutionFileChange,
 } from "../../chat-session.model";
-import { cn } from "../../lib/utils";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { getTaskFileChangeFiles, getTaskFileChangeHunks } from "../../runtime";
 
 type StoredFileChange = TaskExecutionFileChange & {

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { canUseTauriStore } from "./_helpers/shell-store-storage.helper";
+import { canUseTauriStore } from "@machdoch/media-studio/tauri/ui/lib/_helpers/shell-store-storage.helper.js";
 
 interface BeginCrossWindowOperationResponse {
   acquired: boolean;

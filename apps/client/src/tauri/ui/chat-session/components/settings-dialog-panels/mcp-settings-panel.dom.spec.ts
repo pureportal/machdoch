@@ -10,7 +10,7 @@ import {
 } from "@testing-library/react";
 import { createElement, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TooltipProvider } from "../../../components/ui/tooltip";
+import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { McpSettingsPanel } from "./mcp-settings-panel";
 import type { McpSettingsControls } from "./types";
 

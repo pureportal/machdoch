@@ -229,24 +229,8 @@ export async function reviewProduct(page, size, instanceId) {
     .getByRole("button", { name: "Media Studio", exact: true })
     .filter({ visible: true })
     .click();
-  await page
-    .getByRole("button", { name: "Generate", exact: true })
-    .filter({ visible: true })
-    .click();
-  await trapped(page);
-  await capture(page, `${size}-media-dialog`);
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Cancel", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Assets", exact: true })
-    .filter({ visible: true })
-    .click();
-  await page.locator(".m-media-asset").first().click();
-  await trapped(page);
-  await capture(page, `${size}-asset-dialog`);
-  await page.keyboard.press("Escape");
+  await page.locator('iframe[title="Media Studio"]').waitFor();
+  await capture(page, `${size}-media-studio`);
   await page
     .getByRole("button", { name: "Chat", exact: true })
     .filter({ visible: true })

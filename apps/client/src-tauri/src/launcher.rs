@@ -79,6 +79,7 @@ pub(crate) fn run_cli(args: &[String]) -> Result<i32, String> {
 
     cli_command
         .command
+        .env("MACHDOCH_NATIVE_EXECUTABLE", env::current_exe().map_err(|error| error.to_string())?)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());

@@ -41,7 +41,7 @@ import {
   isSessionArchived,
   type ChatSessionRecord,
 } from "../../chat-session.model";
-import { Button } from "../../components/ui/button";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -53,19 +53,19 @@ import {
 import {
   ContextActionMenu,
   openContextMenuFromButton,
-} from "../../components/ui/context-action-menu";
-import { copyText } from "../../lib/clipboard";
-import { EmptyState } from "../../components/ui/empty-state";
+} from "@machdoch/media-studio/tauri/ui/components/ui/context-action-menu.js";
+import { copyText } from "@machdoch/media-studio/tauri/ui/lib/clipboard.js";
+import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
 import { ScrollArea } from "../../components/ui/scroll-area";
-import { SearchField } from "../../components/ui/search-field";
-import { useOptionalRegisterCommands } from "../../commands/command-context";
-import type { CommandDefinition } from "../../commands/command-types";
+import { SearchField } from "@machdoch/media-studio/tauri/ui/components/ui/search-field.js";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
+import type { CommandDefinition } from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "../../components/ui/tooltip";
-import { cn } from "../../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   ALL_SESSION_PROJECTS_FILTER,
   type SessionHistoryProjectFacet,

@@ -4,7 +4,7 @@ import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Button } from "@/components/ui/button";
-import { api, jsonBody } from "@/lib/api";
+import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
 import { formatTime } from "@/lib/format";
 import type { UpdateProfile } from "./profile-editor";
 import type { SettingsProfile, SettingsProfileVersion } from "./types";

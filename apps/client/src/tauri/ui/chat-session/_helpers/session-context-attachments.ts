@@ -6,7 +6,7 @@ import {
   type ChatSessionContextAttachmentKind,
   type ChatSessionRecord,
 } from "../../chat-session.model";
-import type { MediaAssetReference } from "../../../../core/media/contracts.js";
+import type { MediaAssetReference } from "@machdoch/media-studio/core/media/contracts.js";
 import type { DroppedPathEntry } from "../../runtime";
 import { createWorkspaceRootKey } from "../../workspace-management/workspace-management-model";
 

@@ -1,3 +1,4 @@
+import { mediaRequestSchema } from "@machdoch/fleet-protocol";
 import {
   createFleetManagedSettingsEtag,
   gatewayProtocolVersion,
@@ -215,6 +216,34 @@ async function routeApi(
   ) {
     if (method === "GET" && path[3] === "snapshot") {
       return instanceProductSnapshot(runtime, request, path[1]);
+    }
+    if (method === "POST" && path[3] === "media") {
+      requireMutation(runtime, request);
+      requireManagedInstance(runtime, path[1]);
+      const input = await parseJson(
+        request,
+        mediaRequestSchema,
+        400,
+        "Media request is invalid.",
+        1024 * 1024,
+      );
+      requireMutation(runtime, request);
+      requireManagedInstance(runtime, path[1]);
+      const response = await relay(
+        runtime,
+        path[1],
+        { type: "media", request: input },
+        request.signal,
+      );
+      requireOwner(runtime, request);
+      requireManagedInstance(runtime, path[1]);
+      if (response.type === "error") throwHostError(response);
+      if (response.type !== "media")
+        throw new HttpError(
+          502,
+          "Instance returned an invalid media response.",
+        );
+      return Response.json(response.response);
     }
     if (method === "POST" && path[3] === "commands") {
       return executeInstanceProductCommand(runtime, request, path[1]);

@@ -37,15 +37,15 @@ import { FilePreviewDialogFallback } from "./chat-session/components/file-previe
 import { MarkdownContent } from "./components/markdown-content";
 import { ScrollToNewestButton } from "./chat-session/components/scroll-to-newest-button";
 import { ScrollToTopButton } from "./chat-session/components/scroll-to-top-button";
-import { CommandProvider } from "./commands/command-context";
-import { getDefaultCommandShortcut } from "./commands/command-defaults";
+import { CommandProvider } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
+import { getDefaultCommandShortcut } from "@machdoch/media-studio/tauri/ui/commands/command-defaults.js";
 import {
   asPaletteCommands,
   type CommandDefinition,
-} from "./commands/command-types";
-import { Button } from "./components/ui/button";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { ScrollArea } from "./components/ui/scroll-area";
-import { cn } from "./lib/utils";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   ASSISTANT_SURFACE_READY_EVENT,
   QUICK_CHAT_DROP_EVENT,

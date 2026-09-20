@@ -708,6 +708,7 @@ pub fn deserialize_host_message(
     deny_unknown_fields
 )]
 pub enum HostRequest {
+    Media { request: Value },
     GetProductSnapshot,
     ExecuteProductCommand {
         command: ProductCommand,
@@ -736,6 +737,7 @@ pub enum HostRequest {
     deny_unknown_fields
 )]
 pub enum HostResponse {
+    Media { response: Value },
     WorkspaceRuns {
         snapshot: Value,
     },

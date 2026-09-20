@@ -12,6 +12,14 @@ const config = {
 } as FleetManagerConfig;
 
 describe("Fleet Manager request limits", () => {
+  it("accepts bounded media upload chunks without expanding other API limits", () => {
+    expect(
+      maximumRequestBodyBytes("/api/instances/host/product/media", config),
+    ).toBe(1024 * 1024);
+    expect(
+      maximumRequestBodyBytes("/api/instances/host/product/snapshot", config),
+    ).toBe(64 * 1024);
+  });
   it("keeps authentication payloads small", () => {
     expect(maximumRequestBodyBytes("/api/auth/login", config)).toBe(16 * 1024);
     expect(maximumRequestBodyBytes("/api/auth/account", config)).toBe(

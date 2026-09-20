@@ -1,23 +1,25 @@
 import { createRoot } from "react-dom/client";
 import { useState } from "react";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+import { configureRemoteMediaPlatform } from "@machdoch/media-studio/tauri/ui/media/media-platform.js";
 import type {
   CivitaiInspection,
   CivitaiModel,
-} from "../../../core/media/civitai.js";
-import { CivitaiBrowserDialog } from "../media/components/civitai-browser-dialog";
-import { Button } from "../components/ui/button";
-import { TooltipProvider } from "../components/ui/tooltip";
+} from "@machdoch/media-studio/core/media/civitai.js";
+import { CivitaiBrowserDialog } from "@machdoch/media-studio/tauri/ui/media/components/civitai-browser-dialog.js";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import "../styles.css";
 
 const state = {
   requests: [] as { command: string; args: Record<string, unknown> }[],
   imports: [] as { kind: string; request: unknown; metadata: unknown }[],
   copied: [] as string[],
-  downloadMode: "complete" as "complete" | "hold" | "error",
+  downloadMode: "complete" as "complete" | "hold" | "error" | "auth",
   failSearch: false,
-  connected: false,
+  connected: localStorage.getItem("civitai-test-connected") === "true",
 };
 Object.assign(window, { isTauri: true, civitaiReview: state });
 Object.defineProperty(navigator, "clipboard", {
@@ -145,6 +147,16 @@ mockIPC(
   async (command, payload) => {
     const args = payload as Record<string, unknown>;
     state.requests.push({ command, args });
+    if (command === "plugin:store|load") return 1;
+    if (command === "plugin:store|get") {
+      const raw = localStorage.getItem(String(args.key));
+      return [raw ? JSON.parse(raw) : null, Boolean(raw)];
+    }
+    if (command === "plugin:store|set") {
+      localStorage.setItem(String(args.key), JSON.stringify(args.value));
+      return;
+    }
+    if (command === "plugin:store|save") return;
     if (command === "media_civitai_options")
       return {
         modelTypes: ["Checkpoint", "LORA", "LoCon", "DoRA", "TextualInversion"],
@@ -184,6 +196,7 @@ mockIPC(
     if (command === "media_civitai_connection") return state.connected;
     if (command === "media_connect_civitai") {
       state.connected = Boolean(args.token);
+      localStorage.setItem("civitai-test-connected", String(state.connected));
       return state.connected;
     }
     if (command === "media_search_civitai") {
@@ -264,6 +277,12 @@ mockIPC(
         await new Promise((_resolve, reject) => {
           rejectDownload = reject;
         });
+      if (state.downloadMode === "auth")
+        throw {
+          code: "MODEL_ACCESS_DENIED",
+          message:
+            "Civitai denied this download. Save an API key with access to this model in Settings, then try again.",
+        };
       if (state.downloadMode === "error")
         throw new Error(
           "The downloaded Civitai bytes failed SHA-256 or byte-size verification",
@@ -322,4 +341,17 @@ function Review() {
   );
 }
 
+if (new URLSearchParams(location.search).has("fleet")) {
+  Object.assign(window, { isTauri: false });
+  configureRemoteMediaPlatform({
+    invoke,
+    listen,
+    storageKey: "fleet:review-host",
+    open: async () => null,
+    save: async () => null,
+    upload: async () => {
+      throw new Error("No upload in this fixture");
+    },
+  });
+}
 createRoot(document.getElementById("root")!).render(<Review />);

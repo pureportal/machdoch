@@ -141,6 +141,7 @@ export function RemoteProductApp({
   return (
     <ProductShell
       drafts={drafts}
+      mediaHref={runtime.mediaHref}
       servicesHref={runtime.servicesHref}
       settingsHref={runtime.settingsHref}
       instanceName={instanceName}

@@ -8,14 +8,14 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { Button } from "../../../components/ui/button";
-import { Input } from "../../../components/ui/input";
-import { AppNotification } from "../../../components/ui/notification";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
+import { AppNotification } from "@machdoch/media-studio/tauri/ui/components/ui/notification.js";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
-} from "../../../components/ui/submit-shortcut";
-import { cn } from "../../../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { useSettingsNavigationGuard } from "./navigation-guard";
 import type { SettingsStatusMessage } from "./types";
 

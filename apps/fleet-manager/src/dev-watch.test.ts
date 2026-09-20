@@ -52,11 +52,13 @@ console.log("fleet-watch-fixture:" + process.argv[2]);
     }),
   );
 
+  const watcherCommand = packageJson.scripts.dev.split(" && ").at(-1)!.split(" ");
+  expect(watcherCommand.shift()).toBe("nodemon");
   const monitor = spawn(
     process.execPath,
     [
       fileURLToPath(import.meta.resolve("nodemon/bin/nodemon.js")),
-      ...packageJson.scripts.dev.split(" ").slice(1),
+      ...watcherCommand,
     ],
     { cwd: directory, stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
   );

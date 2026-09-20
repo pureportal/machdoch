@@ -2,20 +2,20 @@ import { SettingsToggle } from "./settings-toggle";
 import { SettingsNumberInput } from "./settings-number-input";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState, type JSX } from "react";
-import { detectCommandPlatform } from "../../../commands/command-context";
-import { findDefaultShortcutConflict } from "../../../commands/command-defaults";
+import { detectCommandPlatform } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
+import { findDefaultShortcutConflict } from "@machdoch/media-studio/tauri/ui/commands/command-defaults.js";
 import {
   DEFAULT_USER_DESKTOP_SETTINGS,
   DESKTOP_SETTING_BOUNDS,
 } from "../../../../../core/runtime-contract.generated.js";
-import { Input } from "../../../components/ui/input";
-import { Button } from "../../../components/ui/button";
-import { useOptionalRegisterCommands } from "../../../commands/command-context";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import {
   asPaletteCommands,
   type CommandDefinition,
   type CommandPageItem,
-} from "../../../commands/command-types";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 import type { UserDesktopSettings } from "../../../runtime";
 import {
   ChoiceButtons,

@@ -7,9 +7,9 @@ import {
 } from "../../../core/instruction-system/limits.js";
 import { normalizeInstructionTag } from "../../../core/instruction-system/tag-rules.js";
 import type { InstructionTagRule } from "../../../core/instruction-system/types.js";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { cn } from "../lib/utils";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 
 export const createEmptyTagGroup = (): InstructionTagRule => ({
   op: "and",

@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./styles.css": "./src/styles.css",
     "./theme.css": "./src/theme.css",
-    "./primitives.css": "./src/primitives.css"
+    "./primitives.css": "./src/primitives.css",
+    "./fleet-api": "./src/fleet-api.ts"
   },
   "scripts": {
     "check": "pnpm run lint && pnpm run typecheck",

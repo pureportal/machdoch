@@ -4,12 +4,12 @@ import {
   AGENT_LIMIT_BOUNDS,
   DEFAULT_USER_AGENT_LIMITS_SETTINGS,
 } from "../../../../../core/runtime-contract.generated.js";
-import { useOptionalRegisterCommands } from "../../../commands/command-context";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import {
   asPaletteCommands,
   type CommandDefinition,
   type CommandPageItem,
-} from "../../../commands/command-types";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 import {
   getCatalogModelsForProvider,
   getDefaultReviewModelForProvider,

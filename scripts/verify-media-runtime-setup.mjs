@@ -20,10 +20,10 @@ await writeFile(
 import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createMediaModelCatalogSnapshot } from "../../../core/media/catalog";
-import { MediaAssetsView } from "../media/components/media-assets-view";
-import { MediaRuntimeSetupNotice } from "../media/components/media-runtime-setup-notice";
-import { EMPTY_MEDIA_RUNTIME_SETUP } from "../media/media-runtime-setup";
-import { useMediaRuntimeSetup } from "../media/use-media-runtime-setup";
+import { MediaAssetsView } from "@machdoch/media-studio/tauri/ui/media/components/media-assets-view.js";
+import { MediaRuntimeSetupNotice } from "@machdoch/media-studio/tauri/ui/media/components/media-runtime-setup-notice.js";
+import { EMPTY_MEDIA_RUNTIME_SETUP } from "@machdoch/media-studio/tauri/ui/media/media-runtime-setup.js";
+import { useMediaRuntimeSetup } from "@machdoch/media-studio/tauri/ui/media/use-media-runtime-setup.js";
 window.isTauri = true;
 window.setupCalls = 0;
 window.usedModels = 0;

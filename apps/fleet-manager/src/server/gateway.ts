@@ -235,7 +235,9 @@ export class GatewayHub {
           signal?.removeEventListener("abort", abort);
         },
         responseType:
-          request.type === "getProductSnapshot"
+          request.type === "media"
+            ? "media"
+            : request.type === "getProductSnapshot"
             ? "productSnapshot"
             : request.type === "getWorkspaceRuns"
               ? "workspaceRuns"

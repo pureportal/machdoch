@@ -1,4 +1,4 @@
-import { CopyContextMenu } from "../components/ui/copy-context-menu";
+import { CopyContextMenu } from "@machdoch/media-studio/tauri/ui/components/ui/copy-context-menu.js";
 import {
   Check,
   ChevronDown,
@@ -27,18 +27,18 @@ import {
   type JSX,
   type KeyboardEvent,
 } from "react";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
-} from "../components/ui/submit-shortcut";
-import { useOptionalRegisterCommands } from "../commands/command-context";
+} from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import {
   asPaletteCommands,
   type CommandDefinition,
-} from "../commands/command-types";
-import { cn } from "../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   createWorkspaceEntry,
   deleteWorkspaceEntry,

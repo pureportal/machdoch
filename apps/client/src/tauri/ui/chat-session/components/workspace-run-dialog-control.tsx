@@ -4,15 +4,15 @@ import type {
   WorkspaceRunConfigurationStatus,
   WorkspaceRunSnapshot,
 } from "../../../../shared/workspace-run.js";
-import { Button } from "../../components/ui/button";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "../../components/ui/dialog";
-import { cn } from "../../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   listenWorkspaceRunState,
   loadWorkspaceRunSnapshot,

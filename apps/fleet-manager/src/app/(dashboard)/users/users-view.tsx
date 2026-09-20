@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Field } from "@/components/field";
 import { Input } from "@/components/ui/input";
-import { api, jsonBody } from "@/lib/api";
+import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
 import { formatTime } from "@/lib/format";
 
 interface OwnerAccount {

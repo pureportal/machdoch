@@ -1,8 +1,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import type { MediaGenerationAssetMetadata } from "../../../core/media/contracts.js";
+import type { MediaGenerationAssetMetadata } from "@machdoch/media-studio/core/media/contracts.js";
 
 const storage = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn() }));
-vi.mock("../lib/_helpers/shell-store-storage.helper", () => ({
+vi.mock("@machdoch/media-studio/tauri/ui/lib/_helpers/shell-store-storage.helper.js", () => ({
   loadStoredValue: storage.load,
   saveStoredValue: storage.save,
 }));
@@ -21,7 +21,7 @@ const metadata: MediaGenerationAssetMetadata = {
 };
 
 it("persists an import after navigation without replacing the latest draft", async () => {
-  const store = await import("./media-studio-store");
+  const store = await import("@machdoch/media-studio/tauri/ui/media/media-studio-store.js");
   await store.saveMediaStudioState({
     ...store.DEFAULT_MEDIA_STUDIO_STATE,
     recipe: {
@@ -41,7 +41,7 @@ it("persists an import after navigation without replacing the latest draft", asy
 });
 
 it("serializes an import and later edits, and surfaces failed persistence", async () => {
-  const store = await import("./media-studio-store");
+  const store = await import("@machdoch/media-studio/tauri/ui/media/media-studio-store.js");
   await store.saveMediaStudioState(store.DEFAULT_MEDIA_STUDIO_STATE);
   let release!: (value: boolean) => void;
   storage.save.mockImplementationOnce(

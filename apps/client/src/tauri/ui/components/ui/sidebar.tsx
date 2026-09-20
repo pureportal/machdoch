@@ -4,11 +4,11 @@ import { PanelLeftIcon } from "lucide-react";
 import { Slot } from "radix-ui";
 import * as React from "react";
 
-import { cn } from "../../lib/utils";
-import { Button } from "./button";
-import { Input } from "./input";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import { Separator } from "./separator";
-import { ControlTooltip } from "./tooltip";
+import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import {
   Sheet,
   SheetContent,

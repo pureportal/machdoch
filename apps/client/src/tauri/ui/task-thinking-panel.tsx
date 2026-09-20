@@ -26,7 +26,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { TaskTimeoutControls } from "./task-timeout-controls";
 import { createTaskTimeoutIndicator } from "./_helpers/task-timeout-indicator.helper";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
-import { cn } from "./lib/utils";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import type { TaskPanelTone } from "./task-panel";
 import {
   createTaskExecutionStory,

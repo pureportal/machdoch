@@ -1,6 +1,6 @@
 import { AlertCircle, Cog } from "lucide-react";
 import type { JSX } from "react";
-import { Button } from "../../components/ui/button";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 
 export interface ProviderEmptyStateProps {
   onOpenSettings: () => void;

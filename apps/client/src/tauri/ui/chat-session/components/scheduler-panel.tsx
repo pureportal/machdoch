@@ -20,27 +20,27 @@ import {
   useState,
   type JSX,
 } from "react";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
+import { Badge } from "@machdoch/media-studio/tauri/ui/components/ui/badge.js";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "../../components/ui/dialog";
-import { Input } from "../../components/ui/input";
+} from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
-} from "../../components/ui/submit-shortcut";
-import { Textarea } from "../../components/ui/textarea";
-import { useOptionalRegisterCommands } from "../../commands/command-context";
+} from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
+import { Textarea } from "@machdoch/media-studio/tauri/ui/components/ui/textarea.js";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import {
   asPaletteCommands,
   type CommandDefinition,
   type CommandPageItem,
-} from "../../commands/command-types";
-import { cn } from "../../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   cancelSchedulerRun,
   createSchedulerJob,

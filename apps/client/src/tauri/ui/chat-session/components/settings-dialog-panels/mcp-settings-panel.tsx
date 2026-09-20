@@ -1,4 +1,4 @@
-import { CopyContextMenu } from "../../../components/ui/copy-context-menu";
+import { CopyContextMenu } from "@machdoch/media-studio/tauri/ui/components/ui/copy-context-menu.js";
 import {
   AlertTriangle,
   ChevronDown,
@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useId, useMemo, useState, type JSX, type ReactNode } from "react";
 import { Tabs as TabsPrimitive } from "radix-ui";
-import { Button } from "../../../components/ui/button";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   Dialog,
   DialogClose,
@@ -21,14 +21,14 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "../../../components/ui/dialog";
-import { Input } from "../../../components/ui/input";
+} from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
-} from "../../../components/ui/submit-shortcut";
-import { Textarea } from "../../../components/ui/textarea";
-import { cn } from "../../../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
+import { Textarea } from "@machdoch/media-studio/tauri/ui/components/ui/textarea.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { SettingsCard, SettingsStatus } from "./shared";
 import { ProviderSyncControl } from "./provider-sync-control";
 import { useSettingsNavigationGuard } from "./navigation-guard";

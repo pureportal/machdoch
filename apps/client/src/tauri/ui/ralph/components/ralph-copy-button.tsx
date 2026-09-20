@@ -1,8 +1,8 @@
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState, type JSX } from "react";
 
-import { Button } from "../../components/ui/button";
-import { cn } from "../../lib/utils";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 
 interface RalphCopyButtonProps {
   value: string;

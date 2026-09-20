@@ -4,9 +4,9 @@ import * as React from "react";
 import { XIcon } from "lucide-react";
 import { Dialog as SheetPrimitive } from "radix-ui";
 
-import { cn } from "../../lib/utils";
-import { useCommandOverlay } from "../../commands/use-command-overlay";
-import { commandOverlayStore } from "../../commands/command-overlay-store";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
+import { useCommandOverlay } from "@machdoch/media-studio/tauri/ui/commands/use-command-overlay.js";
+import { commandOverlayStore } from "@machdoch/media-studio/tauri/ui/commands/command-overlay-store.js";
 
 type SheetProps = React.ComponentProps<typeof SheetPrimitive.Root> & {
   commandOverlayId?: string;

@@ -5,11 +5,19 @@
 !apps/
 !apps/fleet-manager/
 !apps/fleet-manager/**
+!apps/client/
+!apps/client/package.json
+!apps/client/vite.fleet-media.config.ts
+!apps/client/tsconfig.json
+!apps/client/src/
+!apps/client/src/**
 !packages/
 !packages/fleet-protocol/
 !packages/fleet-protocol/**
 !packages/product-ui/
 !packages/product-ui/**
+!packages/media-studio/
+!packages/media-studio/**
 
 apps/fleet-manager/.next/
 apps/fleet-manager/.env*
@@ -17,6 +25,7 @@ apps/fleet-manager/data/
 apps/fleet-manager/fleet-manager.json
 apps/fleet-manager/node_modules/
 apps/fleet-manager/*.tsbuildinfo
+apps/fleet-manager/public/media-studio/
 packages/**/node_modules/
 packages/**/target/
 packages/fleet-protocol/Cargo.lock

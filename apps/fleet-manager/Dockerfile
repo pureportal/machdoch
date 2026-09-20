@@ -9,16 +9,20 @@ FROM base AS dependencies
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/fleet-manager/package.json apps/fleet-manager/package.json
+COPY apps/client/package.json apps/client/package.json
 COPY packages/fleet-protocol/package.json packages/fleet-protocol/package.json
 COPY packages/product-ui/package.json packages/product-ui/package.json
+COPY packages/media-studio/package.json packages/media-studio/package.json
 
 RUN pnpm install --frozen-lockfile
 
 FROM dependencies AS build
 
 COPY apps/fleet-manager apps/fleet-manager
+COPY apps/client apps/client
 COPY packages/fleet-protocol packages/fleet-protocol
 COPY packages/product-ui packages/product-ui
+COPY packages/media-studio packages/media-studio
 
 RUN pnpm build:fleet-manager
 
@@ -39,6 +43,7 @@ WORKDIR /workspace
 
 COPY --from=production-dependencies /workspace ./
 COPY --from=build --chown=node:node /workspace/apps/fleet-manager/.next apps/fleet-manager/.next
+COPY --from=build --chown=node:node /workspace/apps/fleet-manager/public apps/fleet-manager/public
 COPY --from=build --chown=node:node /workspace/apps/fleet-manager/src apps/fleet-manager/src
 COPY --from=build --chown=node:node /workspace/apps/fleet-manager/next.config.ts apps/fleet-manager/next.config.ts
 COPY --from=build --chown=node:node /workspace/apps/fleet-manager/tsconfig.json apps/fleet-manager/tsconfig.json
@@ -51,6 +56,7 @@ RUN mkdir -p /config/data \
 WORKDIR /workspace/apps/fleet-manager
 
 RUN test -f .next/BUILD_ID \
+    && test -f public/media-studio/index.html \
     && test -L node_modules/@machdoch/fleet-protocol \
     && test -L node_modules/@machdoch/product-ui \
     && node --import @oxc-node/core/register --input-type=module --eval "await import('@machdoch/fleet-protocol')"

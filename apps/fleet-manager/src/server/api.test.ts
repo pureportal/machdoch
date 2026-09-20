@@ -25,6 +25,61 @@ afterEach(() => {
 });
 
 describe("Fleet Manager API", () => {
+  it("protects media operations with owner authentication, CSRF, and the media allowlist", async () => {
+    runtime = testRuntime();
+    setRuntimeForTests(runtime);
+    const { cookie, csrf } = await authenticateTestOwner();
+    const instance = enrollTestInstance(runtime);
+    const path = `/api/instances/${instance.instanceId}/product/media`;
+    const request = {
+      kind: "invoke",
+      id: crypto.randomUUID(),
+      command: "media_search_civitai",
+      args: { request: { query: "Age" } },
+    };
+    expect((await apiRequest(path, "POST", request)).status).toBe(401);
+    expect((await apiRequest(path, "POST", request, cookie)).status).toBe(403);
+    expect(
+      (
+        await apiRequest(
+          path,
+          "POST",
+          { ...request, command: "execute_shell" },
+          cookie,
+          csrf,
+        )
+      ).status,
+    ).toBe(400);
+    const relay = vi
+      .spyOn(runtime.gateways, "relay")
+      .mockResolvedValue({ type: "media", response: { state: "pending" } });
+    const response = await apiRequest(path, "POST", request, cookie, csrf);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ state: "pending" });
+    expect(relay).toHaveBeenCalledWith(
+      instance.instanceId,
+      { type: "media", request },
+      expect.any(AbortSignal),
+    );
+    const upload = {
+      kind: "invoke",
+      id: crypto.randomUUID(),
+      command: "media_write_transfer",
+      args: { id: crypto.randomUUID(), offset: 0, data: "A".repeat(524288) },
+    };
+    expect((await apiRequest(path, "POST", upload, cookie, csrf)).status).toBe(
+      200,
+    );
+    const oversized = {
+      ...upload,
+      args: { ...upload.args, data: "A".repeat(1024 * 1024) },
+    };
+    const calls = relay.mock.calls.length;
+    expect(
+      (await apiRequest(path, "POST", oversized, cookie, csrf)).status,
+    ).toBe(413);
+    expect(relay.mock.calls).toHaveLength(calls);
+  });
   it("requires owner CSRF for service mutations and preview grants and gates unsupported hosts", async () => {
     runtime = testRuntime();
     setRuntimeForTests(runtime);

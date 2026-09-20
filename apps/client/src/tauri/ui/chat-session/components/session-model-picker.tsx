@@ -3,12 +3,12 @@ import {
   type ComposerModelProvider,
 } from "@machdoch/product-ui";
 import { useEffect, useMemo, useState, type JSX } from "react";
-import { useOptionalRegisterCommands } from "../../commands/command-context";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import type {
   CommandDefinition,
   CommandPage,
   CommandPageGroup,
-} from "../../commands/command-types";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 import {
   getCatalogModelsForProvider,
   getModelLabelForProvider,

@@ -39,6 +39,7 @@ import {
 } from "./ai-context-window";
 
 export type SettingsSection =
+  | "civitai"
   | "providers"
   | "web-search"
   | "mcp"
@@ -103,6 +104,13 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
       "background",
       "model",
     ],
+  },
+  {
+    id: "civitai",
+    label: "Civitai",
+    group: "Setup",
+    description: "",
+    keywords: ["media", "models", "api", "key", "downloads"],
   },
   {
     id: "agent",

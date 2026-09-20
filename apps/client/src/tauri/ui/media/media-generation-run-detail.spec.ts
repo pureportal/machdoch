@@ -1,19 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { MediaRunDetail } from "../../../core/media/contracts.js";
-import type { MediaGenerationRecipeSnapshot } from "./media-generation-queue";
-import { generationJobToRunDetail } from "./media-generation-run";
+import type { MediaRunDetail } from "@machdoch/media-studio/core/media/contracts.js";
+import type { MediaGenerationRecipeSnapshot } from "@machdoch/media-studio/tauri/ui/media/media-generation-queue.js";
+import { generationJobToRunDetail } from "@machdoch/media-studio/tauri/ui/media/media-generation-run.js";
 import {
   getMediaGenerationRunDetail,
   mediaGenerationQueue,
-} from "./media-generation-service";
-import { getMediaRunDetail } from "./media-runtime";
+} from "@machdoch/media-studio/tauri/ui/media/media-generation-service.js";
+import { getMediaRunDetail } from "@machdoch/media-studio/tauri/ui/media/media-runtime.js";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
   isTauri: () => false,
 }));
 
-vi.mock("./media-runtime", () => ({
+vi.mock("@machdoch/media-studio/tauri/ui/media/media-runtime.js", () => ({
   getMediaRunDetail: vi.fn(),
   cancelMediaRun: vi.fn(),
   normalizeMediaError: vi.fn(),

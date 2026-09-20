@@ -37,7 +37,7 @@
     "tauri": "pnpm --filter @machdoch/client tauri",
     "tauri:build": "pnpm --filter @machdoch/client tauri:build",
     "tauri:dev": "pnpm --filter @machdoch/client tauri:dev",
-    "test": "pnpm --filter @machdoch/client test && pnpm --filter @machdoch/fleet-manager test",
+    "test": "pnpm --filter @machdoch/media-studio test && pnpm --filter @machdoch/client test && pnpm --filter @machdoch/fleet-manager test",
     "test:watch": "pnpm --filter @machdoch/client test:watch",
     "typecheck": "pnpm run typecheck:packages && pnpm run typecheck:client && pnpm run typecheck:fleet-manager && pnpm run typecheck:landing",
     "typecheck:client": "pnpm --filter @machdoch/client typecheck",
@@ -59,7 +59,8 @@
     "version:bump": "node scripts/bump-version.mjs",
     "version:major": "node scripts/bump-version.mjs major",
     "version:minor": "node scripts/bump-version.mjs minor",
-    "version:patch": "node scripts/bump-version.mjs patch"
+    "version:patch": "node scripts/bump-version.mjs patch",
+    "verify:fleet-media": "node --import @oxc-node/core/register scripts/verify-fleet-media.mjs"
   },
   "engines": {
     "node": ">=22.13",

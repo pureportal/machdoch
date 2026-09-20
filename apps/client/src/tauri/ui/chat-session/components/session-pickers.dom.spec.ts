@@ -11,13 +11,13 @@ import { ComposerModelPicker } from "@machdoch/product-ui";
 import { createElement } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { RUN_MODE_META } from "../_helpers/session-shell";
-import { TooltipProvider } from "../../components/ui/tooltip";
+import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
   DialogDescription,
-} from "../../components/ui/dialog";
+} from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
 import { SessionModePicker } from "./session-mode-picker";
 import { SessionReasoningPicker } from "./session-reasoning-picker";
 

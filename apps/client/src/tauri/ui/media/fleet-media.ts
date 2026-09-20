@@ -3,22 +3,23 @@ import {
   compileMediaFlow,
   compileMediaImageOutputBranches,
   createMediaFlowLayout,
-} from "../../../core/media/compiler.js";
-import { readFlowSubjectCutoutModelPriority } from "../../../core/media/subject-cutout-policy.js";
+} from "@machdoch/media-studio/core/media/compiler.js";
+import { readFlowSubjectCutoutModelPriority } from "@machdoch/media-studio/core/media/subject-cutout-policy.js";
+import { isMediaModelReady } from "@machdoch/media-studio/core/media/model-readiness.js";
 import type {
   GenerateMediaImagesRequest,
   GenerateMediaSvgRequest,
   ImageRecipeSettings,
   MediaModelDescriptor,
   MediaRunPlanSnapshot,
-} from "../../../core/media/contracts.js";
+} from "@machdoch/media-studio/core/media/contracts.js";
 import type { FleetControlCommandEvent } from "../runtime";
-import { createBasicMediaRecipeFlow } from "./media-basic-generation";
-import { normalizeMediaSubmissionText } from "./media-generation-recipe";
+import { createBasicMediaRecipeFlow } from "@machdoch/media-studio/tauri/ui/media/media-basic-generation.js";
+import { normalizeMediaSubmissionText } from "@machdoch/media-studio/tauri/ui/media/media-generation-recipe.js";
 import {
   loadMediaStudioState,
   saveMediaStudioState,
-} from "./media-studio-store";
+} from "@machdoch/media-studio/tauri/ui/media/media-studio-store.js";
 import {
   cancelMediaRun,
   generateMediaImages,
@@ -29,7 +30,7 @@ import {
   listMediaRuns,
   readMediaAssetPreview,
   saveMediaFlowRevision,
-} from "./media-runtime";
+} from "@machdoch/media-studio/tauri/ui/media/media-runtime.js";
 
 const maximumRemotePreviewChars = 120_000;
 const remotePreviewCount = 12;
@@ -54,7 +55,12 @@ export async function loadFleetMediaSnapshot(
   const directModelIds = new Set(runtime.directGenerationModelIds);
   const models = catalog.models.flatMap((model) => {
     const targets = remoteTargetsForModel(model);
-    if (!targets.length || !directModelIds.has(model.id)) return [];
+    if (
+      !targets.length ||
+      !directModelIds.has(model.id) ||
+      !isMediaModelReady(model)
+    )
+      return [];
     return [
       {
         id: model.id,
@@ -190,7 +196,10 @@ export async function executeFleetMediaCommand(
   if (!model || !remoteTargetsForModel(model).includes(input.target)) {
     throw new Error("The selected media model is unavailable.");
   }
-  if (!runtime.directGenerationModelIds.includes(model.id)) {
+  if (
+    !runtime.directGenerationModelIds.includes(model.id) ||
+    !isMediaModelReady(model)
+  ) {
     throw new Error("The selected media model is not ready.");
   }
 
@@ -368,9 +377,8 @@ async function loadPreviews(
 }
 
 function getFleetMediaRuntime(): ReturnType<typeof initializeMediaRuntime> {
-  runtimeInitialization ??= initializeMediaRuntime().catch((error) => {
+  runtimeInitialization ??= initializeMediaRuntime().finally(() => {
     runtimeInitialization = null;
-    throw error;
   });
   return runtimeInitialization;
 }

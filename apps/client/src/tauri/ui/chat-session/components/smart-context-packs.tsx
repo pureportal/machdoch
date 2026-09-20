@@ -39,12 +39,12 @@ import {
   type SmartContextPackVariable,
 } from "../../chat-session.model";
 import type { RalphFlow } from "../../../../core/ralph.js";
-import { Button } from "../../components/ui/button";
-import { useOptionalRegisterCommands } from "../../commands/command-context";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import type {
   CommandDefinition,
   CommandPageItem,
-} from "../../commands/command-types";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 import {
   Dialog,
   DialogContent,
@@ -52,22 +52,22 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "../../components/ui/dialog";
-import { EmptyState } from "../../components/ui/empty-state";
-import { Input } from "../../components/ui/input";
+} from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
+import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "../../components/ui/popover";
-import { ControlTooltip } from "../../components/ui/tooltip";
-import { SearchField } from "../../components/ui/search-field";
+} from "@machdoch/media-studio/tauri/ui/components/ui/popover.js";
+import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
+import { SearchField } from "@machdoch/media-studio/tauri/ui/components/ui/search-field.js";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
-} from "../../components/ui/submit-shortcut";
-import { Textarea } from "../../components/ui/textarea";
-import { cn } from "../../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
+import { Textarea } from "@machdoch/media-studio/tauri/ui/components/ui/textarea.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { getProviderLabel, type RuntimeProvider } from "../../model-catalog";
 import { listRalphFlows, showRalphFlow } from "../../runtime";
 import {

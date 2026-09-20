@@ -13,7 +13,7 @@ import { DEFAULT_USER_AGENT_LIMITS_SETTINGS } from "../../../../core/runtime-con
 import { ShellTitlebar, type ShellTitlebarProps } from "./shell-titlebar";
 import { AgentLimitsSettingsPanel } from "./settings-dialog-panels/agent-limits-settings-panel";
 import type { AgentLimitsSettingsControls } from "./settings-dialog-panels/types";
-import { TooltipProvider } from "../../components/ui/tooltip";
+import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 
 vi.mock("../../runtime", () => ({
   loadProviderModelCatalog: vi.fn(async () => ({

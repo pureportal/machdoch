@@ -3,8 +3,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CommandProvider } from "../commands/command-context";
-import { TooltipProvider } from "../components/ui/tooltip";
+import { CommandProvider } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
+import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { AppRail, type AppActivityState } from "./app-rail";
 
 const renderRail = (

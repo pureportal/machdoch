@@ -1,7 +1,7 @@
 import { ChevronRight, type LucideIcon } from "lucide-react";
 import type { JSX, ReactNode } from "react";
 import type { RalphBlockType } from "../../../../core/ralph.js";
-import { cn } from "../../lib/utils";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { getBlockTone } from "../_helpers/get-ralph-block-visual.helper";
 import { MCP_BLOCK_ACTIONS } from "../_helpers/ralph-flow-editor-options.helper";
 

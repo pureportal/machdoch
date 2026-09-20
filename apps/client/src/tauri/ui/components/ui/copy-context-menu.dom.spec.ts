@@ -9,8 +9,8 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CopyContextMenu } from "./copy-context-menu";
-import { commandOverlayStore } from "../../commands/command-overlay-store";
+import { CopyContextMenu } from "@machdoch/media-studio/tauri/ui/components/ui/copy-context-menu.js";
+import { commandOverlayStore } from "@machdoch/media-studio/tauri/ui/commands/command-overlay-store.js";
 
 const writeText = vi.fn();
 

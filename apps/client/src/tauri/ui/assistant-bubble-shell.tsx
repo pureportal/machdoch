@@ -34,7 +34,7 @@ import {
   useSessionFileDrops,
   type SessionDropPayload,
 } from "./chat-session/_helpers/use-session-file-drops";
-import { ControlTooltip } from "./components/ui/tooltip";
+import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 
 const BUBBLE_SYNC_INTERVAL_MS = 30_000;
 const ACTIVE_TASK_RECONCILIATION_INTERVAL_MS = 30_000;

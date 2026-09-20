@@ -1,4 +1,4 @@
-import { CopyContextMenu } from "../components/ui/copy-context-menu";
+import { CopyContextMenu } from "@machdoch/media-studio/tauri/ui/components/ui/copy-context-menu.js";
 import {
   ChevronDown,
   CircleAlert,
@@ -23,13 +23,13 @@ import {
   type WorkspaceRunConfigurationStatus,
   type WorkspaceRunSnapshot,
 } from "../../../shared/workspace-run.js";
-import { Button } from "../components/ui/button";
-import { AppNotification } from "../components/ui/notification";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { AppNotification } from "@machdoch/media-studio/tauri/ui/components/ui/notification.js";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
-} from "../components/ui/submit-shortcut";
-import { cn } from "../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   listenWorkspaceRunLogs,
   listenWorkspaceRunState,

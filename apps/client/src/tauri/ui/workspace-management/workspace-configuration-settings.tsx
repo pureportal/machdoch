@@ -1,7 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { LoaderCircle, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
-import { Button } from "../components/ui/button";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   loadWorkspaceRuntimeSnapshot,
   saveWorkspaceContextWindow,

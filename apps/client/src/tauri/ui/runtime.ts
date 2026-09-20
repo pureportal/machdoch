@@ -33,7 +33,7 @@ import {
 import { normalizeMcpConfigSaveError } from "./mcp-config-error.js";
 import type { RunMode } from "../../core/runtime-contract.generated.js";
 import type { InstructionTagRule } from "../../core/instruction-system/types.js";
-import type { MediaAssetReference } from "../../core/media/contracts.js";
+import type { MediaAssetReference } from "@machdoch/media-studio/core/media/contracts.js";
 import type {
   RalphGenerationEvent,
   RalphGenerationInterviewSession,
