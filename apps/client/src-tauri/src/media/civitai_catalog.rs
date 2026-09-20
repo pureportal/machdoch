@@ -13,15 +13,11 @@ use super::{
     MediaModelAddonImportInspection, MediaResult,
 };
 
-static API_KEY: Mutex<Option<String>> = Mutex::new(None);
 static DOWNLOADS: LazyLock<Mutex<HashMap<String, (bool, Instant)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub(super) fn api_key() -> MediaResult<Option<String>> {
-    API_KEY
-        .lock()
-        .map(|key| key.clone())
-        .map_err(|_| "Civitai connection is unavailable".to_string())
+    super::civitai_credentials::load()
 }
 
 pub(super) async fn connect(token: Option<String>) -> MediaResult<bool> {
@@ -46,9 +42,7 @@ pub(super) async fn connect(token: Option<String>) -> MediaResult<bool> {
         }
     }
     let connected = token.is_some();
-    *API_KEY
-        .lock()
-        .map_err(|_| "Civitai connection is unavailable".to_string())? = token;
+    super::civitai_credentials::save(token.as_deref())?;
     Ok(connected)
 }
 

@@ -2,6 +2,7 @@ mod analysis;
 mod catalog;
 mod civitai_addon;
 mod civitai_catalog;
+mod civitai_credentials;
 mod civitai_compatibility;
 mod civitai_download;
 pub(crate) mod civitai_commands;

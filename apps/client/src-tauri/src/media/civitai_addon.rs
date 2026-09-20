@@ -1079,6 +1079,65 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
+    async fn civitai_live_download_and_import_checkpoint() {
+        let resolved = resolve_source("4384@128713", Some(93211)).await.unwrap();
+        assert!(
+            resolved.public.can_download,
+            "{:?}",
+            resolved.public.blocking_reason
+        );
+        let root = std::env::temp_dir().join(format!(
+            "machdoch-civitai-checkpoint-{}",
+            model_import::new_import_id().unwrap()
+        ));
+        let paths = MediaRuntimePaths {
+            database: root.join("media.sqlite3"),
+            blobs: root.join("blobs"),
+        };
+        database::ensure_initialized(&paths).unwrap();
+        let selected = resolved.selected_file.unwrap();
+        assert!(selected.public.byte_size > 2_000_000_000);
+        let source =
+            super::super::civitai_download::download_selected(&paths, &selected, |_, _| Ok(()))
+                .await
+                .unwrap();
+        let inspection = model_import::inspect(&source).unwrap();
+        assert!(inspection.can_import, "{:?}", inspection.blocking_reason);
+        assert_eq!(
+            inspection.detected_architecture.as_deref(),
+            Some("stable-diffusion-1")
+        );
+        write_staged_source_metadata(&paths, &source, &resolved.public)
+            .await
+            .unwrap();
+        let import_paths = paths.clone();
+        let import_source = source.clone();
+        let imported = tauri::async_runtime::spawn_blocking(move || {
+            model_import::import_reviewed(
+                &import_paths,
+                &super::super::ImportMediaLocalModelRequest {
+                    source_path: import_source,
+                    review_token: inspection.review_token,
+                    display_name: resolved.public.model_name,
+                    architecture: "stable-diffusion-1".into(),
+                    source_url: Some(resolved.public.source_url),
+                    license_name: None,
+                    commercial_use: None,
+                },
+            )
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(imported.digest, selected.public.sha256);
+        remove_staged_source_after_import(&paths, &source).unwrap();
+        assert!(!Path::new(&source).exists());
+        assert!(root.starts_with(std::env::temp_dir()));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore]
     async fn civitai_live_download_and_import_embedding() {
         let resolved = resolve_source("7808@9208", Some(8955)).await.unwrap();
         assert!(
