@@ -453,7 +453,7 @@ const readRalphGenerationInterviewInput = async (
   };
 };
 
-const createResumeRunLogPaths = (
+export const createResumeRunLogPaths = (
   recordPath: string,
   record: RalphRunRecord,
 ): RalphRunLogPaths => {
@@ -476,7 +476,7 @@ const getRalphCommandScope = (options: RalphCliOptions): RalphFlowScope => {
   return options.scope ?? "workspace";
 };
 
-const createRalphFlowDiscoveryOptions = (
+export const createRalphFlowDiscoveryOptions = (
   discoverGithubCustomizations: boolean | undefined,
   flow: RalphFlow | undefined,
   scope: RalphFlowScope,

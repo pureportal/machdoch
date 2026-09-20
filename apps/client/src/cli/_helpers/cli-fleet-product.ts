@@ -1,3 +1,4 @@
+import { FleetRalphRuntime } from "./cli-fleet-ralph.js";
 import { FleetMediaWorker } from "./cli-fleet-media.js";
 import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -297,6 +298,7 @@ const cloneState = (state: FleetCliState): FleetCliState =>
 
 export class FleetCliProductRuntime {
   private readonly media = new FleetMediaWorker();
+  private readonly ralph = new FleetRalphRuntime();
   private readonly runs = new FleetRunManager((workspace) =>
     this.assertWorkspace(workspace),
   );
@@ -412,6 +414,7 @@ export class FleetCliProductRuntime {
       task.controller.cancel(reason);
     }
     await Promise.allSettled([
+      this.ralph.shutdown(),
       ...this.taskSettlements.values(),
       projectsStopped,
       runsStopped,
@@ -563,6 +566,43 @@ export class FleetCliProductRuntime {
                 ),
             ),
           };
+        });
+      case "ralph-run":
+      case "ralph-resume-run":
+        return await this.commitCommand(command, async (_state, commandId) => {
+          const workspace = await this.assertWorkspace(command.workspace);
+          if (!isConfiguredModelProvider(command.provider))
+            throw new FleetProductError(
+              "invalidRequest",
+              "Invalid RALPH provider.",
+            );
+          if (
+            this.state.sessions.some(
+              (session) =>
+                session.workspace === workspace && session.pendingTask,
+            )
+          )
+            throw new FleetProductError(
+              "conflict",
+              "A chat is already running in this workspace.",
+            );
+          const config = await this.dependencies.loadRuntimeConfig(
+            workspace,
+            "machdoch",
+            command.model,
+            command.provider,
+            undefined,
+            command.reasoning,
+          );
+          this.assertRuntimeAvailable(config);
+          const taskId = `ralph-fleet-${commandId}`;
+          const start = await this.ralph.prepare(
+            command,
+            workspace,
+            config,
+            taskId,
+          );
+          return { record: { taskId }, afterCommit: start };
         });
       case "submit-message":
         return await this.submitMessage(command);
@@ -743,8 +783,6 @@ export class FleetCliProductRuntime {
       case "scheduler-delete":
       case "scheduler-retry-run":
       case "scheduler-cancel-run":
-      case "ralph-run":
-      case "ralph-resume-run":
       case "generate-media":
       case "cancel-media-run":
         throw new FleetProductError(
@@ -996,7 +1034,10 @@ export class FleetCliProductRuntime {
   ): Promise<HostResponse> {
     return await this.commitCommand(command, async (state, _id, timestamp) => {
       const currentSession = this.getSession(this.state, sessionId);
-      if (currentSession.pendingTask) {
+      if (
+        currentSession.pendingTask ||
+        this.ralph.isWorkspaceBusy(currentSession.workspace)
+      ) {
         throw new FleetProductError(
           "conflict",
           "The session has a running task.",
@@ -1210,6 +1251,12 @@ export class FleetCliProductRuntime {
   private async cancelTask(
     command: Extract<ProductCommand, { kind: "cancel" }>,
   ): Promise<HostResponse> {
+    if (this.ralph.hasTask(command.taskId)) {
+      return await this.commitCommand(command, () => ({
+        record: { taskId: command.taskId },
+        afterCommit: () => this.ralph.cancel(command.taskId),
+      }));
+    }
     const active = this.activeTasks.get(command.taskId);
     if (!active) {
       throw new FleetProductError("invalidRequest", "Task not found.");
@@ -1307,6 +1354,7 @@ export class FleetCliProductRuntime {
         ({ digest: _digest, ...command }) => command,
       ),
       shell: {
+        ralph: await this.ralph.snapshot(activeSession.workspace),
         projectLibrary,
         version: productSnapshotVersion,
         capturedAt: timestamp,
