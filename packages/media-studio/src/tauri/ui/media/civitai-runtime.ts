@@ -8,6 +8,7 @@ import type {
   CivitaiOptions,
   CivitaiSearch,
   CivitaiSearchPage,
+  CivitaiStorage,
 } from "../../../core/media/civitai.js";
 
 async function call<T>(
@@ -29,6 +30,8 @@ async function call<T>(
 }
 
 export const civitaiRuntime = {
+  storage: (fileBytes: number) =>
+    call<CivitaiStorage>("media_civitai_storage", { fileBytes }),
   options: () => call<CivitaiOptions>("media_civitai_options"),
   search: (request: CivitaiSearch) =>
     call<CivitaiSearchPage>("media_search_civitai", { request }),

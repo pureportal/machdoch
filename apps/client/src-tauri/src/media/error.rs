@@ -318,6 +318,7 @@ fn classify(operation: &str, diagnostic: &str) -> MediaErrorCode {
         || diagnostic.contains("disk full")
         || diagnostic.contains("insufficient space")
         || diagnostic.contains("not have enough free space")
+        || diagnostic.contains("not enough free space")
     {
         return MediaErrorCode::DiskFull;
     }

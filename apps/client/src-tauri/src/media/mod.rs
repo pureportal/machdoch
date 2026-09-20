@@ -10,6 +10,7 @@ mod civitai_catalog;
 mod civitai_credentials;
 mod civitai_compatibility;
 mod civitai_download;
+mod civitai_storage;
 pub(crate) mod civitai_commands;
 mod controlnet;
 mod database;

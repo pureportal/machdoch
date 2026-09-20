@@ -768,7 +768,7 @@ pub(crate) async fn download_reviewed(
     app: &tauri::AppHandle,
 ) -> MediaResult<super::civitai_catalog::CivitaiDownloadedResource> {
     let resolved = resolve_source(&request.source, Some(request.file_id)).await?;
-    super::civitai_catalog::report_progress(app, &request.operation_id, 0, 1)?;
+    super::civitai_catalog::report_progress(app, &request.operation_id, 0, 1, None)?;
     if request.review_token != resolved.public.review_token {
         return Err(
             "The Civitai model metadata changed after review. Inspect the URL or AIR again before downloading."
@@ -784,8 +784,8 @@ pub(crate) async fn download_reviewed(
         .selected_file
         .ok_or_else(|| "The reviewed Civitai file is no longer available".to_string())?;
     let source_path =
-        super::civitai_download::download_selected(paths, &selected, |received, total| {
-            super::civitai_catalog::report_progress(app, &request.operation_id, received, total)
+        super::civitai_download::download_selected(paths, &selected, |received, total, storage| {
+            super::civitai_catalog::report_progress(app, &request.operation_id, received, total, storage)
         })
         .await?;
     write_staged_source_metadata(paths, &source_path, &resolved.public).await?;
@@ -1098,7 +1098,7 @@ mod tests {
         let selected = resolved.selected_file.unwrap();
         assert!(selected.public.byte_size > 2_000_000_000);
         let source =
-            super::super::civitai_download::download_selected(&paths, &selected, |_, _| Ok(()))
+            super::super::civitai_download::download_selected(&paths, &selected, |_, _, _| Ok(()))
                 .await
                 .unwrap();
         let inspection = model_import::inspect(&source).unwrap();
@@ -1157,7 +1157,7 @@ mod tests {
         let selected = resolved.selected_file.unwrap();
         assert!(selected.public.byte_size < 1024 * 1024);
         let source =
-            super::super::civitai_download::download_selected(&paths, &selected, |_, _| Ok(()))
+            super::super::civitai_download::download_selected(&paths, &selected, |_, _, _| Ok(()))
                 .await
                 .unwrap();
         let inspection = model_addon::inspect_for_import(&paths, &source).unwrap();

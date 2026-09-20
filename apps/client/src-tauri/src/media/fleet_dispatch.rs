@@ -98,6 +98,17 @@ pub(super) async fn invoke(
             )
             .map_err(|error| json!(error.to_string()))?
         }
+        "media_civitai_storage" => {
+            check_arguments(&args, &["fileBytes"])?;
+            serde_json::to_value(
+                super::civitai_commands::media_civitai_storage(
+                    app.clone(),
+                    argument(&args, "fileBytes")?,
+                )
+                .map_err(error_value)?,
+            )
+            .map_err(|error| json!(error.to_string()))?
+        }
         "media_connect_civitai" => {
             check_arguments(&args, &["token"])?;
             serde_json::to_value(

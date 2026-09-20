@@ -2,6 +2,57 @@ import { describe, expect, it, vi } from "vitest";
 import { MediaImportQueue } from "./media-import-queue";
 
 describe("background model imports", () => {
+  it("keeps downloads serial after unsubscribe and waits for cancellation to settle", async () => {
+    const queue = new MediaImportQueue();
+    let finish!: () => void;
+    let aborted = false;
+    const unsubscribe = queue.subscribe(vi.fn());
+    queue.enqueue(
+      "First",
+      async ({ signal, update }) => {
+        await new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+        aborted = signal.aborted;
+        signal.throwIfAborted();
+        update({ status: "importing" });
+        return "first";
+      },
+      "hash-1",
+    );
+    const second = vi.fn(async () => "second");
+    queue.enqueue("Duplicate", second, "hash-1");
+    queue.enqueue("Second", second, "hash-2");
+    expect(queue.getSnapshot()).toHaveLength(2);
+    unsubscribe();
+    queue.cancel(queue.getSnapshot()[0]!.id);
+    expect(second).not.toHaveBeenCalled();
+    expect(queue.hasPendingWork()).toBe(true);
+    finish();
+    await vi.waitFor(() => expect(second).toHaveBeenCalledOnce());
+    expect(aborted).toBe(true);
+    expect(queue.getSnapshot()[0]!.status).toBe("cancelled");
+    await vi.waitFor(() => expect(queue.hasPendingWork()).toBe(false));
+  });
+
+  it("cancels waiting downloads without starting them", async () => {
+    const queue = new MediaImportQueue();
+    let finish!: (id: string) => void;
+    queue.enqueue(
+      "First",
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      "hash-1",
+    );
+    const second = vi.fn(async () => "second");
+    queue.enqueue("Second", second, "hash-2");
+    queue.cancel(queue.getSnapshot()[1]!.id);
+    finish("first");
+    await vi.waitFor(() => expect(queue.hasPendingWork()).toBe(false));
+    expect(second).not.toHaveBeenCalled();
+  });
   it("queues independent imports, keeps the UI free, and retries a failure", async () => {
     const queue = new MediaImportQueue();
     let complete!: (id: string) => void;

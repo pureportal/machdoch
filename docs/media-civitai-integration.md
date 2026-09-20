@@ -99,3 +99,12 @@ Additional checks:
 - Native persistence tests cover reading after save, replacement, and removal; live public API and embedding download/import checks passed. A real DreamShaper checkpoint (model 4384, version 128713, file 93211; 2,132,625,894 bytes) also passed full download, SHA-256 verification, architecture inspection, and library import in an isolated temporary library. Test files were removed afterward.
 
 Reports and screenshots: `apps/client/.cache/civitai-review/`, `apps/client/.cache/civitai-review-fleet/`, and `.cache/fleet-media-review/`.
+
+
+## Background downloads and disk space
+
+Civitai checkpoints, LoRAs, and embeddings now use the shared background import queue. Closing the catalog or changing Media Studio tabs leaves work running. Assets and the catalog show queued, downloading, importing, completed, failed, and cancelled items with progress, cancellation, retry, and dismissal. The queue waits for import and metadata persistence before starting another download. A native lock also serializes Civitai transfers across windows. Queued or failed work participates in the existing pending-work/shutdown checks.
+
+Free space is checked on the model volume before enqueueing, when a queued transfer starts, before writing, and during transfer. Downloads require 2.1 times the file size to allow for the downloaded source and import copy. A warning appears when that reserve would leave less than 5 GiB; insufficient or unreadable free space blocks the transfer. Cancellation and transfer errors remove partial downloads. Metadata-save retries retain the imported resource ID and do not reimport it.
+
+The queue lives for the current application window session; it is not restored after closing the app or reloading the Fleet page. Browser verification uses mocked desktop and Fleet IPC. Live authenticated transfers and the Unix free-space implementation were not exercised for this change.
