@@ -31,6 +31,15 @@ vi.mock("./media-visual-preview", () => ({
 }));
 
 const noop = (): void => {};
+vi.stubGlobal(
+  "ResizeObserver",
+  class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+);
+Element.prototype.scrollIntoView = vi.fn();
 const baseState = normalizeMediaStudioState(DEFAULT_MEDIA_STUDIO_STATE);
 const catalog = createMediaModelCatalogSnapshot({
   isOpenAiConfigured: false,
@@ -274,6 +283,69 @@ describe("MediaGenerateView", () => {
       }),
     );
   });
+  it.each(["remote", "local"] as const)(
+    "selects a %s model and reports sampling resets",
+    (target) => {
+      const props = createProps();
+      const destination =
+        target === "remote"
+          ? createMediaModelCatalogSnapshot({
+              isOpenAiConfigured: true,
+            }).models.find((model) => model.providerId === "openai")!
+          : imageModel;
+      const source = {
+        ...imageModel,
+        id: "local:source",
+        displayName: "Source checkpoint",
+        architecture: "stable-diffusion-xl" as const,
+      };
+      const onChange = vi.fn();
+      render(
+        createElement(MediaGenerateView, {
+          ...props,
+          catalog: { ...catalog, models: [source, destination] },
+          directGenerationModelIds: [source.id, destination.id],
+          settings: {
+            ...props.settings,
+            modelId: source.id,
+            sampling: { numInferenceSteps: 20, guidanceScale: 5 },
+          },
+          onChange,
+        }),
+      );
+      fireEvent.click(screen.getByRole("combobox", { name: "Model" }));
+      const option = screen.getByRole("option", {
+        name: new RegExp(
+          destination.displayName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        ),
+      });
+      expect(option.getAttribute("aria-disabled")).not.toBe("true");
+      fireEvent.click(option);
+      expect(onChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          modelId: destination.id,
+          sampling:
+            target === "remote"
+              ? {}
+              : { numInferenceSteps: null, guidanceScale: null },
+        }),
+      );
+      expect(screen.getByText("Model settings updated")).toBeTruthy();
+      expect(
+        screen.getByText(
+          target === "remote"
+            ? "Custom sampling reset to model defaults."
+            : "Sampling steps set to 4. Guidance reset to model default.",
+        ),
+      ).toBeTruthy();
+      expect(screen.queryByRole("option")).toBeNull();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Dismiss notification" }),
+      );
+      expect(screen.queryByText("Model settings updated")).toBeNull();
+    },
+  );
+
   it("keeps a missing video model selected until it becomes available", () => {
     const onVideoSettingsChange = vi.fn();
     const hunyuan = {
