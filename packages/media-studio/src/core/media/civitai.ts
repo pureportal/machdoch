@@ -60,6 +60,8 @@ export interface CivitaiModel {
   stats: { downloadCount: number | null; thumbsUpCount: number | null } | null;
 }
 
+export type CivitaiContentMode = "normal" | "all" | "mature";
+
 export interface CivitaiSearch {
   query: string;
   modelType: string;
@@ -68,7 +70,7 @@ export interface CivitaiSearch {
   period: string;
   tag: string;
   username: string;
-  nsfw: boolean;
+  contentMode: CivitaiContentMode;
   favorites: boolean;
   cursor: string | null;
 }
@@ -121,7 +123,7 @@ export const CIVITAI_DEFAULT_SEARCH: CivitaiSearch = {
   period: "AllTime",
   tag: "",
   username: "",
-  nsfw: false,
+  contentMode: "normal",
   favorites: false,
   cursor: null,
 };

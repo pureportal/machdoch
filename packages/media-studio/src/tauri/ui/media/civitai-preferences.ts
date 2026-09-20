@@ -21,9 +21,14 @@ export function normalizeCivitaiPreferences(value: unknown): CivitaiSearch {
   ] as const) {
     if (typeof stored[key] === "string") result[key] = stored[key];
   }
-  for (const key of ["nsfw", "favorites"] as const) {
-    if (typeof stored[key] === "boolean") result[key] = stored[key];
-  }
+  if (typeof stored.favorites === "boolean")
+    result.favorites = stored.favorites;
+  if (
+    stored.contentMode === "normal" ||
+    stored.contentMode === "all" ||
+    stored.contentMode === "mature"
+  )
+    result.contentMode = stored.contentMode;
   if (
     ["Most Downloaded", "Highest Rated", "Newest"].includes(String(stored.sort))
   )

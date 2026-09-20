@@ -94,6 +94,24 @@ pub(crate) struct CivitaiPreviewMeta {
     pub negative_prompt: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum CivitaiContentMode {
+    Normal,
+    All,
+    Mature,
+}
+
+impl CivitaiContentMode {
+    fn matches(self, nsfw: bool) -> bool {
+        match self {
+            Self::Normal => !nsfw,
+            Self::All => true,
+            Self::Mature => nsfw,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct CivitaiSearchRequest {
@@ -104,7 +122,7 @@ pub(crate) struct CivitaiSearchRequest {
     pub period: String,
     pub tag: String,
     pub username: String,
-    pub nsfw: bool,
+    pub content_mode: CivitaiContentMode,
     pub favorites: bool,
     pub cursor: Option<String>,
 }
@@ -131,7 +149,14 @@ fn search_url(request: &CivitaiSearchRequest) -> MediaResult<reqwest::Url> {
         .append_pair("limit", "24")
         .append_pair("sort", &request.sort)
         .append_pair("period", &request.period)
-        .append_pair("nsfw", if request.nsfw { "true" } else { "false" });
+        .append_pair(
+            "nsfw",
+            if request.content_mode == CivitaiContentMode::Normal {
+                "false"
+            } else {
+                "true"
+            },
+        );
     for (key, value, limit) in [
         ("query", request.query.as_str(), 512),
         ("tag", request.tag.as_str(), 128),
@@ -301,10 +326,10 @@ pub(super) async fn search(request: &CivitaiSearchRequest) -> MediaResult<Civita
     let mut items: Vec<CivitaiCatalogModel> =
         serde_json::from_value(response.get("items").cloned().unwrap_or(Value::Null))
             .map_err(|error| format!("Civitai returned invalid search results: {error}"))?;
-    items.retain(|model| request.nsfw || !model.nsfw);
+    items.retain(|model| request.content_mode.matches(model.nsfw));
     for model in &mut items {
         filter_resources(model, &request.base_model);
-        filter_previews(model, request.nsfw);
+        filter_previews(model, request.content_mode != CivitaiContentMode::Normal);
     }
     items.retain(|model| {
         !model.model_versions.is_empty()
@@ -515,6 +540,36 @@ mod tests {
     }
 
     #[test]
+    fn content_modes_filter_models_and_control_upstream_mature_content() {
+        for (mode, expected, upstream) in [
+            ("normal", vec![false], "false"),
+            ("all", vec![false, true], "true"),
+            ("mature", vec![true], "true"),
+        ] {
+            let request: CivitaiSearchRequest = serde_json::from_value(serde_json::json!({
+                "query": "", "modelType": "", "baseModel": "", "sort": "Newest",
+                "period": "AllTime", "tag": "", "username": "", "contentMode": mode,
+                "favorites": false, "cursor": "next-page"
+            }))
+            .unwrap();
+            let url = search_url(&request).unwrap();
+            let pairs: HashMap<_, _> = url.query_pairs().into_owned().collect();
+            assert_eq!(pairs["nsfw"], upstream);
+            assert_eq!(pairs["cursor"], "next-page");
+            assert_eq!(
+                [false, true]
+                    .into_iter()
+                    .filter(|nsfw| request.content_mode.matches(*nsfw))
+                    .collect::<Vec<_>>(),
+                expected
+            );
+        }
+        assert!(
+            serde_json::from_value::<CivitaiContentMode>(serde_json::json!("invalid")).is_err()
+        );
+    }
+
+    #[test]
     fn all_filters_still_restrict_the_upstream_search() {
         let mut request = CivitaiSearchRequest {
             query: "".into(),
@@ -524,7 +579,7 @@ mod tests {
             period: "Month".into(),
             tag: "".into(),
             username: "".into(),
-            nsfw: false,
+            content_mode: CivitaiContentMode::Normal,
             favorites: false,
             cursor: None,
         };
@@ -582,7 +637,7 @@ mod tests {
             period: "AllTime".into(),
             tag: "".into(),
             username: "".into(),
-            nsfw: false,
+            content_mode: CivitaiContentMode::Normal,
             favorites: false,
             cursor: None,
         };
@@ -618,7 +673,7 @@ mod tests {
             period: "Month".into(),
             tag: "".into(),
             username: "".into(),
-            nsfw: true,
+            content_mode: CivitaiContentMode::All,
             favorites: false,
             cursor: Some("12|34".into()),
         };
@@ -643,7 +698,7 @@ mod tests {
                 period: "AllTime".into(),
                 tag: "".into(),
                 username: "".into(),
-                nsfw: false,
+                content_mode: CivitaiContentMode::Normal,
                 favorites: false,
                 cursor: None,
             })

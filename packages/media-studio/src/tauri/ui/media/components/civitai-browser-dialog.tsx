@@ -14,6 +14,7 @@ import {
   civitaiRequestedVersion,
   civitaiVisibleImages,
   isCivitaiLookup,
+  type CivitaiContentMode,
   type CivitaiModel,
   type CivitaiOptions,
   type CivitaiSearch,
@@ -87,11 +88,15 @@ export function CivitaiBrowserDialog({
     void loadCivitaiPreferences()
       .then((saved) => {
         if (!active) return;
-        const restored = initialSource
+        const restored: CivitaiSearch = initialSource
           ? {
               ...saved,
               query: initialSource,
-              nsfw: saved.nsfw || initialSource.includes("civitai.red"),
+              contentMode:
+                saved.contentMode === "normal" &&
+                initialSource.includes("civitai.red")
+                  ? "all"
+                  : saved.contentMode,
             }
           : saved;
         setFilters(restored);
@@ -164,9 +169,10 @@ export function CivitaiBrowserDialog({
       if (isCivitaiLookup(request.query)) {
         const model = await civitaiRuntime.getModel(
           request.query.trim(),
-          request.nsfw,
+          request.contentMode !== "normal",
         );
         if (sequence.current !== requestId) return;
+        if (request.contentMode === "mature" && !model.nsfw) return;
         setItems([model]);
         setSelected(model);
         setSelectedVersion(
@@ -230,7 +236,7 @@ export function CivitaiBrowserDialog({
     setFilters({
       ...CIVITAI_DEFAULT_SEARCH,
       query: filters.query,
-      nsfw: filters.nsfw,
+      contentMode: filters.contentMode,
     });
 
   const openModel = async (model: CivitaiModel) => {
@@ -240,7 +246,7 @@ export function CivitaiBrowserDialog({
     try {
       const detail = await civitaiRuntime.getModel(
         civitaiModelUrl(model, model.modelVersions[0]?.id),
-        filters.nsfw,
+        filters.contentMode !== "normal",
       );
       if (sequence.current === requestId) {
         setSelected(detail);
@@ -388,15 +394,20 @@ export function CivitaiBrowserDialog({
                   Clear filters
                 </Button>
               )}
-              <label className="ml-auto flex min-h-10 items-center gap-2 text-sm text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={filters.nsfw}
-                  onChange={(event) => update({ nsfw: event.target.checked })}
-                  className="accent-sky-400"
-                />{" "}
-                Mature content
-              </label>
+              <select
+                aria-label="Content"
+                className={`${fieldClass} ml-auto flex-[1_1_10rem] sm:max-w-48`}
+                value={filters.contentMode}
+                onChange={(event) =>
+                  update({
+                    contentMode: event.target.value as CivitaiContentMode,
+                  })
+                }
+              >
+                <option value="normal">Normal</option>
+                <option value="all">Normal + Mature</option>
+                <option value="mature">Mature only</option>
+              </select>
             </div>
             {advanced && (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -484,7 +495,7 @@ export function CivitaiBrowserDialog({
               key={selected.id}
               model={selected}
               initialVersionId={selectedVersion}
-              mature={filters.nsfw}
+              mature={filters.contentMode !== "normal"}
               installedHashes={installedHashes}
               onBack={() => {
                 setSelected(null);
@@ -504,7 +515,7 @@ export function CivitaiBrowserDialog({
                   const preview = civitaiVisibleImages(
                     model,
                     version,
-                    filters.nsfw,
+                    filters.contentMode !== "normal",
                   )[0];
                   const installed = version?.files.some(
                     (file) =>
