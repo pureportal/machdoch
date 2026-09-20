@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { UserAgentLimitsSettings } from "../../../core/runtime-contract.generated.js";
 import type { ShellPersistedState } from "../chat-session.model";
 import { loadShellStateSnapshot } from "../lib/shell-store";
-import { hasPendingMediaGeneration } from "../media/media-generation-service";
+import { hasPendingMediaGeneration } from "@machdoch/media-studio/tauri/ui/media/media-generation-service.js";
 import { hasPendingChatWork, IdleShutdownMonitor } from "./shutdown-when-idle";
 import { startAutomaticWorkPump } from "./automatic-work-pump";
 

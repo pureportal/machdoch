@@ -13,7 +13,7 @@ import {
   createSession,
   type ChatSessionContextAttachment,
 } from "../../chat-session.model";
-import { TooltipProvider } from "../../components/ui/tooltip";
+import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { SessionsSidebar, type SessionsSidebarProps } from "./sessions-sidebar";
 import {
   ContextAttachmentsList,

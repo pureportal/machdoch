@@ -6,6 +6,7 @@
 @import "./components/ui/menu.css";
 @source "../ui";
 @source "./";
+@source "../../../../../packages/media-studio/src";
 @custom-variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *));
 
 /*

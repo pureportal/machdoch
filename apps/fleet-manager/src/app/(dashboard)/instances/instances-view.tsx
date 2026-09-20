@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { api } from "@/lib/api";
+import { api } from "@machdoch/product-ui/fleet-api";
 import { formatRelativeTime, formatTime } from "@/lib/format";
 
 interface FleetInstance {

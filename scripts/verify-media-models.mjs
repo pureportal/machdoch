@@ -106,7 +106,7 @@ await writeFile(
   `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { MediaStudio } from '../media/media-studio';
+import { MediaStudio } from '@machdoch/media-studio/tauri/ui/media/media-studio.js';
 window.isTauri = true;
 window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
 window.__TAURI_INTERNALS__ = {

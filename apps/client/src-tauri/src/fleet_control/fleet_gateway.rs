@@ -12,6 +12,7 @@ pub(crate) fn handle_fleet_request(
     request: HostRequest,
 ) -> HostResponse {
     match request {
+        HostRequest::Media { request } => HostResponse::Media { response: crate::media::fleet::handle(app_handle, request) },
         HostRequest::GetProductSnapshot => product_snapshot(app_handle),
         HostRequest::ExecuteProductCommand { command } => {
             execute_product_command(app_handle, command)

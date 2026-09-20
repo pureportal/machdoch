@@ -7,7 +7,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import type { JSX, KeyboardEvent } from "react";
-import { cn } from "../lib/utils";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 
 export type WorkspaceDetailSection =
   | "output"

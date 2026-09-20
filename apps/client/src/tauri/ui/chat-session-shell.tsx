@@ -34,8 +34,8 @@ import { SessionComposer } from "./chat-session/components/session-composer";
 import { SessionHeader } from "./chat-session/components/session-header";
 import { SessionsSidebar } from "./chat-session/components/sessions-sidebar";
 import { ShellTitlebar } from "./chat-session/components/shell-titlebar";
-import { Dialog } from "./components/ui/dialog";
-import { Button } from "./components/ui/button";
+import { Dialog } from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { VoiceInputOverlay } from "./components/voice-input-overlay";
 import {
@@ -61,10 +61,10 @@ import {
   takeFileManagerInvocations,
   type FileManagerInvocation,
 } from "./runtime";
-import { CommandProvider } from "./commands/command-context";
-import { getDefaultCommandShortcut } from "./commands/command-defaults";
-import { useCommandOverlay } from "./commands/use-command-overlay";
-import type { CommandDefinition } from "./commands/command-types";
+import { CommandProvider } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
+import { getDefaultCommandShortcut } from "@machdoch/media-studio/tauri/ui/commands/command-defaults.js";
+import { useCommandOverlay } from "@machdoch/media-studio/tauri/ui/commands/use-command-overlay.js";
+import type { CommandDefinition } from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 
 const SettingsDialog = lazy(async () => {
   const module = await import("./chat-session/components/settings-dialog");
@@ -95,7 +95,7 @@ const RalphApp = lazy(async () => {
 });
 
 const MediaStudio = lazy(async () => {
-  const module = await import("./media/media-studio");
+  const module = await import("@machdoch/media-studio/tauri/ui/media/media-studio.js");
 
   return { default: module.MediaStudio };
 });
@@ -390,7 +390,7 @@ export const ChatSession = (): JSX.Element => {
   const shellCommands = useMemo<readonly CommandDefinition[]>(() => {
     const state = () => shellCommandStateRef.current;
     const viewCommands: Array<{
-      id: keyof typeof import("./commands/command-defaults").DEFAULT_COMMAND_SHORTCUTS;
+      id: keyof typeof import("@machdoch/media-studio/tauri/ui/commands/command-defaults.js").DEFAULT_COMMAND_SHORTCUTS;
       app: MainAppId;
       title: string;
     }> = [

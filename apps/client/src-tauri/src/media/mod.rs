@@ -1,3 +1,8 @@
+mod fleet_store;
+pub(crate) mod fleet_transfer;
+pub(crate) mod fleet_worker;
+pub(crate) mod fleet;
+mod fleet_dispatch;
 mod analysis;
 mod catalog;
 mod civitai_addon;

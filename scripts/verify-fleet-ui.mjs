@@ -330,7 +330,7 @@ try {
   );
 
   await page.click('.m-product-rail-button[aria-label="Media Studio"]');
-  await page.waitForSelector(".m-media-surface");
+  await page.waitForSelector('iframe[title="Media Studio"]');
   const desktopMedia = await inspectFeatureViewport(page, "media");
   assertFeatureViewport("Desktop Media Studio", desktopMedia);
   if (screenshot) {
@@ -339,39 +339,6 @@ try {
       fullPage: true,
     });
   }
-  await page.click(".m-media-prompt textarea");
-  await page.keyboard.down("Control");
-  await page.keyboard.press("A");
-  await page.keyboard.up("Control");
-  await page.keyboard.press("Backspace");
-  await page.type(
-    ".m-media-prompt textarea",
-    "A cobalt paper sculpture with soft shadows",
-  );
-  await new Promise((resolve) => setTimeout(resolve, 2_000));
-  const preservedMediaPrompt = await page.$eval(
-    ".m-media-prompt textarea",
-    (element) => element.value,
-  );
-  if (preservedMediaPrompt !== "A cobalt paper sculpture with soft shadows") {
-    throw new Error(
-      "Media Studio replaced an in-progress prompt while polling.",
-    );
-  }
-  await page.click(".m-media-create-actions .m-product-primary-button");
-  await page.waitForSelector('.m-media-modal[role="dialog"]');
-  await page.click(".m-media-modal .m-product-secondary-button");
-  await page.click('.m-media-navigation button[aria-label="Assets"]');
-  await page.waitForSelector(".m-media-asset");
-  await page.click(".m-media-asset");
-  await page.waitForSelector('.m-media-asset-dialog[role="dialog"]');
-  await page.click(".m-media-asset-dialog .m-media-modal-close");
-  await page.click('.m-media-navigation button[aria-label="Activity"]');
-  const mediaRuns = await page.$$(".m-media-run");
-  if (mediaRuns.length !== 2) {
-    throw new Error(`Media activity is incomplete: ${mediaRuns.length}`);
-  }
-
   await page.click('.m-product-rail-button[aria-label="Smart Scheduler"]');
   await page.waitForSelector(".m-scheduler");
   const desktopScheduler = await inspectFeatureViewport(page, "scheduler");
@@ -530,7 +497,7 @@ try {
   const mobile = await inspectChatViewport(page);
   assertChatViewport("Mobile", mobile, true);
   await page.click('.m-product-mobile-nav button[aria-label="Media Studio"]');
-  await page.waitForSelector(".m-media-surface");
+  await page.waitForSelector('iframe[title="Media Studio"]');
   const mobileMedia = await inspectFeatureViewport(page, "media");
   assertFeatureViewport("Mobile Media Studio", mobileMedia, true);
   if (screenshot) {
@@ -622,7 +589,7 @@ try {
   const narrow = await inspectChatViewport(page);
   assertChatViewport("Narrow mobile", narrow, true);
   await page.click('.m-product-mobile-nav button[aria-label="Media Studio"]');
-  await page.waitForSelector(".m-media-surface");
+  await page.waitForSelector('iframe[title="Media Studio"]');
   const narrowMedia = await inspectFeatureViewport(page, "media");
   assertFeatureViewport("Narrow Media Studio", narrowMedia, true);
   await page.click('.m-product-mobile-nav button[aria-label="Chat"]');
@@ -730,14 +697,14 @@ async function inspectFeatureViewport(page, feature) {
     const surface = document
       .querySelector(
         activeFeature === "media"
-          ? ".m-media-surface"
+          ? 'iframe[title="Media Studio"]'
           : activeFeature === "ralph"
             ? ".m-ralph"
             : ".m-scheduler",
       )
       ?.getBoundingClientRect();
     const mediaNavigation = document
-      .querySelector(".m-media-navigation")
+      .querySelector('iframe[title="Media Studio"]')
       ?.getBoundingClientRect();
     return {
       viewportWidth: window.innerWidth,

@@ -1,13 +1,13 @@
 import { Clock3, RotateCcw } from "lucide-react";
 import { useId, useState, type JSX } from "react";
 import { DESKTOP_SETTING_BOUNDS } from "../../core/runtime-contract.generated.js";
-import { Button } from "./components/ui/button";
-import { Input } from "./components/ui/input";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "./components/ui/popover";
+} from "@machdoch/media-studio/tauri/ui/components/ui/popover.js";
 import { resetDesktopTaskTimeout } from "./runtime";
 
 export const TaskTimeoutControls = ({

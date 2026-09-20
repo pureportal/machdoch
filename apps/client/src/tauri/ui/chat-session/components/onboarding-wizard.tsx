@@ -2,14 +2,14 @@ import { FolderOpen, Sparkles } from "lucide-react";
 import { useMemo, useRef, type JSX } from "react";
 import type { RunMode } from "../../../../core/runtime-contract.generated.js";
 import type { ChatSessionRecord } from "../../chat-session.model";
-import { Button } from "../../components/ui/button";
-import { useOptionalRegisterCommands } from "../../commands/command-context";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import {
   asPaletteCommands,
   type CommandDefinition,
   type CommandPageItem,
-} from "../../commands/command-types";
-import { Dialog } from "../../components/ui/dialog";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
+import { Dialog } from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
 import type { RuntimeProvider } from "../../model-catalog";
 import {
   USER_API_KEY_PROVIDER_ORDER,

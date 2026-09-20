@@ -1,7 +1,7 @@
 import { useRef, useState, type JSX } from "react";
 import { createRoot } from "react-dom/client";
-import { CommandProvider } from "../commands/command-context";
-import { TooltipProvider } from "../components/ui/tooltip";
+import { CommandProvider } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
+import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { RalphFlowEditor } from "../ralph/ralph-flow-editor";
 import { ChatInputNeededDialog } from "../chat-session/components/chat-input-needed-dialog";
 import { ChatInterviewDialog } from "../chat-session/components/chat-interview-dialog";
@@ -10,8 +10,8 @@ import { AttachmentImagePreviewDialog } from "../chat-session/components/attachm
 import { FilePreviewDialog } from "../chat-session/components/file-preview-dialog";
 import { createSession } from "../chat-session.model";
 import { VoiceInputOverlay } from "../components/voice-input-overlay";
-import { MediaAssetImportDialog } from "../media/components/media-asset-import-dialog";
-import { MediaCategoryManagerDialog } from "../media/components/media-category-manager-dialog";
+import { MediaAssetImportDialog } from "@machdoch/media-studio/tauri/ui/media/components/media-asset-import-dialog.js";
+import { MediaCategoryManagerDialog } from "@machdoch/media-studio/tauri/ui/media/components/media-category-manager-dialog.js";
 import { RalphExpandedEditorDialog } from "../ralph/components/ralph-editor-dialogs";
 import { RalphOverview } from "../ralph/components/ralph-overview";
 import { OnboardingWizard } from "../chat-session/components/onboarding-wizard";
@@ -19,9 +19,9 @@ import { useChatSessionController } from "../chat-session/_helpers/use-chat-sess
 import { useAppearanceSettings } from "../chat-session/_helpers/use-appearance-settings";
 import { RalphGenerationInterviewDialog } from "../ralph/components/ralph-generation-interview-dialog";
 import { WorkspaceRunDialogControl } from "../chat-session/components/workspace-run-dialog-control";
-import { MediaImageMaskEditor } from "../media/components/media-image-mask-editor";
+import { MediaImageMaskEditor } from "@machdoch/media-studio/tauri/ui/media/components/media-image-mask-editor.js";
 import { TaskTimeoutControls } from "../task-timeout-controls";
-import type { MediaImageMask } from "../../../core/media/contracts";
+import type { MediaImageMask } from "@machdoch/media-studio/core/media/contracts.js";
 import {
   createOverviewLibrary,
   createOverviewRun,

@@ -8,7 +8,7 @@ import {
   type JSX,
 } from "react";
 import type { ChatInputNeededPlaceholder } from "../_helpers/chat-input-needed-placeholders";
-import { Button } from "../../components/ui/button";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   Dialog,
   DialogContent,
@@ -16,12 +16,12 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "../../components/ui/dialog";
-import { Textarea } from "../../components/ui/textarea";
+} from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
+import { Textarea } from "@machdoch/media-studio/tauri/ui/components/ui/textarea.js";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
-} from "../../components/ui/submit-shortcut";
+} from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
 
 export interface ChatInputNeededDialogRequest {
   placeholder: ChatInputNeededPlaceholder;

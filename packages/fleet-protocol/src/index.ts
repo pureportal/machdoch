@@ -1,3 +1,8 @@
+import {
+  mediaRequestSchema,
+  mediaResponseSchema,
+} from "@machdoch/fleet-protocol/media";
+export * from "@machdoch/fleet-protocol/media";
 import { z } from "zod";
 
 export const workspaceRunsCapability = "workspace-runs.v1";
@@ -1523,6 +1528,7 @@ export const commandReceiptSchema = z.strictObject({
 export type CommandReceipt = z.infer<typeof commandReceiptSchema>;
 
 export const hostRequestSchema = z.discriminatedUnion("type", [
+  z.strictObject({ type: z.literal("media"), request: mediaRequestSchema }),
   z.strictObject({
     type: z.literal("getWorkspaceRuns"),
     workspace,
@@ -1549,6 +1555,7 @@ export const hostRequestSchema = z.discriminatedUnion("type", [
 export type HostRequest = z.infer<typeof hostRequestSchema>;
 
 export const hostResponseSchema = z.discriminatedUnion("type", [
+  z.strictObject({ type: z.literal("media"), response: mediaResponseSchema }),
   z.strictObject({
     type: z.literal("workspaceRuns"),
     snapshot: runSnapshotSchema,

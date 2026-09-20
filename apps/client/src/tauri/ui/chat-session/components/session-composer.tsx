@@ -21,7 +21,7 @@ import type {
   ReasoningMode,
   RunMode,
 } from "../../../../core/runtime-contract.generated.js";
-import { AppNotification } from "../../components/ui/notification";
+import { AppNotification } from "@machdoch/media-studio/tauri/ui/components/ui/notification.js";
 import {
   createMemoryManagementEntries,
   type MemorySourceSession,
@@ -32,7 +32,7 @@ import {
   type ChatSessionRecord,
   type SmartContextPack,
 } from "../../chat-session.model";
-import { cn } from "../../lib/utils";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import type { RunningTaskMessageAction } from "../../lib/shell-store";
 import type { RuntimeProvider } from "../../model-catalog";
 import type { PromptEnhancementMode } from "../_helpers/prompt-enhancement";

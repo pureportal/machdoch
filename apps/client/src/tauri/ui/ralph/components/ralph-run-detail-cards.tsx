@@ -5,7 +5,7 @@ import type {
   RalphRunRecordBlock,
   RalphRunRecordBlockProgressEvent,
 } from "../../../../core/ralph.js";
-import { cn } from "../../lib/utils";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   formatRalphProgressTimestamp,
   getRalphProgressKindLabel,

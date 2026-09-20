@@ -3,7 +3,7 @@
 import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { api } from "@/lib/api";
+import { api } from "@machdoch/product-ui/fleet-api";
 import { Button } from "./ui/button";
 
 export function LogoutButton(): React.ReactElement {

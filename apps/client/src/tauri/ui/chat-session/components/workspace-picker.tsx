@@ -1,9 +1,9 @@
 import { useMemo, type JSX } from "react";
-import { useOptionalRegisterCommands } from "../../commands/command-context";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import type {
   CommandDefinition,
   CommandPageItem,
-} from "../../commands/command-types";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 import { getWorkspaceLabel } from "../_helpers/session-shell";
 import {
   WorkspaceSelect,

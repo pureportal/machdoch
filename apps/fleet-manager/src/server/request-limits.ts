@@ -18,6 +18,9 @@ export function maximumRequestBodyBytes(
   if (/^\/api\/instances\/[^/]+\/product\/commands$/u.test(pathname)) {
     return maximumGatewayMessageBytes;
   }
+  if (/^\/api\/instances\/[^/]+\/product\/media$/u.test(pathname)) {
+    return 1024 * 1024;
+  }
   if (/^\/api\/instances\/[^/]+\/runs$/u.test(pathname))
     return 1024 * 1024 + maximumSmallApiBodyBytes;
   if (pathname.startsWith("/api/settings/")) {

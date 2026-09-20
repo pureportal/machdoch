@@ -1,20 +1,20 @@
 import { Check, CircleDashed } from "lucide-react";
 import { useCallback, useMemo, useState, type JSX } from "react";
 import type { RunMode } from "../../../../core/runtime-contract.generated.js";
-import { useOptionalRegisterCommands } from "../../commands/command-context";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import type {
   CommandDefinition,
   CommandPageItem,
-} from "../../commands/command-types";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
+import { Badge } from "@machdoch/media-studio/tauri/ui/components/ui/badge.js";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "../../components/ui/popover";
-import { ControlTooltip } from "../../components/ui/tooltip";
-import { cn } from "../../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/components/ui/popover.js";
+import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { RUN_MODE_META, RUN_MODE_ORDER } from "../_helpers/session-shell";
 
 export interface SessionModePickerProps {

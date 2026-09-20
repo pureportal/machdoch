@@ -10,8 +10,8 @@ import {
 import type { JSX } from "react";
 
 import type { RalphBlockType, RalphFlowScope } from "../../../../core/ralph.js";
-import { Button } from "../../components/ui/button";
-import { useOptionalCommandShortcut } from "../../commands/command-context";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { useOptionalCommandShortcut } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,8 +22,8 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "../../components/ui/tooltip";
-import { cn } from "../../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   BLOCK_ACTIONS,
   MCP_BLOCK_ACTIONS,

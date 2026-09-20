@@ -6,7 +6,7 @@ import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { api, jsonBody } from "@/lib/api";
+import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
 
 export function LoginForm(): React.ReactElement {
   const router = useRouter();

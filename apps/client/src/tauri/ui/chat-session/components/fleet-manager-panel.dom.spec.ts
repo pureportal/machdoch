@@ -9,9 +9,9 @@ import {
 } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CommandProvider } from "../../commands/command-context";
-import { Dialog } from "../../components/ui/dialog";
-import { TooltipProvider } from "../../components/ui/tooltip";
+import { CommandProvider } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
+import { Dialog } from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
+import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { FleetManagerPanel } from "./fleet-manager-panel";
 
 const runtime = vi.hoisted(() => ({

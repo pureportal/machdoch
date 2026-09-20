@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import type { AppActivityState } from "../app-shell/app-rail";
 import { toAppActivityState } from "../app-shell/operation-activity";
 import type { MainAppId } from "../lib/shell-store";
-import type { MediaRuntimeRunRecord } from "../../../core/media/contracts.js";
-import { isMediaRunActive } from "./media-run-activity";
+import type { MediaRuntimeRunRecord } from "@machdoch/media-studio/core/media/contracts.js";
+import { isMediaRunActive } from "@machdoch/media-studio/tauri/ui/media/media-run-activity.js";
 import { startActivityPolling } from "../app-shell/activity-polling";
 
 const POLL_INTERVAL_MS = 2_000;
@@ -18,7 +18,7 @@ const loadRunsForActivity = async (): Promise<MediaRuntimeRunRecord[]> => {
     return invoke<MediaRuntimeRunRecord[]>("media_list_runs", { limit: 100 });
   }
 
-  const runtime = await import("./media-runtime");
+  const runtime = await import("@machdoch/media-studio/tauri/ui/media/media-runtime.js");
   return runtime.listMediaRuns();
 };
 

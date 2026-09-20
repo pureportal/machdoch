@@ -37,7 +37,10 @@ const css = chunks
   .filter((item) => item.fileName.endsWith(".css"))
   .map((item) => item.source)
   .join("\n");
-const output = resolve("apps/client/.cache/civitai-review");
+const fleet = process.argv.includes("--fleet");
+const output = resolve(
+  `apps/client/.cache/civitai-review${fleet ? "-fleet" : ""}`,
+);
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({
   channel: process.env.CHROME_CHANNEL ?? "chrome",
@@ -53,7 +56,7 @@ try {
   reviewPage = page;
   page.setDefaultTimeout(12000);
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.route("http://127.0.0.1/civitai-review", (route) =>
+  await page.route("http://127.0.0.1/civitai-review*", (route) =>
     route.fulfill({
       contentType: "text/html",
       body: '<!doctype html><html lang="en" class="dark" data-theme="dark"><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Civitai review</title></head><body><div id="root"></div></body></html>',
@@ -66,7 +69,7 @@ try {
       body: `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><defs><linearGradient id="sky" x2="0" y2="1"><stop stop-color="${second ? "#7b536c" : "#40677f"}"/><stop offset="1" stop-color="#d7bea5"/></linearGradient></defs><rect width="800" height="600" fill="url(#sky)"/><circle cx="560" cy="190" r="66" fill="#f2d4a0"/><path d="M0 490L180 210L370 470L550 320L800 500V600H0" fill="#334d5e"/><path d="M0 570L280 400L520 550L730 460L800 520V600H0" fill="#203c4f"/></svg>`,
     });
   });
-  await page.goto("http://127.0.0.1/civitai-review");
+  await page.goto(`http://127.0.0.1/civitai-review${fleet ? "?fleet" : ""}`);
   await page.addStyleTag({ content: css });
   await page.addScriptTag({ content: script });
   await page
@@ -81,41 +84,62 @@ try {
   );
   await page.screenshot({ path: resolve(output, "catalog-desktop.png") });
   checks.push("Catalog renders, focuses search, and displays previews");
-  assert.deepEqual(
+  const select = async (label, value, search) => {
+    await page.getByRole("combobox", { name: label, exact: true }).click();
+    const option = page.locator(
+      `[role="option"][data-option-value="${value}"]`,
+    );
+    const text = await option.innerText();
     await page
-      .getByLabel("Resource type", { exact: true })
-      .locator("option")
-      .evaluateAll((options) => options.map((option) => option.value)),
-    ["", "Checkpoint", "LORA", "LoCon", "DoRA", "TextualInversion"],
-  );
+      .getByRole("combobox", {
+        name: `Search ${label.toLowerCase()}`,
+        exact: true,
+      })
+      .fill(search ?? text);
+    await page
+      .getByRole("combobox", {
+        name: `Search ${label.toLowerCase()}`,
+        exact: true,
+      })
+      .press("Enter");
+    await page.getByRole("listbox").waitFor({ state: "hidden" });
+  };
+  await select("Base model", "Wan Video 2.2 TI2V-5B", "wan");
+  await select("Resource type", "Checkpoint", "Check");
   await page
-    .getByLabel("Base model", { exact: true })
-    .selectOption("Wan Video 2.2 TI2V-5B");
+    .getByRole("combobox", { name: "Resource type", exact: true })
+    .click();
   await page
-    .getByLabel("Resource type", { exact: true })
-    .selectOption("Checkpoint");
+    .getByRole("combobox", { name: "Search resource type", exact: true })
+    .fill("unmatched-resource");
+  await page.getByText("No matches", { exact: true }).waitFor();
+  await page
+    .getByRole("combobox", { name: "Search resource type", exact: true })
+    .press("Enter");
+  await page.keyboard.press("Escape");
   assert.equal(
-    await page.getByLabel("Base model", { exact: true }).inputValue(),
-    "",
+    await page
+      .getByRole("combobox", { name: "Resource type", exact: true })
+      .innerText(),
+    "Checkpoint",
   );
   assert.equal(
     await page
-      .getByLabel("Base model", { exact: true })
-      .locator('option[value="Wan Video 2.2 TI2V-5B"]')
-      .count(),
+      .getByRole("combobox", { name: "Base model", exact: true })
+      .innerText(),
+    "All base models",
+  );
+  await page.getByRole("combobox", { name: "Base model", exact: true }).click();
+  assert.equal(
+    await page.locator('[data-option-value="Wan Video 2.2 TI2V-5B"]').count(),
     0,
   );
-  await page
-    .getByLabel("Resource type", { exact: true })
-    .selectOption("TextualInversion");
-  assert.equal(
-    await page
-      .getByLabel("Base model", { exact: true })
-      .locator('option[value="Krea 2"]')
-      .count(),
-    0,
-  );
-  await page.getByLabel("Resource type", { exact: true }).selectOption("");
+  await page.keyboard.press("Escape");
+  await select("Resource type", "TextualInversion", "Embed");
+  await page.getByRole("combobox", { name: "Base model", exact: true }).click();
+  assert.equal(await page.locator('[data-option-value="Krea 2"]').count(), 0);
+  await page.keyboard.press("Escape");
+  await select("Resource type", "");
   await page
     .getByRole("button", { name: "View Watercolor Landscapes", exact: true })
     .waitFor();
@@ -137,11 +161,10 @@ try {
   checks.push("Cursor pagination and mature-content switching");
   await page.getByRole("button", { name: "Filters", exact: true }).click();
   await page.getByLabel("My favorites").click();
-  await page.getByLabel("API key").fill("test-session-key");
-  await page
-    .getByRole("button", { name: "Connect for this session", exact: true })
-    .click();
-  await page.getByRole("button", { name: "Connected", exact: true }).waitFor();
+  await page.getByLabel("Civitai API key").fill("test-session-key");
+  await page.getByRole("button", { name: "Save key", exact: true }).click();
+  await page.getByRole("button", { name: "Remove key", exact: true }).waitFor();
+  await page.keyboard.press("Escape");
   await page.getByLabel("My favorites").check();
   await page
     .getByRole("button", { name: "View Watercolor Landscapes", exact: true })
@@ -171,8 +194,8 @@ try {
   await page
     .getByRole("button", { name: "Preview saved", exact: true })
     .waitFor();
-  await page.getByLabel("Version", { exact: true }).selectOption("12");
-  await page.getByLabel("File", { exact: true }).selectOption("122");
+  await select("Version", "12");
+  await select("File", "122");
   await page.waitForFunction(() =>
     window.civitaiReview.requests.some(
       ({ command, args }) =>
@@ -181,7 +204,7 @@ try {
   );
   await page.screenshot({ path: resolve(output, "detail-desktop.png") });
   checks.push(
-    "Session connection, favorites, versions, files, trigger words, prompt copy, preview saving",
+    "Saved connection, favorites, versions, files, trigger words, prompt copy, preview saving",
   );
   await page.evaluate(() => {
     window.civitaiReview.downloadMode = "hold";
@@ -228,6 +251,24 @@ try {
   await page
     .getByRole("button", { name: "View Studio XL", exact: true })
     .click();
+  await page.evaluate(() => {
+    window.civitaiReview.downloadMode = "auth";
+  });
+  await page.getByRole("button", { name: /Download & import/ }).click();
+  await page
+    .getByRole("button", { name: "Open settings", exact: true })
+    .click();
+  await page.getByLabel("Civitai API key").fill("replacement-test-key");
+  await page.getByRole("button", { name: "Save key", exact: true }).click();
+  await page.getByLabel("Civitai API key").waitFor({ state: "visible" });
+  await page.waitForFunction(
+    () => document.querySelector('input[type="password"]').value === "",
+  );
+  await page.keyboard.press("Escape");
+  await page.getByRole("heading", { name: "Studio XL", exact: true }).waitFor();
+  await page.evaluate(() => {
+    window.civitaiReview.downloadMode = "complete";
+  });
   await page.getByRole("button", { name: /Download & import/ }).click();
   await page.getByRole("dialog").waitFor({ state: "hidden" });
   assert.equal(
@@ -241,23 +282,30 @@ try {
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await page.getByLabel("Version", { exact: true }).waitFor();
   assert.equal(
-    await page.getByLabel("Version", { exact: true }).inputValue(),
-    "12",
+    await page
+      .getByRole("combobox", { name: "Version", exact: true })
+      .innerText(),
+    "v1.0",
   );
   await page.getByRole("button", { name: "Results", exact: true }).click();
   await page.getByLabel("Search Civitai").fill("empty");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await page.getByText("No matching models", { exact: true }).waitFor();
-  await page
-    .getByRole("button", { name: "Clear filters", exact: true })
-    .click();
+  if (
+    await page
+      .getByRole("button", { name: "Clear filters", exact: true })
+      .count()
+  )
+    await page
+      .getByRole("button", { name: "Clear filters", exact: true })
+      .click();
   assert.equal(await page.getByLabel("Search Civitai").inputValue(), "empty");
   await page.getByLabel("Search Civitai").fill("");
   await page.getByLabel("Search Civitai").press("Enter");
   await page.evaluate(() => {
     window.civitaiReview.failSearch = true;
   });
-  await page.getByLabel("Resource type").selectOption("LORA");
+  await select("Resource type", "LORA");
   await page.getByText(/Civitai rate limit reached/).waitFor();
   await page.evaluate(() => {
     window.civitaiReview.failSearch = false;
@@ -271,7 +319,7 @@ try {
   );
   await page.getByLabel("Search Civitai").fill("slow");
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  await page.getByLabel("Resource type").selectOption("Checkpoint");
+  await select("Resource type", "Checkpoint");
   await page.getByLabel("Search Civitai").fill("fresh");
   await page.getByLabel("Search Civitai").press("Enter");
   await page
@@ -285,7 +333,7 @@ try {
     0,
   );
   checks.push("Out-of-order search responses cannot replace newer results");
-  await page.getByLabel("Resource type").selectOption("");
+  await select("Resource type", "");
   await page.getByLabel("Search Civitai").fill("Age");
   await page.getByLabel("Search Civitai").press("Enter");
   await page
@@ -307,8 +355,13 @@ try {
     ageRequests.every(({ period, nsfw }) => period === "AllTime" && !nsfw),
   );
   await page.screenshot({ path: resolve(output, "age-search-desktop.png") });
-  await page.getByRole("button", { name: "Filters", exact: true }).click();
-  await page.getByLabel("Period", { exact: true }).selectOption("Month");
+  if (
+    (await page
+      .getByRole("button", { name: "Filters", exact: true })
+      .getAttribute("aria-expanded")) !== "true"
+  )
+    await page.getByRole("button", { name: "Filters", exact: true }).click();
+  await select("Period", "Month");
   await page.getByText("No matching models", { exact: true }).waitFor();
   await page
     .getByRole("button", { name: "Clear filters", exact: true })
@@ -318,8 +371,10 @@ try {
     .waitFor();
   assert.equal(await page.getByLabel("Search Civitai").inputValue(), "Age");
   assert.equal(
-    await page.getByLabel("Period", { exact: true }).inputValue(),
-    "AllTime",
+    await page
+      .getByRole("combobox", { name: "Period", exact: true })
+      .innerText(),
+    "All time",
   );
   await page.getByRole("button", { name: "Filters", exact: true }).click();
   checks.push(
@@ -389,10 +444,84 @@ try {
     false,
   );
   checks.push("Superseded searches stop fetching empty pages");
-  await page.getByLabel("Resource type").selectOption("");
+  await select("Resource type", "");
   await page
     .getByRole("button", { name: "View Watercolor Landscapes", exact: true })
     .waitFor();
+  await select("Resource type", "Checkpoint", "Check");
+  await select("Base model", "SDXL 1.0", "sdxl");
+  await select("Sort Civitai results", "Newest", "new");
+  await page.getByLabel("Mature content").check();
+  if (
+    (await page
+      .getByRole("button", { name: "Filters", exact: true })
+      .getAttribute("aria-expanded")) !== "true"
+  )
+    await page.getByRole("button", { name: "Filters", exact: true }).click();
+  await select("Period", "Year");
+  await page.getByLabel("Tag", { exact: true }).fill("style");
+  await page.getByLabel("Creator", { exact: true }).fill("artist");
+  await page.getByLabel("Creator", { exact: true }).press("Tab");
+  await page.getByLabel("My favorites").check();
+  await page
+    .getByRole("button", { name: "Close Civitai", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Browse Civitai", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "View Studio XL", exact: true })
+    .waitFor();
+  assert.equal(
+    await page
+      .getByRole("combobox", { name: "Resource type", exact: true })
+      .innerText(),
+    "Checkpoint",
+  );
+  assert.equal(await page.getByLabel("Mature content").isChecked(), true);
+  await page.reload();
+  await page.addStyleTag({ content: css });
+  await page.addScriptTag({ content: script });
+  await page
+    .getByRole("button", { name: "View Studio XL", exact: true })
+    .waitFor();
+  const firstRequest = await page.evaluate(
+    () =>
+      window.civitaiReview.requests.find(
+        ({ command }) => command === "media_search_civitai",
+      ).args.request,
+  );
+  assert.deepEqual(firstRequest, {
+    query: "fresh",
+    modelType: "Checkpoint",
+    baseModel: "SDXL 1.0",
+    sort: "Newest",
+    period: "Year",
+    tag: "style",
+    username: "artist",
+    nsfw: true,
+    favorites: true,
+    cursor: null,
+  });
+  await page
+    .getByRole("button", { name: "Civitai settings", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Remove key", exact: true }).waitFor();
+  assert.equal(await page.getByLabel("Civitai API key").inputValue(), "");
+  await page.screenshot({ path: resolve(output, "settings-desktop.png") });
+  await page.getByRole("button", { name: "Remove key", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Remove key", exact: true })
+    .waitFor({ state: "hidden" });
+  await page.keyboard.press("Escape");
+  assert.equal(await page.getByLabel("My favorites").isChecked(), false);
+  await page
+    .getByRole("button", { name: "Clear filters", exact: true })
+    .click();
+  await page.getByLabel("Mature content").uncheck();
+  checks.push(
+    "Reopening and reloading restores every filter before the first search; saved keys stay masked and can be removed",
+  );
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: resolve(output, "catalog-mobile.png") });
   const overflow = () =>
@@ -428,6 +557,50 @@ try {
       })),
     })),
   );
+  await page.getByRole("combobox", { name: "Version", exact: true }).click();
+  await page.screenshot({ path: resolve(output, "dropdown-mobile.png") });
+  accessibility.push(
+    ...(await page.evaluate(async () =>
+      (
+        await axe.run(document, {
+          runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] },
+        })
+      ).violations.map(({ id, impact, nodes }) => ({
+        id,
+        impact,
+        count: nodes.length,
+        surface: "open dropdown",
+        nodes: nodes.map(({ target, failureSummary }) => ({
+          target,
+          failureSummary,
+        })),
+      })),
+    )),
+  );
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("button", { name: "Civitai settings", exact: true })
+    .click();
+  await page.screenshot({ path: resolve(output, "settings-mobile.png") });
+  accessibility.push(
+    ...(await page.evaluate(async () =>
+      (
+        await axe.run(document, {
+          runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] },
+        })
+      ).violations.map(({ id, impact, nodes }) => ({
+        id,
+        impact,
+        count: nodes.length,
+        surface: "settings",
+        nodes: nodes.map(({ target, failureSummary }) => ({
+          target,
+          failureSummary,
+        })),
+      })),
+    )),
+  );
+  await page.keyboard.press("Escape");
   await writeFile(
     resolve(output, "accessibility.json"),
     JSON.stringify(accessibility, null, 2),

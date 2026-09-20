@@ -1,3 +1,4 @@
+import { FleetMediaWorker } from "./cli-fleet-media.js";
 import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { FleetRunManager } from "../../core/fleet-runs.js";
@@ -295,6 +296,7 @@ const cloneState = (state: FleetCliState): FleetCliState =>
   structuredClone(state);
 
 export class FleetCliProductRuntime {
+  private readonly media = new FleetMediaWorker();
   private readonly runs = new FleetRunManager((workspace) =>
     this.assertWorkspace(workspace),
   );
@@ -360,6 +362,11 @@ export class FleetCliProductRuntime {
       };
     try {
       switch (request.type) {
+        case "media":
+          return {
+            type: "media",
+            response: await this.media.request(request.request),
+          };
         case "getWorkspaceRuns":
           return {
             type: "workspaceRuns",
@@ -396,6 +403,7 @@ export class FleetCliProductRuntime {
 
   async shutdown(reason = "Fleet CLI service stopped."): Promise<void> {
     this.stopping = true;
+    this.media.close();
     this.previewTunnels.close();
     const runsStopped = this.runs.shutdown();
     const projectsStopped = this.projects.shutdown();

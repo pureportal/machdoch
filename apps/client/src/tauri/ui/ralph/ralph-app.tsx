@@ -19,14 +19,14 @@ import {
 } from "../chat-session.model";
 import { getWorkspaceLabel } from "../chat-session/_helpers/session-shell";
 import { WorkspacePicker } from "../chat-session/components/workspace-picker";
-import { Button } from "../components/ui/button";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
-import { Input } from "../components/ui/input";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import {
   broadcastShellStateChanged,
   DEFAULT_RALPH_SETTINGS,
@@ -37,7 +37,7 @@ import {
   updateShellStateAtomically,
   type RalphSettings,
 } from "../lib/shell-store";
-import { cn } from "../lib/utils";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   getCatalogModelsForProvider,
   getDefaultModelForProvider,

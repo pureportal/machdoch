@@ -10,7 +10,7 @@ import {
 import { createElement } from "react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
-import { TooltipProvider } from "../components/ui/tooltip";
+import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import {
   discoverMcpServer,
   loadMcpConfigDocument,

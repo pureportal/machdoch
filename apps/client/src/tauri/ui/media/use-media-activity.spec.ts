@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useMediaActivity } from "./use-media-activity";
 import type { MainAppId } from "../lib/shell-store";
 const { listRuns } = vi.hoisted(() => ({ listRuns: vi.fn() }));
-vi.mock("./media-runtime", () => ({ listMediaRuns: listRuns }));
+vi.mock("@machdoch/media-studio/tauri/ui/media/media-runtime.js", () => ({ listMediaRuns: listRuns }));
 beforeEach(() => {
   vi.useFakeTimers();
   listRuns.mockReset().mockResolvedValue([]);

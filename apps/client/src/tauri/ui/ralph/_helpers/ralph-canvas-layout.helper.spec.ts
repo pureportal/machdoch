@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { FLOW_PORT_PRESENTATIONS } from "../../flow/flow-theme";
+import { FLOW_PORT_PRESENTATIONS } from "@machdoch/media-studio/tauri/ui/flow/flow-theme.js";
 import { createBlankFlow } from "./create-blank-ralph-flow.helper";
 import { flowToEdges, flowToNodes } from "./ralph-canvas-layout.helper";
 

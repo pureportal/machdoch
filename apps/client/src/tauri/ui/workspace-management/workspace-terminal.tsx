@@ -1,5 +1,5 @@
-import { ContextActionMenu } from "../components/ui/context-action-menu";
-import { copyText } from "../lib/clipboard";
+import { ContextActionMenu } from "@machdoch/media-studio/tauri/ui/components/ui/context-action-menu.js";
+import { copyText } from "@machdoch/media-studio/tauri/ui/lib/clipboard.js";
 import "@xterm/xterm/css/xterm.css";
 import {
   CircleDot,
@@ -25,12 +25,12 @@ import {
   useSyncExternalStore,
   type JSX,
 } from "react";
-import { Button } from "../components/ui/button";
-import { useOptionalRegisterCommands } from "../commands/command-context";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import {
   asPaletteCommands,
   type CommandDefinition,
-} from "../commands/command-types";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -44,9 +44,9 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
-import { EmptyState } from "../components/ui/empty-state";
-import { ControlTooltip } from "../components/ui/tooltip";
-import { cn } from "../lib/utils";
+import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
+import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { openWorkspaceTerminalHost } from "../runtime";
 import {
   getWorkspaceTerminalStore,

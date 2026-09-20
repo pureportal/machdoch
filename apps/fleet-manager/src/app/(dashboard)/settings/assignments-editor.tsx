@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
-import { api, jsonBody } from "@/lib/api";
+import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
 import { formatTime } from "@/lib/format";
 import type { SettingsAssignment, SettingsProfileSummary } from "./types";
 import { settingsError } from "./use-settings-profiles";

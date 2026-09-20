@@ -18,16 +18,16 @@ import { isLinkContextAttachment } from "../_helpers/session-context-attachments
 import {
   CopyContextMenu,
   type CopyMenuValue,
-} from "../../components/ui/copy-context-menu";
-import { Button } from "../../components/ui/button";
+} from "@machdoch/media-studio/tauri/ui/components/ui/copy-context-menu.js";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu";
-import { ControlTooltip } from "../../components/ui/tooltip";
-import { cn } from "../../lib/utils";
+import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 
 const getAttachmentIcon = (
   attachment: ChatSessionContextAttachment,

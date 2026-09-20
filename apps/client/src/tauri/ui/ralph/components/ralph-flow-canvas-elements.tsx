@@ -8,7 +8,7 @@ import { AlertTriangle, FileText, LayoutGrid, LockKeyhole } from "lucide-react";
 import type { JSX } from "react";
 
 import type { RalphAnnotationTone } from "../../../../core/ralph.js";
-import { cn } from "../../lib/utils";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   RALPH_GROUP_COLLAPSED_HEIGHT,
   type RalphCanvasNode,
@@ -27,8 +27,8 @@ import {
   FlowNodeHeader,
   FlowNodeShell,
   FlowPort,
-} from "../../flow/flow-primitives";
-import { FLOW_SELECTED_NODE_CLASS_NAME } from "../../flow/flow-theme";
+} from "@machdoch/media-studio/tauri/ui/flow/flow-primitives.js";
+import { FLOW_SELECTED_NODE_CLASS_NAME } from "@machdoch/media-studio/tauri/ui/flow/flow-theme.js";
 
 const getAnnotationToneClassName = (
   tone: RalphAnnotationTone | undefined,

@@ -39,24 +39,24 @@ import {
   scrollFilePreviewTargetLineIntoView,
 } from "../_helpers/file-preview-target-line";
 import { MarkdownContent } from "../../components/markdown-content";
-import { Button } from "../../components/ui/button";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "../../components/ui/dialog";
-import { Input } from "../../components/ui/input";
-import { ControlTooltip } from "../../components/ui/tooltip";
-import { useOptionalRegisterCommands } from "../../commands/command-context";
-import { getDefaultCommandShortcut } from "../../commands/command-defaults";
+} from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
+import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
+import { getDefaultCommandShortcut } from "@machdoch/media-studio/tauri/ui/commands/command-defaults.js";
 import {
   asPaletteCommands,
   type CommandDefinition,
   type CommandPageItem,
-} from "../../commands/command-types";
-import { cn } from "../../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 
 export type FilePreviewMode = "image" | "pdf" | "text";
 

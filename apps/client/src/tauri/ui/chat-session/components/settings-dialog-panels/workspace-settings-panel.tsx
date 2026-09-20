@@ -6,7 +6,7 @@ import {
 import { getModelContextWindowTokens } from "../../../../../core/model-capabilities.js";
 import { supportsLongContextWindow } from "../../../../../core/context-windows.js";
 import { getReasoningExecutionModesForProviderModel } from "../../../../../core/reasoning-execution-modes.js";
-import { Input } from "../../../components/ui/input";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import {
   getCatalogModelForProvider,
   type ProviderModelCatalogSnapshot,

@@ -51,7 +51,7 @@ import {
 import {
   canUseTauriStore,
   getCurrentShellWindowLabel,
-} from "../../lib/_helpers/shell-store-storage.helper";
+} from "@machdoch/media-studio/tauri/ui/lib/_helpers/shell-store-storage.helper.js";
 import { normalizeReasoningModeForProvider } from "../../reasoning-options";
 import { subscribeToFleetManagedSettingsSyncRequests } from "./fleet-managed-settings-sync";
 

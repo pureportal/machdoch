@@ -2,8 +2,8 @@ import { Check, LoaderCircle, MessageSquare, Sparkles } from "lucide-react";
 import type { JSX } from "react";
 
 import type { RalphInputValue } from "../../../../core/ralph.js";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
+import { Badge } from "@machdoch/media-studio/tauri/ui/components/ui/badge.js";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   Dialog,
   DialogContent,
@@ -11,14 +11,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "../../components/ui/dialog";
+} from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
-} from "../../components/ui/submit-shortcut";
-import { Textarea } from "../../components/ui/textarea";
-import { cn } from "../../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
+import { Textarea } from "@machdoch/media-studio/tauri/ui/components/ui/textarea.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { getDefaultRalphInputValue } from "../../ralph/_helpers/validate-ralph-input-field-values.helper";
 import { RalphInputControl } from "../../ralph/components/ralph-input-controls";
 import { TaskThinkingPanel } from "../../task-thinking-panel";

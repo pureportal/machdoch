@@ -22,12 +22,12 @@ import {
   revealMainWindow,
 } from "./assistant-surface";
 import { IS_DEVELOPMENT_BUILD, MACHDOCH_DISPLAY_NAME } from "./build-info";
-import { CommandProvider } from "./commands/command-context";
-import { getDefaultCommandShortcut } from "./commands/command-defaults";
+import { CommandProvider } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
+import { getDefaultCommandShortcut } from "@machdoch/media-studio/tauri/ui/commands/command-defaults.js";
 import {
   asPaletteCommands,
   type CommandDefinition,
-} from "./commands/command-types";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 
 const TRAY_MENU_BLUR_HIDE_DELAY_MS = 90;
 

@@ -30,14 +30,14 @@ import {
   QUICK_VOICE_START_EVENT,
   type UserSpeechToTextSettings,
 } from "./runtime";
-import { Button } from "./components/ui/button";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { VoiceInputOverlay } from "./components/voice-input-overlay";
-import { CommandProvider } from "./commands/command-context";
-import { getDefaultCommandShortcut } from "./commands/command-defaults";
+import { CommandProvider } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
+import { getDefaultCommandShortcut } from "@machdoch/media-studio/tauri/ui/commands/command-defaults.js";
 import {
   asPaletteCommands,
   type CommandDefinition,
-} from "./commands/command-types";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 
 const VOICE_ACTIVITY_THRESHOLD = 0.012;
 const VOICE_ACTIVITY_FRAME_COUNT = 2;

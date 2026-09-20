@@ -1,4 +1,4 @@
-import { CopyContextMenu } from "../components/ui/copy-context-menu";
+import { CopyContextMenu } from "@machdoch/media-studio/tauri/ui/components/ui/copy-context-menu.js";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   ArrowDownToLine,
@@ -35,23 +35,23 @@ import {
   instructionTagKey,
   instructionTagRuleMatches,
 } from "../../../core/instruction-system/tag-rules.js";
-import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
-import { EmptyState } from "../components/ui/empty-state";
-import { Input } from "../components/ui/input";
-import { SearchField } from "../components/ui/search-field";
+import { Badge } from "@machdoch/media-studio/tauri/ui/components/ui/badge.js";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
+import { SearchField } from "@machdoch/media-studio/tauri/ui/components/ui/search-field.js";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
-} from "../components/ui/submit-shortcut";
-import { getDefaultCommandShortcut } from "../commands/command-defaults";
-import { useOptionalRegisterCommands } from "../commands/command-context";
+} from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
+import { getDefaultCommandShortcut } from "@machdoch/media-studio/tauri/ui/commands/command-defaults.js";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import {
   asPaletteCommands,
   type CommandDefinition,
   type CommandPageItem,
-} from "../commands/command-types";
-import { cn } from "../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   loadWorkspaceGitOverview,
   loadWorkspaceGitRepositories,

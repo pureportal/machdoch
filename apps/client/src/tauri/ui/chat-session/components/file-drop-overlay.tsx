@@ -1,6 +1,6 @@
 import { Paperclip } from "lucide-react";
 import type { JSX } from "react";
-import { cn } from "../../lib/utils";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 
 export interface FileDropOverlayProps {
   active: boolean;

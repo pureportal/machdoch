@@ -39,6 +39,28 @@ afterEach(async () => {
 });
 
 describe("gateway failure recovery and resource limits", () => {
+  it("correlates media results without treating them as command receipts", async () => {
+    const fixture = await gatewayFixture();
+    const incoming = nextMessage(fixture.socket);
+    const response = hub!.relay(fixture.instanceId, {
+      type: "media",
+      request: { kind: "read", id: crypto.randomUUID(), offset: 0 },
+    });
+    const request = await incoming;
+    if (request.type !== "request") throw new Error("Expected request");
+    fixture.socket.send(
+      JSON.stringify({
+        type: "response",
+        requestId: request.requestId,
+        response: { type: "media", response: { state: "pending" } },
+      }),
+    );
+    await expect(response).resolves.toEqual({
+      type: "media",
+      response: { state: "pending" },
+    });
+    expect(hub!.isOnline(fixture.instanceId)).toBe(true);
+  });
   it("allows bounded preview receipt bursts without disconnecting the control channel", async () => {
     const fixture = await gatewayFixture(true, true);
     for (let i = 0; i < 600; i++)

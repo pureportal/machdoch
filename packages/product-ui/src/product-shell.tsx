@@ -17,7 +17,6 @@ import { useEffect, useState } from "react";
 import { Composer } from "./composer";
 import { Conversation } from "./conversation";
 import { Inspector } from "./inspector";
-import { MediaStudio } from "./media-studio";
 import type { ProductCommandHandler } from "./product-runtime";
 import { ProductRail, type ProductView } from "./product-rail";
 import { Ralph } from "./ralph";
@@ -31,6 +30,7 @@ import type { ComposerDraftStore } from "./use-composer-draft";
 
 export function ProductShell({
   instanceName,
+  mediaHref,
   servicesHref,
   settingsHref,
   snapshot,
@@ -43,6 +43,7 @@ export function ProductShell({
   onRefresh,
 }: {
   instanceName: string;
+  mediaHref?: string | undefined;
   servicesHref?: string | undefined;
   settingsHref?: string | undefined;
   snapshot: ProductSnapshot | null;
@@ -55,6 +56,7 @@ export function ProductShell({
   onRefresh: () => Promise<void>;
 }): React.ReactElement {
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [mediaOpened, setMediaOpened] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [requestedView, setRequestedView] = useState<ProductView>("projects");
   const compact = useMediaQuery("(max-width: 900px)");
@@ -64,6 +66,7 @@ export function ProductShell({
   }, [compact]);
   const selectView = (view: ProductView): void => {
     setRequestedView(view);
+    if (view === "media") setMediaOpened(true);
     setSessionsOpen(false);
     setInspectorOpen(false);
   };
@@ -77,7 +80,7 @@ export function ProductShell({
   const activeView: ProductView =
     requestedView === "projects" && !shell?.projectLibrary
       ? "chat"
-      : requestedView === "media" && !shell?.media
+      : requestedView === "media" && !mediaHref
         ? "chat"
         : requestedView === "scheduler" && !shell?.scheduler
           ? "chat"
@@ -129,7 +132,7 @@ export function ProductShell({
               <MessageSquareText aria-hidden="true" />
               <span>Chat</span>
             </button>
-            {shell.media ? (
+            {mediaHref ? (
               <button
                 type="button"
                 data-active={activeView === "media"}
@@ -259,7 +262,7 @@ export function ProductShell({
             settingsHref={settingsHref}
             inspectorOpen={inspectorOpen}
             activeView={activeView}
-            mediaAvailable={shell.media !== undefined}
+            mediaAvailable={Boolean(mediaHref)}
             schedulerAvailable={shell.scheduler !== undefined}
             ralphAvailable={shell.ralph !== undefined}
             projectsAvailable={shell.projectLibrary !== undefined}
@@ -354,12 +357,17 @@ export function ProductShell({
               />
             </main>
           ) : null}
-          {activeView === "media" && shell.media ? (
-            <main className="m-product-feature-main">
-              <MediaStudio
-                media={shell.media}
-                pending={commandsBlocked}
-                onCommand={onCommand}
+          {mediaHref && mediaOpened ? (
+            <main
+              className="m-product-feature-main"
+              hidden={activeView !== "media"}
+              style={activeView !== "media" ? { display: "none" } : undefined}
+            >
+              <iframe
+                src={mediaHref}
+                title="Media Studio"
+                className="m-product-media-frame"
+                allow="clipboard-read; clipboard-write"
               />
             </main>
           ) : null}

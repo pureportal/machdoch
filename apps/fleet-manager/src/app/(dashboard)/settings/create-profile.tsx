@@ -6,7 +6,7 @@ import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { api, jsonBody } from "@/lib/api";
+import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
 import { SettingsFormDialog } from "./settings-form-dialog";
 import type { SettingsProfile } from "./types";
 

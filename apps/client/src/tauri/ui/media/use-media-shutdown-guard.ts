@@ -2,8 +2,8 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { useEffect } from "react";
-import type { MediaRuntimeRunRecord } from "../../../core/media/contracts.js";
-import { isMediaRunActive } from "./media-run-activity";
+import type { MediaRuntimeRunRecord } from "@machdoch/media-studio/core/media/contracts.js";
+import { isMediaRunActive } from "@machdoch/media-studio/tauri/ui/media/media-run-activity.js";
 
 export const getActiveMediaShutdownRuns = (
   runs: readonly MediaRuntimeRunRecord[],

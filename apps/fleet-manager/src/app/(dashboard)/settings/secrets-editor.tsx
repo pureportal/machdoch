@@ -5,7 +5,7 @@ import { useState } from "react";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { jsonBody } from "@/lib/api";
+import { jsonBody } from "@machdoch/product-ui/fleet-api";
 import type { UpdateProfile } from "./profile-editor";
 import type {
   SecretDescriptor,

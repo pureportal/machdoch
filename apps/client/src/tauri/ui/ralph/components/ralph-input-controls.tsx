@@ -6,9 +6,9 @@ import type {
   RalphInputField,
   RalphInputValue,
 } from "../../../../core/ralph.js";
-import { Input } from "../../components/ui/input";
-import { Textarea } from "../../components/ui/textarea";
-import { cn } from "../../lib/utils";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
+import { Textarea } from "@machdoch/media-studio/tauri/ui/components/ui/textarea.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 
 interface RalphInputControlProps {
   field: RalphInputField;

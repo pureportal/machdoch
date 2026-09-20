@@ -1,4 +1,4 @@
-import { copyText } from "../lib/clipboard";
+import { copyText } from "@machdoch/media-studio/tauri/ui/lib/clipboard.js";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import {

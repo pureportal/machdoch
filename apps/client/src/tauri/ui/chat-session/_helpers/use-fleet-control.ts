@@ -92,7 +92,7 @@ import { getRenderedMessageContent } from "./execution-message";
 import {
   canUseTauriStore,
   getCurrentShellWindowLabel,
-} from "../../lib/_helpers/shell-store-storage.helper";
+} from "@machdoch/media-studio/tauri/ui/lib/_helpers/shell-store-storage.helper.js";
 
 interface FleetSchedulerState {
   snapshot: FleetShellSchedulerSnapshot | null;

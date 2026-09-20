@@ -22,7 +22,19 @@ const nextConfig: NextConfig = {
   },
   poweredByHeader: false,
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      {
+        source: "/media-studio/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          {
+            key: "Content-Security-Policy",
+            value: `default-src 'self'; script-src ${scriptSources.join(" ")}; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'`,
+          },
+        ],
+      },
+    ];
   },
 };
 

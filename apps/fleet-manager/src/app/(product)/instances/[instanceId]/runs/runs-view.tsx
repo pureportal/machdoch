@@ -17,7 +17,7 @@ import {
   type RunCommand,
   type RunSnapshot,
 } from "@machdoch/fleet-protocol";
-import { api, jsonBody } from "@/lib/api";
+import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
 import { Button } from "@/components/ui/button";
 import { RunConfiguration } from "./run-configuration";
 

@@ -7,19 +7,19 @@ import {
   type ChatSessionMediaAssetAttachment,
   type ChatSessionPathContextAttachment,
 } from "../../chat-session.model";
-import { Button } from "../../components/ui/button";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "../../components/ui/dialog";
-import { useOptionalRegisterCommands } from "../../commands/command-context";
+} from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import {
   asPaletteCommands,
   type CommandDefinition,
-} from "../../commands/command-types";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 
 export interface AttachmentImagePreview {
   attachment: ChatSessionContextAttachment;

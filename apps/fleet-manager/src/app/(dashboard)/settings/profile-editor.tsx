@@ -6,7 +6,7 @@ import { useRef, useState } from "react";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { api, ApiError, jsonBody } from "@/lib/api";
+import { api, ApiError, jsonBody } from "@machdoch/product-ui/fleet-api";
 import { AssignmentsEditor } from "./assignments-editor";
 import { ContextPacksEditor } from "./context-packs-editor";
 import { HistoryEditor } from "./history-editor";

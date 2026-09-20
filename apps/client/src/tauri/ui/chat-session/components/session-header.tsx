@@ -1,10 +1,10 @@
 import { GitBranch, PanelLeft, PencilLine, Pin, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type JSX } from "react";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { SubmitShortcut } from "../../components/ui/submit-shortcut";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
+import { SubmitShortcut } from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
 import type { ChatSessionRecord } from "../../chat-session.model";
-import { cn } from "../../lib/utils";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { WorkspaceRunDialogControl } from "./workspace-run-dialog-control";
 
 export interface SessionHeaderProps {

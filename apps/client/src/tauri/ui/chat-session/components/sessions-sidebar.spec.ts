@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createSession } from "../../chat-session.model";
-import { TooltipProvider } from "../../components/ui/tooltip";
+import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { ALL_SESSION_PROJECTS_FILTER } from "../_helpers/session-history-index";
 import {
   createSessionActionItems,

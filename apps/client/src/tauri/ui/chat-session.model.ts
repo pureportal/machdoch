@@ -25,7 +25,7 @@ import type {
 import type {
   MediaAssetKind,
   MediaAssetReference,
-} from "../../core/media/contracts.js";
+} from "@machdoch/media-studio/core/media/contracts.js";
 import type {
   ReasoningMode,
   RunMode,

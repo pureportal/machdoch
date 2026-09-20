@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
+import { api } from "@machdoch/product-ui/fleet-api";
 import type {
   SettingsCatalog,
   SettingsProfile,

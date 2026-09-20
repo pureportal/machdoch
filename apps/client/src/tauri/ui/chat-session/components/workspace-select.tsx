@@ -7,21 +7,21 @@ import {
   X,
 } from "lucide-react";
 import { useMemo, useRef, useState, type JSX, type KeyboardEvent } from "react";
-import { Button } from "../../components/ui/button";
-import { EmptyState } from "../../components/ui/empty-state";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "../../components/ui/popover";
-import { SearchField } from "../../components/ui/search-field";
+} from "@machdoch/media-studio/tauri/ui/components/ui/popover.js";
+import { SearchField } from "@machdoch/media-studio/tauri/ui/components/ui/search-field.js";
 import {
   ControlTooltip,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "../../components/ui/tooltip";
-import { cn } from "../../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 
 export interface WorkspaceSelectOption {
   id: string;

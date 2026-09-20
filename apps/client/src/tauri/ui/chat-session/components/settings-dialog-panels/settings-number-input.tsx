@@ -6,7 +6,7 @@ import {
   type ComponentProps,
   type JSX,
 } from "react";
-import { Input } from "../../../components/ui/input";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import { useSettingsNavigationGuard } from "./navigation-guard";
 
 interface SettingsNumberInputProps extends Omit<

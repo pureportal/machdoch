@@ -8,7 +8,7 @@ import {
 } from "@machdoch/fleet-protocol";
 import { RemoteProductApp, type ProductRuntime } from "@machdoch/product-ui";
 import { useMemo } from "react";
-import { api, jsonBody } from "@/lib/api";
+import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
 
 export function InstanceProduct({
   instanceId,
@@ -22,6 +22,7 @@ export function InstanceProduct({
   const runtime = useMemo<ProductRuntime>(() => {
     const basePath = `/api/instances/${encodeURIComponent(instanceId)}/product`;
     return {
+      mediaHref: `/media-studio/index.html?instance=${encodeURIComponent(instanceId)}`,
       servicesHref: `/instances/${encodeURIComponent(instanceId)}/runs`,
       ...(settingsEnabled ? { settingsHref: "/settings" } : {}),
       async getSnapshot(signal) {

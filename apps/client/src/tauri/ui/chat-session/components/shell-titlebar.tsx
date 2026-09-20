@@ -5,9 +5,9 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "../../components/ui/tooltip";
+} from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { IS_DEVELOPMENT_BUILD } from "../../build-info";
-import { cn } from "../../lib/utils";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   getProviderLabel,
   SUPPORTED_PROVIDER_ORDER,

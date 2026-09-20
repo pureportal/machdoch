@@ -50,6 +50,13 @@ fn app_title(is_development: bool) -> &'static str {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if std::env::args().nth(1).as_deref() == Some("--fleet-media-worker") {
+        if let Err(error) = media::fleet_worker::run() {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     desktop_shell::hide_console_window_for_background_ui_launch();
 
     match ui_control::try_run_ui_control_bridge_from_args() {
@@ -141,6 +148,8 @@ pub fn run() {
         .manage(fleet::FleetConnectionState::default())
         .manage(fleet_control::FleetControlState::default())
         .manage(media::MediaRuntimeState::default())
+        .manage(media::fleet::FleetMediaState::default())
+        .manage(media::fleet_transfer::FleetTransferState::default())
         .manage(idle_shutdown::IdleShutdownState::default())
         .manage(shell_state::ShellStateStoreLock::default())
         .manage(sleep_inhibition::SystemSleepInhibitor::default())
@@ -157,6 +166,7 @@ pub fn run() {
             desktop_shell::handle_window_event(window, event);
         })
         .setup(move |app| {
+            media::fleet::initialize(app.handle());
             settings_transfer::initialize(app.handle()).map_err(std::io::Error::other)?;
             desktop_task::cleanup_stale_task_context_files();
 

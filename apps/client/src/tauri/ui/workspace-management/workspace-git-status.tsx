@@ -1,4 +1,4 @@
-import { CopyContextMenu } from "../components/ui/copy-context-menu";
+import { CopyContextMenu } from "@machdoch/media-studio/tauri/ui/components/ui/copy-context-menu.js";
 import {
   Check,
   ChevronRight,
@@ -7,9 +7,9 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState, type JSX } from "react";
-import { Button } from "../components/ui/button";
-import { EmptyState } from "../components/ui/empty-state";
-import { cn } from "../lib/utils";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   loadWorkspaceGitDiff,
   type WorkspaceGitChange,

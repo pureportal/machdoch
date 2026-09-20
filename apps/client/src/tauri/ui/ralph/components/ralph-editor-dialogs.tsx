@@ -8,7 +8,7 @@ import {
 
 import type { RalphFlowScope } from "../../../../core/ralph.js";
 import type { RalphStarterFlowSummary } from "../../../../core/ralph-starter-flows.js";
-import { Button } from "../../components/ui/button";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   Dialog,
   DialogContent,
@@ -16,14 +16,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "../../components/ui/dialog";
+} from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
-} from "../../components/ui/submit-shortcut";
-import { Textarea } from "../../components/ui/textarea";
-import { cn } from "../../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
+import { Textarea } from "@machdoch/media-studio/tauri/ui/components/ui/textarea.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   RALPH_FLOW_SCOPES,
   RALPH_FLOW_SCOPE_LABELS,

@@ -1,8 +1,8 @@
 import { AudioWaveform, LoaderCircle, Mic, Square } from "lucide-react";
 import type { JSX, ReactNode } from "react";
-import { Button } from "./ui/button";
-import { ControlTooltip } from "./ui/tooltip";
-import { cn } from "../lib/utils";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 
 export type VoiceInputOverlayStatusTone = "success" | "error" | "info" | null;
 

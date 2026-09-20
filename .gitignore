@@ -75,3 +75,5 @@ models/
 apps/client/src-tauri/python/runtime/
 __pycache__/
 *.py[cod]
+
+apps/fleet-manager/public/media-studio/

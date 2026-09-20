@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type JSX } from "react";
 import type { ChatSessionMessage } from "../../chat-session.model";
-import { useCommandOverlay } from "../../commands/use-command-overlay";
+import { useCommandOverlay } from "@machdoch/media-studio/tauri/ui/commands/use-command-overlay.js";
 import {
   copyMessageImage,
   copyMessageText,

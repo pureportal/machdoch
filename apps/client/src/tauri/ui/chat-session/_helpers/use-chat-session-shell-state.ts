@@ -60,7 +60,7 @@ import {
   type SessionHistoryTagFacet,
 } from "./session-history-index";
 import { useNewestMessageScroll } from "./use-newest-message-scroll";
-import { canUseTauriStore } from "../../lib/_helpers/shell-store-storage.helper";
+import { canUseTauriStore } from "@machdoch/media-studio/tauri/ui/lib/_helpers/shell-store-storage.helper.js";
 
 const serializeShellFragment = (value: unknown): string => {
   return JSON.stringify(value);

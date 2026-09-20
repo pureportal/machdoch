@@ -25,15 +25,15 @@ import {
 } from "react";
 import { MarkdownContent } from "../components/markdown-content";
 import { getWorkspaceMarkdownLinkTarget } from "../components/workspace-markdown-links";
-import { Button } from "../components/ui/button";
-import { EmptyState } from "../components/ui/empty-state";
-import { ControlTooltip } from "../components/ui/tooltip";
-import { useOptionalRegisterCommands } from "../commands/command-context";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
+import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import {
   asPaletteCommands,
   type CommandDefinition,
-} from "../commands/command-types";
-import { cn } from "../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   openWorkspacePath,
   openExternalUrl,

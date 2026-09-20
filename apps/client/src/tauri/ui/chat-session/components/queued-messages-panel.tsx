@@ -9,11 +9,11 @@ import {
 } from "lucide-react";
 import { useState, type ClipboardEvent, type DragEvent, type JSX } from "react";
 import type { ChatSessionContextAttachment } from "../../chat-session.model";
-import { Button } from "../../components/ui/button";
-import { SubmitShortcut } from "../../components/ui/submit-shortcut";
-import { Textarea } from "../../components/ui/textarea";
-import { ControlTooltip } from "../../components/ui/tooltip";
-import { cn } from "../../lib/utils";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { SubmitShortcut } from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
+import { Textarea } from "@machdoch/media-studio/tauri/ui/components/ui/textarea.js";
+import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { getClipboardImageFiles } from "../_helpers/clipboard-image-files";
 import type { AttachmentSelectionKind } from "../_helpers/session-context-attachments";
 import {

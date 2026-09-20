@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import { CopyContextMenu } from "../components/ui/copy-context-menu";
+import { CopyContextMenu } from "@machdoch/media-studio/tauri/ui/components/ui/copy-context-menu.js";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -16,8 +16,8 @@ import {
   DialogTrigger,
   DialogContent,
   DialogTitle,
-} from "../components/ui/dialog";
-import { TooltipProvider } from "../components/ui/tooltip";
+} from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
+import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import {
   RalphCanvasSubmenu,
   RalphContextMenuButton,

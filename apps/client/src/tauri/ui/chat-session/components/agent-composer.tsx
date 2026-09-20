@@ -17,19 +17,19 @@ import {
   useState,
 } from "react";
 import type { ChatSessionContextAttachment } from "../../chat-session.model";
-import { getDefaultCommandShortcut } from "../../commands/command-defaults";
-import { useOptionalRegisterCommands } from "../../commands/command-context";
+import { getDefaultCommandShortcut } from "@machdoch/media-studio/tauri/ui/commands/command-defaults.js";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import type {
   CommandDefinition,
   CommandPageItem,
-} from "../../commands/command-types";
-import { Button } from "../../components/ui/button";
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
-} from "../../components/ui/submit-shortcut";
-import { Textarea } from "../../components/ui/textarea";
-import { cn } from "../../lib/utils";
+} from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
+import { Textarea } from "@machdoch/media-studio/tauri/ui/components/ui/textarea.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import type { RunningTaskMessageAction } from "../../lib/shell-store";
 import type { RuntimeProvider } from "../../model-catalog";
 import { getClipboardImageFiles } from "../_helpers/clipboard-image-files";

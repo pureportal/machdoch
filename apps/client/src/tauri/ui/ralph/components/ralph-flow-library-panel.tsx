@@ -13,10 +13,10 @@ import type {
   RalphFlowScope,
   RalphFlowSummary,
 } from "../../../../core/ralph.js";
-import { Button } from "../../components/ui/button";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { ScrollArea } from "../../components/ui/scroll-area";
-import { ControlTooltip } from "../../components/ui/tooltip";
-import { cn } from "../../lib/utils";
+import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { formatFlowSubtitle } from "../_helpers/format-ralph-flow-labels.helper";
 import {
   RALPH_FLOW_LIBRARY_LABELS,

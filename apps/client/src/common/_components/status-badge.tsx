@@ -1,6 +1,6 @@
 import type { ComponentProps, JSX, ReactNode } from "react";
-import { Badge } from "../../tauri/ui/components/ui/badge";
-import { cn } from "../../tauri/ui/lib/utils";
+import { Badge } from "@machdoch/media-studio/tauri/ui/components/ui/badge.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 
 type BadgeVariant = NonNullable<ComponentProps<typeof Badge>["variant"]>;
 

@@ -4,12 +4,12 @@ import type {
   WorkspaceRunConfigurationDocument,
   WorkspaceRunSnapshot,
 } from "../../../shared/workspace-run.js";
-import { Button } from "../components/ui/button";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
-} from "../components/ui/submit-shortcut";
-import { Textarea } from "../components/ui/textarea";
+} from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
+import { Textarea } from "@machdoch/media-studio/tauri/ui/components/ui/textarea.js";
 import {
   precheckWorkspaceRunConfigurationJson,
   saveWorkspaceRunConfigurationDocument,

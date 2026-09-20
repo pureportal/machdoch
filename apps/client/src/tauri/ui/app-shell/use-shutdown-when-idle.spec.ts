@@ -28,7 +28,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async () => vi.fn()),
 }));
 vi.mock("../lib/shell-store", () => ({ loadShellStateSnapshot: vi.fn() }));
-vi.mock("../media/media-generation-service", () => ({
+vi.mock("@machdoch/media-studio/tauri/ui/media/media-generation-service.js", () => ({
   hasPendingMediaGeneration: () => activity.media,
 }));
 

@@ -8,8 +8,8 @@ import {
 import type { JSX } from "react";
 
 import type { RalphFlowBlock, RalphFlowEdge } from "../../../../core/ralph.js";
-import { cn } from "../../lib/utils";
-import { ControlTooltip } from "../../components/ui/tooltip";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
+import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import type { RalphInspectorSectionId } from "../_helpers/ralph-flow-editor-options.helper";
 
 interface RalphInspectorSection {

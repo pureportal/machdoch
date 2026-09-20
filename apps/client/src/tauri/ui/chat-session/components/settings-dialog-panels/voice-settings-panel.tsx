@@ -1,6 +1,6 @@
 import { RefreshCw } from "lucide-react";
 import type { JSX } from "react";
-import { Button } from "../../../components/ui/button";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { getProviderLabel } from "../../../model-catalog";
 import {
   USER_SPEECH_TO_TEXT_PROVIDER_ORDER,
@@ -8,7 +8,7 @@ import {
   type SpeechToTextProvider,
   type VoiceAiProvider,
 } from "../../../runtime";
-import { cn } from "../../../lib/utils";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   ChoiceButtons,
   SettingPanel,
