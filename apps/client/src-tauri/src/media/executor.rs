@@ -165,6 +165,7 @@ mod tests {
             std::process::id()
         ));
         MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("media.sqlite3"),
             blobs: root.join("blobs"),
         }

@@ -572,6 +572,7 @@ mod tests {
             .unwrap();
         fs::write(&source, encoded.into_inner()).unwrap();
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("runtime").join("media.sqlite3"),
             blobs: root.join("runtime").join("blobs"),
         };
@@ -617,6 +618,7 @@ mod tests {
         fs::write(&source, svg).unwrap();
         let source_digest = format!("{:x}", Sha256::digest(svg.as_bytes()));
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("runtime").join("media.sqlite3"),
             blobs: root.join("runtime").join("blobs"),
         };
@@ -665,6 +667,7 @@ mod tests {
         )
         .unwrap();
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("runtime").join("media.sqlite3"),
             blobs: root.join("runtime").join("blobs"),
         };

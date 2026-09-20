@@ -1019,6 +1019,7 @@ mod tests {
         let source = temp_path(name);
         let root = source.with_extension("store");
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("media.sqlite3"),
             blobs: root.join("blobs").join("sha256"),
         };

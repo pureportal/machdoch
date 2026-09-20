@@ -16,6 +16,7 @@ pub(crate) fn run() -> Result<(), String> {
         .manage(super::fleet_transfer::FleetTransferState::default())
         .build(context)
         .map_err(|error| error.to_string())?;
+    super::storage::resume_pending(app.handle())?;
     super::fleet::initialize(app.handle());
     let app_handle = app.handle().clone();
     std::thread::spawn(move || {

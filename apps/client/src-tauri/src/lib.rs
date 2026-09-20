@@ -186,8 +186,14 @@ pub fn run() {
                 eprintln!("Failed to initialize Fleet Manager connection: {error}");
             }
 
-            if let Err(error) = media::initialize_runtime(app.handle()) {
-                eprintln!("Failed to initialize Media Studio: {error}");
+            match media::storage::resume_pending(app.handle()) {
+                Ok(false) => {
+                    if let Err(error) = media::initialize_runtime(app.handle()) {
+                        eprintln!("Failed to initialize Media Studio: {error}");
+                    }
+                }
+                Ok(true) => {}
+                Err(error) => eprintln!("Could not resume asset move: {error}"),
             }
 
             if let Err(error) = app
@@ -287,6 +293,9 @@ pub fn run() {
             workspace_tools::terminal::stop_workspace_terminals,
             workspace_tools::terminal::write_workspace_terminal_binary,
             workspace_tools::terminal::write_workspace_terminal,
+            media::storage::media_get_asset_storage,
+            media::storage::media_move_asset_storage,
+            media::storage::media_resume_asset_storage,
             media::media_cancel_run,
             media::media_analyze_image_quality,
             media::media_enqueue_fixture_run,

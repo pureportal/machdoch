@@ -1288,6 +1288,7 @@ mod tests {
             .as_nanos();
         let root = std::env::temp_dir().join(format!("machdoch-provider-{label}-{unique}"));
         MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("media.sqlite3"),
             blobs: root.join("blobs"),
         }

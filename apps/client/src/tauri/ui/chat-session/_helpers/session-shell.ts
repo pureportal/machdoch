@@ -39,6 +39,7 @@ import {
 } from "./ai-context-window";
 
 export type SettingsSection =
+  | "asset-storage"
   | "civitai"
   | "providers"
   | "web-search"
@@ -103,6 +104,22 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
       "internal",
       "background",
       "model",
+    ],
+  },
+  {
+    id: "asset-storage",
+    label: "Asset storage",
+    group: "Data",
+    description: "",
+    keywords: [
+      "media",
+      "models",
+      "loras",
+      "embeddings",
+      "folder",
+      "disk",
+      "downloads",
+      "move",
     ],
   },
   {

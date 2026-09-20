@@ -975,6 +975,7 @@ mod tests {
             .unwrap();
         fs::write(&source, encoded.into_inner()).unwrap();
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("runtime").join("media.sqlite3"),
             blobs: root.join("runtime").join("blobs"),
         };
@@ -1188,6 +1189,7 @@ mod tests {
             .unwrap();
         fs::write(&source, bytes).unwrap();
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("runtime").join("media.sqlite3"),
             blobs: root.join("runtime").join("blobs"),
         };

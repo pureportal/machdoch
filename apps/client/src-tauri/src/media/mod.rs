@@ -37,6 +37,8 @@ mod provider_mock;
 mod provider_openai;
 mod provider_svg;
 pub(crate) mod runtime_setup;
+pub(crate) mod storage;
+mod storage_migration;
 mod subject_cutout;
 mod svg;
 mod transform;
@@ -66,22 +68,14 @@ use error::{command_result, MediaCommandResult, MediaError};
 
 #[derive(Debug, Clone)]
 pub(crate) struct MediaRuntimePaths {
+    _storage_lease: Option<Arc<std::fs::File>>,
     pub(crate) database: PathBuf,
     pub(crate) blobs: PathBuf,
 }
 
 impl MediaRuntimePaths {
     fn resolve(app: &AppHandle) -> MediaResult<Self> {
-        let root = app
-            .path()
-            .app_data_dir()
-            .map_err(|error| format!("failed to resolve Media Studio data directory: {error}"))?
-            .join("media-studio");
-
-        Ok(Self {
-            database: root.join("media.sqlite3"),
-            blobs: root.join("blobs").join("sha256"),
-        })
+        storage::resolve(&storage::control_root(app)?)
     }
 
     fn models_root(&self) -> MediaResult<PathBuf> {
@@ -112,6 +106,9 @@ impl Drop for ActiveMediaRun<'_> {
 }
 
 pub(crate) fn has_pending_shutdown_work(app: &AppHandle) -> MediaResult<bool> {
+    if storage::read_config(&storage::control_root(app)?)?.migration.is_some() {
+        return Ok(true);
+    }
     let state = app.state::<MediaRuntimeState>();
     if state
         .runtime_setup
@@ -3428,31 +3425,49 @@ pub(crate) fn inspect_ralph_media_run(
     database::get_run_detail(&paths, &required_text("runId", run_id, 128)?).map(Into::into)
 }
 
-pub(crate) fn initialize_runtime(app: &AppHandle) -> MediaResult<MediaRuntimeStatus> {
-    let paths = MediaRuntimePaths::resolve(app)?;
-    let recovery = database::initialize(&paths)?;
-    model_install::recover_removals(&paths)?;
-    model_addon::recover_removals(&paths)?;
-    let queued_run_ids = database::list_queued_run_ids(&paths)?;
-    let provider_run_ids = provider_mock::recover_interrupted(&paths)?;
-    let queued_model_install_ids = model_install::recover_interrupted(&paths)?;
+struct MediaRuntimeRecovery {
+    recovered_runs: u32,
+    queued_run_ids: Vec<String>,
+    provider_run_ids: Vec<String>,
+    queued_model_install_ids: Vec<String>,
+}
 
-    for run_id in &queued_run_ids {
+fn recover_runtime_storage(paths: &MediaRuntimePaths) -> MediaResult<MediaRuntimeRecovery> {
+    let recovery = database::initialize(paths)?;
+    model_install::recover_removals(paths)?;
+    model_addon::recover_removals(paths)?;
+    Ok(MediaRuntimeRecovery {
+        recovered_runs: recovery.recovered_runs,
+        queued_run_ids: database::list_queued_run_ids(paths)?,
+        provider_run_ids: provider_mock::recover_interrupted(paths)?,
+        queued_model_install_ids: model_install::recover_interrupted(paths)?,
+    })
+}
+
+fn resume_runtime_workers(app: &AppHandle, recovery: &MediaRuntimeRecovery) -> MediaResult<()> {
+    for run_id in &recovery.queued_run_ids {
         spawn_fixture_worker(app.clone(), run_id.clone())?;
     }
-    for run_id in &provider_run_ids {
+    for run_id in &recovery.provider_run_ids {
         spawn_provider_worker(app.clone(), run_id.clone())?;
     }
-    for job_id in queued_model_install_ids {
-        spawn_model_install_worker(app.clone(), job_id)?;
+    for job_id in &recovery.queued_model_install_ids {
+        spawn_model_install_worker(app.clone(), job_id.clone())?;
     }
+    Ok(())
+}
+
+pub(crate) fn initialize_runtime(app: &AppHandle) -> MediaResult<MediaRuntimeStatus> {
+    let paths = MediaRuntimePaths::resolve(app)?;
+    let recovery = recover_runtime_storage(&paths)?;
+    resume_runtime_workers(app, &recovery)?;
 
     let local_diffusers = app.state::<MediaRuntimeState>().local_diffusers_status(app);
     let direct_generation_model_ids = direct_generation_model_ids(&paths, &local_diffusers)?;
     Ok(MediaRuntimeStatus {
         schema_version: database::SCHEMA_VERSION,
         recovered_runs: recovery.recovered_runs,
-        queued_runs: (queued_run_ids.len() + provider_run_ids.len()) as u32,
+        queued_runs: (recovery.queued_run_ids.len() + recovery.provider_run_ids.len()) as u32,
         active_runs: app.state::<MediaRuntimeState>().active_count(),
         storage_ready: true,
         mode: "native",

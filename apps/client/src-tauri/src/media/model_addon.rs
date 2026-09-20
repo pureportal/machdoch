@@ -2094,6 +2094,7 @@ mod tests {
         let source = temp_path(name);
         let root = source.with_extension("store");
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("media.sqlite3"),
             blobs: root.join("blobs").join("sha256"),
         };
@@ -2118,6 +2119,7 @@ mod tests {
             std::env::var("MACHDOCH_MEDIA_ADDON_FIXTURE").expect("external fixture path");
         let fixture: Value = serde_json::from_slice(&fs::read(fixture_path).unwrap()).unwrap();
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: PathBuf::from(fixture["database"].as_str().unwrap()),
             blobs: PathBuf::from(fixture["blobs"].as_str().unwrap()),
         };

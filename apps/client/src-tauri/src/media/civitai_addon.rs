@@ -1091,6 +1091,7 @@ mod tests {
             model_import::new_import_id().unwrap()
         ));
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("media.sqlite3"),
             blobs: root.join("blobs"),
         };
@@ -1150,6 +1151,7 @@ mod tests {
             model_import::new_import_id().unwrap()
         ));
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("media.sqlite3"),
             blobs: root.join("blobs"),
         };
@@ -1298,6 +1300,7 @@ mod tests {
             .as_nanos();
         let root = std::env::temp_dir().join(format!("machdoch-civitai-source-{unique}"));
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("media.sqlite3"),
             blobs: root.join("blobs"),
         };

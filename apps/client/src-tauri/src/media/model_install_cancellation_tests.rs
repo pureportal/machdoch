@@ -10,6 +10,7 @@ impl Fixture {
     fn new() -> Self {
         let root = std::env::temp_dir().join(new_job_id().expect("fixture identifier"));
         let paths = MediaRuntimePaths {
+            _storage_lease: None,
             database: root.join("media.sqlite3"),
             blobs: root.join("blobs").join("sha256"),
         };
