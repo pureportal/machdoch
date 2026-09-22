@@ -58,8 +58,12 @@ pub(crate) fn restore<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), Strin
             Err(error) => return Err(error.into()),
         };
         if let Some(saved) = saved {
+            let size = PhysicalSize::new(saved.width.max(1), saved.height.max(1));
+            window.set_size(size)?;
             window.set_position(PhysicalPosition::new(saved.x, saved.y))?;
-            window.set_size(PhysicalSize::new(saved.width.max(1), saved.height.max(1)))?;
+            if window.inner_size()? != size {
+                window.set_size(size)?;
+            }
         }
         display_layout::recover_window(window, &window.available_monitors()?, false)?;
         let position = window.outer_position()?;
@@ -80,32 +84,40 @@ pub(crate) fn restore<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), Strin
     restore().map_err(|error| format!("Failed to restore the main window: {error}"))
 }
 
-pub(crate) fn apply_saved_mode<R: Runtime>(window: &WebviewWindow<R>) {
+pub(crate) fn apply_saved_mode<R: Runtime>(window: &WebviewWindow<R>, was_hidden: bool) {
     if window.label() != MAIN_WINDOW_LABEL {
         return;
     }
-    let saved = {
+    let (saved, mode_pending) = {
         let state = window.state::<WindowPlacementState>();
-        let mut progress = state.0.lock().unwrap();
-        if !progress.mode_pending {
+        let progress = state.0.lock().unwrap();
+        if !progress.mode_pending && !was_hidden {
             return;
         }
-        progress.mode_pending = false;
-        progress.saved
+        (progress.saved, progress.mode_pending)
     };
     let apply = || -> tauri::Result<()> {
         if let Some(saved) = saved {
-            if saved.maximized {
+            if saved.maximized && !window.is_maximized()? {
                 window.maximize()?;
             }
-            if saved.fullscreen {
+            if saved.fullscreen && !window.is_fullscreen()? {
                 window.set_fullscreen(true)?;
             }
         }
         Ok(())
     };
-    if let Err(error) = apply() {
-        eprintln!("Failed to restore the main window mode: {error}");
+    match apply() {
+        Ok(()) if mode_pending => {
+            window
+                .state::<WindowPlacementState>()
+                .0
+                .lock()
+                .unwrap()
+                .mode_pending = false;
+        }
+        Err(error) => eprintln!("Failed to restore the main window mode: {error}"),
+        Ok(()) => {}
     }
 }
 

@@ -376,8 +376,8 @@ fn apply_startup_mode<R: Runtime>(app: &AppHandle<R>, launch_context: LaunchCont
         }
         StartupWindowMode::OpenWindow => {
             let _ = window.set_skip_taskbar(false);
-            super::placement::apply_saved_mode(&window);
             let _ = window.show();
+            super::placement::apply_saved_mode(&window, false);
 
             if !launch_context.launched_from_autostart {
                 let _ = window.set_focus();

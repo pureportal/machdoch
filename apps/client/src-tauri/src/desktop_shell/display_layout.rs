@@ -142,6 +142,41 @@ fn titlebar_reachable(window: Bounds, areas: &[Bounds]) -> bool {
     })
 }
 
+fn mode_has_visible_monitor(window: Bounds, areas: &[Bounds]) -> bool {
+    areas
+        .iter()
+        .any(|area| window.overlap(*area) >= u64::from(area.width) * u64::from(area.height) / 2)
+}
+
+fn preserve_current_bounds(
+    current: Bounds,
+    inner: PhysicalSize<u32>,
+    areas: &[Bounds],
+    area: Bounds,
+    minimum: PhysicalSize<u32>,
+    fit_visible: bool,
+    maximized: bool,
+    fullscreen: bool,
+) -> bool {
+    let visible_area = areas.iter().fold(0_u64, |sum, area| {
+        sum.saturating_add(current.overlap(*area))
+    });
+    let total_area = u64::from(current.width) * u64::from(current.height);
+    let spans_monitors = areas
+        .iter()
+        .filter(|area| current.overlap(**area) > 0)
+        .count()
+        > 1;
+    let mostly_visible = spans_monitors && visible_area >= total_area - total_area / 10;
+    !fit_visible
+        && (((maximized || fullscreen) && mode_has_visible_monitor(current, areas))
+            || (titlebar_reachable(current, areas)
+                && inner.width >= minimum.width
+                && inner.height >= minimum.height
+                && ((current.width <= area.width && current.height <= area.height)
+                    || mostly_visible)))
+}
+
 fn minimum_size(scale: f64, area: Bounds, frame: PhysicalSize<u32>) -> PhysicalSize<u32> {
     let scale = if scale.is_finite() && scale > 0.0 {
         scale
@@ -221,17 +256,20 @@ pub(crate) fn recover_window<R: Runtime>(
     if window.label() == MAIN_WINDOW_LABEL {
         window.set_min_size(Some(minimum))?;
     }
-    if !fit_visible
-        && titlebar_reachable(current, &areas)
-        && inner.width >= minimum.width
-        && inner.height >= minimum.height
-        && current.width <= areas[index].width
-        && current.height <= areas[index].height
-    {
+    if preserve_current_bounds(
+        current,
+        inner,
+        &areas,
+        areas[index],
+        minimum,
+        fit_visible,
+        maximized,
+        fullscreen,
+    ) {
         return Ok(());
     }
     if fullscreen || maximized {
-        if current.overlap(areas[index]) > 0 {
+        if mode_has_visible_monitor(current, &areas) {
             return Ok(());
         }
         // Rescue stale bounds while retaining the user's fullscreen/maximized mode.
@@ -362,7 +400,7 @@ pub(crate) fn initialize<R: Runtime>(app: &AppHandle<R>) {
                             if window.is_visible().unwrap_or(false)
                                 && !window.is_minimized().unwrap_or(true)
                             {
-                                super::placement::apply_saved_mode(window);
+                                super::placement::apply_saved_mode(window, false);
                             }
                             if recover_window(window, &monitors, fit_visible).is_err() {
                                 recovered = false;
@@ -498,5 +536,81 @@ mod tests {
         assert!(titlebar_reachable(bounds(900, 100, 900, 500), &areas));
         assert!(!titlebar_reachable(bounds(3000, 100, 900, 500), &areas));
         assert!(!titlebar_reachable(bounds(0, -100, 900, 500), &areas));
+    }
+
+    #[test]
+    fn focus_keeps_maximized_and_cross_monitor_window_bounds() {
+        let areas = [bounds(0, 40, 1280, 680), bounds(1280, 40, 1280, 680)];
+        let minimum = PhysicalSize::new(960, 600);
+        let maximized = bounds(-8, 32, 1296, 696);
+        assert!(preserve_current_bounds(
+            maximized,
+            PhysicalSize::new(1296, 696),
+            &areas,
+            areas[0],
+            minimum,
+            false,
+            true,
+            false
+        ));
+        let spanning = bounds(250, 80, 2000, 640);
+        assert!(preserve_current_bounds(
+            spanning,
+            PhysicalSize::new(2000, 640),
+            &areas,
+            areas[0],
+            minimum,
+            false,
+            false,
+            false
+        ));
+        assert!(!preserve_current_bounds(
+            spanning,
+            PhysicalSize::new(2000, 640),
+            &areas,
+            areas[0],
+            minimum,
+            true,
+            false,
+            false
+        ));
+    }
+
+    #[test]
+    fn offscreen_and_undersized_windows_still_recover() {
+        let areas = [bounds(0, 40, 1280, 680)];
+        let minimum = PhysicalSize::new(960, 600);
+        for (current, inner, maximized) in [
+            (
+                bounds(3000, 100, 1200, 640),
+                PhysicalSize::new(1200, 640),
+                true,
+            ),
+            (
+                bounds(1272, 40, 1280, 680),
+                PhysicalSize::new(1280, 680),
+                true,
+            ),
+            (
+                bounds(1160, 100, 1200, 640),
+                PhysicalSize::new(1200, 640),
+                false,
+            ),
+            (
+                bounds(100, 100, 3000, 640),
+                PhysicalSize::new(3000, 640),
+                false,
+            ),
+            (
+                bounds(0, 40, 1320, 700),
+                PhysicalSize::new(1320, 700),
+                false,
+            ),
+            (bounds(100, 100, 176, 40), PhysicalSize::new(176, 40), false),
+        ] {
+            assert!(!preserve_current_bounds(
+                current, inner, &areas, areas[0], minimum, false, maximized, false
+            ));
+        }
     }
 }
