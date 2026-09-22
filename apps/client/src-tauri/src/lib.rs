@@ -264,6 +264,7 @@ pub fn run() {
             scheduler_activity::get_scheduler_activity,
             desktop_task::start_scheduler_service,
             desktop_task::run_task_interview_command,
+            desktop_task::media_flow_agent::run_media_flow_agent,
             desktop_task::run_desktop_task,
             desktop_task::save_clipboard_image_attachment,
             workspace_git::discover_workspace_git_repositories,

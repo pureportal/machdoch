@@ -104,7 +104,7 @@ fn write_workspace_payload_file(
     Ok(file_path)
 }
 
-fn write_instruction_payload_file(contents: &str) -> Result<PathBuf, String> {
+pub(super) fn write_instruction_payload_file(contents: &str) -> Result<PathBuf, String> {
     let unique_id = WORKSPACE_PAYLOAD_FILE_COUNTER.fetch_add(1, Ordering::SeqCst);
     let directory = get_user_config_directory()?.join(INSTRUCTION_PAYLOAD_DIRECTORY_NAME);
     cleanup_instruction_payload_directory(

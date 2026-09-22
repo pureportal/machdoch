@@ -20,6 +20,7 @@ mod commands;
 mod diagnostics;
 mod dropped_paths;
 mod file_changes;
+pub(crate) mod media_flow_agent;
 mod paths;
 mod payload;
 mod payload_files;

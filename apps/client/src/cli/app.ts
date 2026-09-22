@@ -59,6 +59,12 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
   }
 
   switch (args.command) {
+    case "media-flow-agent": {
+      const { runMediaFlowAgentCommand } =
+        await import("./_helpers/cli-media-flow-agent.js");
+      await runMediaFlowAgentCommand(args);
+      return;
+    }
     case "help": {
       writeStdoutLine(getHelpText(args.helpTopic));
       return;

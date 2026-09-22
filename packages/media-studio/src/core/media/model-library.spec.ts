@@ -161,15 +161,15 @@ describe("matchesMediaModelQuery", () => {
       importedReady.id,
       brokenInstalled.id,
       runtimeUnavailable.id,
-      notInstalled.id,
     ]);
   });
 
-  it("offers managed video and SVG downloads before installation without making them selectable", () => {
+  it("excludes uninstalled catalog models from the library and selection", () => {
     const models = createMediaModelCatalogSnapshot({
       isOpenAiConfigured: false,
     }).models;
     const downloadableIds = [
+      "local:flux-2-klein-4b",
       "local:wan2.2-ti2v-5b",
       "local-svg:IntroSVG-Qwen2.5-VL-7B",
     ];
@@ -177,7 +177,8 @@ describe("matchesMediaModelQuery", () => {
     const selectable = listSelectableMediaModels(models);
 
     for (const id of downloadableIds) {
-      expect(library.some((model) => model.id === id)).toBe(true);
+      expect(models.some((model) => model.id === id)).toBe(true);
+      expect(library.some((model) => model.id === id)).toBe(false);
       expect(selectable.some((model) => model.id === id)).toBe(false);
     }
   });

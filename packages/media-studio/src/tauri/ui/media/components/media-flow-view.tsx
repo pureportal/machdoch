@@ -1,3 +1,4 @@
+import { MediaFlowAgentPanel } from "./media-flow-agent-panel";
 import { MediaAssetBrowser } from "./media-asset-browser";
 import { MediaNodeAddonField } from "./media-node-addon-field";
 import { MediaGenerationEstimate } from "./media-generation-estimate";
@@ -207,6 +208,7 @@ import {
 } from "../../flow/flow-theme";
 
 interface MediaFlowViewProps {
+  workspaceRoot?: string | null;
   flow: MediaFlow;
   layout: MediaFlowLayout;
   plan: MediaCompiledPlan;
@@ -3730,6 +3732,7 @@ const FlowPortabilityPanel = ({
 };
 
 export const MediaFlowView = ({
+  workspaceRoot = null,
   flow,
   layout,
   plan,
@@ -3797,6 +3800,7 @@ export const MediaFlowView = ({
     onDisconnectConnection ??
     ((request: MediaFlowConnectionRequest) =>
       onDisconnectInput(request.toNodeId, request.toPortId));
+  const [agentPanelOpen, setAgentPanelOpen] = useState(false);
   const [planPanelOpen, setPlanPanelOpen] = useState(false);
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
   const [portabilityPanelOpen, setPortabilityPanelOpen] = useState(false);
@@ -4081,6 +4085,7 @@ export const MediaFlowView = ({
     [flow.nodes],
   );
   const panelOpen =
+    agentPanelOpen ||
     planPanelOpen ||
     historyPanelOpen ||
     portabilityPanelOpen ||
@@ -4105,6 +4110,7 @@ export const MediaFlowView = ({
   const toggleFlowPanel = useCallback(
     (
       panel:
+        | "agent"
         | "templates"
         | "variables"
         | "groups"
@@ -4114,6 +4120,7 @@ export const MediaFlowView = ({
         | "plan",
     ): void => {
       setSelectedNodeId(null);
+      setAgentPanelOpen((open) => (panel === "agent" ? !open : false));
       setTemplatesPanelOpen((open) => (panel === "templates" ? !open : false));
       setVariablesPanelOpen((open) => (panel === "variables" ? !open : false));
       setGroupsPanelOpen((open) => (panel === "groups" ? !open : false));
@@ -4671,11 +4678,13 @@ export const MediaFlowView = ({
       if (event.defaultPrevented) return;
       if (
         event.key === "Escape" &&
-        (palettePanelOpen ||
+        (agentPanelOpen ||
+          palettePanelOpen ||
           selectionPanelOpen ||
           variablesPanelOpen ||
           templatesPanelOpen)
       ) {
+        setAgentPanelOpen(false);
         setPalettePanelOpen(false);
         setSelectionPanelOpen(false);
         setVariablesPanelOpen(false);
@@ -4686,6 +4695,7 @@ export const MediaFlowView = ({
     window.addEventListener("keydown", handleKeyboardShortcut);
     return () => window.removeEventListener("keydown", handleKeyboardShortcut);
   }, [
+    agentPanelOpen,
     palettePanelOpen,
     selectionPanelOpen,
     variablesPanelOpen,
@@ -4716,6 +4726,32 @@ export const MediaFlowView = ({
     selectionPanelOpen,
     templatesPanelOpen,
     variablesPanelOpen,
+  ]);
+
+  useEffect(() => {
+    if (
+      templatesPanelOpen ||
+      planPanelOpen ||
+      historyPanelOpen ||
+      portabilityPanelOpen ||
+      palettePanelOpen ||
+      groupsPanelOpen ||
+      variablesPanelOpen ||
+      selectionPanelOpen ||
+      selectedNode !== undefined
+    ) {
+      setAgentPanelOpen(false);
+    }
+  }, [
+    templatesPanelOpen,
+    planPanelOpen,
+    historyPanelOpen,
+    portabilityPanelOpen,
+    palettePanelOpen,
+    groupsPanelOpen,
+    variablesPanelOpen,
+    selectionPanelOpen,
+    selectedNode,
   ]);
 
   const isValidConnection = useCallback(
@@ -5502,6 +5538,16 @@ export const MediaFlowView = ({
             type="button"
             variant="ghost"
             size="sm"
+            aria-expanded={agentPanelOpen}
+            onClick={() => toggleFlowPanel("agent")}
+            className="h-8 text-xs text-slate-300"
+          >
+            AI assistant
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
             aria-label="Browse built-in flow templates"
             aria-expanded={templatesPanelOpen}
             onClick={() => {
@@ -5939,6 +5985,18 @@ export const MediaFlowView = ({
             aria-label="Editable semantic media workflow"
           />
         </div>
+
+        <MediaFlowAgentPanel
+          key={flow.id}
+          open={agentPanelOpen}
+          workspaceRoot={workspaceRoot}
+          flow={flow}
+          models={models}
+          addons={addons}
+          assets={assets}
+          onApply={onFlowVariablesChange}
+          onClose={() => setAgentPanelOpen(false)}
+        />
 
         {variablesPanelOpen ? (
           <MediaFlowVariablesPanel

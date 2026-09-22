@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./core/media/flow-agent.js": "./src/core/media/flow-agent.ts",
     "./fleet-transport.js": "./src/fleet-transport.ts",
     "./core/media/asset-categories.js": "./src/core/media/asset-categories.ts",
     "./core/media/asset-discovery.js": "./src/core/media/asset-discovery.ts",
@@ -122,7 +123,6 @@
     "./tauri/ui/media/components/media-import-jobs.js": "./src/tauri/ui/media/components/media-import-jobs.tsx",
     "./tauri/ui/media/components/media-lora-strength-control.js": "./src/tauri/ui/media/components/media-lora-strength-control.tsx",
     "./tauri/ui/media/components/media-model-edit-dialog.js": "./src/tauri/ui/media/components/media-model-edit-dialog.tsx",
-    "./tauri/ui/media/components/media-model-install-dialog.js": "./src/tauri/ui/media/components/media-model-install-dialog.tsx",
     "./tauri/ui/media/components/media-model-picker.js": "./src/tauri/ui/media/components/media-model-picker.tsx",
     "./tauri/ui/media/components/media-node-addon-field.js": "./src/tauri/ui/media/components/media-node-addon-field.tsx",
     "./tauri/ui/media/components/media-pagination.js": "./src/tauri/ui/media/components/media-pagination.tsx",

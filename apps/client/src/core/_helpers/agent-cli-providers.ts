@@ -263,16 +263,26 @@ export const getAgentCliProviderLabel = (
   provider: AgentCliProvider,
 ): string => AGENT_CLI_PROVIDER_DEFINITIONS[provider].label;
 
+const normalizeEnvironmentKeys = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv =>
+  process.platform === "win32"
+    ? Object.fromEntries(
+        Object.entries(env).map(([key, value]) => [key.toUpperCase(), value]),
+      )
+    : env;
+
 export const resolveAgentCliProviderBinary = (
   provider: AgentCliProvider,
   values: Record<string, string | undefined> = process.env,
 ): AgentCliBinaryResolution => {
   const definition = AGENT_CLI_PROVIDER_DEFINITIONS[provider];
+  const normalizedValues = normalizeEnvironmentKeys(values);
   const env = {
-    ...process.env,
-    ...values,
+    ...normalizeEnvironmentKeys(process.env),
+    ...normalizedValues,
   };
-  const configuredPath = normalizeOptionalString(values[definition.envKey]);
+  const configuredPath = normalizeOptionalString(
+    normalizedValues[definition.envKey],
+  );
 
   if (configuredPath) {
     const executable = resolveConfiguredBinaryPath(configuredPath, env);

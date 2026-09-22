@@ -1098,6 +1098,26 @@ export const parseCliArgs = (
     );
   }
 
+  if (first === "media-flow-agent") {
+    assertNoAdditionalPositionals(first, rest);
+    if (
+      quickRunRequested ||
+      rawTask ||
+      rawRalphInputJson ||
+      !rawRalphInputJsonFile
+    ) {
+      fail("`machdoch media-flow-agent` expects --input-json-file.");
+    }
+    return {
+      ...sharedOptions,
+      command: "media-flow-agent",
+      mediaFlowAgent: {
+        inputJsonFile:
+          rawRalphInputJsonFile ?? fail("Missing --input-json-file."),
+      },
+    };
+  }
+
   if (first === "interview") {
     if (quickRunRequested || rawTask) {
       fail("`machdoch interview` cannot be combined with --quick or --task.");

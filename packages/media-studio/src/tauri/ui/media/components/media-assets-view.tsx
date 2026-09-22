@@ -8,7 +8,6 @@ import {
 } from "../../../../core/media/resource-discovery.js";
 import { MediaImportJobs } from "./media-import-jobs";
 import { MediaAssetDetailsDialog } from "./media-asset-details-dialog";
-import { MediaModelInstallDialog } from "./media-model-install-dialog";
 import { MediaRemoveResourceButton } from "./media-remove-resource-button";
 import {
   Copy,
@@ -583,14 +582,6 @@ export const MediaAssetsView = ({
     }
   };
 
-  const [installModel, setInstallModel] = useState<MediaModelDescriptor | null>(
-    null,
-  );
-  const closeInstall = useCallback(() => setInstallModel(null), []);
-  const installed = useCallback(async () => {
-    await onRefreshModels();
-    if (installModel) onVerifyModel(installModel);
-  }, [onRefreshModels, onVerifyModel, installModel]);
   return (
     <div className="flex h-full min-h-0 flex-col bg-slate-950">
       <header className="flex flex-wrap items-center gap-3 border-b border-slate-800/80 px-5 py-3">
@@ -684,6 +675,7 @@ export const MediaAssetsView = ({
         >
           Scan models
         </Button>
+        <MediaImportJobs onOpen={showResource} />
         {persistenceError ? (
           <div
             role="alert"
@@ -701,7 +693,6 @@ export const MediaAssetsView = ({
           </div>
         ) : null}
       </header>
-      <MediaImportJobs onOpen={showResource} />
       <div className="flex gap-2 overflow-x-auto border-b border-slate-800/70 px-5 py-2">
         {FILTERS.map((item) => (
           <button
@@ -866,19 +857,7 @@ export const MediaAssetsView = ({
                             model.family}
                         </p>
                       </div>
-                      {!model.installed &&
-                      model.management.acquisition === "managed-install" ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="w-full"
-                          onClick={() => setInstallModel(model)}
-                          disabled={!importSupported}
-                        >
-                          Install model
-                        </Button>
-                      ) : ready ? (
+                      {ready ? (
                         <Button
                           type="button"
                           variant="outline"
@@ -1277,21 +1256,10 @@ export const MediaAssetsView = ({
                     </pre>
                   </details>
                 ) : null}
-                {!selectedResourceModel.installed &&
-                selectedResourceModel.management.acquisition ===
-                  "managed-install" ? (
-                  <Button
-                    type="button"
-                    className="w-full"
-                    onClick={() => setInstallModel(selectedResourceModel)}
-                    disabled={!importSupported}
-                  >
-                    Install model
-                  </Button>
-                ) : selectedResourceModel.runtimeReadiness ===
-                    "runtime-unavailable" &&
-                  !runtimeReady &&
-                  selectedResourceModel.providerId === "local-diffusers" ? (
+                {selectedResourceModel.runtimeReadiness ===
+                  "runtime-unavailable" &&
+                !runtimeReady &&
+                selectedResourceModel.providerId === "local-diffusers" ? (
                   <Button
                     type="button"
                     variant="outline"
@@ -1353,13 +1321,6 @@ export const MediaAssetsView = ({
         />
       ) : null}
 
-      {installModel ? (
-        <MediaModelInstallDialog
-          model={installModel}
-          onClose={closeInstall}
-          onInstalled={installed}
-        />
-      ) : null}
       {selectedAsset && selectedAssetMetadata ? (
         <MediaAssetDetailsDialog
           asset={selectedAsset}

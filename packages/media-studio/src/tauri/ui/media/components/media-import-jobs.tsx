@@ -1,5 +1,6 @@
-import { LoaderCircle, X } from "lucide-react";
-import { useSyncExternalStore, type JSX } from "react";
+import { Download, LoaderCircle, X } from "lucide-react";
+import { useState, useSyncExternalStore, type JSX } from "react";
+import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { mediaImportQueue } from "../media-import-queue";
 import { Button } from "../../components/ui/button";
 import { civitaiFileSize } from "../../../../core/media/civitai.js";
@@ -11,6 +12,7 @@ export const MediaImportJobs = ({
   onOpen?: (resourceId: string) => void;
   downloadsOnly?: boolean;
 }): JSX.Element | null => {
+  const [open, setOpen] = useState(false);
   const jobs = useSyncExternalStore(
     mediaImportQueue.subscribe,
     mediaImportQueue.getSnapshot,
@@ -18,12 +20,19 @@ export const MediaImportJobs = ({
   const visibleJobs = downloadsOnly
     ? jobs.filter((job) => job.downloadKey)
     : jobs;
-  if (!visibleJobs.length) return null;
+  const activeCount = visibleJobs.filter((job) => ["queued", "downloading", "importing"].includes(job.status)).length;
+  const failedCount = visibleJobs.filter((job) => job.status === "failed").length;
   return (
-    <section
-      aria-label="Downloads and imports"
-      className="max-h-48 shrink-0 overflow-y-auto border-b border-slate-800 px-5 py-2"
-    >
+    <Popover open={open && visibleJobs.length > 0} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" size="sm" disabled={!visibleJobs.length} aria-label={`Downloads and imports, ${activeCount} active${failedCount ? `, ${failedCount} failed` : ""}`}>
+          {activeCount ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          Downloads
+          <span className={failedCount ? "text-rose-300 tabular-nums" : "tabular-nums"}>{activeCount || failedCount || visibleJobs.length}</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-96 max-h-[min(28rem,var(--radix-popover-content-available-height))] border-slate-700 bg-slate-950 p-4 text-slate-100">
+      <section aria-label="Downloads and imports">
       <h3 className="py-1 text-xs font-medium text-slate-300">
         {downloadsOnly ? "Downloads" : "Downloads and imports"}
       </h3>
@@ -53,7 +62,7 @@ export const MediaImportJobs = ({
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onOpen(job.resourceId!)}
+              onClick={() => { setOpen(false); onOpen(job.resourceId!); }}
             >
               View
             </Button>
@@ -113,5 +122,7 @@ export const MediaImportJobs = ({
         </div>
       ))}
     </section>
+      </PopoverContent>
+    </Popover>
   );
 };
