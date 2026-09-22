@@ -1575,13 +1575,13 @@ const createCopilotCommand = ({
   args.push(`--model=${config.model}`);
 
   if (effort) {
-    if (!providerFeatures.includes("--effort")) {
+    if (!providerFeatures.includes("--reasoning-effort")) {
       throw new Error(
-        "The selected Copilot CLI does not expose --effort. Upgrade Copilot CLI or use the default reasoning mode.",
+        "The selected Copilot CLI does not expose --reasoning-effort. Upgrade Copilot CLI or use the default reasoning mode.",
       );
     }
 
-    args.push(`--effort=${effort}`);
+    args.push(`--reasoning-effort=${effort}`);
   }
 
   if (contextWindow === "long") {

@@ -172,7 +172,7 @@ const detectFeatures = (provider: AgentCliProvider, help: string): string[] => {
             "--agent",
             "--attachment",
             "--context",
-            "--effort",
+            "--reasoning-effort",
             "--no-auto-update",
             "--no-custom-instructions",
             "--output-format",
