@@ -26,24 +26,19 @@ const FULLSCREEN_TOLERANCE_PX: i32 = 12;
 const FULLSCREEN_MIN_AREA_RATIO: f64 = 0.96;
 
 pub(crate) fn handle_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
-    if matches!(
-        event,
-        WindowEvent::ScaleFactorChanged { .. } | WindowEvent::Focused(true)
-    ) || (window.label() == MAIN_WINDOW_LABEL
-        && matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_)))
+    if let Some(state) = window
+        .app_handle()
+        .try_state::<super::display_layout::DisplayLayoutState>()
     {
-        if let Some(state) = window
-            .app_handle()
-            .try_state::<super::display_layout::DisplayLayoutState>()
-        {
-            if matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_)) {
+        match event {
+            WindowEvent::ScaleFactorChanged { .. } => state.window_changed(window.label(), true),
+            WindowEvent::Focused(true) => state.refresh(),
+            WindowEvent::Moved(_) | WindowEvent::Resized(_)
+                if window.label() == MAIN_WINDOW_LABEL =>
+            {
                 state.refresh();
-            } else {
-                state.window_changed(
-                    window.label(),
-                    matches!(event, WindowEvent::ScaleFactorChanged { .. }),
-                );
             }
+            _ => {}
         }
     }
     if window.label() != MAIN_WINDOW_LABEL {
@@ -66,8 +61,8 @@ pub(crate) fn handle_window_event<R: Runtime>(window: &Window<R>, event: &Window
         "Settings sharing stopped when the main window was closed.",
     );
     hide_transient_assistant_windows(window);
-    let _ = window.set_skip_taskbar(true);
     let _ = window.hide();
+    let _ = window.set_skip_taskbar(true);
 }
 
 pub(crate) fn sync_assistant_bubble_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
@@ -297,8 +292,8 @@ pub(super) fn hide_to_tray<R: Runtime>(app: &AppHandle<R>) {
     };
 
     super::placement::capture(&window);
-    let _ = window.set_skip_taskbar(true);
     let _ = window.hide();
+    let _ = window.set_skip_taskbar(true);
 }
 
 pub(super) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
@@ -311,14 +306,44 @@ pub(super) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
         return;
     };
 
-    let _ = window.set_skip_taskbar(false);
-    if window.is_minimized().unwrap_or(false) {
-        let _ = window.unminimize();
+    let was_visible = match window.is_visible() {
+        Ok(visible) => visible,
+        Err(error) => {
+            eprintln!("Failed to inspect main window visibility: {error}");
+            return;
+        }
+    };
+    let was_minimized = match window.is_minimized() {
+        Ok(minimized) => minimized,
+        Err(error) => {
+            eprintln!("Failed to inspect main window minimized state: {error}");
+            return;
+        }
+    };
+    if was_visible && !was_minimized {
+        if let Err(error) = window.set_focus() {
+            eprintln!("Failed to focus the main window: {error}");
+        }
+        return;
+    }
+
+    if let Err(error) = window.set_skip_taskbar(false) {
+        eprintln!("Failed to show the main window in the taskbar: {error}");
+    }
+    if was_minimized {
+        if let Err(error) = window.unminimize() {
+            eprintln!("Failed to restore the minimized main window: {error}");
+        }
     }
     super::display_layout::recover_on_reveal(&window);
-    super::placement::apply_saved_mode(&window);
-    let _ = window.show();
-    let _ = window.set_focus();
+    if let Err(error) = window.show() {
+        eprintln!("Failed to show the main window: {error}");
+        return;
+    }
+    super::placement::apply_saved_mode(&window, !was_visible);
+    if let Err(error) = window.set_focus() {
+        eprintln!("Failed to focus the main window: {error}");
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
