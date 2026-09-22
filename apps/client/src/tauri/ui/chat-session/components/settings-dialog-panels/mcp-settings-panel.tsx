@@ -29,6 +29,7 @@ import {
 } from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
 import { Textarea } from "@machdoch/media-studio/tauri/ui/components/ui/textarea.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
+import { ParsedField } from "./parsed-field";
 import { SettingsCard, SettingsStatus } from "./shared";
 import { ProviderSyncControl } from "./provider-sync-control";
 import { useSettingsNavigationGuard } from "./navigation-guard";
@@ -1335,17 +1336,17 @@ export const McpSettingsPanel = ({
                 label="Args"
                 detail="One argument per line or comma separated."
               >
-                <Textarea
-                  value={formatStringList(transport?.args)}
+                <ParsedField
+                  key={selectedServerKey}
+                  value={transport?.args}
+                  format={formatStringList}
+                  parse={parseStringList}
+                  multiline
                   disabled={disabled}
                   placeholder="-y&#10;@modelcontextprotocol/server-filesystem"
-                  onChange={(event) =>
+                  onChange={(args) =>
                     updateSelectedRecord("transport", (record) =>
-                      setRecordValue(
-                        record,
-                        "args",
-                        parseStringList(event.target.value),
-                      ),
+                      setRecordValue(record, "args", args),
                     )
                   }
                   className={TEXTAREA_CLASS}
@@ -1355,17 +1356,17 @@ export const McpSettingsPanel = ({
                 label="Env"
                 detail="KEY=value, one per line. Prefer env references for secrets."
               >
-                <Textarea
-                  value={formatStringRecord(transport?.env)}
+                <ParsedField
+                  key={selectedServerKey}
+                  value={transport?.env}
+                  format={formatStringRecord}
+                  parse={parseStringRecord}
+                  multiline
                   disabled={disabled}
                   placeholder="API_KEY=${env:API_KEY}"
-                  onChange={(event) =>
+                  onChange={(env) =>
                     updateSelectedRecord("transport", (record) =>
-                      setRecordValue(
-                        record,
-                        "env",
-                        parseStringRecord(event.target.value),
-                      ),
+                      setRecordValue(record, "env", env),
                     )
                   }
                   className={TEXTAREA_CLASS}
@@ -1404,16 +1405,16 @@ export const McpSettingsPanel = ({
             </div>
           ) : (
             <Field label="Headers" detail="KEY=value, one per line.">
-              <Textarea
-                value={formatStringRecord(transport?.headers)}
+              <ParsedField
+                key={selectedServerKey}
+                value={transport?.headers}
+                format={formatStringRecord}
+                parse={parseStringRecord}
+                multiline
                 disabled={disabled}
-                onChange={(event) =>
+                onChange={(headers) =>
                   updateSelectedRecord("transport", (record) =>
-                    setRecordValue(
-                      record,
-                      "headers",
-                      parseStringRecord(event.target.value),
-                    ),
+                    setRecordValue(record, "headers", headers),
                   )
                 }
                 className={TEXTAREA_CLASS}
@@ -1516,32 +1517,32 @@ export const McpSettingsPanel = ({
           {authType === "headers" ? (
             <div className="grid gap-3 md:grid-cols-2">
               <Field label="Headers" detail="KEY=value, one per line.">
-                <Textarea
-                  value={formatStringRecord(auth?.headers)}
+                <ParsedField
+                  key={selectedServerKey}
+                  value={auth?.headers}
+                  format={formatStringRecord}
+                  parse={parseStringRecord}
+                  multiline
                   disabled={disabled}
-                  onChange={(event) =>
+                  onChange={(headers) =>
                     updateSelectedRecord("auth", (record) =>
-                      setRecordValue(
-                        record,
-                        "headers",
-                        parseStringRecord(event.target.value),
-                      ),
+                      setRecordValue(record, "headers", headers),
                     )
                   }
                   className={TEXTAREA_CLASS}
                 />
               </Field>
               <Field label="Env headers" detail="Header=ENV_VAR, one per line.">
-                <Textarea
-                  value={formatStringRecord(auth?.envHeaders)}
+                <ParsedField
+                  key={selectedServerKey}
+                  value={auth?.envHeaders}
+                  format={formatStringRecord}
+                  parse={parseStringRecord}
+                  multiline
                   disabled={disabled}
-                  onChange={(event) =>
+                  onChange={(envHeaders) =>
                     updateSelectedRecord("auth", (record) =>
-                      setRecordValue(
-                        record,
-                        "envHeaders",
-                        parseStringRecord(event.target.value),
-                      ),
+                      setRecordValue(record, "envHeaders", envHeaders),
                     )
                   }
                   className={TEXTAREA_CLASS}
@@ -1598,16 +1599,17 @@ export const McpSettingsPanel = ({
                   />
                 </Field>
                 <Field label="Scopes">
-                  <Input
-                    value={formatStringList(auth?.scopes).replace(/\n/gu, ", ")}
+                  <ParsedField
+                    key={selectedServerKey}
+                    value={auth?.scopes}
+                    format={(value) =>
+                      formatStringList(value).replace(/\n/gu, ", ")
+                    }
+                    parse={parseStringList}
                     disabled={disabled}
-                    onChange={(event) =>
+                    onChange={(scopes) =>
                       updateSelectedRecord("auth", (record) =>
-                        setRecordValue(
-                          record,
-                          "scopes",
-                          parseStringList(event.target.value),
-                        ),
+                        setRecordValue(record, "scopes", scopes),
                       )
                     }
                     className={INPUT_CLASS}
@@ -1927,20 +1929,20 @@ export const McpSettingsPanel = ({
         <PanelBlock title="Runtime permissions">
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Roots">
-              <Input
-                value={
-                  Array.isArray(selectedServer.roots)
-                    ? selectedServer.roots.join(", ")
-                    : getString(selectedServer, "roots")
+              <ParsedField
+                key={selectedServerKey}
+                value={selectedServer.roots}
+                format={(value) =>
+                  Array.isArray(value)
+                    ? value.join(", ")
+                    : typeof value === "string"
+                      ? value
+                      : ""
                 }
+                parse={parseRootsInput}
                 disabled={disabled}
                 placeholder="workspace"
-                onChange={(event) =>
-                  updateSelectedField(
-                    "roots",
-                    parseRootsInput(event.target.value),
-                  )
-                }
+                onChange={(roots) => updateSelectedField("roots", roots)}
                 className={INPUT_CLASS}
               />
             </Field>
