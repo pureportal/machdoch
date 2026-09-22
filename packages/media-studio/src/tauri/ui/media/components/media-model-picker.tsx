@@ -1,5 +1,6 @@
 import { Check, ChevronDown } from "lucide-react";
 import { useState, type JSX } from "react";
+import { MEDIA_MODEL_ARCHITECTURES } from "../../../../core/media/model-architectures.js";
 import { listSelectableMediaModels } from "../../../../core/media/model-library.js";
 import type {
   MediaAssetCategory,
@@ -63,11 +64,20 @@ export const MediaModelPicker = ({
   className,
 }: MediaModelPickerProps): JSX.Element => {
   const [open, setOpen] = useState(false);
+  const [baseModel, setBaseModel] = useState("all");
+  const [target, setTarget] = useState("all");
   const selectableModels = listSelectableMediaModels(models);
   const discovery = useMediaResourceDiscovery(
     selectableModels,
     metadata,
     categories,
+  );
+  const baseModels = MEDIA_MODEL_ARCHITECTURES.filter((base) =>
+    selectableModels.some((model) => model.architecture === base.value),
+  );
+  const visibleModels = discovery.visibleResources.filter((model) =>
+    (baseModel === "all" || model.architecture === baseModel) &&
+    (target === "all" || model.target === target),
   );
   const selectedModel =
     selectableModels.find((model) => model.id === value) ?? null;
@@ -130,7 +140,18 @@ export const MediaModelPicker = ({
               discovery.setFilters({ ...discovery.filters, query })
             }
           />
-          <div className="p-2" onKeyDown={(event) => event.stopPropagation()}>
+          <div className="space-y-2 p-2" onKeyDown={(event) => event.stopPropagation()}>
+            <div className="flex gap-2">
+              <select aria-label="Filter models by base model" value={baseModel} onChange={(event) => setBaseModel(event.target.value)} className="h-9 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200">
+                <option value="all">All base models</option>
+                {baseModels.map((base) => <option key={base.value} value={base.value}>{base.label}</option>)}
+              </select>
+              <select aria-label="Filter models by location" value={target} onChange={(event) => setTarget(event.target.value)} className="h-9 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200">
+                <option value="all">Local + Remote</option>
+                <option value="local">Local</option>
+                <option value="remote">Remote</option>
+              </select>
+            </div>
             <MediaResourceFilters
               label="models"
               filters={discovery.filters}
@@ -160,7 +181,7 @@ export const MediaModelPicker = ({
                   ) : null}
                 </CommandItem>
               ) : null}
-              {discovery.visibleResources.map((model) => (
+              {visibleModels.map((model) => (
                 <CommandItem
                   key={model.id}
                   value={model.id}

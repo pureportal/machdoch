@@ -2,6 +2,40 @@ import { getHelpText, parseCliArgs } from "./cli-args.ts";
 import { describe, expect, it } from "vitest";
 
 describe("cli args public parser", () => {
+  it("routes Media Studio assistant input without accepting task arguments", () => {
+    expect(
+      parseCliArgs([
+        "--json",
+        "media-flow-agent",
+        "--input-json-file",
+        "C:/input.json",
+      ]),
+    ).toMatchObject({
+      command: "media-flow-agent",
+      mediaFlowAgent: { inputJsonFile: "C:/input.json" },
+      json: true,
+    });
+    expect(() => parseCliArgs(["media-flow-agent"])).toThrow(
+      "--input-json-file",
+    );
+    expect(() =>
+      parseCliArgs([
+        "media-flow-agent",
+        "extra",
+        "--input-json-file",
+        "C:/input.json",
+      ]),
+    ).toThrow("positional arguments");
+    expect(() =>
+      parseCliArgs([
+        "media-flow-agent",
+        "--task",
+        "hello",
+        "--input-json-file",
+        "C:/input.json",
+      ]),
+    ).toThrow();
+  });
   it("recognizes explicit chat and --task for both chat and run", () => {
     expect(parseCliArgs(["chat"])).toMatchObject({ command: "chat" });
     expect(parseCliArgs(["chat"]).task).toBeUndefined();

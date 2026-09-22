@@ -619,6 +619,28 @@ pub(super) fn execute_provider_sync_command(
     )
 }
 
+pub(super) fn execute_media_flow_agent(workspace_root: &str, input: &Value) -> Result<Value, String> {
+    let contents = serde_json::to_string(input).map_err(|error| error.to_string())?;
+    if contents.len() > 2 * 1024 * 1024 {
+        return Err("Media Studio assistant input exceeds 2 MiB.".to_string());
+    }
+    let path = super::payload_files::write_instruction_payload_file(&contents)?;
+    let result = run_auxiliary_json_command(
+        workspace_root,
+        vec!["--input-json-file".to_string(), path.display().to_string()],
+        &AuxiliaryCliSpec {
+            subcommand: "media-flow-agent",
+            command_name: "Media Studio assistant",
+            parse_name: "Media Studio assistant",
+            failure_name: "Media Studio assistant",
+            stdout_capture_limit_bytes: 2 * 1024 * 1024,
+            timeout_ms: AUXILIARY_CLI_COMMAND_TIMEOUT_MS,
+        },
+    );
+    cleanup_temporary_files(&[path]);
+    result
+}
+
 pub(super) fn execute_instruction_command(
     request: InstructionCommandRequest,
 ) -> Result<Value, String> {

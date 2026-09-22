@@ -164,38 +164,28 @@ try {
     await page.getByRole("button", { name: "Models", exact: true }).click();
     for (const name of ["Wan2.2 TI2V 5B", "IntroSVG 7B"]) {
       await page.getByLabel("Search assets", { exact: true }).fill(name);
-      const card = page
-        .locator("article")
-        .filter({
-          has: page.getByRole("button", { name: `View ${name}`, exact: true }),
-        });
-      await card
-        .getByRole("button", { name: "Install model", exact: true })
-        .click();
-      const installDialog = page.getByRole("dialog", {
-        name: `Install ${name}`,
-        exact: true,
-      });
-      await installDialog.getByText(/GB download/).waitFor();
       assert.equal(
-        await installDialog
-          .getByRole("button", { name: "Install model", exact: true })
-          .isEnabled(),
-        true,
+        await page
+          .getByRole("button", { name: `View ${name}`, exact: true })
+          .count(),
+        0,
       );
-      await page.screenshot({
-        path: resolve(
-          output,
-          `${fleet ? "fleet" : "client"}-${name.startsWith("Wan") ? "wan" : "svg"}-install.png`,
-        ),
-      });
-      await installDialog
-        .getByRole("button", { name: "Close", exact: true })
-        .first()
-        .click();
     }
+    await page.getByLabel("Search assets", { exact: true }).fill("");
+    assert.equal(
+      await page
+        .getByRole("button", { name: "Install model", exact: true })
+        .count(),
+      0,
+    );
+    assert.equal(
+      await page
+        .getByRole("button", { name: "Browse Civitai", exact: true })
+        .isEnabled(),
+      true,
+    );
     checks.push(
-      `${fleet ? "Fleet" : "Client"}: Wan and SVG models offer installation with download size and disk requirements`,
+      `${fleet ? "Fleet" : "Client"}: uninstalled models and install actions are hidden; Browse Civitai is available`,
     );
     await page.getByRole("button", { name: "Basic", exact: true }).click();
     for (const width of [390, 320]) {

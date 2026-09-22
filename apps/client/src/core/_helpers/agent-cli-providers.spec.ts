@@ -17,6 +17,7 @@ const createFile = async (path: string): Promise<void> => {
 };
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await Promise.all(
     temporaryDirectories.splice(0).map((directory) =>
       rm(directory, { recursive: true, force: true }),
@@ -25,6 +26,123 @@ afterEach(async () => {
 });
 
 describe("resolveAgentCliProviderBinary", () => {
+  it.each(["inherited", "supplied"])(
+    "finds Copilot using mixed-case Windows environment keys from %s values",
+    async (source) => {
+      const directory = await createTemporaryDirectory("copilot-path");
+      const binaryPath = join(directory, "copilot.custom");
+      await createFile(binaryPath);
+
+      const values = { Path: directory, PathExt: ".custom" };
+      vi.stubGlobal("process", {
+        ...process,
+        platform: "win32",
+        env: source === "inherited" ? values : { PATH: "", PATHEXT: ".exe" },
+      });
+
+      const resolution = resolveAgentCliProviderBinary(
+        "copilot-cli",
+        source === "inherited" ? undefined : values,
+      );
+
+      expect(resolution).toEqual({
+        available: true,
+        executable: binaryPath,
+        provider: "copilot-cli",
+        source: "path",
+      });
+    },
+  );
+
+  it("resolves a configured command using mixed-case Windows environment keys", async () => {
+    const directory = await createTemporaryDirectory("copilot-configured-command");
+    const binaryPath = join(directory, "custom-copilot.cmd");
+    await createFile(binaryPath);
+    vi.stubGlobal("process", { ...process, platform: "win32", env: {} });
+
+    const resolution = resolveAgentCliProviderBinary("copilot-cli", {
+      machdoch_copilot_cli_path: "custom-copilot",
+      Path: directory,
+      PathExt: ".cmd",
+    });
+
+    expect(resolution).toEqual({
+      available: true,
+      executable: binaryPath,
+      provider: "copilot-cli",
+      source: "configured-path",
+    });
+  });
+
+  it.each([
+    ["UserProfile", [".local", "bin", "copilot.exe"]],
+    ["AppData", ["npm", "copilot.cmd"]],
+    ["LocalAppData", ["Microsoft", "WinGet", "Links", "copilot.exe"]],
+  ])("finds Copilot using mixed-case %s on Windows", async (key, segments) => {
+    const directory = await createTemporaryDirectory("copilot-default-path");
+    const binaryPath = join(directory, ...segments);
+    await createFile(binaryPath);
+    vi.stubGlobal("process", {
+      ...process,
+      platform: "win32",
+      env: {
+        USERPROFILE: join(directory, "missing"),
+        APPDATA: join(directory, "missing"),
+        LOCALAPPDATA: join(directory, "missing"),
+      },
+    });
+
+    const resolution = resolveAgentCliProviderBinary("copilot-cli", {
+      Path: "",
+      [key]: directory,
+    });
+
+    expect(resolution.executable).toBe(binaryPath);
+  });
+
+  it("allows an empty Windows path override with different casing", async () => {
+    const directory = await createTemporaryDirectory("copilot-cleared-path");
+    const binaryPath = join(directory, "copilot.cmd");
+    await createFile(binaryPath);
+    vi.stubGlobal("process", {
+      ...process,
+      platform: "win32",
+      env: { PATH: directory, PATHEXT: ".cmd" },
+    });
+
+    const resolution = resolveAgentCliProviderBinary("copilot-cli", {
+      Path: "",
+      USERPROFILE: directory,
+      APPDATA: directory,
+      LOCALAPPDATA: directory,
+    });
+
+    expect(resolution.available).toBe(false);
+  });
+
+  it("keeps environment keys case-sensitive on other platforms", async () => {
+    const directory = await createTemporaryDirectory("copilot-posix-path");
+    const binaryPath = join(directory, "copilot");
+    await createFile(binaryPath);
+    vi.stubGlobal("process", {
+      ...process,
+      platform: "linux",
+      env: { PATH: directory },
+    });
+
+    const resolution = resolveAgentCliProviderBinary("copilot-cli", {
+      Path: "",
+      machdoch_copilot_cli_path: "missing-command",
+    });
+
+    expect(resolution).toEqual({
+      available: true,
+      executable: binaryPath,
+      provider: "copilot-cli",
+      source: "path",
+    });
+  });
+
   it("checks the Windows Codex app bin directory for Codex CLI", async () => {
     if (process.platform !== "win32") {
       return;

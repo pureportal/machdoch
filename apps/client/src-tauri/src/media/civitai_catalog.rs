@@ -146,7 +146,7 @@ fn search_url(request: &CivitaiSearchRequest) -> MediaResult<reqwest::Url> {
     let mut url = civitai_addon::api_url("/api/v1/models")?;
     let mut pairs = url.query_pairs_mut();
     pairs
-        .append_pair("limit", "24")
+        .append_pair("limit", "100")
         .append_pair("sort", &request.sort)
         .append_pair("period", &request.period)
         .append_pair(

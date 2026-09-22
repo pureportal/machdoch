@@ -26,6 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog";
+import { CivitaiSearchResults } from "../civitai-search-results";
 import { civitaiRuntime } from "../civitai-runtime";
 import {
   CivitaiModelDetail,
@@ -71,7 +72,10 @@ export function CivitaiBrowserDialog({
     : options.baseModels;
   const [query, setQuery] = useState(initialSource);
   const [items, setItems] = useState<CivitaiModel[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const results = useRef<CivitaiSearchResults | null>(null);
+  const scrollArea = useRef<HTMLDivElement>(null);
+  const loadMore = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<CivitaiModel | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -162,7 +166,7 @@ export function CivitaiBrowserDialog({
     setError(null);
     if (!append) {
       setItems([]);
-      setCursor(null);
+      setHasMore(false);
       setSelected(null);
     }
     try {
@@ -178,37 +182,15 @@ export function CivitaiBrowserDialog({
         setSelectedVersion(
           model.matchedVersionId ?? civitaiRequestedVersion(request.query),
         );
-        setCursor(null);
+        setHasMore(false);
       } else {
-        let page = await civitaiRuntime.search(request);
-        const visited = new Set([request.cursor]);
-        for (let scanned = 1; ; scanned++) {
-          if (sequence.current !== requestId) return;
-          if (page.nextCursor && visited.has(page.nextCursor)) {
-            throw new Error(
-              "Civitai repeated a results page. Try searching again.",
-            );
-          }
-          if (page.items.length > 0 || !page.nextCursor || scanned >= 5) break;
-          visited.add(page.nextCursor);
-          page = await civitaiRuntime.search({
-            ...request,
-            cursor: page.nextCursor,
-          });
+        if (!append || !results.current) {
+          results.current = new CivitaiSearchResults(request, civitaiRuntime.search);
         }
+        const page = await results.current.next(() => sequence.current === requestId);
         if (sequence.current !== requestId) return;
-        setItems((previous) =>
-          append
-            ? [
-                ...previous,
-                ...page.items.filter(
-                  (item) =>
-                    !previous.some((existing) => existing.id === item.id),
-                ),
-              ]
-            : page.items,
-        );
-        setCursor(page.nextCursor);
+        setItems((previous) => append ? [...previous, ...page.items] : page.items);
+        setHasMore(page.hasMore);
       }
     } catch (failure) {
       if (sequence.current === requestId) setError((failure as Error).message);
@@ -234,6 +216,15 @@ export function CivitaiBrowserDialog({
     }
     void load(filters);
   }, [filters, refresh, ready, options]);
+
+  useEffect(() => {
+    if (!hasMore || loading || error || selected || !loadMore.current) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) void load(filters, true);
+    }, { root: scrollArea.current, rootMargin: "300px" });
+    observer.observe(loadMore.current);
+    return () => observer.disconnect();
+  }, [hasMore, loading, error, selected, filters]);
 
   const update = (patch: Partial<CivitaiSearch>) =>
     setFilters((value) => ({ ...value, ...patch, cursor: null }));
@@ -293,6 +284,7 @@ export function CivitaiBrowserDialog({
           <div className="flex items-center justify-between gap-3">
             <DialogTitle>Civitai</DialogTitle>
             <div className="flex items-center gap-2">
+              <MediaImportJobs downloadsOnly />
               <Button
                 type="button"
                 variant="ghost"
@@ -315,7 +307,6 @@ export function CivitaiBrowserDialog({
             </div>
           </div>
         </DialogHeader>
-        <MediaImportJobs downloadsOnly />
         {!selected && (
           <form
             className="shrink-0 space-y-3 border-b border-slate-800 p-4"
@@ -483,6 +474,7 @@ export function CivitaiBrowserDialog({
           </form>
         )}
         <div
+          ref={scrollArea}
           className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5"
           aria-busy={loading}
         >
@@ -590,18 +582,18 @@ export function CivitaiBrowserDialog({
                   models…
                 </div>
               )}
-              {!loading && !error && !cursor && items.length === 0 && (
+              {!loading && !error && !hasMore && items.length === 0 && (
                 <div className="flex min-h-56 flex-col items-center justify-center gap-3 text-sm text-slate-400">
                   <Search className="h-8 w-8 text-slate-600" />
                   <p>No matching models</p>
                 </div>
               )}
-              {cursor && !loading && !error && (
-                <div className="flex justify-center pt-5">
+              {hasMore && !loading && !error && (
+                <div ref={loadMore} className="flex justify-center pt-5">
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => void load({ ...filters, cursor }, true)}
+                    onClick={() => void load(filters, true)}
                   >
                     {items.length === 0 ? "Search more" : "Load more"}
                   </Button>

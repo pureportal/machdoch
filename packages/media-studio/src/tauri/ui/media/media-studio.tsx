@@ -4589,6 +4589,7 @@ export const MediaStudio = ({
           ) : null}
           {loaded && state.activeSection === "flow" ? (
             <MediaFlowView
+              workspaceRoot={workspaceRoot}
               flow={flow}
               layout={layout}
               plan={plan}

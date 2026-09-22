@@ -12,6 +12,7 @@ export type CommandName =
   | "run"
   | "chat"
   | "interview"
+  | "media-flow-agent"
   | "ralph"
   | "scheduler"
   | "fleet"
@@ -317,6 +318,7 @@ export interface InstructionCliOptions {
 }
 
 export interface ParsedCliArgs {
+  mediaFlowAgent?: { inputJsonFile: string };
   command: CommandName;
   helpTopic?: string;
   task?: string;

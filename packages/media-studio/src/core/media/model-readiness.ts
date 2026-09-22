@@ -117,7 +117,7 @@ export const describeMediaModelReadiness = (
       }
       return {
         message: `${model.displayName} is not installed on this device.`,
-        action: "Review the license and disk estimate, then install the model.",
+        action: "Browse Civitai to find a model.",
       };
     case "verification-required":
       return {
