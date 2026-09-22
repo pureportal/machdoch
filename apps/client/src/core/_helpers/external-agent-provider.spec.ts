@@ -151,6 +151,7 @@ vi.mock("node:child_process", async (importOriginal) => ({
           "--attachment",
           "--context",
           "--effort",
+          "--reasoning-effort",
           "--no-auto-update",
           "--no-custom-instructions",
           "--output-format",
@@ -365,7 +366,7 @@ const createExternalInstructionPlan = (
                 "--agent",
                 "--attachment",
                 "--context",
-                "--effort",
+                "--reasoning-effort",
                 "--no-auto-update",
                 "--no-custom-instructions",
                 "--output-format",
@@ -2459,9 +2460,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).not.toContain("--add-dir");
     expect(call?.args).not.toContain("--deny-tool=write,shell,memory");
     expect(call?.args).toContain("--model=auto");
-    expect(call?.args.some((argument) => argument.startsWith("--effort"))).toBe(
-      false,
-    );
+    expect(
+      call?.args.some((argument) => argument.startsWith("--reasoning-effort")),
+    ).toBe(false);
     expect(call?.child.stdinText).not.toContain(
       "You are running as a delegated Copilot CLI agent for Machdoch.",
     );
@@ -2892,7 +2893,10 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     const call = spawnCalls[0];
 
     expect(call?.args).toContain("--model=gpt-5.3-codex");
-    expect(call?.args).toContain("--effort=xhigh");
+    expect(call?.args).toContain("--reasoning-effort=xhigh");
+    expect(call?.args.some((argument) => argument.startsWith("--effort"))).toBe(
+      false,
+    );
     expect(call?.args).toContain("--context=long_context");
 
     writeStructuredAnswer(call!, "Copilot delegated answer.");

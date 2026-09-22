@@ -267,7 +267,7 @@ describe("provider capability registry", () => {
       .mockReturnValueOnce({
         status: 0,
         stdout:
-          "Usage: copilot --stream --output-format <format> --attachment <path> --effort <level> --context <mode>",
+          "Usage: copilot --stream --output-format <format> --attachment <path> --reasoning-effort <level> --context <mode>",
         stderr: "",
       });
 
@@ -280,7 +280,7 @@ describe("provider capability registry", () => {
     expect(result.features).toEqual([
       "--attachment",
       "--context",
-      "--effort",
+      "--reasoning-effort",
       "--output-format",
       "--stream",
     ]);
