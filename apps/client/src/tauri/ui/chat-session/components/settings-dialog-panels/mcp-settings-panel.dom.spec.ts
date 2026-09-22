@@ -9,6 +9,7 @@ import {
   within,
 } from "@testing-library/react";
 import { createElement, useState } from "react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { McpSettingsPanel } from "./mcp-settings-panel";
@@ -62,6 +63,109 @@ const renderSettings = (servers: Record<string, unknown>[] = []) => {
 };
 
 describe("MCP settings interactions", () => {
+  it("keeps newlines and commas editable in stdio arguments and saves each argument", async () => {
+    const user = userEvent.setup();
+    const { onSave } = renderSettings([
+      {
+        id: "local",
+        transport: { type: "stdio", command: "node", args: ["--transport"] },
+      },
+    ]);
+    const args = screen.getByRole("textbox", {
+      name: "Args",
+    }) as HTMLTextAreaElement;
+
+    await user.type(args, "{End}{Enter}stdio,");
+    expect(args.value).toBe("--transport\nstdio,");
+    await user.type(args, "--in-process");
+    expect(args.value).toBe("--transport\nstdio,--in-process");
+
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    const saved = JSON.parse(onSave.mock.calls[0]![0]);
+    expect(saved.servers[0].transport.args).toEqual([
+      "--transport",
+      "stdio",
+      "--in-process",
+    ]);
+  });
+
+  it("keeps incomplete environment lines editable without splitting commas in values", async () => {
+    const user = userEvent.setup();
+    const { onSave } = renderSettings([
+      { id: "local", transport: { type: "stdio", command: "node" } },
+    ]);
+    const env = screen.getByRole("textbox", {
+      name: "Env",
+    }) as HTMLTextAreaElement;
+
+    await user.type(env, "API_KEY=value,with,commas{Enter}MODE=fast");
+    expect(env.value).toBe("API_KEY=value,with,commas\nMODE=fast");
+
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    const saved = JSON.parse(onSave.mock.calls[0]![0]);
+    expect(saved.servers[0].transport.env).toEqual({
+      API_KEY: "value,with,commas",
+      MODE: "fast",
+    });
+  });
+
+  it("keeps comma separators editable in OAuth scopes and runtime roots", async () => {
+    const user = userEvent.setup();
+    const { onSave } = renderSettings([
+      {
+        id: "local",
+        transport: { type: "stdio", command: "node" },
+        auth: { type: "oauth", scopes: ["openid"] },
+        roots: "workspace",
+      },
+    ]);
+
+    await user.click(screen.getByRole("tab", { name: "Auth" }));
+    const scopes = screen.getByRole("textbox", {
+      name: "Scopes",
+    }) as HTMLInputElement;
+    await user.type(scopes, "{End},profile");
+    expect(scopes.value).toBe("openid,profile");
+
+    await user.click(screen.getByRole("tab", { name: "Advanced" }));
+    const roots = screen.getByRole("textbox", {
+      name: "Roots",
+    }) as HTMLInputElement;
+    await user.type(roots, "{End},extra");
+    expect(roots.value).toBe("workspace,extra");
+
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    const saved = JSON.parse(onSave.mock.calls[0]![0]);
+    expect(saved.servers[0].auth.scopes).toEqual(["openid", "profile"]);
+    expect(saved.servers[0].roots).toEqual(["workspace", "extra"]);
+  });
+
+  it("does not carry unfinished arguments to another server", () => {
+    renderSettings([
+      {
+        id: "first",
+        title: "First",
+        transport: { type: "stdio", command: "node", args: ["--transport"] },
+      },
+      {
+        id: "second",
+        title: "Second",
+        transport: { type: "stdio", command: "node", args: ["--transport"] },
+      },
+    ]);
+    const args = screen.getByRole("textbox", {
+      name: "Args",
+    }) as HTMLTextAreaElement;
+    fireEvent.change(args, { target: { value: "--transport," } });
+    expect(args.value).toBe("--transport,");
+
+    fireEvent.click(screen.getByRole("button", { name: /Second/ }));
+    expect(
+      (screen.getByRole("textbox", { name: "Args" }) as HTMLTextAreaElement)
+        .value,
+    ).toBe("--transport");
+  });
+
   it("removes stdio fields when switching to HTTP and saving", () => {
     const { onSave } = renderSettings([
       {
