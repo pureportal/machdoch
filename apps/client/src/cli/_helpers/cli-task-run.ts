@@ -2,6 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import process from "node:process";
 import { CliUsageError } from "./cli-error.js";
+import { probeCodexCliImageInput } from "./codex-cli-image-capability.js";
 import { parseConversationContext } from "./cli-chat-sessions.js";
 import { loadRuntimeConfig } from "../../core/config.js";
 import { discoverCustomizations } from "../../core/customizations.js";
@@ -141,7 +142,19 @@ export const createImageInputsFromPaths = async (
     return [];
   }
 
-  if (!modelSupportsImageInput(config.provider, config.model)) {
+  const codexImageInput =
+    config.provider === "codex-cli"
+      ? await probeCodexCliImageInput(config.model, workspaceRoot)
+      : undefined;
+  if (codexImageInput === false) {
+    fail(
+      `Codex CLI reports that \`${config.model}\` does not support image input.`,
+    );
+  }
+  if (
+    config.provider !== "codex-cli" &&
+    !modelSupportsImageInput(config.provider, config.model)
+  ) {
     fail(
       createImageInputUnsupportedModelMessage(config.provider, config.model),
     );
@@ -161,7 +174,7 @@ export const createImageInputsFromPaths = async (
         fail(
           `Unsupported image attachment format for \`${imagePath}\`. Supported extensions for provider \`${config.provider}\`: ${getSupportedImageInputExtensions(
             config.provider,
-            config.model,
+            config.provider === "codex-cli" ? undefined : config.model,
           ).join(", ")}.`,
         );
 
@@ -169,12 +182,12 @@ export const createImageInputsFromPaths = async (
         !providerSupportsImageInputMediaType(
           config.provider,
           imageMediaType,
-          config.model,
+          config.provider === "codex-cli" ? undefined : config.model,
         )
       ) {
         const supportedExtensions = getSupportedImageInputExtensions(
           config.provider,
-          config.model,
+          config.provider === "codex-cli" ? undefined : config.model,
         ).join(", ");
 
         fail(
