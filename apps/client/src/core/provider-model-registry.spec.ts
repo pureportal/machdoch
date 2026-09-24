@@ -1,3 +1,4 @@
+import { describe, expect, it } from "vitest";
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   findProviderModelMetadata,
@@ -61,6 +62,19 @@ describe("provider model registry", () => {
         },
       });
     }
+  });
+
+  it("includes image input for GPT-6 Sol in the OpenAI fallback", () => {
+    expect(findProviderModelMetadata("openai", "gpt-6-sol")).toMatchObject({
+      lifecycle: "stable",
+      releaseDate: "2026-09-22",
+      capabilities: {
+        imageInput: true,
+        computerUse: true,
+        contextWindowTokens: 1_050_000,
+        maxOutputTokens: 128_000,
+      },
+    });
   });
 
   it("includes the GPT-5.6 family in OpenAI and Codex CLI fallbacks", () => {
