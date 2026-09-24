@@ -3,7 +3,7 @@ import type {
   ConversationMemoryEntry,
   TaskConversationContext,
 } from "../../core/types.ts";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ParsedCliArgs } from "./cli-args.ts";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,6 +13,14 @@ import {
   createImageInputsFromPaths,
   resolveConversationContext,
 } from "./cli-task-run.ts";
+
+const { probeCodexCliImageInput } = vi.hoisted(() => ({
+  probeCodexCliImageInput: vi.fn<() => Promise<boolean | undefined>>(),
+}));
+
+vi.mock("./codex-cli-image-capability.js", () => ({
+  probeCodexCliImageInput,
+}));
 
 const createMemoryEntry = (
   scope: ConversationMemoryEntry["scope"],
@@ -152,6 +160,10 @@ describe("applyContextPathsToTask", () => {
 });
 
 describe("createImageInputsFromPaths", () => {
+  afterEach(() => {
+    probeCodexCliImageInput.mockReset();
+  });
+
   it("loads image attachments as base64 inputs for a vision-capable model", async () => {
     const workspaceRoot = await createWorkspace();
 
@@ -188,6 +200,58 @@ describe("createImageInputsFromPaths", () => {
         data: Buffer.from("image").toString("base64"),
       },
     ]);
+  });
+
+  it("loads images for GPT-6 Sol through Codex CLI", async () => {
+    const workspaceRoot = await createWorkspace();
+    probeCodexCliImageInput.mockResolvedValue(true);
+
+    await writeFile(join(workspaceRoot, "screen.png"), Buffer.from("image"));
+
+    await expect(
+      createImageInputsFromPaths(["screen.png"], workspaceRoot, {
+        provider: "codex-cli",
+        model: "gpt-6-sol",
+      }),
+    ).resolves.toEqual([
+      {
+        path: join(workspaceRoot, "screen.png"),
+        mediaType: "image/png",
+        data: Buffer.from("image").toString("base64"),
+      },
+    ]);
+    expect(probeCodexCliImageInput).toHaveBeenCalledWith(
+      "gpt-6-sol",
+      workspaceRoot,
+    );
+  });
+
+  it("rejects images when Codex CLI reports a text-only model", async () => {
+    const workspaceRoot = await createWorkspace();
+    probeCodexCliImageInput.mockResolvedValue(false);
+    await writeFile(join(workspaceRoot, "screen.png"), Buffer.from("image"));
+
+    await expect(
+      createImageInputsFromPaths(["screen.png"], workspaceRoot, {
+        provider: "codex-cli",
+        model: "gpt-6-astra",
+      }),
+    ).rejects.toThrow(
+      "Codex CLI reports that `gpt-6-astra` does not support image input",
+    );
+  });
+
+  it("lets Codex CLI validate images when its catalog has no modality metadata", async () => {
+    const workspaceRoot = await createWorkspace();
+    probeCodexCliImageInput.mockResolvedValue(undefined);
+    await writeFile(join(workspaceRoot, "screen.png"), Buffer.from("image"));
+
+    await expect(
+      createImageInputsFromPaths(["screen.png"], workspaceRoot, {
+        provider: "codex-cli",
+        model: "new-codex-model",
+      }),
+    ).resolves.toHaveLength(1);
   });
 
   it("rejects image attachments for text-only models", async () => {
