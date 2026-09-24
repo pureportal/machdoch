@@ -222,45 +222,38 @@ export const PROVIDER_CATALOG_METADATA: readonly ProviderCatalogMetadata[] = [
   {
     provider: "openai",
     docsUrl: "https://developers.openai.com/api/docs/models",
-    note:
-      "OpenAI model availability is discovered through the Models API and filtered to current GPT text-generation families.",
+    note: "OpenAI model availability is discovered through the Models API and filtered to current GPT text-generation families.",
   },
   {
     provider: "anthropic",
     docsUrl: "https://platform.claude.com/docs/en/about-claude/models/overview",
-    note:
-      "Anthropic model availability is discovered through the Models API and filtered to current Claude text-generation families.",
+    note: "Anthropic model availability is discovered through the Models API and filtered to current Claude text-generation families.",
   },
   {
     provider: "google",
     docsUrl: "https://ai.google.dev/gemini-api/docs/models",
-    note:
-      "Gemini model metadata is available through the Models API, including generation methods and token limits.",
+    note: "Gemini model metadata is available through the Models API, including generation methods and token limits.",
   },
   {
     provider: "langdock",
     docsUrl: "https://docs.langdock.com/en/developer/overview/api-introduction",
-    note:
-      "Langdock exposes provider-specific completion APIs; Machdoch routes GPT and OpenAI-compatible chat models through OpenAI Chat Completions, Claude models through Anthropic Messages, and Gemini models through Google generateContent.",
+    note: "Langdock exposes provider-specific completion APIs; Machdoch routes GPT and OpenAI-compatible chat models through OpenAI Chat Completions, Claude models through Anthropic Messages, and Gemini models through Google generateContent.",
   },
   {
     provider: "codex-cli",
     docsUrl: "https://developers.openai.com/codex/models",
-    note:
-      "Codex CLI runs through `codex exec`; supported GPT models can be discovered from `codex debug models`.",
+    note: "Codex CLI runs through `codex exec`; supported GPT models can be discovered from `codex debug models`.",
   },
   {
     provider: "claude-cli",
     docsUrl: "https://code.claude.com/docs/en/cli-reference",
-    note:
-      "Claude CLI runs through `claude -p` in non-interactive mode; model selection is delegated with `--model`.",
+    note: "Claude CLI runs through `claude -p` in non-interactive mode; model selection is delegated with `--model`.",
   },
   {
     provider: "copilot-cli",
     docsUrl:
       "https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-programmatic-reference",
-    note:
-      "Copilot CLI runs through `copilot -p` in non-interactive mode; model selection is delegated with `--model`, including `--model=auto` when Auto is selected.",
+    note: "Copilot CLI runs through `copilot -p` in non-interactive mode; model selection is delegated with `--model`, including `--model=auto` when Auto is selected.",
   },
 ] as const;
 
@@ -271,6 +264,20 @@ export const PROVIDER_MODEL_METADATA = [
     label: "GPT-6 Astra",
     lifecycle: "stable",
     releaseDate: "2026-09-03",
+    recommendedFor: ["coding", "vision", "computer-use"],
+    capabilities: createOpenAiCapabilities({
+      contextWindowTokens: 1_050_000,
+      maxOutputTokens: 128_000,
+    }),
+    warnings: [],
+    source: "curated-fallback",
+  },
+  {
+    provider: "openai",
+    id: "gpt-6-sol",
+    label: "GPT-6 Sol",
+    lifecycle: "stable",
+    releaseDate: "2026-09-22",
     recommendedFor: ["coding", "vision", "computer-use"],
     capabilities: createOpenAiCapabilities({
       contextWindowTokens: 1_050_000,
@@ -501,7 +508,9 @@ export const PROVIDER_MODEL_METADATA = [
       contextWindowTokens: 1_000_000,
       maxOutputTokens: 65_536,
     }),
-    warnings: ["Preview model: verify behavior and availability before production use."],
+    warnings: [
+      "Preview model: verify behavior and availability before production use.",
+    ],
     source: "curated-fallback",
   },
   {
@@ -516,7 +525,9 @@ export const PROVIDER_MODEL_METADATA = [
       maxOutputTokens: 65_536,
       computerUse: true,
     }),
-    warnings: ["Preview model: verify behavior and availability before production use."],
+    warnings: [
+      "Preview model: verify behavior and availability before production use.",
+    ],
     source: "curated-fallback",
   },
   {
