@@ -2474,6 +2474,7 @@ pub(crate) fn complete_local_video_generation(
         )
         .map_err(|error| format!("failed to register video last-frame lineage: {error}"))?;
     let architecture_tag = match video.architecture.as_str() {
+        "minimax-h3-ref2va" => ("minimax-h3-ref2va", "MiniMax H3 Ref2VA"),
         "hunyuan-video-1.5-i2v" => (
             "hunyuan-video-1-5-i2v",
             "HunyuanVideo 1.5 I2V Step Distilled",
@@ -2643,7 +2644,9 @@ pub(crate) fn complete_local_video_generation(
         "ping-pong" => "ping-pong-loop",
         _ => "one-way-shot",
     };
-    let conditioning_label = if video.architecture == "hunyuan-video-1.5-i2v" {
+    let conditioning_label = if video.architecture == "minimax-h3-ref2va" {
+        "its reference image"
+    } else if video.architecture == "hunyuan-video-1.5-i2v" {
         "its native immutable first frame"
     } else {
         "immutable first and last frames"
@@ -4592,6 +4595,21 @@ pub(crate) fn set_user_asset_tags(
     replace_asset_tags(paths, asset_id, "user", tags, None)
 }
 
+pub(crate) fn mark_openpose_asset(
+    paths: &MediaRuntimePaths,
+    asset_id: &str,
+) -> MediaResult<MediaAssetRecord> {
+    let asset = get_asset(paths, asset_id)?;
+    let mut tags = asset.tags.iter()
+        .filter(|tag| tag.source == "technical")
+        .map(|tag| (tag.value.clone(), tag.label.clone()))
+        .collect::<Vec<_>>();
+    if !tags.iter().any(|(value, _)| value == "openpose") {
+        tags.push(("openpose".to_string(), "OpenPose".to_string()));
+    }
+    replace_asset_tags(paths, asset_id, "technical", &tags, Some(1.0))
+}
+
 pub(crate) fn auto_tag_asset(
     paths: &MediaRuntimePaths,
     asset_id: &str,
@@ -4614,6 +4632,13 @@ pub(crate) fn auto_tag_asset(
         .optional()
         .map_err(|error| format!("failed to inspect asset for technical tags: {error}"))?
         .ok_or_else(|| format!("media asset {asset_id} was not found"))?;
+    let openpose = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM asset_tags WHERE asset_id = ?1 AND source = 'technical' AND normalized_tag = 'openpose')",
+            params![asset_id],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|error| format!("failed to inspect OpenPose asset tag: {error}"))?;
     drop(connection);
 
     let mut tags = vec![(kind.clone(), kind)];
@@ -4649,6 +4674,9 @@ pub(crate) fn auto_tag_asset(
     }
     if fixture {
         tags.push(("fixture-output".to_string(), "Fixture output".to_string()));
+    }
+    if openpose {
+        tags.push(("openpose".to_string(), "OpenPose".to_string()));
     }
     replace_asset_tags(paths, asset_id, "technical", &tags, Some(1.0))
 }

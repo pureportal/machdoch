@@ -187,7 +187,9 @@ export const MediaBasicSamplingOptions = ({
                 }
               />
             </label>
-            {architecture !== "flux-2" && architecture !== "krea-2" ? (
+            {architecture !== "flux-2" &&
+            architecture !== "krea-2" &&
+            architecture !== "qwen-image-2.1" ? (
               <label className={field}>
                 <span>Guidance</span>
                 <input
@@ -225,30 +227,67 @@ export const MediaBasicSamplingOptions = ({
             (settings.memoryProfile ?? "auto") !== "auto")) ||
         target === "video" ? (
           <>
-            <label className={field}>
-              <span>Seed</span>
-              <input
-                className={control}
-                type="number"
-                min={0}
-                max={Number.MAX_SAFE_INTEGER}
-                step={1}
-                placeholder="Random"
-                value={
-                  (target === "video" ? videoSettings.seed : settings.seed) ??
-                  ""
-                }
-                onChange={(event) => {
-                  const seed =
-                    event.target.value === ""
-                      ? null
-                      : Number(event.target.value);
-                  if (target === "video")
-                    onVideoChange({ ...videoSettings, seed });
-                  else onChange({ ...settings, seed });
-                }}
-              />
-            </label>
+            {target === "image" ? (
+              <>
+                <label className={field}>
+                  <span>Seed</span>
+                  <select
+                    className={control}
+                    value={settings.seed == null ? "random" : "fixed"}
+                    onChange={(event) =>
+                      onChange({
+                        ...settings,
+                        seed: event.target.value === "random" ? null : 0,
+                      })
+                    }
+                  >
+                    <option value="random">Random</option>
+                    <option value="fixed">Fixed</option>
+                  </select>
+                </label>
+                {settings.seed != null ? (
+                  <label className={field}>
+                    <span>Value</span>
+                    <input
+                      className={control}
+                      type="number"
+                      min={0}
+                      max={Number.MAX_SAFE_INTEGER}
+                      step={1}
+                      value={settings.seed}
+                      onChange={(event) =>
+                        onChange({
+                          ...settings,
+                          seed: Number(event.target.value),
+                        })
+                      }
+                    />
+                  </label>
+                ) : null}
+              </>
+            ) : (
+              <label className={field}>
+                <span>Seed</span>
+                <input
+                  className={control}
+                  type="number"
+                  min={0}
+                  max={Number.MAX_SAFE_INTEGER}
+                  step={1}
+                  placeholder="Random"
+                  value={videoSettings.seed ?? ""}
+                  onChange={(event) =>
+                    onVideoChange({
+                      ...videoSettings,
+                      seed:
+                        event.target.value === ""
+                          ? null
+                          : Number(event.target.value),
+                    })
+                  }
+                />
+              </label>
+            )}
             {target === "video" ||
             architecture === "krea-2" ||
             (settings.memoryProfile ?? "auto") !== "auto" ? (

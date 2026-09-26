@@ -27,6 +27,8 @@ export const MediaAssetBrowser = ({
   selectedIds,
   onSelect,
   disabledReason,
+  label = "images",
+  compact = false,
 }: {
   assets: readonly MediaAssetRecord[];
   metadata: Readonly<Record<string, MediaGenerationAssetMetadata>>;
@@ -34,6 +36,8 @@ export const MediaAssetBrowser = ({
   selectedIds: readonly string[];
   onSelect: (asset: MediaAssetRecord) => void;
   disabledReason?: (asset: MediaAssetRecord) => string | undefined;
+  label?: string;
+  compact?: boolean;
 }) => {
   const discovery = useMediaResourceDiscovery(
     assets,
@@ -43,16 +47,20 @@ export const MediaAssetBrowser = ({
   );
   const [page, setPage] = useState(1);
   const [selectedOnly, setSelectedOnly] = useState(false);
+  const [query, setQuery] = useState("");
   const matching = discovery.visibleResources.filter(
-    (asset) => !selectedOnly || selectedIds.includes(asset.id),
+    (asset) => (!selectedOnly || selectedIds.includes(asset.id)) &&
+      (!compact || mediaAssetLabel(asset).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())),
   );
   const pageCount = Math.ceil(matching.length / PAGE_SIZE);
   const currentPage = Math.min(page, Math.max(1, pageCount));
   const offset = (currentPage - 1) * PAGE_SIZE;
   return (
     <div className="space-y-3">
-      <MediaResourceFilters
-        label="images"
+      {compact ? <input type="search" aria-label={`Search ${label}`} placeholder={`Search ${label}`} value={query}
+        onChange={(event) => { setQuery(event.target.value); setPage(1); }}
+        className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100" /> : <MediaResourceFilters
+        label={label}
         filters={discovery.filters}
         onChange={(filters) => {
           discovery.setFilters(filters);
@@ -61,8 +69,8 @@ export const MediaAssetBrowser = ({
         categories={categories}
         tags={discovery.tags}
         allowNewest
-      />
-      <label className="flex items-center gap-2 text-xs text-slate-300">
+      />}
+      {!compact && selectedIds.length > 0 ? <label className="flex items-center gap-2 text-xs text-slate-300">
         <input
           type="checkbox"
           checked={selectedOnly}
@@ -72,7 +80,7 @@ export const MediaAssetBrowser = ({
           }}
         />
         Selected only
-      </label>
+      </label> : null}
       <div className="grid max-h-96 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
         {matching.slice(offset, offset + PAGE_SIZE).map((asset) => {
           const selected = selectedIds.includes(asset.id);
@@ -115,18 +123,18 @@ export const MediaAssetBrowser = ({
       </div>
       {matching.length === 0 ? (
         <p role="status" className="py-4 text-center text-xs text-slate-500">
-          No matching images
+          No matching {label}
         </p>
       ) : null}
-      <MediaPagination
+      {(!compact || pageCount > 1) ? <MediaPagination
         page={currentPage}
         pageCount={pageCount}
         firstItemNumber={offset + 1}
         lastItemNumber={Math.min(offset + PAGE_SIZE, matching.length)}
         totalItems={matching.length}
-        itemLabel="images"
+        itemLabel={label}
         onPageChange={setPage}
-      />
+      /> : null}
     </div>
   );
 };

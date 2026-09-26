@@ -11,10 +11,12 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createImageRecipeFlow } from "../../../../core/media/compiler.js";
+import { createDefaultMediaNodeConfig } from "../../../../core/media/node-registry.js";
 import { DEFAULT_IMAGE_RECIPE_SETTINGS } from "../media-studio-store";
 import { invoke, isRemoteMedia } from "../media-platform";
 import { MediaFlowAgentPanel } from "./media-flow-agent-panel";
 import type { MediaFlowAgentResult } from "../../../../core/media/flow-agent.js";
+import type { MediaAssetRecord } from "../../../../core/media/contracts.js";
 
 vi.mock("../media-platform", () => ({
   invoke: vi.fn(),
@@ -35,6 +37,7 @@ const props = (): ComponentProps<typeof MediaFlowAgentPanel> => ({
   addons: [],
   assets: [],
   onApply: vi.fn(),
+  onPoseAssetsCreated: vi.fn(),
   onClose: vi.fn(),
 });
 const send = (text: string) => {
@@ -48,6 +51,7 @@ describe("Media Studio flow assistant", () => {
     vi.mocked(invoke).mockResolvedValue({
       message: "Changed the prompt.",
       flow: { ...flow, name: "Updated" },
+      poseMaps: [],
     });
     render(createElement(MediaFlowAgentPanel, settings));
     send("Add a sunset");
@@ -68,6 +72,41 @@ describe("Media Studio flow assistant", () => {
     );
   });
 
+  it("creates a pose asset before applying the assistant's flow", async () => {
+    const settings = props();
+    const poseNode = {
+      id: "pose-source",
+      type: "source.image" as const,
+      label: "Two people",
+      version: 1 as const,
+      layer: "source" as const,
+      config: {
+        ...createDefaultMediaNodeConfig("source.image"),
+        assetId: "pose-map:duo",
+        referenceRole: "pose",
+      },
+    };
+    const map = {
+      aspectRatio: "1:1" as const,
+      people: [
+        { pose: "standing" as const, x: 0.28, y: 0.92, scale: 0.75, mirror: false },
+        { pose: "sitting" as const, x: 0.7, y: 0.92, scale: 0.73, mirror: true },
+      ],
+    };
+    const asset = { id: "asset:duo" } as MediaAssetRecord;
+    vi.mocked(invoke).mockImplementation(async (command) =>
+      command === "run_media_flow_agent"
+        ? { message: "Added a pose.", flow: { ...flow, nodes: [...flow.nodes, poseNode] }, poseMaps: [{ id: "duo", map }] }
+        : { asset },
+    );
+    render(createElement(MediaFlowAgentPanel, settings));
+    send("Two people, one standing and one sitting");
+    await screen.findByText("Added a pose.");
+    expect(invoke).toHaveBeenCalledWith("media_create_pose_map", { map });
+    expect(settings.onPoseAssetsCreated).toHaveBeenCalledWith([asset]);
+    expect(vi.mocked(settings.onApply).mock.calls[0]?.[0].nodes.find((node) => node.id === "pose-source")?.config.assetId).toBe(asset.id);
+  });
+
   it("rejects late edits when the user changed the flow", async () => {
     let resolve!: (result: MediaFlowAgentResult) => void;
     vi.mocked(invoke).mockReturnValue(
@@ -84,7 +123,7 @@ describe("Media Studio flow assistant", () => {
         flow: { ...flow, name: "Manual edit" },
       }),
     );
-    await act(async () => resolve({ message: "Updated", flow }));
+    await act(async () => resolve({ message: "Updated", flow, poseMaps: [] }));
     expect(settings.onApply).not.toHaveBeenCalled();
     expect(screen.getByRole("alert").textContent).toContain("flow changed");
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe(
@@ -103,7 +142,7 @@ describe("Media Studio flow assistant", () => {
     const view = render(createElement(MediaFlowAgentPanel, settings));
     send("Add a sunset");
     view.unmount();
-    await act(async () => resolve({ message: "Updated", flow }));
+    await act(async () => resolve({ message: "Updated", flow, poseMaps: [] }));
     expect(settings.onApply).not.toHaveBeenCalled();
   });
 
@@ -121,11 +160,9 @@ describe("Media Studio flow assistant", () => {
     ).toBe(false);
   });
 
-  it("disables requests on a remote media host", () => {
+  it("accepts requests on a remote media host", () => {
     vi.mocked(isRemoteMedia).mockReturnValue(true);
     render(createElement(MediaFlowAgentPanel, props()));
-    expect((screen.getByRole("textbox") as HTMLTextAreaElement).disabled).toBe(
-      true,
-    );
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).disabled).toBe(false);
   });
 });

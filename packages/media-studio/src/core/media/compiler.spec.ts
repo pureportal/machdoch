@@ -1432,6 +1432,14 @@ describe("media flow compiler", () => {
       sourceAssetId: "asset:base",
       settings: { ...DEFAULT_SETTINGS, qualityGateEnabled: false },
     });
+    const randomSeedNode = {
+      ...seeded,
+      nodes: seeded.nodes.map((node) =>
+        node.type === "source.seed"
+          ? { ...node, config: { seed: null } }
+          : node,
+      ),
+    };
 
     expect(readImageRecipeSettings(seeded)?.seed).toBe(123_456);
     expect(
@@ -1450,6 +1458,7 @@ describe("media flow compiler", () => {
       }).steps,
     ).toContainEqual(expect.objectContaining({ kind: "resolve-seed" }));
     expect(readImageRecipeSettings(unseeded)?.seed).toBeNull();
+    expect(readImageRecipeSettings(randomSeedNode)?.seed).toBeNull();
   });
 
   it("requires both pose control and masked editing for a combined flow", () => {

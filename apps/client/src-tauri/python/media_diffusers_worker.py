@@ -78,7 +78,9 @@ SUPPORTED_ARCHITECTURES = (
     "flux-2",
     "framepack-i2v",
     "hunyuan-video-1.5-i2v",
+    "minimax-h3-ref2va",
     "krea-2",
+    "qwen-image-2.1",
     "ltx-video",
     "wan-2.2-ti2v",
     "intro-svg",
@@ -102,14 +104,16 @@ NATIVE_REFERENCE_ROLES = {
     "pony": frozenset({"subject", "style", "composition"}),
     "flux-1": frozenset({"composition"}),
     "krea-2": frozenset({"subject", "style", "composition", "palette", "detail"}),
+    "qwen-image-2.1": frozenset({"subject", "style", "composition", "palette", "detail"}),
 }
 RUNTIME_MANIFEST = json.loads(Path(__file__).with_name("media_runtime_manifest.json").read_text(encoding="utf-8"))
 ACCEPTED_PACKAGE_VERSIONS = {
     name.lower(): (version,)
     for line in Path(__file__).with_name("media_diffusers_requirements.txt").read_text(encoding="utf-8").splitlines()
-    if line.strip() and not line.startswith("#")
+    if "==" in line and not line.startswith("#")
     for name, version in [line.strip().split("==", 1)]
 }
+ACCEPTED_PACKAGE_VERSIONS["diffusers"] = ("0.41.0.dev0",)
 for package in ("torch", "torchvision"):
     ACCEPTED_PACKAGE_VERSIONS[package] = tuple(bundle[package] for bundle in RUNTIME_MANIFEST["accelerators"].values())
 REQUIRED_PACKAGES = tuple(ACCEPTED_PACKAGE_VERSIONS)
@@ -484,6 +488,48 @@ def _krea_state_key(source_key: str) -> str:
         ".lin": "",
     }[suffix]
     return destination + destination_suffix
+
+
+def _krea_lora_key(source_key: str) -> str:
+    prefixes = ("base_model.model.", "model.diffusion_model.", "diffusion_model.")
+    prefix = next((prefix for prefix in prefixes if source_key.startswith(prefix)), None)
+    if prefix is None:
+        raise WorkerError(f"KREA LoRA contains an unexpected tensor: {source_key}")
+    key = source_key[len(prefix):]
+    suffixes = {
+        ".lora_A.weight": ".lora_A.weight",
+        ".lora_B.weight": ".lora_B.weight",
+        ".lora_down.weight": ".lora_A.weight",
+        ".lora_up.weight": ".lora_B.weight",
+        ".alpha": ".alpha",
+    }
+    for source_suffix, target_suffix in suffixes.items():
+        if key.endswith(source_suffix):
+            module = key[: -len(source_suffix)]
+            target = _krea_state_key(f"model.diffusion_model.{module}.weight")
+            return f"transformer.{target.removesuffix('.weight')}{target_suffix}"
+    raise WorkerError(f"KREA LoRA contains an unsupported tensor: {source_key}")
+
+
+def _load_krea_lora(pipeline: Any, path: Path, name: str) -> None:
+    from safetensors.torch import load_file
+
+    weights = load_file(str(path), device="cpu")
+    original_keys = [
+        key for key in weights if key.startswith(("base_model.model.", "diffusion_model.", "model.diffusion_model."))
+    ]
+    if original_keys:
+        if len(original_keys) != len(weights):
+            raise WorkerError("KREA LoRA mixes incompatible tensor names")
+        weights = {_krea_lora_key(key): value for key, value in weights.items()}
+        if len(weights) != len(original_keys):
+            raise WorkerError("KREA LoRA has duplicate mapped tensors")
+        pipeline.load_lora_weights(weights, adapter_name=name, low_cpu_mem_usage=True)
+    else:
+        pipeline.load_lora_weights(
+            str(path.parent), weight_name=path.name,
+            adapter_name=name, low_cpu_mem_usage=True,
+        )
 
 
 def _krea_scaled_fp8_linear_forward(module: Any, input_tensor: Any) -> Any:
@@ -956,7 +1002,31 @@ def _load_pipeline(
         "local_files_only": True,
         "use_safetensors": True,
     }
-    if architecture == "krea-2" and package_kind == "single-file":
+    if architecture == "qwen-image-2.1" and package_kind == "single-file":
+        physical_memory = _physical_memory_bytes()
+        if physical_memory is not None and physical_memory < 48 * 1024**3:
+            raise WorkerError(
+                "Qwen-Image 2.1 needs at least 48 GiB of system memory with these BF16 weights"
+            )
+        config_path = _absolute_existing_path(model.get("configPath"), file=False)
+        manifest_path = _absolute_existing_path(str(config_path / "qwen21-runtime.json"), file=True)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("schemaVersion") != 1:
+            raise WorkerError("The Qwen-Image 2.1 component manifest is invalid")
+        runtime_root = _absolute_existing_path(manifest.get("runtimeRoot"), file=False)
+        transformer_class = getattr(diffusers, "QwenImage21Transformer2DModel", None)
+        pipeline_class = getattr(diffusers, "QwenImage21Pipeline", None)
+        if transformer_class is None or pipeline_class is None:
+            raise WorkerError("The media runtime does not support Qwen-Image 2.1. Repair setup.")
+        transformer = transformer_class.from_single_file(
+            str(model_path), config=str(runtime_root), subfolder="transformer",
+            dtype=dtype, local_files_only=True,
+        )
+        pipeline = pipeline_class.from_pretrained(
+            str(runtime_root), transformer=transformer, dtype=dtype,
+            local_files_only=True, use_safetensors=True,
+        )
+    elif architecture == "krea-2" and package_kind == "single-file":
         pipeline = _load_krea_pipeline(diffusers, torch, model, model_path)
     elif package_kind == "diffusers-directory":
         pipeline = diffusers.DiffusionPipeline.from_pretrained(
@@ -1026,6 +1096,25 @@ def probe_model(request: dict[str, Any]) -> dict[str, Any]:
         component_names = ["model", "processor"]
         required_methods = []
         capabilities = ["text-to-svg", "image-to-svg"]
+    elif architecture == "minimax-h3-ref2va":
+        model_root = _absolute_existing_path(model.get("path"), file=False)
+        for relative in (
+            "diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+            "vae/minimax_h3_video_vae_fp16.safetensors",
+            "vae/minimax_h3_audio_vae_fp32.safetensors",
+            "loras/minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
+            "small_te/mmh3-4b-ClipProj-v3.1.safetensors",
+        ):
+            _absolute_existing_path(str(model_root / relative), file=True)
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import media_minimax_h3
+
+        pipeline = None
+        pipeline_class_name = "MiniMaxH3DirectRuntime"
+        component_names = ["transformer", "text_encoder", "video_vae", "audio_vae", "lora"]
+        probe_diagnostic = "MiniMax H3 components are ready."
+        required_methods = []
+        capabilities = ["image-to-video"]
     elif architecture == "framepack-i2v":
         pipeline, _, _, _, _ = _load_framepack_pipeline(
             diffusers,
@@ -1106,7 +1195,10 @@ def probe_model(request: dict[str, Any]) -> dict[str, Any]:
         ]
     else:
         pipeline = _load_pipeline(diffusers, torch, model)
-        required_methods = ["load_lora_weights", "set_adapters", "get_list_adapters"]
+        required_methods = (
+            [] if architecture == "qwen-image-2.1"
+            else ["load_lora_weights", "set_adapters", "get_list_adapters"]
+        )
         if architecture in (
             "stable-diffusion-1",
             "stable-diffusion-2",
@@ -1115,14 +1207,10 @@ def probe_model(request: dict[str, Any]) -> dict[str, Any]:
             "flux-1",
         ):
             required_methods.append("load_textual_inversion")
-        capabilities = [
+        capabilities = [] if architecture == "qwen-image-2.1" else [
             "lora",
             "multi-lora",
-            *(
-                ["textual-inversion"]
-                if hasattr(pipeline, "load_textual_inversion")
-                else []
-            ),
+            *(["textual-inversion"] if hasattr(pipeline, "load_textual_inversion") else []),
         ]
     video_transformers = {
         "wan-2.2-ti2v": "WanTransformer3DModel",
@@ -1642,12 +1730,15 @@ def _apply_addons(
                 spec.loader.exec_module(module)
                 module.load_text_encoder_lora(pipeline, path, name, target_components)
             else:
-                pipeline.load_lora_weights(
-                    str(path.parent),
-                    weight_name=path.name,
-                    adapter_name=name,
-                    low_cpu_mem_usage=True,
-                )
+                if getattr(pipeline, "_machdoch_krea_text_root", None) is not None:
+                    _load_krea_lora(pipeline, path, name)
+                else:
+                    pipeline.load_lora_weights(
+                        str(path.parent),
+                        weight_name=path.name,
+                        adapter_name=name,
+                        low_cpu_mem_usage=True,
+                    )
             # PEFT initializes adapter matrices from the base layer's dtype. For
             # scaled-FP8 KREA checkpoints that would leave LoRA A/B in FP8 and
             # route them through ordinary addmm, which ROCm intentionally does
@@ -1914,10 +2005,10 @@ def _dimensions(
     architecture: str, aspect_ratio: str, policy: str
 ) -> tuple[int, int]:
     small = architecture in ("stable-diffusion-1", "stable-diffusion-2")
-    if architecture in ("flux-2", "krea-2"):
+    if architecture in ("flux-2", "krea-2", "qwen-image-2.1"):
         scale = (
             {"fast": 512, "balanced": 768, "quality": 1_024}[policy]
-            if architecture == "flux-2"
+            if architecture in ("flux-2", "qwen-image-2.1")
             else {"fast": 512, "balanced": 768, "quality": 768}[policy]
         )
         table = {
@@ -1948,6 +2039,8 @@ def _steps(architecture: str, policy: str) -> int:
         return 4
     if architecture == "krea-2":
         return {"fast": 8, "balanced": 10, "quality": 12}[policy]
+    if architecture == "qwen-image-2.1":
+        return {"fast": 20, "balanced": 30, "quality": 40}[policy]
     return {"fast": 16, "balanced": 24, "quality": 32}[policy]
 
 
@@ -2694,6 +2787,8 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         raise WorkerError(f"{architecture} accepts one reference or base image")
     if architecture in ("stable-diffusion-1", "stable-diffusion-xl", "pony", "krea-2") and len(references) > 3:
         raise WorkerError(f"{architecture} accepts at most three reference images")
+    if architecture == "qwen-image-2.1" and len(conditioned_images) > 10:
+        raise WorkerError("Qwen-Image 2.1 accepts at most ten input images")
     if not prompt and not conditioned_images and control_image is None:
         raise WorkerError("prompt or image conditioning is required")
     edit_mask = request.get("editMask")
@@ -2895,7 +2990,9 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         filename = f"output-{index:04d}.{suffix}"
         destination = output_directory / filename
         save_format = {"png": "PNG", "jpeg": "JPEG", "webp": "WEBP"}[output_format]
-        image = generated_image.convert("RGB")
+        image = generated_image.convert(
+            "RGBA" if architecture == "qwen-image-2.1" and output_format == "png" and "A" in generated_image.getbands() else "RGB"
+        )
         if masked_context is not None:
             image = _composite_masked_result(masked_context, image)
         _validate_generated_pixels(image, applied, require_chroma_background)
@@ -2941,7 +3038,13 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
             "generator": generator,
             "num_images_per_prompt": 1,
         }
-        if requested_guidance is not None:
+        if requested_guidance is not None and architecture == "qwen-image-2.1":
+            if requested_guidance < 1:
+                raise WorkerError("Qwen-Image 2.1 guidance must be at least 1")
+            if requested_guidance > 1 and not negative_prompt.strip():
+                raise WorkerError("Qwen-Image 2.1 needs a negative prompt for guidance above 1")
+            arguments["true_cfg_scale"] = requested_guidance
+        elif requested_guidance is not None:
             if "guidance_scale" not in call_parameters:
                 raise WorkerError(f"{architecture} does not support manual guidance")
             arguments["guidance_scale"] = requested_guidance
@@ -2969,6 +3072,11 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
             # FLUX.2 Klein is distilled for guidance 1.0. Larger classifier-free
             # guidance values cost memory and diverge from the model card recipe.
             arguments["guidance_scale"] = 1.0
+        if architecture == "qwen-image-2.1" and conditioned_images:
+            images = [reference["image"] for reference in references]
+            if base_image is not None:
+                images.insert(0, base_image)
+            arguments["image"] = images[0] if len(images) == 1 else images
         if architecture == "flux-2":
             if flux2_inpainting:
                 if masked_context is None:
@@ -2990,7 +3098,7 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
                 arguments["image"] = (
                     flux_images[0] if len(flux_images) == 1 else flux_images
                 )
-        elif primary_reference_image is not None and architecture != "krea-2":
+        elif primary_reference_image is not None and architecture not in ("krea-2", "qwen-image-2.1"):
             arguments["image"] = _fit_conditioning_image(
                 primary_reference_image, width, height
             )
@@ -3015,6 +3123,10 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
             if "control_guidance_end" in call_parameters:
                 arguments["control_guidance_end"] = control_end
         if "negative_prompt" in call_parameters and negative_prompt.strip():
+            if architecture == "qwen-image-2.1":
+                if requested_guidance == 1:
+                    raise WorkerError("Qwen-Image 2.1 needs guidance above 1 for a negative prompt")
+                arguments["true_cfg_scale"] = requested_guidance or 4.0
             if any(addon["kind"] == "textual-inversion" and addon["placement"] != "positive" for addon in applied):
                 guidance = arguments.get("guidance_scale", call_parameters["guidance_scale"].default)
                 if guidance <= 1:
@@ -3093,6 +3205,8 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
                     if architecture == "krea-2" and masked_context is not None
                     else "krea2-image-conditioning-v1"
                     if architecture == "krea-2"
+                    else "qwen21-native-reference"
+                    if architecture == "qwen-image-2.1"
                     else f"controlnet-{control_kind}-soft-inpaint-v1"
                     if control_image is not None and masked_context is not None
                     else f"controlnet-{control_kind}"
@@ -3105,7 +3219,7 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
                     if architecture == "flux-2"
                     else "diffusers-image-to-image"
                 ),
-                "referenceEncoding": "ip-adapter-plus-v1" if ip_adapter_references else "qwen3-vl-v1" if architecture == "krea-2" and references else None,
+                "referenceEncoding": "ip-adapter-plus-v1" if ip_adapter_references else "qwen3-vl-v1" if architecture in ("krea-2", "qwen-image-2.1") and references else None,
                 "referenceSources": [
                     {
                         "digest": _sha256_file(reference["path"]),
@@ -6266,6 +6380,12 @@ def _video_dimensions(
                 "21:9": (1152, 496),
             },
         }
+    if architecture == "minimax-h3-ref2va":
+        profiles = {
+            "preview-512": {"1:1": (512, 512), "16:9": (512, 288), "9:16": (288, 512), "21:9": (512, 224)},
+            "quality-640": {"1:1": (576, 576), "16:9": (640, 384), "9:16": (384, 640), "21:9": (640, 288)},
+            "quality-768": {"1:1": (768, 768), "16:9": (1024, 576), "9:16": (576, 1024), "21:9": (1152, 512)},
+        }
     if architecture == "ltx-video" and resolution == "quality-768":
         profiles["quality-768"] = {
             "1:1": (640, 640),
@@ -8628,7 +8748,166 @@ def _finish_video_memory_observation(
     return evidence
 
 
+def _generate_minimax_h3_video(request: dict[str, Any]) -> dict[str, Any]:
+    from argparse import Namespace
+    from contextlib import redirect_stdout
+    import imageio_ffmpeg
+
+    started_at = time.perf_counter()
+    if request.get("schemaVersion") != SCHEMA_VERSION:
+        raise WorkerError("Unsupported worker request schema")
+    torch, _ = _runtime()
+    device, device_label, device_memory = _device(torch)
+    if device != "cuda":
+        raise WorkerError("MiniMax H3 requires a supported GPU")
+    model = request["model"]
+    model_root = _absolute_existing_path(model.get("path"), file=False)
+    prompt = _required_text(request, "prompt", 8_000)
+    source_path = _absolute_existing_path(request.get("firstFramePath"), file=True)
+    last_path = _absolute_existing_path(request.get("lastFramePath"), file=True)
+    if source_path.read_bytes() != last_path.read_bytes():
+        raise WorkerError("MiniMax H3 uses one reference image")
+    if request.get("transparentBackground") or request.get("loopMode") != "none":
+        raise WorkerError("MiniMax H3 requires opaque, non-looping video")
+    if request.get("animatedBackground") is not None or request.get("addons"):
+        raise WorkerError("MiniMax H3 does not support these video additions")
+    negative_prompt = request.get("negativePrompt", "")
+    if negative_prompt:
+        raise WorkerError("MiniMax H3 does not support negative prompts")
+    width, height = _video_dimensions(
+        request.get("aspectRatio"), request.get("resolution"), "minimax-h3-ref2va"
+    )
+    if (request.get("width") is None) != (request.get("height") is None):
+        raise WorkerError("Enter both video width and height")
+    if request.get("width") is not None:
+        width, height = request["width"], request["height"]
+    frames = request.get("numFrames")
+    steps = request.get("numInferenceSteps")
+    fps = request.get("fps")
+    seed = request.get("seed")
+    if seed is None:
+        seed = int.from_bytes(os.urandom(8), "little") & ((1 << 63) - 1)
+    if any(not isinstance(value, int) or isinstance(value, bool) for value in (width, height, frames, steps, fps, seed)):
+        raise WorkerError("MiniMax H3 video settings must be integers")
+    if width % 32 or height % 32 or not 124 <= frames <= 362 or (frames - 5) % 17:
+        raise WorkerError("MiniMax H3 requires dimensions divisible by 32 and 17n+5 frames from 124 to 362")
+    if not 4 <= steps <= 40 or fps != 24 or not 0 <= seed < 2**63:
+        raise WorkerError("MiniMax H3 sampling settings are invalid")
+    output_directory = _fresh_output_directory(request.get("outputDirectory"))
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from media_minimax_h3 import render, save_audio
+
+    args = Namespace(
+        image=source_path,
+        prompt=prompt,
+        models=model_root,
+        lora=model_root / "loras" / "minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
+        small_te=model_root / "small_te",
+        width=width,
+        height=height,
+        frames=frames,
+        steps=steps + 1,
+        seed=seed,
+        swap_blocks=44,
+        output=output_directory / "unused.mp4",
+    )
+    _progress("Generating MiniMax H3 video and audio", 0.10)
+    with redirect_stdout(sys.stderr):
+        video_frames, audio, sample_rate = render(
+            args,
+            progress=lambda step, total: _progress(
+                f"Denoising video and audio {step}/{total}",
+                0.10 + 0.70 * step / total,
+            ),
+        )
+    rendered_at = time.perf_counter()
+    _progress("Encoding MiniMax H3 video", 0.85)
+    from PIL import Image
+
+    frame_images = [
+        Image.fromarray((frame.clamp(0, 1).numpy() * 255).astype(np.uint8))
+        for frame in video_frames.permute(1, 2, 3, 0)
+    ]
+    destination, evidence, composite = _encode_video_webm(
+        frame_images,
+        output_directory,
+        fps,
+        None,
+        transparent_background=False,
+        loop_mode="none",
+        matte_quality="fast",
+        encoding_quality=request.get("encodingQuality", "balanced"),
+    )
+    if composite is not None:
+        raise WorkerError("MiniMax H3 produced an unexpected composite")
+    audio_path = output_directory / "h3-audio.wav"
+    save_audio(audio_path, audio, sample_rate)
+    muxed_path = output_directory / "h3-muxed.webm"
+    command = [
+        imageio_ffmpeg.get_ffmpeg_exe(), "-loglevel", "error", "-y",
+        "-i", str(destination), "-i", str(audio_path),
+        "-c:v", "copy", "-c:a", "libopus", "-b:a", "192k",
+        "-t", str(frames / fps), str(muxed_path),
+    ]
+    completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    if completed.returncode != 0 or not muxed_path.is_file():
+        raise WorkerError(f"MiniMax H3 audio mux failed: {completed.stderr[-2000:]}")
+    os.replace(muxed_path, destination)
+    audio_path.unlink()
+    _progress("Verifying MiniMax H3 output", 0.98)
+    verification = subprocess.run(
+        [imageio_ffmpeg.get_ffmpeg_exe(), "-v", "error", "-i", str(destination),
+         "-map", "0:a:0", "-f", "null", "-"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if verification.returncode != 0:
+        raise WorkerError(f"MiniMax H3 output has no decodable audio: {verification.stderr[-2000:]}")
+    torch.cuda.empty_cache()
+    finished_at = time.perf_counter()
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "workerVersion": WORKER_VERSION,
+        "packages": _package_versions(),
+        "device": device,
+        "deviceLabel": device_label,
+        "deviceMemoryBytes": device_memory,
+        "architecture": "minimax-h3-ref2va",
+        "addons": [],
+        "performance": {
+            "gpuMemory": {
+                "processIsolation": "one-generation-per-process",
+                "peakAllocatedBytes": torch.cuda.max_memory_allocated(),
+                "postReleaseAllocatedBytes": torch.cuda.memory_allocated(),
+            },
+            "timingSeconds": {"total": finished_at - started_at, "render": rendered_at - started_at},
+            "lora": {"strength": 1.0, "fileName": args.lora.name},
+        },
+        "conv3dBackend": _configure_video_conv3d_backend(torch, device),
+        "conditioningMode": "minimax-h3-reference-image-audio",
+        "conditioningFraming": {"referenceImage": source_path.name},
+        "endpointRestoration": None,
+        "loopEndpointRestoration": None,
+        "loopBoundaryInspection": None,
+        "prompt": prompt,
+        "negativePrompt": "",
+        "negativePromptApplied": False,
+        "resolution": request.get("resolution"),
+        "requestedGuidanceScale": request.get("guidanceScale"),
+        "guidanceScale": 1.0,
+        "requestedNumInferenceSteps": steps,
+        "numInferenceSteps": steps,
+        "transparentBackground": False,
+        "modelRevision": _required_text(model, "revision", 128),
+        "modelDigest": _required_text(model, "digest", 160),
+        "output": {"index": 0, "fileName": destination.name, "seed": seed, **evidence},
+    }
+
+
 def generate_video(request: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(request.get("model"), dict) and request["model"].get("architecture") == "minimax-h3-ref2va":
+        return _generate_minimax_h3_video(request)
     _progress("Starting video runtime", 0.02)
     started_at = time.perf_counter()
     if request.get("schemaVersion") != SCHEMA_VERSION:

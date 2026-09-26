@@ -1,12 +1,24 @@
 import type {
   ImageRecipeSettings,
+  MediaGenerationTarget,
   MediaModelDescriptor,
 } from "../../../core/media/contracts.js";
+
 import {
   getMediaReferenceConditioningCapabilities,
   mediaModelSupportsReferenceRole,
 } from "../../../core/media/reference-conditioning.js";
 import { defaultMediaImageSteps } from "../../../core/media/image-sampling.js";
+
+export const basicPosePresetSelectionStillCurrent = (
+  selected: ImageRecipeSettings,
+  current: ImageRecipeSettings,
+  target: MediaGenerationTarget,
+): boolean =>
+  target === "image" &&
+  current.modelId === selected.modelId &&
+  current.aspectRatio === selected.aspectRatio &&
+  current.poseImageAssetId === selected.poseImageAssetId;
 
 export const reconcileBasicImageModelSettings = (
   settings: ImageRecipeSettings,
@@ -34,7 +46,9 @@ export const reconcileBasicImageModelSettings = (
       changes.push("Sampling steps set to 4.");
     }
     if (
-      (model.architecture === "flux-2" || model.architecture === "krea-2") &&
+      (model.architecture === "flux-2" ||
+        model.architecture === "krea-2" ||
+        model.architecture === "qwen-image-2.1") &&
       sampling.guidanceScale != null
     ) {
       sampling.guidanceScale = null;
@@ -95,7 +109,9 @@ export const basicImageModelError = (
   if (settings.editMask && !model.capabilities.includes("masked-image-edit"))
     return "Remove the mask to use this model.";
   if (settings.poseImageAssetId && !model.capabilities.includes("pose-control"))
-    return "Remove the pose map to use this model.";
+    return ["stable-diffusion-1", "stable-diffusion-2", "stable-diffusion-xl", "pony"].includes(model.architecture ?? "")
+      ? "Install the matching OpenPose ControlNet for this model."
+      : "Choose a local Stable Diffusion model with OpenPose ControlNet.";
   if (
     settings.referenceImages.some(
       (reference) => !mediaModelSupportsReferenceRole(model, reference.role),
@@ -126,7 +142,9 @@ export const basicImageModelError = (
   )
     return "This model uses 4 sampling steps.";
   if (
-    (model.architecture === "flux-2" || model.architecture === "krea-2") &&
+    (model.architecture === "flux-2" ||
+      model.architecture === "krea-2" ||
+      model.architecture === "qwen-image-2.1") &&
     settings.sampling?.guidanceScale != null
   )
     return "Clear manual guidance to use this model.";
@@ -138,7 +156,9 @@ export const basicImageUsesEditStrength = (
   model: MediaModelDescriptor,
 ): boolean =>
   Boolean(settings.editMask) ||
-  (model.architecture !== "flux-2" && Boolean(settings.baseImageAssetId)) ||
+  (model.architecture !== "flux-2" &&
+    model.architecture !== "qwen-image-2.1" &&
+    Boolean(settings.baseImageAssetId)) ||
   ((model.architecture === "stable-diffusion-2" ||
     model.architecture === "flux-1") &&
     settings.referenceImages.length > 0);

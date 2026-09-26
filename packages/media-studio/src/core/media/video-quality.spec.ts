@@ -52,6 +52,12 @@ const videoAsset = (
 });
 
 describe("media video quality helpers", () => {
+  it("accepts MiniMax H3 frame counts on its native grid", () => {
+    expect(isMediaVideoFrameCountValid(124, "minimax-h3-ref2va")).toBe(true);
+    expect(isMediaVideoFrameCountValid(141, "minimax-h3-ref2va")).toBe(true);
+    expect(isMediaVideoFrameCountValid(125, "minimax-h3-ref2va")).toBe(false);
+  });
+
   it.each([
     "framepack-i2v",
     "hunyuan-video-1.5-i2v",

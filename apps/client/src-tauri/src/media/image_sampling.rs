@@ -41,6 +41,10 @@ impl ImageSampling {
         if architecture == "flux-2" && self.num_inference_steps.is_some_and(|steps| steps != 4) {
             return Err("FLUX.2 Klein requires 4 sampling steps.".to_string());
         }
+        if architecture == "qwen-image-2.1" && self.guidance_scale.is_some_and(|scale| scale < 1.0)
+        {
+            return Err("Qwen-Image 2.1 guidance must be at least 1.".to_string());
+        }
         let fixed_guidance = match architecture {
             "flux-2" => Some(1.0),
             "krea-2" => Some(0.0),

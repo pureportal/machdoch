@@ -12,6 +12,32 @@ const encodeJson = (value: unknown): string =>
 afterEach(() => vi.useRealTimers());
 
 describe("Fleet media transport", () => {
+  it("routes Advanced flow assistant requests through the connected host", async () => {
+    const requests: MediaRequest[] = [];
+    const value = { message: "Flow updated", flow: null };
+    const chunk = encodeJson(value);
+    const transport = createFleetMediaTransport("host-a", async (request) => {
+      requests.push(request);
+      return request.kind === "read"
+        ? { state: "complete", chunk, offset: 0, total: chunk.length }
+        : { state: "pending" };
+    });
+    await expect(
+      transport.invoke("run_media_flow_agent", {
+        workspaceRoot: "C:\\work",
+        request: { prompt: "Add an image output" },
+      }),
+    ).resolves.toEqual(value);
+    expect(requests[0]).toMatchObject({
+      kind: "invoke",
+      command: "run_media_flow_agent",
+      args: {
+        workspaceRoot: "C:\\work",
+        request: { prompt: "Add an image output" },
+      },
+    });
+  });
+
   it("reassembles bounded Unicode results and releases the operation", async () => {
     const value = {
       name: "模型 🖼️",

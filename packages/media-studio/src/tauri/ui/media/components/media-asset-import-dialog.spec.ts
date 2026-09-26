@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createElement, type ComponentProps } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MediaLocalModelImportInspection } from "../../../../core/media/contracts.js";
+import * as mediaPlatform from "../media-platform";
 import { MediaAssetImportDialog } from "./media-asset-import-dialog";
 
 const runtimeMocks = vi.hoisted(() => ({
@@ -104,6 +105,26 @@ beforeEach(() => {
 });
 
 describe("MediaAssetImportDialog", () => {
+  it("accepts an existing file path on the connected client", async () => {
+    const remote = vi.spyOn(mediaPlatform, "isRemoteMedia").mockReturnValue(true);
+    try {
+      const props = createProps();
+      render(createElement(MediaAssetImportDialog, props));
+      fireEvent.change(
+        screen.getByRole("textbox", { name: "Connected client file path" }),
+        { target: { value: " C:\\models\\sample.safetensors " } },
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Use file" }));
+      await waitFor(() =>
+        expect(props.onInspectModel).toHaveBeenCalledWith(
+          "C:\\models\\sample.safetensors",
+        ),
+      );
+    } finally {
+      remote.mockRestore();
+    }
+  });
+
   it("imports an SDXL checkpoint with the selected Pony base model", async () => {
     const props = createProps();
     runtimeMocks.openDialog.mockResolvedValue(inspection.sourcePath);

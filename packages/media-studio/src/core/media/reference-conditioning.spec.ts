@@ -12,6 +12,23 @@ const localFlux = createMediaModelCatalog({
 }).find((model) => model.id === "local:flux-2-klein-4b")!;
 
 describe("local reference conditioning capabilities", () => {
+  it("offers Qwen-Image 2.1 references within the Studio limit", () => {
+    const qwen = {
+      ...localFlux,
+      architecture: "qwen-image-2.1",
+      capabilities: ["text-to-image", "image-to-image", "multi-reference-edit", "transparent-output"],
+    } as const satisfies MediaModelDescriptor;
+
+    expect(getMediaReferenceConditioningCapabilities(qwen)).toEqual({
+      roles: ["subject", "style", "composition", "palette", "detail"],
+      maximumReferenceImages: 7,
+      adjustableInfluence: false,
+      promptless: false,
+    });
+    expect(mediaModelSupportsReferenceRole(qwen, "base")).toBe(true);
+    expect(mediaModelSupportsReferenceRole(qwen, "pose")).toBe(false);
+  });
+
   it("offers KREA vision references with fixed influence", () => {
     const krea = {
       ...localFlux,

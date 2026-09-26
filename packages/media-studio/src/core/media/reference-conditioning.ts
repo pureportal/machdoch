@@ -50,6 +50,13 @@ export const getMediaReferenceConditioningCapabilities = (
         adjustableInfluence: false,
         promptless: true,
       };
+    case "qwen-image-2.1":
+      return {
+        roles: ["subject", "style", "composition", "palette", "detail"],
+        maximumReferenceImages: 7,
+        adjustableInfluence: false,
+        promptless: false,
+      };
     case "stable-diffusion-1":
       return {
         roles: ["subject"],

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createImageRecipeFlow } from "@machdoch/media-studio/core/media/compiler.js";
-import type { MediaFlowAgentRequest } from "@machdoch/media-studio/core/media/flow-agent.js";
+import { validateMediaAgentPoseMaps, type MediaFlowAgentRequest } from "@machdoch/media-studio/core/media/flow-agent.js";
+import { createDefaultMediaNodeConfig } from "@machdoch/media-studio/core/media/node-registry.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import { runMediaFlowAgent } from "./flow-agent.js";
 
@@ -59,6 +60,7 @@ describe("Media Studio flow agent", () => {
         text: JSON.stringify({
           message: "Updated the flow.",
           graphJson: JSON.stringify(flow),
+          poseMaps: [],
         }),
         toolCalls: [],
       });
@@ -81,13 +83,14 @@ describe("Media Studio flow agent", () => {
     const startTurn = vi
       .fn()
       .mockResolvedValueOnce({
-        text: JSON.stringify({ message: "Updated.", graphJson: "{}" }),
+        text: JSON.stringify({ message: "Updated.", graphJson: "{}", poseMaps: [] }),
         toolCalls: [],
       })
       .mockResolvedValueOnce({
         text: JSON.stringify({
           message: "Updated.",
           graphJson: JSON.stringify(flow),
+          poseMaps: [],
         }),
         toolCalls: [],
       });
@@ -109,6 +112,7 @@ describe("Media Studio flow agent", () => {
         text: JSON.stringify({
           message: "Which source image should I use?",
           graphJson: null,
+          poseMaps: [],
         }),
         toolCalls: [],
       });
@@ -120,6 +124,94 @@ describe("Media Studio flow agent", () => {
         })
       ).flow,
     ).toBeNull();
+  });
+
+  it("accepts a structured two-person pose for a connected pose source", async () => {
+    const generation = flow.nodes.find((node) => node.type === "task.generate-image")!;
+    const candidate = {
+      ...flow,
+      nodes: [
+        ...flow.nodes,
+        {
+          id: "pose-source",
+          type: "source.image",
+          label: "Two people",
+          config: {
+            ...createDefaultMediaNodeConfig("source.image"),
+            assetId: "pose-map:duo",
+            referenceRole: "pose",
+          },
+        },
+      ],
+      edges: [
+        ...flow.edges,
+        {
+          id: "pose-edge",
+          fromNodeId: "pose-source",
+          fromPortId: "image",
+          toNodeId: generation.id,
+          toPortId: "image",
+        },
+      ],
+    };
+    const poseMaps = [{
+      id: "duo",
+      map: {
+        aspectRatio: "1:1",
+        people: [
+          { pose: "standing", x: 0.28, y: 0.92, scale: 0.75, mirror: false },
+          { pose: "sitting", x: 0.7, y: 0.92, scale: 0.73, mirror: true },
+        ],
+      },
+    }];
+    const startTurn = vi.fn().mockResolvedValue({
+      text: JSON.stringify({ message: "Added two poses.", graphJson: JSON.stringify(candidate), poseMaps }),
+      toolCalls: [],
+    });
+    const result = await runMediaFlowAgent(config, request, { startTurn, continueTurn: vi.fn() });
+    expect(result.flow?.nodes.find((node) => node.id === "pose-source")?.config.assetId).toBe("pose-map:duo");
+    expect(result.poseMaps[0]?.map.people.map((person) => person.pose)).toEqual(["standing", "sitting"]);
+  });
+
+  it("rejects generated poses that cannot condition an image task", () => {
+    const generation = flow.nodes.find((node) => node.type === "task.generate-image")!;
+    const source = {
+      id: "pose-source",
+      type: "source.image" as const,
+      label: "Pose",
+      version: 1 as const,
+      layer: "source" as const,
+      config: {
+        ...createDefaultMediaNodeConfig("source.image"),
+        assetId: "pose-map:person",
+        referenceRole: "pose",
+      },
+    };
+    const map = {
+      aspectRatio: "1:1" as const,
+      people: [{ pose: "standing" as const, x: 0.5, y: 0.92, scale: 0.8, mirror: false }],
+    };
+    const candidate = { ...flow, nodes: [...flow.nodes, source] };
+    const maps = [{ id: "person", map }];
+    expect(() => validateMediaAgentPoseMaps(maps, candidate)).toThrow(/connected pose source/);
+    expect(() => validateMediaAgentPoseMaps(maps, {
+      ...candidate,
+      nodes: [...flow.nodes, { ...source, config: { ...source.config, referenceRole: "style" } }],
+      edges: [...flow.edges, {
+        id: "pose-edge", fromNodeId: source.id, fromPortId: "image",
+        toNodeId: generation.id, toPortId: "image",
+      }],
+    })).toThrow(/connected pose source/);
+    expect(() => validateMediaAgentPoseMaps(maps, {
+      ...candidate,
+      nodes: [...flow.nodes.map((node) => node.id === generation.id
+        ? { ...node, config: { ...node.config, aspectRatio: "16:9" } }
+        : node), source],
+      edges: [...flow.edges, {
+        id: "pose-edge", fromNodeId: source.id, fromPortId: "image",
+        toNodeId: generation.id, toPortId: "image",
+      }],
+    })).toThrow(/aspect ratio/);
   });
 
   it("bounds repair attempts and leaves the source untouched", async () => {

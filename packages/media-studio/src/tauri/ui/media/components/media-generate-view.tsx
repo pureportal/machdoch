@@ -68,6 +68,12 @@ import type { MediaGenerationQueueJob } from "../media-generation-queue";
 import { normalizeMediaSubmissionText } from "../media-generation-recipe";
 import { MediaAddonDialog } from "./media-addon-dialog";
 import { MediaAddonTriggerWarnings } from "./media-addon-trigger-warnings";
+import {
+  isMediaOpenPoseAsset,
+  type MediaPoseMap,
+  type MediaSavedPoseScene,
+} from "../../../../core/media/pose-map.js";
+import { MediaPoseWorkspace } from "./media-pose-workspace";
 
 interface MediaGenerateViewProps {
   target: MediaGenerationTarget;
@@ -102,7 +108,12 @@ interface MediaGenerateViewProps {
   onGenerate: () => void;
   onAddReferenceImages: () => void;
   onAddBaseImage: () => void;
-  onAddPoseImage: () => void;
+  onSelectPosePreset: (map: MediaPoseMap) => void;
+  onGeneratePoseChat: (map: MediaPoseMap | null) => void | Promise<void>;
+  savedPoseScenes?: readonly MediaSavedPoseScene[];
+  onRenamePoseScene?: (id: string, title: string) => void;
+  onInstallPoseControl: (architecture: string) => void;
+  poseInstallPending: boolean;
   onEditResult: (asset: MediaAssetRecord) => void;
   onAnimateResult: (asset: MediaAssetRecord) => void;
   onOpenResult: (asset: MediaAssetRecord) => void;
@@ -151,7 +162,12 @@ export const MediaGenerateView = ({
   onGenerate,
   onAddReferenceImages,
   onAddBaseImage,
-  onAddPoseImage,
+  onSelectPosePreset,
+  onGeneratePoseChat,
+  savedPoseScenes = [],
+  onRenamePoseScene,
+  onInstallPoseControl,
+  poseInstallPending,
   onEditResult,
   onAnimateResult,
   onOpenResult,
@@ -193,8 +209,10 @@ export const MediaGenerateView = ({
       (asset) =>
         asset.kind === "image" && asset.id === settings.poseImageAssetId,
     ) ?? null;
-  const poseStart = settings.poseStart ?? 0;
-  const poseEnd = settings.poseEnd ?? 1;
+  const poseMapAssets = visualReferenceAssets.filter(
+    (asset) =>
+      isMediaOpenPoseAsset(asset) || asset.id === settings.poseImageAssetId,
+  );
   const intersectModelIds = (
     left: readonly string[] | null,
     right: readonly string[] | null,
@@ -281,6 +299,27 @@ export const MediaGenerateView = ({
         models.find((model) => model.id === plan.model?.id) ??
         models[0] ??
         null);
+  const poseModelReady =
+    selectedModel !== null &&
+    (directPoseModelIds?.includes(selectedModel.id) ?? false);
+  const poseModelFamily = selectedModel?.architecture;
+  const poseSetupMessage =
+    !selectedModel ||
+    selectedModel.target !== "local" ||
+    ![
+      "stable-diffusion-1",
+      "stable-diffusion-2",
+      "stable-diffusion-xl",
+      "pony",
+    ].includes(poseModelFamily ?? "")
+      ? "Choose a local Stable Diffusion model to use a pose."
+      : selectedModel.runtimeReadiness !== "ready"
+        ? "Verify this model in Assets to use a pose."
+        : poseModelFamily === "stable-diffusion-2" &&
+            directPoseModelIds !== null &&
+            !poseModelReady
+          ? "SD 2 needs a matching OpenPose ControlNet installed manually."
+          : null;
   const addonModel =
     target === "video" && settings.referenceImages.length === 0
       ? (catalog.models.find(
@@ -383,12 +422,15 @@ export const MediaGenerateView = ({
   const modelReady = selectedModel !== null && isMediaModelReady(selectedModel);
   const seamlessSupported =
     selectedModel?.capabilities.includes("start-end-to-video") === true;
+  const minimaxH3 = selectedModel?.architecture === "minimax-h3-ref2va";
   const videoLoopError =
     target === "video" &&
     selectedModel !== null &&
-    videoSettings.loopMode === "seamless" &&
-    !seamlessSupported
-      ? "This model cannot close a seamless loop. Choose Crossfade or Ping-pong."
+    ((minimaxH3 && (videoSettings.loopMode !== "none" || videoSettings.transparentBackground)) ||
+      (videoSettings.loopMode === "seamless" && !seamlessSupported))
+      ? minimaxH3
+        ? "MiniMax H3 requires opaque, non-looping video."
+        : "This model cannot close a seamless loop. Choose Crossfade or Ping-pong."
       : null;
   const runtimeReady =
     target === "video" ||
@@ -539,6 +581,9 @@ export const MediaGenerateView = ({
           selectedVideoPreset ?? MEDIA_VIDEO_QUALITY_PRESETS[0]!,
           model?.architecture,
         ),
+        ...(model?.architecture === "minimax-h3-ref2va"
+          ? { loopMode: "none" as const, transparentBackground: false }
+          : {}),
         modelId: modelId as MediaVideoRecipeSettings["modelId"],
         modelAddons: reconcileMediaModelAddonSelections(
           model ?? null,
@@ -699,9 +744,9 @@ export const MediaGenerateView = ({
           </Button>
         </header>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(360px,0.85fr)_minmax(420px,1.15fr)] lg:overflow-hidden">
-          <section className="flex flex-col border-slate-800/70 lg:min-h-0 lg:border-r lg:overflow-hidden">
-            <div className="space-y-5 p-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto xl:grid-cols-[minmax(420px,1fr)_minmax(420px,1fr)] xl:overflow-hidden">
+          <section className="flex flex-col border-slate-800/70 xl:min-h-0 xl:border-r xl:overflow-hidden">
+            <div className="space-y-6 p-5 xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:p-6">
               {target === "svg" ? (
                 <div className="space-y-2">
                   <span className="block text-sm font-medium text-slate-200">
@@ -715,7 +760,7 @@ export const MediaGenerateView = ({
                         aria-pressed={(settings.svgMode ?? "generate") === mode}
                         onClick={() => changeSvgMode(mode)}
                         className={cn(
-                          "rounded-lg px-3 py-2 text-xs font-medium transition-colors",
+                          "rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                           (settings.svgMode ?? "generate") === mode
                             ? "bg-slate-700 text-white"
                             : "text-slate-400 hover:text-slate-100",
@@ -804,7 +849,7 @@ export const MediaGenerateView = ({
                             current === "reference" ? null : "reference",
                           )
                         }
-                        className="shrink-0 text-xs font-medium text-sky-300 hover:text-sky-200"
+                        className="shrink-0 rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-sky-300 hover:bg-slate-800 hover:text-sky-200"
                       >
                         {assetPicker === "reference"
                           ? "Close"
@@ -816,7 +861,7 @@ export const MediaGenerateView = ({
                     {selectedReferences.map(({ asset, reference }, index) => (
                       <div
                         key={reference.assetId}
-                        className="w-28 shrink-0 space-y-1.5"
+                        className="w-32 shrink-0 space-y-2"
                       >
                         <div className="group relative aspect-square overflow-hidden rounded-xl border border-slate-700">
                           {asset ? (
@@ -843,9 +888,9 @@ export const MediaGenerateView = ({
                                   ),
                                 )
                               }
-                              className="absolute top-1 right-1 rounded-md bg-slate-950/85 p-1 text-slate-200 opacity-80 transition-opacity hover:opacity-100"
+                              className="absolute top-1 right-1 rounded-md bg-slate-950/85 p-1.5 text-slate-200 opacity-80 transition-opacity hover:opacity-100"
                             >
-                              <X className="h-3 w-3" />
+                              <X className="h-4 w-4" />
                             </button>
                           </ControlTooltip>
                         </div>
@@ -866,7 +911,7 @@ export const MediaGenerateView = ({
                                 ),
                               )
                             }
-                            className="h-7 w-full rounded-lg border border-slate-700 bg-slate-950 px-1.5 text-[10px] text-slate-300"
+                            className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-sm text-slate-300"
                           >
                             {referenceCapabilities.roles.map((role) => (
                               <option key={role} value={role}>
@@ -878,7 +923,7 @@ export const MediaGenerateView = ({
                         ) : null}
                         {target === "image" &&
                         referenceCapabilities.adjustableInfluence ? (
-                          <label className="block text-[10px] text-slate-500">
+                          <label className="block text-xs text-slate-400">
                             <span>
                               Influence {reference.influence.toFixed(2)}
                             </span>
@@ -924,14 +969,14 @@ export const MediaGenerateView = ({
                               !referenceImportSupported ||
                               referenceImportPending
                             }
-                            className="flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-slate-700 text-slate-400 transition-colors hover:border-sky-500 hover:text-sky-300 disabled:cursor-not-allowed disabled:opacity-40"
+                            className="flex h-24 w-24 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-slate-700 text-slate-400 transition-colors hover:border-sky-500 hover:text-sky-300 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             {referenceImportPending ? (
                               <LoaderCircle className="h-5 w-5 animate-spin" />
                             ) : (
                               <ImagePlus className="h-5 w-5" />
                             )}
-                            <span className="text-[10px]">
+                            <span className="text-xs">
                               {referenceImportPending ? "Adding" : "Add image"}
                             </span>
                           </button>
@@ -971,18 +1016,13 @@ export const MediaGenerateView = ({
                 </section>
               ) : null}
 
-              {target === "image" &&
-              (settings.poseImageAssetId !== null ||
-                (directPoseModelIds !== null &&
-                  directPoseModelIds.length > 0)) ? (
+              {target === "image" ? (
                 <section className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
                     <h2 className="text-sm font-medium text-slate-200">
                       Pose map
                     </h2>
-                    {visualReferenceAssets.some(
-                      (asset) => asset.kind === "image",
-                    ) ? (
+                    {poseMapAssets.length > 0 ? (
                       <button
                         type="button"
                         aria-expanded={assetPicker === "pose"}
@@ -991,116 +1031,19 @@ export const MediaGenerateView = ({
                             current === "pose" ? null : "pose",
                           )
                         }
-                        className="shrink-0 text-xs font-medium text-sky-300 hover:text-sky-200"
+                        className="shrink-0 rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-sky-300 hover:bg-slate-800 hover:text-sky-200"
                       >
                         {assetPicker === "pose"
-                          ? "Close"
-                          : "Choose from Assets"}
+                          ? "Show poses"
+                          : "Choose pose image"}
                       </button>
                     ) : null}
                   </div>
-                  <div className="flex min-h-11 gap-2">
-                    {poseImageAsset ? (
-                      <div className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-slate-700">
-                        <MediaAssetPreview
-                          asset={poseImageAsset}
-                          className="h-full w-full"
-                        />
-                        <ControlTooltip content="Remove pose map">
-                          <button
-                            type="button"
-                            aria-label="Remove pose map"
-                            onClick={() =>
-                              onChange({ ...settings, poseImageAssetId: null })
-                            }
-                            className="absolute top-1 right-1 rounded-md bg-slate-950/85 p-1 text-slate-200"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </ControlTooltip>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        aria-label="Add pose map"
-                        onClick={onAddPoseImage}
-                        disabled={
-                          !referenceImportSupported || referenceImportPending
-                        }
-                        className="flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-slate-700 text-slate-400 hover:border-sky-500 hover:text-sky-300 disabled:opacity-40"
-                      >
-                        <ImagePlus className="h-5 w-5" />
-                        <span className="text-[10px]">Add image</span>
-                      </button>
-                    )}
-                  </div>
-                  {poseImageAsset ? (
-                    <div className="grid gap-2">
-                      <label className="flex items-center gap-3 text-xs text-slate-300">
-                        <span className="w-14">Strength</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={2}
-                          step={0.05}
-                          value={settings.poseStrength}
-                          onChange={(event) =>
-                            onChange({
-                              ...settings,
-                              poseStrength: Number(event.target.value),
-                            })
-                          }
-                          className="min-w-0 flex-1"
-                        />
-                        <span className="w-8 text-right tabular-nums">
-                          {settings.poseStrength.toFixed(2)}
-                        </span>
-                      </label>
-                      <label className="flex items-center gap-3 text-xs text-slate-300">
-                        <span className="w-14">Start</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={Math.max(0, poseEnd - 0.05)}
-                          step={0.05}
-                          value={poseStart}
-                          onChange={(event) =>
-                            onChange({
-                              ...settings,
-                              poseStart: Number(event.target.value),
-                            })
-                          }
-                          className="min-w-0 flex-1"
-                        />
-                        <span className="w-8 text-right tabular-nums">
-                          {poseStart.toFixed(2)}
-                        </span>
-                      </label>
-                      <label className="flex items-center gap-3 text-xs text-slate-300">
-                        <span className="w-14">End</span>
-                        <input
-                          type="range"
-                          min={Math.min(1, poseStart + 0.05)}
-                          max={1}
-                          step={0.05}
-                          value={poseEnd}
-                          onChange={(event) =>
-                            onChange({
-                              ...settings,
-                              poseEnd: Number(event.target.value),
-                            })
-                          }
-                          className="min-w-0 flex-1"
-                        />
-                        <span className="w-8 text-right tabular-nums">
-                          {poseEnd.toFixed(2)}
-                        </span>
-                      </label>
-                    </div>
-                  ) : null}
                   {assetPicker === "pose" ? (
                     <MediaAssetBrowser
-                      assets={visualReferenceAssets}
+                      assets={poseMapAssets}
+                      label="pose maps"
+                      compact
                       metadata={assetMetadata}
                       categories={categories}
                       selectedIds={
@@ -1127,6 +1070,79 @@ export const MediaGenerateView = ({
                         setAssetPicker(null);
                       }}
                     />
+                  ) : null}
+                  <MediaPoseWorkspace
+                    aspectRatio={settings.aspectRatio}
+                    savedScenes={savedPoseScenes}
+                    onRenamePoseScene={onRenamePoseScene}
+                    onLoadScene={(scene, guidance) =>
+                      onChange({
+                        ...settings,
+                        aspectRatio: scene.aspectRatio,
+                        ...(guidance
+                          ? {
+                              poseStrength: guidance.strength,
+                              poseStart: guidance.start,
+                              poseEnd: guidance.end,
+                            }
+                          : {}),
+                      })
+                    }
+                    disabled={referenceImportPending}
+                    externalPoseSelected={Boolean(poseImageAsset)}
+                    appliedPreview={
+                      poseImageAsset ? (
+                        <MediaAssetPreview
+                          asset={poseImageAsset}
+                          fit="contain"
+                          className="h-full w-full"
+                        />
+                      ) : undefined
+                    }
+                    onRemoveApplied={() =>
+                      onChange({ ...settings, poseImageAssetId: null })
+                    }
+                    guidance={{
+                      strength: settings.poseStrength,
+                      start: settings.poseStart ?? 0,
+                      end: settings.poseEnd ?? 1,
+                    }}
+                    onGuidanceChange={(guidance) =>
+                      onChange({
+                        ...settings,
+                        poseStrength: guidance.strength,
+                        poseStart: guidance.start,
+                        poseEnd: guidance.end,
+                      })
+                    }
+                    onGenerate={onGeneratePoseChat}
+                    onApply={onSelectPosePreset}
+                  />
+                  {poseImageAsset && poseSetupMessage ? (
+                    <p className="text-xs text-amber-300">{poseSetupMessage}</p>
+                  ) : null}
+                  {poseImageAsset &&
+                  selectedModel &&
+                  [
+                    "stable-diffusion-1",
+                    "stable-diffusion-xl",
+                    "pony",
+                  ].includes(selectedModel.architecture ?? "") &&
+                  directPoseModelIds !== null &&
+                  !poseModelReady &&
+                  selectedModel.runtimeReadiness === "ready" ? (
+                    <button
+                      type="button"
+                      disabled={poseInstallPending}
+                      onClick={() =>
+                        onInstallPoseControl(selectedModel.architecture!)
+                      }
+                      className="rounded-md border border-sky-700 px-4 py-2 text-sm font-medium text-sky-300 disabled:opacity-50"
+                    >
+                      {poseInstallPending
+                        ? "Installing OpenPose…"
+                        : `Install OpenPose (${selectedModel.architecture === "stable-diffusion-1" ? "1.5" : "2.5"} GB)`}
+                    </button>
                   ) : null}
                 </section>
               ) : null}
@@ -1268,7 +1284,7 @@ export const MediaGenerateView = ({
                                   ))}
                                 </select>
                               </label>
-                              <label className="space-y-1 text-xs text-slate-400">
+                              {!minimaxH3 ? <label className="space-y-1 text-xs text-slate-400">
                                 <span>Loop</span>
                                 <select
                                   value={videoSettings.loopMode}
@@ -1291,7 +1307,7 @@ export const MediaGenerateView = ({
                                   </option>
                                   <option value="ping-pong">Ping-pong</option>
                                 </select>
-                              </label>
+                              </label> : null}
                               <label className="space-y-1 text-xs text-slate-400">
                                 <span>Quality</span>
                                 <select
@@ -1327,7 +1343,7 @@ export const MediaGenerateView = ({
                                   ))}
                                 </select>
                               </label>
-                              <label className="flex items-center gap-2 self-end pb-2 text-xs text-slate-300">
+                              {!minimaxH3 ? <label className="flex items-center gap-2 self-end pb-2 text-xs text-slate-300">
                                 <input
                                   type="checkbox"
                                   checked={videoSettings.transparentBackground}
@@ -1340,7 +1356,7 @@ export const MediaGenerateView = ({
                                   }
                                 />
                                 Transparent background
-                              </label>
+                              </label> : null}
                             </>
                           ) : target === "svg" ? (
                             <>
@@ -1550,7 +1566,7 @@ export const MediaGenerateView = ({
             </footer>
           </section>
 
-          <section className="flex min-h-[360px] flex-col p-5 lg:min-h-0 lg:overflow-y-auto">
+          <section className="flex min-h-[360px] flex-col p-5 xl:min-h-0 xl:overflow-y-auto xl:p-6">
             {generationPending ? (
               <div
                 role="status"

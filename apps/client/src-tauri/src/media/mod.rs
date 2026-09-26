@@ -21,6 +21,7 @@ mod flow;
 mod hardware;
 mod image_sampling;
 mod ingest;
+mod krea_training;
 mod local_flow;
 mod model_addon;
 mod model_components;
@@ -35,6 +36,7 @@ mod provider_images;
 mod provider_local_diffusers;
 mod provider_mock;
 mod provider_openai;
+mod pose_map;
 mod provider_svg;
 pub(crate) mod runtime_setup;
 pub(crate) mod storage;
@@ -2323,8 +2325,10 @@ impl GenerateMediaVideoRequest {
         );
         let framepack_video = self.model_id == "local:framepack-i2v-hy-13b";
         let hunyuan_video = self.model_id == "local:hunyuan-video-1.5-i2v-step-distilled";
+        let minimax_h3 = self.model_id == "local:minimax-h3-ref2va";
         if !framepack_video
             && !hunyuan_video
+            && !minimax_h3
             && !ltx_video
             && self.model_id != "local:wan2.2-ti2v-5b"
             && !self.model_id.starts_with(model_import::USER_MODEL_ID_PREFIX)
@@ -2349,17 +2353,22 @@ impl GenerateMediaVideoRequest {
         ) {
             return Err("loopMode must be none, ping-pong, seamless, or crossfade".to_string());
         }
-        if hunyuan_video && self.first_frame_asset_id != self.last_frame_asset_id {
-            return Err(
-                "HunyuanVideo 1.5 requires the same immutable asset on both frame ports because it uses native first-frame conditioning"
-                    .to_string(),
-            );
+        if (hunyuan_video || minimax_h3)
+            && self.first_frame_asset_id != self.last_frame_asset_id
+        {
+            return Err(format!(
+                "{} requires the same image on both frame ports",
+                if minimax_h3 { "MiniMax H3" } else { "HunyuanVideo 1.5" }
+            ));
         }
         if hunyuan_video && self.loop_mode == "seamless" {
             return Err(
                 "HunyuanVideo 1.5 cannot natively condition a closing frame; use LTX-Video or FramePack with matching endpoints"
                     .to_string(),
             );
+        }
+        if minimax_h3 && (self.loop_mode != "none" || self.transparent_background) {
+            return Err("MiniMax H3 requires opaque, non-looping video".to_string());
         }
         if self.loop_mode == "seamless" && self.first_frame_asset_id != self.last_frame_asset_id {
             return Err(
@@ -2371,6 +2380,9 @@ impl GenerateMediaVideoRequest {
         if self.fps == 0 || self.fps > 60 {
             return Err("fps must be between 1 and 60".to_string());
         }
+        if minimax_h3 && self.fps != 24 {
+            return Err("MiniMax H3 requires 24 fps".to_string());
+        }
         if ltx_video
             && (!(9..=257).contains(&self.num_frames) || !(self.num_frames - 1).is_multiple_of(8))
         {
@@ -2380,7 +2392,14 @@ impl GenerateMediaVideoRequest {
             );
         }
         let maximum_frames = if framepack_video { 129 } else { 121 };
+        if minimax_h3
+            && (!(124..=362).contains(&self.num_frames)
+                || !(self.num_frames - 5).is_multiple_of(17))
+        {
+            return Err("MiniMax H3 numFrames must be 124 through 362 in the 17n+5 form".to_string());
+        }
         if !ltx_video
+            && !minimax_h3
             && (!(17..=maximum_frames).contains(&self.num_frames)
                 || !(self.num_frames - 1).is_multiple_of(4))
         {
@@ -3855,6 +3874,60 @@ pub(crate) async fn media_inspect_model_addon(
 }
 
 #[tauri::command]
+pub(crate) async fn media_inspect_krea_training_images(
+    paths: Vec<PathBuf>,
+) -> MediaCommandResult<Vec<krea_training::KreaTrainingImageInspection>> {
+    let result = tauri::async_runtime::spawn_blocking(move || krea_training::inspect_images(paths))
+        .await
+        .map_err(|error| format!("Image inspection failed: {error}"))
+        .and_then(|result| result);
+    command_result("media_inspect_krea_training_images", result)
+}
+
+#[tauri::command]
+pub(crate) async fn media_submit_krea_training(
+    app: AppHandle,
+    request: krea_training::KreaTrainingRequest,
+) -> MediaCommandResult<krea_training::KreaTrainingJob> {
+    let result = match MediaRuntimePaths::resolve(&app) {
+        Ok(paths) => tauri::async_runtime::spawn_blocking(move || krea_training::submit(&app, &paths, request))
+            .await.map_err(|error| format!("Training worker failed: {error}")).and_then(|result| result),
+        Err(error) => Err(error),
+    };
+    command_result("media_submit_krea_training", result)
+}
+
+#[tauri::command]
+pub(crate) async fn media_get_krea_training_status(
+    app: AppHandle,
+    request_id: String,
+) -> MediaCommandResult<krea_training::KreaTrainingStatus> {
+    let result = MediaRuntimePaths::resolve(&app).and_then(|paths| krea_training::status(&paths, &request_id));
+    command_result("media_get_krea_training_status", result)
+}
+
+#[tauri::command]
+pub(crate) async fn media_cancel_krea_training(app: AppHandle, request_id: String) -> MediaCommandResult<()> {
+    let result = MediaRuntimePaths::resolve(&app).and_then(|paths| krea_training::cancel(&paths, &request_id));
+    command_result("media_cancel_krea_training", result)
+}
+
+#[tauri::command]
+pub(crate) async fn media_resume_krea_training(
+    app: AppHandle,
+    request_id: String,
+) -> MediaCommandResult<()> {
+    let result = MediaRuntimePaths::resolve(&app).and_then(|paths| krea_training::resume(&app, &paths, &request_id));
+    command_result("media_resume_krea_training", result)
+}
+
+#[tauri::command]
+pub(crate) async fn media_finish_krea_training(app: AppHandle, request_id: String) -> MediaCommandResult<()> {
+    let result = MediaRuntimePaths::resolve(&app).and_then(|paths| krea_training::remove_job(&paths, &request_id));
+    command_result("media_finish_krea_training", result)
+}
+
+#[tauri::command]
 pub(crate) async fn media_inspect_civitai_model_addon(
     source: String,
 ) -> MediaCommandResult<civitai_addon::MediaCivitaiModelAddonInspection> {
@@ -5280,6 +5353,96 @@ pub(crate) async fn media_import_image(
     }
     .await;
     command_result("media_import_image", result)
+}
+
+#[tauri::command]
+pub(crate) async fn media_create_pose_map(
+    app: AppHandle,
+    map: pose_map::PoseMap,
+) -> MediaCommandResult<MediaImageImportResult> {
+    let result: MediaResult<_> = async {
+        let paths = MediaRuntimePaths::resolve(&app)?;
+        database::ensure_initialized(&paths)?;
+        tauri::async_runtime::spawn_blocking(move || pose_map::create(&paths, map))
+            .await
+            .map_err(|error| format!("pose map worker could not be joined: {error}"))?
+    }
+    .await;
+    command_result("media_create_pose_map", result)
+}
+
+fn pose_scene_path(session_id: &str) -> Result<std::path::PathBuf, String> {
+    let valid_id = session_id.len() == 36
+        && session_id.bytes().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit()
+            }
+        });
+    if !valid_id {
+        return Err("Invalid pose chat id.".to_string());
+    }
+    Ok(crate::runtime_snapshot::get_user_config_directory()?
+        .join("pose-scenes")
+        .join(format!("{session_id}.json")))
+}
+
+#[tauri::command]
+pub(crate) async fn media_read_pose_scene(
+    session_id: String,
+) -> Result<Option<serde_json::Value>, String> {
+    let path = pose_scene_path(&session_id)?;
+    let source = match std::fs::read_to_string(path) {
+        Ok(source) => source,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    };
+    let map: pose_map::PoseMap = serde_json::from_str(&source).map_err(|error| error.to_string())?;
+    map.validate()?;
+    serde_json::from_str(&source)
+        .map(Some)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn media_write_pose_scene(
+    session_id: String,
+    map: serde_json::Value,
+) -> Result<(), String> {
+    let path = pose_scene_path(&session_id)?;
+    let pose: pose_map::PoseMap = serde_json::from_value(map.clone()).map_err(|error| error.to_string())?;
+    pose.validate()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::cooperative_file_lock::with_cooperative_file_lock(&path, || {
+            crate::atomic_file::write_file_atomic(
+                &path,
+                &serde_json::to_vec(&map).map_err(|error| error.to_string())?,
+                crate::atomic_file::AtomicWriteOptions::default(),
+            )
+            .map_err(|error| error.to_string())
+        })
+    })
+    .await
+    .map_err(|error| format!("pose scene write worker could not be joined: {error}"))?
+}
+
+#[tauri::command]
+pub(crate) async fn media_install_pose_control(
+    app: AppHandle,
+    architecture: String,
+) -> MediaCommandResult<String> {
+    let result: MediaResult<_> = async {
+        let paths = MediaRuntimePaths::resolve(&app)?;
+        tauri::async_runtime::spawn_blocking(move || {
+            controlnet::install_openpose(&paths, &architecture)
+                .map(|path| path.to_string_lossy().into_owned())
+        })
+        .await
+        .map_err(|error| format!("OpenPose install worker could not be joined: {error}"))?
+    }
+    .await;
+    command_result("media_install_pose_control", result)
 }
 
 #[tauri::command]

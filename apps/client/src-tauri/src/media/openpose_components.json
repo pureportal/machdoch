@@ -1,0 +1,30 @@
+{
+  "sd15": [
+    {
+      "path": "config.json",
+      "url": "https://huggingface.co/lllyasviel/control_v11p_sd15_openpose/resolve/9ae9f970358db89e211b87c915f9535c6686d5ba/config.json",
+      "bytes": 999,
+      "sha256": "aa6fecc8745c0d0b26f0d2ca0f686600c8b33177c667d44eb41a51e56e44a697"
+    },
+    {
+      "path": "diffusion_pytorch_model.safetensors",
+      "url": "https://huggingface.co/lllyasviel/control_v11p_sd15_openpose/resolve/9ae9f970358db89e211b87c915f9535c6686d5ba/diffusion_pytorch_model.safetensors",
+      "bytes": 1445157124,
+      "sha256": "46b10abb28f3750aba7eea208e188539f7945d9256de9a248cbb9902f2276988"
+    }
+  ],
+  "sdxl": [
+    {
+      "path": "config.json",
+      "url": "https://huggingface.co/xinsir/controlnet-openpose-sdxl-1.0/resolve/23f966cd5cfdd3f7729c903e243d87152162d2b7/config.json",
+      "bytes": 1235,
+      "sha256": "b5b8f9a7619c9452f19407ef73a01ce3f061fcf932de43ddbaca336d12d02801"
+    },
+    {
+      "path": "diffusion_pytorch_model.safetensors",
+      "url": "https://huggingface.co/xinsir/controlnet-openpose-sdxl-1.0/resolve/23f966cd5cfdd3f7729c903e243d87152162d2b7/diffusion_pytorch_model.safetensors",
+      "bytes": 2502139104,
+      "sha256": "b8524e557a7df60d081f5d4a0eb109967d107df217943bf88c2d99b9ebcc06c5"
+    }
+  ]
+}

@@ -67,6 +67,7 @@ const FRAMEPACK_SOURCE_URL =
   "https://huggingface.co/lllyasviel/FramePackI2V_HY";
 const HUNYUAN_VIDEO_15_SOURCE_URL =
   "https://huggingface.co/hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_i2v_step_distilled";
+const MINIMAX_H3_SOURCE_URL = "https://huggingface.co/MiniMaxAI/MiniMax-H3";
 const LTX_SOURCE_URL = "https://huggingface.co/Lightricks/LTX-Video";
 const LTX_LICENSE_URL =
   "https://huggingface.co/Lightricks/LTX-Video/blob/main/LTX-Video-Open-Weights-License-0.X.txt";
@@ -78,6 +79,62 @@ const LTX_LICENSE_URL =
  */
 export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeProfile[] =
   [
+    {
+      id: "minimax-h3-ref2va",
+      architecture: "minimax-h3-ref2va",
+      artifactKind: "diffusers-model",
+      preferredRelativePath: "minimax-h3-ref2va",
+      capabilities: ["image-to-video"],
+      requiredRuntimeCapabilities: ["image-to-video"],
+      minimumDeviceMemoryBytes: 12 * 1_024 ** 3,
+      minimumPhysicalMemoryBytes: 30 * 1_024 ** 3,
+      allowCpu: false,
+      provider: {
+        id: "local-video",
+        displayName: "Local Video",
+        target: "local",
+        lifecycle: "active",
+        privacySummary: "Generation runs on this device.",
+        staleAfterSeconds: 2_592_000,
+        sourceUrl: MINIMAX_H3_SOURCE_URL,
+        catalogRevision: "minimax-h3-ref2va-local-1",
+      },
+      model: {
+        id: "local:minimax-h3-ref2va",
+        providerId: "local-video",
+        displayName: "MiniMax H3 Ref2VA",
+        family: "MiniMax H3",
+        target: "local",
+        lifecycle: "active",
+        lifecycleStaleAfterSeconds: 2_592_000,
+        lifecycleSourceUrl: MINIMAX_H3_SOURCE_URL,
+        catalogRevision: "minimax-h3-ref2va-local-1",
+        bundled: false,
+        installedRevision: "minimax-h3-ref2va-pruned-int8-convrot",
+        packageType: "safetensors",
+        architecture: "minimax-h3-ref2va",
+        management: {
+          acquisition: "workspace-discovery",
+          verification: "runtime-probe",
+        },
+        license: {
+          name: "MiniMax H3 Community License",
+          spdxId: null,
+          sourceUrl: "https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE",
+          commercialUse: "review-required",
+          requiresAcceptance: true,
+        },
+        recommended: false,
+        speedScore: 65,
+        qualityScore: 95,
+        minVramGb: 12,
+        expectedDownloadGb: 36,
+        costHint: "Runs locally.",
+        privacySummary: "Generation runs on this device.",
+        limitation: "Reference image and prompt generate video with audio.",
+        userImported: false,
+      },
+    },
     {
       id: "hunyuan-video-1.5-i2v-step-distilled",
       architecture: "hunyuan-video-1.5-i2v",

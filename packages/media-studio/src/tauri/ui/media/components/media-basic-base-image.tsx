@@ -55,7 +55,7 @@ export const MediaBasicBaseImage = ({
             aria-expanded={assetPickerOpen}
             disabled={!baseImageSupported}
             onClick={() => onAssetPickerChange(!assetPickerOpen)}
-            className="shrink-0 text-xs font-medium text-sky-300 hover:text-sky-200"
+            className="shrink-0 rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-sky-300 hover:bg-slate-800 hover:text-sky-200 disabled:opacity-40"
           >
             {assetPickerOpen ? "Close" : "Choose from Assets"}
           </button>
@@ -63,7 +63,7 @@ export const MediaBasicBaseImage = ({
       </div>
       <div className="flex min-h-11 gap-2">
         {settings.baseImageAssetId ? (
-          <div className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-slate-700">
+          <div className="group relative h-24 w-24 shrink-0 overflow-hidden rounded-xl border border-slate-700">
             {baseImageAsset ? (
               <MediaAssetPreview
                 asset={baseImageAsset}
@@ -83,9 +83,9 @@ export const MediaBasicBaseImage = ({
                     editMask: null,
                   })
                 }
-                className="absolute top-1 right-1 rounded-md bg-slate-950/85 p-1 text-slate-200"
+                className="absolute top-1 right-1 rounded-md bg-slate-950/85 p-1.5 text-slate-200"
               >
-                <X className="h-3 w-3" />
+                <X className="h-4 w-4" />
               </button>
             </ControlTooltip>
           </div>
@@ -99,10 +99,10 @@ export const MediaBasicBaseImage = ({
               !referenceImportSupported ||
               referenceImportPending
             }
-            className="flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-slate-700 text-slate-400 hover:border-sky-500 hover:text-sky-300 disabled:opacity-40"
+            className="flex h-24 w-24 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-slate-700 text-slate-400 hover:border-sky-500 hover:text-sky-300 disabled:opacity-40"
           >
             <ImagePlus className="h-5 w-5" />
-            <span className="text-[10px]">Add image</span>
+            <span className="text-xs">Add image</span>
           </button>
         )}
       </div>
@@ -111,7 +111,7 @@ export const MediaBasicBaseImage = ({
           type="button"
           disabled={referenceImportPending || !referenceImportSupported}
           onClick={onAddBaseImage}
-          className="text-xs text-sky-300"
+          className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-sky-300 hover:bg-slate-800"
         >
           Replace base image
         </button>
@@ -149,7 +149,7 @@ export const MediaBasicBaseImage = ({
               aria-pressed={settings.editMask === null}
               onClick={() => onChange({ ...settings, editMask: null })}
               className={cn(
-                "rounded-lg px-3 py-2 text-xs font-medium",
+                "rounded-lg px-3 py-2 text-sm font-medium",
                 settings.editMask === null
                   ? "bg-slate-700 text-white"
                   : "text-slate-400 hover:text-slate-100",
@@ -184,7 +184,7 @@ export const MediaBasicBaseImage = ({
                 })
               }
               className={cn(
-                "rounded-lg px-3 py-2 text-xs font-medium",
+                "rounded-lg px-3 py-2 text-sm font-medium",
                 settings.editMask !== null
                   ? "bg-slate-700 text-white"
                   : "text-slate-400 hover:text-slate-100",

@@ -1,3 +1,6 @@
+export { MEDIA_POSE_BONES, isMediaPoseMap, mediaPoseJoints, renderMediaPoseSvg } from "./pose-map.js";
+export type { MediaPoseJoint, MediaPoseKind, MediaPoseMap, MediaPosePerson, MediaSavedPoseScene } from "./pose-map.js";
+
 export type MediaAssetKind =
   | "prompt"
   | "image"
@@ -105,7 +108,9 @@ export type MediaBuiltinLocalModelArchitecture =
   | "flux-2"
   | "framepack-i2v"
   | "hunyuan-video-1.5-i2v"
+  | "minimax-h3-ref2va"
   | "krea-2"
+  | "qwen-image-2.1"
   | "ltx-video"
   | "wan-2.2-ti2v";
 
@@ -1086,6 +1091,7 @@ export type MediaGenerationTarget = "image" | "video" | "svg";
 export type MediaVideoModelId =
   | "local:framepack-i2v-hy-13b"
   | "local:hunyuan-video-1.5-i2v-step-distilled"
+  | "local:minimax-h3-ref2va"
   | "local:ltx-video-0.9.8-13b-distilled-fp8"
   | "local:ltx-video-0.9.8-2b-distilled-fp8"
   | "local:wan2.2-ti2v-5b"
@@ -1397,7 +1403,7 @@ export interface MediaRunPlanSnapshot {
   steps: MediaExecutionStep[];
 }
 
-export type MediaStudioSection = "generate" | "flow" | "library" | "runs";
+export type MediaStudioSection = "generate" | "flow" | "train" | "library" | "runs";
 
 export type MediaRunStatus =
   | "draft"
@@ -1933,13 +1939,15 @@ export interface MediaLocalVideoGenerationOperation extends Omit<
   modelId:
     | "local:framepack-i2v-hy-13b"
     | "local:hunyuan-video-1.5-i2v-step-distilled"
+    | "local:minimax-h3-ref2va"
     | "local:ltx-video-0.9.8-13b-distilled-fp8"
     | "local:ltx-video-0.9.8-2b-distilled-fp8";
-  architecture: "framepack-i2v" | "hunyuan-video-1.5-i2v" | "ltx-video";
+  architecture: "framepack-i2v" | "hunyuan-video-1.5-i2v" | "minimax-h3-ref2va" | "ltx-video";
   conv3dBackend: "aten-native-hip" | "cudnn" | "cpu-native" | "mps-native";
   conditioningMode:
     | "framepack-inverted-anti-drifting-first-last"
     | "hunyuan-video-1.5-native-first-frame"
+    | "minimax-h3-reference-image-audio"
     | "ltx-native-first-last-keyframes"
     | "ltx-native-first-last-keyframes-multiscale";
   negativePromptApplied: boolean;

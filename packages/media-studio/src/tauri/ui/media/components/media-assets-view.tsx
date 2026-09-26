@@ -57,6 +57,7 @@ import {
   isMediaModelReady,
 } from "../../../../core/media/model-readiness.js";
 import { mediaAssetLabel } from "../../../../core/media/asset-label.js";
+import { isMediaOpenPoseAsset } from "../../../../core/media/pose-map.js";
 import type {
   ImportMediaLocalModelRequest,
   ImportMediaModelAddonRequest,
@@ -148,6 +149,7 @@ interface MediaAssetsViewProps {
   verifyingModelId: string | null;
   onUseAddon: (addonId: string) => void;
   onUseAsReference: (asset: MediaAssetRecord) => void;
+  onUseAsPose: (asset: MediaAssetRecord) => void;
   onEditImage: (asset: MediaAssetRecord) => void;
   onAnimateImage: (asset: MediaAssetRecord) => void;
   onOpenVideoAsFlow: (asset: MediaAssetRecord) => void;
@@ -178,6 +180,7 @@ const FILTERS: ReadonlyArray<{ id: MediaAssetTypeFilter; label: string }> = [
   { id: "lora", label: "LoRAs" },
   { id: "embedding", label: "Embeddings" },
   { id: "image", label: "Images" },
+  { id: "openpose", label: "OpenPose" },
   { id: "video", label: "Videos" },
   { id: "svg", label: "SVGs" },
 ];
@@ -229,6 +232,7 @@ export const MediaAssetsView = ({
   verifyingModelId,
   onUseAddon,
   onUseAsReference,
+  onUseAsPose,
   onEditImage,
   onAnimateImage,
   onOpenVideoAsFlow,
@@ -421,9 +425,11 @@ export const MediaAssetsView = ({
         ? asset.kind !== "report"
         : filter === "svg"
           ? asset.kind === "vector"
+          : filter === "openpose"
+            ? isMediaOpenPoseAsset(asset)
           : asset.kind === filter),
   );
-  const mediaGroups = [
+  const mediaGroups = filter === "openpose" ? [{ id: "openpose", label: "", assets: visibleMedia }] : [
     {
       id: "generated",
       label: "Generations",
@@ -450,7 +456,7 @@ export const MediaAssetsView = ({
         : filter === "all"
           ? [...libraryModels, ...catalog.addons, ...assets]
           : assets.filter(
-              (asset) => asset.kind === (filter === "svg" ? "vector" : filter),
+              (asset) => filter === "openpose" ? isMediaOpenPoseAsset(asset) : asset.kind === (filter === "svg" ? "vector" : filter),
             );
   const availableTags = listMediaResourceTags(filteredTypeResources, metadata);
   const architectures = [
@@ -471,7 +477,7 @@ export const MediaAssetsView = ({
           (asset) =>
             asset.kind !== "report" &&
             (filter === "all" ||
-              asset.kind === (filter === "svg" ? "vector" : filter)),
+              (filter === "openpose" ? isMediaOpenPoseAsset(asset) : asset.kind === (filter === "svg" ? "vector" : filter))),
         )
         .map((asset) => asset.mimeType),
     ),
@@ -992,9 +998,9 @@ export const MediaAssetsView = ({
               .filter((group) => group.assets.length > 0)
               .map((group) => (
                 <Fragment key={group.id}>
-                  <h2 className="col-span-full text-sm font-medium text-slate-300">
+                  {group.label ? <h2 className="col-span-full text-sm font-medium text-slate-300">
                     {group.label}
-                  </h2>
+                  </h2> : null}
                   {group.assets.map((asset) => (
                     <ContextActionMenu
                       key={asset.id}
@@ -1012,6 +1018,7 @@ export const MediaAssetsView = ({
                         },
                         ...(asset.kind === "image"
                           ? [
+                              ...(isMediaOpenPoseAsset(asset) ? [{ label: "Use as pose", onSelect: () => onUseAsPose(asset) }] : []),
                               {
                                 label: "Edit image",
                                 onSelect: () => onEditImage(asset),
@@ -1112,7 +1119,11 @@ export const MediaAssetsView = ({
                             </p>
                           ) : null}
                           <div className="flex gap-2">
-                            {asset.kind === "image" ? (
+                            {isMediaOpenPoseAsset(asset) ? (
+                              <Button type="button" variant="outline" size="sm" onClick={() => onUseAsPose(asset)} className="flex-1">
+                                Use as pose
+                              </Button>
+                            ) : asset.kind === "image" ? (
                               <Button
                                 type="button"
                                 variant="outline"

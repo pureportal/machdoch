@@ -617,7 +617,8 @@ fn build_inspection(
     {
         blocking_reason =
             Some("The AIR add-on kind does not match Civitai's current model metadata".to_string());
-    } else if !civitai_compatibility::supports_resource(
+    } else if !civitai_compatibility::supports_catalog_resource(
+        &model.name,
         &model.model_type,
         version.base_model.as_deref(),
     ) || !civitai_compatibility::supports_version_type(version.base_model_type.as_deref())

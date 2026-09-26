@@ -69,6 +69,25 @@ pub(super) fn ensure_component(
     )
 }
 
+pub(super) fn install_openpose(
+    paths: &MediaRuntimePaths,
+    architecture: &str,
+) -> MediaResult<std::path::PathBuf> {
+    let profile = match architecture {
+        "stable-diffusion-1" => "sd15",
+        "stable-diffusion-xl" | "pony" => "sdxl",
+        _ => return Err("Choose an SD 1.5, SDXL, or Pony model for OpenPose installation.".into()),
+    };
+    let manifests: serde_json::Value =
+        serde_json::from_str(include_str!("openpose_components.json"))
+            .map_err(|error| error.to_string())?;
+    let files = manifests.get(profile).ok_or("Unknown OpenPose model")?;
+    model_components::ensure_components(
+        &paths.models_root()?.join("controlnet").join("openpose").join(profile),
+        &files.to_string(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

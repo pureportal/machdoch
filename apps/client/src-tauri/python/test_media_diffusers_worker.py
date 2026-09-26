@@ -23,6 +23,62 @@ SPEC.loader.exec_module(WORKER)
 
 
 class MediaDiffusersQualityTests(unittest.TestCase):
+    def test_qwen_image_21_loads_civitai_transformer_with_pinned_components(self) -> None:
+        transformer_loader = mock.Mock(return_value=SimpleNamespace())
+        pipeline_loader = mock.Mock(return_value=SimpleNamespace())
+        diffusers = SimpleNamespace(
+            QwenImage21Transformer2DModel=SimpleNamespace(from_single_file=transformer_loader),
+            QwenImage21Pipeline=SimpleNamespace(from_pretrained=pipeline_loader),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoint = root / "checkpoint.safetensors"
+            checkpoint.write_bytes(b"fixture")
+            components = root / "components"
+            components.mkdir()
+            config = root / "config"
+            config.mkdir()
+            (config / "qwen21-runtime.json").write_text(
+                json.dumps({"schemaVersion": 1, "runtimeRoot": str(components)}),
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.object(WORKER, "_device", return_value=("cpu", "CPU", None)),
+                mock.patch.object(WORKER, "_pipeline_dtype", return_value="float32"),
+                mock.patch.object(WORKER, "_physical_memory_bytes", return_value=64 * 1024**3),
+            ):
+                pipeline = WORKER._load_pipeline(diffusers, SimpleNamespace(), {
+                    "architecture": "qwen-image-2.1",
+                    "packageKind": "single-file",
+                    "path": str(checkpoint),
+                    "configPath": str(config),
+                })
+            self.assertIs(pipeline, pipeline_loader.return_value)
+            transformer_loader.assert_called_once_with(
+                str(checkpoint), config=str(components), subfolder="transformer",
+                dtype="float32", local_files_only=True,
+            )
+            pipeline_loader.assert_called_once_with(
+                str(components), transformer=transformer_loader.return_value,
+                dtype="float32", local_files_only=True, use_safetensors=True,
+            )
+
+    def test_qwen_image_21_rejects_insufficient_memory_before_loading(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / "checkpoint.safetensors"
+            checkpoint.write_bytes(b"fixture")
+            with (
+                mock.patch.object(WORKER, "_device", return_value=("cpu", "CPU", None)),
+                mock.patch.object(WORKER, "_pipeline_dtype", return_value="float32"),
+                mock.patch.object(WORKER, "_physical_memory_bytes", return_value=32 * 1024**3),
+            ):
+                with self.assertRaisesRegex(WORKER.WorkerError, "at least 48 GiB"):
+                    WORKER._load_pipeline(SimpleNamespace(), SimpleNamespace(), {
+                        "architecture": "qwen-image-2.1",
+                        "packageKind": "single-file",
+                        "path": str(checkpoint),
+                    })
+
     def test_pony_loads_the_sdxl_pipeline_offline(self) -> None:
         loader = mock.Mock(return_value=SimpleNamespace())
         diffusers = SimpleNamespace(StableDiffusionXLPipeline=SimpleNamespace(from_single_file=loader))
@@ -40,6 +96,41 @@ class MediaDiffusersQualityTests(unittest.TestCase):
                 })
             self.assertIs(pipeline, loader.return_value)
             loader.assert_called_once_with(str(checkpoint), torch_dtype="float32", local_files_only=True, use_safetensors=True, config=str(config))
+
+    def test_openpose_uses_the_matching_controlnet_pipeline_for_each_model_family(self) -> None:
+        families = (
+            ("stable-diffusion-1", "StableDiffusionControlNetPipeline", "StableDiffusionControlNetImg2ImgPipeline"),
+            ("stable-diffusion-2", "StableDiffusionControlNetPipeline", "StableDiffusionControlNetImg2ImgPipeline"),
+            ("stable-diffusion-xl", "StableDiffusionXLControlNetPipeline", "StableDiffusionXLControlNetImg2ImgPipeline"),
+            ("pony", "StableDiffusionXLControlNetPipeline", "StableDiffusionXLControlNetImg2ImgPipeline"),
+        )
+        for architecture, text_pipeline, image_pipeline in families:
+            for image_to_image, class_name in ((False, text_pipeline), (True, image_pipeline)):
+                with self.subTest(architecture=architecture, image_to_image=image_to_image):
+                    controlnet = object()
+                    controlnet_loader = mock.Mock(return_value=controlnet)
+                    pipeline = SimpleNamespace(components={})
+                    pipeline_loader = mock.Mock(return_value=object())
+                    diffusers = SimpleNamespace(
+                        ControlNetModel=SimpleNamespace(from_pretrained=controlnet_loader),
+                        **{class_name: SimpleNamespace(from_pipe=pipeline_loader)},
+                    )
+                    path = Path("/models/controlnet/openpose")
+
+                    result = WORKER._controlnet_pipeline(
+                        diffusers,
+                        SimpleNamespace(float32="float32"),
+                        pipeline,
+                        architecture,
+                        path,
+                        image_to_image,
+                    )
+
+                    self.assertIs(result, pipeline_loader.return_value)
+                    controlnet_loader.assert_called_once_with(
+                        str(path), torch_dtype="float32", local_files_only=True, use_safetensors=True
+                    )
+                    pipeline_loader.assert_called_once_with(pipeline, controlnet=controlnet)
 
     def test_krea_offload_cache_belongs_to_the_removable_model_package(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -39,6 +39,15 @@ pub(super) async fn invoke(
     args: Value,
 ) -> Result<Value, Value> {
     Ok(match command.as_str() {
+        "run_media_flow_agent" => {
+            check_arguments(&args, &["workspaceRoot", "request"])?;
+            crate::desktop_task::media_flow_agent::run_media_flow_agent(
+                argument(&args, "workspaceRoot")?,
+                argument(&args, "request")?,
+            )
+            .await
+            .map_err(error_value)?
+        }
         "media_read_studio_state" | "media_write_studio_state" => {
             check_arguments(
                 &args,
@@ -537,6 +546,24 @@ pub(super) async fn invoke(
             check_arguments(&args, &["path"])?;
             serde_json::to_value(
                 super::media_import_image(app.clone(), argument(&args, "path")?)
+                    .await
+                    .map_err(error_value)?,
+            )
+            .map_err(|error| json!(error.to_string()))?
+        }
+        "media_create_pose_map" => {
+            check_arguments(&args, &["map"])?;
+            serde_json::to_value(
+                super::media_create_pose_map(app.clone(), argument(&args, "map")?)
+                    .await
+                    .map_err(error_value)?,
+            )
+            .map_err(|error| json!(error.to_string()))?
+        }
+        "media_install_pose_control" => {
+            check_arguments(&args, &["architecture"])?;
+            serde_json::to_value(
+                super::media_install_pose_control(app.clone(), argument(&args, "architecture")?)
                     .await
                     .map_err(error_value)?,
             )

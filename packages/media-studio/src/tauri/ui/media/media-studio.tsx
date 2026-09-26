@@ -1,7 +1,15 @@
 import { useMediaStudioAutosave } from "./use-media-studio-autosave";
 import { assessRemoteEditExecution } from "./media-remote-edit-assessment";
 import { useMediaGenerationTiming } from "./use-media-generation-timing";
-import { basicImageReferenceLimit } from "./media-basic-image-options";
+import {
+  basicImageReferenceLimit,
+  basicPosePresetSelectionStillCurrent,
+} from "./media-basic-image-options";
+import {
+  isMediaOpenPoseAsset,
+  type MediaPoseMap,
+  type MediaSavedPoseScene,
+} from "../../../core/media/pose-map.js";
 import { getMediaReferenceConditioningCapabilities } from "../../../core/media/reference-conditioning.js";
 import { mediaImportQueue } from "./media-import-queue";
 import { generationJobToRunDetail } from "./media-generation-run";
@@ -23,10 +31,12 @@ import { open as openDialog, save as saveDialog } from "./media-platform";
 import {
   useCallback,
   useEffect,
+  lazy,
   useMemo,
   useRef,
   useState,
   useSyncExternalStore,
+  Suspense,
   type JSX,
 } from "react";
 import { createMediaModelCatalogSnapshot } from "../../../core/media/catalog.js";
@@ -129,11 +139,12 @@ import { getDefaultCommandShortcut } from "../commands/command-defaults";
 import { useOptionalRegisterCommands } from "../commands/command-context";
 import type { CommandDefinition } from "../commands/command-types";
 import { subscribeToUserSettingsChanged } from "./media-platform";
-import { MediaFlowView } from "./components/media-flow-view";
 import { MediaErrorNotice } from "./components/media-error-notice";
 import { MediaGenerateView } from "./components/media-generate-view";
 import { MediaAssetsView } from "./components/media-assets-view";
 import { MediaRunsView } from "./components/media-runs-view";
+import { MediaTrainView } from "./components/media-train-view";
+
 import {
   createBasicMediaRecipeFlow,
   compileBasicImageOutputBranches,
@@ -201,9 +212,14 @@ import {
   normalizeMediaError,
 } from "./media-runtime";
 
+const MediaFlowView = lazy(async () => ({
+  default: (await import("./components/media-flow-view")).MediaFlowView,
+}));
+
 const EXECUTABLE_LOCAL_VIDEO_MODEL_IDS: ReadonlySet<string> = new Set([
   "local:framepack-i2v-hy-13b",
   "local:hunyuan-video-1.5-i2v-step-distilled",
+  "local:minimax-h3-ref2va",
   "local:ltx-video-0.9.8-13b-distilled-fp8",
   "local:ltx-video-0.9.8-2b-distilled-fp8",
   "local:wan2.2-ti2v-5b",
@@ -228,6 +244,9 @@ const createIdentityImageOutputBranch = (
 });
 
 interface MediaStudioProps {
+  onOpenPoseChat: (map: MediaPoseMap | null) => void | Promise<void>;
+  savedPoseScenes?: readonly MediaSavedPoseScene[];
+  onRenamePoseScene?: (id: string, title: string) => void;
   providerStatuses: readonly { provider: string; configured: boolean }[];
   onOpenProviderSettings: () => void;
   workspaceRoot: string | null;
@@ -249,6 +268,7 @@ const NAVIGATION_ITEMS: readonly {
 }[] = [
   { id: "generate", label: "Basic" },
   { id: "flow", label: "Advanced" },
+  { id: "train", label: "Train" },
   { id: "library", label: "Assets" },
   { id: "runs", label: "Activity" },
 ] as const;
@@ -485,6 +505,9 @@ const assessAdvancedLocalImageExecution = ({
 };
 
 export const MediaStudio = ({
+  onOpenPoseChat,
+  savedPoseScenes = [],
+  onRenamePoseScene,
   providerStatuses,
   onOpenProviderSettings,
   workspaceRoot,
@@ -566,6 +589,7 @@ export const MediaStudio = ({
     null,
   );
   const [importLoading, setImportLoading] = useState(false);
+  const [poseInstallPending, setPoseInstallPending] = useState(false);
   const [assetImportError, setAssetImportError] = useState<string | null>(null);
   const [assetImportProgress, setAssetImportProgress] =
     useState<MediaAssetImportProgress | null>(null);
@@ -1643,12 +1667,15 @@ export const MediaStudio = ({
               ? "graph"
               : item.id === "runs"
                 ? "activity"
-                : "assets"
+                : item.id === "train"
+                  ? "train"
+                  : "assets"
         }` as
           | "media.section.create"
           | "media.section.assets"
           | "media.section.graph"
-          | "media.section.activity";
+          | "media.section.activity"
+          | "media.section.train";
         return {
           id: commandId,
           title: `Open Media ${item.label}`,
@@ -1737,6 +1764,33 @@ export const MediaStudio = ({
     },
     [],
   );
+  const useAssetAsPose = useCallback((asset: MediaAssetRecord): void => {
+    if (!isMediaOpenPoseAsset(asset)) return;
+    const ratio = asset.width / asset.height;
+    const aspectRatio: MediaPoseMap["aspectRatio"] =
+      ratio > 1.3 ? "16:9" : ratio < 0.7 ? "9:16" : ratio < 0.9 ? "4:5" : "1:1";
+    setState((current) => ({
+      ...current,
+      activeSection: "generate",
+      target: "image",
+      recipe: {
+        ...current.recipe,
+        aspectRatio,
+        poseImageAssetId: asset.id,
+        baseImageAssetId:
+          current.recipe.baseImageAssetId === asset.id
+            ? null
+            : current.recipe.baseImageAssetId,
+        editMask:
+          current.recipe.baseImageAssetId === asset.id
+            ? null
+            : current.recipe.editMask,
+        referenceImages: current.recipe.referenceImages.filter(
+          (reference) => reference.assetId !== asset.id,
+        ),
+      },
+    }));
+  }, []);
   const useAssetAsBasicVideoReference = useCallback(
     (asset: MediaAssetRecord): void => {
       if (asset.kind !== "image") return;
@@ -1839,28 +1893,48 @@ export const MediaStudio = ({
             },
           };
         }
-        if (
-          current.recipe.modelAddons.some(
-            (selection) => selection.addonId === addonId,
-          )
-        ) {
-          return { ...current, activeSection: "generate" };
-        }
+        const selectedImageModel = activeModelCatalog.models.find(
+          (model) => model.id === current.recipe.modelId,
+        );
+        const runnableModelIds = runtimeStatus?.directGenerationModelIds ?? [];
+        const imageModel =
+          selectedImageModel?.installed &&
+          runnableModelIds.includes(selectedImageModel.id) &&
+          isMediaModelAddonSelectable(selectedImageModel, addon)
+            ? selectedImageModel
+            : activeModelCatalog.models.find(
+                (model) =>
+                  model.installed &&
+                  runnableModelIds.includes(model.id) &&
+                  isMediaModelAddonSelectable(model, addon),
+              );
+        if (!imageModel) return { ...current, activeSection: "library" };
+        const modelAddons = reconcileMediaModelAddonSelections(
+          imageModel,
+          activeModelCatalog.addons,
+          current.recipe.modelAddons,
+        );
         return {
           ...current,
           activeSection: "generate",
-          target: current.target === "video" ? "image" : current.target,
+          target: "image",
           recipe: {
             ...current.recipe,
-            modelAddons: [
-              ...current.recipe.modelAddons,
-              createMediaModelAddonSelection(addon),
-            ],
+            modelId: imageModel.id,
+            modelAddons: modelAddons.some(
+              (selection) => selection.addonId === addonId,
+            )
+              ? modelAddons
+              : [...modelAddons, createMediaModelAddonSelection(addon)],
           },
         };
       });
     },
-    [activeModelCatalog.addons, activeModelCatalog.models],
+    [
+      activeModelCatalog.addons,
+      activeModelCatalog.models,
+      runtimeStatus?.directGenerationModelIds,
+    ],
   );
   const openVideoFlowDraft = useCallback(
     ({
@@ -4273,90 +4347,148 @@ export const MediaStudio = ({
     state.recipe.poseImageAssetId,
     state.recipe.referenceImages.length,
   ]);
-  const importConditioningImage = useCallback(
-    (kind: "base" | "pose"): void => {
-      if (importLoading || !supportsNativeMediaImport()) return;
+  const importBaseImage = useCallback((): void => {
+    if (importLoading || !supportsNativeMediaImport()) return;
+    setImportLoading(true);
+    setRuntimeError(null);
+    void (async () => {
+      const selected = await openDialog({
+        multiple: false,
+        directory: false,
+        title: "Add base image",
+        filters: [
+          {
+            name: "Supported images",
+            extensions: ["png", "jpg", "jpeg", "webp"],
+          },
+        ],
+      });
+      if (typeof selected !== "string") return;
+      const importState = stateRef.current;
+      const result = await importMediaAsset(selected);
+      setRuntimeAssets((current) => [
+        result.asset,
+        ...current.filter((asset) => asset.id !== result.asset.id),
+      ]);
+      if (result.asset.kind !== "image")
+        throw new Error("Choose a PNG, JPEG, or WebP image.", {
+          cause: "basic-image-input",
+        });
+      if (
+        stateRef.current.target !== importState.target ||
+        stateRef.current.recipe.modelId !== importState.recipe.modelId ||
+        stateRef.current.recipe.baseImageAssetId !==
+          importState.recipe.baseImageAssetId ||
+        stateRef.current.recipe.poseImageAssetId !==
+          importState.recipe.poseImageAssetId ||
+        stateRef.current.recipe.referenceImages !==
+          importState.recipe.referenceImages
+      )
+        throw new Error(
+          "The image setup changed while importing. Choose the imported image from Assets.",
+          { cause: "basic-image-input" },
+        );
+      setState((current) => {
+        const referenceImages = current.recipe.referenceImages.filter(
+          (reference) => reference.assetId !== result.asset.id,
+        );
+        return {
+          ...current,
+          recipe: {
+            ...current.recipe,
+            referenceImages,
+            baseImageAssetId: result.asset.id,
+            poseImageAssetId:
+              current.recipe.poseImageAssetId === result.asset.id
+                ? null
+                : current.recipe.poseImageAssetId,
+            editMask: null,
+          },
+        };
+      });
+      await refreshRuntime();
+    })()
+      .catch((error: unknown) => {
+        setRuntimeError(basicImageImportFailure(error, "import_base_image"));
+      })
+      .finally(() => setImportLoading(false));
+  }, [importLoading, refreshRuntime]);
+  const createPoseAsset = useCallback(
+    async (map: MediaPoseMap): Promise<void> => {
+      if (importLoading || !supportsNativeMediaImport())
+        throw new Error("Pose saving is unavailable.");
+      const recipeAtSelection = stateRef.current.recipe;
       setImportLoading(true);
       setRuntimeError(null);
-      void (async () => {
-        const selected = await openDialog({
-          multiple: false,
-          directory: false,
-          title: kind === "base" ? "Add base image" : "Add pose map",
-          filters: [
-            {
-              name: "Supported images",
-              extensions: ["png", "jpg", "jpeg", "webp"],
-            },
-          ],
-        });
-        if (typeof selected !== "string") return;
-        const importState = stateRef.current;
-        const result = await importMediaAsset(selected);
+      try {
+        const result = await invoke<
+          Awaited<ReturnType<typeof importMediaAsset>>
+        >("media_create_pose_map", { map });
         setRuntimeAssets((current) => [
           result.asset,
           ...current.filter((asset) => asset.id !== result.asset.id),
         ]);
-        if (result.asset.kind !== "image")
-          throw new Error("Choose a PNG, JPEG, or WebP image.", {
-            cause: "basic-image-input",
-          });
         if (
-          stateRef.current.target !== importState.target ||
-          stateRef.current.recipe.modelId !== importState.recipe.modelId ||
-          stateRef.current.recipe.baseImageAssetId !==
-            importState.recipe.baseImageAssetId ||
-          stateRef.current.recipe.poseImageAssetId !==
-            importState.recipe.poseImageAssetId ||
-          stateRef.current.recipe.referenceImages !==
-            importState.recipe.referenceImages
-        )
+          !basicPosePresetSelectionStillCurrent(
+            recipeAtSelection,
+            stateRef.current.recipe,
+            stateRef.current.target,
+          )
+        ) {
+          await refreshRuntime();
           throw new Error(
-            "The image setup changed while importing. Choose the imported image from Assets.",
-            { cause: "basic-image-input" },
+            "The image setup changed while creating the pose. Choose the saved pose image from Assets.",
           );
-        setState((current) => {
-          const referenceImages = current.recipe.referenceImages.filter(
-            (reference) => reference.assetId !== result.asset.id,
-          );
-          return {
-            ...current,
-            recipe: {
-              ...current.recipe,
-              referenceImages,
-              ...(kind === "base"
-                ? {
-                    baseImageAssetId: result.asset.id,
-                    poseImageAssetId:
-                      current.recipe.poseImageAssetId === result.asset.id
-                        ? null
-                        : current.recipe.poseImageAssetId,
-                    editMask: null,
-                  }
-                : {
-                    poseImageAssetId: result.asset.id,
-                    baseImageAssetId:
-                      current.recipe.baseImageAssetId === result.asset.id
-                        ? null
-                        : current.recipe.baseImageAssetId,
-                    editMask:
-                      current.recipe.baseImageAssetId === result.asset.id
-                        ? null
-                        : current.recipe.editMask,
-                  }),
-            },
-          };
-        });
+        }
+        setState((current) => ({
+          ...current,
+          recipe: {
+            ...current.recipe,
+            poseImageAssetId: result.asset.id,
+            baseImageAssetId:
+              current.recipe.baseImageAssetId === result.asset.id
+                ? null
+                : current.recipe.baseImageAssetId,
+            referenceImages: current.recipe.referenceImages.filter(
+              (reference) => reference.assetId !== result.asset.id,
+            ),
+          },
+        }));
         await refreshRuntime();
-      })()
-        .catch((error: unknown) => {
-          setRuntimeError(
-            basicImageImportFailure(error, `import_${kind}_image`),
-          );
-        })
-        .finally(() => setImportLoading(false));
+      } catch (error) {
+        setRuntimeError(normalizeMediaError(error, "media_create_pose_map"));
+        throw error;
+      } finally {
+        setImportLoading(false);
+      }
     },
     [importLoading, refreshRuntime],
+  );
+  const selectPosePreset = useCallback(
+    (map: MediaPoseMap): Promise<void> => createPoseAsset(map),
+    [createPoseAsset],
+  );
+  const generatePoseChat = useCallback(
+    async (map: MediaPoseMap | null): Promise<void> => {
+      await onOpenPoseChat(map);
+    },
+    [onOpenPoseChat],
+  );
+  const installPoseControl = useCallback(
+    (architecture: string): void => {
+      if (poseInstallPending) return;
+      setPoseInstallPending(true);
+      setRuntimeError(null);
+      void invoke<string>("media_install_pose_control", { architecture })
+        .then(() => refreshRuntime())
+        .catch((error) =>
+          setRuntimeError(
+            normalizeMediaError(error, "media_install_pose_control"),
+          ),
+        )
+        .finally(() => setPoseInstallPending(false));
+    },
+    [poseInstallPending, refreshRuntime],
   );
   const updateAssetTags = useCallback(
     (update: MediaAssetTagUpdate) => {
@@ -4579,108 +4711,154 @@ export const MediaStudio = ({
               onOpenActivity={inspectRunSettings}
               onGenerate={runGeneration}
               onAddReferenceImages={importReferenceImages}
-              onAddBaseImage={() => importConditioningImage("base")}
-              onAddPoseImage={() => importConditioningImage("pose")}
+              onAddBaseImage={importBaseImage}
+              onSelectPosePreset={selectPosePreset}
+              onGeneratePoseChat={generatePoseChat}
+              savedPoseScenes={savedPoseScenes}
+              onRenamePoseScene={onRenamePoseScene}
+              onInstallPoseControl={installPoseControl}
+              poseInstallPending={poseInstallPending}
               onEditResult={useAssetAsBaseImage}
               onAnimateResult={useAssetAsBasicVideoReference}
               onOpenResult={openAssetInLibrary}
               generationPending={generationPending || localFlowPending}
             />
           ) : null}
-          {loaded && state.activeSection === "flow" ? (
-            <MediaFlowView
-              workspaceRoot={workspaceRoot}
-              flow={flow}
-              layout={layout}
-              plan={plan}
-              models={models}
-              addons={activeModelCatalog.addons}
-              assets={runtimeAssets}
-              assetMetadata={state.assetMetadata}
-              categories={state.categories}
-              onLayoutChange={changeFlowLayout}
-              onFlowVariablesChange={applySemanticFlow}
-              onTemplateApply={applyFlowTemplate}
-              onNodeConfigChange={changeFlowNodeConfig}
-              onNodeConfigPatch={changeFlowNodeConfigs}
-              onNodeLabelChange={changeFlowNodeLabel}
-              onNodeAdd={addFlowNode}
-              onNodeRemove={removeFlowNode}
-              onConnectPorts={connectFlowPorts}
-              onDisconnectInput={disconnectFlowInput}
-              onDisconnectConnection={disconnectFlowConnection}
-              canUndoSemantic={semanticUndoStack.current.length > 0}
-              canRedoSemantic={semanticRedoStack.current.length > 0}
-              onUndoSemantic={undoSemanticFlow}
-              onRedoSemantic={redoSemanticFlow}
-              onNodeCopy={copyFlowNode}
-              onNodePaste={pasteFlowNode}
-              onNodesCopy={copySelectedFlowNodes}
-              clipboardLabel={flowClipboard?.label ?? null}
-              canPasteNode={pasteInspection.valid}
-              pasteBlockedReason={pasteInspection.reason}
-              history={flowHistory}
-              savedFlows={savedFlows}
-              savedFlowsLoading={savedFlowsLoading || flowRevisionLoading}
-              revisionLoading={flowRevisionLoading}
-              revisionNotice={flowRevisionNotice}
-              hasUnsavedChanges={hasUnsavedFlowChanges}
-              onRefreshHistory={refreshFlowHistory}
-              onRefreshSavedFlows={refreshSavedFlows}
-              onOpenSavedFlow={openSavedFlow}
-              onSaveRevision={saveCurrentFlowRevision}
-              onRestoreRevision={restoreFlowRevision}
-              portabilitySupported={supportsNativeMediaFlowPortability()}
-              portabilityLoading={flowPortabilityLoading}
-              importInspection={flowImportInspection}
-              onInspectImport={inspectPortableFlow}
-              onImportReviewed={importReviewedFlow}
-              onDismissImport={dismissFlowImport}
-              onExportRevision={exportCurrentFlowRevision}
-              onRunLocalFlow={
-                isConnectedMediaFlow(flow)
-                  ? runLocalFlow
-                  : advancedLocalImageExecution.supported
-                    ? runAdvancedLocalImageFlow
-                    : videoFlowExecution.supported
-                      ? runVideoFlow
-                      : runLocalFlow
+          {loaded && state.activeSection === "train" ? (
+            <MediaTrainView
+              onImported={refreshModelCatalog}
+              onUseAddon={useAddonInCreate}
+              canUseAddon={activeModelCatalog.models.some(
+                (model) =>
+                  model.installed &&
+                  model.architecture === "krea-2" &&
+                  (runtimeStatus?.directGenerationModelIds ?? []).includes(
+                    model.id,
+                  ),
+              )}
+              onFindModel={() =>
+                setState((current) => ({
+                  ...current,
+                  activeSection: "library",
+                }))
               }
-              localRunPending={localFlowPending}
-              localRunSupported={
-                isConnectedMediaFlow(flow)
-                  ? localFlowExecution.supported
-                  : advancedLocalImageExecution.supported ||
-                    localFlowExecution.supported ||
-                    videoFlowExecution.supported
-              }
-              localRunDescription={
-                isConnectedMediaFlow(flow)
-                  ? localFlowExecution.reason
-                  : advancedLocalImageExecution.supported
-                    ? advancedLocalImageExecution.reason
-                    : videoFlowExecution.videoNode
-                      ? videoFlowExecution.reason
-                      : localFlowExecution.reason
-              }
-              onRunRemoteEdit={runRemoteEditFlow}
-              remoteRunPending={remoteEditPending}
-              remoteRunSupported={remoteEditExecution.supported}
-              remoteRunDescription={remoteEditExecution.reason}
-              remoteRunMode={runtimeStatus?.mode ?? null}
-              remoteMaskIncluded={remoteEditExecution.maskIncluded}
-              remoteUploadManifest={remoteEditExecution.manifest}
-              runOverlay={
-                flowRunOverlayId === flowRunOverlay?.id
-                  ? flowRunOverlay
-                  : flowOverlayJob
-                    ? generationJobToRunDetail(flowOverlayJob)
-                    : null
-              }
-              onRunOverlayClear={() => setFlowRunOverlayId(null)}
-              onOpenRun={inspectRunSettings}
-              onCancelRun={cancelRun}
             />
+          ) : null}
+          {loaded && state.activeSection === "flow" ? (
+            <Suspense
+              fallback={
+                <div role="status" className="p-6 text-sm text-slate-400">
+                  Loading Flow…
+                </div>
+              }
+            >
+              <MediaFlowView
+                onGeneratePoseChat={generatePoseChat}
+                savedPoseScenes={savedPoseScenes}
+                onRenamePoseScene={onRenamePoseScene}
+                workspaceRoot={workspaceRoot}
+                flow={flow}
+                layout={layout}
+                plan={plan}
+                models={models}
+                addons={activeModelCatalog.addons}
+                assets={runtimeAssets}
+                assetMetadata={state.assetMetadata}
+                categories={state.categories}
+                onLayoutChange={changeFlowLayout}
+                onFlowVariablesChange={applySemanticFlow}
+                onPoseAssetsCreated={(assets) => {
+                  setRuntimeAssets((current) => [
+                    ...assets,
+                    ...current.filter(
+                      (asset) =>
+                        !assets.some((created) => created.id === asset.id),
+                    ),
+                  ]);
+                  void refreshRuntime();
+                }}
+                onTemplateApply={applyFlowTemplate}
+                onNodeConfigChange={changeFlowNodeConfig}
+                onNodeConfigPatch={changeFlowNodeConfigs}
+                onNodeLabelChange={changeFlowNodeLabel}
+                onNodeAdd={addFlowNode}
+                onNodeRemove={removeFlowNode}
+                onConnectPorts={connectFlowPorts}
+                onDisconnectInput={disconnectFlowInput}
+                onDisconnectConnection={disconnectFlowConnection}
+                canUndoSemantic={semanticUndoStack.current.length > 0}
+                canRedoSemantic={semanticRedoStack.current.length > 0}
+                onUndoSemantic={undoSemanticFlow}
+                onRedoSemantic={redoSemanticFlow}
+                onNodeCopy={copyFlowNode}
+                onNodePaste={pasteFlowNode}
+                onNodesCopy={copySelectedFlowNodes}
+                clipboardLabel={flowClipboard?.label ?? null}
+                canPasteNode={pasteInspection.valid}
+                pasteBlockedReason={pasteInspection.reason}
+                history={flowHistory}
+                savedFlows={savedFlows}
+                savedFlowsLoading={savedFlowsLoading || flowRevisionLoading}
+                revisionLoading={flowRevisionLoading}
+                revisionNotice={flowRevisionNotice}
+                hasUnsavedChanges={hasUnsavedFlowChanges}
+                onRefreshHistory={refreshFlowHistory}
+                onRefreshSavedFlows={refreshSavedFlows}
+                onOpenSavedFlow={openSavedFlow}
+                onSaveRevision={saveCurrentFlowRevision}
+                onRestoreRevision={restoreFlowRevision}
+                portabilitySupported={supportsNativeMediaFlowPortability()}
+                portabilityLoading={flowPortabilityLoading}
+                importInspection={flowImportInspection}
+                onInspectImport={inspectPortableFlow}
+                onImportReviewed={importReviewedFlow}
+                onDismissImport={dismissFlowImport}
+                onExportRevision={exportCurrentFlowRevision}
+                onRunLocalFlow={
+                  isConnectedMediaFlow(flow)
+                    ? runLocalFlow
+                    : advancedLocalImageExecution.supported
+                      ? runAdvancedLocalImageFlow
+                      : videoFlowExecution.supported
+                        ? runVideoFlow
+                        : runLocalFlow
+                }
+                localRunPending={localFlowPending}
+                localRunSupported={
+                  isConnectedMediaFlow(flow)
+                    ? localFlowExecution.supported
+                    : advancedLocalImageExecution.supported ||
+                      localFlowExecution.supported ||
+                      videoFlowExecution.supported
+                }
+                localRunDescription={
+                  isConnectedMediaFlow(flow)
+                    ? localFlowExecution.reason
+                    : advancedLocalImageExecution.supported
+                      ? advancedLocalImageExecution.reason
+                      : videoFlowExecution.videoNode
+                        ? videoFlowExecution.reason
+                        : localFlowExecution.reason
+                }
+                onRunRemoteEdit={runRemoteEditFlow}
+                remoteRunPending={remoteEditPending}
+                remoteRunSupported={remoteEditExecution.supported}
+                remoteRunDescription={remoteEditExecution.reason}
+                remoteRunMode={runtimeStatus?.mode ?? null}
+                remoteMaskIncluded={remoteEditExecution.maskIncluded}
+                remoteUploadManifest={remoteEditExecution.manifest}
+                runOverlay={
+                  flowRunOverlayId === flowRunOverlay?.id
+                    ? flowRunOverlay
+                    : flowOverlayJob
+                      ? generationJobToRunDetail(flowOverlayJob)
+                      : null
+                }
+                onRunOverlayClear={() => setFlowRunOverlayId(null)}
+                onOpenRun={inspectRunSettings}
+                onCancelRun={cancelRun}
+              />
+            </Suspense>
           ) : null}
           {loaded &&
           runtimeLoading &&
@@ -4816,6 +4994,7 @@ export const MediaStudio = ({
               onUpdateMetadata={updateAssetMetadata}
               onCategoryStateChange={updateAssetCategoryState}
               onUseAsReference={useAssetAsCreateReference}
+              onUseAsPose={useAssetAsPose}
               onEditImage={useAssetAsBaseImage}
               onAnimateImage={useAssetAsBasicVideoReference}
               onOpenVideoAsFlow={openAssetAsVideoFlow}

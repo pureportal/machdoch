@@ -635,6 +635,12 @@ pub(crate) fn worker_script(app: &AppHandle) -> MediaResult<PathBuf> {
     Err("The bundled local Diffusers worker is missing; reinstall the application.".to_string())
 }
 
+pub(crate) fn configure_preferred_gpu(command: &mut Command) {
+    if let Some(index) = PREFERRED_HIP_VISIBLE_DEVICE.get() {
+        command.env("HIP_VISIBLE_DEVICES", index);
+    }
+}
+
 fn run_worker(
     python: &Path,
     script: &Path,
@@ -1404,6 +1410,8 @@ fn model_probe_matches_runtime(
         && (if model.architecture == "intro-svg" {
             response.capabilities.contains(&"text-to-svg".to_string())
                 && response.capabilities.contains(&"image-to-svg".to_string())
+        } else if model.architecture == "qwen-image-2.1" {
+            true
         } else {
             response.capabilities.contains(&"lora".to_string())
                 && response.capabilities.contains(&"multi-lora".to_string())
@@ -1777,6 +1785,7 @@ pub(crate) fn runnable_reference_model_ids(
                         | "flux-1"
                         | "flux-2"
                         | "krea-2"
+                        | "qwen-image-2.1"
                         | "intro-svg"
                 )
             })
@@ -2359,6 +2368,8 @@ fn validate_edit_conditioning_evidence(
         "krea2-latent-inpaint-v1"
     } else if expected.architecture == "krea-2" {
         "krea2-image-conditioning-v1"
+    } else if expected.architecture == "qwen-image-2.1" {
+        "qwen21-native-reference"
     } else if expected.pose_digest.is_some() && expected.has_mask {
         "controlnet-openpose-soft-inpaint-v1"
     } else if expected.pose_digest.is_some() {
@@ -2384,6 +2395,7 @@ fn validate_edit_conditioning_evidence(
         match expected.architecture {
             "stable-diffusion-1" | "stable-diffusion-xl" | "pony" => Some("ip-adapter-plus-v1"),
             "krea-2" => Some("qwen3-vl-v1"),
+            "qwen-image-2.1" => Some("qwen3-vl-v1"),
             _ => None,
         }
     };
@@ -2569,6 +2581,9 @@ fn expected_image_inference_steps(architecture: &str, model_policy: &str) -> Med
         ("krea-2", "fast") => Ok(8),
         ("krea-2", "balanced") => Ok(10),
         ("krea-2", "quality") => Ok(12),
+        ("qwen-image-2.1", "fast") => Ok(20),
+        ("qwen-image-2.1", "balanced") => Ok(30),
+        ("qwen-image-2.1", "quality") => Ok(40),
         (_, "fast") => Ok(16),
         (_, "balanced") => Ok(24),
         (_, "quality") => Ok(32),
@@ -2595,7 +2610,9 @@ pub(crate) fn generate(
         || request.pose_image_asset_id.is_some()
         || request.control_net.is_some();
     let supported_roles: &[&str] = match model.architecture.as_str() {
-        "flux-2" | "krea-2" => &["subject", "style", "composition", "palette", "detail"],
+        "flux-2" | "krea-2" | "qwen-image-2.1" => {
+            &["subject", "style", "composition", "palette", "detail"]
+        }
         "stable-diffusion-1" => &["subject"],
         "stable-diffusion-xl" | "pony" => &["subject", "style", "composition"],
         "stable-diffusion-2" | "flux-1" => &["composition"],
@@ -2613,6 +2630,7 @@ pub(crate) fn generate(
     }
     let maximum_references = match model.architecture.as_str() {
         "flux-2" => 7,
+        "qwen-image-2.1" => 7,
         "stable-diffusion-1" | "stable-diffusion-xl" | "pony" | "krea-2" => 3,
         "stable-diffusion-2" | "flux-1" => 1,
         _ => 0,
@@ -3149,6 +3167,21 @@ const FRAMEPACK_IMAGE_REVISION: &str = "45b801affc54ff2af4e5daf1b282e0921901db87
 const FRAMEPACK_MODEL_ID: &str = "local:framepack-i2v-hy-13b";
 const HUNYUAN_VIDEO_15_MODEL_REVISION: &str = "854c04a4c8a53d990b418c7478f0802c0fc8c726";
 const HUNYUAN_VIDEO_15_MODEL_ID: &str = "local:hunyuan-video-1.5-i2v-step-distilled";
+const MINIMAX_H3_MODEL_ID: &str = "local:minimax-h3-ref2va";
+const MINIMAX_H3_MODEL_REVISION: &str = "minimax-h3-ref2va-pruned-int8-convrot";
+const MINIMAX_H3_FILES: &[(&str, u64)] = &[
+    ("diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors", 20_970_379_616),
+    ("vae/minimax_h3_video_vae_fp16.safetensors", 5_207_808_496),
+    ("vae/minimax_h3_audio_vae_fp32.safetensors", 605_254_808),
+    ("loras/minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors", 1_956_193_000),
+    ("small_te/config.json", 1_505),
+    ("small_te/tokenizer.json", 7_032_403),
+    ("small_te/preprocessor_config.json", 390),
+    ("small_te/model.safetensors.index.json", 64_742),
+    ("small_te/model-00001-of-00002.safetensors", 4_967_229_296),
+    ("small_te/model-00002-of-00002.safetensors", 3_908_490_048),
+    ("small_te/mmh3-4b-ClipProj-v3.1.safetensors", 26_256_128),
+];
 const WAN_MODEL_REVISION: &str = "b8fff7315c768468a5333511427288870b2e9635";
 
 fn framepack_download_identity(
@@ -3408,6 +3441,27 @@ fn hunyuan_video_15_index_shards(
         ));
     }
     Ok(shards)
+}
+
+fn resolve_minimax_h3_model(workspace_root: &str) -> MediaResult<(PathBuf, String)> {
+    let model_root = super::model_discovery::resolve_workspace_diffusers_package(
+        workspace_root,
+        "minimax-h3-ref2va",
+        Some("minimax-h3-ref2va"),
+    )?;
+    let mut hasher = Sha256::new();
+    hasher.update(b"machdoch-minimax-h3-ref2va-inventory-v1\0");
+    for &(relative, expected_size) in MINIMAX_H3_FILES {
+        let path = safe_managed_path(&model_root, relative)?;
+        let metadata = fs::symlink_metadata(&path)
+            .map_err(|error| format!("MiniMax H3 is missing {relative}: {error}"))?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() != expected_size {
+            return Err(format!("MiniMax H3 component {relative} is incomplete"));
+        }
+        hasher.update(relative.as_bytes());
+        hasher.update(expected_size.to_le_bytes());
+    }
+    Ok((model_root, format!("{:x}", hasher.finalize())))
 }
 
 fn resolve_hunyuan_video_15_model(workspace_root: &str) -> MediaResult<(PathBuf, String)> {
@@ -3964,6 +4018,10 @@ pub(crate) fn generate_video(
             )
         } else {
             match request.model_id.as_str() {
+                MINIMAX_H3_MODEL_ID => {
+                    let (path, digest) = resolve_minimax_h3_model(&request.workspace_root)?;
+                    ("minimax-h3-ref2va", MINIMAX_H3_MODEL_REVISION, path, digest)
+                }
                 HUNYUAN_VIDEO_15_MODEL_ID => {
                     let (path, digest) = resolve_hunyuan_video_15_model(&request.workspace_root)?;
                     (
@@ -4001,7 +4059,7 @@ pub(crate) fn generate_video(
     if !runtime.ready
         || !runtime.architectures.contains(&architecture.to_string())
         || !runtime.capabilities.contains(&"image-to-video".to_string())
-        || (architecture != "hunyuan-video-1.5-i2v"
+        || (!matches!(architecture, "hunyuan-video-1.5-i2v" | "minimax-h3-ref2va")
             && !runtime
                 .capabilities
                 .contains(&"start-end-to-video".to_string()))
@@ -4074,11 +4132,20 @@ pub(crate) fn generate_video(
         &request.last_frame_asset_id,
         "last",
     )?;
-    if architecture == "hunyuan-video-1.5-i2v" && first_source.digest != last_source.digest {
+    if matches!(architecture, "hunyuan-video-1.5-i2v" | "minimax-h3-ref2va")
+        && first_source.digest != last_source.digest
+    {
         return Err(
-            "HunyuanVideo 1.5 I2V supports one native first-frame reference. Use FramePack or LTX-Video when the first and last references differ."
+            "The selected model uses one image reference. Choose the same image for both frame inputs."
                 .to_string(),
         );
+    }
+    if architecture == "minimax-h3-ref2va"
+        && (request.transparent_background
+            || request.loop_mode != "none"
+            || request.animated_background.is_some())
+    {
+        return Err("MiniMax H3 supports opaque, non-looping output".to_string());
     }
     let addons = resolve_addons(
         paths,
@@ -4152,6 +4219,18 @@ pub(crate) fn generate_video(
         request.resolution.as_str(),
         request.aspect_ratio.as_str(),
     ) {
+        ("minimax-h3-ref2va", "preview-512", "1:1") => (512, 512),
+        ("minimax-h3-ref2va", "preview-512", "16:9") => (512, 288),
+        ("minimax-h3-ref2va", "preview-512", "9:16") => (288, 512),
+        ("minimax-h3-ref2va", "preview-512", "21:9") => (512, 224),
+        ("minimax-h3-ref2va", "quality-640", "1:1") => (576, 576),
+        ("minimax-h3-ref2va", "quality-640", "16:9") => (640, 384),
+        ("minimax-h3-ref2va", "quality-640", "9:16") => (384, 640),
+        ("minimax-h3-ref2va", "quality-640", "21:9") => (640, 288),
+        ("minimax-h3-ref2va", "quality-768", "1:1") => (768, 768),
+        ("minimax-h3-ref2va", "quality-768", "16:9") => (1_024, 576),
+        ("minimax-h3-ref2va", "quality-768", "9:16") => (576, 1_024),
+        ("minimax-h3-ref2va", "quality-768", "21:9") => (1_152, 512),
         ("hunyuan-video-1.5-i2v", "preview-512", "1:1") => (512, 512),
         ("hunyuan-video-1.5-i2v", "preview-512", "16:9") => (672, 384),
         ("hunyuan-video-1.5-i2v", "preview-512", "9:16") => (384, 672),
@@ -4244,7 +4323,7 @@ pub(crate) fn generate_video(
         || response.resolution != request.resolution
         || response.requested_guidance_scale != Some(request.guidance_scale)
         || response.guidance_scale
-            != if matches!(architecture, "ltx-video" | "hunyuan-video-1.5-i2v") {
+            != if matches!(architecture, "ltx-video" | "hunyuan-video-1.5-i2v" | "minimax-h3-ref2va") {
                 1.0
             } else {
                 request.guidance_scale
@@ -4611,6 +4690,7 @@ fn expected_video_conditioning_mode(
         }
         "wan-2.2-ti2v" if same_endpoints => "first-frame",
         "hunyuan-video-1.5-i2v" => "hunyuan-video-1.5-native-first-frame",
+        "minimax-h3-ref2va" => "minimax-h3-reference-image-audio",
         "framepack-i2v" => "framepack-inverted-anti-drifting-first-last",
         "ltx-video" if model_id == LTX_13B_MODEL_ID && resolution != "preview-512" => {
             "ltx-native-first-last-keyframes-multiscale"
@@ -4870,6 +4950,38 @@ time.sleep(60)
         assert!(openpose_controlnet_path(&paths, "stable-diffusion-xl")
             .unwrap()
             .is_none());
+
+        for (profile, architectures) in [
+            ("sd15", &["stable-diffusion-1"][..]),
+            ("sdxl", &["stable-diffusion-xl", "pony"][..]),
+        ] {
+            let directory = root.join("models/controlnet/openpose").join(profile);
+            fs::create_dir_all(&directory).expect("controlnet directory should exist");
+            fs::write(directory.join("config.json"), b"{}").expect("config should be written");
+            fs::write(
+                directory.join("diffusion_pytorch_model.safetensors"),
+                b"weights",
+            )
+            .expect("weights should be written");
+            let expected = fs::canonicalize(&directory).expect("controlnet path should resolve");
+            for architecture in architectures {
+                assert_eq!(
+                    openpose_controlnet_path(&paths, architecture).unwrap(),
+                    Some(expected.clone())
+                );
+            }
+        }
+        for architecture in [
+            "flux-1",
+            "flux-2",
+            "krea-2",
+            "qwen-image-2.1",
+            "stable-diffusion-3",
+        ] {
+            assert!(openpose_controlnet_path(&paths, architecture)
+                .unwrap()
+                .is_none());
+        }
 
         let _ = fs::remove_dir_all(root);
     }

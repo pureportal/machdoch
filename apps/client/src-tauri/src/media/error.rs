@@ -146,7 +146,7 @@ impl MediaError {
             schema_version: 1,
             code,
             category,
-            message: if operation.contains("civitai") {
+            message: if operation.contains("krea_training") || operation.contains("civitai") {
                 sanitize_diagnostic(&diagnostic)
             } else if cause.contains("cannot fit all vectors for") {
                 "Prompt is too long for the selected embeddings. Shorten it or remove an embedding."

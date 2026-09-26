@@ -799,18 +799,23 @@ fn delete_model_data(paths: &MediaRuntimePaths, removal_id: &str) -> MediaResult
             }
         }
     }
-    let last_krea_model: bool = connection
+    let shared_components: Option<String> = connection
         .query_row(
-            "SELECT architecture = 'krea-2' AND NOT EXISTS (
-           SELECT 1 FROM media_models m JOIN media_model_installations i ON i.model_id = m.id
-           WHERE m.architecture = 'krea-2' AND m.id != ?1 AND i.status IN ('installed', 'removing')
-         ) FROM media_models WHERE id = ?1",
+            "SELECT CASE architecture
+               WHEN 'krea-2' THEN 'components/krea-2'
+               WHEN 'qwen-image-2.1' THEN 'components/qwen-image-2.1'
+               END
+             FROM media_models WHERE id = ?1 AND NOT EXISTS (
+               SELECT 1 FROM media_models m JOIN media_model_installations i ON i.model_id = m.id
+               WHERE m.architecture = media_models.architecture AND m.id != ?1
+                 AND i.status IN ('installed', 'removing')
+             )",
             [&model_id],
             |row| row.get(0),
         )
         .map_err(|error| format!("failed to inspect shared model components: {error}"))?;
-    if last_krea_model {
-        let components = safe_relative_path(&models_root, "components/krea-2")?;
+    if let Some(relative_path) = shared_components {
+        let components = safe_relative_path(&models_root, &relative_path)?;
         if components.exists() {
             fs::remove_dir_all(components)
                 .map_err(|error| format!("failed to delete unused model components: {error}"))?;

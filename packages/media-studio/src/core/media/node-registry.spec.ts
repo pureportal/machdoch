@@ -110,14 +110,25 @@ describe("media node registry", () => {
     });
   });
 
-  it("allows an unconnected seed source for runtime-random image generation", () => {
+  it("defaults Seed nodes to random and accepts a fixed value", () => {
     const withSeed = addMediaFlowNode({
       flow: createSimpleFlow(),
       type: "source.seed",
       updatedAt: "2026-07-14T10:00:01.000Z",
     });
+    const seedNode = withSeed.flow.nodes.find((node) => node.type === "source.seed")!;
+    const fixedFlow = updateMediaFlowNodeConfig({
+      flow: withSeed.flow,
+      nodeId: seedNode.id,
+      fieldId: "seed",
+      value: 123_456,
+      updatedAt: "2026-07-14T10:00:02.000Z",
+    });
 
+    expect(seedNode.config.seed).toBeNull();
+    expect(validateMediaFlowNode(seedNode)).toEqual([]);
     expect(validateMediaFlowGraph(withSeed.flow)).toEqual([]);
+    expect(validateMediaFlowNode(fixedFlow.nodes.find((node) => node.id === seedNode.id)!)).toEqual([]);
     expect(getMediaNodeDefinition("source.seed")).toMatchObject({
       outputs: [expect.objectContaining({ id: "seed", required: false })],
     });
