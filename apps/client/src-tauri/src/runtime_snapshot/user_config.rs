@@ -177,7 +177,14 @@ fn merge_typed_user_config(original: Value, typed: &UserConfigFile) -> Result<Va
         &mut target,
         source,
         "speechToText",
-        &["activeProvider", "inputDeviceId"],
+        &[
+            "activeProvider",
+            "inputDeviceId",
+            "keyTerms",
+            "speechContext",
+            "autoTranslateToEnglish",
+            "autoFormat",
+        ],
     );
     merge_known_object_members(
         &mut target,
@@ -438,6 +445,43 @@ mod tests {
             reloaded.internal_task_model.reasoning.as_deref(),
             Some("high")
         );
+    }
+
+    #[test]
+    fn typed_update_persists_speech_processing_settings() {
+        let original = serde_json::json!({
+            "speechToText": {
+                "activeProvider": "openai",
+                "inputDeviceId": null,
+                "futureSetting": "keep-me"
+            }
+        });
+        let mut typed: UserConfigFile =
+            serde_json::from_value(original.clone()).expect("speech settings should parse");
+        typed.speech_to_text.key_terms = vec!["Machdoch".to_string()];
+        typed.speech_to_text.speech_context = Some("Project notes".to_string());
+        typed.speech_to_text.auto_translate_to_english = Some(true);
+        typed.speech_to_text.auto_format = Some(true);
+
+        let merged = merge_typed_user_config(original, &typed).expect("merge should succeed");
+        assert_eq!(merged["speechToText"]["futureSetting"], "keep-me");
+        let reloaded: UserConfigFile =
+            serde_json::from_value(merged).expect("merged settings should reload");
+
+        assert_eq!(
+            reloaded.speech_to_text.active_provider.as_deref(),
+            Some("openai")
+        );
+        assert_eq!(reloaded.speech_to_text.key_terms, vec!["Machdoch"]);
+        assert_eq!(
+            reloaded.speech_to_text.speech_context.as_deref(),
+            Some("Project notes")
+        );
+        assert_eq!(
+            reloaded.speech_to_text.auto_translate_to_english,
+            Some(true)
+        );
+        assert_eq!(reloaded.speech_to_text.auto_format, Some(true));
     }
 
     #[test]

@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { getUserConfigPath } from "../../core/env.js";
 import { withCooperativeFileLock } from "../../core/_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "../../core/_helpers/write-file-atomically.helper.js";
+import { isMediaPoseMap, type MediaPoseMap } from "@machdoch/media-studio/core/media/contracts.js";
 import type {
   ModelProvider,
   ReasoningMode,
@@ -34,10 +35,13 @@ export interface FleetCliPendingTask {
 export interface FleetCliSession {
   id: string;
   title: string;
+  specialKind?: "pose";
+  poseScene?: MediaPoseMap;
   workspace: string;
   provider: ModelProvider;
   model: string;
   mode: RunMode;
+  parallelAgentMode: "disabled" | "read-only" | "machdoch";
   reasoning: ReasoningMode;
   createdAt: number;
   updatedAt: number;
@@ -178,18 +182,24 @@ const parseSession = (value: unknown): FleetCliSession => {
   if (
     !isRecord(value) ||
     !hasOnlyKeys(value, required, [
+      "specialKind",
+      "poseScene",
       "archivedAt",
       "pinnedAt",
       "pendingTask",
       "useWorkspaceMemory",
+      "parallelAgentMode",
     ]) ||
     !boundedString(value.id, 240) ||
     !boundedString(value.title, 12_000) ||
+    (value.specialKind !== undefined && value.specialKind !== "pose") ||
+    (value.poseScene !== undefined && (value.specialKind !== "pose" || !isMediaPoseMap(value.poseScene))) ||
     !boundedString(value.workspace, 12_000) ||
     !boundedString(value.provider, 240) ||
     !isModelProvider(value.provider) ||
     !boundedString(value.model, 240) ||
     !modes.has(value.mode) ||
+    (value.parallelAgentMode !== undefined && !["disabled", "read-only", "machdoch"].includes(String(value.parallelAgentMode))) ||
     !reasoningModes.has(value.reasoning) ||
     !finiteTimestamp(value.createdAt) ||
     !finiteTimestamp(value.updatedAt) ||
@@ -212,10 +222,13 @@ const parseSession = (value: unknown): FleetCliSession => {
   return {
     id: value.id,
     title: value.title,
+    ...(value.specialKind === "pose" ? { specialKind: "pose" as const } : {}),
+    ...(value.specialKind === "pose" && isMediaPoseMap(value.poseScene) ? { poseScene: value.poseScene } : {}),
     workspace: value.workspace,
     provider: value.provider,
     model: value.model,
     mode: value.mode as RunMode,
+    parallelAgentMode: (value.parallelAgentMode ?? "disabled") as FleetCliSession["parallelAgentMode"],
     reasoning: value.reasoning as ReasoningMode,
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,

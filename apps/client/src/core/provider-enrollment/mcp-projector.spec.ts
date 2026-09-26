@@ -70,6 +70,26 @@ describe("MCP projector", () => {
     },
   );
 
+  it("keeps a dedicated Pose chat on the local MCP server", async () => {
+    const root = await mkdtemp(join(tmpdir(), "machdoch-pose-projector-"));
+    roots.push(root);
+    process.env.MACHDOCH_USER_CONFIG_DIR = join(root, "user");
+    const configDirectory = join(root, ".machdoch", "mcp");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(join(configDirectory, "mcp.json"), JSON.stringify({
+      schemaVersion: 1,
+      servers: [{ id: "unrelated", enabled: true, transport: { type: "streamable-http", url: "http://localhost:32123/bb-mcp" } }],
+    }));
+
+    const projection = await projectMcpForProvider("codex-cli", root, {
+      machdochCliLaunch: createLaunch(root),
+      localMcp: { url: "http://127.0.0.1:43125/mcp", token: "runtime-token" },
+      localMcpOnly: true,
+    });
+
+    expect(projection.servers.map((server) => server.canonicalId)).toEqual(["machdoch"]);
+  });
+
   it("uses direct native entries first and a named stdio proxy for field loss", async () => {
     const root = await mkdtemp(join(tmpdir(), "machdoch-projector-"));
     roots.push(root);

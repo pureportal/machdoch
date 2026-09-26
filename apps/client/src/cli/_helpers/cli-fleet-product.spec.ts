@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { productSnapshotSchema } from "@machdoch/fleet-protocol";
@@ -19,6 +19,26 @@ afterEach(async () => {
 });
 
 describe.sequential("Fleet CLI product runtime", () => {
+  it("creates a pose chat and refreshes its scene preview after agent edits", async () => {
+    const root = await mkdtemp(join(tmpdir(), "machdoch-fleet-pose-"));
+    roots.push(root);
+    const configDirectory = join(root, "config");
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", configDirectory);
+    const runtime = await FleetCliProductRuntime.create(join(root, "workspace"));
+    const poseScene = { aspectRatio: "1:1" as const, people: [{ pose: "standing" as const, x: 0.5, y: 0.92, scale: 0.8, mirror: false }] };
+    expect((await runtime.handleRequest({ type: "executeProductCommand", command: { kind: "create-session", specialKind: "pose", poseScene } })).type).toBe("commandAccepted");
+    const first = await runtime.handleRequest({ type: "getProductSnapshot" });
+    if (first.type !== "productSnapshot") throw new Error("Pose chat snapshot was not returned.");
+    expect(first.snapshot.shell?.sessions.find((session) => session.id === first.snapshot.shell?.activeSessionId)?.specialKind).toBe("pose");
+    expect(first.snapshot.shell?.poseSceneSvg).toContain("<svg");
+    const sceneDirectory = join(configDirectory, "pose-scenes");
+    await mkdir(sceneDirectory, { recursive: true });
+    await writeFile(join(sceneDirectory, `${first.snapshot.shell?.activeSessionId}.json`), JSON.stringify({ ...poseScene, people: [...poseScene.people, { pose: "walking", x: 0.7, y: 0.92, scale: 0.8, mirror: false }] }));
+    const updated = await runtime.handleRequest({ type: "getProductSnapshot" });
+    if (updated.type !== "productSnapshot") throw new Error("Updated pose chat snapshot was not returned.");
+    expect(updated.snapshot.shell?.poseSceneSvg?.match(/<line /gu)).toHaveLength(34);
+    await runtime.shutdown();
+  });
   it("drains an accepted task and persists cancellation while rejecting new work at shutdown", async () => {
     const root = await mkdtemp(join(tmpdir(), "machdoch-fleet-shutdown-"));
     roots.push(root);
@@ -159,6 +179,17 @@ describe.sequential("Fleet CLI product runtime", () => {
     expect(activeSessionId).toBeTruthy();
     if (!activeSessionId) return;
 
+    expect(response.snapshot.shell?.composer?.parallelAgentMode).toBe("disabled");
+    expect(await runtime.handleRequest({
+      type: "executeProductCommand",
+      command: {
+        kind: "set-parallel-agent-mode",
+        commandId: "command-parallel-read-only",
+        sessionId: activeSessionId,
+        mode: "read-only",
+      },
+    })).toMatchObject({ type: "commandAccepted" });
+
     await runtime.handleRequest({
       type: "executeProductCommand",
       command: {
@@ -177,12 +208,14 @@ describe.sequential("Fleet CLI product runtime", () => {
         ? updated.snapshot.shell?.composer
         : undefined,
     ).toMatchObject({
+      parallelAgentMode: "read-only",
       workspaceMemoryAvailable: true,
       workspaceMemoryEnabled: false,
     });
     await expect(
       readFile(getFleetCliStatePath(workspace), "utf8"),
     ).resolves.toContain('"useWorkspaceMemory": false');
+    await expect(readFile(getFleetCliStatePath(workspace), "utf8")).resolves.toContain('"parallelAgentMode": "read-only"');
     await runtime.shutdown();
   });
 

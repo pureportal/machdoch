@@ -88,6 +88,7 @@ interface MaterializeCliEnrollmentParams {
   runtimeSystemInstructions: string;
   machdochCliLaunch: MachdochCliLaunch;
   localMcp?: LocalMcpEndpoint;
+  localMcpOnly?: boolean;
 }
 
 interface RenderedEnrollmentFiles {
@@ -995,11 +996,12 @@ export const materializeCliEnrollment = async (
       projectMcpForProvider(params.provider, params.workspaceRoot, {
         machdochCliLaunch: params.machdochCliLaunch,
         ...(params.localMcp ? { localMcp: params.localMcp } : {}),
+        ...(params.localMcpOnly ? { localMcpOnly: true } : {}),
       }),
     ]);
     const instructionPayload = renderInstructionTransportPayload(
       params.resolution.renderedEnvelope,
-      params.resolution.mcpInitializationInstructions,
+      params.localMcpOnly ? [] : params.resolution.mcpInitializationInstructions,
     );
     const systemInstructions = [
       params.runtimeSystemInstructions.trim(),

@@ -31,6 +31,7 @@ import { createShellNetworkToolDefinitions } from "./shell-network-tool-definiti
 import { createWorkspaceAgentPresenceToolDefinition } from "./workspace-agent-presence-tool.js";
 import { validateToolArguments } from "./tool-argument-validation.js";
 import { createWorkflowToolDefinitions } from "./workflow-tool-definitions.js";
+import { createPoseSceneToolDefinitions } from "./pose-scene-tool-definitions.js";
 
 const READ_ONLY_EFFECTS: ReadonlySet<ToolCallEffect> = new Set([
   "read",
@@ -88,6 +89,9 @@ export const createToolDefinitions = (
   memory: ConversationMemoryRuntime,
   uiControl?: UiControlRuntimeInfo,
 ): AgentToolDefinition[] => {
+  if (memory.sourceSessionId && Object.hasOwn(memory, "poseScene")) {
+    return createPoseSceneToolDefinitions(memory);
+  }
   const definitions = [
     ...createFilesystemToolDefinitions(),
     ...createGitToolDefinitions(),

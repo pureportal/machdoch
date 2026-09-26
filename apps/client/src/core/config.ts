@@ -198,6 +198,24 @@ export const saveWorkspaceMemoryOverride = async (
   });
 };
 
+export const saveWorkspaceAdaptiveControllerOverride = async (
+  workspaceRoot: string,
+  enabled: boolean | null,
+): Promise<string> => {
+  return saveWorkspaceConfigFile(workspaceRoot, {
+    adaptiveControllerEnabled: enabled,
+  });
+};
+
+export const saveWorkspaceReasoningBankEnabled = async (
+  workspaceRoot: string,
+  enabled: boolean,
+): Promise<string> => {
+  return saveWorkspaceConfigFile(workspaceRoot, {
+    reasoningBankEnabled: enabled,
+  });
+};
+
 export const saveWorkspaceReasoningMode = async (
   workspaceRoot: string,
   reasoning: string,

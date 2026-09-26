@@ -41,6 +41,9 @@ import {
   type PreparedConversationPromptContext,
 } from "./_helpers/conversation-prompt-context.js";
 import { maybeExecuteExternalAgentProviderTask } from "./_helpers/external-agent-provider.js";
+import { createParallelAgentSessionTool } from "./_helpers/parallel-agent-sessions.js";
+import { finalizePoseSceneResult } from "./_helpers/pose-scene-result.js";
+import { resolveAdaptiveExecutionPlan } from "./adaptive-controller.js";
 import { isAgentCliProvider } from "./_helpers/agent-cli-providers.js";
 import { createProviderAdapter } from "./_helpers/provider-adapters.js";
 import { resolveReviewModelRuntimeConfig } from "./review-model.js";
@@ -2277,6 +2280,7 @@ const runModelDrivenLoop = async (
 
   if (
     resultProtocol ||
+    Object.hasOwn(conversationContext.memory, "poseScene") ||
     config.mode !== "machdoch" ||
     cycleResult.result.status !== "executed"
   ) {
@@ -2420,39 +2424,116 @@ export const maybeExecuteModelDrivenTask = async (
   const instructionReceipts = params.instructionDeliveryReceipts ?? [];
   let instructionPlan = params.instructionDeliveryPlan;
   try {
+    const adaptivePlan = await resolveAdaptiveExecutionPlan(
+      params.task,
+      params.config,
+      params.conversationContext,
+    );
+    const executionConfig = adaptivePlan
+      ? {
+          ...params.config,
+          reasoning: adaptivePlan.reasoning,
+          agentLimits: {
+            executorTurns: adaptivePlan.executorTurns,
+            autopilotExecutorIterations: adaptivePlan.autopilotIterations,
+          },
+        }
+      : params.config;
     if (instructionResolution && instructionPlan === undefined) {
       instructionPlan = await createInstructionDeliveryPlanForRuntime(
         instructionResolution,
         {
-          workspaceRoot: params.config.workspaceRoot,
-          reasoning: params.config.reasoning,
+          workspaceRoot: executionConfig.workspaceRoot,
+          reasoning: executionConfig.reasoning,
         },
       );
     }
     const preparedConversationContext = await prepareConversationPromptContext(
       params.task,
-      params.config,
+      executionConfig,
       params.conversationContext,
       params.signal,
+      adaptivePlan,
     );
 
     if (isAgentCliProvider(params.config.provider) && !params.modelAdapter) {
-      return await maybeExecuteExternalAgentProviderTask({
+      const result = await maybeExecuteExternalAgentProviderTask({
         ...params,
+        config: executionConfig,
         preparedConversationContext: preparedConversationContext,
       });
+      return result
+        ? {
+            ...finalizePoseSceneResult(
+              result,
+              preparedConversationContext.memory,
+            ),
+            ...(preparedConversationContext.reasoningBankRetrievedIds
+              ? {
+                  metadata: {
+                    ...result.metadata,
+                    reasoningBankRetrievedIds:
+                      preparedConversationContext.reasoningBankRetrievedIds,
+                  },
+                }
+              : {}),
+          }
+        : undefined;
     }
 
-    return await runModelDrivenLoop(
+    const parallelMode =
+      params.conversationContext?.parallelAgentMode ?? "disabled";
+    const parallelTool =
+      parallelMode !== "disabled" &&
+      !executionConfig.offline &&
+      !isAgentCliProvider(executionConfig.provider) &&
+      executionConfig.providerAvailability.some(
+        (entry) =>
+          entry.provider === executionConfig.provider && entry.configured,
+      ) &&
+      !params.resultProtocol &&
+      !params.conversationContext?.poseScene &&
+      !params.additionalToolDefinitions?.some(
+        (tool) => tool.spec.name === "run_parallel_agents",
+      )
+        ? createParallelAgentSessionTool({
+            config: executionConfig,
+            task: params.task,
+            taskContext: params.taskContext,
+            mode: parallelMode,
+            ...(adaptivePlan ? { maxWorkers: adaptivePlan.maxWorkers } : {}),
+            ...(params.signal ? { signal: params.signal } : {}),
+            ...(params.onStateChange || params.onStreamActivity
+              ? {
+                  onProgress: (timelineEvent: ProgressTimelineEvent) => {
+                    params.onStreamActivity?.();
+                    return params.onStateChange?.({
+                      task: params.task,
+                      mode: executionConfig.mode,
+                      state: "executing",
+                      message: `${timelineEvent.label} ${timelineEvent.phase}${timelineEvent.detail ? `: ${timelineEvent.detail}` : "."}`,
+                      executedTools: [],
+                      outputSections: [],
+                      cancellable: true,
+                      timelineEvent,
+                    });
+                  },
+                }
+              : {}),
+          })
+        : undefined;
+    const result = await runModelDrivenLoop(
       params.task,
-      params.config,
+      executionConfig,
       params.taskContext,
       params.contextSections,
       preparedConversationContext,
       params.imageInputs,
       params.modelAdapter,
       params.monitorModelAdapter,
-      params.additionalToolDefinitions,
+      parallelTool
+        ? [...(params.additionalToolDefinitions ?? []), parallelTool.definition]
+        : params.additionalToolDefinitions,
       params.systemPromptSections,
       params.structuredOutput,
       params.resultProtocol,
@@ -2464,6 +2545,44 @@ export const maybeExecuteModelDrivenTask = async (
       instructionPlan,
       instructionReceipts,
     );
+    const parallelWorkerFailure = parallelTool?.hasWorkerFailure() ?? false;
+    return {
+      ...finalizePoseSceneResult(result, preparedConversationContext.memory),
+      ...(parallelWorkerFailure && result.status === "executed"
+        ? {
+            status: "failed" as const,
+            summary:
+              "Parallel work failed. Review the worker results and workspace changes.",
+            reason:
+              "A parallel worker failed. Review the worker results and workspace changes before retrying.",
+            ...(result.response
+              ? {
+                  response: {
+                    ...result.response,
+                    markdown: `${result.response.markdown}\n\nParallel work failed. Review the worker results and workspace changes.`,
+                  },
+                }
+              : {}),
+          }
+        : {}),
+      ...(parallelMode !== "disabled" ||
+      preparedConversationContext.reasoningBankRetrievedIds
+        ? {
+            metadata: {
+              ...result.metadata,
+              ...(parallelMode !== "disabled"
+                ? { parallelAgentMode: parallelMode, parallelWorkerFailure }
+                : {}),
+              ...(preparedConversationContext.reasoningBankRetrievedIds
+                ? {
+                    reasoningBankRetrievedIds:
+                      preparedConversationContext.reasoningBankRetrievedIds,
+                  }
+                : {}),
+            },
+          }
+        : {}),
+    };
   } catch (error) {
     const message = getRuntimeErrorMessage(error);
     const summary = createModelRuntimeFailureSummary(params.config, error);

@@ -80,6 +80,8 @@ mod tests {
             .expect("snapshot request should serialize");
         let command = serde_json::to_value(HostRequest::ExecuteProductCommand {
             command: ProductCommand {
+                special_kind: None,
+                pose_scene: None,
                 name: None,
                 repository: None,
                 branch: None,

@@ -115,6 +115,7 @@ const webSearchProviders = getEnum("WebSearchProvider");
 const userWebSearchProviders = getEnum("UserWebSearchProvider");
 const audioProviders = getEnum("AudioProvider");
 const voiceProviders = getEnum("VoiceAiProvider");
+const speechToTextProviders = getEnum("SpeechToTextProvider");
 const runtimeMemoryScopes = getEnum("RuntimeMemoryScope");
 const runtimeMemoryKinds = getEnum("RuntimeMemoryKind");
 const userReviewModelModes = getEnum("UserReviewModelMode");
@@ -210,7 +211,8 @@ export type AudioProvider = (typeof USER_AUDIO_AI_PROVIDERS)[number];
 
 export const VALID_AUDIO_AI_PROVIDERS = ${tsReadonlyArray(voiceProviders)} as const;
 export type VoiceAiProvider = (typeof VALID_AUDIO_AI_PROVIDERS)[number];
-export type SpeechToTextProvider = VoiceAiProvider;
+export const VALID_SPEECH_TO_TEXT_PROVIDERS = ${tsReadonlyArray(speechToTextProviders)} as const;
+export type SpeechToTextProvider = (typeof VALID_SPEECH_TO_TEXT_PROVIDERS)[number];
 
 export const RUNTIME_MEMORY_SCOPES = ${tsReadonlyArray(runtimeMemoryScopes)} as const;
 export type RuntimeMemoryScope = (typeof RUNTIME_MEMORY_SCOPES)[number];
@@ -324,6 +326,8 @@ export interface WorkspaceConfigFile {
   agentLimits?: RuntimeAgentLimitOverrides;
   compatibility?: WorkspaceCompatibilityConfig;
   workspaceMemoryEnabled?: boolean | null;
+  reasoningBankEnabled?: boolean;
+  adaptiveControllerEnabled?: boolean | null;
 }
 
 export interface ProviderAvailability {
@@ -338,6 +342,11 @@ export interface WebSearchProviderAvailability {
 
 export interface AudioProviderAvailability {
   provider: AudioProvider;
+  configured: boolean;
+}
+
+export interface SpeechToTextProviderAvailability {
+  provider: SpeechToTextProvider;
   configured: boolean;
 }
 
@@ -372,7 +381,11 @@ export interface UserVoiceSettings {
 export interface UserSpeechToTextSettings {
   activeProvider: SpeechToTextProvider;
   inputDeviceId: string | null;
-  providerAvailability: AudioProviderAvailability[];
+  keyTerms: string[];
+  speechContext: string;
+  autoTranslateToEnglish: boolean;
+  autoFormat: boolean;
+  providerAvailability: SpeechToTextProviderAvailability[];
 }
 
 export interface RuntimeConfig {
@@ -410,6 +423,8 @@ export interface RuntimeSnapshot extends Omit<RuntimeConfig, "agentLimits" | "co
   defaultReasoningMode?: ReasoningExecutionMode;
   defaultContextWindow?: ContextWindow;
   workspaceMemoryEnabled: boolean;
+  reasoningBankEnabled?: boolean;
+  adaptiveControllerOverride?: boolean | null;
   workspaceMemoryOverride: boolean | null;
   contextWindow?: ContextWindow;
   agentLimits: RuntimeAgentLimits;
@@ -432,6 +447,10 @@ export interface UserVoiceConfigFile {
 export interface UserSpeechToTextConfigFile {
   activeProvider?: SpeechToTextProvider;
   inputDeviceId?: string;
+  keyTerms?: string[];
+  speechContext?: string;
+  autoTranslateToEnglish?: boolean;
+  autoFormat?: boolean;
 }
 
 export interface RuntimeMemoryEntry {
@@ -539,6 +558,7 @@ export interface UserDesktopSettings {
   assistantBubbleHideWhenFullscreen: boolean;
   assistantBubbleTemporarilyHideSeconds: number;
   aiContextMaxMessages: number;
+  adaptiveControllerEnabled: boolean;
   chatIdleTimeoutMinutes: number;
   inactiveSessionArchiveDays: number;
   archivedSessionRetentionDays: number;
@@ -620,6 +640,7 @@ pub const USER_WEB_SEARCH_PROVIDERS: [&str; ${userWebSearchProviders.length}] = 
 pub const USER_AUDIO_AI_PROVIDERS: [&str; ${audioProviders.length}] = ${rustStringArray(audioProviders)};
 pub const VALID_WEB_SEARCH_PROVIDERS: [&str; ${webSearchProviders.length}] = ${rustStringArray(webSearchProviders)};
 pub const VALID_AUDIO_AI_PROVIDERS: [&str; ${voiceProviders.length}] = ${rustStringArray(voiceProviders)};
+pub const VALID_SPEECH_TO_TEXT_PROVIDERS: [&str; ${speechToTextProviders.length}] = ${rustStringArray(speechToTextProviders)};
 pub const USER_REVIEW_MODEL_MODES: [&str; ${userReviewModelModes.length}] = ${rustStringArray(userReviewModelModes)};
 pub const RUNTIME_ENV_KEYS: [&str; ${runtimeEnvKeys.length}] = ${rustStringArray(runtimeEnvKeys)};
 pub const PROVIDER_ENV_KEYS: [(&str, &str); ${Object.keys(providerEnvKeys).length}] = ${rustPairs(providerEnvKeys)};

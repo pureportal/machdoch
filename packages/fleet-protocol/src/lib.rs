@@ -776,6 +776,10 @@ pub enum HostErrorCode {
 pub struct ProductCommand {
     pub kind: ProductCommandKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub special_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pose_scene: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repository: Option<String>,
@@ -877,6 +881,7 @@ pub enum ProductCommandKind {
     UpdateDraft,
     SetSessionModel,
     SetSessionMode,
+    SetParallelAgentMode,
     SetSessionReasoning,
     SetSessionWorkspace,
     ClearSessionWorkspace,
@@ -910,6 +915,10 @@ pub enum ProductCommandKind {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RawProductCommand {
+    #[serde(default)]
+    special_kind: Option<String>,
+    #[serde(default)]
+    pose_scene: Option<Value>,
     kind: ProductCommandKind,
     #[serde(default)]
     name: Option<String>,
@@ -1000,6 +1009,8 @@ impl<'de> Deserialize<'de> for ProductCommand {
         let raw = RawProductCommand::deserialize(payload).map_err(D::Error::custom)?;
         let mut command = Self {
             kind: raw.kind,
+            special_kind: raw.special_kind,
+            pose_scene: raw.pose_scene,
             name: raw.name,
             repository: raw.repository,
             branch: raw.branch,
@@ -1178,7 +1189,7 @@ impl ProductCommand {
                 ("provider", self.provider.is_some()),
                 ("model", self.model.is_some()),
             ]),
-            ProductCommandKind::SetSessionMode => required.extend([
+            ProductCommandKind::SetSessionMode | ProductCommandKind::SetParallelAgentMode => required.extend([
                 ("sessionId", self.session_id.is_some()),
                 ("mode", self.mode.is_some()),
             ]),
@@ -1315,6 +1326,11 @@ impl ProductCommand {
             }
             ProductCommandKind::CreateSession => {
                 self.workspace.as_deref().is_none_or(valid_workspace)
+                    && self.special_kind.as_deref().is_none_or(|kind| kind == "pose")
+                    && (self.pose_scene.is_none() || self.special_kind.as_deref() == Some("pose"))
+                    && self.pose_scene.as_ref().is_none_or(|scene| {
+                        scene.is_object() && scene.to_string().len() <= 24_000
+                    })
             }
             ProductCommandKind::ActivateSession
             | ProductCommandKind::ArchiveSession
@@ -1347,6 +1363,10 @@ impl ProductCommand {
             }
             ProductCommandKind::SetSessionMode => {
                 valid_identifier(self.session_id.as_deref()) && valid_mode(self.mode.as_deref())
+            }
+            ProductCommandKind::SetParallelAgentMode => {
+                valid_identifier(self.session_id.as_deref())
+                    && valid_parallel_agent_mode(self.mode.as_deref())
             }
             ProductCommandKind::SetSessionReasoning => {
                 valid_identifier(self.session_id.as_deref())
@@ -1542,6 +1562,10 @@ fn valid_mode(value: Option<&str>) -> bool {
     matches!(value, Some("ask" | "machdoch"))
 }
 
+fn valid_parallel_agent_mode(value: Option<&str>) -> bool {
+    matches!(value, Some("disabled" | "read-only" | "machdoch"))
+}
+
 fn valid_reasoning(value: Option<&str>) -> bool {
     matches!(
         value,
@@ -1616,7 +1640,7 @@ impl ProductCommandKind {
                 "promptEnhancementMode",
                 "interviewEnabled",
             ],
-            Self::CreateSession => &["kind", "commandId", "workspace"],
+            Self::CreateSession => &["kind", "commandId", "workspace", "specialKind", "poseScene"],
             Self::ActivateSession
             | Self::ArchiveSession
             | Self::PinSession
@@ -1633,6 +1657,7 @@ impl ProductCommandKind {
             Self::UpdateDraft => &["kind", "commandId", "sessionId", "prompt"],
             Self::SetSessionModel => &["kind", "commandId", "sessionId", "provider", "model"],
             Self::SetSessionMode => &["kind", "commandId", "sessionId", "mode"],
+            Self::SetParallelAgentMode => &["kind", "commandId", "sessionId", "mode"],
             Self::SetSessionReasoning => &["kind", "commandId", "sessionId", "reasoning"],
             Self::SetSessionWorkspace => &["kind", "commandId", "sessionId", "workspace"],
             Self::SetPromptEnhancementMode => {
@@ -1723,6 +1748,7 @@ impl ProductCommandKind {
             Self::UpdateDraft => "update-draft",
             Self::SetSessionModel => "set-session-model",
             Self::SetSessionMode => "set-session-mode",
+            Self::SetParallelAgentMode => "set-parallel-agent-mode",
             Self::SetSessionReasoning => "set-session-reasoning",
             Self::SetSessionWorkspace => "set-session-workspace",
             Self::ClearSessionWorkspace => "clear-session-workspace",
@@ -1879,6 +1905,8 @@ mod tests {
 
     fn cancel_command() -> ProductCommand {
         ProductCommand {
+            special_kind: None,
+            pose_scene: None,
             name: None,
             repository: None,
             branch: None,
@@ -1933,6 +1961,11 @@ mod tests {
     fn command_payload_with_all_fields(kind: &str) -> Value {
         serde_json::json!({
             "kind": kind,
+            "specialKind": "pose",
+            "poseScene": {
+                "aspectRatio": "1:1",
+                "people": [{"pose": "standing", "x": 0.5, "y": 0.92, "scale": 0.8, "mirror": false}]
+            },
             "commandId": "command-1",
             "taskId": "task-1",
             "sessionId": "session-1",
@@ -2235,6 +2268,7 @@ mod tests {
             ("update-draft", &["sessionId", "prompt"][..]),
             ("set-session-model", &["sessionId", "provider", "model"][..]),
             ("set-session-mode", &["sessionId", "mode"][..]),
+            ("set-parallel-agent-mode", &["sessionId", "mode"][..]),
             ("set-session-reasoning", &["sessionId", "reasoning"][..]),
             ("set-session-workspace", &["sessionId", "workspace"][..]),
             ("clear-session-workspace", &["sessionId"][..]),
@@ -2323,6 +2357,7 @@ mod tests {
             "update-draft",
             "set-session-model",
             "set-session-mode",
+            "set-parallel-agent-mode",
             "set-session-reasoning",
             "set-session-workspace",
             "clear-session-workspace",

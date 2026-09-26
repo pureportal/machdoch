@@ -13,6 +13,7 @@ fn settings(shortcut: &str) -> UserDesktopSettings {
         assistant_bubble_hide_when_fullscreen: false,
         assistant_bubble_temporarily_hide_seconds: 60,
         ai_context_max_messages: 20,
+        adaptive_controller_enabled: true,
         chat_idle_timeout_minutes: 10,
         inactive_session_archive_days: 7,
         archived_session_retention_days: 30,

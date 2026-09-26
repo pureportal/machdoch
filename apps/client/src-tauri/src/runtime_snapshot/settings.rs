@@ -350,6 +350,7 @@ pub(super) fn normalize_user_desktop_settings_input(
             settings.assistant_bubble_temporarily_hide_seconds,
         ),
         ai_context_max_messages: clamp_ai_context_message_limit(settings.ai_context_max_messages),
+        adaptive_controller_enabled: settings.adaptive_controller_enabled,
         chat_idle_timeout_minutes: settings.chat_idle_timeout_minutes.clamp(
             MIN_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
             MAX_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,

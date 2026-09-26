@@ -15,7 +15,7 @@ use crate::runtime_contract_generated::{
     AGENT_CLI_PROVIDERS, DEFAULT_MODEL_BY_PROVIDER, DEFAULT_MODEL_PROVIDER,
     MAX_CONTEXT_WINDOW_TOKENS, MIN_CONTEXT_WINDOW_TOKENS, PROVIDER_ENV_KEYS, REASONING_MODES,
     USER_AUDIO_AI_PROVIDERS, VALID_AUDIO_AI_PROVIDERS, VALID_MODEL_PROVIDERS,
-    VALID_WEB_SEARCH_PROVIDERS, WEB_SEARCH_ENV_KEYS,
+    VALID_SPEECH_TO_TEXT_PROVIDERS, VALID_WEB_SEARCH_PROVIDERS, WEB_SEARCH_ENV_KEYS,
 };
 
 fn normalize_context_window(value: &ContextWindow) -> Result<ContextWindow, String> {
@@ -211,6 +211,23 @@ pub(super) fn get_audio_provider_availability(
             })
         })
         .collect()
+}
+
+pub(super) fn get_speech_to_text_provider_availability(
+    env: &HashMap<String, String>,
+) -> Vec<AudioProviderAvailability> {
+    let mut availability = get_audio_provider_availability(env);
+    availability.push(AudioProviderAvailability {
+        provider: "whisper".to_string(),
+        configured: true,
+    });
+    availability
+}
+
+pub(super) fn resolve_speech_to_text_active_provider(configured_provider: Option<&str>) -> String {
+    normalize_optional_string(configured_provider)
+        .filter(|provider| VALID_SPEECH_TO_TEXT_PROVIDERS.contains(&provider.as_str()))
+        .unwrap_or_else(|| "none".to_string())
 }
 
 pub(super) fn resolve_audio_active_provider(configured_provider: Option<&str>) -> String {
@@ -427,7 +444,9 @@ pub(super) fn collect_runtime_snapshot(workspace_root: &str) -> Result<RuntimeSn
         default_reasoning_mode,
         default_context_window,
         workspace_memory_enabled,
+        reasoning_bank_enabled: config.reasoning_bank_enabled.unwrap_or(true),
         workspace_memory_override,
+        adaptive_controller_override: config.adaptive_controller_enabled,
         mode,
         provider,
         model,
@@ -466,6 +485,28 @@ mod workspace_memory_tests {
         assert!(!resolve_workspace_memory_enabled(Some(false), None));
         assert!(resolve_workspace_memory_enabled(Some(true), None));
         assert!(resolve_workspace_memory_enabled(None, None));
+    }
+}
+
+#[cfg(test)]
+mod speech_to_text_tests {
+    use super::{
+        get_speech_to_text_provider_availability, resolve_audio_active_provider,
+        resolve_speech_to_text_active_provider,
+    };
+    use std::collections::HashMap;
+
+    #[test]
+    fn bundled_whisper_is_available_only_for_speech_input() {
+        let availability = get_speech_to_text_provider_availability(&HashMap::new());
+        assert!(availability
+            .iter()
+            .any(|entry| entry.provider == "whisper" && entry.configured));
+        assert_eq!(
+            resolve_speech_to_text_active_provider(Some("whisper")),
+            "whisper"
+        );
+        assert_eq!(resolve_audio_active_provider(Some("whisper")), "none");
     }
 }
 

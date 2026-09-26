@@ -32,6 +32,7 @@ import {
   maybeExecuteModelDrivenTask,
 } from "./agent-runtime.js";
 import { consolidateTaskExecutionMemory } from "./memory-consolidation.js";
+import { consolidateTaskReasoning } from "./reasoning-bank-consolidation.js";
 import { runWithTaskModelUsageRecording } from "./model-usage.js";
 import { resolveTaskContext } from "./task-context.js";
 import { runWithWorkspaceAgentPresence } from "./_helpers/workspace-agent-presence.js";
@@ -676,6 +677,27 @@ export interface TaskExecutionController {
   execute(): Promise<TaskExecutionResult>;
 }
 
+const consolidateTaskLearnings = async (
+  task: string,
+  config: RuntimeConfig,
+  result: TaskExecutionResult,
+  conversationContext: TaskExecutionOptions["conversationContext"],
+  signal: AbortSignal,
+): Promise<TaskExecutionResult> => {
+  const [memoryResult, reasoningResult] = await Promise.all([
+    consolidateTaskExecutionMemory(task, config, result, conversationContext, {
+      signal,
+    }),
+    consolidateTaskReasoning(task, config, result, conversationContext, {
+      signal,
+    }),
+  ]);
+  return {
+    ...memoryResult,
+    metadata: { ...memoryResult.metadata, ...reasoningResult.metadata },
+  };
+};
+
 export const createTaskExecutionController = (
   task: string,
   config: RuntimeConfig,
@@ -714,17 +736,15 @@ export const createTaskExecutionController = (
             createActivityAwareExecutionOptions(options, managedTimeout),
           );
           const fileChanges = await fileChangeCapture?.finish();
-          const consolidatedResult = await consolidateTaskExecutionMemory(
+          const consolidatedResult = await consolidateTaskLearnings(
             task,
             config,
-            result,
+            fileChanges ? { ...result, fileChanges } : result,
             options.conversationContext,
-            { signal: managedTimeout.signal },
+            managedTimeout.signal,
           );
 
-          return fileChanges
-            ? { ...consolidatedResult, fileChanges }
-            : consolidatedResult;
+          return consolidatedResult;
         });
       } finally {
         await fileChangeCapture?.dispose();
@@ -765,12 +785,12 @@ const executeTaskWithoutWorkspacePresence = async (
         createActivityAwareExecutionOptions(options, managedTimeout),
       );
 
-      return await consolidateTaskExecutionMemory(
+      return await consolidateTaskLearnings(
         task,
         config,
         result,
         options.conversationContext,
-        { signal: managedTimeout.signal },
+        managedTimeout.signal,
       );
     });
   } finally {

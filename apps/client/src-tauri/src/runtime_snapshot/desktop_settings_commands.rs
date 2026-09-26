@@ -13,6 +13,7 @@ use super::{
     user_config::{load_user_config_file, update_user_config_file},
 };
 use crate::runtime_contract_generated::{
+    DEFAULT_DESKTOP_SETTING_ADAPTIVE_CONTROLLER_ENABLED,
     DEFAULT_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
     DEFAULT_DESKTOP_SETTING_ALWAYS_RUN_AS_ADMINISTRATOR,
     DEFAULT_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
@@ -102,6 +103,10 @@ pub(crate) fn load_user_desktop_settings<R: tauri::Runtime, M: tauri::Manager<R>
                 .ai_context_max_messages
                 .unwrap_or(DEFAULT_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES),
         ),
+        adaptive_controller_enabled: config
+            .desktop
+            .adaptive_controller_enabled
+            .unwrap_or(DEFAULT_DESKTOP_SETTING_ADAPTIVE_CONTROLLER_ENABLED),
         chat_idle_timeout_minutes: config
             .desktop
             .chat_idle_timeout_minutes
@@ -161,6 +166,8 @@ pub(super) fn save_user_desktop_settings_value<R: tauri::Runtime, M: tauri::Mana
         config.desktop.assistant_bubble_temporarily_hide_seconds =
             Some(normalized_settings.assistant_bubble_temporarily_hide_seconds);
         config.desktop.ai_context_max_messages = Some(normalized_settings.ai_context_max_messages);
+        config.desktop.adaptive_controller_enabled =
+            Some(normalized_settings.adaptive_controller_enabled);
         config.desktop.chat_idle_timeout_minutes =
             Some(normalized_settings.chat_idle_timeout_minutes);
         config.desktop.inactive_session_archive_days =

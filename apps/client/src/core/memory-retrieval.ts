@@ -68,6 +68,7 @@ export interface MemoryRetrievalResult {
 export interface MemoryRetrievalOptions {
   maxEntries?: number;
   maxCharacters?: number;
+  scopeQuotas?: Record<ConversationMemoryScope, number>;
   minimumScore?: number;
   now?: number;
 }
@@ -239,7 +240,8 @@ export const retrieveConversationMemory = (
 
     if (
       selected.length >= maxEntries ||
-      selectedByScope[scope] >= SCOPE_QUOTAS[scope] ||
+      selectedByScope[scope] >=
+        (options.scopeQuotas?.[scope] ?? SCOPE_QUOTAS[scope]) ||
       nextCharacters > maxCharacters
     ) {
       continue;

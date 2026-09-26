@@ -44,7 +44,8 @@ export type AudioProvider = (typeof USER_AUDIO_AI_PROVIDERS)[number];
 
 export const VALID_AUDIO_AI_PROVIDERS = ["none", "openai", "google"] as const;
 export type VoiceAiProvider = (typeof VALID_AUDIO_AI_PROVIDERS)[number];
-export type SpeechToTextProvider = VoiceAiProvider;
+export const VALID_SPEECH_TO_TEXT_PROVIDERS = ["none", "openai", "google", "whisper"] as const;
+export type SpeechToTextProvider = (typeof VALID_SPEECH_TO_TEXT_PROVIDERS)[number];
 
 export const RUNTIME_MEMORY_SCOPES = ["session", "workspace", "global"] as const;
 export type RuntimeMemoryScope = (typeof RUNTIME_MEMORY_SCOPES)[number];
@@ -151,6 +152,7 @@ export const DEFAULT_USER_DESKTOP_SETTINGS = {
   "assistantBubbleHideWhenFullscreen": true,
   "assistantBubbleTemporarilyHideSeconds": 6,
   "aiContextMaxMessages": 60,
+  "adaptiveControllerEnabled": true,
   "chatIdleTimeoutMinutes": 20,
   "inactiveSessionArchiveDays": 7,
   "archivedSessionRetentionDays": 7,
@@ -276,6 +278,8 @@ export interface WorkspaceConfigFile {
   agentLimits?: RuntimeAgentLimitOverrides;
   compatibility?: WorkspaceCompatibilityConfig;
   workspaceMemoryEnabled?: boolean | null;
+  reasoningBankEnabled?: boolean;
+  adaptiveControllerEnabled?: boolean | null;
 }
 
 export interface ProviderAvailability {
@@ -290,6 +294,11 @@ export interface WebSearchProviderAvailability {
 
 export interface AudioProviderAvailability {
   provider: AudioProvider;
+  configured: boolean;
+}
+
+export interface SpeechToTextProviderAvailability {
+  provider: SpeechToTextProvider;
   configured: boolean;
 }
 
@@ -324,7 +333,11 @@ export interface UserVoiceSettings {
 export interface UserSpeechToTextSettings {
   activeProvider: SpeechToTextProvider;
   inputDeviceId: string | null;
-  providerAvailability: AudioProviderAvailability[];
+  keyTerms: string[];
+  speechContext: string;
+  autoTranslateToEnglish: boolean;
+  autoFormat: boolean;
+  providerAvailability: SpeechToTextProviderAvailability[];
 }
 
 export interface RuntimeConfig {
@@ -362,6 +375,8 @@ export interface RuntimeSnapshot extends Omit<RuntimeConfig, "agentLimits" | "co
   defaultReasoningMode?: ReasoningExecutionMode;
   defaultContextWindow?: ContextWindow;
   workspaceMemoryEnabled: boolean;
+  reasoningBankEnabled?: boolean;
+  adaptiveControllerOverride?: boolean | null;
   workspaceMemoryOverride: boolean | null;
   contextWindow?: ContextWindow;
   agentLimits: RuntimeAgentLimits;
@@ -384,6 +399,10 @@ export interface UserVoiceConfigFile {
 export interface UserSpeechToTextConfigFile {
   activeProvider?: SpeechToTextProvider;
   inputDeviceId?: string;
+  keyTerms?: string[];
+  speechContext?: string;
+  autoTranslateToEnglish?: boolean;
+  autoFormat?: boolean;
 }
 
 export interface RuntimeMemoryEntry {
@@ -491,6 +510,7 @@ export interface UserDesktopSettings {
   assistantBubbleHideWhenFullscreen: boolean;
   assistantBubbleTemporarilyHideSeconds: number;
   aiContextMaxMessages: number;
+  adaptiveControllerEnabled: boolean;
   chatIdleTimeoutMinutes: number;
   inactiveSessionArchiveDays: number;
   archivedSessionRetentionDays: number;

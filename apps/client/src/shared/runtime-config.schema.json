@@ -124,6 +124,10 @@
       "type": "string",
       "enum": ["none", "openai", "google"]
     },
+    "SpeechToTextProvider": {
+      "type": "string",
+      "enum": ["none", "openai", "google", "whisper"]
+    },
     "RuntimeMemoryScope": {
       "type": "string",
       "enum": ["session", "workspace", "global"]
@@ -219,6 +223,13 @@
         },
         "workspaceMemoryEnabled": {
           "type": ["boolean", "null"]
+        },
+        "reasoningBankEnabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "adaptiveControllerEnabled": {
+          "type": ["boolean", "null"]
         }
       }
     },
@@ -255,6 +266,19 @@
       "properties": {
         "provider": {
           "$ref": "#/$defs/AudioProvider"
+        },
+        "configured": {
+          "type": "boolean"
+        }
+      }
+    },
+    "SpeechToTextProviderAvailability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "configured"],
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/SpeechToTextProvider"
         },
         "configured": {
           "type": "boolean"
@@ -452,10 +476,25 @@
       "additionalProperties": false,
       "properties": {
         "activeProvider": {
-          "$ref": "#/$defs/VoiceAiProvider"
+          "$ref": "#/$defs/SpeechToTextProvider"
         },
         "inputDeviceId": {
           "type": "string"
+        },
+        "keyTerms": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "type": "string", "minLength": 1, "maxLength": 80 }
+        },
+        "speechContext": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "autoTranslateToEnglish": {
+          "type": "boolean"
+        },
+        "autoFormat": {
+          "type": "boolean"
         }
       }
     },
@@ -724,6 +763,7 @@
         "assistantBubbleHideWhenFullscreen",
         "assistantBubbleTemporarilyHideSeconds",
         "aiContextMaxMessages",
+        "adaptiveControllerEnabled",
         "chatIdleTimeoutMinutes",
         "inactiveSessionArchiveDays",
         "archivedSessionRetentionDays",
@@ -768,6 +808,10 @@
           "minimum": 1,
           "maximum": 200,
           "default": 60
+        },
+        "adaptiveControllerEnabled": {
+          "type": "boolean",
+          "default": true
         },
         "chatIdleTimeoutMinutes": {
           "type": "integer",
@@ -1056,7 +1100,13 @@
         "workspaceMemoryEnabled": {
           "type": "boolean"
         },
+        "reasoningBankEnabled": {
+          "type": "boolean"
+        },
         "workspaceMemoryOverride": {
+          "type": ["boolean", "null"]
+        },
+        "adaptiveControllerOverride": {
           "type": ["boolean", "null"]
         },
         "mode": {

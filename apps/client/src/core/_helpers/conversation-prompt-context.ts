@@ -1,11 +1,20 @@
 import { loadWorkspaceConfigFile } from "../config.js";
 import { loadUserMemorySettings } from "../env.js";
-import { retrieveConversationMemory } from "../memory-retrieval.js";
+import {
+  retrieveConversationMemory,
+  tokenizeMemoryText,
+} from "../memory-retrieval.js";
+import type { AdaptiveExecutionPlan } from "../adaptive-controller.js";
 import {
   normalizeConversationMemoryEntries,
   resolveWorkspaceMemoryEnabled,
 } from "../memory.js";
 import { loadWorkspaceMemory } from "../workspace-memory.js";
+import {
+  createLocalReasoningBank,
+  isReasoningBankEnabled,
+  retrieveReasoningLessons,
+} from "../reasoning-bank.js";
 import type {
   ConversationHistoryEntry,
   TaskConversationContext,
@@ -19,6 +28,7 @@ import {
   resolveInternalTaskRuntimeConfig,
 } from "../internal-task-model.js";
 import { observeAgentModelCall } from "../model-usage.js";
+import { sliceUtf16PrefixAtCodePointBoundary } from "../../shared/unicode.js";
 import {
   compactTraceText,
   createTextSection,
@@ -163,13 +173,15 @@ const minimalWorkspaceRunStatus = (
 
 export const serializeWorkspaceRunContext = (
   context: WorkspaceRunContext,
+  maxCharacters = MAX_WORKSPACE_RUN_CONTEXT_CHARS,
 ): string => {
+  const rootLimit = Math.min(1_024, Math.floor(maxCharacters / 4));
   const sanitized = {
     ...context,
     configurations: context.configurations.map(redactWorkspaceRunStatus),
   };
   const serialized = JSON.stringify(sanitized);
-  if (serialized.length <= MAX_WORKSPACE_RUN_CONTEXT_CHARS) {
+  if (serialized.length <= maxCharacters) {
     return serialized;
   }
 
@@ -178,7 +190,7 @@ export const serializeWorkspaceRunContext = (
     primaryConfigurationId: sanitized.primaryConfigurationId,
     configurations: sanitized.configurations.map(compactWorkspaceRunStatus),
   });
-  if (compact.length <= MAX_WORKSPACE_RUN_CONTEXT_CHARS) {
+  if (compact.length <= maxCharacters) {
     return compact;
   }
 
@@ -186,20 +198,20 @@ export const serializeWorkspaceRunContext = (
   for (const status of sanitized.configurations) {
     configurations.push(minimalWorkspaceRunStatus(status));
     const candidate = JSON.stringify({
-      workspaceRoot: sanitized.workspaceRoot.slice(0, 1_024),
+      workspaceRoot: sanitized.workspaceRoot.slice(0, rootLimit),
       primaryConfigurationId: sanitized.primaryConfigurationId,
       configurations,
       omittedConfigurationCount:
         sanitized.configurations.length - configurations.length,
     });
-    if (candidate.length > MAX_WORKSPACE_RUN_CONTEXT_CHARS) {
+    if (candidate.length > maxCharacters) {
       configurations.pop();
       break;
     }
   }
 
   return JSON.stringify({
-    workspaceRoot: sanitized.workspaceRoot.slice(0, 1_024),
+    workspaceRoot: sanitized.workspaceRoot.slice(0, rootLimit),
     primaryConfigurationId: sanitized.primaryConfigurationId,
     configurations,
     omittedConfigurationCount:
@@ -208,6 +220,8 @@ export const serializeWorkspaceRunContext = (
 };
 
 export interface PreparedConversationPromptContext {
+  adaptivePlan?: AdaptiveExecutionPlan;
+  wasQueued: boolean;
   workspace: {
     selection: "selected" | "not-set";
     root?: string;
@@ -220,6 +234,7 @@ export interface PreparedConversationPromptContext {
   >["diagnostics"] & {
     workspaceLoadFailed: boolean;
   };
+  reasoningBankRetrievedIds?: string[];
   uiControlEnabled: boolean;
   uiControl?: UiControlRuntimeInfo;
 }
@@ -290,6 +305,8 @@ const createDeterministicConversationSummary = (
 
 const createRecentHistoryWindow = (
   history: ConversationHistoryEntry[],
+  maxMessages = MAX_RECENT_HISTORY_MESSAGES,
+  maxCharacters = MAX_RECENT_HISTORY_CHARS,
 ): {
   omittedHistory: ConversationHistoryEntry[];
   recentHistory: ConversationHistoryEntry[];
@@ -306,13 +323,13 @@ const createRecentHistoryWindow = (
 
     const boundedEntry = {
       ...entry,
-      content: entry.content.slice(0, MAX_RECENT_HISTORY_CHARS),
+      content: entry.content.slice(0, maxCharacters),
     };
     const nextChars = totalChars + boundedEntry.content.length;
 
     if (
-      recentHistory.length >= MAX_RECENT_HISTORY_MESSAGES ||
-      (recentHistory.length > 0 && nextChars > MAX_RECENT_HISTORY_CHARS)
+      recentHistory.length >= maxMessages ||
+      (recentHistory.length > 0 && nextChars > maxCharacters)
     ) {
       break;
     }
@@ -327,6 +344,41 @@ const createRecentHistoryWindow = (
       Math.max(0, history.length - recentHistory.length),
     ),
     recentHistory,
+  };
+};
+
+const selectRelevantEarlierHistory = (
+  task: string,
+  history: ConversationHistoryEntry[],
+  maxCharacters: number,
+): {
+  selected: ConversationHistoryEntry[];
+  remaining: ConversationHistoryEntry[];
+} => {
+  const terms = new Set(tokenizeMemoryText(task));
+  const ranked = history
+    .map((entry, index) => ({
+      index,
+      score: [...new Set(tokenizeMemoryText(entry.content))].filter((term) =>
+        terms.has(term),
+      ).length,
+    }))
+    .filter((candidate) => candidate.score > 0)
+    .sort(
+      (left, right) => right.score - left.score || right.index - left.index,
+    );
+  const selectedIndices = new Set<number>();
+  let usedCharacters = 0;
+  for (const candidate of ranked) {
+    const entry = history[candidate.index];
+    if (!entry || usedCharacters + entry.content.length > maxCharacters)
+      continue;
+    selectedIndices.add(candidate.index);
+    usedCharacters += entry.content.length;
+  }
+  return {
+    selected: history.filter((_, index) => selectedIndices.has(index)),
+    remaining: history.filter((_, index) => !selectedIndices.has(index)),
   };
 };
 
@@ -373,7 +425,7 @@ const summarizeConversationHistory = async (
       `Current task: ${task}`,
       "Summarize the earlier conversation below so the next task can continue with the right context.",
       "Transcript:",
-      transcript.slice(0, MAX_CONVERSATION_SUMMARY_INPUT_CHARS),
+      transcript.slice(-MAX_CONVERSATION_SUMMARY_INPUT_CHARS),
     ].join("\n\n");
     const turn = await observeAgentModelCall(
       {
@@ -405,6 +457,7 @@ export const prepareConversationPromptContext = async (
   config: RuntimeConfig,
   conversationContext: TaskConversationContext | undefined,
   signal?: AbortSignal,
+  adaptivePlan?: AdaptiveExecutionPlan,
 ): Promise<PreparedConversationPromptContext> => {
   const normalizedHistory = normalizeConversationHistory(
     conversationContext?.history,
@@ -452,11 +505,19 @@ export const prepareConversationPromptContext = async (
   const workspaceEntries = workspaceEnabled
     ? normalizeConversationMemoryEntries(storedWorkspaceEntries, "workspace")
     : [];
-  const retrieval = retrieveConversationMemory(task, [
-    ...sessionEntries,
-    ...workspaceEntries,
-    ...globalEntries,
-  ]);
+  const retrieval = retrieveConversationMemory(
+    task,
+    [...sessionEntries, ...workspaceEntries, ...globalEntries],
+    adaptivePlan
+      ? {
+          maxEntries: adaptivePlan.memoryEntries,
+          maxCharacters: adaptivePlan.memoryCharacters,
+          ...(adaptivePlan.level === "deep"
+            ? { scopeQuotas: { session: 5, workspace: 6, global: 3 } }
+            : {}),
+        }
+      : {},
+  );
   const retrievedSessionEntries = retrieval.entries.filter(
     (entry) => entry.scope === "session",
   );
@@ -466,18 +527,59 @@ export const prepareConversationPromptContext = async (
   const retrievedGlobalEntries = retrieval.entries.filter(
     (entry) => entry.scope === "global",
   );
-  const { omittedHistory, recentHistory } =
-    createRecentHistoryWindow(normalizedHistory);
-  const summary =
-    omittedHistory.length > 0
-      ? ((await summarizeConversationHistory(
-          task,
-          config,
-          omittedHistory,
-          signal,
-        )) ?? createDeterministicConversationSummary(omittedHistory))
+  const { omittedHistory, recentHistory } = createRecentHistoryWindow(
+    normalizedHistory,
+    adaptivePlan?.historyMessages,
+    adaptivePlan
+      ? Math.floor(adaptivePlan.historyCharacters * 0.75)
+      : undefined,
+  );
+  const recentHistoryCharacters = recentHistory.reduce(
+    (total, entry) => total + entry.content.length,
+    0,
+  );
+  const earlierHistory = adaptivePlan
+    ? selectRelevantEarlierHistory(
+        task,
+        omittedHistory,
+        Math.floor(
+          (adaptivePlan.historyCharacters - recentHistoryCharacters) / 2,
+        ),
+      )
+    : { selected: [], remaining: omittedHistory };
+  const summaryText =
+    earlierHistory.remaining.length > 0
+      ? ((adaptivePlan?.level === "simple" ||
+        (adaptivePlan?.level === "standard" &&
+          earlierHistory.remaining.length <= 6)
+          ? undefined
+          : await summarizeConversationHistory(
+              task,
+              config,
+              earlierHistory.remaining,
+              signal,
+            )) ??
+        createDeterministicConversationSummary(earlierHistory.remaining))
       : undefined;
+  const summaryCharacters = adaptivePlan
+    ? adaptivePlan.historyCharacters -
+      recentHistoryCharacters -
+      earlierHistory.selected.reduce(
+        (total, entry) => total + entry.content.length,
+        0,
+      )
+    : undefined;
+  const summary =
+    summaryText && summaryCharacters !== undefined
+      ? sliceUtf16PrefixAtCodePointBoundary(
+          summaryText,
+          summaryCharacters,
+        ).trim()
+      : summaryText;
   const recentHistoryLines = recentHistory.map(formatConversationHistoryEntry);
+  const relevantHistoryLines = earlierHistory.selected.map(
+    formatConversationHistoryEntry,
+  );
   const sessionMemoryLines = retrievedSessionEntries.map(
     (entry) => entry.content,
   );
@@ -487,8 +589,41 @@ export const prepareConversationPromptContext = async (
   const globalMemoryLines = retrievedGlobalEntries.map(
     (entry) => entry.content,
   );
+  const reasoningBankEnabled =
+    config.mode === "machdoch" &&
+    (await isReasoningBankEnabled(
+      workspaceRoot,
+      workspace.selection === "selected" || conversationContext === undefined,
+    ));
+  const reasoningLessons = reasoningBankEnabled
+    ? retrieveReasoningLessons(
+        task,
+        await createLocalReasoningBank(workspaceRoot)
+          .load()
+          .catch((error) => {
+            console.error("ReasoningBank could not be loaded", error);
+            return [];
+          }),
+        adaptivePlan
+          ? {
+              maxLessons: adaptivePlan.experienceLessons,
+              maxCharacters: adaptivePlan.experienceCharacters,
+            }
+          : {},
+      )
+    : [];
+  if (reasoningLessons.length > 0) {
+    await createLocalReasoningBank(workspaceRoot)
+      .recordRetrieval(reasoningLessons.map((lesson) => lesson.id))
+      .catch((error) => {
+        console.error("ReasoningBank retrieval could not be recorded", error);
+      });
+  }
   const workspaceRunContext = conversationContext?.workspaceRun;
   const promptSections = [
+    conversationContext?.chatType === "pose"
+      ? "This is a dedicated Pose chat. Create and refine OpenPose skeleton scenes, including multiple characters. Call pose_scene_get, then save the requested scene with pose_scene_replace or the pose_person_* and pose_joint_set tools. Make every figure's visible joint geometry match the requested action; a standing base pose with merely raised arms is not a climbing pose. Use climbing for climbers and vary the limbs and placement for multiple figures. Use reference images to reconstruct body positions. Do not generate a final image or call an image generation tool. A written pose scene is the deliverable; do not claim success unless a pose tool saved it. Briefly describe the saved pose and invite edits."
+      : undefined,
     summary
       ? [
           "<earlier_conversation_summary>",
@@ -524,10 +659,30 @@ export const prepareConversationPromptContext = async (
           "</global_memory>",
         ].join("\n")
       : undefined,
+    relevantHistoryLines.length > 0
+      ? [
+          "<relevant_earlier_conversation>",
+          ...relevantHistoryLines,
+          "</relevant_earlier_conversation>",
+        ].join("\n")
+      : undefined,
+    reasoningLessons.length > 0
+      ? [
+          "<reasoning_bank>",
+          "Past strategies are advisory; apply them only when relevant to the current task.",
+          ...reasoningLessons.map(
+            (lesson) => `- ${lesson.title}: ${lesson.content}`,
+          ),
+          "</reasoning_bank>",
+        ].join("\n")
+      : undefined,
     workspaceRunContext
       ? [
           "<workspace_run_context>",
-          serializeWorkspaceRunContext(workspaceRunContext),
+          serializeWorkspaceRunContext(
+            workspaceRunContext,
+            adaptivePlan?.workspaceRunCharacters,
+          ),
           "</workspace_run_context>",
         ].join("\n")
       : undefined,
@@ -549,7 +704,16 @@ export const prepareConversationPromptContext = async (
   ].filter((section): section is string => typeof section === "string");
 
   return {
+    ...(adaptivePlan ? { adaptivePlan } : {}),
+    wasQueued: conversationContext?.wasQueued === true,
     workspace,
+    ...(reasoningLessons.length > 0
+      ? {
+          reasoningBankRetrievedIds: reasoningLessons.map(
+            (lesson) => lesson.id,
+          ),
+        }
+      : {}),
     ...(promptSections.length > 0
       ? {
           promptBlock: [
@@ -632,6 +796,9 @@ export const prepareConversationPromptContext = async (
     memory: {
       ...(conversationContext?.sessionId
         ? { sourceSessionId: conversationContext.sessionId }
+        : {}),
+      ...(conversationContext?.chatType === "pose"
+        ? { poseScene: conversationContext.poseScene }
         : {}),
       sessionEnabled,
       sessionEntries,

@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   WorkspaceRunConfigurationStatus,
   WorkspaceRunSnapshot,
@@ -9,6 +9,8 @@ import type {
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type { ConversationMemoryEntry } from "../types.js";
 import { rememberWorkspaceMemory } from "../workspace-memory.js";
+import { createLocalReasoningBank } from "../reasoning-bank.js";
+import { planAdaptiveExecution } from "../adaptive-controller.js";
 import {
   prepareConversationPromptContext,
   serializeWorkspaceRunContext,
@@ -114,6 +116,22 @@ const taskStatus = (
   children: [],
 });
 
+describe("message delivery prompt context", () => {
+  it.each([true, false])("preserves queued status %s", async (wasQueued) => {
+    const context = await prepareConversationPromptContext(
+      "Follow up",
+      runtimeConfig,
+      {
+        history: [],
+        wasQueued,
+        workspace: { selection: "not-set" },
+      },
+    );
+
+    expect(context.wasQueued).toBe(wasQueued);
+  });
+});
+
 describe("workspace run prompt context", () => {
   it("redacts environment values while preserving structured state", () => {
     const serialized = serializeWorkspaceRunContext({
@@ -151,6 +169,9 @@ describe("workspace run prompt context", () => {
     expect(serialized.length).toBeLessThanOrEqual(12_000);
     expect(() => JSON.parse(serialized)).not.toThrow();
     expect(serialized).not.toContain("secret-value");
+    expect(
+      serializeWorkspaceRunContext(snapshot, 1_000).length,
+    ).toBeLessThanOrEqual(1_000);
   });
 });
 
@@ -189,6 +210,47 @@ describe("conversation summary model", () => {
       expect.objectContaining({ model: "claude-internal" }),
     );
     expect(context.promptBlock).toContain("- Earlier requirement");
+  });
+});
+
+describe("adaptive conversation context", () => {
+  it("keeps relevant earlier messages available alongside a bounded recent window", async () => {
+    const history = [
+      {
+        role: "user" as const,
+        content: "The database migration must preserve account IDs.",
+      },
+      ...Array.from({ length: 12 }, (_, index) => ({
+        role: "assistant" as const,
+        content: `Unrelated status message ${index}`,
+      })),
+    ];
+    const task = "Explain the database migration";
+    const plan = {
+      ...planAdaptiveExecution(task, runtimeConfig, { history }),
+      historyMessages: 2,
+      historyCharacters: 400,
+    };
+    const context = await prepareConversationPromptContext(
+      task,
+      runtimeConfig,
+      {
+        history,
+        workspace: { selection: "not-set" },
+        globalMemoryEnabled: false,
+      },
+      undefined,
+      plan,
+    );
+    expect(context.promptBlock).toContain("<relevant_earlier_conversation>");
+    expect(context.promptBlock).toContain(
+      "database migration must preserve account IDs",
+    );
+    expect(
+      context.sections.find(
+        (section) => section.title === "Recent conversation",
+      )?.lines,
+    ).toHaveLength(2);
   });
 });
 
@@ -383,5 +445,69 @@ describe("conversation memory prompt context", () => {
 
     expect(context.memory.workspaceEnabled).toBe(false);
     expect(context.memory.workspaceEntries).toEqual([]);
+  });
+
+  it("injects relevant ReasoningBank lessons and respects the workspace toggle", async () => {
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), "machdoch-prompt-reasoning-"),
+    );
+    workspaceRoots.push(workspaceRoot);
+    const [stored] = await createLocalReasoningBank(workspaceRoot).consolidate([
+      {
+        title: "Regenerate runtime contracts after schema edits",
+        description:
+          "Refresh generated bindings after changing runtime schemas.",
+        content:
+          "After editing the runtime schema, regenerate language bindings before type checking because stale contracts can conceal integration errors.",
+        triggerTerms: ["runtime schema", "bindings"],
+        outcome: "failure",
+        confidence: 0.85,
+      },
+    ]);
+    const context = {
+      history: [],
+      workspace: { selection: "selected" as const, root: workspaceRoot },
+    };
+
+    const enabled = await prepareConversationPromptContext(
+      "Update the runtime schema",
+      { ...runtimeConfig, workspaceRoot },
+      context,
+    );
+    expect(enabled.promptBlock).toContain("<reasoning_bank>");
+    expect(enabled.promptBlock).toContain("regenerate language bindings");
+    expect(enabled.promptBlock).toContain(
+      "- Regenerate runtime contracts after schema edits:",
+    );
+    expect(enabled.promptBlock).not.toContain("- Avoid:");
+    expect(enabled.reasoningBankRetrievedIds).toEqual([stored?.id]);
+    expect(
+      (await createLocalReasoningBank(workspaceRoot).load())[0],
+    ).toMatchObject({
+      retrievalCount: 1,
+      lastRetrievedAt: expect.any(Number),
+    });
+
+    const ask = await prepareConversationPromptContext(
+      "Update the runtime schema",
+      { ...runtimeConfig, workspaceRoot, mode: "ask" },
+      context,
+    );
+    expect(ask.reasoningBankRetrievedIds).toBeUndefined();
+
+    await writeFile(
+      join(workspaceRoot, ".machdoch", "config.json"),
+      JSON.stringify({ reasoningBankEnabled: false }),
+    );
+    const disabled = await prepareConversationPromptContext(
+      "Update the runtime schema",
+      { ...runtimeConfig, workspaceRoot },
+      context,
+    );
+    expect(disabled.promptBlock ?? "").not.toContain("<reasoning_bank>");
+    expect(disabled.reasoningBankRetrievedIds).toBeUndefined();
+    expect(
+      (await createLocalReasoningBank(workspaceRoot).load())[0]?.retrievalCount,
+    ).toBe(1);
   });
 });

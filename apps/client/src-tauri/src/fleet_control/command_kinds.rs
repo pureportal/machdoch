@@ -16,6 +16,7 @@ const SESSION_ID_COMMANDS: &[&str] = &[
     "update-draft",
     "set-session-model",
     "set-session-mode",
+    "set-parallel-agent-mode",
     "set-session-reasoning",
     "set-session-workspace",
     "clear-session-workspace",
@@ -24,6 +25,7 @@ const SESSION_ID_COMMANDS: &[&str] = &[
     "set-session-memory",
     "forget-session-memory",
     "set-global-memory",
+    "set-workspace-memory",
     "set-ui-control",
     "remove-attachment",
     "clear-attachments",
@@ -42,6 +44,7 @@ const SESSION_MUTATION_COMMANDS: &[&str] = &[
 const ENABLED_COMMANDS: &[&str] = &[
     "set-session-memory",
     "set-global-memory",
+    "set-workspace-memory",
     "set-ui-control",
     "set-interview",
 ];
@@ -190,6 +193,7 @@ mod tests {
         assert!(requires_task_id("cancel"));
         assert!(requires_session_id("rename-session"));
         assert!(requires_session_id("set-session-reasoning"));
+        assert!(requires_session_id("set-workspace-memory"));
         assert!(requires_context_pack_id("delete-context-pack"));
         assert!(requires_memory_id("forget-session-memory"));
         assert!(requires_message_id("speak-message"));
@@ -239,6 +243,7 @@ mod tests {
     fn enabled_value_is_required_only_for_toggle_commands() {
         assert!(requires_enabled("set-session-memory"));
         assert!(requires_enabled("set-global-memory"));
+        assert!(requires_enabled("set-workspace-memory"));
         assert!(requires_enabled("set-ui-control"));
         assert!(!requires_enabled("submit-message"));
         assert!(!requires_enabled("set-session-mode"));

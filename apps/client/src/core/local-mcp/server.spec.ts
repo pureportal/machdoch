@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -87,6 +88,16 @@ const connect = async (
 };
 
 describe("Machdoch MCP capability parity", () => {
+  it("exposes pose editing through MCP and native function calls in a pose chat", async () => {
+    const state: ConversationMemoryRuntime = { ...memory(), sourceSessionId: randomUUID(), poseScene: undefined };
+    const { client, apiCall, mcpCall } = await connect("machdoch", state);
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(["pose_scene_get", "pose_scene_replace", "pose_joint_set"]));
+    const created = await mcpCall("pose_person_add", { person: { pose: "standing", x: 0.5, y: 0.92, scale: 0.8, mirror: false } });
+    expect(created.isError, created.output).not.toBe(true);
+    const current = JSON.parse((await apiCall("pose_scene_get")).output);
+    expect(current.map.people).toHaveLength(1);
+    expect(current.joints[4]).toBe("right wrist");
+  });
   it.each(["ask", "machdoch"] as const)(
     "discovers the API tool catalog in %s mode",
     async (mode) => {

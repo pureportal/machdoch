@@ -2,8 +2,10 @@ use std::{collections::HashMap, path::PathBuf};
 
 use super::{
     env::has_configured_value,
-    get_audio_provider_availability, get_web_search_provider_availability, load_global_env,
-    normalize_optional_string, resolve_audio_active_provider, resolve_web_search_active_provider,
+    get_audio_provider_availability, get_speech_to_text_provider_availability,
+    get_web_search_provider_availability, load_global_env, normalize_optional_string,
+    resolve_audio_active_provider, resolve_speech_to_text_active_provider,
+    resolve_web_search_active_provider,
     settings::{
         normalize_user_agent_limits_settings, normalize_user_agent_limits_settings_input,
         normalize_user_internal_task_model_settings,
@@ -224,15 +226,24 @@ pub(super) fn load_user_voice_settings() -> Result<UserVoiceSettings, String> {
 pub(super) fn load_user_speech_to_text_settings() -> Result<UserSpeechToTextSettings, String> {
     let (config, _) = load_user_config_file()?;
     let env = load_global_env()?;
+    let active_provider =
+        resolve_speech_to_text_active_provider(config.speech_to_text.active_provider.as_deref());
+    let auto_format =
+        active_provider != "whisper" && config.speech_to_text.auto_format.unwrap_or(false);
 
     Ok(UserSpeechToTextSettings {
-        active_provider: resolve_audio_active_provider(
-            config.speech_to_text.active_provider.as_deref(),
-        ),
+        active_provider,
         input_device_id: normalize_optional_string(
             config.speech_to_text.input_device_id.as_deref(),
         ),
-        provider_availability: get_audio_provider_availability(&env),
+        key_terms: config.speech_to_text.key_terms,
+        speech_context: config.speech_to_text.speech_context.unwrap_or_default(),
+        auto_translate_to_english: config
+            .speech_to_text
+            .auto_translate_to_english
+            .unwrap_or(false),
+        auto_format,
+        provider_availability: get_speech_to_text_provider_availability(&env),
     })
 }
 
@@ -318,15 +329,22 @@ pub(super) fn save_user_voice_active_provider_value(provider: &str) -> Result<Pa
 pub(super) fn save_user_speech_to_text_active_provider_value(
     provider: &str,
 ) -> Result<PathBuf, String> {
-    let normalized_provider = normalize_optional_string(Some(provider))
-        .ok_or_else(|| "Expected provider to be one of none, openai, or google.".to_string())?;
+    let normalized_provider = normalize_optional_string(Some(provider)).ok_or_else(|| {
+        "Expected provider to be one of none, openai, google, or whisper.".to_string()
+    })?;
 
-    if !is_user_audio_ai_provider(&normalized_provider) && normalized_provider != "none" {
-        return Err("Expected provider to be one of none, openai, or google.".to_string());
+    if !matches!(
+        normalized_provider.as_str(),
+        "none" | "openai" | "google" | "whisper"
+    ) {
+        return Err("Expected provider to be one of none, openai, google, or whisper.".to_string());
     }
 
     update_user_config_file(|config| {
         config.speech_to_text.active_provider = Some(normalized_provider.clone());
+        if normalized_provider == "whisper" {
+            config.speech_to_text.auto_format = Some(false);
+        }
     })
 }
 
@@ -335,6 +353,70 @@ pub(super) fn save_user_speech_to_text_input_device_value(
 ) -> Result<PathBuf, String> {
     update_user_config_file(|config| {
         config.speech_to_text.input_device_id = normalize_optional_string(input_device_id);
+    })
+}
+
+pub(super) fn save_user_speech_to_text_key_terms_value(
+    key_terms: Vec<String>,
+) -> Result<PathBuf, String> {
+    if key_terms.len() > 100 {
+        return Err("Use no more than 100 key terms.".to_string());
+    }
+    let mut normalized = Vec::new();
+    for term in key_terms {
+        let term = term.trim();
+        if term.is_empty() {
+            continue;
+        }
+        if term.chars().count() > 80
+            || term
+                .chars()
+                .any(|character| matches!(character, '<' | '>' | '\r' | '\n'))
+        {
+            return Err(
+                "Each key term must be one line of up to 80 characters without angle brackets."
+                    .to_string(),
+            );
+        }
+        if !normalized
+            .iter()
+            .any(|saved: &String| saved.eq_ignore_ascii_case(term))
+        {
+            normalized.push(term.to_string());
+        }
+    }
+    update_user_config_file(|config| {
+        config.speech_to_text.key_terms = normalized;
+    })
+}
+
+pub(super) fn save_user_speech_to_text_context_value(
+    speech_context: &str,
+) -> Result<PathBuf, String> {
+    let speech_context = speech_context.trim();
+    if speech_context.chars().count() > 2_000 {
+        return Err("Speech context must be 2,000 characters or fewer.".to_string());
+    }
+    update_user_config_file(|config| {
+        config.speech_to_text.speech_context = if speech_context.is_empty() {
+            None
+        } else {
+            Some(speech_context.to_string())
+        };
+    })
+}
+
+pub(super) fn save_user_speech_to_text_processing_value(
+    auto_translate_to_english: bool,
+    auto_format: bool,
+) -> Result<PathBuf, String> {
+    let (config, _) = load_user_config_file()?;
+    if auto_format && config.speech_to_text.active_provider.as_deref() == Some("whisper") {
+        return Err("Formatting is unavailable with local Whisper.".to_string());
+    }
+    update_user_config_file(|config| {
+        config.speech_to_text.auto_translate_to_english = Some(auto_translate_to_english);
+        config.speech_to_text.auto_format = Some(auto_format);
     })
 }
 
