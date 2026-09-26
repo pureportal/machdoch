@@ -10,10 +10,10 @@
     "format": "oxfmt src next.config.ts postcss.config.mjs package.json tsconfig.json components.json",
     "lint": "oxlint src next.config.ts",
     "lint:fix": "oxlint --fix src next.config.ts",
-    "password": "oxnode src/server.ts password",
-    "seed": "oxnode src/server.ts seed",
-    "settings-key": "oxnode src/server.ts settings-key",
-    "start": "oxnode src/server.ts serve",
+    "password": "node --disable-warning=ExperimentalWarning --import @oxc-node/core/register src/server.ts password",
+    "seed": "node --disable-warning=ExperimentalWarning --import @oxc-node/core/register src/server.ts seed",
+    "settings-key": "node --disable-warning=ExperimentalWarning --import @oxc-node/core/register src/server.ts settings-key",
+    "start": "node --disable-warning=ExperimentalWarning --import @oxc-node/core/register src/server.ts serve",
     "test": "vitest run",
     "typecheck": "next typegen && tsc --noEmit --pretty false"
   },
@@ -25,7 +25,7 @@
     ],
     "ext": "ts,sql",
     "delay": 200,
-    "exec": "node --enable-source-maps --import @oxc-node/core/register",
+    "exec": "node --enable-source-maps --disable-warning=ExperimentalWarning --import @oxc-node/core/register",
     "signal": "SIGTERM"
   },
   "engines": {
