@@ -23,6 +23,12 @@ fn find_node_binary() -> Option<PathBuf> {
 
 fn main() {
     configure_windows_common_controls_manifest();
+    println!("cargo:rustc-check-cfg=cfg(machdoch_embedded_runtime)");
+
+    if !is_distributable_build() {
+        tauri_build::build();
+        return;
+    }
 
     let manifest_dir = required_env_path("CARGO_MANIFEST_DIR");
     let cli_bundle_path = manifest_dir
@@ -36,7 +42,6 @@ fn main() {
     println!("cargo:rerun-if-changed={}", cli_bundle_path.display());
     println!("cargo:rerun-if-env-changed=MACHDOCH_NODE_BINARY");
     println!("cargo:rerun-if-env-changed=PATH");
-    println!("cargo:rustc-check-cfg=cfg(machdoch_embedded_runtime)");
 
     let runtime_inputs =
         EmbeddedRuntimeInputs::classify(&cli_bundle_path, find_node_binary().as_deref());
@@ -50,20 +55,16 @@ fn main() {
             node_binary,
         } => {
             if let Err(error) = validate_runtime(&node_binary, &cli_bundle) {
-                if is_distributable_build() {
-                    panic!("{error}");
-                }
-                return tauri_build::build();
+                panic!("{error}");
             }
 
             copy_file_or_panic(&cli_bundle, &output_path, "bundled CLI");
             copy_file_or_panic(&node_binary, &node_output_path, "Node runtime");
             println!("cargo:rustc-cfg=machdoch_embedded_runtime");
         }
-        EmbeddedRuntimeInputs::Incomplete(issue) if is_distributable_build() => {
+        EmbeddedRuntimeInputs::Incomplete(issue) => {
             panic!("{}", issue.build_error(&cli_bundle_path));
         }
-        EmbeddedRuntimeInputs::Incomplete(_) => {}
     }
 
     tauri_build::build()
