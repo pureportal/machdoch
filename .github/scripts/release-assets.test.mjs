@@ -333,6 +333,10 @@ test("pins installer metadata, dependencies, and installation paths", async () =
     "libgbm.so.1()(64bit)",
     "libpipewire-0.3.so.0()(64bit)",
   ]);
+  assert.deepEqual(configuration.bundle.linux.rpm.compression, {
+    type: "zstd",
+    level: 3,
+  });
   assert.deepEqual(configuration.bundle.linux.rpm.recommends, [
     "nautilus-python",
   ]);
