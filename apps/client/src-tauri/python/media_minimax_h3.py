@@ -144,7 +144,7 @@ def render(args, progress=None):
         video_latent, audio_latent = sample_image(
             model, text_embeddings.to("cuda", torch.bfloat16),
             width=args.width, height=args.height, num_frames=args.frames,
-            steps=args.steps, shift=6.0, schedule_mode="reference", sampler="euler",
+            steps=args.steps, shift=6.0, schedule_mode="beta57", sampler="er_sde",
             cfg_scale=1.0, seed=args.seed, dtype=torch.bfloat16, ref_latents=[reference_latent],
             text_token_tags=token_tags, return_audio=True, log_steps=True,
             on_denoised=(lambda step, total, _: progress(step, total)) if progress else None,

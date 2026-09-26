@@ -26,6 +26,7 @@ Flow / sign convention (this is the easy thing to get backwards):
 
 import gc
 import logging
+import math
 
 import torch
 
@@ -80,8 +81,23 @@ def sample_schedule(steps: int, shift: float = 12.0, mode: str = "comfy"):
                  for u in ((i + 1) / 1000.0 for i in range(1000))]
         stride = len(table) / steps
         return [table[-(1 + int(x * stride))] for x in range(steps)] + [0.0]
+    if mode == "beta57":
+        from scipy.stats import beta as beta_distribution
+
+        evaluations = steps - 1
+        if evaluations < 1:
+            raise ValueError("beta57 needs at least one model evaluation")
+        probabilities = 1.0 - torch.arange(evaluations, dtype=torch.float64).numpy() / evaluations
+        indices = (beta_distribution.ppf(probabilities, 0.5, 0.7) * 999).round().astype(int)
+        values = []
+        for index in indices:
+            position = (index + 1) / 1000.0
+            sigma = shift * position / (1.0 + (shift - 1.0) * position)
+            if not values or sigma != values[-1]:
+                values.append(sigma)
+        return values + [0.0]
     if mode != "reference":
-        raise ValueError(f"sample_schedule mode must be 'comfy' or 'reference', got {mode!r}")
+        raise ValueError(f"unsupported sample schedule: {mode}")
     if steps < 2:
         raise ValueError("reference mode needs at least 2 sigmas (one model evaluation)")
     out = []
@@ -91,6 +107,52 @@ def sample_schedule(steps: int, shift: float = 12.0, mode: str = "comfy"):
         if not out or sig != out[-1]:                   # unique_consecutive
             out.append(sig)
     return out
+
+
+def _er_sde_update(state, denoised, previous_denoised, previous_derivative,
+                   sigma, next_sigma, previous_sigma, second_previous_sigma, generator):
+    if next_sigma == 0:
+        return denoised, None
+
+    current_lambda = sigma / (1.0 - sigma)
+    next_lambda = next_sigma / (1.0 - next_sigma)
+    current_alpha = 1.0 - sigma
+    next_alpha = 1.0 - next_sigma
+
+    def noise_scale(value):
+        return value * (math.exp(value ** 0.3) + 10.0)
+
+    current_scale = noise_scale(current_lambda)
+    next_scale = noise_scale(next_lambda)
+    ratio = next_scale / current_scale
+    updated = (next_alpha / current_alpha) * ratio * state + next_alpha * (1.0 - ratio) * denoised
+    derivative = None
+
+    if previous_denoised is not None:
+        previous_lambda = previous_sigma / (1.0 - previous_sigma)
+        interval = next_lambda - current_lambda
+        integration_step = -interval / 200.0
+        positions = [next_lambda + index * integration_step for index in range(200)]
+        first_integral = sum(1.0 / noise_scale(position) for position in positions) * integration_step
+        derivative = (denoised - previous_denoised) / (current_lambda - previous_lambda)
+        updated = updated + next_alpha * (interval + first_integral * next_scale) * derivative
+
+        if previous_derivative is not None:
+            second_previous_lambda = second_previous_sigma / (1.0 - second_previous_sigma)
+            second_integral = sum(
+                (position - current_lambda) / noise_scale(position) for position in positions
+            ) * integration_step
+            second_derivative = (derivative - previous_derivative) / (
+                (current_lambda - second_previous_lambda) / 2.0
+            )
+            updated = updated + next_alpha * (
+                interval * interval / 2.0 + second_integral * next_scale
+            ) * second_derivative
+
+    variance = max(0.0, next_lambda * next_lambda - current_lambda * current_lambda * ratio * ratio)
+    noise = torch.randn(state.shape, generator=generator, dtype=state.dtype).to(state.device)
+    updated = updated + next_alpha * math.sqrt(variance) * noise
+    return updated, derivative
 
 
 def latent_to_rgb(latent: torch.Tensor):
@@ -265,9 +327,17 @@ def _sample_image_impl(model, text_embeds, *, width=512, height=512, steps=8, cf
                         and ref_schedule is None and not keyframes
                         and hasattr(model, "forward_cached"))
     sigmas = sample_schedule(steps, shift=shift, mode=schedule_mode)
+    if sampler not in ("euler", "res_multistep", "er_sde"):
+        raise ValueError(f"unsupported sampler: {sampler}")
+    if sampler == "er_sde":
+        offset_position = 1.0 - 1e-4
+        sigmas[0] = min(sigmas[0], shift * offset_position / (1.0 + (shift - 1.0) * offset_position))
+        stochastic_generator = torch.Generator(device="cpu").manual_seed(int(seed) + 1)
     n_eval = len(sigmas) - 1                            # the terminal 0 is not an evaluation
     prev_denoised = None                                # res_multistep's one-step memory
     prev_denoised_a = None                              # ...and the audio stream's own
+    prev_derivative = None
+    prev_derivative_a = None
     import time as _t
     _last = [None]                                      # per-step wall time for the log
     _slow_fired = False                                 # on_slow_step is a ONE-shot notice
@@ -365,18 +435,33 @@ def _sample_image_impl(model, text_embeds, *, width=512, height=512, steps=8, cf
             # the SAME update (Euler or second-order) drives both streams below.
             denoised_a = audio_rows + s_curr * a_out
         _second_order = (sampler == "res_multistep" and prev_denoised is not None and s_next > 0)
-        if _second_order:
+        if sampler == "er_sde":
+            x, derivative = _er_sde_update(
+                x, denoised, prev_denoised, prev_derivative,
+                s_curr, s_next, sigmas[i - 1] if i > 0 else None,
+                sigmas[i - 2] if i > 1 else None, stochastic_generator,
+            )
+        elif _second_order:
             a_x, hb1, hb2 = _res_multistep_coeffs(s_curr, s_next, sigmas[i - 1])
             x = a_x * x + hb1 * denoised + hb2 * prev_denoised
         else:
             x = x + (s_curr - s_next) * out             # Euler (first step, last step, or opt-out)
         if a_out is not None:
-            if _second_order and prev_denoised_a is not None:
+            if sampler == "er_sde":
+                audio_rows, derivative_a = _er_sde_update(
+                    audio_rows, denoised_a, prev_denoised_a, prev_derivative_a,
+                    s_curr, s_next, sigmas[i - 1] if i > 0 else None,
+                    sigmas[i - 2] if i > 1 else None, stochastic_generator,
+                )
+                prev_derivative_a = derivative_a
+            elif _second_order and prev_denoised_a is not None:
                 audio_rows = a_x * audio_rows + hb1 * denoised_a + hb2 * prev_denoised_a
             else:
                 audio_rows = audio_rows + (s_curr - s_next) * a_out
             prev_denoised_a = denoised_a
         prev_denoised = denoised
+        if sampler == "er_sde":
+            prev_derivative = derivative
         # One-shot slow-step notice. A preview that oversubscribes VRAM does NOT raise on
         # Windows — the driver pages to system RAM and the forward just crawls, so every
         # exception-driven fallback in the trainer stays silent while a step takes minutes.
