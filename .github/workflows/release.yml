@@ -257,7 +257,7 @@ jobs:
           - runner: ubuntu-24.04
             container: debian:12-slim
             release_target: linux-amd64
-            bundle_args: "--bundles deb,rpm,appimage"
+            bundle_args: "--bundles deb,appimage"
             debian_architecture: amd64
             debian_asset: release-assets/machdoch-linux-amd64.deb
             rpm_architecture: x86_64
@@ -360,6 +360,11 @@ jobs:
         if: "!startsWith(matrix.release_target, 'linux-')"
         shell: bash
         run: pnpm --filter @machdoch/client tauri build ${{ matrix.bundle_args }}
+
+      - name: Build RPM installer
+        if: matrix.release_target == 'linux-amd64'
+        shell: bash
+        run: bash .github/scripts/build-linux-rpm.sh
 
       - name: List bundle outputs
         shell: bash
