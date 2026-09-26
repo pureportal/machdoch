@@ -1,0 +1,11 @@
+# Bundled Whisper speech input
+
+Machdoch runs Whisper in its Rust process through `whisper-rs`, which builds and statically links `whisper.cpp`. It decodes microphone recordings in the WebView, sends 16 kHz mono PCM WAV to Rust, and transcribes with a bundled `large-v3` Q5 model. No API key, Python environment, server, or network connection is needed at runtime.
+
+The model is pinned to a [ggml release](https://huggingface.co/ggerganov/whisper.cpp/blob/c521a4b02f422512d734391fdf08bb08c0862f68/ggml-large-v3-q5_0.bin), with a 1,081,140,203-byte size and SHA-256 `d75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1`. The build preparation script checks both before Tauri packages the model as a resource. The model is downloaded at build time because committing a 1.08 GB binary to Git would make every source checkout carry it.
+
+`large-v3` supports both transcription and speech translation to English. [OpenAI states that `large-v3-turbo` is not trained for translation](https://github.com/openai/whisper/blob/main/README.md), so it cannot reliably support Machdoch's existing translation option. The local path uses Whisper's translation task directly. Saved key terms are supplied as an initial prompt. Text formatting is unavailable for Whisper because it requires a separate language model.
+
+`whisper.cpp` is [MIT licensed](https://github.com/ggml-org/whisper.cpp/blob/v1.9.4/LICENSE), and the [OpenAI model is MIT licensed](https://huggingface.co/openai/whisper-large-v3). Their notices are included in the application resources. `whisper-rs` is [Unlicense](https://codeberg.org/tazz4843/whisper-rs). `faster-whisper` is also [MIT licensed](https://github.com/SYSTRAN/faster-whisper), but it brings a Python and CTranslate2 deployment stack that is unnecessary for Machdoch's in-process speech input.
+
+The current native build uses the CPU backend, so transcription speed depends on the user's CPU. `GGML_NATIVE=OFF` keeps release binaries portable across supported CPUs. Building the app requires CMake, a C++ compiler, and libclang for Rust bindings in addition to the existing Rust and Tauri toolchain; the installed app does not. The bundled model adds about 1.08 GB before installer compression.
