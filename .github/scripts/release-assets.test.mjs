@@ -330,8 +330,11 @@ test("pins installer metadata, dependencies, and installation paths", async () =
   ]);
   assert.deepEqual(configuration.bundle.linux.deb.files, expectedLinuxFiles);
   assert.deepEqual(configuration.bundle.linux.rpm.depends, [
+    "libayatana-appindicator3.so.1()(64bit)",
     "libgbm.so.1()(64bit)",
+    "libgtk-3.so.0()(64bit)",
     "libpipewire-0.3.so.0()(64bit)",
+    "libwebkit2gtk-4.1.so.0()(64bit)",
   ]);
   assert.deepEqual(configuration.bundle.linux.rpm.compression, {
     type: "zstd",
