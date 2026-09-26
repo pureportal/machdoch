@@ -128,8 +128,11 @@
           "level": 3
         },
         "depends": [
+          "libayatana-appindicator3.so.1()(64bit)",
           "libgbm.so.1()(64bit)",
-          "libpipewire-0.3.so.0()(64bit)"
+          "libgtk-3.so.0()(64bit)",
+          "libpipewire-0.3.so.0()(64bit)",
+          "libwebkit2gtk-4.1.so.0()(64bit)"
         ],
         "recommends": [
           "nautilus-python"
