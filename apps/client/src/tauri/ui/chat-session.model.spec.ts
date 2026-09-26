@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
+import { mediaPoseJoints } from "@machdoch/media-studio/core/media/contracts.js";
 import {
   applySessionRetentionPolicy,
   canDeleteSession,
   canDuplicateSession,
   createInitialShellState,
   createSession,
+  getSessionTitle,
   getActiveChatOperationIds,
   getActivePromptEnhancementEditMessageId,
   getLatestRunningTaskId,
   getSessionOverviewStatus,
+  getSavedPoseScenes,
   getSessionTimestamp,
   isPromptEnhancementPlaceholderMessage,
   isSessionWorkspaceLocked,
@@ -28,8 +31,73 @@ import {
   createPreviewFixture,
 } from "./preview/fixtures";
 import { createInitialThinkingTrace } from "./task-thinking.model";
+import { createSessionMessageSettings, getSessionMessageSettings } from "./chat-session/_helpers/session-message-settings";
 
 const SESSION_DAY_MS = 24 * 60 * 60 * 1_000;
+
+describe("parallel agent session mode", () => {
+  it("persists the selected mode and freezes it in each message", () => {
+    const session = createSession({ parallelAgentMode: "read-only" });
+    const settings = createSessionMessageSettings(session);
+    const changed = createSession({ ...session, parallelAgentMode: "machdoch" });
+    const state = normalizeShellState({
+      ...createInitialShellState(),
+      activeSessionId: changed.id,
+      sessions: [changed],
+    });
+
+    expect(settings.parallelAgentMode).toBe("read-only");
+    expect(state.sessions[0]?.parallelAgentMode).toBe("machdoch");
+    expect(getSessionMessageSettings({ id: "message", role: "user", content: "task", settings }, changed).parallelAgentMode).toBe("read-only");
+  });
+});
+
+describe("adaptive controller session override", () => {
+  it("persists the override and freezes it in message settings", () => {
+    const session = createSession({ adaptiveControllerOverride: false });
+    const settings = createSessionMessageSettings(session);
+    const updated = createSession({ ...session, adaptiveControllerOverride: true });
+    const state = normalizeShellState({
+      ...createInitialShellState(),
+      activeSessionId: updated.id,
+      sessions: [updated],
+    });
+    expect(settings.adaptiveControllerOverride).toBe(false);
+    expect(state.sessions[0]?.adaptiveControllerOverride).toBe(true);
+    expect(getSessionMessageSettings({ id: "message", role: "user", content: "task", settings }, updated).adaptiveControllerOverride).toBe(false);
+  });
+});
+
+describe("pose chats", () => {
+  it("keeps the starting scene and chat type across session normalization", () => {
+    const poseScene = { aspectRatio: "1:1" as const, people: [{ pose: "standing" as const, x: 0.5, y: 0.92, scale: 0.8, mirror: false }] };
+    const session = createSession({ specialSession: "pose", poseScene, workspace: null });
+    const state = createInitialShellState();
+    const normalized = normalizeShellState({ ...state, activeSessionId: session.id, sessions: [session] });
+    expect(normalized.sessions[0]?.specialSession).toBe("pose");
+    expect(normalized.sessions[0]?.poseScene).toEqual(poseScene);
+    expect(getSessionTitle(normalized.sessions[0]!)).toBe("Pose scene");
+    expect(getSavedPoseScenes(normalized.sessions)).toEqual([{ id: session.id, label: "Pose scene", map: poseScene }]);
+  });
+
+  it("lists a generated scene by its request and keeps its editable joints", () => {
+    const poseScene = {
+      aspectRatio: "4:5" as const,
+      people: [0.25, 0.5, 0.75].map((x) => ({ pose: "climbing" as const, x, y: 0.9, scale: 0.5, mirror: false, joints: mediaPoseJoints("climbing") })),
+    };
+    const session = createSession({
+      specialSession: "pose",
+      poseScene,
+      workspace: null,
+      messages: [{ id: "request", role: "user", content: "3 persons climbing a rock", createdAt: 1 }],
+    });
+    expect(getSavedPoseScenes([session])).toEqual([{ id: session.id, label: "3 persons climbing a rock", map: poseScene }]);
+    expect(getSavedPoseScenes([{ ...session, manualTitle: "Climbers" }])).toEqual([{ id: session.id, label: "Climbers", map: poseScene }]);
+    expect(getSavedPoseScenes([{ ...session, poseScene: undefined }])).toEqual([
+      { id: session.id, label: "3 persons climbing a rock" },
+    ]);
+  });
+});
 
 describe("session time controls", () => {
   const createTimedSession = (id: string, timestamp: number) =>
@@ -899,6 +967,8 @@ describe("normalizeShellState", () => {
       provider: "openai",
       model: "gpt-5.5",
       mode: "ask",
+      parallelAgentMode: "disabled",
+      adaptiveControllerOverride: null,
       reasoning: "high",
       sessionMemoryEnabled: false,
       useWorkspaceMemory: false,
@@ -1744,6 +1814,58 @@ describe("recoverInterruptedTasksForLaunch", () => {
     });
 
     expect(getSessionOverviewStatus(session)).toBe("done");
+  });
+
+  it("keeps a session running through queued enhancement and reports its exhausted failure", () => {
+    const session = createSession({
+      id: "session",
+      messages: [
+        { id: "user", taskId: "task", role: "user", content: "First request" },
+        {
+          id: "agent",
+          taskId: "task",
+          role: "agent",
+          content: "Completed",
+          outcome: { status: "succeeded" },
+        },
+      ],
+    });
+    const queued = {
+      id: "queued",
+      sessionId: session.id,
+      task: "Next request",
+      contentUpdatedAt: 1,
+      attachmentsUpdatedAt: 1,
+      attachmentTombstones: {},
+      blockerUpdatedAt: 1,
+      orderRank: 0,
+      orderUpdatedAt: 1,
+      status: "queued" as const,
+      statusUpdatedAt: 1,
+      contextAttachments: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    expect(getSessionOverviewStatus(session)).toBe("done");
+    expect(getSessionOverviewStatus(session, [queued])).toBe("running");
+    expect(
+      getSessionOverviewStatus(session, [{ ...queued, status: "enhancing" }]),
+    ).toBe("running");
+    expect(
+      getSessionOverviewStatus(session, [
+        { ...queued, status: "failed" },
+        { ...queued, id: "later", status: "queued" },
+      ]),
+    ).toBe("running");
+    expect(
+      getSessionOverviewStatus(session, [{ ...queued, status: "failed" }]),
+    ).toBe("failed");
+    expect(
+      getSessionOverviewStatus(session, [
+        { ...queued, sessionId: "another-session", status: "failed" },
+      ]),
+    ).toBe("done");
   });
 
   it.each([

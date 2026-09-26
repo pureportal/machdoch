@@ -131,6 +131,91 @@ const createTrace = (): TaskThinkingTrace => ({
 });
 
 describe("createTaskExecutionStory", () => {
+  it("keeps concurrent agents separate and shows their individual outcomes", () => {
+    const trace = createInitialThinkingTrace("machdoch", 1_000);
+    const updates = [
+      {
+        kind: "agent",
+        phase: "started",
+        label: "Agent files",
+        detail: "Inspect files",
+        tone: "info",
+      },
+      {
+        kind: "agent",
+        phase: "started",
+        label: "Agent tests",
+        detail: "Check tests",
+        tone: "info",
+      },
+      {
+        kind: "tool-call",
+        phase: "started",
+        label: "Agent files · read file",
+        detail: "src/a.ts",
+        tone: "info",
+        toolName: "read_file",
+        callId: "files:read",
+      },
+      {
+        kind: "tool-call",
+        phase: "completed",
+        label: "Agent files · read file",
+        detail: "src/a.ts",
+        tone: "success",
+        toolName: "read_file",
+        callId: "files:read",
+      },
+      {
+        kind: "agent",
+        phase: "failed",
+        label: "Agent tests",
+        detail: "Provider failed",
+        tone: "danger",
+      },
+      {
+        kind: "agent",
+        phase: "completed",
+        label: "Agent files",
+        tone: "success",
+      },
+    ] as const;
+    const completedTrace = updates.reduce(
+      (current, timelineEvent, index) =>
+        appendThinkingProgress(
+          current,
+          {
+            task: "Inspect",
+            mode: "machdoch",
+            state: "executing",
+            message: timelineEvent.label,
+            executedTools: [],
+            outputSections: [],
+            cancellable: true,
+            timelineEvent,
+          },
+          1_100 + index * 100,
+        ),
+      trace,
+    );
+
+    const story = createTaskExecutionStory(completedTrace);
+    expect(story.map((item) => item.label)).toEqual([
+      "Starting",
+      "Agent files finished",
+      "Agent tests failed",
+      "Ran Agent files · read file",
+    ]);
+    expect(story[1]).toMatchObject({
+      detail: "Inspect files",
+      durationMs: 500,
+    });
+    expect(story[2]).toMatchObject({
+      detail: "Provider failed",
+      startedDetail: "Check tests",
+    });
+  });
+
   it("merges lifecycle pairs and attaches terminal activity to its action", () => {
     const story = createTaskExecutionStory(createTrace());
 

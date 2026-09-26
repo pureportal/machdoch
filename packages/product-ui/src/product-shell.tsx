@@ -1,4 +1,4 @@
-import type { ProductSnapshot } from "@machdoch/fleet-protocol";
+import { productCommandSchema, type ProductSnapshot } from "@machdoch/fleet-protocol";
 import {
   Aperture,
   FolderKanban,
@@ -13,7 +13,7 @@ import {
   WifiOff,
   Workflow,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Composer } from "./composer";
 import { Conversation } from "./conversation";
 import { Inspector } from "./inspector";
@@ -59,6 +59,8 @@ export function ProductShell({
   const [mediaOpened, setMediaOpened] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [requestedView, setRequestedView] = useState<ProductView>("projects");
+  const [pendingPoseChat, setPendingPoseChat] = useState<{ previousSessionId: string | null; hasScene: boolean } | null>(null);
+  const mediaFrameRef = useRef<HTMLIFrameElement>(null);
   const compact = useMediaQuery("(max-width: 900px)");
   const viewportRef = useProductViewport();
   useEffect(() => {
@@ -87,6 +89,33 @@ export function ProductShell({
           : requestedView === "ralph" && !shell?.ralph
             ? "chat"
             : requestedView;
+
+  useEffect(() => {
+    const receivePoseChat = (event: MessageEvent): void => {
+      if (event.origin !== window.location.origin || event.source !== mediaFrameRef.current?.contentWindow) return;
+      const data = event.data as { type?: unknown; map?: unknown } | null;
+      if (data?.type !== "machdoch:pose-chat" || (data.map !== null && (typeof data.map !== "object" || data.map === undefined))) return;
+      const command = productCommandSchema.safeParse({ kind: "create-session", specialKind: "pose", ...(data.map ? { poseScene: data.map } : {}) });
+      if (!command.success || command.data.kind !== "create-session") return;
+      const previousSessionId = snapshot?.shell?.activeSessionId ?? null;
+      void onCommand(command.data).then((created) => {
+        if (created) setPendingPoseChat({ hasScene: data.map !== null, previousSessionId });
+      });
+    };
+    window.addEventListener("message", receivePoseChat);
+    return () => window.removeEventListener("message", receivePoseChat);
+  }, [onCommand, snapshot?.shell?.activeSessionId]);
+
+  useEffect(() => {
+    const sessionId = snapshot?.shell?.activeSessionId;
+    if (!pendingPoseChat || !sessionId || sessionId === pendingPoseChat.previousSessionId) return;
+    setPendingPoseChat(null);
+    void (async () => {
+      if (!await onCommand({ kind: "set-session-mode", sessionId, mode: "machdoch" })) return;
+      const prompt = pendingPoseChat.hasScene ? "Refine this pose scene" : "Create a pose scene";
+      if (await onCommand({ kind: "update-draft", sessionId, prompt })) selectView("chat");
+    })();
+  }, [pendingPoseChat, snapshot?.shell?.activeSessionId, onCommand]);
 
   return (
     <div ref={viewportRef} className="machdoch-product">
@@ -303,7 +332,7 @@ export function ProductShell({
                   }}
                 />
               )}
-              <main className="m-product-main">
+              <main className="m-product-main" data-pose-scene={activeSession?.specialKind === "pose" && Boolean(shell.poseSceneSvg)}>
                 {activeSession ? (
                   <>
                     <SessionHeader
@@ -312,6 +341,9 @@ export function ProductShell({
                       pending={commandsBlocked}
                       onCommand={onCommand}
                     />
+                    {activeSession.specialKind === "pose" && shell.poseSceneSvg ? (
+                      <div className="m-product-pose-scene"><img alt="Current pose scene" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(shell.poseSceneSvg)}`} /></div>
+                    ) : null}
                     <Conversation
                       messages={shell.visibleMessages}
                       sessionId={activeSession.id}
@@ -364,6 +396,7 @@ export function ProductShell({
               style={activeView !== "media" ? { display: "none" } : undefined}
             >
               <iframe
+                ref={mediaFrameRef}
                 src={mediaHref}
                 title="Media Studio"
                 className="m-product-media-frame"

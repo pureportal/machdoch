@@ -216,6 +216,50 @@ export const WorkspaceSettingsPanel = ({
         />
       </SettingPanel>
 
+      <SettingPanel label="Adaptive context & compute">
+        <ChoiceButtons
+          label="Adaptive context & compute override"
+          value={
+            setup.adaptiveControllerOverride === null ||
+            setup.adaptiveControllerOverride === undefined
+              ? "default"
+              : setup.adaptiveControllerOverride
+                ? "enabled"
+                : "disabled"
+          }
+          options={[
+            { value: "default", label: "Default" },
+            { value: "enabled", label: "Enabled" },
+            { value: "disabled", label: "Disabled" },
+          ]}
+          disabled={setup.saving || !setup.workspaceRoot}
+          onChange={(value) => {
+            void setup.onAdaptiveControllerOverrideChange?.(
+              value === "default" ? null : value === "enabled",
+            );
+          }}
+        />
+      </SettingPanel>
+
+      {setup.onReasoningBankEnabledChange ? (
+        <SettingPanel label="ReasoningBank">
+          <ChoiceButtons
+            label="ReasoningBank status"
+            value={
+              setup.reasoningBankEnabled === false ? "disabled" : "enabled"
+            }
+            options={[
+              { value: "enabled", label: "Enabled" },
+              { value: "disabled", label: "Disabled" },
+            ]}
+            disabled={setup.saving || !setup.workspaceRoot}
+            onChange={(value) => {
+              void setup.onReasoningBankEnabledChange?.(value === "enabled");
+            }}
+          />
+        </SettingPanel>
+      ) : null}
+
       <SettingPanel label="Default mode">
         <ChoiceButtons
           label="Default workspace mode"

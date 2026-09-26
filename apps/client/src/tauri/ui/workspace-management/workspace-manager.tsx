@@ -83,6 +83,7 @@ import {
 } from "./workspace-detail-navigation";
 import { WorkspaceGitStatus } from "./workspace-git-status";
 import { WorkspaceMemoryPanel } from "./workspace-memory-panel";
+import { WorkspaceReasoningBankPanel } from "./workspace-reasoning-bank-panel";
 import type { WorkspaceManagementControls } from "./types";
 import {
   selectWorkspaceGitRepository,
@@ -1817,20 +1818,26 @@ export const WorkspaceManager = ({
                   />
                 </div>
 
-                {workspaceSection === "memory" ? (
-                  <WorkspaceMemoryPanel
-                    entries={workspaceMemoryEntries}
-                    sourceSessions={workspaceSetup.memorySourceSessions}
-                    loading={
-                      workspaceMemoryLoading &&
-                      workspaceMemoryRoot !== selectedWorkspace.root
-                    }
-                    disabled={
-                      workspaceMemoryLoading || workspaceMemoryForgetting
-                    }
-                    error={workspaceMemoryError}
-                    onForget={forgetWorkspaceMemory}
-                  />
+                {workspaceSection === "memory" && selectedWorkspace ? (
+                  <div className="space-y-4">
+                    <WorkspaceMemoryPanel
+                      entries={workspaceMemoryEntries}
+                      sourceSessions={workspaceSetup.memorySourceSessions}
+                      loading={
+                        workspaceMemoryLoading &&
+                        workspaceMemoryRoot !== selectedWorkspace.root
+                      }
+                      disabled={
+                        workspaceMemoryLoading || workspaceMemoryForgetting
+                      }
+                      error={workspaceMemoryError}
+                      onForget={forgetWorkspaceMemory}
+                    />
+                    <WorkspaceReasoningBankPanel
+                      key={selectedWorkspace.key}
+                      workspaceRoot={selectedWorkspace.root}
+                    />
+                  </div>
                 ) : null}
 
                 <div

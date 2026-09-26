@@ -127,7 +127,7 @@ const REASONING_META: Record<
   },
   ultra: {
     label: "Ultra",
-    description: "Use maximum reasoning with proactive parallel subagents.",
+    description: "Use maximum reasoning effort.",
     icon: Sparkles,
     triggerClassName:
       "border-violet-400/35 bg-violet-400/10 text-violet-100 hover:border-violet-300/50 hover:bg-violet-400/15 hover:text-white",

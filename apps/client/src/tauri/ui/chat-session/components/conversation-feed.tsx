@@ -23,6 +23,7 @@ import {
   useState,
   type JSX,
   type MouseEvent,
+  type ReactNode,
   type Ref,
 } from "react";
 import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
@@ -79,6 +80,8 @@ import {
 
 export interface ConversationFeedProps {
   visibleMessages: ChatSessionMessage[];
+  hideEmptyState?: boolean;
+  poseScenePreview?: ReactNode;
   promptEnhancementPreview?: {
     id: string;
     content: string;
@@ -376,6 +379,12 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
               </div>
             ) : null}
 
+            {message.role === "user" && message.iteration ? (
+              <span className="px-1 text-xs font-medium text-sky-200">
+                Iteration {message.iteration.index} of {message.iteration.total}
+              </span>
+            ) : null}
+
             {shouldRenderBubble ? (
               <div
                 className={cn(
@@ -648,6 +657,8 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
 
 export const ConversationFeed = ({
   visibleMessages,
+  hideEmptyState = false,
+  poseScenePreview,
   promptEnhancementPreview = null,
   workspaceRoot,
   aiContextMessageLimit = DEFAULT_AI_CONTEXT_MESSAGE_LIMIT,
@@ -1437,6 +1448,14 @@ export const ConversationFeed = ({
   useOptionalRegisterCommands(conversationCommands);
 
   if (visibleMessages.length === 0 && !promptEnhancementPreview) {
+    if (hideEmptyState) {
+      return (
+        <div className="app-conversation-feed mx-auto flex w-full max-w-6xl min-w-0 flex-col px-4 pt-8 lg:px-6">
+          {poseScenePreview}
+          <div ref={bottomRef} className="h-2 shrink-0" />
+        </div>
+      );
+    }
     return (
       <div className="app-conversation-empty mx-auto flex min-h-full max-w-2xl flex-col items-center justify-center py-16">
         <div className="flex flex-col items-center gap-6 text-center">
@@ -1691,6 +1710,7 @@ export const ConversationFeed = ({
           onSaveAsContextPack={onSaveMessageAsContextPack}
         />
       ) : null}
+      {poseScenePreview}
       <div ref={bottomRef} className="h-2 shrink-0" />
     </div>
   );

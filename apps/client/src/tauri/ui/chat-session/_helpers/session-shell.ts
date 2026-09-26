@@ -567,6 +567,9 @@ export const createConversationContextFromSession = (
 
   return {
     sessionId: session.id,
+    adaptiveControllerOverride: session.adaptiveControllerOverride ?? null,
+    ...(session.specialSession === "pose" ? { chatType: "pose" as const } : {}),
+    ...(session.specialSession === "pose" && session.poseScene ? { poseScene: session.poseScene } : {}),
     workspace: session.workspace
       ? { selection: "selected", root: session.workspace }
       : { selection: "not-set" },

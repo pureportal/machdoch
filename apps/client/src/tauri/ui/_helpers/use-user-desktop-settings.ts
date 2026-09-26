@@ -14,6 +14,7 @@ const FALLBACK_USER_DESKTOP_SETTINGS: UserDesktopSettings = {
   assistantBubbleHideWhenFullscreen: true,
   assistantBubbleTemporarilyHideSeconds: 6,
   aiContextMaxMessages: 60,
+  adaptiveControllerEnabled: true,
   inactiveSessionArchiveDays: 7,
   chatIdleTimeoutMinutes: 20,
   archivedSessionRetentionDays: 7,

@@ -42,3 +42,21 @@ describe("desktop chat timeout settings", () => {
     );
   });
 });
+
+describe("adaptive controller global setting", () => {
+  it("saves the global toggle", async () => {
+    const onSave = vi.fn();
+    render(createElement(DesktopSettingsPanel, {
+      setup: {
+        settings: { ...DEFAULT_USER_DESKTOP_SETTINGS },
+        saving: false,
+        message: null,
+        onSave,
+      },
+    }));
+    fireEvent.click(screen.getByRole("switch", { name: "Adaptive context & compute" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ adaptiveControllerEnabled: false }),
+    ));
+  });
+});

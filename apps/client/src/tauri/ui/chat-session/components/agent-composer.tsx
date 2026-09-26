@@ -2,6 +2,7 @@ import {
   ChevronDown,
   CornerDownRight,
   ListOrdered,
+  Repeat2,
   SendHorizonal,
   Square,
   X,
@@ -12,11 +13,13 @@ import {
   startTransition,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import type { ChatSessionContextAttachment } from "../../chat-session.model";
+import { MAX_REQUEST_ITERATIONS } from "../../chat-session.model";
 import { getDefaultCommandShortcut } from "@machdoch/media-studio/tauri/ui/commands/command-defaults.js";
 import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import type {
@@ -24,6 +27,15 @@ import type {
   CommandPageItem,
 } from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import {
+  ContextActionMenu,
+  type ContextMenuAction,
+} from "@machdoch/media-studio/tauri/ui/components/ui/context-action-menu.js";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@machdoch/media-studio/tauri/ui/components/ui/popover.js";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
@@ -70,6 +82,7 @@ export interface AgentComposerAction {
   disabled?: boolean;
   onClick: () => void;
   className?: string;
+  contextActions?: readonly ContextMenuAction[];
 }
 
 export type AgentComposerQueuedMessage = QueuedMessagePanelMessage;
@@ -100,6 +113,7 @@ export interface AgentComposerProps {
   actions?: AgentComposerAction[];
   runningTaskMessageAction?: RunningTaskMessageAction;
   queuedMessages?: AgentComposerQueuedMessage[];
+  iterationsEnabled?: boolean;
   onModelSelection: (provider: RuntimeProvider, model: string) => void;
   onSelectContextFiles: () => Promise<void>;
   onSelectContextFolders: () => Promise<void>;
@@ -134,7 +148,7 @@ export interface AgentComposerProps {
     attachmentId: string,
   ) => void;
   onQueuedMessageClearContextAttachments?: (messageId: string) => void;
-  onSend: (draft: string) => void;
+  onSend: (draft: string, iterationCount?: number) => void;
   onCancel: () => void;
 }
 
@@ -373,9 +387,8 @@ const renderAction = (
   action: AgentComposerAction,
   iconButtonClassName: string,
 ): JSX.Element => {
-  return (
+  const button = (
     <Button
-      key={action.id}
       type="button"
       variant="outline"
       size="icon"
@@ -388,6 +401,41 @@ const renderAction = (
       {action.icon}
     </Button>
   );
+  return action.contextActions ? (
+    <ContextActionMenu
+      key={action.id}
+      label={`${action.label} options`}
+      actions={action.contextActions}
+    >
+      {button}
+    </ContextActionMenu>
+  ) : (
+    <Fragment key={action.id}>{button}</Fragment>
+  );
+};
+
+const hasMultipleComposerLines = (
+  textarea: HTMLTextAreaElement,
+  width: number,
+): boolean => {
+  const measure = textarea.cloneNode(false) as HTMLTextAreaElement;
+  measure.setAttribute("aria-hidden", "true");
+  measure.tabIndex = -1;
+  measure.style.position = "absolute";
+  measure.style.visibility = "hidden";
+  measure.style.pointerEvents = "none";
+  measure.style.width = `${width}px`;
+  measure.style.height = "auto";
+  measure.style.setProperty("min-height", "0", "important");
+  measure.style.setProperty("max-height", "none", "important");
+  measure.style.flex = "none";
+  textarea.parentElement?.append(measure);
+  measure.value = "x";
+  const singleLineHeight = measure.scrollHeight;
+  measure.value = textarea.value;
+  const contentHeight = measure.scrollHeight;
+  measure.remove();
+  return contentHeight > singleLineHeight + 1;
 };
 
 export const AgentComposer = ({
@@ -416,6 +464,7 @@ export const AgentComposer = ({
   actions = [],
   runningTaskMessageAction,
   queuedMessages = [],
+  iterationsEnabled = false,
   onModelSelection,
   onSelectContextFiles,
   onSelectContextFolders,
@@ -441,7 +490,19 @@ export const AgentComposer = ({
   onSend,
   onCancel,
 }: AgentComposerProps): JSX.Element => {
+  const [iterationCount, setIterationCount] = useState(1);
+  const [iterationsOpen, setIterationsOpen] = useState(false);
+  useEffect(() => {
+    setIterationCount(1);
+    setIterationsOpen(false);
+  }, [draftIdentity, iterationsEnabled]);
+  useEffect(() => {
+    if (inputBlocked) setIterationsOpen(false);
+  }, [inputBlocked]);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const composerFormRef = useRef<HTMLFormElement | null>(null);
+  const sessionActionsRef = useRef<HTMLDivElement | null>(null);
+  const [stackSessionActions, setStackSessionActions] = useState(false);
   const handleTextareaRef = useCallback(
     (node: HTMLTextAreaElement | null): void => {
       composerTextareaRef.current = node;
@@ -459,6 +520,54 @@ export const AgentComposer = ({
     draftRevision,
     onDraftChange,
   );
+  useLayoutEffect(() => {
+    const form = composerFormRef.current;
+    const textarea = composerTextareaRef.current;
+    const actionGroup = sessionActionsRef.current;
+    if (!form || !textarea || !actionGroup) {
+      setStackSessionActions(false);
+      return;
+    }
+
+    const updateLayout = (): void => {
+      if (
+        window.matchMedia?.("(max-width: 767px), (max-height: 600px)").matches
+      ) {
+        setStackSessionActions(false);
+        return;
+      }
+
+      const formGap = parseFloat(getComputedStyle(form).columnGap) || 0;
+      const actionGap =
+        parseFloat(getComputedStyle(actionGroup).columnGap) || 0;
+      const buttons = Array.from(actionGroup.children) as HTMLElement[];
+      const actionWidth = buttons.reduce(
+        (width, button) => width + button.getBoundingClientRect().width,
+        actionGap * Math.max(0, buttons.length - 1),
+      );
+      const attachmentWidth =
+        (form.firstElementChild as HTMLElement | null)?.getBoundingClientRect()
+          .width ?? 0;
+      const horizontalTextareaWidth =
+        form.clientWidth - attachmentWidth - actionWidth - formGap * 2;
+      setStackSessionActions(
+        horizontalTextareaWidth >= 200 &&
+          hasMultipleComposerLines(textarea, horizontalTextareaWidth),
+      );
+    };
+
+    updateLayout();
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(updateLayout);
+    observer?.observe(form);
+    window.addEventListener("resize", updateLayout);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", updateLayout);
+    };
+  }, [bufferedDraft.value, showCancelAlongsideSend, variant, actions.length]);
   const styles = getVariantStyles(variant);
   const canSubmit = canSend && Boolean(bufferedDraft.value.trim());
   const showCancelButton = isExecuting && (variant === "quick" || !canSubmit);
@@ -480,13 +589,17 @@ export const AgentComposer = ({
     const currentDraft = bufferedDraft.getValue();
     if (!inputBlocked && canSend && currentDraft.trim()) {
       bufferedDraft.flush();
-      onSend(currentDraft);
+      onSend(currentDraft, iterationsEnabled ? iterationCount : 1);
+      setIterationCount(1);
+      setIterationsOpen(false);
     }
   }, [
     bufferedDraft.flush,
     bufferedDraft.getValue,
     canSend,
     inputBlocked,
+    iterationCount,
+    iterationsEnabled,
     onSend,
   ]);
 
@@ -574,7 +687,13 @@ export const AgentComposer = ({
       onPaste={handleTextareaPaste}
       placeholder={placeholder}
       disabled={inputBlocked}
-      className={styles.textarea}
+      className={cn(
+        styles.textarea,
+        variant === "session" &&
+          !showCancelAlongsideSend &&
+          stackSessionActions &&
+          "app-composer-textarea-stacked min-h-[9.25rem]",
+      )}
     />
   );
   const toggleButtons = toggles.map((toggle) =>
@@ -618,7 +737,13 @@ export const AgentComposer = ({
                 type="button"
                 aria-pressed={selected}
                 disabled={inputBlocked}
-                onClick={() => onRunningTaskMessageActionChange?.(action.id)}
+                onClick={() => {
+                  if (action.id === "steer") {
+                    setIterationCount(1);
+                    setIterationsOpen(false);
+                  }
+                  onRunningTaskMessageActionChange?.(action.id);
+                }}
                 className={cn(
                   "inline-flex h-8 min-w-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 disabled:cursor-not-allowed disabled:text-slate-600 disabled:hover:bg-transparent",
                   selected &&
@@ -1203,10 +1328,87 @@ export const AgentComposer = ({
       {sendControl}
     </div>
   ) : (
-    <>
+    <div
+      ref={sessionActionsRef}
+      className={cn(
+        "app-composer-actions flex shrink-0 items-center gap-3",
+        stackSessionActions && "flex-col gap-y-2",
+      )}
+    >
       {actionButtons}
+      {variant === "session" ? (
+        <Popover open={iterationsOpen} onOpenChange={setIterationsOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-label={
+                iterationCount > 1
+                  ? `Iterations: ${iterationCount}`
+                  : "Iterations"
+              }
+              tooltip={
+                iterationsEnabled
+                  ? `Iterations: ${iterationCount}`
+                  : "Turn off Interview to repeat this request"
+              }
+              disabled={!iterationsEnabled || inputBlocked}
+              className={cn(
+                styles.iconButton,
+                "relative",
+                iterationCount > 1 &&
+                  "border-sky-500/35 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15",
+              )}
+            >
+              <Repeat2 className={styles.iconClassName} />
+              {iterationCount > 1 ? (
+                <span
+                  aria-hidden="true"
+                  className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-sky-400 px-0.5 text-[9px] font-semibold leading-none text-slate-950"
+                >
+                  {iterationCount}
+                </span>
+              ) : null}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            side="top"
+            align="end"
+            sideOffset={8}
+            className="w-40 rounded-2xl border-slate-800 bg-slate-950/95 p-3 shadow-2xl"
+          >
+            <label className="grid gap-2 text-xs font-medium text-slate-300">
+              <span>Iterations</span>
+              <select
+                aria-label="Iterations"
+                value={iterationCount}
+                onChange={(event) => {
+                  const count = Number(event.target.value);
+                  setIterationCount(count);
+                  setIterationsOpen(false);
+                  if (
+                    count > 1 &&
+                    isExecuting &&
+                    selectedRunningAction === "steer"
+                  ) {
+                    onRunningTaskMessageActionChange?.("queue");
+                  }
+                }}
+                className="h-9 w-full rounded-lg border border-slate-800 bg-slate-900 px-2 text-sm text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40"
+              >
+                {Array.from({ length: MAX_REQUEST_ITERATIONS }, (_, index) => (
+                  <option key={index + 1} value={index + 1}>
+                    {index + 1}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </PopoverContent>
+        </Popover>
+      ) : null}
       {sendControl}
-    </>
+    </div>
   );
 
   if (variant === "quick") {
@@ -1284,6 +1486,7 @@ export const AgentComposer = ({
 
         <SubmitShortcut asChild>
           <form
+            ref={composerFormRef}
             className={cn(
               "app-composer-form flex min-w-0 flex-wrap gap-3",
               showCancelAlongsideSend ? "items-end" : "items-center",

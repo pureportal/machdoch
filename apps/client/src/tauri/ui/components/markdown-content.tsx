@@ -9,8 +9,10 @@ import {
 import {
   isValidElement,
   memo,
+  useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -342,7 +344,18 @@ export const MarkdownContent = memo(function MarkdownContent({
   components: componentOverrides,
 }: MarkdownContentProps): JSX.Element {
   const markdownInstanceId = useId().replace(/[^A-Za-z0-9_-]/gu, "");
+  const openWorkspaceFileRef = useRef(onOpenWorkspaceFile);
+  useLayoutEffect(() => {
+    openWorkspaceFileRef.current = onOpenWorkspaceFile;
+  }, [onOpenWorkspaceFile]);
+  const openWorkspaceFile = useCallback<WorkspaceMarkdownLinkOpenHandler>(
+    (relativePath, line) => openWorkspaceFileRef.current?.(relativePath, line),
+    [],
+  );
   const autoLinkWorkspacePaths = Boolean(onOpenWorkspaceFile);
+  const workspaceFileHandler = autoLinkWorkspacePaths
+    ? openWorkspaceFile
+    : undefined;
   const remarkPlugins = useMemo<
     NonNullable<ReactMarkdownOptions["remarkPlugins"]>
   >(
@@ -353,8 +366,8 @@ export const MarkdownContent = memo(function MarkdownContent({
     [autoLinkWorkspacePaths, workspaceRoot],
   );
   const urlTransform = useMemo<UrlTransform>(
-    () => createMarkdownUrlTransform(workspaceRoot, onOpenWorkspaceFile),
-    [onOpenWorkspaceFile, workspaceRoot],
+    () => createMarkdownUrlTransform(workspaceRoot, workspaceFileHandler),
+    [workspaceFileHandler, workspaceRoot],
   );
   const remarkRehypeOptions = useMemo<
     NonNullable<ReactMarkdownOptions["remarkRehypeOptions"]>
@@ -364,10 +377,10 @@ export const MarkdownContent = memo(function MarkdownContent({
   );
   const components = useMemo<Components>(
     () => ({
-      ...createMarkdownComponents(workspaceRoot, onOpenWorkspaceFile),
+      ...createMarkdownComponents(workspaceRoot, workspaceFileHandler),
       ...componentOverrides,
     }),
-    [componentOverrides, onOpenWorkspaceFile, workspaceRoot],
+    [componentOverrides, workspaceFileHandler, workspaceRoot],
   );
 
   return (

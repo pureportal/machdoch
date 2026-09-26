@@ -125,6 +125,7 @@ export const hasDesktopSettingsDraftChanges = (
     left.assistantBubbleTemporarilyHideSeconds !==
       right.assistantBubbleTemporarilyHideSeconds ||
     left.aiContextMaxMessages !== right.aiContextMaxMessages ||
+    left.adaptiveControllerEnabled !== right.adaptiveControllerEnabled ||
     left.chatIdleTimeoutMinutes !== right.chatIdleTimeoutMinutes ||
     left.inactiveSessionArchiveDays !== right.inactiveSessionArchiveDays ||
     left.archivedSessionRetentionDays !== right.archivedSessionRetentionDays ||
@@ -539,6 +540,16 @@ export const DesktopSettingsPanel = ({
 
       <SettingsCard title="Sessions">
         <div className="grid gap-0">
+          <SettingPanel label="Adaptive context & compute">
+            <SettingsToggle
+              label="Adaptive context & compute"
+              checked={draft.adaptiveControllerEnabled}
+              disabled={setup.saving}
+              onCheckedChange={(checked) =>
+                setDraft({ ...draft, adaptiveControllerEnabled: checked })
+              }
+            />
+          </SettingPanel>
           <SettingPanel label="AI context cap">
             <SettingsNumberInput
               aria-label="AI context message limit"

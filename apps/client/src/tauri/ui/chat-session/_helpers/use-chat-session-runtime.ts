@@ -34,6 +34,9 @@ import {
   openUserProviderApiKeyPortal,
   saveUserSpeechToTextActiveProvider,
   saveUserSpeechToTextInputDevice,
+  saveUserSpeechToTextKeyTerms,
+  saveUserSpeechToTextContext,
+  saveUserSpeechToTextProcessing,
   saveUserDesktopSettings,
   saveUserAgentLimitsSettings,
   saveUserReviewModelSettings,
@@ -160,6 +163,12 @@ export interface ChatSessionRuntimeController {
   handleSpeechToTextInputDeviceSave: (
     inputDeviceId: string | null,
   ) => Promise<void>;
+  handleSpeechToTextKeyTermsSave: (keyTerms: string[]) => Promise<void>;
+  handleSpeechToTextContextSave: (speechContext: string) => Promise<void>;
+  handleSpeechToTextProcessingSave: (options: {
+    autoTranslateToEnglish: boolean;
+    autoFormat: boolean;
+  }) => Promise<void>;
   handleWebSearchActiveProviderSave: (
     provider: WebSearchProvider,
   ) => Promise<void>;
@@ -231,6 +240,7 @@ const createEmptyUserDesktopSettings = (): UserDesktopSettings => {
     assistantBubbleHideWhenFullscreen: true,
     assistantBubbleTemporarilyHideSeconds: 6,
     aiContextMaxMessages: 60,
+    adaptiveControllerEnabled: true,
     inactiveSessionArchiveDays: 7,
     chatIdleTimeoutMinutes: 20,
     archivedSessionRetentionDays: 7,
@@ -385,6 +395,10 @@ export const useChatSessionRuntime = (
     useState<UserSpeechToTextSettings>({
       activeProvider: "none",
       inputDeviceId: null,
+      keyTerms: [],
+      speechContext: "",
+      autoTranslateToEnglish: false,
+      autoFormat: false,
       providerAvailability: [],
     });
   const [speechToTextSetupSaving, setSpeechToTextSetupSaving] = useState(false);
@@ -1652,7 +1666,11 @@ export const useChatSessionRuntime = (
       try {
         const settings = await saveUserSpeechToTextActiveProvider(provider);
         const providerLabel =
-          provider === "none" ? "Speak to text" : getProviderLabel(provider);
+          provider === "none"
+            ? "Speak to text"
+            : provider === "whisper"
+              ? "Whisper"
+              : getProviderLabel(provider);
 
         if (speechMutationRevisionRef.current !== mutationRevision) {
           return;
@@ -1735,6 +1753,82 @@ export const useChatSessionRuntime = (
       }
     },
     [applyLoadedUserSpeechToTextSettings, userSpeechToTextSettings],
+  );
+
+  const handleSpeechToTextProcessingSave = useCallback(
+    async (options: {
+      autoTranslateToEnglish: boolean;
+      autoFormat: boolean;
+    }): Promise<void> => {
+      const mutationRevision = speechMutationRevisionRef.current + 1;
+      speechMutationRevisionRef.current = mutationRevision;
+      const previousSettings = userSpeechToTextSettings;
+      setUserSpeechToTextSettings((settings) => ({ ...settings, ...options }));
+      try {
+        const settings = await saveUserSpeechToTextProcessing(options);
+        if (speechMutationRevisionRef.current === mutationRevision) {
+          applyLoadedUserSpeechToTextSettings(settings);
+        }
+      } catch (error) {
+        if (speechMutationRevisionRef.current === mutationRevision) {
+          applyLoadedUserSpeechToTextSettings(previousSettings);
+        }
+        throw error;
+      }
+    },
+    [applyLoadedUserSpeechToTextSettings, userSpeechToTextSettings],
+  );
+
+  const handleSpeechToTextKeyTermsSave = useCallback(
+    async (keyTerms: string[]): Promise<void> => {
+      setSpeechToTextSetupSaving(true);
+      setSpeechToTextSetupMessage(null);
+      try {
+        const settings = await saveUserSpeechToTextKeyTerms(keyTerms);
+        applyLoadedUserSpeechToTextSettings(settings);
+        setSpeechToTextSetupMessage({
+          tone: "success",
+          text: "Key terms saved.",
+        });
+      } catch (error) {
+        setSpeechToTextSetupMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? error.message
+              : "Key terms could not be saved.",
+        });
+      } finally {
+        setSpeechToTextSetupSaving(false);
+      }
+    },
+    [applyLoadedUserSpeechToTextSettings],
+  );
+
+  const handleSpeechToTextContextSave = useCallback(
+    async (speechContext: string): Promise<void> => {
+      setSpeechToTextSetupSaving(true);
+      setSpeechToTextSetupMessage(null);
+      try {
+        const settings = await saveUserSpeechToTextContext(speechContext);
+        applyLoadedUserSpeechToTextSettings(settings);
+        setSpeechToTextSetupMessage({
+          tone: "success",
+          text: "Speech context saved.",
+        });
+      } catch (error) {
+        setSpeechToTextSetupMessage({
+          tone: "error",
+          text:
+            error instanceof Error
+              ? error.message
+              : "Speech context could not be saved.",
+        });
+      } finally {
+        setSpeechToTextSetupSaving(false);
+      }
+    },
+    [applyLoadedUserSpeechToTextSettings],
   );
 
   const handleWebSearchActiveProviderSave = useCallback(
@@ -2631,6 +2725,9 @@ export const useChatSessionRuntime = (
     handleVoiceActiveProviderSave,
     handleSpeechToTextActiveProviderSave,
     handleSpeechToTextInputDeviceSave,
+    handleSpeechToTextKeyTermsSave,
+    handleSpeechToTextContextSave,
+    handleSpeechToTextProcessingSave,
     handleWebSearchActiveProviderSave,
     handleWebSearchSetupProviderChange,
     handleWebSearchSetupKeyChange,

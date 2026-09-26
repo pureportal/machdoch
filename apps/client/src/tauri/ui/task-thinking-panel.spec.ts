@@ -123,6 +123,51 @@ const renderPanel = (thinking: TaskThinkingTrace): string => {
 };
 
 describe("TaskThinkingPanel", () => {
+  it("shows the status of each active parallel agent", () => {
+    const markup = renderPanel({
+      status: "running",
+      mode: "machdoch",
+      startedAt: 1_000,
+      timelineEvents: [
+        {
+          id: "first",
+          kind: "agent",
+          phase: "started",
+          label: "Agent files",
+          detail: "Inspect files",
+          tone: "info",
+          timestamp: 1_100,
+          elapsedMs: 100,
+        },
+        {
+          id: "second",
+          kind: "agent",
+          phase: "started",
+          label: "Agent tests",
+          detail: "Check tests",
+          tone: "info",
+          timestamp: 1_200,
+          elapsedMs: 200,
+        },
+        {
+          id: "second-done",
+          kind: "agent",
+          phase: "completed",
+          label: "Agent tests",
+          detail: "",
+          tone: "success",
+          timestamp: 1_300,
+          elapsedMs: 300,
+        },
+      ],
+    });
+
+    expect(markup).toContain("Agent files started");
+    expect(markup).toContain("Inspect files");
+    expect(markup).toContain("Agent tests finished");
+    expect(markup).toContain("Check tests");
+  });
+
   it("renders mixed execution activity as one readable story", () => {
     const markup = renderPanel(createRepresentativeTrace());
 

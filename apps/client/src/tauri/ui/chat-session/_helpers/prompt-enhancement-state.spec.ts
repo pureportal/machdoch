@@ -322,7 +322,6 @@ describe("enhancement state and queue handoff", () => {
     const submitted = reconcileQueuedMessagesForTaskSubmission({
       queuedSessionMessages: [attempt.message, state.queuedSessionMessages[1]],
       queuedMessageTombstones: {},
-      sessionId: "session",
       consumedQueuedMessageId: "queued",
       timestamp: Date.now(),
     });

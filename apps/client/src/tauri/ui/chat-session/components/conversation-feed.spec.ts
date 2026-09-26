@@ -1,7 +1,9 @@
 import { createElement, createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
 import type { ChatSessionMessage } from "../../chat-session.model";
 import { ConversationFeed } from "./conversation-feed";
+import { PoseScenePreview } from "./pose-scene-preview";
 
 const noop = (): void => {};
 
@@ -24,6 +26,46 @@ const renderFeed = (messages: ChatSessionMessage[], overrides = {}): string =>
   );
 
 describe("ConversationFeed message states", () => {
+  it("shows a starting Pose scene before the first message", () => {
+    const markup = renderFeed([], {
+      hideEmptyState: true,
+      poseScenePreview: createElement(PoseScenePreview, {
+        sessionId: "6b48f2b2-9b96-4567-aab3-e6423dbe482a",
+        initialScene: {
+          aspectRatio: "1:1",
+          people: [
+            { pose: "standing", x: 0.5, y: 0.92, scale: 0.8, mirror: false },
+          ],
+        },
+      }),
+    });
+    expect(markup).toContain('aria-label="Editable pose scene"');
+    expect(markup).not.toContain("Ready to automate");
+  });
+
+  it("shows a generated scene after the Pose chat response", () => {
+    const markup = renderFeed(
+      [{ id: "pose-answer", role: "agent", content: "Saved a pose scene." }],
+      {
+        poseScenePreview: createElement(PoseScenePreview, {
+          sessionId: "6b48f2b2-9b96-4567-aab3-e6423dbe482a",
+          initialScene: {
+            aspectRatio: "16:9",
+            people: [
+              { pose: "walking", x: 0.3, y: 0.92, scale: 0.75, mirror: false },
+              { pose: "waving", x: 0.7, y: 0.92, scale: 0.75, mirror: true },
+            ],
+          },
+        }),
+      },
+    );
+    expect(markup.indexOf("Saved a pose scene.")).toBeLessThan(
+      markup.indexOf('aria-label="Pose scene"'),
+    );
+    expect(markup).toContain('aria-label="Editable pose scene"');
+    expect(markup.match(/<line /gu) ?? []).toHaveLength(34);
+  });
+
   it("shows a concise retry indicator without exposing the recovery prompt", () => {
     const markup = renderFeed([
       {

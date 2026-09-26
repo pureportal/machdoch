@@ -1,4 +1,5 @@
 import * as tauriCore from "@tauri-apps/api/core";
+import { VALID_SPEECH_TO_TEXT_PROVIDERS } from "../../core/runtime-contract.generated.js";
 import type {
   FleetManagedSettingsDelivery,
   FleetManagedPrompt,
@@ -24,6 +25,7 @@ import type {
   TaskExecutionResult,
   TaskRunPreview,
 } from "../../core/types.js";
+import type { ReasoningLesson } from "../../core/reasoning-bank.js";
 import { validateTaskDeterministicAction } from "../../core/_helpers/deterministic-action-validation.js";
 import { replaceDiscoveredModelCapabilities } from "../../core/model-capabilities.js";
 import {
@@ -97,6 +99,7 @@ import {
 import type {
   AudioProvider,
   AudioProviderAvailability as SharedAudioProviderAvailability,
+  SpeechToTextProviderAvailability as SharedSpeechToTextProviderAvailability,
   RuntimeAgentLimits as SharedRuntimeAgentLimits,
   WorkspaceCompatibilityConfig as SharedRuntimeCompatibilityConfig,
   RuntimeSnapshot as SharedRuntimeSnapshot,
@@ -162,7 +165,7 @@ export type UserWebSearchApiKeyProvider = UserWebSearchProvider;
 
 export type UserVoiceAiProvider = AudioProvider;
 
-export type UserSpeechToTextProvider = AudioProvider;
+export type UserSpeechToTextProvider = Exclude<SpeechToTextProvider, "none">;
 
 export const MAIN_WINDOW_LABEL = "main";
 export const ASSISTANT_BUBBLE_WINDOW_LABEL = "assistant-bubble";
@@ -202,7 +205,7 @@ export const USER_VOICE_AI_PROVIDER_ORDER: UserVoiceAiProvider[] = [
 ];
 
 export const USER_SPEECH_TO_TEXT_PROVIDER_ORDER: UserSpeechToTextProvider[] = [
-  ...USER_AUDIO_AI_PROVIDERS,
+  ...VALID_SPEECH_TO_TEXT_PROVIDERS.filter((provider) => provider !== "none"),
 ];
 
 export const USER_API_KEY_PROVIDER_PORTAL_URLS: Record<
@@ -240,7 +243,8 @@ export type WebSearchProviderAvailability = SharedWebSearchProviderAvailability;
 
 export type VoiceProviderAvailability = SharedAudioProviderAvailability;
 
-export type SpeechToTextProviderAvailability = SharedAudioProviderAvailability;
+export type SpeechToTextProviderAvailability =
+  SharedSpeechToTextProviderAvailability;
 
 export type RuntimeWebSearchConfig = SharedRuntimeWebSearchConfig;
 
@@ -1409,6 +1413,7 @@ const FLEET_CONTROL_COMMAND_KINDS = [
   "update-draft",
   "set-session-model",
   "set-session-mode",
+  "set-parallel-agent-mode",
   "set-session-reasoning",
   "set-session-workspace",
   "clear-session-workspace",
@@ -1517,6 +1522,7 @@ const MODEL_STREAM_KINDS = [
 >;
 const TASK_TIMELINE_EVENT_KINDS = [
   "state",
+  "agent",
   "model-call",
   "tool-call",
   "retry",
@@ -1846,6 +1852,8 @@ const isFleetControlCommandEvent = (
       FLEET_CONTROL_RUN_MODES.includes(
         value.mode as (typeof FLEET_CONTROL_RUN_MODES)[number],
       )) &&
+    (value.kind !== "set-parallel-agent-mode" ||
+      ["disabled", "read-only", "machdoch"].includes(String(value.mode))) &&
     (value.reasoning === undefined || typeof value.reasoning === "string") &&
     (value.promptEnhancementMode === undefined ||
       typeof value.promptEnhancementMode === "string") &&
@@ -2660,7 +2668,8 @@ const createSpeechToTextAvailabilitySnapshot = (
 ): SpeechToTextProviderAvailability[] => {
   return USER_SPEECH_TO_TEXT_PROVIDER_ORDER.map((provider) => ({
     provider,
-    configured: configuredProviders.includes(provider),
+    configured:
+      provider === "whisper" || configuredProviders.includes(provider),
   }));
 };
 
@@ -2668,6 +2677,10 @@ const createDefaultUserSpeechToTextSettings = (): UserSpeechToTextSettings => {
   return {
     activeProvider: "none",
     inputDeviceId: null,
+    keyTerms: [],
+    speechContext: "",
+    autoTranslateToEnglish: false,
+    autoFormat: false,
     providerAvailability: createSpeechToTextAvailabilitySnapshot([]),
   };
 };
@@ -3375,6 +3388,20 @@ export const loadWorkspaceMemoryEntries = async (
   }
 };
 
+export const loadWorkspaceReasoningBankLessons = async (
+  workspaceRoot: string,
+): Promise<ReasoningLesson[]> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  if (!normalizedWorkspaceRoot) {
+    throw new Error("Select a workspace to view ReasoningBank.");
+  }
+  if (!canInvokeTauriCommands()) return [];
+  return await tauriCore.invoke<ReasoningLesson[]>(
+    "get_workspace_reasoning_bank_lessons",
+    { workspaceRoot: normalizedWorkspaceRoot },
+  );
+};
+
 export const loadMcpConfigDocument = async (
   scope: McpConfigScope,
   workspaceRoot?: string | null,
@@ -3869,6 +3896,47 @@ export const saveWorkspaceMemoryOverride = async (
   }
 };
 
+export const saveWorkspaceAdaptiveControllerOverride = async (
+  workspaceRoot: string | null | undefined,
+  enabled: boolean | null,
+): Promise<string | null> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  if (!normalizedWorkspaceRoot) {
+    throw new Error(
+      "Select a workspace before changing adaptive context & compute.",
+    );
+  }
+  if (enabled !== null && typeof enabled !== "boolean") {
+    throw new Error("Choose Default, Enabled, or Disabled.");
+  }
+  if (!canInvokeTauriCommands()) return null;
+  return await tauriCore.invoke<string>(
+    "save_workspace_adaptive_controller_override",
+    {
+      workspaceRoot: normalizedWorkspaceRoot,
+      enabled,
+    },
+  );
+};
+
+export const saveWorkspaceReasoningBankEnabled = async (
+  workspaceRoot: string | null | undefined,
+  enabled: boolean,
+): Promise<string | null> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  if (!normalizedWorkspaceRoot) {
+    throw new Error("Select a workspace before changing ReasoningBank.");
+  }
+  if (!canInvokeTauriCommands()) return null;
+  return await tauriCore.invoke<string>(
+    "save_workspace_reasoning_bank_enabled",
+    {
+      workspaceRoot: normalizedWorkspaceRoot,
+      enabled,
+    },
+  );
+};
+
 export const saveWorkspaceReasoningMode = async (
   workspaceRoot: string | null | undefined,
   reasoning: RuntimeSnapshot["reasoning"],
@@ -4153,6 +4221,52 @@ export const saveUserSpeechToTextInputDevice = async (
   }
 };
 
+export const saveUserSpeechToTextKeyTerms = async (
+  keyTerms: string[],
+): Promise<UserSpeechToTextSettings> => {
+  if (!canInvokeTauriCommands()) {
+    return { ...createDefaultUserSpeechToTextSettings(), keyTerms };
+  }
+
+  const result = await tauriCore.invoke<UserSpeechToTextSettings>(
+    "save_user_speech_to_text_key_terms",
+    { keyTerms },
+  );
+  await emitUserSettingsChanged("speech-to-text");
+  return result;
+};
+
+export const saveUserSpeechToTextContext = async (
+  speechContext: string,
+): Promise<UserSpeechToTextSettings> => {
+  if (!canInvokeTauriCommands()) {
+    return { ...createDefaultUserSpeechToTextSettings(), speechContext };
+  }
+
+  const result = await tauriCore.invoke<UserSpeechToTextSettings>(
+    "save_user_speech_to_text_context",
+    { speechContext },
+  );
+  await emitUserSettingsChanged("speech-to-text");
+  return result;
+};
+
+export const saveUserSpeechToTextProcessing = async (options: {
+  autoTranslateToEnglish: boolean;
+  autoFormat: boolean;
+}): Promise<UserSpeechToTextSettings> => {
+  if (!canInvokeTauriCommands()) {
+    return { ...createDefaultUserSpeechToTextSettings(), ...options };
+  }
+
+  const result = await tauriCore.invoke<UserSpeechToTextSettings>(
+    "save_user_speech_to_text_processing",
+    options,
+  );
+  await emitUserSettingsChanged("speech-to-text");
+  return result;
+};
+
 export const synthesizeUserVoiceAudio = async (options: {
   provider: UserVoiceAiProvider;
   text: string;
@@ -4195,6 +4309,9 @@ export const transcribeUserSpeechAudio = async (options: {
   audioBase64: string;
   mimeType: string;
   languageCode?: string;
+  keyTerms: string[];
+  speechContext: string;
+  autoTranslateToEnglish: boolean;
 }): Promise<TranscribedSpeechText> => {
   const normalizedAudioBase64 = options.audioBase64.trim();
   const normalizedMimeType = options.mimeType.trim();
@@ -4220,6 +4337,9 @@ export const transcribeUserSpeechAudio = async (options: {
         provider: options.provider,
         audioBase64: normalizedAudioBase64,
         mimeType: normalizedMimeType,
+        keyTerms: options.keyTerms,
+        speechContext: options.speechContext,
+        autoTranslateToEnglish: options.autoTranslateToEnglish,
         ...(options.languageCode?.trim()
           ? { languageCode: options.languageCode.trim() }
           : {}),
@@ -4228,6 +4348,20 @@ export const transcribeUserSpeechAudio = async (options: {
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
+};
+
+export const processUserSpeechText = async (options: {
+  provider: UserSpeechToTextProvider;
+  text: string;
+  autoTranslateToEnglish: boolean;
+  autoFormat: boolean;
+}): Promise<string> => {
+  if (!canInvokeTauriCommands()) {
+    throw new Error(
+      "Speech text processing is only available in the desktop runtime.",
+    );
+  }
+  return tauriCore.invoke<string>("process_user_speech_text", options);
 };
 
 export const loadWorkspaceRuntimeSnapshot = async (

@@ -27,6 +27,7 @@ import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
 import { FilePreviewDialogFallback } from "./chat-session/components/file-preview-dialog-fallback";
 import { FleetManagerPanel } from "./chat-session/components/fleet-manager-panel";
 import { ProviderEmptyState } from "./chat-session/components/provider-empty-state";
+import { PoseScenePreview } from "./chat-session/components/pose-scene-preview";
 import { SchedulerPanel } from "./chat-session/components/scheduler-panel";
 import { ScrollToNewestButton } from "./chat-session/components/scroll-to-newest-button";
 import { ScrollToTopButton } from "./chat-session/components/scroll-to-top-button";
@@ -1022,6 +1023,8 @@ export const ChatSession = (): JSX.Element => {
                         <ConversationFeed
                           key={controller.composer.activeSession.id}
                           {...controller.conversation}
+                          hideEmptyState={controller.composer.activeSession.specialSession === "pose"}
+                          poseScenePreview={controller.composer.activeSession.specialSession === "pose" ? <PoseScenePreview key={controller.composer.activeSession.id} sessionId={controller.composer.activeSession.id} initialScene={controller.composer.activeSession.poseScene} onSceneChange={(scene) => controller.updatePoseScene(controller.composer.activeSession.id, scene)} /> : undefined}
                         />
                       </ScrollArea>
                       <ScrollToTopButton
@@ -1079,6 +1082,12 @@ export const ChatSession = (): JSX.Element => {
               <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
                 <Suspense fallback={appLoadingFallback}>
                   <MediaStudio
+                    savedPoseScenes={controller.savedPoseScenes}
+                    onRenamePoseScene={controller.renamePoseScene}
+                    onOpenPoseChat={(map) => {
+                      controller.createPoseChat(map);
+                      selectApp("chat");
+                    }}
                     providerStatuses={controller.titlebar.providerStatuses}
                     onOpenProviderSettings={controller.openProviderSettings}
                     workspaceRoot={controller.composer.activeSession.workspace}

@@ -85,6 +85,53 @@ const expectUniqueSessionOrder = (
 };
 
 describe("sidebar filtering and ordering", () => {
+  it("filters by queued activity and failed enhancement after the previous response", () => {
+    const session = createSession({
+      id: "queued-session",
+      messages: [
+        { id: "user", taskId: "task", role: "user", content: "First" },
+        {
+          id: "agent",
+          taskId: "task",
+          role: "agent",
+          content: "Done",
+          outcome: { status: "succeeded" },
+        },
+      ],
+    });
+    const queued = {
+      id: "queued",
+      sessionId: session.id,
+      task: "Next",
+      contentUpdatedAt: 1,
+      attachmentsUpdatedAt: 1,
+      attachmentTombstones: {},
+      blockerUpdatedAt: 1,
+      orderRank: 0,
+      orderUpdatedAt: 1,
+      status: "enhancing" as const,
+      statusUpdatedAt: 1,
+      contextAttachments: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const index = createSessionHistoryIndex([session]);
+    const filter = (
+      status: "running" | "failed",
+      queueStatus: "enhancing" | "failed",
+    ) =>
+      filterSessionHistoryIndex(index, {
+        scope: "all",
+        status,
+        queuedSessionMessages: [{ ...queued, status: queueStatus }],
+      }).sessions;
+
+    expect(filter("running", "enhancing")).toEqual([session]);
+    expect(filter("failed", "enhancing")).toEqual([]);
+    expect(filter("running", "failed")).toEqual([]);
+    expect(filter("failed", "failed")).toEqual([session]);
+  });
+
   const pinnedTitleMatch = createHistorySession({
     id: "pinned-title-match",
     title: "Needle in title",

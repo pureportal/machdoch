@@ -53,6 +53,7 @@ const renderSessions = () => {
       createSession({ id: "selected", manualTitle: "Selected" }),
       createSession({ id: "target-id", manualTitle: "Complete target title" }),
     ],
+    queuedSessionMessages: [],
     sessionScopeFilter: "all",
     sessionStatusFilters: ["any"],
     sessionSearchQuery: "",

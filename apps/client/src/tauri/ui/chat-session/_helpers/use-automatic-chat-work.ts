@@ -88,6 +88,9 @@ export const processAutomaticChatWork = async (
         task: createExecutionRetryPrompt(pending.attempt),
         contextAttachments: pending.source.contextAttachments ?? [],
         messageSettings: pending.source.settings,
+        ...(pending.source.iteration
+          ? { iteration: pending.source.iteration }
+          : {}),
         visibleMessageContent: pending.attempt.task,
         promptHistoryContent: pending.attempt.task,
         clearDraft: false,

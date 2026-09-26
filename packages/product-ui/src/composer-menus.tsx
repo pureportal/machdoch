@@ -15,6 +15,7 @@ import {
   type ReactNode,
 } from "react";
 import type { ProductCommandHandler } from "./product-runtime";
+import { ProductModal } from "./product-modal";
 
 type ControlTone =
   | "neutral"
@@ -144,7 +145,7 @@ export function OptionMenu({
                 </span>
                 <span>
                   <strong>{option.label}</strong>
-                  <small>{option.description}</small>
+                  {option.description ? <small>{option.description}</small> : null}
                 </span>
                 <DropdownMenu.ItemIndicator>
                   <Check aria-hidden="true" />
@@ -169,71 +170,157 @@ export function WorkspaceMenu({
   disabled: boolean;
   onCommand: ProductCommandHandler;
 }): ReactElement {
+  const [pathDialogOpen, setPathDialogOpen] = useState(false);
+  const [path, setPath] = useState("");
+  const [pathError, setPathError] = useState<string | null>(null);
+  const [pathPending, setPathPending] = useState(false);
   const current = workspaces.find(
     (workspace) => workspace.root === session.workspace,
   );
   const label = current?.label ?? session.workspace ?? "No workspace";
+  const selectPath = async (): Promise<void> => {
+    const workspace = path.trim();
+    if (!workspace) {
+      setPathError("Enter a folder path on the connected client.");
+      return;
+    }
+    setPathPending(true);
+    setPathError(null);
+    try {
+      const accepted = await onCommand({
+        kind: "set-session-workspace",
+        sessionId: session.id,
+        workspace,
+      });
+      if (accepted) setPathDialogOpen(false);
+      else
+        setPathError(
+          "Folder could not be selected. Check the path and try again.",
+        );
+    } catch (error) {
+      setPathError(
+        error instanceof Error
+          ? error.message
+          : "Folder could not be selected. Try again.",
+      );
+    } finally {
+      setPathPending(false);
+    }
+  };
   return (
-    <ComposerMenu
-      label="Workspace"
-      className="m-product-menu"
-      contentClassName="m-product-menu-popover"
-      disabled={disabled}
-      trigger={
-        <button
-          type="button"
-          aria-label={`Workspace: ${label}`}
-          title={session.workspace}
-        >
-          <Folder aria-hidden="true" />
-          <span>{label}</span>
-          <ChevronDown aria-hidden="true" />
-        </button>
-      }
-    >
-      <DropdownMenu.RadioGroup
-        value={session.workspace ?? ""}
-        onValueChange={(workspace) =>
-          void onCommand(
-            workspace
-              ? {
-                  kind: "set-session-workspace",
-                  sessionId: session.id,
-                  workspace,
-                }
-              : { kind: "clear-session-workspace", sessionId: session.id },
-          )
+    <>
+      <ComposerMenu
+        label="Workspace"
+        className="m-product-menu"
+        contentClassName="m-product-menu-popover"
+        disabled={disabled}
+        trigger={
+          <button
+            type="button"
+            aria-label={`Workspace: ${label}`}
+            title={session.workspace}
+          >
+            <Folder aria-hidden="true" />
+            <span>{label}</span>
+            <ChevronDown aria-hidden="true" />
+          </button>
         }
       >
-        {workspaces.map((workspace) => (
-          <DropdownMenu.RadioItem
-            key={workspace.root}
-            value={workspace.root}
-            disabled={disabled}
-            asChild
-          >
+        <DropdownMenu.RadioGroup
+          value={session.workspace ?? ""}
+          onValueChange={(workspace) =>
+            void onCommand(
+              workspace
+                ? {
+                    kind: "set-session-workspace",
+                    sessionId: session.id,
+                    workspace,
+                  }
+                : { kind: "clear-session-workspace", sessionId: session.id },
+            )
+          }
+        >
+          {workspaces.map((workspace) => (
+            <DropdownMenu.RadioItem
+              key={workspace.root}
+              value={workspace.root}
+              disabled={disabled}
+              asChild
+            >
+              <button
+                type="button"
+                disabled={disabled}
+                data-active={workspace.root === session.workspace}
+                title={workspace.root}
+              >
+                <span>{workspace.label}</span>
+                <small>{workspace.sessionCount}</small>
+              </button>
+            </DropdownMenu.RadioItem>
+          ))}
+          <DropdownMenu.RadioItem value="" disabled={disabled} asChild>
             <button
               type="button"
               disabled={disabled}
-              data-active={workspace.root === session.workspace}
-              title={workspace.root}
+              data-active={!session.workspace}
             >
-              <span>{workspace.label}</span>
-              <small>{workspace.sessionCount}</small>
+              No workspace
             </button>
           </DropdownMenu.RadioItem>
-        ))}
-        <DropdownMenu.RadioItem value="" disabled={disabled} asChild>
-          <button
-            type="button"
-            disabled={disabled}
-            data-active={!session.workspace}
-          >
-            No workspace
+        </DropdownMenu.RadioGroup>
+        <DropdownMenu.Item
+          onSelect={() => {
+            setPath(session.workspace ?? "");
+            setPathError(null);
+            setPathDialogOpen(true);
+          }}
+          asChild
+        >
+          <button type="button" disabled={disabled}>
+            Other folder…
           </button>
-        </DropdownMenu.RadioItem>
-      </DropdownMenu.RadioGroup>
-    </ComposerMenu>
+        </DropdownMenu.Item>
+      </ComposerMenu>
+      {pathDialogOpen ? (
+        <ProductModal
+          title="Workspace folder"
+          dismissible={!pathPending}
+          onClose={() => setPathDialogOpen(false)}
+        >
+          <form
+            className="m-product-workspace-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void selectPath();
+            }}
+          >
+            <label>
+              Folder path
+              <input
+                autoFocus
+                value={path}
+                maxLength={12000}
+                disabled={pathPending}
+                onChange={(event) => setPath(event.target.value)}
+              />
+            </label>
+            {pathError ? <p role="alert">{pathError}</p> : null}
+            <div className="m-product-card-actions">
+              <button
+                type="button"
+                disabled={pathPending}
+                onClick={() => setPathDialogOpen(false)}
+              >
+                Cancel
+              </button>
+              <button type="submit" disabled={pathPending || !path.trim()}>
+                Use folder
+              </button>
+            </div>
+          </form>
+        </ProductModal>
+      ) : null}
+    </>
   );
 }
 

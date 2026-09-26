@@ -665,6 +665,25 @@
   background: var(--m-bg);
 }
 
+.m-product-main[data-pose-scene="true"] {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.m-product-pose-scene {
+  display: flex;
+  justify-content: center;
+  min-height: 0;
+  padding: 12px;
+  border-bottom: 1px solid var(--m-border);
+}
+
+.m-product-pose-scene img {
+  display: block;
+  max-height: 180px;
+  max-width: 100%;
+  background: #000;
+}
+
 .m-product-session-header {
   display: flex;
   height: 64px;
@@ -2519,6 +2538,33 @@
 
 .m-media-modal button {
   min-height: 44px;
+}
+
+.m-product-workspace-form {
+  display: grid;
+  gap: 16px;
+}
+
+.m-product-workspace-form label {
+  display: grid;
+  gap: 8px;
+  color: var(--m-text-muted);
+  font-size: 12px;
+}
+
+.m-product-workspace-form input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--m-border-strong);
+  border-radius: 10px;
+  background: var(--m-panel);
+  padding: 0 12px;
+  color: var(--m-text);
+}
+
+.m-product-workspace-form [role="alert"] {
+  margin: 0;
+  color: var(--m-danger);
 }
 
 .m-media-modal-close svg {

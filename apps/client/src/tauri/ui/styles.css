@@ -1869,6 +1869,10 @@ body {
   line-height: 1.3rem !important;
 }
 
+:root[data-density="compact"] .app-composer-textarea-stacked {
+  min-height: 7.45rem !important;
+}
+
 :root[data-density="compact"]
   :is(
     .app-composer-attachment-button,

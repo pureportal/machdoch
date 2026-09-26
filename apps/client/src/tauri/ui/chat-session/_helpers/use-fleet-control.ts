@@ -322,6 +322,7 @@ const findRunningTaskIdForSession = (
 
 const createSessionSnapshot = (
   session: ChatSessionRecord,
+  queuedSessionMessages: ShellPersistedState["queuedSessionMessages"],
   activeDesktopTasksRef: MutableRefObject<Map<string, string>>,
   defaultMode: RuntimeSnapshot["mode"],
   defaultReasoning: RuntimeSnapshot["reasoning"],
@@ -331,11 +332,12 @@ const createSessionSnapshot = (
   return {
     id: session.id,
     title: getSessionTitle(session),
-    status: getSessionOverviewStatus(session),
+    status: getSessionOverviewStatus(session, queuedSessionMessages),
     ...(session.workspace ? { workspace: session.workspace } : {}),
     provider: session.provider,
     model: session.model,
     ...(session.mode ? { mode: session.mode } : {}),
+    parallelAgentMode: session.parallelAgentMode,
     effectiveMode: session.mode ?? defaultMode,
     ...(session.reasoning ? { reasoning: session.reasoning } : {}),
     effectiveReasoning: session.reasoning ?? defaultReasoning,
@@ -616,6 +618,7 @@ export const useFleetControl = (options: {
     sessionId: string,
     mode: RuntimeSnapshot["mode"] | null,
   ) => void;
+  onSetParallelAgentMode: (sessionId: string, mode: "disabled" | "read-only" | "machdoch") => void;
   onSetSessionReasoning: (
     sessionId: string,
     reasoning: RuntimeSnapshot["reasoning"] | null,
@@ -928,6 +931,7 @@ export const useFleetControl = (options: {
         .map((session) =>
           createSessionSnapshot(
             session,
+            options.shellState.queuedSessionMessages,
             options.activeDesktopTasksRef,
             options.defaultMode,
             options.defaultReasoning,
@@ -964,6 +968,7 @@ export const useFleetControl = (options: {
         modelCatalog,
         mode: options.activeRunMode,
         defaultMode: options.defaultMode,
+        parallelAgentMode: options.activeSession.parallelAgentMode,
         reasoning: options.activeReasoning,
         defaultReasoning: options.defaultReasoning,
         reasoningOptions: [
@@ -984,7 +989,10 @@ export const useFleetControl = (options: {
           ? { sendDisabledReason: options.sendDisabledReason }
           : {}),
         isExecuting:
-          getSessionOverviewStatus(options.activeSession) === "running",
+          getSessionOverviewStatus(
+            options.activeSession,
+            options.shellState.queuedSessionMessages,
+          ) === "running",
         sessionMemoryEnabled: options.activeSession.sessionMemoryEnabled,
         sessionMemory: options.activeSession.sessionMemory.map((entry) => {
           const sourceSession = entry.sourceSessionId
@@ -1139,6 +1147,7 @@ export const useFleetControl = (options: {
     options.recentWorkspaces,
     options.sendDisabledReason,
     options.shellState.sessions,
+    options.shellState.queuedSessionMessages,
     options.shellState.voice.autoSpeakResponses,
     options.speakingMessageId,
     options.speechInputEnabled,
@@ -1496,6 +1505,13 @@ export const useFleetControl = (options: {
         case "set-session-mode": {
           if (command.sessionId && isRuntimeMode(command.mode)) {
             options.onSetSessionMode(command.sessionId, command.mode);
+          }
+          break;
+        }
+
+        case "set-parallel-agent-mode": {
+          if (command.sessionId && ["disabled", "read-only", "machdoch"].includes(String(command.mode))) {
+            options.onSetParallelAgentMode(command.sessionId, command.mode as "disabled" | "read-only" | "machdoch");
           }
           break;
         }

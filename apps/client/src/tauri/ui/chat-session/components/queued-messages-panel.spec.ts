@@ -150,4 +150,37 @@ describe("QueuedMessagesPanel", () => {
 
     expect(markup).toContain("Next · Enhancing");
   });
+
+  it("shows iteration order and a failed predecessor", () => {
+    const markup = renderToStaticMarkup(
+      createElement(QueuedMessagesPanel, {
+        messages: [
+          {
+            id: "first",
+            content: "Improve the UI",
+            iteration: { groupId: "group", index: 1, total: 3 },
+            attachments: [],
+            status: "failed",
+            createdAt: 1,
+          },
+          {
+            id: "second",
+            content: "Continue",
+            iteration: { groupId: "group", index: 2, total: 3 },
+            waitingForIteration: 1,
+            attachments: [],
+            status: "queued",
+            createdAt: 2,
+          },
+        ],
+        imageInputDisabled: false,
+        imageInputDisabledReason: null,
+      }),
+    );
+    expect(markup).toContain("Iteration 1 of 3");
+    expect(markup).toContain("Iteration 2 of 3");
+    expect(markup).toContain("Waiting for iteration 1");
+    expect(markup).not.toContain("Next · Failed");
+    expect(markup).not.toContain('aria-label="Move queued message 2 up"');
+  });
 });

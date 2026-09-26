@@ -44,7 +44,7 @@ export interface CreateNewSessionOptions {
 
 const isReusableNewSession = (session: ChatSessionRecord): boolean => {
   return (
-    !isQuickVoiceSession(session) &&
+    !session.specialSession &&
     typeof session.archivedAt !== "number" &&
     typeof session.pinnedAt !== "number" &&
     !session.manualTitle?.trim() &&

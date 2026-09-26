@@ -7,6 +7,8 @@ import {
   saveWorkspaceContextWindow,
   saveWorkspaceDefaultMode,
   saveWorkspaceMemoryOverride,
+  saveWorkspaceAdaptiveControllerOverride,
+  saveWorkspaceReasoningBankEnabled,
   saveWorkspaceReasoningExecutionMode,
   saveWorkspaceReasoningMode,
   type ContextWindow,
@@ -37,6 +39,8 @@ type WorkspaceConfigurationValues = Omit<
   | "message"
   | "onDefaultModeChange"
   | "onWorkspaceMemoryOverrideChange"
+  | "onAdaptiveControllerOverrideChange"
+  | "onReasoningBankEnabledChange"
   | "onReasoningModeChange"
   | "onReasoningExecutionModeChange"
   | "onContextWindowChange"
@@ -60,7 +64,9 @@ const createWorkspaceConfigurationValues = (
       snapshot.defaultContextWindow ?? effectiveContextWindow,
     effectiveContextWindow,
     workspaceMemoryOverride: snapshot.workspaceMemoryOverride,
+    adaptiveControllerOverride: snapshot.adaptiveControllerOverride ?? null,
     workspaceMemoryEnabled: snapshot.workspaceMemoryEnabled,
+    reasoningBankEnabled: snapshot.reasoningBankEnabled !== false,
     reasoningProvider:
       snapshot.provider === "unconfigured" ? undefined : snapshot.provider,
     reasoningModel: snapshot.model,
@@ -79,7 +85,9 @@ const createFallbackWorkspaceConfigurationValues = (
   defaultContextWindow: "default",
   effectiveContextWindow: "default",
   workspaceMemoryOverride: null,
+  adaptiveControllerOverride: null,
   workspaceMemoryEnabled: workspaceMemoryDefaultEnabled,
+  reasoningBankEnabled: true,
 });
 
 export const WorkspaceConfigurationSettings = ({
@@ -299,6 +307,23 @@ export const WorkspaceConfigurationSettings = ({
             }),
             "Workspace memory setting saved.",
             "Workspace memory could not be updated.",
+          );
+        },
+        onAdaptiveControllerOverrideChange: async (enabled) => {
+          await saveSetting(
+            () =>
+              saveWorkspaceAdaptiveControllerOverride(workspaceRoot, enabled),
+            (current) => ({ ...current, adaptiveControllerOverride: enabled }),
+            "Adaptive context & compute saved.",
+            "Adaptive context & compute could not be updated.",
+          );
+        },
+        onReasoningBankEnabledChange: async (enabled) => {
+          await saveSetting(
+            () => saveWorkspaceReasoningBankEnabled(workspaceRoot, enabled),
+            (current) => ({ ...current, reasoningBankEnabled: enabled }),
+            "ReasoningBank setting saved.",
+            "ReasoningBank could not be updated.",
           );
         },
         onReasoningModeChange: async (reasoning: ReasoningMode) => {
