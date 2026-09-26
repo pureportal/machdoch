@@ -4,6 +4,7 @@ import type {
   UserSpeechToTextProvider,
   UserSpeechToTextSettings,
 } from "../../runtime";
+import { processUserSpeechText } from "../../runtime";
 import {
   resolveAppNotificationDismissMs,
   scheduleAppNotificationDismiss,
@@ -100,25 +101,52 @@ export const useChatSessionSpeechInput = (
     try {
       const recordedBlob = await recorder.stopRecording();
 
-      if (
-        !recordedBlob ||
-        operationSequenceRef.current !== operationSequence
-      ) {
+      if (!recordedBlob || operationSequenceRef.current !== operationSequence) {
         return;
       }
 
       const transcriptText = await transcription.transcribeRecording({
         blob: recordedBlob,
         provider,
+        keyTerms: options.settings.keyTerms,
+        speechContext: options.settings.speechContext,
+        autoTranslateToEnglish: options.settings.autoTranslateToEnglish,
       });
 
       if (operationSequenceRef.current !== operationSequence) {
         return;
       }
 
-      options.onTranscript(recordingSessionId, transcriptText);
-      setStatusTone("success");
-      setStatusText("Transcript added to the draft.");
+      let draftText = transcriptText;
+      let processingError: string | null = null;
+      if (
+        provider !== "whisper" &&
+        (options.settings.autoTranslateToEnglish || options.settings.autoFormat)
+      ) {
+        setStatusText("Processing speech...");
+        try {
+          draftText = await processUserSpeechText({
+            provider,
+            text: transcriptText,
+            autoTranslateToEnglish: options.settings.autoTranslateToEnglish,
+            autoFormat: options.settings.autoFormat,
+          });
+        } catch (error) {
+          processingError =
+            error instanceof Error ? error.message : String(error);
+        }
+      }
+
+      if (operationSequenceRef.current !== operationSequence) {
+        return;
+      }
+      options.onTranscript(recordingSessionId, draftText);
+      setStatusTone(processingError ? "error" : "success");
+      setStatusText(
+        processingError
+          ? `Text processing failed: ${processingError} Original transcript added to the draft.`
+          : "Transcript added to the draft.",
+      );
     } catch (error) {
       if (operationSequenceRef.current !== operationSequence) {
         return;
@@ -150,9 +178,7 @@ export const useChatSessionSpeechInput = (
 
     if (!recorder.browserSupported) {
       setStatusTone("error");
-      setStatusText(
-        "This WebView does not expose microphone recording APIs.",
-      );
+      setStatusText("This WebView does not expose microphone recording APIs.");
       return;
     }
 

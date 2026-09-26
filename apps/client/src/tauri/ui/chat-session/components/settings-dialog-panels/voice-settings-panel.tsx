@@ -1,5 +1,5 @@
 import { RefreshCw } from "lucide-react";
-import type { JSX } from "react";
+import { useEffect, useState, type JSX } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { getProviderLabel } from "../../../model-catalog";
 import {
@@ -22,7 +22,11 @@ import type { VoiceSettingsControls } from "./types";
 const getSpeechToTextProviderLabel = (
   provider: SpeechToTextProvider,
 ): string => {
-  return provider === "none" ? "Disabled" : getProviderLabel(provider);
+  return provider === "none"
+    ? "Disabled"
+    : provider === "whisper"
+      ? "Whisper (local)"
+      : getProviderLabel(provider);
 };
 
 const getVoiceAiProviderLabel = (provider: VoiceAiProvider): string => {
@@ -38,18 +42,40 @@ export interface VoiceSettingsPanelProps {
 export const VoiceSettingsPanel = ({
   setup,
 }: VoiceSettingsPanelProps): JSX.Element => {
+  const savedKeyTerms = setup.speechKeyTerms.join("\n");
+  const [keyTermsDraft, setKeyTermsDraft] = useState(savedKeyTerms);
+  const [speechContextDraft, setSpeechContextDraft] = useState(
+    setup.speechContext,
+  );
+
+  useEffect(() => {
+    setKeyTermsDraft(savedKeyTerms);
+  }, [savedKeyTerms]);
+  useEffect(() => {
+    setSpeechContextDraft(setup.speechContext);
+  }, [setup.speechContext]);
+
   const persistenceBusy =
     setup.speechToTextProviderSaving ||
     setup.speechInputDeviceSaving ||
     setup.aiProviderSaving;
+  const keyTermsChanged = keyTermsDraft.trim() !== savedKeyTerms.trim();
+  const speechContextChanged =
+    speechContextDraft.trim() !== setup.speechContext.trim();
 
   useSettingsNavigationGuard({
-    dirty: persistenceBusy,
-    title: "Saving speech settings",
-    description:
-      "Wait for the speech setting to finish saving before leaving this section.",
-    canDiscard: false,
-    onDiscard: () => undefined,
+    dirty: persistenceBusy || keyTermsChanged || speechContextChanged,
+    title: persistenceBusy
+      ? "Saving speech settings"
+      : "Unsaved speech settings",
+    description: persistenceBusy
+      ? "Wait for the speech setting to finish saving before leaving this section."
+      : "Discard your unsaved speech input changes?",
+    canDiscard: !persistenceBusy,
+    onDiscard: () => {
+      setKeyTermsDraft(savedKeyTerms);
+      setSpeechContextDraft(setup.speechContext);
+    },
   });
 
   const speechToTextProviderConfigured = new Map(
@@ -108,6 +134,71 @@ export const VoiceSettingsPanel = ({
             disabled={setup.speechToTextProviderSaving}
             onChange={setup.onSpeechToTextProviderChange}
           />
+
+          <SettingPanel
+            label="Key terms"
+            detail="One per line; up to 100 terms, 80 characters each."
+          >
+            <div className="grid gap-2">
+              <textarea
+                aria-label="Speech key terms"
+                value={keyTermsDraft}
+                maxLength={8100}
+                rows={4}
+                onChange={(event) => setKeyTermsDraft(event.target.value)}
+                className="w-full resize-y rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition-colors focus:border-sky-500/40"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="justify-self-end"
+                disabled={persistenceBusy || !keyTermsChanged}
+                onClick={() => {
+                  void setup.onSpeechKeyTermsSave(
+                    keyTermsDraft
+                      .split(/\r?\n/)
+                      .map((term) => term.trim())
+                      .filter(Boolean),
+                  );
+                }}
+              >
+                Save terms
+              </Button>
+            </div>
+          </SettingPanel>
+
+          {setup.speechToTextProvider === "openai" ? (
+            <SettingPanel
+              label="Context"
+              detail="Used by OpenAI to recognize speech."
+            >
+              <div className="grid gap-2">
+                <textarea
+                  aria-label="Speech context"
+                  value={speechContextDraft}
+                  maxLength={2000}
+                  rows={4}
+                  onChange={(event) =>
+                    setSpeechContextDraft(event.target.value)
+                  }
+                  className="w-full resize-y rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition-colors focus:border-sky-500/40"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="justify-self-end"
+                  disabled={persistenceBusy || !speechContextChanged}
+                  onClick={() => {
+                    void setup.onSpeechContextSave(speechContextDraft.trim());
+                  }}
+                >
+                  Save context
+                </Button>
+              </div>
+            </SettingPanel>
+          ) : null}
 
           <SettingPanel
             label="Input device"

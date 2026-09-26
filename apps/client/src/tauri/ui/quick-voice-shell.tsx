@@ -28,6 +28,7 @@ import { useSpeechTranscription } from "./chat-session/_helpers/use-speech-trans
 import {
   ASSISTANT_SURFACE_READY_EVENT,
   QUICK_VOICE_START_EVENT,
+  processUserSpeechText,
   type UserSpeechToTextSettings,
 } from "./runtime";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
@@ -65,11 +66,20 @@ export const QuickVoiceShell = (): JSX.Element => {
     return {
       activeProvider: controller.settingsDialog.voiceSetup.speechToTextProvider,
       inputDeviceId: controller.settingsDialog.voiceSetup.speechInputDeviceId,
+      keyTerms: controller.settingsDialog.voiceSetup.speechKeyTerms,
+      speechContext: controller.settingsDialog.voiceSetup.speechContext,
+      autoTranslateToEnglish:
+        controller.settingsDialog.voiceSetup.speechAutoTranslateToEnglish,
+      autoFormat: controller.settingsDialog.voiceSetup.speechAutoFormat,
       providerAvailability:
         controller.settingsDialog.voiceSetup.speechToTextProviderAvailability,
     };
   }, [
     controller.settingsDialog.voiceSetup.speechInputDeviceId,
+    controller.settingsDialog.voiceSetup.speechKeyTerms,
+    controller.settingsDialog.voiceSetup.speechContext,
+    controller.settingsDialog.voiceSetup.speechAutoTranslateToEnglish,
+    controller.settingsDialog.voiceSetup.speechAutoFormat,
     controller.settingsDialog.voiceSetup.speechToTextProvider,
     controller.settingsDialog.voiceSetup.speechToTextProviderAvailability,
   ]);
@@ -185,13 +195,31 @@ export const QuickVoiceShell = (): JSX.Element => {
       const transcriptText = await transcribeRecording({
         blob: recordedBlob,
         provider,
+        keyTerms: speechToTextSettings.keyTerms,
+        speechContext: speechToTextSettings.speechContext,
+        autoTranslateToEnglish: speechToTextSettings.autoTranslateToEnglish,
       });
 
       if (operationSequenceRef.current !== operationSequence) {
         return;
       }
 
-      submitQuickVoiceCommand(transcriptText);
+      const commandText =
+        provider !== "whisper" &&
+        (speechToTextSettings.autoTranslateToEnglish ||
+          speechToTextSettings.autoFormat)
+          ? await processUserSpeechText({
+              provider,
+              text: transcriptText,
+              autoTranslateToEnglish:
+                speechToTextSettings.autoTranslateToEnglish,
+              autoFormat: speechToTextSettings.autoFormat,
+            })
+          : transcriptText;
+      if (operationSequenceRef.current !== operationSequence) {
+        return;
+      }
+      submitQuickVoiceCommand(commandText);
       setStatusText("Sent.");
       hideWindowSoon(500);
     } catch (error) {
@@ -218,6 +246,10 @@ export const QuickVoiceShell = (): JSX.Element => {
     recording,
     resetVoiceActivity,
     stopRecording,
+    speechToTextSettings.autoTranslateToEnglish,
+    speechToTextSettings.autoFormat,
+    speechToTextSettings.keyTerms,
+    speechToTextSettings.speechContext,
     submitQuickVoiceCommand,
     transcribeRecording,
   ]);
