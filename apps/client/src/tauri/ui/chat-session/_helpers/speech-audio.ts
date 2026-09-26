@@ -11,6 +11,13 @@ const GOOGLE_SUPPORTED_MIME_TYPES = new Set([
   "audio/aac",
   "audio/ogg",
   "audio/flac",
+  "audio/mpeg",
+  "audio/m4a",
+  "audio/l16",
+  "audio/opus",
+  "audio/alaw",
+  "audio/mulaw",
+  "audio/webm",
 ]);
 
 const RECORDING_MIME_CANDIDATES = [
@@ -126,8 +133,7 @@ export const getConfiguredSpeechToTextProvider = (
   }
 
   return settings.providerAvailability.some(
-    (entry) =>
-      entry.provider === settings.activeProvider && entry.configured,
+    (entry) => entry.provider === settings.activeProvider && entry.configured,
   )
     ? settings.activeProvider
     : null;
@@ -143,10 +149,13 @@ export const getSpeechInputAvailabilityDescription = (
   }
 
   if (settings.activeProvider === "none") {
-    return "Choose an AI provider to turn short microphone recordings into editable draft text.";
+    return "Choose a speech input provider.";
   }
 
-  const providerLabel = getProviderLabel(settings.activeProvider);
+  const providerLabel =
+    settings.activeProvider === "whisper"
+      ? "Whisper"
+      : getProviderLabel(settings.activeProvider);
 
   if (configuredProvider) {
     return `${providerLabel} is ready for push-to-talk transcription. New recordings are inserted into the current draft as plain text.`;
@@ -244,7 +253,10 @@ const mixDownToMono = (audioBuffer: AudioBuffer): Float32Array => {
   return mixed;
 };
 
-const convertBlobToWav = async (blob: Blob): Promise<Blob> => {
+const convertBlobToWav = async (
+  blob: Blob,
+  targetSampleRate?: number,
+): Promise<Blob> => {
   if (typeof AudioContext === "undefined") {
     throw new Error(
       "This WebView cannot convert the recorded audio to WAV for the selected provider.",
@@ -256,8 +268,24 @@ const convertBlobToWav = async (blob: Blob): Promise<Blob> => {
   try {
     const audioData = await blob.arrayBuffer();
     const decodedAudio = await audioContext.decodeAudioData(audioData.slice(0));
-    const monoSamples = mixDownToMono(decodedAudio);
-    const wavBuffer = encodeWav(monoSamples, decodedAudio.sampleRate);
+    let wavAudio = decodedAudio;
+    if (targetSampleRate && decodedAudio.sampleRate !== targetSampleRate) {
+      if (typeof OfflineAudioContext === "undefined") {
+        throw new Error("This WebView cannot prepare audio for Whisper.");
+      }
+      const offlineContext = new OfflineAudioContext(
+        1,
+        Math.ceil(decodedAudio.duration * targetSampleRate),
+        targetSampleRate,
+      );
+      const source = offlineContext.createBufferSource();
+      source.buffer = decodedAudio;
+      source.connect(offlineContext.destination);
+      source.start();
+      wavAudio = await offlineContext.startRendering();
+    }
+    const monoSamples = mixDownToMono(wavAudio);
+    const wavBuffer = encodeWav(monoSamples, wavAudio.sampleRate);
 
     return new Blob([wavBuffer], { type: "audio/wav" });
   } finally {
@@ -269,6 +297,9 @@ export const prepareAudioBlob = async (
   blob: Blob,
   provider: UserSpeechToTextProvider,
 ): Promise<Blob> => {
+  if (provider === "whisper") {
+    return convertBlobToWav(blob, 16_000);
+  }
   if (provider !== "google") {
     return blob;
   }
@@ -283,9 +314,7 @@ export const prepareAudioBlob = async (
 };
 
 const isNoSpeechDetectedError = (error: unknown): boolean => {
-  return (
-    error instanceof Error && error.message === NO_SPEECH_DETECTED_MESSAGE
-  );
+  return error instanceof Error && error.message === NO_SPEECH_DETECTED_MESSAGE;
 };
 
 export const assertRecordedSpeechDetected = async (
@@ -331,10 +360,7 @@ export const assertRecordedSpeechDetected = async (
 
     const rms = sampleCount > 0 ? Math.sqrt(sumSquares / sampleCount) : 0;
 
-    if (
-      rms < MIN_RECORDED_SPEECH_RMS &&
-      peak < MIN_RECORDED_SPEECH_PEAK
-    ) {
+    if (rms < MIN_RECORDED_SPEECH_RMS && peak < MIN_RECORDED_SPEECH_PEAK) {
       throw new Error(NO_SPEECH_DETECTED_MESSAGE);
     }
   } catch (error) {

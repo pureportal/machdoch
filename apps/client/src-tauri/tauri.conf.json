@@ -6,11 +6,11 @@
   "build": {
     "beforeDevCommand": {
       "cwd": "..",
-      "script": "pnpm run build:cli-bundle && pnpm run dev:ui"
+      "script": "node scripts/prepare-whisper-model.mjs && pnpm run dev:ui"
     },
     "beforeBuildCommand": {
       "cwd": "..",
-      "script": "pnpm run build:cli-bundle && pnpm run build:ui"
+      "script": "node scripts/prepare-whisper-model.mjs && pnpm run build:cli-bundle && pnpm run build:ui"
     },
     "devUrl": "http://127.0.0.1:4173",
     "frontendDist": "../dist/ui-preview"
@@ -22,7 +22,9 @@
         "enable": true,
         "scope": []
       },
-      "capabilities": ["default"]
+      "capabilities": [
+        "default"
+      ]
     },
     "windows": [
       {
@@ -53,7 +55,17 @@
     "shortDescription": "Local-first OS AI agent for CLI and desktop.",
     "longDescription": "Machdoch is a local-first AI assistant for Windows and Linux that works with folders, runs tasks, and automates repeatable workflows from the desktop or CLI.",
     "resources": {
+      "resources/whisper/ggml-large-v3-q5_0.bin": "whisper/ggml-large-v3-q5_0.bin",
+      "resources/whisper/LICENSE-whisper.cpp.txt": "whisper/LICENSE-whisper.cpp.txt",
+      "resources/whisper/LICENSE-whisper-model.txt": "whisper/LICENSE-whisper-model.txt",
       "python/media_diffusers_worker.py": "python/media_diffusers_worker.py",
+      "python/media_minimax_h3.py": "python/media_minimax_h3.py",
+      "python/fizgig": "python/fizgig",
+      "python/LICENSE-fizgig.txt": "python/LICENSE-fizgig.txt",
+      "python/THIRD_PARTY_NOTICES-fizgig.md": "python/THIRD_PARTY_NOTICES-fizgig.md",
+      "python/media_krea_training.py": "python/media_krea_training.py",
+      "python/train_dreambooth_lora_krea2.py": "python/train_dreambooth_lora_krea2.py",
+      "python/LICENSE-diffusers-training.txt": "python/LICENSE-diffusers-training.txt",
       "python/media_model_memory.py": "python/media_model_memory.py",
       "python/media_model_server.py": "python/media_model_server.py",
       "python/media_image_conditioning.py": "python/media_image_conditioning.py",
@@ -71,7 +83,13 @@
       "python/media_runtime_manifest.json": "python/media_runtime_manifest.json",
       "../scripts/build_source_anchored_loop.py": "python/build_source_anchored_loop.py"
     },
-    "targets": ["msi", "nsis", "deb", "rpm", "appimage"],
+    "targets": [
+      "msi",
+      "nsis",
+      "deb",
+      "rpm",
+      "appimage"
+    ],
     "windows": {
       "wix": {
         "upgradeCode": "47638e6f-1542-5d67-bc57-e5ae45db5fd8",
@@ -91,8 +109,13 @@
     },
     "linux": {
       "deb": {
-        "depends": ["libgbm1", "libpipewire-0.3-0"],
-        "recommends": ["python3-nautilus"],
+        "depends": [
+          "libgbm1",
+          "libpipewire-0.3-0"
+        ],
+        "recommends": [
+          "python3-nautilus"
+        ],
         "files": {
           "/usr/share/kio/servicemenus/machdoch-folder-context.desktop": "linux/machdoch-folder-context.desktop",
           "/usr/share/kio/servicemenus/machdoch-files-context.desktop": "linux/machdoch-files-context.desktop",
@@ -100,8 +123,13 @@
         }
       },
       "rpm": {
-        "depends": ["libgbm.so.1()(64bit)", "libpipewire-0.3.so.0()(64bit)"],
-        "recommends": ["nautilus-python"],
+        "depends": [
+          "libgbm.so.1()(64bit)",
+          "libpipewire-0.3.so.0()(64bit)"
+        ],
+        "recommends": [
+          "nautilus-python"
+        ],
         "files": {
           "/usr/share/kio/servicemenus/machdoch-folder-context.desktop": "linux/machdoch-folder-context.desktop",
           "/usr/share/kio/servicemenus/machdoch-files-context.desktop": "linux/machdoch-files-context.desktop",

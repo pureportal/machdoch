@@ -8,6 +8,7 @@ mod common;
 mod google;
 mod google_response;
 mod openai;
+mod whisper;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +31,7 @@ pub struct TranscribedSpeechText {
 enum SpeechTranscriptionProvider {
     OpenAi,
     Google,
+    Whisper,
 }
 
 impl SpeechTranscriptionProvider {
@@ -37,7 +39,8 @@ impl SpeechTranscriptionProvider {
         match value {
             "openai" => Ok(Self::OpenAi),
             "google" => Ok(Self::Google),
-            _ => Err("Expected provider to be one of openai or google.".to_string()),
+            "whisper" => Ok(Self::Whisper),
+            _ => Err("Expected provider to be one of openai, google, or whisper.".to_string()),
         }
     }
 
@@ -45,6 +48,7 @@ impl SpeechTranscriptionProvider {
         match self {
             Self::OpenAi => "OpenAI",
             Self::Google => "Google",
+            Self::Whisper => "Whisper",
         }
     }
 
@@ -52,6 +56,7 @@ impl SpeechTranscriptionProvider {
         match self {
             Self::OpenAi => openai::OPENAI_MAX_UPLOAD_BYTES,
             Self::Google => google::GOOGLE_MAX_INLINE_AUDIO_BYTES,
+            Self::Whisper => whisper::WHISPER_MAX_AUDIO_BYTES,
         }
     }
 }
@@ -86,14 +91,35 @@ pub async fn synthesize_user_voice_audio(
 
 #[tauri::command]
 pub async fn transcribe_user_speech_audio(
+    app: tauri::AppHandle,
     provider: String,
     audio_base64: String,
     mime_type: String,
     language_code: Option<String>,
+    key_terms: Vec<String>,
+    speech_context: String,
+    auto_translate_to_english: bool,
 ) -> Result<TranscribedSpeechText, String> {
     let normalized_provider = provider.trim().to_lowercase();
     let transcription_provider =
         SpeechTranscriptionProvider::from_normalized(&normalized_provider)?;
+    if key_terms.len() > 100
+        || key_terms.iter().any(|term| {
+            term.trim().is_empty()
+                || term.chars().count() > 80
+                || term
+                    .chars()
+                    .any(|character| matches!(character, '<' | '>' | '\r' | '\n'))
+        })
+    {
+        return Err(
+            "Use up to 100 key terms of 80 characters each, without angle brackets or line breaks."
+                .to_string(),
+        );
+    }
+    if speech_context.chars().count() > 2_000 {
+        return Err("Speech context must be 2,000 characters or fewer.".to_string());
+    }
     let normalized_mime_type = normalize_mime_type(&mime_type)?;
     validate_audio_base64_encoded_size(
         &audio_base64,
@@ -101,30 +127,92 @@ pub async fn transcribe_user_speech_audio(
         transcription_provider.max_upload_bytes(),
     )?;
     let audio_bytes = decode_audio_base64(&audio_base64)?;
-    let env = crate::runtime_snapshot::load_global_env()?;
-    let client = build_http_client()?;
-
     match transcription_provider {
         SpeechTranscriptionProvider::OpenAi => {
+            let env = crate::runtime_snapshot::load_global_env()?;
+            let client = build_http_client()?;
             openai::transcribe_openai(
                 &client,
                 &env,
                 audio_bytes,
                 &normalized_mime_type,
                 language_code.as_deref(),
+                &key_terms,
+                &speech_context,
             )
             .await
         }
         SpeechTranscriptionProvider::Google => {
+            let env = crate::runtime_snapshot::load_global_env()?;
+            let client = build_http_client()?;
             google::transcribe_google(
                 &client,
                 &env,
                 audio_bytes,
                 &normalized_mime_type,
                 language_code.as_deref(),
+                &key_terms,
             )
             .await
         }
+        SpeechTranscriptionProvider::Whisper => {
+            whisper::transcribe_whisper(
+                app,
+                audio_bytes,
+                &normalized_mime_type,
+                &key_terms,
+                auto_translate_to_english,
+            )
+            .await
+        }
+    }
+}
+
+fn speech_text_instruction(auto_translate_to_english: bool, auto_format: bool) -> String {
+    let mut instruction = String::from("Edit the speech transcript below. Return only the edited text. Preserve the speaker's meaning, requests, facts, names, paths, code, and technical terms. Do not add ideas or commentary.");
+    if auto_translate_to_english {
+        instruction.push_str(" Translate non-English speech into natural English. Keep content that is already English in English.");
+    }
+    if auto_format {
+        instruction.push_str(" Correct grammar, punctuation, and wording. Organize distinct requested changes as a Markdown list. Use paragraphs or other Markdown structure when appropriate.");
+    }
+    instruction
+}
+
+#[tauri::command]
+pub async fn process_user_speech_text(
+    provider: String,
+    text: String,
+    auto_translate_to_english: bool,
+    auto_format: bool,
+) -> Result<String, String> {
+    let normalized_provider =
+        SpeechTranscriptionProvider::from_normalized(&provider.trim().to_lowercase())?;
+    let normalized_text = normalize_text(&text)?;
+    if !auto_translate_to_english && !auto_format {
+        return Ok(normalized_text);
+    }
+    if normalized_text.chars().count() > 20_000 {
+        return Err("Speech transcript is too long to process.".to_string());
+    }
+    if normalized_provider == SpeechTranscriptionProvider::Whisper {
+        return if auto_format {
+            Err("Formatting is unavailable with local Whisper.".to_string())
+        } else {
+            Ok(normalized_text)
+        };
+    }
+    let env = crate::runtime_snapshot::load_global_env()?;
+    let client = build_http_client()?;
+    let instruction = speech_text_instruction(auto_translate_to_english, auto_format);
+    match normalized_provider {
+        SpeechTranscriptionProvider::OpenAi => {
+            openai::process_openai_text(&client, &env, &normalized_text, &instruction).await
+        }
+        SpeechTranscriptionProvider::Google => {
+            google::process_google_text(&client, &env, &normalized_text, &instruction).await
+        }
+        SpeechTranscriptionProvider::Whisper => unreachable!(),
     }
 }
 
@@ -132,19 +220,20 @@ pub async fn transcribe_user_speech_audio(
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn transcribe_rejects_unsupported_provider_before_audio_validation() {
-        let result = transcribe_user_speech_audio(
-            "unsupported".to_string(),
-            "not valid base64".to_string(),
-            "not-an-audio-mime-type".to_string(),
-            None,
-        )
-        .await;
+    #[test]
+    fn speech_text_instruction_requests_markdown_lists_for_distinct_changes() {
+        let instruction = speech_text_instruction(true, true);
+        assert!(instruction.contains("natural English"));
+        assert!(instruction.contains("Markdown list"));
+        assert!(!speech_text_instruction(false, false).contains("Markdown list"));
+    }
 
+    #[test]
+    fn transcribe_rejects_unsupported_provider() {
+        let result = SpeechTranscriptionProvider::from_normalized("unsupported");
         assert_eq!(
             result.unwrap_err(),
-            "Expected provider to be one of openai or google."
+            "Expected provider to be one of openai, google, or whisper."
         );
     }
 
@@ -180,6 +269,6 @@ mod tests {
         .unwrap_err();
 
         assert!(openai_error.contains("OpenAI speech-to-text uploads are limited to 25 MB"));
-        assert!(google_error.contains("Google speech-to-text uploads are limited to 20 MB"));
+        assert!(google_error.contains("Google speech-to-text uploads are limited to 14 MB"));
     }
 }

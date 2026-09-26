@@ -1,5 +1,6 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use reqwest::Client;
+use serde::Deserialize;
 use serde_json::json;
 
 use super::{
@@ -15,12 +16,52 @@ use super::{
 
 const GOOGLE_TTS_ENDPOINT: &str =
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-tts-preview:generateContent";
-const GOOGLE_STT_ENDPOINT: &str =
+const GOOGLE_STT_ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/interactions";
+const GOOGLE_STT_MODEL: &str = "gemini-3.5-transcribe";
+const GOOGLE_TEXT_ENDPOINT: &str =
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent";
 const GOOGLE_TTS_VOICE: &str = "Kore";
 const GOOGLE_TTS_RETRY_COUNT: usize = 2;
-const GOOGLE_STT_SYSTEM_INSTRUCTION: &str = "You are a speech-to-text transcription service for a desktop AI assistant. Return only the spoken transcript as plain text. Preserve punctuation, filenames, CLI flags, code symbols, and product names when they are clear. If no intelligible speech is present, return an empty transcript. Do not summarize, explain, or add speaker labels.";
-pub(super) const GOOGLE_MAX_INLINE_AUDIO_BYTES: usize = 20 * 1024 * 1024;
+pub(super) const GOOGLE_MAX_INLINE_AUDIO_BYTES: usize = 14 * 1024 * 1024;
+
+#[derive(Debug, Deserialize)]
+struct GoogleInteractionResponse {
+    steps: Vec<GoogleInteractionStep>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GoogleInteractionStep {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default)]
+    content: Vec<GoogleInteractionContent>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GoogleInteractionContent {
+    #[serde(rename = "type")]
+    kind: String,
+    text: Option<String>,
+}
+
+fn extract_google_interaction_transcript(
+    response: GoogleInteractionResponse,
+) -> Result<String, String> {
+    let transcript = response
+        .steps
+        .iter()
+        .filter(|step| step.kind == "model_output")
+        .flat_map(|step| &step.content)
+        .filter(|content| content.kind == "text")
+        .filter_map(|content| content.text.as_deref())
+        .collect::<Vec<_>>()
+        .join("");
+    let transcript = transcript.trim();
+    if transcript.is_empty() {
+        return Err("Google returned an empty transcript.".to_string());
+    }
+    Ok(transcript.to_string())
+}
 
 fn create_google_pace_instruction(rate: Option<f64>) -> Option<String> {
     let rate = rate.filter(|value| value.is_finite())?;
@@ -54,15 +95,35 @@ fn create_google_prompt(text: &str, rate: Option<f64>) -> String {
     )
 }
 
-fn create_google_transcription_prompt(language_code: Option<&str>) -> String {
-    if let Some(language_code) = normalize_language_code(language_code) {
-        return format!(
-            "Generate an accurate transcript of the spoken audio. The most likely spoken language code is {language_code}. If no intelligible speech is present, return an empty transcript. Return only the transcript text."
-        );
+pub(super) async fn process_google_text(
+    client: &Client,
+    env: &std::collections::HashMap<String, String>,
+    text: &str,
+    instruction: &str,
+) -> Result<String, String> {
+    let api_key = get_required_api_key(env, "GOOGLE_API_KEY", "Google")?;
+    let response = client
+        .post(GOOGLE_TEXT_ENDPOINT)
+        .query(&[("key", api_key.as_str())])
+        .json(&json!({
+            "systemInstruction": { "parts": [{ "text": instruction }] },
+            "contents": [{ "parts": [{ "text": text }] }],
+            "generationConfig": { "responseMimeType": "text/plain", "temperature": 0.1 }
+        }))
+        .send()
+        .await
+        .map_err(|error| format!("Google Gemini speech text processing failed: {error}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "Google Gemini speech text processing failed: {}",
+            read_api_error(response).await
+        ));
     }
-
-    "Generate an accurate transcript of the spoken audio. If no intelligible speech is present, return an empty transcript. Return only the transcript text."
-        .to_string()
+    let parsed = response
+        .json::<GoogleGenerateContentResponse>()
+        .await
+        .map_err(|error| format!("Failed to parse Google Gemini speech text response: {error}"))?;
+    extract_google_transcript(parsed)
 }
 
 fn google_tts_failure_is_retryable(failure: &GoogleAudioExtractionFailure) -> bool {
@@ -181,42 +242,31 @@ pub(super) async fn transcribe_google(
     audio_bytes: Vec<u8>,
     mime_type: &str,
     language_code: Option<&str>,
+    key_terms: &[String],
 ) -> Result<TranscribedSpeechText, String> {
     validate_audio_upload_size(audio_bytes.len(), "Google", GOOGLE_MAX_INLINE_AUDIO_BYTES)?;
 
     let api_key = get_required_api_key(env, "GOOGLE_API_KEY", "Google")?;
+    let mut transcription_config = json!({});
+    if let Some(language_code) = normalize_language_code(language_code) {
+        transcription_config["language_codes"] = json!([language_code]);
+    }
+    if !key_terms.is_empty() {
+        transcription_config["custom_vocabulary"] = json!(key_terms);
+    }
     let request_body = json!({
-        "systemInstruction": {
-            "parts": [
-                {
-                    "text": GOOGLE_STT_SYSTEM_INSTRUCTION
-                }
-            ]
-        },
-        "contents": [
-            {
-                "parts": [
-                    {
-                        "text": create_google_transcription_prompt(language_code)
-                    },
-                    {
-                        "inlineData": {
-                            "mimeType": mime_type,
-                            "data": BASE64_STANDARD.encode(audio_bytes)
-                        }
-                    }
-                ]
-            }
-        ],
-        "generationConfig": {
-            "responseMimeType": "text/plain",
-            "temperature": 0.1
-        }
+        "model": GOOGLE_STT_MODEL,
+        "input": [{
+            "type": "audio",
+            "data": BASE64_STANDARD.encode(audio_bytes),
+            "mime_type": mime_type
+        }],
+        "generation_config": { "transcription_config": transcription_config }
     });
 
     let response = client
         .post(GOOGLE_STT_ENDPOINT)
-        .query(&[("key", api_key.as_str())])
+        .header("x-goog-api-key", api_key)
         .json(&request_body)
         .send()
         .await
@@ -230,18 +280,18 @@ pub(super) async fn transcribe_google(
     }
 
     let parsed = response
-        .json::<GoogleGenerateContentResponse>()
+        .json::<GoogleInteractionResponse>()
         .await
         .map_err(|error| {
             format!("Failed to parse Google Gemini speech-to-text response: {error}")
         })?;
-    let transcript = extract_google_transcript(parsed)?;
+    let transcript = extract_google_interaction_transcript(parsed)?;
 
     Ok(TranscribedSpeechText {
         provider: "google".to_string(),
         text: transcript,
         mime_type: mime_type.to_string(),
-        detected_language: normalize_language_code(language_code),
+        detected_language: None,
     })
 }
 
@@ -272,10 +322,18 @@ mod tests {
     }
 
     #[test]
-    fn create_google_transcription_prompt_includes_normalized_language_hint() {
-        let prompt = create_google_transcription_prompt(Some(" de-DE "));
-
-        assert!(prompt.contains("de-DE"));
+    fn extracts_transcript_from_interaction_response() {
+        let response = serde_json::from_value(json!({
+            "steps": [{
+                "type": "model_output",
+                "content": [{ "type": "text", "text": "Open Machdoch." }]
+            }]
+        }))
+        .unwrap();
+        assert_eq!(
+            extract_google_interaction_transcript(response).unwrap(),
+            "Open Machdoch."
+        );
     }
 
     #[test]

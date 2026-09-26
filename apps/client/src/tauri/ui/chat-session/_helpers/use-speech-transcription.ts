@@ -14,6 +14,9 @@ export interface SpeechTranscriptionOptions {
   blob: Blob;
   provider: UserSpeechToTextProvider;
   languageCode?: string;
+  keyTerms: string[];
+  speechContext: string;
+  autoTranslateToEnglish: boolean;
 }
 
 export interface SpeechTranscriptionController {
@@ -41,7 +44,12 @@ export const useSpeechTranscription = (): SpeechTranscriptionController => {
           provider: options.provider,
           audioBase64: await convertBlobToBase64(preparedBlob),
           mimeType: normalizeAudioMimeType(preparedBlob.type) || "audio/wav",
-          ...(options.languageCode ? { languageCode: options.languageCode } : {}),
+          keyTerms: options.keyTerms,
+          speechContext: options.speechContext,
+          autoTranslateToEnglish: options.autoTranslateToEnglish,
+          ...(options.languageCode
+            ? { languageCode: options.languageCode }
+            : {}),
         });
         const transcriptText = transcription.text.trim();
 

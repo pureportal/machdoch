@@ -18,14 +18,78 @@ const OPENAI_TTS_INSTRUCTIONS: &str =
     "Speak in a clear, friendly, helpful tone for a desktop AI assistant.";
 const OPENAI_MAX_INPUT_CHARS: usize = 4096;
 const OPENAI_STT_ENDPOINT: &str = "https://api.openai.com/v1/audio/transcriptions";
-const OPENAI_STT_MODEL: &str = "gpt-4o-transcribe";
+const OPENAI_STT_MODEL: &str = "gpt-transcribe";
 const OPENAI_STT_PROMPT: &str = "Transcribe this short push-to-talk instruction for a desktop AI assistant. Preserve punctuation, filenames, CLI flags, code symbols, and product names when they are clear. If no intelligible speech is present, return an empty transcript. Return only the transcript.";
+const OPENAI_TEXT_ENDPOINT: &str = "https://api.openai.com/v1/chat/completions";
+const OPENAI_TEXT_MODEL: &str = "gpt-4o-mini";
 pub(super) const OPENAI_MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
 
 #[derive(Debug, Deserialize)]
 struct OpenAiTranscriptionResponse {
     text: String,
-    language: Option<String>,
+    #[serde(default)]
+    languages: Vec<OpenAiTranscriptionLanguage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiTranscriptionLanguage {
+    code: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiTextResponse {
+    choices: Vec<OpenAiTextChoice>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiTextChoice {
+    message: OpenAiTextMessage,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiTextMessage {
+    content: Option<String>,
+}
+
+pub(super) async fn process_openai_text(
+    client: &Client,
+    env: &std::collections::HashMap<String, String>,
+    text: &str,
+    instruction: &str,
+) -> Result<String, String> {
+    let api_key = get_required_api_key(env, "OPENAI_API_KEY", "OpenAI")?;
+    let response = client
+        .post(OPENAI_TEXT_ENDPOINT)
+        .bearer_auth(api_key)
+        .json(&json!({
+            "model": OPENAI_TEXT_MODEL,
+            "temperature": 0.1,
+            "messages": [
+                { "role": "system", "content": instruction },
+                { "role": "user", "content": text }
+            ]
+        }))
+        .send()
+        .await
+        .map_err(|error| format!("OpenAI speech text processing failed: {error}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "OpenAI speech text processing failed: {}",
+            read_api_error(response).await
+        ));
+    }
+    let parsed = response
+        .json::<OpenAiTextResponse>()
+        .await
+        .map_err(|error| format!("Failed to parse OpenAI speech text response: {error}"))?;
+    normalize_text(
+        parsed
+            .choices
+            .first()
+            .and_then(|choice| choice.message.content.as_deref())
+            .unwrap_or_default(),
+    )
+    .map_err(|_| "OpenAI returned empty processed speech text.".to_string())
 }
 
 fn clamp_openai_speed(value: Option<f64>) -> f64 {
@@ -95,6 +159,8 @@ pub(super) async fn transcribe_openai(
     audio_bytes: Vec<u8>,
     mime_type: &str,
     language_code: Option<&str>,
+    key_terms: &[String],
+    speech_context: &str,
 ) -> Result<TranscribedSpeechText, String> {
     validate_audio_upload_size(audio_bytes.len(), "OpenAI", OPENAI_MAX_UPLOAD_BYTES)?;
 
@@ -104,14 +170,26 @@ pub(super) async fn transcribe_openai(
         .mime_str(mime_type)
         .map_err(|error| format!("Failed to prepare the audio upload: {error}"))?;
 
+    let prompt = if speech_context.trim().is_empty() {
+        OPENAI_STT_PROMPT.to_string()
+    } else {
+        format!(
+            "{OPENAI_STT_PROMPT}\nBackground context for recognizing spoken words: {}\nUse this only to resolve ambiguous speech; do not add unspoken content.",
+            speech_context.trim()
+        )
+    };
     let mut form = multipart::Form::new()
         .text("model", OPENAI_STT_MODEL.to_string())
         .text("response_format", "json".to_string())
-        .text("prompt", OPENAI_STT_PROMPT.to_string())
+        .text("prompt", prompt)
         .part("file", audio_part);
 
+    for term in key_terms {
+        form = form.text("keywords[]", term.clone());
+    }
+
     if let Some(language_code) = normalize_language_code(language_code) {
-        form = form.text("language", language_code);
+        form = form.text("languages[]", language_code);
     }
 
     let response = client
@@ -140,7 +218,12 @@ pub(super) async fn transcribe_openai(
         provider: "openai".to_string(),
         text: transcript,
         mime_type: mime_type.to_string(),
-        detected_language: normalize_language_code(parsed.language.as_deref()),
+        detected_language: normalize_language_code(
+            parsed
+                .languages
+                .first()
+                .map(|language| language.code.as_str()),
+        ),
     })
 }
 

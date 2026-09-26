@@ -69,6 +69,8 @@ temp/
 
 # Model folder
 models/
+apps/client/src-tauri/resources/whisper/*.bin
+apps/client/src-tauri/resources/whisper/*.download-*
 
 # Developer-only accelerator runtimes are assembled locally and are never
 # shipped from the source tree.
