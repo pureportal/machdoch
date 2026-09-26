@@ -810,6 +810,18 @@ export const productCommandSchema = z
       ...baseCommandShape,
       kind: z.literal("create-session"),
       workspace: workspace.optional(),
+      specialKind: z.literal("pose").optional(),
+      poseScene: z.strictObject({
+        aspectRatio: z.enum(["1:1", "4:5", "16:9", "9:16"]),
+        people: z.array(z.strictObject({
+          pose: z.enum(["standing", "sitting", "walking", "waving", "arms-up"]),
+          x: z.number().min(0.1).max(0.9),
+          y: z.number().min(0.35).max(1),
+          scale: z.number().min(0.2).max(0.9),
+          mirror: z.boolean(),
+          joints: z.array(z.strictObject({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) })).length(18).optional(),
+        })).min(1).max(4),
+      }).optional(),
     }),
     ...simpleSessionCommandSchema.options,
     z.strictObject({
@@ -837,6 +849,11 @@ export const productCommandSchema = z
       ...sessionCommandShape,
       kind: z.literal("set-session-mode"),
       mode: z.enum(["ask", "machdoch"]),
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("set-parallel-agent-mode"),
+      mode: z.enum(["disabled", "read-only", "machdoch"]),
     }),
     z.strictObject({
       ...sessionCommandShape,
@@ -1017,6 +1034,7 @@ export const productSessionSchema = z.strictObject({
   model: z.string().max(240),
   mode: z.string().max(240).optional(),
   effectiveMode: z.string().max(240),
+  parallelAgentMode: z.enum(["disabled", "read-only", "machdoch"]).optional(),
   reasoning: z.string().max(240).optional(),
   effectiveReasoning: z.string().max(240).optional(),
   createdAt: timestamp,
@@ -1309,6 +1327,7 @@ export const projectLibrarySchema = z.strictObject({
 
 export const productShellSchema = z.strictObject({
   projectLibrary: projectLibrarySchema.optional(),
+  poseSceneSvg: z.string().max(64_000).optional(),
   version: z.literal(productSnapshotVersion),
   capturedAt: timestamp,
   activeSessionId: identifier.optional(),
@@ -1335,6 +1354,7 @@ export const productShellSchema = z.strictObject({
       modelCatalog: z.array(productModelProviderSchema).max(32),
       mode: z.enum(["ask", "machdoch"]),
       defaultMode: z.enum(["ask", "machdoch"]),
+      parallelAgentMode: z.enum(["disabled", "read-only", "machdoch"]).optional(),
       reasoning: reasoningModeSchema,
       defaultReasoning: reasoningModeSchema,
       reasoningOptions: z.array(reasoningModeSchema).min(1).max(10),

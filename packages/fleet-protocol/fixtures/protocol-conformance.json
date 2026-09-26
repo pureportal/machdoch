@@ -638,6 +638,26 @@
       }
     },
     {
+      "id": "command/set-parallel-agent-mode/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "set-parallel-agent-mode",
+        "sessionId": "session-1",
+        "mode": "read-only"
+      }
+    },
+    {
+      "id": "command/set-parallel-agent-mode/invalid-mode",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-parallel-agent-mode",
+        "sessionId": "session-1",
+        "mode": "automatic"
+      }
+    },
+    {
       "id": "command/set-session-reasoning/missing-sessionId",
       "target": "command",
       "accepted": false,

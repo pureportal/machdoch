@@ -15,7 +15,7 @@ describe("Fleet Manager request limits", () => {
   it("accepts bounded media upload chunks without expanding other API limits", () => {
     expect(
       maximumRequestBodyBytes("/api/instances/host/product/media", config),
-    ).toBe(1024 * 1024);
+    ).toBe(2_250_000);
     expect(
       maximumRequestBodyBytes("/api/instances/host/product/snapshot", config),
     ).toBe(64 * 1024);

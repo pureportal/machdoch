@@ -234,6 +234,11 @@ fn normalize_command_fields(
     if kind == "set-session-mode" && !matches!(mode.as_deref(), Some("ask" | "machdoch")) {
         return Err("Session mode must be ask or machdoch.".to_string());
     }
+    if kind == "set-parallel-agent-mode"
+        && !matches!(mode.as_deref(), Some("disabled" | "read-only" | "machdoch"))
+    {
+        return Err("Parallel agent mode must be disabled, read-only, or machdoch.".to_string());
+    }
 
     let reasoning =
         optional_truncated_text(request.reasoning.as_deref(), MAX_FLEET_SHORT_TEXT_CHARS);

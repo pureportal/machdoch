@@ -300,9 +300,15 @@ const createExternalAgentOperatingInstructions = (
 const createExternalAgentCompletionContract = (
   delegationMode: ExternalAgentDelegationMode,
   resultProtocol: ModelDrivenExecutionParams["resultProtocol"],
+  poseChat = false,
 ): string[] => {
   const completionInstructions =
-    delegationMode === "read-only-artifact"
+    poseChat
+      ? [
+          "Save the requested pose scene through a Machdoch pose tool before replying.",
+          "Describe the saved skeleton briefly, including the characters' positions or actions. Do not describe a rendered image.",
+        ]
+      : delegationMode === "read-only-artifact"
       ? [
           "Return exactly the artifact or answer requested by the user task.",
           "Preserve any output contract in the user task exactly.",
@@ -328,6 +334,7 @@ const createExternalAgentSystemInstructions = (
   delegationMode: ExternalAgentDelegationMode,
   resultProtocol: ModelDrivenExecutionParams["resultProtocol"],
   workspacePresenceAvailable: boolean,
+  poseChat = false,
 ): string => {
   const runtimeSectionsBlock =
     runtimeSystemPromptSections.length > 0
@@ -341,8 +348,9 @@ const createExternalAgentSystemInstructions = (
     `Workspace: ${config.workspaceRoot}`,
     `Machdoch mode: ${config.mode}`,
     `Reasoning mode: ${config.reasoning}`,
-    ...createExternalAgentOperatingInstructions(delegationMode),
-    workspacePresenceAvailable
+    ...(poseChat ? [] : createExternalAgentOperatingInstructions(delegationMode)),
+    "The user task states whether its message was queued before delivery. A queued message may have been written before earlier work finished. Check its assumptions against the latest outcome, especially after a failure. Proceed when it still makes sense; do not treat queueing alone as evidence that it is stale or canceled.",
+    workspacePresenceAvailable && !poseChat
       ? "Other agents may be active in this workspace. If files or Git state change unexpectedly, use the `get_active_workspace_agents` workspace-presence tool; treat its result as advisory context only, never as proof of attribution or a reason to relax workspace safety rules."
       : undefined,
     runtimeSectionsBlock,
@@ -350,6 +358,7 @@ const createExternalAgentSystemInstructions = (
     ...createExternalAgentCompletionContract(
       delegationMode,
       resultProtocol,
+      poseChat,
     ).map((line) => `- ${line}`),
   ]
     .filter(
@@ -377,6 +386,7 @@ const createExternalAgentPrompt = (
     .join("\n\n");
   const prompt = [
     attachmentBlock,
+    `Queued before delivery: ${conversationContext.wasQueued ? "yes" : "no"}`,
     "User task:",
     task,
     conversationContext.promptBlock,
@@ -1374,6 +1384,7 @@ const createCodexArgs = (
     config.model,
   );
   args.push("--config", "skills.bundled.enabled=false");
+  args.push("--config", "features.multi_agent=false");
 
   if (reasoningEffort) {
     args.push("--config", `model_reasoning_effort="${reasoningEffort}"`);
@@ -1490,6 +1501,8 @@ const createClaudeCommand = ({
     model,
     "--dangerously-skip-permissions",
     "--no-session-persistence",
+    "--disallowedTools",
+    "Agent",
     ...enrollmentArgs,
   ];
   const maxTurns = getExecutorTurnLimit(config);
@@ -1568,6 +1581,7 @@ const createCopilotCommand = ({
     "--output-format=json",
     "--autopilot",
     "--no-ask-user",
+    "--excluded-tools=task,read_agent,write_agent,list_agents",
     `--secret-env-vars=${secretEnvKeys.join(",")}`,
     ...enrollmentArgs,
   ];
@@ -1694,13 +1708,22 @@ const executeExternalAgentCliTask = async (
   );
   const delegationMode = getExternalAgentDelegationMode(params);
   const workspacePresence = getWorkspacePresenceEnrollment();
+  const poseChat = Object.hasOwn(params.preparedConversationContext.memory, "poseScene");
   const runtimeSystemInstructions = createExternalAgentSystemInstructions(
     executionConfig,
-    params.systemPromptSections ?? [],
+    [
+      ...(params.systemPromptSections ?? []),
+      ...(poseChat
+        ? [
+            "This is a Pose chat. Use the Machdoch MCP pose_scene_get and pose_scene_replace or pose_person_* and pose_joint_set tools to create or edit the OpenPose skeleton. Make the visible joints match the requested action for every figure; use the climbing base pose for climbers and vary their limbs and placement. The saved pose scene is the deliverable. Do not use image generation, shell commands, or file edits for this task. Do not report success until a pose tool has saved the scene. Describe only the saved skeleton, never a final image.",
+          ]
+        : []),
+    ],
     providerLabel,
     delegationMode,
     params.resultProtocol,
     workspacePresence !== undefined,
+    poseChat,
   );
   const resolution = params.taskContext.instructionResolution;
   const instructionPlan = params.instructionDeliveryPlan;
@@ -1734,6 +1757,7 @@ const executeExternalAgentCliTask = async (
       runtimeSystemInstructions,
       machdochCliLaunch: resolveMachdochCliLaunch(),
       localMcp,
+      ...(poseChat ? { localMcpOnly: true } : {}),
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);

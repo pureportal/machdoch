@@ -2,109 +2,32 @@
 // Source of truth: src/shared/runtime-config.schema.json
 #![allow(dead_code)]
 
-pub const RUNTIME_CONFIG_SCHEMA_ID: &str =
-    "https://machdoch.local/schemas/runtime-config.schema.json";
+pub const RUNTIME_CONFIG_SCHEMA_ID: &str = "https://machdoch.local/schemas/runtime-config.schema.json";
 pub const RUNTIME_CONFIG_SCHEMA_VERSION: u32 = 1;
 
 pub const RUN_MODES: [&str; 2] = ["ask", "machdoch"];
-pub const REASONING_MODES: [&str; 10] = [
-    "default", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra", "aeon",
-];
+pub const REASONING_MODES: [&str; 10] = ["default", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra", "aeon"];
 pub const REASONING_EXECUTION_MODES: [&str; 2] = ["standard", "pro"];
 pub const CONTEXT_WINDOW_MODES: [&str; 2] = ["default", "long"];
 pub const MIN_CONTEXT_WINDOW_TOKENS: u32 = 1;
 pub const MAX_CONTEXT_WINDOW_TOKENS: u32 = 10000000;
-pub const VALID_TOOLS: [&str; 11] = [
-    "filesystem",
-    "shell",
-    "network",
-    "browser",
-    "git",
-    "packages",
-    "run",
-    "mcp",
-    "scheduler",
-    "workflows",
-    "utilities",
-];
-pub const VALID_MODEL_PROVIDERS: [&str; 7] = [
-    "openai",
-    "anthropic",
-    "google",
-    "langdock",
-    "codex-cli",
-    "claude-cli",
-    "copilot-cli",
-];
-pub const MODEL_PROVIDERS: [&str; 8] = [
-    "openai",
-    "anthropic",
-    "google",
-    "langdock",
-    "codex-cli",
-    "claude-cli",
-    "copilot-cli",
-    "unconfigured",
-];
-pub const USER_API_PROVIDERS: [&str; 6] = [
-    "openai",
-    "anthropic",
-    "google",
-    "langdock",
-    "quiver",
-    "recraft",
-];
+pub const VALID_TOOLS: [&str; 11] = ["filesystem", "shell", "network", "browser", "git", "packages", "run", "mcp", "scheduler", "workflows", "utilities"];
+pub const VALID_MODEL_PROVIDERS: [&str; 7] = ["openai", "anthropic", "google", "langdock", "codex-cli", "claude-cli", "copilot-cli"];
+pub const MODEL_PROVIDERS: [&str; 8] = ["openai", "anthropic", "google", "langdock", "codex-cli", "claude-cli", "copilot-cli", "unconfigured"];
+pub const USER_API_PROVIDERS: [&str; 6] = ["openai", "anthropic", "google", "langdock", "quiver", "recraft"];
 pub const AGENT_CLI_PROVIDERS: [&str; 3] = ["codex-cli", "claude-cli", "copilot-cli"];
 pub const USER_WEB_SEARCH_PROVIDERS: [&str; 3] = ["perplexity", "tavily", "serper"];
 pub const USER_AUDIO_AI_PROVIDERS: [&str; 2] = ["openai", "google"];
 pub const VALID_WEB_SEARCH_PROVIDERS: [&str; 4] = ["none", "perplexity", "tavily", "serper"];
 pub const VALID_AUDIO_AI_PROVIDERS: [&str; 3] = ["none", "openai", "google"];
+pub const VALID_SPEECH_TO_TEXT_PROVIDERS: [&str; 4] = ["none", "openai", "google", "whisper"];
 pub const USER_REVIEW_MODEL_MODES: [&str; 2] = ["base", "dedicated"];
-pub const RUNTIME_ENV_KEYS: [&str; 15] = [
-    "MACHDOCH_MODE",
-    "MACHDOCH_MODEL",
-    "MACHDOCH_REASONING",
-    "MACHDOCH_REASONING_MODE",
-    "MACHDOCH_CONTEXT_WINDOW",
-    "MACHDOCH_OFFLINE",
-    "MACHDOCH_WEB_SEARCH_PROVIDER",
-    "MACHDOCH_EXECUTOR_TURNS",
-    "MACHDOCH_AUTOPILOT_ITERATIONS",
-    "MACHDOCH_INFINITE",
-    "MACHDOCH_CODEX_CLI_PATH",
-    "MACHDOCH_CLAUDE_CLI_PATH",
-    "MACHDOCH_COPILOT_CLI_PATH",
-    "MACHDOCH_LANGDOCK_REGION",
-    "MACHDOCH_LANGDOCK_BASE_URL",
-];
-pub const PROVIDER_ENV_KEYS: [(&str, &str); 6] = [
-    ("openai", "OPENAI_API_KEY"),
-    ("anthropic", "ANTHROPIC_API_KEY"),
-    ("google", "GOOGLE_API_KEY"),
-    ("langdock", "LANGDOCK_API_KEY"),
-    ("quiver", "QUIVERAI_API_KEY"),
-    ("recraft", "RECRAFT_API_KEY"),
-];
-pub const AGENT_CLI_PROVIDER_ENV_KEYS: [(&str, &str); 3] = [
-    ("codex-cli", "MACHDOCH_CODEX_CLI_PATH"),
-    ("claude-cli", "MACHDOCH_CLAUDE_CLI_PATH"),
-    ("copilot-cli", "MACHDOCH_COPILOT_CLI_PATH"),
-];
-pub const WEB_SEARCH_ENV_KEYS: [(&str, &str); 3] = [
-    ("perplexity", "PERPLEXITY_API_KEY"),
-    ("tavily", "TAVILY_API_KEY"),
-    ("serper", "SERPER_API_KEY"),
-];
+pub const RUNTIME_ENV_KEYS: [&str; 15] = ["MACHDOCH_MODE", "MACHDOCH_MODEL", "MACHDOCH_REASONING", "MACHDOCH_REASONING_MODE", "MACHDOCH_CONTEXT_WINDOW", "MACHDOCH_OFFLINE", "MACHDOCH_WEB_SEARCH_PROVIDER", "MACHDOCH_EXECUTOR_TURNS", "MACHDOCH_AUTOPILOT_ITERATIONS", "MACHDOCH_INFINITE", "MACHDOCH_CODEX_CLI_PATH", "MACHDOCH_CLAUDE_CLI_PATH", "MACHDOCH_COPILOT_CLI_PATH", "MACHDOCH_LANGDOCK_REGION", "MACHDOCH_LANGDOCK_BASE_URL"];
+pub const PROVIDER_ENV_KEYS: [(&str, &str); 6] = [("openai", "OPENAI_API_KEY"), ("anthropic", "ANTHROPIC_API_KEY"), ("google", "GOOGLE_API_KEY"), ("langdock", "LANGDOCK_API_KEY"), ("quiver", "QUIVERAI_API_KEY"), ("recraft", "RECRAFT_API_KEY")];
+pub const AGENT_CLI_PROVIDER_ENV_KEYS: [(&str, &str); 3] = [("codex-cli", "MACHDOCH_CODEX_CLI_PATH"), ("claude-cli", "MACHDOCH_CLAUDE_CLI_PATH"), ("copilot-cli", "MACHDOCH_COPILOT_CLI_PATH")];
+pub const WEB_SEARCH_ENV_KEYS: [(&str, &str); 3] = [("perplexity", "PERPLEXITY_API_KEY"), ("tavily", "TAVILY_API_KEY"), ("serper", "SERPER_API_KEY")];
 pub const DEFAULT_MODEL_PROVIDER: &str = "openai";
-pub const DEFAULT_MODEL_BY_PROVIDER: [(&str, &str); 7] = [
-    ("openai", "gpt-5.6-sol"),
-    ("anthropic", "claude-sonnet-5"),
-    ("google", "gemini-3.7-flash"),
-    ("langdock", "gpt-5.5"),
-    ("codex-cli", "gpt-5.6-sol"),
-    ("claude-cli", "sonnet"),
-    ("copilot-cli", "auto"),
-];
+pub const DEFAULT_MODEL_BY_PROVIDER: [(&str, &str); 7] = [("openai", "gpt-5.6-sol"), ("anthropic", "claude-sonnet-5"), ("google", "gemini-3.7-flash"), ("langdock", "gpt-5.5"), ("codex-cli", "gpt-5.6-sol"), ("claude-cli", "sonnet"), ("copilot-cli", "auto")];
 pub const DEFAULT_USER_REVIEW_MODEL_MODE: &str = "base";
 pub const DEFAULT_USER_INTERNAL_TASK_MODEL_REASONING: &str = "default";
 
@@ -141,6 +64,7 @@ pub const DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_ENABLED: bool = true;
 pub const DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_HIDE_WHEN_FULLSCREEN: bool = true;
 pub const DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS: u32 = 6;
 pub const DEFAULT_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES: u32 = 60;
+pub const DEFAULT_DESKTOP_SETTING_ADAPTIVE_CONTROLLER_ENABLED: bool = true;
 pub const DEFAULT_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES: u32 = 20;
 pub const DEFAULT_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS: u32 = 7;
 pub const DEFAULT_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS: u32 = 7;

@@ -109,6 +109,7 @@ export const runInteractiveChat = async (
         {
           conversationContext: {
             ...state.session.context,
+            parallelAgentMode: state.session.parallelAgentMode,
             history: state.session.context.history.slice(-60),
           },
           showActionFeedback: true,
@@ -247,7 +248,7 @@ export const runInteractiveChat = async (
     ) {
       if (name === "export") unsaved = false;
       else if (
-        ["model", "mode", "reasoning", "memory", "forget"].includes(name)
+        ["model", "mode", "parallel", "reasoning", "memory", "forget"].includes(name)
       )
         await persist();
       return true;

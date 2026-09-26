@@ -16,6 +16,7 @@ import {
 import type { ParsedCliArgs } from "./cli-args.js";
 import type { ChatInput } from "./cli-chat-input.js";
 import type { CliChatSession } from "./cli-chat-sessions.js";
+import type { ParallelAgentMode } from "../../core/types.js";
 import {
   createTerminalPrompter,
   type InteractivePrompter,
@@ -46,7 +47,7 @@ export const showChatStatus = (
   write: (line: string) => void,
 ): void => {
   write(
-    `${state.args.workspaceRoot}\n${state.config.mode} · ${state.config.provider} / ${state.config.model} · reasoning ${state.config.reasoning}`,
+    `${state.args.workspaceRoot}\n${state.config.mode} · ${state.config.provider} / ${state.config.model} · reasoning ${state.config.reasoning} · parallel ${state.session.parallelAgentMode}`,
   );
 };
 
@@ -75,6 +76,19 @@ export const handleChatRuntimeControl = async (
   };
   if (command === "status") {
     if (values.length) usage("");
+    showChatStatus(state, write);
+    return true;
+  }
+  if (command === "parallel") {
+    const choices: ParallelAgentMode[] = ["disabled", "read-only", "machdoch"];
+    if (values.length > 1) usage("[disabled|read-only|machdoch]");
+    const value = values[0] ?? await withChatMenu(input, (prompter) =>
+      prompter.select("Parallel agents", choices.map((mode) => ({ value: mode, label: mode })),
+        { currentValue: state.session.parallelAgentMode }));
+    if (value === undefined) return true;
+    if (!choices.includes(value as ParallelAgentMode)) usage("[disabled|read-only|machdoch]");
+    state.session.parallelAgentMode = value as ParallelAgentMode;
+    state.session.context.parallelAgentMode = value as ParallelAgentMode;
     showChatStatus(state, write);
     return true;
   }

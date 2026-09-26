@@ -24,6 +24,10 @@ pub struct UserVoiceSettings {
 pub struct UserSpeechToTextSettings {
     pub(super) active_provider: String,
     pub(super) input_device_id: Option<String>,
+    pub(super) key_terms: Vec<String>,
+    pub(super) speech_context: String,
+    pub(super) auto_translate_to_english: bool,
+    pub(super) auto_format: bool,
     pub(super) provider_availability: Vec<AudioProviderAvailability>,
 }
 
@@ -91,6 +95,7 @@ pub struct UserDesktopSettings {
     pub(crate) assistant_bubble_hide_when_fullscreen: bool,
     pub(crate) assistant_bubble_temporarily_hide_seconds: u32,
     pub(crate) ai_context_max_messages: u32,
+    pub(crate) adaptive_controller_enabled: bool,
     pub(crate) chat_idle_timeout_minutes: u32,
     pub(crate) inactive_session_archive_days: u32,
     pub(crate) archived_session_retention_days: u32,
@@ -119,6 +124,8 @@ pub(super) struct WorkspaceConfigFile {
     pub(super) agent_limits: Option<UserAgentLimitsConfigFile>,
     pub(super) compatibility: Option<WorkspaceCompatibilityConfig>,
     pub(super) workspace_memory_enabled: Option<bool>,
+    pub(super) reasoning_bank_enabled: Option<bool>,
+    pub(super) adaptive_controller_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -187,6 +194,11 @@ pub(super) struct UserVoiceConfigFile {
 pub(super) struct UserSpeechToTextConfigFile {
     pub(super) active_provider: Option<String>,
     pub(super) input_device_id: Option<String>,
+    #[serde(default)]
+    pub(super) key_terms: Vec<String>,
+    pub(super) speech_context: Option<String>,
+    pub(super) auto_translate_to_english: Option<bool>,
+    pub(super) auto_format: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -199,6 +211,7 @@ pub(super) struct UserDesktopConfigFile {
     pub(super) assistant_bubble_hide_when_fullscreen: Option<bool>,
     pub(super) assistant_bubble_temporarily_hide_seconds: Option<u32>,
     pub(super) ai_context_max_messages: Option<u32>,
+    pub(super) adaptive_controller_enabled: Option<bool>,
     pub(super) chat_idle_timeout_minutes: Option<u32>,
     pub(super) inactive_session_archive_days: Option<u32>,
     pub(super) archived_session_retention_days: Option<u32>,

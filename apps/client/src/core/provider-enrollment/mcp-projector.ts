@@ -33,6 +33,7 @@ export interface McpProjectionOptions {
   scope?: "user" | "workspace";
   machdochCliLaunch?: MachdochCliLaunch;
   localMcp?: LocalMcpEndpoint;
+  localMcpOnly?: boolean;
 }
 
 const ENVIRONMENT_TEMPLATE_PATTERN = /\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}/gu;
@@ -543,6 +544,7 @@ export const projectMcpForProvider = async (
   const discovery = discoveryCache.servers;
   const enabledServers = listEnabledMcpServers(effectiveConfig).filter(
     (server) => {
+      if (options.localMcpOnly) return false;
       if (!options.scope) return true;
       const isWorkspaceServer = server.sources.includes("workspace");
       return options.scope === "workspace"

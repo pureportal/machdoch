@@ -60,6 +60,7 @@ const createConversationContext = (
   overrides: Partial<PreparedConversationPromptContext> = {},
 ): PreparedConversationPromptContext => {
   return {
+    wasQueued: false,
     workspace: {
       selection: "selected",
       root: "c:/Development/machdoch",
@@ -418,5 +419,38 @@ describe("createExecutorSystemPrompt", () => {
     expect(userPrompt.match(/Create the Docker Compose files/gu)).toHaveLength(
       1,
     );
+  });
+
+  it("marks queued and direct messages and explains how to interpret the queue", () => {
+    const config = createRuntimeConfig();
+    const taskContext = createTaskContext();
+    const queuedContext = createConversationContext({ wasQueued: true });
+    const directContext = createConversationContext();
+    const systemPrompt = createExecutorSystemPrompt(
+      config,
+      taskContext,
+      [],
+      queuedContext,
+    );
+
+    expect(systemPrompt).toContain("<queued_message_contract>");
+    expect(systemPrompt).toContain("especially after a failure");
+    expect(systemPrompt).toContain("do not treat queueing alone");
+    expect(
+      createExecutorUserPrompt(
+        config,
+        taskContext.task,
+        taskContext,
+        queuedContext,
+      ),
+    ).toContain("<queued_message>true</queued_message>");
+    expect(
+      createExecutorUserPrompt(
+        config,
+        taskContext.task,
+        taskContext,
+        directContext,
+      ),
+    ).toContain("<queued_message>false</queued_message>");
   });
 });

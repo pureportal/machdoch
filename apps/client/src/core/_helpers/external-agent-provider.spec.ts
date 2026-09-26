@@ -317,6 +317,7 @@ const createConfig = (
 });
 
 const preparedConversationContext: PreparedConversationPromptContext = {
+  wasQueued: false,
   workspace: {
     selection: "selected",
     root: "C:/workspace",
@@ -527,6 +528,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).toContain("--ephemeral");
     expect(call?.args).not.toContain("--ignore-user-config");
     expect(call?.args).toContain("skills.bundled.enabled=false");
+    expect(call?.args).toContain("features.multi_agent=false");
     expect(call?.args).toContain("--skip-git-repo-check");
     expect(call?.args).toContain("--ignore-rules");
     expect(call?.args).not.toContain("--dangerously-bypass-hook-trust");
@@ -670,6 +672,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
       await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
       const call = spawnCalls[0]!;
+      if (provider === "codex-cli") expect(call.args).toContain("features.multi_agent=false");
+      if (provider === "claude-cli") expect(call.args).toContain("--disallowedTools");
+      if (provider === "copilot-cli") expect(call.args).toContain("--excluded-tools=task,read_agent,write_agent,list_agents");
       const systemInstructions = await readRunScopedSystemInstructions(
         provider,
         call,
@@ -1381,6 +1386,38 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     call.child.emit("close", 0, null);
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
   });
+
+  it.each([true, false])(
+    "delivers queued status %s to the CLI agent",
+    async (wasQueued) => {
+      const workspaceRoot = await createWorkspace();
+      process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+      const params = createParams(workspaceRoot);
+      params.preparedConversationContext = {
+        ...params.preparedConversationContext,
+        wasQueued,
+      };
+
+      const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+
+      expect(call.child.stdinText).toContain(
+        `Queued before delivery: ${wasQueued ? "yes" : "no"}`,
+      );
+      expect(call.child.stdinText).toContain(params.task);
+      const instructions = await readRunScopedSystemInstructions(
+        "codex-cli",
+        call,
+      );
+      expect(instructions).toContain("especially after a failure");
+      expect(instructions).toContain("do not treat queueing alone");
+
+      writeStructuredAnswer(call, "Delegated answer.");
+      call.child.emit("close", 0, null);
+      await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+    },
+  );
 
   it.each([
     ["codex-cli", "MACHDOCH_CODEX_CLI_PATH", "--image"],

@@ -7,6 +7,8 @@ use super::{
 
 fn command_request(kind: ProductCommandKind) -> ProductCommand {
     ProductCommand {
+        special_kind: None,
+        pose_scene: None,
         name: None,
         repository: None,
         branch: None,

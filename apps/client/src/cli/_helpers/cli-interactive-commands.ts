@@ -6,6 +6,7 @@ export const CHAT_COMMANDS = [
   ["status", "", "Show session settings"],
   ["model", "[provider model]", "Choose a model"],
   ["mode", "[ask|machdoch]", "Change mode"],
+  ["parallel", "[disabled|read-only|machdoch]", "Change parallel agent mode"],
   ["reasoning", "[level]", "Change reasoning"],
   ["new", "[workspace]", "Start a conversation"],
   ["sessions", "[search]", "Resume a saved CLI conversation"],

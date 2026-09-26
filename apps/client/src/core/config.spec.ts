@@ -8,6 +8,8 @@ import {
   saveWorkspaceDefaultMode,
   saveWorkspaceDefaultModel,
   saveWorkspaceMemoryOverride,
+  saveWorkspaceAdaptiveControllerOverride,
+  saveWorkspaceReasoningBankEnabled,
   saveWorkspaceReasoningExecutionMode,
   saveWorkspaceReasoningMode,
   saveWorkspaceRuntimeProvider,
@@ -425,14 +427,51 @@ describe("loadRuntimeConfig", () => {
     const workspaceRoot = await createWorkspace();
 
     await saveWorkspaceMemoryOverride(workspaceRoot, false);
-    expect((await loadWorkspaceConfigFile(workspaceRoot)).config).toMatchObject({
-      workspaceMemoryEnabled: false,
-    });
+    expect((await loadWorkspaceConfigFile(workspaceRoot)).config).toMatchObject(
+      {
+        workspaceMemoryEnabled: false,
+      },
+    );
 
     await saveWorkspaceMemoryOverride(workspaceRoot, null);
-    expect((await loadWorkspaceConfigFile(workspaceRoot)).config).toMatchObject({
-      workspaceMemoryEnabled: null,
-    });
+    expect((await loadWorkspaceConfigFile(workspaceRoot)).config).toMatchObject(
+      {
+        workspaceMemoryEnabled: null,
+      },
+    );
+  });
+
+  it("persists nullable adaptive controller overrides", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+    await saveWorkspaceAdaptiveControllerOverride(workspaceRoot, false);
+    expect(
+      (await loadWorkspaceConfigFile(workspaceRoot)).config
+        .adaptiveControllerEnabled,
+    ).toBe(false);
+    await saveWorkspaceAdaptiveControllerOverride(workspaceRoot, null);
+    expect(
+      (await loadWorkspaceConfigFile(workspaceRoot)).config
+        .adaptiveControllerEnabled,
+    ).toBeNull();
+  });
+
+  it("persists the ReasoningBank workspace setting", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    await saveWorkspaceReasoningBankEnabled(workspaceRoot, false);
+    expect((await loadWorkspaceConfigFile(workspaceRoot)).config).toMatchObject(
+      {
+        reasoningBankEnabled: false,
+      },
+    );
+    await saveWorkspaceReasoningBankEnabled(workspaceRoot, true);
+    expect((await loadWorkspaceConfigFile(workspaceRoot)).config).toMatchObject(
+      {
+        reasoningBankEnabled: true,
+      },
+    );
   });
 
   it("persists and loads a numeric Codex context window", async () => {

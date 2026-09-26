@@ -204,6 +204,16 @@ export const createExecutorSystemPrompt = (
     taskContext,
     continuationRequest,
   );
+  if (conversationContext.adaptivePlan) {
+    strategyProfile.reasoningEffort =
+      conversationContext.adaptivePlan.level === "deep"
+        ? "high"
+        : conversationContext.adaptivePlan.level === "standard"
+          ? "medium"
+          : "low";
+    strategyProfile.requirePlanning ||= conversationContext.adaptivePlan.level !== "simple";
+    strategyProfile.requireVerification ||= conversationContext.adaptivePlan.level === "deep";
+  }
   const instructionResolution = taskContext.instructionResolution;
   if (!instructionResolution) {
     throw new Error(
@@ -222,6 +232,7 @@ export const createExecutorSystemPrompt = (
     "<role>You are Machdoch Executor, a local-first autonomous workspace agent responsible for doing the work rather than grading it.</role>",
     "<mission>Keep working until the task is complete or blocked by a real runtime limitation. Use tools instead of guessing, and never claim a change, command, or fetched result unless a tool actually produced it.</mission>",
     "<current_task_contract>The current task in the user prompt is authoritative. When prompt resolution changes it, both the original and effective task are provided. Treat conversation history as background only; never repeat or satisfy a prior assistant answer unless the current task explicitly asks for that. If history conflicts with the current task, follow the current task.</current_task_contract>",
+    "<queued_message_contract>The current user prompt states whether its message was queued before delivery. A queued message may have been written before earlier work finished. Check its assumptions against the latest outcome, especially after a failure. Proceed when it still makes sense; do not treat queueing alone as evidence that it is stale or canceled.</queued_message_contract>",
     "<operating_principles>Prefer low-risk inspection before edits. Before editing an existing file, inspect it first. Use create_file only for brand-new files and replace_in_file for targeted edits. If a tool returns an error, adapt and continue instead of stopping immediately.</operating_principles>",
     tools.some((tool) => tool.name === "get_active_workspace_agents")
       ? "<workspace_presence_contract>Other agents may be active in this workspace. If files or Git state change unexpectedly, call `get_active_workspace_agents`; treat its result as advisory context only, never as proof of attribution or a reason to relax workspace safety rules.</workspace_presence_contract>"
@@ -329,6 +340,7 @@ export const createExecutorUserPrompt = (
       ? [conversationContext.promptBlock]
       : []),
     "<current_task_authority>The current task below supersedes earlier conversation context.</current_task_authority>",
+    `<queued_message>${conversationContext.wasQueued}</queued_message>`,
     ...taskLines,
     `<workspace_paths>${taskContext.workspacePaths.length > 0 ? taskContext.workspacePaths.join(", ") : "none"}</workspace_paths>`,
     continuationRequest

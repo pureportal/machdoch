@@ -152,6 +152,11 @@ export interface ConversationMemoryEntry {
 
 export interface TaskConversationContext {
   sessionId?: string;
+  adaptiveControllerOverride?: boolean | null;
+  parallelAgentMode?: ParallelAgentMode;
+  wasQueued?: boolean;
+  chatType?: "pose";
+  poseScene?: import("@machdoch/media-studio/core/media/contracts.js").MediaPoseMap;
   workspace?: {
     selection: "selected" | "not-set";
     root?: string;
@@ -166,6 +171,8 @@ export interface TaskConversationContext {
   uiControl?: UiControlRuntimeInfo;
   workspaceRun?: WorkspaceRunSnapshot;
 }
+
+export type ParallelAgentMode = "disabled" | "read-only" | "machdoch";
 
 export interface TaskExecutionMemoryUpdate {
   scope: ConversationMemoryScope;
@@ -524,6 +531,7 @@ export interface TaskModelUsageReport {
 
 export type TaskExecutionTimelineEventKind =
   | "state"
+  | "agent"
   | "model-call"
   | "tool-call"
   | "retry"

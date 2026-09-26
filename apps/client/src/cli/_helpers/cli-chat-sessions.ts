@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { getUserConfigPath } from "../../core/env.js";
+import { isMediaPoseMap } from "@machdoch/media-studio/core/media/contracts.js";
 import { writeJsonAtomically } from "../../core/_helpers/write-file-atomically.helper.js";
 import { withCooperativeFileLock } from "../../core/_helpers/with-cooperative-file-lock.helper.js";
 import { normalizeConversationMemoryEntries } from "../../core/memory.js";
@@ -13,7 +14,10 @@ import {
   type RunMode,
 } from "../../core/runtime-contract.generated.js";
 import type { ConfiguredModelProvider } from "../../core/provider-model-registry.js";
-import type { TaskConversationContext } from "../../core/types.js";
+import type {
+  ParallelAgentMode,
+  TaskConversationContext,
+} from "../../core/types.js";
 import { CliUsageError } from "./cli-error.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -39,6 +43,7 @@ export const parseConversationContext = (
       "Invalid conversation context: expected a history array of user and assistant messages.",
     );
   for (const key of [
+    "wasQueued",
     "sessionMemoryEnabled",
     "workspaceMemoryEnabled",
     "globalMemoryEnabled",
@@ -49,8 +54,30 @@ export const parseConversationContext = (
         `Invalid conversation context: ${key} must be a boolean.`,
       );
   }
+  if (
+    value.adaptiveControllerOverride !== undefined &&
+    value.adaptiveControllerOverride !== null &&
+    typeof value.adaptiveControllerOverride !== "boolean"
+  ) {
+    throw new CliUsageError(
+      "Invalid conversation context: adaptiveControllerOverride must be a boolean or null.",
+    );
+  }
   if (value.sessionId !== undefined && typeof value.sessionId !== "string")
     throw new CliUsageError("Invalid conversation session id.");
+  if (value.chatType !== undefined && value.chatType !== "pose")
+    throw new CliUsageError("Invalid conversation chat type.");
+  if (
+    value.parallelAgentMode !== undefined &&
+    (typeof value.parallelAgentMode !== "string" ||
+      !["disabled", "read-only", "machdoch"].includes(value.parallelAgentMode))
+  )
+    throw new CliUsageError("Invalid conversation parallel agent mode.");
+  if (
+    value.poseScene !== undefined &&
+    (value.chatType !== "pose" || !isMediaPoseMap(value.poseScene))
+  )
+    throw new CliUsageError("Invalid conversation pose scene.");
   if (
     value.workspace !== undefined &&
     (!isRecord(value.workspace) ||
@@ -99,6 +126,7 @@ export interface CliChatSession {
   updatedAt: number;
   context: TaskConversationContext;
   mode?: RunMode;
+  parallelAgentMode: ParallelAgentMode;
   provider?: ConfiguredModelProvider;
   model?: string;
   reasoning?: ReasoningMode;
@@ -123,8 +151,10 @@ export const createChatSession = (
     revision: 0,
     workspaceRoot,
     updatedAt: Date.now(),
+    parallelAgentMode: context.parallelAgentMode ?? "disabled",
     context: {
       ...context,
+      parallelAgentMode: context.parallelAgentMode ?? "disabled",
       history: [...context.history],
       sessionMemory: context.sessionMemory ?? [],
       sessionMemoryEnabled: context.sessionMemoryEnabled ?? true,
@@ -169,6 +199,11 @@ export const loadChatSession = async (id: string): Promise<CliChatSession> => {
     !Number.isFinite(value.updatedAt) ||
     (value.mode !== undefined &&
       !["ask", "machdoch"].includes(String(value.mode))) ||
+    (value.parallelAgentMode !== undefined &&
+      (typeof value.parallelAgentMode !== "string" ||
+        !["disabled", "read-only", "machdoch"].includes(
+          value.parallelAgentMode,
+        ))) ||
     (value.provider !== undefined &&
       !VALID_MODEL_PROVIDERS.includes(
         value.provider as ConfiguredModelProvider,
@@ -197,6 +232,8 @@ export const loadChatSession = async (id: string): Promise<CliChatSession> => {
   }
   return {
     ...(value as unknown as CliChatSession),
+    parallelAgentMode: (value.parallelAgentMode ??
+      "disabled") as ParallelAgentMode,
     context: parseConversationContext(value.context),
   };
 };

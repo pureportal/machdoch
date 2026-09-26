@@ -1,7 +1,8 @@
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadUserMemorySettings, saveUserGlobalMemoryEnabled } from "./env.ts";
 import { executeTask } from "./execution.ts";
 import { createInstructionResolutionFixture } from "./__test__/instruction-test-helpers.ts";
@@ -194,6 +195,113 @@ afterEach(async () => {
 });
 
 describe("executeTask", () => {
+  it("exposes managed parallel work only when the chat mode enables it", async () => {
+    const workspaceRoot = await createWorkspace();
+    const available: Record<string, boolean> = {};
+    for (const parallelAgentMode of ["disabled", "read-only", "machdoch"] as const) {
+      const modelAdapter: AgentModelAdapter = {
+        startTurn: async (params) => {
+          available[parallelAgentMode] = params.tools.some((tool) => tool.name === "run_parallel_agents");
+          return { text: "", toolCalls: [createFinalResponseToolCall()] };
+        },
+        continueTurn: async (): Promise<never> => { throw new Error("Unexpected continuation"); },
+      };
+      const result = await executeTask(
+        "Summarize this task.",
+        createConfig(workspaceRoot, "ask", {
+          provider: "openai",
+          providerAvailability: configuredProviderAvailability,
+        }),
+        emptyCustomizations(workspaceRoot),
+        {
+          modelAdapter,
+          conversationContext: { history: [], parallelAgentMode },
+        },
+      );
+      expect(result.status).toBe("executed");
+    }
+    expect(available).toEqual({ disabled: false, "read-only": true, machdoch: true });
+
+    const unavailableAdapter: AgentModelAdapter = {
+      startTurn: async (params) => {
+        available.unavailable = params.tools.some((tool) => tool.name === "run_parallel_agents");
+        return { text: "", toolCalls: [createFinalResponseToolCall()] };
+      },
+      continueTurn: async (): Promise<never> => { throw new Error("Unexpected continuation"); },
+    };
+    await executeTask(
+      "Summarize this task.",
+      createConfig(workspaceRoot, "ask"),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: unavailableAdapter,
+        conversationContext: { history: [], parallelAgentMode: "machdoch" },
+      },
+    );
+    expect(available.unavailable).toBe(false);
+  });
+
+  it("saves a multi-character Pose chat request and reports the skeleton", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_USER_CONFIG_DIR = join(workspaceRoot, ".user-config");
+    const sessionId = randomUUID();
+    const scene = {
+      aspectRatio: "16:9",
+      people: [
+        { pose: "walking", x: 0.3, y: 0.92, scale: 0.75, mirror: false },
+        { pose: "waving", x: 0.7, y: 0.92, scale: 0.75, mirror: true },
+      ],
+    };
+    let turn = 0;
+    const modelAdapter: AgentModelAdapter = {
+      startTurn: async (params) => {
+        expect(params.tools.map((tool) => tool.name)).toContain("pose_scene_replace");
+        expect(params.tools.map((tool) => tool.name)).not.toContain("run_shell_command");
+        return { text: "", toolCalls: [{ id: "get-scene", name: "pose_scene_get", arguments: {} }] };
+      },
+      continueTurn: async (params) => {
+        expect(params.toolResults[0]?.isError).not.toBe(true);
+        turn += 1;
+        return turn === 1
+          ? { text: "", toolCalls: [{ id: "save-scene", name: "pose_scene_replace", arguments: { map: scene } }] }
+          : { text: "", toolCalls: [createFinalResponseToolCall({ summary: "Created a final image.", markdown: "Created a final image." })] };
+      },
+    };
+
+    const result = await executeTask(
+      "Create a pose scene with two characters, one walking and one waving.",
+      createConfig(workspaceRoot, "machdoch"),
+      emptyCustomizations(workspaceRoot),
+      {
+        conversationContext: { sessionId, chatType: "pose", history: [], workspace: { selection: "not-set" } },
+        modelAdapter,
+      },
+    );
+
+    expect(result.status).toBe("executed");
+    expect(result.response?.markdown).toContain("2 editable figures");
+    expect(result.response?.markdown).not.toContain("final image");
+    expect(JSON.parse(await readFile(join(workspaceRoot, ".user-config", "pose-scenes", `${sessionId}.json`), "utf8"))).toEqual(scene);
+  });
+
+  it("does not claim a Pose chat succeeded when no scene was saved", async () => {
+    const workspaceRoot = await createWorkspace();
+    const result = await executeTask(
+      "Create a pose scene.",
+      createConfig(workspaceRoot, "machdoch"),
+      emptyCustomizations(workspaceRoot),
+      {
+        conversationContext: { sessionId: randomUUID(), chatType: "pose", history: [], workspace: { selection: "not-set" } },
+        modelAdapter: createFinalOnlyAdapter("Created a studio image."),
+        monitorModelAdapter: createAcceptingMonitorAdapter(),
+      },
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.response?.markdown).toContain("couldn't create");
+    expect(result.response?.markdown).not.toContain("studio image");
+  });
+
   it("executes a safe read-only workspace inspection when filesystem access is allowed", async () => {
     const workspaceRoot = await createWorkspace();
 

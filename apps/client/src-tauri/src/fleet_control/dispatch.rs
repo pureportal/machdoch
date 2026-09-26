@@ -18,13 +18,24 @@ pub(super) enum FleetCommandDispatchError {
 pub(super) fn dispatch_fleet_command(
     control_state: &FleetControlState,
     app_handle: &tauri::AppHandle,
-    request: ProductCommand,
+    mut request: ProductCommand,
 ) -> Result<CommandReceipt, FleetCommandDispatchError> {
     if request.kind.is_workspace_command() {
         return Err(FleetCommandDispatchError::Unavailable(
             "Project management requires a headless Fleet host running machdoch fleet service."
                 .to_string(),
         ));
+    }
+    if request.kind.as_str() == "set-session-workspace" {
+        let workspace = request.workspace.as_deref().ok_or_else(|| {
+            FleetCommandDispatchError::InvalidRequest("Workspace path is required.".to_string())
+        })?;
+        request.workspace = Some(
+            crate::runtime_snapshot::resolve_workspace_root_path(workspace)
+                .map_err(FleetCommandDispatchError::InvalidRequest)?
+                .display()
+                .to_string(),
+        );
     }
     let event = match normalize_command(request) {
         Ok(event) => event,

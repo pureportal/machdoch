@@ -4,6 +4,7 @@ import type { FleetManagerConfig } from "./config";
 const maximumAuthenticationBodyBytes = 16 * 1024;
 const maximumSettingsSyncReportBodyBytes = 16 * 1024;
 const maximumSmallApiBodyBytes = 64 * 1024;
+export const maximumMediaRequestBodyBytes = 2_250_000;
 
 export function maximumRequestBodyBytes(
   pathname: string,
@@ -19,7 +20,7 @@ export function maximumRequestBodyBytes(
     return maximumGatewayMessageBytes;
   }
   if (/^\/api\/instances\/[^/]+\/product\/media$/u.test(pathname)) {
-    return 1024 * 1024;
+    return maximumMediaRequestBodyBytes;
   }
   if (/^\/api\/instances\/[^/]+\/runs$/u.test(pathname))
     return 1024 * 1024 + maximumSmallApiBodyBytes;

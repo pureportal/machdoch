@@ -49,6 +49,7 @@ import {
   validateSettingsDocument,
 } from "./settings";
 import { SettingsStoreError } from "./settings-store";
+import { maximumMediaRequestBodyBytes } from "./request-limits";
 
 const maximumAuthenticationBodyBytes = 16 * 1024;
 const maximumSettingsSyncReportBodyBytes = 16 * 1024;
@@ -225,7 +226,7 @@ async function routeApi(
         mediaRequestSchema,
         400,
         "Media request is invalid.",
-        1024 * 1024,
+        maximumMediaRequestBodyBytes,
       );
       requireMutation(runtime, request);
       requireManagedInstance(runtime, path[1]);

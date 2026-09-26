@@ -70,9 +70,27 @@ describe("Fleet Manager API", () => {
     expect((await apiRequest(path, "POST", upload, cookie, csrf)).status).toBe(
       200,
     );
+    const assistant = {
+      kind: "invoke",
+      id: crypto.randomUUID(),
+      command: "run_media_flow_agent",
+      args: {
+        workspaceRoot: "C:\\work",
+        request: {
+          prompt: "Add an output",
+          messages: Array.from({ length: 40 }, () => ({
+            role: "user",
+            content: "A".repeat(28_000),
+          })),
+        },
+      },
+    };
+    expect(
+      (await apiRequest(path, "POST", assistant, cookie, csrf)).status,
+    ).toBe(200);
     const oversized = {
       ...upload,
-      args: { ...upload.args, data: "A".repeat(1024 * 1024) },
+      args: { ...upload.args, data: "A".repeat(2_250_000) },
     };
     const calls = relay.mock.calls.length;
     expect(

@@ -85,6 +85,7 @@ describe("resolveConversationContext", () => {
   it("preserves explicit conversation state when no CLI overrides are provided", async () => {
     const explicitContext: TaskConversationContext = {
       history: [{ role: "user", content: "Summarize the repo" }],
+      wasQueued: true,
       sessionId: "conversation-id",
       workspaceMemoryEnabled: false,
       workspace: { selection: "selected", root: "C:/workspace" },
@@ -102,6 +103,60 @@ describe("resolveConversationContext", () => {
     await expect(
       resolveConversationContext(createArgs(), explicitContext),
     ).resolves.toEqual(explicitContext);
+  });
+
+  it.each([true, false])(
+    "preserves queued status %s through the desktop context file",
+    async (wasQueued) => {
+      const workspaceRoot = await createWorkspace();
+      const contextFile = join(workspaceRoot, "conversation.json");
+      await writeFile(
+        contextFile,
+        JSON.stringify({ history: [], wasQueued }),
+      );
+
+      await expect(
+        resolveConversationContext(
+          createArgs({ conversationContextFile: contextFile }),
+        ),
+      ).resolves.toMatchObject({ history: [], wasQueued });
+    },
+  );
+
+  it("keeps Pose chat type and scene when the desktop task reaches the CLI", async () => {
+    const sessionId = "6b48f2b2-9b96-4567-aab3-e6423dbe482a";
+    const poseScene = {
+      aspectRatio: "1:1" as const,
+      people: [
+        {
+          pose: "standing" as const,
+          x: 0.5,
+          y: 0.92,
+          scale: 0.8,
+          mirror: false,
+        },
+      ],
+    };
+    const context: TaskConversationContext = {
+      history: [],
+      sessionId,
+      chatType: "pose",
+      poseScene,
+    };
+    await expect(
+      resolveConversationContext(createArgs(), context),
+    ).resolves.toEqual(context);
+    await expect(
+      resolveConversationContext(createArgs(), {
+        history: [],
+        sessionId,
+        chatType: "pose",
+      }),
+    ).resolves.toEqual({
+      history: [],
+      sessionId,
+      chatType: "pose",
+    });
   });
 
   it("lets CLI overrides win over the explicit conversation context", async () => {

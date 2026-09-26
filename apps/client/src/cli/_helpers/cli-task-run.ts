@@ -241,8 +241,17 @@ export const resolveConversationContext = async (
 
   return {
     history: baseContext?.history ?? [],
+    ...(baseContext?.wasQueued !== undefined
+      ? { wasQueued: baseContext.wasQueued }
+      : {}),
     ...(baseContext?.sessionId !== undefined
       ? { sessionId: baseContext.sessionId }
+      : {}),
+    ...(baseContext?.chatType !== undefined
+      ? { chatType: baseContext.chatType }
+      : {}),
+    ...(baseContext?.poseScene !== undefined
+      ? { poseScene: baseContext.poseScene }
       : {}),
     ...(baseContext?.workspaceMemoryEnabled !== undefined
       ? { workspaceMemoryEnabled: baseContext.workspaceMemoryEnabled }

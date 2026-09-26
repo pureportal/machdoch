@@ -1,7 +1,9 @@
 import { FleetRalphRuntime } from "./cli-fleet-ralph.js";
 import { FleetMediaWorker } from "./cli-fleet-media.js";
+import { isMediaPoseMap, renderMediaPoseSvg, type MediaPoseMap } from "@machdoch/media-studio/core/media/contracts.js";
 import { createHash, randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { FleetRunManager } from "../../core/fleet-runs.js";
 import { FleetPreviewTunnels } from "../../core/fleet-preview-tunnel.js";
 import {
@@ -21,7 +23,7 @@ import {
   loadWorkspaceConfigFile,
 } from "../../core/config.js";
 import { discoverCustomizations } from "../../core/customizations.js";
-import { loadUserMemorySettings } from "../../core/env.js";
+import { getUserConfigPath, loadUserMemorySettings } from "../../core/env.js";
 import {
   createTaskExecutionController,
   type TaskExecutionController,
@@ -159,6 +161,20 @@ const promptPreview = (value: string): string =>
 const sessionTitle = (prompt: string): string =>
   boundedText(prompt.replace(/\s+/gu, " ").trim(), 80) || "New chat";
 
+const readPoseScene = async (session: FleetCliSession): Promise<MediaPoseMap | undefined> => {
+  if (session.specialKind !== "pose") return undefined;
+  if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu.test(session.id)) return session.poseScene;
+  const path = join(dirname(getUserConfigPath()), "pose-scenes", `${session.id}.json`);
+  try {
+    const value: unknown = JSON.parse(await readFile(path, "utf8"));
+    if (!isMediaPoseMap(value)) throw new Error("The saved pose scene is invalid.");
+    return value;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return session.poseScene;
+    throw error;
+  }
+};
+
 const providerLabel = (provider: string): string =>
   provider
     .split("-")
@@ -203,6 +219,7 @@ const createSession = (
     provider: config.provider,
     model: config.model,
     mode: config.mode,
+    parallelAgentMode: "disabled",
     reasoning: config.reasoning,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -630,6 +647,14 @@ export class FleetCliProductRuntime {
             this.dependencies.createId,
             this.dependencies.now,
           );
+          if (command.specialKind === "pose") {
+            session.specialKind = "pose";
+            session.title = "Pose scene";
+            if (command.poseScene) {
+              if (!isMediaPoseMap(command.poseScene)) throw new FleetProductError("invalidRequest", "The pose scene is invalid.");
+              session.poseScene = command.poseScene;
+            }
+          }
           state.sessions.unshift(session);
           state.activeSessionId = session.id;
           return { record: { sessionId: session.id } };
@@ -688,6 +713,13 @@ export class FleetCliProductRuntime {
         });
       case "clear-session-mode":
         return await this.resetSessionMode(command, "mode");
+      case "set-parallel-agent-mode":
+        return await this.commitCommand(command, (state, _id, timestamp) => {
+          const session = this.getSession(state, command.sessionId);
+          session.parallelAgentMode = command.mode;
+          session.updatedAt = timestamp;
+          return { record: { sessionId: session.id } };
+        });
       case "set-session-reasoning":
         return await this.commitCommand(command, (state, _id, timestamp) => {
           const session = this.getSession(state, command.sessionId);
@@ -875,6 +907,10 @@ export class FleetCliProductRuntime {
         if (!copy)
           throw new FleetProductError("internal", "Session copy failed.");
         copy.id = this.dependencies.createId();
+        if (session.specialKind === "pose") {
+          const currentScene = await readPoseScene(session);
+          if (currentScene) copy.poseScene = currentScene;
+        }
         copy.title = `${session.title} copy`;
         copy.createdAt = timestamp;
         copy.updatedAt = timestamp;
@@ -981,6 +1017,8 @@ export class FleetCliProductRuntime {
         runId: taskId,
         conversationContext: {
           sessionId: session.id,
+          parallelAgentMode: session.parallelAgentMode,
+          ...(session.specialKind === "pose" ? { chatType: "pose" as const, poseScene: session.poseScene } : {}),
           workspace: { selection: "selected", root: session.workspace },
           history,
           sessionMemoryEnabled: session.sessionMemoryEnabled,
@@ -1343,6 +1381,7 @@ export class FleetCliProductRuntime {
     );
     const timestamp = this.dependencies.now();
     const projectLibrary = this.projects.getSnapshot();
+    const poseScene = await readPoseScene(activeSession);
     const snapshot = {
       enabled: true,
       serverTime: timestamp,
@@ -1355,6 +1394,7 @@ export class FleetCliProductRuntime {
       ),
       shell: {
         ralph: await this.ralph.snapshot(activeSession.workspace),
+        ...(poseScene ? { poseSceneSvg: renderMediaPoseSvg(poseScene) } : {}),
         projectLibrary,
         version: productSnapshotVersion,
         capturedAt: timestamp,
@@ -1362,12 +1402,14 @@ export class FleetCliProductRuntime {
         sessions: state.sessions.map((session) => ({
           id: session.id,
           title: session.title,
+          ...(session.specialKind ? { specialKind: session.specialKind } : {}),
           status: session.pendingTask ? "running" : "ready",
           workspace: session.workspace,
           provider: session.provider,
           model: session.model,
           mode: session.mode,
           effectiveMode: session.mode,
+          parallelAgentMode: session.parallelAgentMode,
           reasoning: session.reasoning,
           effectiveReasoning: session.reasoning,
           createdAt: session.createdAt,
@@ -1437,6 +1479,7 @@ export class FleetCliProductRuntime {
           })),
           mode: activeSession.mode,
           defaultMode: config.mode,
+          parallelAgentMode: activeSession.parallelAgentMode,
           reasoning: activeSession.reasoning,
           defaultReasoning: config.reasoning,
           reasoningOptions: [...REASONING_MODES],

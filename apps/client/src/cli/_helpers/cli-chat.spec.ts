@@ -282,6 +282,9 @@ describe("interactive chat workflows", () => {
         workspaceMemoryEnabled: "false",
       }),
     ).toThrow("must be a boolean");
+    expect(() => parseConversationContext({ history: [], parallelAgentMode: "unrestricted" })).toThrow("parallel agent mode");
+    expect(parseConversationContext({ history: [], adaptiveControllerOverride: false }).adaptiveControllerOverride).toBe(false);
+    expect(() => parseConversationContext({ history: [], adaptiveControllerOverride: "off" })).toThrow("adaptiveControllerOverride");
     await expect(loadChatSession("../user-config")).rejects.toThrow(
       "Invalid CLI session id",
     );
@@ -292,6 +295,7 @@ describe("interactive chat workflows", () => {
       [
         "/model openai gpt-5.5",
         "/mode ask",
+        "/parallel read-only",
         "/memory global off",
         "Original task",
         "/exit",
@@ -313,11 +317,19 @@ describe("interactive chat workflows", () => {
     });
     expect(executeTask.mock.calls[0]?.[1]?.conversationContext).toMatchObject({
       globalMemoryEnabled: false,
+      parallelAgentMode: "read-only",
     });
     expect(
       executeTask.mock.calls[0]?.[1]?.conversationContext?.history,
     ).toHaveLength(2);
     expect((await listChatSessions()).sessions).toHaveLength(1);
+  });
+
+  it("applies parallel mode to each task and resets it for a new conversation", async () => {
+    const executeTask = vi.fn<typeof printTaskPreview>(async (args) => result(args.task!));
+    await runChat(["/parallel machdoch", "First", "/new", "Second", "/exit"], executeTask);
+    expect(executeTask.mock.calls[0]?.[1]?.conversationContext?.parallelAgentMode).toBe("machdoch");
+    expect(executeTask.mock.calls[1]?.[1]?.conversationContext?.parallelAgentMode).toBe("disabled");
   });
 
   it("preserves a conversation in memory and offers export when saving fails", async () => {

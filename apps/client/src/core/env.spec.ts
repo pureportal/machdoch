@@ -305,6 +305,7 @@ describe("user config API key helpers", () => {
     await saveUserDesktopSettingsPatch({
       quickVoiceEnabled: false,
       quickVoiceMaxMessages: 80,
+      adaptiveControllerEnabled: false,
     });
 
     const savedConfigPath = join(configDirectory, "user-config.json");
@@ -315,6 +316,7 @@ describe("user config API key helpers", () => {
     expect(config.speechToText.inputDeviceId).toBe("microphone-1");
     expect(config.desktop.quickVoiceEnabled).toBe(false);
     expect(config.desktop.quickVoiceMaxMessages).toBe(80);
+    expect(config.desktop.adaptiveControllerEnabled).toBe(false);
 
     await saveUserSpeechToTextInputDevice(null);
 
