@@ -61,6 +61,7 @@ const createProps = (
     totalSessions: 1,
     activeSessionId: emptySession.id,
     filteredSessions: [emptySession],
+    queuedSessionMessages: [],
     sessionScopeFilter: "all",
     sessionStatusFilters: ["any"],
     sessionSearchQuery: "",
@@ -136,6 +137,50 @@ describe("SessionsSidebar", () => {
         /aria-label="Session status: Done"[^>]*><svg[^>]*\blucide-check\b/g,
       ),
     ).toHaveLength(2);
+  });
+
+  it("shows queued work as running and exhausted enhancement as failed", () => {
+    const session = createCompletedSession({
+      id: "queued-session",
+      lastReadAt: 200,
+    });
+    const queuedMessage: SessionsSidebarProps["queuedSessionMessages"][number] = {
+      id: "queued",
+      sessionId: session.id,
+      task: "Next request",
+      contentUpdatedAt: 1,
+      attachmentsUpdatedAt: 1,
+      attachmentTombstones: {},
+      blockerUpdatedAt: 1,
+      orderRank: 0,
+      orderUpdatedAt: 1,
+      status: "enhancing",
+      statusUpdatedAt: 1,
+      contextAttachments: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const renderStatus = (status: typeof queuedMessage.status) =>
+      renderToStaticMarkup(
+        createElement(
+          TooltipProvider,
+          null,
+          createElement(
+            SessionsSidebar,
+            createProps({
+              filteredSessions: [session],
+              queuedSessionMessages: [{ ...queuedMessage, status }],
+            }),
+          ),
+        ),
+      );
+
+    expect(renderStatus("enhancing")).toContain(
+      'aria-label="Session status: Running"',
+    );
+    expect(renderStatus("failed")).toContain(
+      'aria-label="Session status: Failed"',
+    );
   });
 
   it("routes the empty-session delete action", () => {

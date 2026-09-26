@@ -40,6 +40,7 @@ import {
   isQuickVoiceSession,
   isSessionArchived,
   type ChatSessionRecord,
+  type ChatSessionQueuedMessage,
 } from "../../chat-session.model";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
@@ -202,6 +203,7 @@ export interface SessionsSidebarProps {
   totalSessions: number;
   activeSessionId: string;
   filteredSessions: ChatSessionRecord[];
+  queuedSessionMessages: readonly ChatSessionQueuedMessage[];
   sessionScopeFilter: SessionScopeFilter;
   sessionStatusFilters: SessionStatusFilterSelection;
   sessionSearchQuery: string;
@@ -234,6 +236,7 @@ export const SessionsSidebar = ({
   totalSessions,
   activeSessionId,
   filteredSessions,
+  queuedSessionMessages,
   sessionScopeFilter,
   sessionStatusFilters,
   sessionSearchQuery,
@@ -828,7 +831,10 @@ export const SessionsSidebar = ({
               {renderedSessions.map((session, index) => {
                 const isActive = session.id === activeSessionId;
                 const archived = isSessionArchived(session);
-                const sessionStatus = getSessionOverviewStatus(session);
+                const sessionStatus = getSessionOverviewStatus(
+                  session,
+                  queuedSessionMessages,
+                );
                 const statusMeta = SESSION_STATUS_META[sessionStatus];
                 const SessionStatusIcon = statusMeta.icon;
                 const showArchiveAction = canArchiveSession(session);

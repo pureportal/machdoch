@@ -8,6 +8,7 @@ import {
   CircleDashed,
   CircleOff,
   FolderHeart,
+  GitFork,
   Infinity as InfinityIcon,
   MessageSquare,
   Monitor,
@@ -105,7 +106,7 @@ const REASONING_OPTIONS: Record<
   },
   ultra: {
     label: "Ultra",
-    description: "Use maximum reasoning and parallel agents.",
+    description: "Use maximum reasoning effort.",
     icon: Sparkles,
     tone: "violet",
   },
@@ -383,6 +384,24 @@ export function Composer({
                     },
               )
             }
+          />
+          <OptionMenu
+            disabled={pending || composer.provider.endsWith("-cli")}
+            label={composer.provider.endsWith("-cli") ? "Parallel agents require an API provider" : "Parallel agents"}
+            activeValue={composer.parallelAgentMode ?? "disabled"}
+            activeLabel={{ disabled: "Disabled", "read-only": "Read Only", machdoch: "Full Mode" }[composer.parallelAgentMode ?? "disabled"]}
+            activeIcon={GitFork}
+            activeTone="violet"
+            options={[
+              { value: "disabled", label: "Disabled", description: "", icon: CircleOff, tone: "neutral" },
+              { value: "read-only", label: "Read Only", description: "", icon: Search, tone: "neutral" },
+              { value: "machdoch", label: "Full Mode", description: "", icon: GitFork, tone: "violet" },
+            ]}
+            onSelect={(value) => void onCommand({
+              kind: "set-parallel-agent-mode",
+              sessionId: session.id,
+              mode: value as NonNullable<ProductComposer["parallelAgentMode"]>,
+            })}
           />
           <OptionMenu
             disabled={pending}

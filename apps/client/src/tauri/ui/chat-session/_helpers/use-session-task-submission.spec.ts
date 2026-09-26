@@ -1,3 +1,4 @@
+import { describe, expect, it } from "vitest";
 import type { ChatSessionQueuedMessage } from "../../chat-session.model";
 import { reconcileQueuedMessagesForTaskSubmission } from "./use-session-task-submission";
 
@@ -33,7 +34,6 @@ describe("queued task submission reconciliation", () => {
         }),
       ],
       queuedMessageTombstones: {},
-      sessionId: "session-1",
       consumedQueuedMessageId: "dispatched",
       timestamp: 30,
     });
@@ -44,7 +44,7 @@ describe("queued task submission reconciliation", () => {
     expect(reconciliation?.queuedMessageTombstones.dispatched).toBe(30);
   });
 
-  it("preserves queue items created after an edited-message branch began", () => {
+  it("leaves the queue untouched when no queued item is consumed", () => {
     const reconciliation = reconcileQueuedMessagesForTaskSubmission({
       queuedSessionMessages: [
         createQueuedMessage("old", { createdAt: 10 }),
@@ -55,15 +55,9 @@ describe("queued task submission reconciliation", () => {
         }),
       ],
       queuedMessageTombstones: {},
-      sessionId: "session-1",
-      conversationCutoffMessageId: "message-1",
-      preserveQueuedMessagesCreatedAfter: 20,
       timestamp: 30,
     });
 
-    expect(
-      reconciliation?.queuedSessionMessages.map((message) => message.id),
-    ).toEqual(["new", "other-session"]);
-    expect(reconciliation?.queuedMessageTombstones.old).toBe(30);
+    expect(reconciliation).toBeNull();
   });
 });

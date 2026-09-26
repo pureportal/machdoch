@@ -150,50 +150,27 @@ const hasUserMessageForTask = (
 export const reconcileQueuedMessagesForTaskSubmission = (input: {
   queuedSessionMessages: ChatSessionQueuedMessage[];
   queuedMessageTombstones: Record<string, number>;
-  sessionId: string;
-  conversationCutoffMessageId?: string;
-  preserveQueuedMessagesCreatedAfter?: number;
   consumedQueuedMessageId?: string;
   timestamp: number;
 }): {
   queuedSessionMessages: ChatSessionQueuedMessage[];
   queuedMessageTombstones: Record<string, number>;
 } | null => {
-  if (!input.conversationCutoffMessageId && !input.consumedQueuedMessageId) {
+  if (!input.consumedQueuedMessageId) {
     return null;
   }
 
   const queuedSessionMessages = input.queuedSessionMessages.filter(
-    (message) => {
-      if (message.id === input.consumedQueuedMessageId) {
-        return false;
-      }
-
-      if (
-        !input.conversationCutoffMessageId ||
-        message.sessionId !== input.sessionId
-      ) {
-        return true;
-      }
-
-      return (
-        input.preserveQueuedMessagesCreatedAfter !== undefined &&
-        message.createdAt >= input.preserveQueuedMessagesCreatedAfter
-      );
-    },
-  );
-  const queuedMessageIds = new Set(
-    queuedSessionMessages.map((message) => message.id),
+    (message) => message.id !== input.consumedQueuedMessageId,
   );
   const queuedMessageTombstones = {
     ...input.queuedMessageTombstones,
   };
 
-  for (const message of input.queuedSessionMessages) {
-    if (!queuedMessageIds.has(message.id)) {
-      queuedMessageTombstones[message.id] = input.timestamp;
-    }
+  if (queuedSessionMessages.length === input.queuedSessionMessages.length) {
+    return null;
   }
+  queuedMessageTombstones[input.consumedQueuedMessageId] = input.timestamp;
 
   return {
     queuedSessionMessages,
@@ -237,8 +214,8 @@ export interface SubmitTaskToSessionOptions {
   promptEnhancementRequestOnConflict?: ChatSessionQueuedPromptEnhancementRequest;
   messageSettings?: ChatSessionMessageSettings;
   messageTaskAction?: ChatSessionTaskAction;
+  iteration?: ChatSessionMessage["iteration"];
   conversationCutoffMessageId?: string;
-  preserveQueuedMessagesCreatedAfter?: number;
   consumedQueuedMessageId?: string;
   queuedMessageRecovery?: ChatSessionQueuedMessage;
   onTaskStarted?: (taskId: string) => void;
@@ -560,6 +537,9 @@ export const useSessionTaskSubmission = (options: {
         ...(submitOptions.messageTaskAction
           ? { taskAction: { ...submitOptions.messageTaskAction } }
           : {}),
+        ...(submitOptions.iteration
+          ? { iteration: { ...submitOptions.iteration } }
+          : {}),
         ...(userMessageContextAttachments.length > 0
           ? { contextAttachments: userMessageContextAttachments }
           : {}),
@@ -573,15 +553,23 @@ export const useSessionTaskSubmission = (options: {
       let composerCleared = false;
       const sessionWorkspace = sessionSnapshot.workspace;
       const sessionMode = submitOptions.modeOverride ?? sessionSnapshot.mode;
-      const taskConversationContext = createConversationContextFromSession(
-        sessionSnapshot,
-        currentOptions.runtime.userMemorySettings.globalEnabled,
-        currentOptions.uiControlAvailability,
-        currentOptions.aiContextMessageLimit,
-        currentOptions.runtime.runtimeSnapshot?.workspaceMemoryEnabled ??
-          currentOptions.runtime.userMemorySettings.workspaceDefaultEnabled !==
-            false,
-      );
+      const taskConversationContext = {
+        ...createConversationContextFromSession(
+          sessionSnapshot,
+          currentOptions.runtime.userMemorySettings.globalEnabled,
+          currentOptions.uiControlAvailability,
+          currentOptions.aiContextMessageLimit,
+          currentOptions.runtime.runtimeSnapshot?.workspaceMemoryEnabled ??
+            currentOptions.runtime.userMemorySettings
+              .workspaceDefaultEnabled !== false,
+        ),
+        parallelAgentMode: messageSettings.parallelAgentMode,
+        adaptiveControllerOverride:
+          messageSettings.adaptiveControllerOverride ?? null,
+        wasQueued:
+          submitOptions.consumedQueuedMessageId !== undefined ||
+          submitOptions.queuedMessageRecovery !== undefined,
+      };
       const nextRunMode = getEffectiveSessionMode(
         sessionMode,
         currentOptions.runtime.runtimeSnapshot,
@@ -1211,11 +1199,6 @@ export const useSessionTaskSubmission = (options: {
           reconcileQueuedMessagesForTaskSubmission({
             queuedSessionMessages: prev.queuedSessionMessages,
             queuedMessageTombstones: prev.queuedMessageTombstones,
-            sessionId,
-            conversationCutoffMessageId:
-              submitOptions.conversationCutoffMessageId,
-            preserveQueuedMessagesCreatedAfter:
-              submitOptions.preserveQueuedMessagesCreatedAfter,
             consumedQueuedMessageId: submitOptions.consumedQueuedMessageId,
             timestamp: nextUpdatedAt,
           });

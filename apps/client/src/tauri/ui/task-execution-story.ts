@@ -48,6 +48,7 @@ interface OutputSource {
 type StorySource = TimelineSource | OutputSource;
 
 const LIFECYCLE_KINDS = new Set<TaskThinkingTimelineEvent["kind"]>([
+  "agent",
   "model-call",
   "tool-call",
   "validator",
@@ -85,6 +86,19 @@ const formatModelSubject = (label: string): string => {
 };
 
 const createNarrativeLabel = (event: TaskThinkingTimelineEvent): string => {
+  if (event.kind === "agent") {
+    switch (event.phase) {
+      case "started":
+        return `${event.label} started`;
+      case "completed":
+        return `${event.label} finished`;
+      case "failed":
+        return `${event.label} failed`;
+      default:
+        return event.label;
+    }
+  }
+
   if (event.kind === "tool-call") {
     const subject = formatToolSubject(event);
 

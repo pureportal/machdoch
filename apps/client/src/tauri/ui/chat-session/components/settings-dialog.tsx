@@ -1176,7 +1176,9 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
                   title:
                     provider === "none"
                       ? "Disabled"
-                      : getProviderLabel(provider),
+                      : provider === "whisper"
+                        ? "Whisper (local)"
+                        : getProviderLabel(provider),
                   current:
                     state().props.voiceSetup.speechToTextProvider === provider,
                   numericKey: numericKey(index),

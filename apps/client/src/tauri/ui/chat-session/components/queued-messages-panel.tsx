@@ -8,7 +8,10 @@ import {
   X,
 } from "lucide-react";
 import { useState, type ClipboardEvent, type DragEvent, type JSX } from "react";
-import type { ChatSessionContextAttachment } from "../../chat-session.model";
+import type {
+  ChatSessionContextAttachment,
+  ChatSessionRequestIteration,
+} from "../../chat-session.model";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { SubmitShortcut } from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
 import { Textarea } from "@machdoch/media-studio/tauri/ui/components/ui/textarea.js";
@@ -26,6 +29,8 @@ const QUEUED_MESSAGE_DRAG_TYPE = "application/x-machdoch-queued-message";
 export interface QueuedMessagePanelMessage {
   id: string;
   content: string;
+  iteration?: ChatSessionRequestIteration;
+  waitingForIteration?: number;
   attachments: ChatSessionContextAttachment[];
   promptEnhancementMode?: "simple" | "web-search";
   status: "queued" | "enhancing" | "dispatching" | "failed";
@@ -65,7 +70,7 @@ const getQueueStateLabel = (
           ? "Failed"
           : "Queued";
 
-  if (index === 0) {
+  if (index === 0 && status !== "failed") {
     return status === "queued" ? "Next" : `Next · ${statusLabel}`;
   }
 
@@ -176,7 +181,11 @@ export const QueuedMessagesPanel = ({
           const isDragTarget = dragOverIndex === index && !isDragging;
           const isInProgress =
             message.status === "enhancing" || message.status === "dispatching";
+          const canReorderMessage = canReorder && !message.iteration;
           const stateLabel = getQueueStateLabel(message.status, index);
+          const displayStateLabel = message.waitingForIteration
+            ? `Waiting for iteration ${message.waitingForIteration}`
+            : stateLabel;
 
           return (
             <SubmitShortcut key={message.id} asChild>
@@ -233,11 +242,17 @@ export const QueuedMessagesPanel = ({
                     {isInProgress ? (
                       <LoaderCircle className="h-3 w-3 animate-spin" />
                     ) : null}
-                    {stateLabel}
+                    {displayStateLabel}
                   </span>
                 </div>
 
                 <div className="grid min-w-0 gap-2">
+                  {message.iteration ? (
+                    <span className="text-xs font-medium text-sky-200">
+                      Iteration {message.iteration.index} of{" "}
+                      {message.iteration.total}
+                    </span>
+                  ) : null}
                   <Textarea
                     aria-label={`Queued message ${index + 1}`}
                     value={message.content}
@@ -310,7 +325,8 @@ export const QueuedMessagesPanel = ({
                           disabled={isInProgress}
                         />
                       </div>
-                    ) : (
+                    ) : message.iteration &&
+                      message.iteration.index > 1 ? null : (
                       <div className="flex min-h-7 min-w-0 flex-1 items-center px-1 text-[11px] text-slate-500">
                         No attachments
                       </div>
@@ -319,63 +335,73 @@ export const QueuedMessagesPanel = ({
                 </div>
 
                 <div className="flex items-center gap-1 sm:flex-col sm:justify-start">
-                  <ControlTooltip content="Drag to reorder">
-                    <button
-                      type="button"
-                      draggable={canReorder && !isInProgress}
-                      aria-label={`Drag queued message ${index + 1} to reorder`}
-                      onDragStart={(event) => {
-                        if (!canReorder || isInProgress) {
-                          event.preventDefault();
-                          return;
-                        }
+                  {!message.iteration ? (
+                    <>
+                      <ControlTooltip content="Drag to reorder">
+                        <button
+                          type="button"
+                          draggable={canReorderMessage && !isInProgress}
+                          disabled={!canReorderMessage || isInProgress}
+                          aria-label={`Drag queued message ${index + 1} to reorder`}
+                          onDragStart={(event) => {
+                            if (!canReorderMessage || isInProgress) {
+                              event.preventDefault();
+                              return;
+                            }
 
-                        setDraggingMessageId(message.id);
-                        event.dataTransfer.effectAllowed = "move";
-                        event.dataTransfer.setData(
-                          QUEUED_MESSAGE_DRAG_TYPE,
-                          message.id,
-                        );
-                        event.dataTransfer.setData("text/plain", message.id);
-                      }}
-                      onDragEnd={() => {
-                        setDraggingMessageId(null);
-                        setDragOverIndex(null);
-                      }}
-                      className={cn(
-                        "inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40",
-                        canReorder && !isInProgress
-                          ? "cursor-grab hover:bg-slate-800 hover:text-slate-100 active:cursor-grabbing"
-                          : "cursor-not-allowed opacity-50",
-                      )}
-                    >
-                      <GripVertical className="h-3 w-3" />
-                    </button>
-                  </ControlTooltip>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon-xs"
-                    aria-label={`Move queued message ${index + 1} up`}
-                    tooltip="Move up"
-                    disabled={!canReorder || index === 0}
-                    onClick={() => onMessageMove?.(message.id, -1)}
-                    className="border-slate-800 bg-slate-950/70 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:bg-slate-950/40 disabled:text-slate-700"
-                  >
-                    <ArrowUp className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon-xs"
-                    aria-label={`Move queued message ${index + 1} down`}
-                    tooltip="Move down"
-                    disabled={!canReorder || index === messages.length - 1}
-                    onClick={() => onMessageMove?.(message.id, 1)}
-                    className="border-slate-800 bg-slate-950/70 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:bg-slate-950/40 disabled:text-slate-700"
-                  >
-                    <ArrowDown className="h-3 w-3" />
-                  </Button>
+                            setDraggingMessageId(message.id);
+                            event.dataTransfer.effectAllowed = "move";
+                            event.dataTransfer.setData(
+                              QUEUED_MESSAGE_DRAG_TYPE,
+                              message.id,
+                            );
+                            event.dataTransfer.setData(
+                              "text/plain",
+                              message.id,
+                            );
+                          }}
+                          onDragEnd={() => {
+                            setDraggingMessageId(null);
+                            setDragOverIndex(null);
+                          }}
+                          className={cn(
+                            "inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40",
+                            canReorderMessage && !isInProgress
+                              ? "cursor-grab hover:bg-slate-800 hover:text-slate-100 active:cursor-grabbing"
+                              : "cursor-not-allowed opacity-50",
+                          )}
+                        >
+                          <GripVertical className="h-3 w-3" />
+                        </button>
+                      </ControlTooltip>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon-xs"
+                        aria-label={`Move queued message ${index + 1} up`}
+                        tooltip="Move up"
+                        disabled={!canReorderMessage || index === 0}
+                        onClick={() => onMessageMove?.(message.id, -1)}
+                        className="border-slate-800 bg-slate-950/70 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:bg-slate-950/40 disabled:text-slate-700"
+                      >
+                        <ArrowUp className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon-xs"
+                        aria-label={`Move queued message ${index + 1} down`}
+                        tooltip="Move down"
+                        disabled={
+                          !canReorderMessage || index === messages.length - 1
+                        }
+                        onClick={() => onMessageMove?.(message.id, 1)}
+                        className="border-slate-800 bg-slate-950/70 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:bg-slate-950/40 disabled:text-slate-700"
+                      >
+                        <ArrowDown className="h-3 w-3" />
+                      </Button>
+                    </>
+                  ) : null}
                   <Button
                     type="button"
                     variant="outline"

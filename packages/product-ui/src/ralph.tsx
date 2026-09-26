@@ -174,7 +174,7 @@ export function Ralph({
     setSubmitting(true);
     setActionError(null);
     try {
-      await onCommand({
+      const accepted = await onCommand({
         kind: "ralph-resume-run",
         workspace: ralph.workspaceRoot,
         scope: run.scope,
@@ -183,6 +183,7 @@ export function Ralph({
         model,
         reasoning: effectiveReasoning,
       });
+      if (!accepted) setActionError("Run could not be resumed. Try again.");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error));
     } finally {

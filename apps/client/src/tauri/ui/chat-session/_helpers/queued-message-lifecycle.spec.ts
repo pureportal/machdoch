@@ -49,7 +49,6 @@ describe("queued message lifecycle", () => {
     const submitted = reconcileQueuedMessagesForTaskSubmission({
       queuedSessionMessages: [attempt.message],
       queuedMessageTombstones: {},
-      sessionId: "session-1",
       consumedQueuedMessageId: attempt.message.id,
       timestamp: 30,
     });
@@ -151,7 +150,6 @@ describe("queued message lifecycle", () => {
     const submitted = reconcileQueuedMessagesForTaskSubmission({
       queuedSessionMessages: [attempt.message],
       queuedMessageTombstones: {},
-      sessionId: currentSession.id,
       consumedQueuedMessageId: attempt.message.id,
       timestamp: 30,
     });

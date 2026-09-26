@@ -1,6 +1,7 @@
 import {
   Activity,
   AlertTriangle,
+  Bot,
   BrainCircuit,
   CheckCircle2,
   ChevronDown,
@@ -68,6 +69,7 @@ const outputLineClasses = {
 
 const storyIcons: Record<TaskExecutionStoryItem["kind"], LucideIcon> = {
   state: Activity,
+  agent: Bot,
   "model-call": BrainCircuit,
   "tool-call": Hammer,
   retry: RotateCcw,

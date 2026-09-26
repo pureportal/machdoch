@@ -6,6 +6,7 @@ import {
 } from "../../core/runtime-contract.generated.js";
 import type {
   ConversationMemoryEntry,
+  ParallelAgentMode,
   TaskExecutionChangedLineRange,
   TaskExecutionFileChange,
   TaskExecutionFileChangeCompleteness,
@@ -26,6 +27,7 @@ import type {
   MediaAssetKind,
   MediaAssetReference,
 } from "@machdoch/media-studio/core/media/contracts.js";
+import { isMediaPoseMap, type MediaPoseMap, type MediaSavedPoseScene } from "@machdoch/media-studio/core/media/contracts.js";
 import type {
   ReasoningMode,
   RunMode,
@@ -71,7 +73,7 @@ export type ChatSessionMessageSource =
     }
   | TaskThinkingSource;
 
-export type ChatSessionSpecialKind = "quick-voice";
+export type ChatSessionSpecialKind = "quick-voice" | "pose";
 
 export type ChatSessionContextAttachmentKind =
   | "file"
@@ -110,6 +112,14 @@ export const isMediaAssetContextAttachment = (
 export interface ChatSessionMessagePromptEnhancement {
   originalContent: string;
 }
+
+export interface ChatSessionRequestIteration {
+  groupId: string;
+  index: number;
+  total: number;
+}
+
+export const MAX_REQUEST_ITERATIONS = 20;
 
 export type ChatSessionMessagePromptEnhancementMode =
   | "off"
@@ -158,6 +168,8 @@ export interface ChatSessionMessageSettings {
   provider: RuntimeProvider;
   model: string;
   mode?: RunMode;
+  parallelAgentMode: ParallelAgentMode;
+  adaptiveControllerOverride?: boolean | null;
   reasoning?: ReasoningMode;
   sessionMemoryEnabled: boolean;
   useWorkspaceMemory: boolean;
@@ -176,6 +188,7 @@ export interface ChatSessionMessage {
   content: string;
   createdAt?: number;
   taskAction?: ChatSessionTaskAction;
+  iteration?: ChatSessionRequestIteration;
   contextAttachments?: ChatSessionContextAttachment[];
   promptEnhancement?: ChatSessionMessagePromptEnhancement;
   settings?: ChatSessionMessageSettings;
@@ -262,10 +275,13 @@ export interface ChatSessionRecord {
   timeResetAt?: number;
   movedToTopAt?: number;
   specialSession?: ChatSessionSpecialKind;
+  poseScene?: MediaPoseMap;
   workspace: string | null;
   provider: RuntimeProvider;
   model: string;
   mode?: RunMode;
+  parallelAgentMode?: ParallelAgentMode;
+  adaptiveControllerOverride?: boolean | null;
   reasoning?: ReasoningMode;
   draft: string;
   draftContextAttachments: ChatSessionContextAttachment[];
@@ -334,6 +350,7 @@ export interface ChatSessionQueuedMessage {
   task: string;
   visibleMessageContent?: string;
   promptHistoryContent?: string;
+  iteration?: ChatSessionRequestIteration;
   promptEnhancement?: ChatSessionMessagePromptEnhancement;
   promptEnhancementRequest?: ChatSessionQueuedPromptEnhancementRequest;
   promptEnhancementAttempt?: PromptEnhancementAttempt;
@@ -403,8 +420,14 @@ const DEFAULT_PROVIDER: RuntimeProvider = "openai";
 const DEFAULT_VOICE_RATE = 1;
 const MIN_VOICE_RATE = 0.8;
 const MAX_VOICE_RATE = 1.4;
-const SPECIAL_SESSION_KINDS = ["quick-voice"] as const;
+const SPECIAL_SESSION_KINDS = ["quick-voice", "pose"] as const;
 const RUN_MODES: RunMode[] = ["ask", "machdoch"];
+const PARALLEL_AGENT_MODES: ParallelAgentMode[] = ["disabled", "read-only", "machdoch"];
+
+const normalizeParallelAgentMode = (value: unknown): ParallelAgentMode =>
+  typeof value === "string" && PARALLEL_AGENT_MODES.includes(value as ParallelAgentMode)
+    ? value as ParallelAgentMode
+    : "disabled";
 const STORED_REASONING_MODES: ReasoningMode[] = [...REASONING_MODES];
 const RUNTIME_PROVIDERS: RuntimeProvider[] = [...RUNNABLE_PROVIDER_ORDER];
 const TASK_EXECUTION_STATUSES: TaskExecutionStatus[] = [
@@ -1337,10 +1360,13 @@ export const createSession = (
       ? { movedToTopAt: overrides.movedToTopAt }
       : {}),
     ...(specialSession ? { specialSession } : {}),
+    ...(specialSession === "pose" && isMediaPoseMap(overrides.poseScene) ? { poseScene: overrides.poseScene } : {}),
     workspace: overrides.workspace ?? null,
     provider,
     model: overrides.model ?? getDefaultModelForProvider(provider),
     ...(mode ? { mode } : {}),
+    parallelAgentMode: normalizeParallelAgentMode(overrides.parallelAgentMode),
+    adaptiveControllerOverride: overrides.adaptiveControllerOverride ?? null,
     ...(reasoning ? { reasoning } : {}),
     draft: overrides.draft ?? "",
     draftContextAttachments,
@@ -1365,6 +1391,9 @@ export const getSessionTitle = (session: ChatSessionRecord): string => {
   if (session.specialSession === QUICK_VOICE_SESSION_KIND) {
     return "Quick Chat";
   }
+  if (session.specialSession === "pose" && !session.manualTitle?.trim()) {
+    return "Pose scene";
+  }
 
   if (session.manualTitle?.trim()) {
     return session.manualTitle.trim();
@@ -1386,6 +1415,19 @@ export const getSessionTitle = (session: ChatSessionRecord): string => {
 
   return `${normalized.slice(0, 45)}â€¦`;
 };
+
+export const getSavedPoseScenes = (sessions: readonly ChatSessionRecord[]): MediaSavedPoseScene[] =>
+  [...sessions]
+    .filter((session) => session.specialSession === "pose")
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .map((session) => {
+      const request = session.messages.find((message) => message.role === "user" && message.content.trim());
+      return {
+        id: session.id,
+        label: session.manualTitle?.trim() || request?.content.trim().slice(0, 60) || "Pose scene",
+        ...(isMediaPoseMap(session.poseScene) ? { map: session.poseScene } : {}),
+      };
+    });
 
 export const createInitialShellState = (): ShellPersistedState => {
   const initialSession = createSession();
@@ -2311,6 +2353,25 @@ const normalizeMessageTaskAction = (
   return objective ? { kind: value.kind, objective } : undefined;
 };
 
+const normalizeRequestIteration = (
+  value: unknown,
+): ChatSessionRequestIteration | undefined => {
+  if (!isRecord(value)) return undefined;
+  const groupId = normalizeString(value.groupId).trim();
+  const index = value.index;
+  const total = value.total;
+  return groupId &&
+    typeof index === "number" &&
+    Number.isInteger(index) &&
+    typeof total === "number" &&
+    Number.isInteger(total) &&
+    index >= 1 &&
+    index <= total &&
+    total <= MAX_REQUEST_ITERATIONS
+    ? { groupId, index, total }
+    : undefined;
+};
+
 const normalizeMessageLifecycle = (
   value: unknown,
   role: ChatSessionMessage["role"],
@@ -2476,6 +2537,11 @@ const normalizeMessageSettings = (
     provider: value.provider,
     model,
     ...(mode ? { mode } : {}),
+    parallelAgentMode: normalizeParallelAgentMode(value.parallelAgentMode),
+    adaptiveControllerOverride:
+      typeof value.adaptiveControllerOverride === "boolean"
+        ? value.adaptiveControllerOverride
+        : null,
     ...(reasoning ? { reasoning } : {}),
     sessionMemoryEnabled: value.sessionMemoryEnabled === true,
     useWorkspaceMemory: value.useWorkspaceMemory !== false,
@@ -2597,6 +2663,10 @@ const normalizeSessionMessages = (
     }
     const createdAt = normalizeOptionalFiniteNumber(entry.createdAt);
     const taskAction = normalizeMessageTaskAction(entry.taskAction, entry.role);
+    const iteration =
+      entry.role === "user"
+        ? normalizeRequestIteration(entry.iteration)
+        : undefined;
     const taskId = normalizeChatSessionOptionalString(entry.taskId);
     const contextAttachments = normalizeContextAttachments(
       entry.contextAttachments,
@@ -2642,6 +2712,7 @@ const normalizeSessionMessages = (
       ...(taskId ? { taskId } : {}),
       ...(createdAt !== undefined ? { createdAt } : {}),
       ...(taskAction ? { taskAction } : {}),
+      ...(iteration ? { iteration } : {}),
       ...(contextAttachments.length > 0 ? { contextAttachments } : {}),
       ...(promptEnhancement ? { promptEnhancement } : {}),
       ...(settings ? { settings } : {}),
@@ -2697,6 +2768,7 @@ const normalizeSessionRecord = (
     ...session,
     provider,
     ...(specialSession ? { specialSession } : {}),
+    ...(specialSession === "pose" && isMediaPoseMap(session.poseScene) ? { poseScene: session.poseScene } : {}),
     ...(mode ? { mode } : {}),
     ...(reasoning ? { reasoning } : {}),
     model:
@@ -2727,6 +2799,10 @@ const normalizeSessionRecord = (
     useWorkspaceMemory: session.useWorkspaceMemory !== false,
     useGlobalMemory: session.useGlobalMemory !== false,
     uiControlEnabled: session.uiControlEnabled === true,
+    adaptiveControllerOverride:
+      typeof session.adaptiveControllerOverride === "boolean"
+        ? session.adaptiveControllerOverride
+        : null,
     sessionMemory: isQuickTaskSession
       ? []
       : normalizeConversationMemoryEntries(session.sessionMemory, "session"),
@@ -2844,6 +2920,7 @@ const normalizeQueuedSessionMessages = (
     const promptEnhancementAttempt = promptEnhancementRequest
       ? normalizePromptEnhancementAttempt(entry.promptEnhancementAttempt)
       : undefined;
+    const iteration = normalizeRequestIteration(entry.iteration);
     const blockedByTaskId = normalizeString(entry.blockedByTaskId).trim();
     const createdAt = normalizeFiniteNumber(entry.createdAt, index);
     const updatedAt = Math.max(
@@ -2902,6 +2979,7 @@ const normalizeQueuedSessionMessages = (
       task,
       ...(visibleMessageContent ? { visibleMessageContent } : {}),
       ...(promptHistoryContent ? { promptHistoryContent } : {}),
+      ...(iteration ? { iteration } : {}),
       ...(promptEnhancement ? { promptEnhancement } : {}),
       ...(promptEnhancementRequest ? { promptEnhancementRequest } : {}),
       ...(promptEnhancementAttempt ? { promptEnhancementAttempt } : {}),
@@ -3310,7 +3388,7 @@ export const canRenameSession = (session: ChatSessionRecord): boolean => {
   return !isQuickVoiceSession(session);
 };
 
-export const getSessionOverviewStatus = (
+const getConversationOverviewStatus = (
   session: ChatSessionRecord,
 ): SessionOverviewStatus => {
   if (
@@ -3355,6 +3433,27 @@ export const getSessionOverviewStatus = (
   } satisfies Record<ChatSessionTaskOutcomeStatus, SessionOverviewStatus>;
 
   return overviewStatusByOutcome[outcome.status];
+};
+
+export const getSessionOverviewStatus = (
+  session: ChatSessionRecord,
+  queuedMessages: readonly ChatSessionQueuedMessage[] = [],
+): SessionOverviewStatus => {
+  const conversationStatus = getConversationOverviewStatus(session);
+
+  if (conversationStatus === "running") {
+    return "running";
+  }
+
+  const sessionQueue = queuedMessages.filter(
+    (message) => message.sessionId === session.id,
+  );
+
+  if (sessionQueue.some((message) => message.status !== "failed")) {
+    return "running";
+  }
+
+  return sessionQueue.length > 0 ? "failed" : conversationStatus;
 };
 
 export const isSessionEmpty = (session: ChatSessionRecord): boolean => {

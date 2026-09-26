@@ -1626,6 +1626,7 @@ const createSessionMutationComparable = (
     provider: session.provider,
     model: session.model,
     mode: session.mode,
+    parallelAgentMode: session.parallelAgentMode,
     reasoning: session.reasoning,
     draft: session.draft,
     draftContextAttachments: session.draftContextAttachments,
@@ -2527,12 +2528,14 @@ export const useChatSessionShellState = (
     return filterSessionHistoryIndex(sessionHistoryIndex, {
       scope: sessionScopeFilter,
       status: sessionStatusFilters,
+      queuedSessionMessages: shellState.queuedSessionMessages,
       searchQuery: sessionSearchQuery,
       projectFilter: sessionProjectFilter,
       tagFilters: sessionTagFilters,
     }).sessions;
   }, [
     sessionHistoryIndex,
+    shellState.queuedSessionMessages,
     sessionProjectFilter,
     sessionScopeFilter,
     sessionSearchQuery,

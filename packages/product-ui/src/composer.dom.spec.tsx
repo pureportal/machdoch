@@ -147,6 +147,20 @@ afterEach(() => {
 });
 
 describe("composer submission guards", () => {
+  it("sends a parallel agent mode change for the active session", async () => {
+    const onCommand = vi.fn<ProductCommandHandler>().mockResolvedValue(true);
+    harness(onCommand);
+    fireEvent.keyDown(screen.getByRole("button", { name: "Parallel agents: Disabled" }), { key: "ArrowDown" });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitemradio", { name: "Choose Read Only" }));
+    });
+    expect(onCommand).toHaveBeenCalledWith({
+      kind: "set-parallel-agent-mode",
+      sessionId: "A",
+      mode: "read-only",
+    });
+  });
+
   it("checks the current pointer before sending even before the responsive state updates", async () => {
     const onCommand = vi.fn<ProductCommandHandler>().mockResolvedValue(true);
     harness(onCommand, "Touch draft");

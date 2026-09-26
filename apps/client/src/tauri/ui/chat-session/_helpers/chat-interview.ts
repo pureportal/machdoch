@@ -30,7 +30,6 @@ export interface ChatInterviewStartContext {
   reasoning?: ReasoningMode;
   messageSettings?: ChatSessionMessageSettings;
   conversationCutoffMessageId?: string;
-  preserveQueuedMessagesCreatedAfter?: number;
 }
 
 export type ChatInterviewDialogStatus =

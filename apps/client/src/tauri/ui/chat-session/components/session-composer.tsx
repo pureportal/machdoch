@@ -2,11 +2,13 @@ import {
   Brain,
   BrainCircuit,
   FolderHeart,
+  Languages,
   LoaderCircle,
   MessageSquare,
   Mic,
   Monitor,
   Square,
+  WandSparkles,
 } from "lucide-react";
 import { SessionMemoryDialog } from "@machdoch/product-ui";
 import {
@@ -21,6 +23,7 @@ import type {
   ReasoningMode,
   RunMode,
 } from "../../../../core/runtime-contract.generated.js";
+import type { ParallelAgentMode } from "../../../../core/types.js";
 import { AppNotification } from "@machdoch/media-studio/tauri/ui/components/ui/notification.js";
 import {
   createMemoryManagementEntries,
@@ -50,6 +53,8 @@ import {
   type AgentComposerToggle,
 } from "./agent-composer";
 import { SessionModePicker } from "./session-mode-picker";
+import { SessionParallelAgentPicker } from "./session-parallel-agent-picker";
+import { SessionAdaptiveControllerPicker } from "./session-adaptive-controller-picker";
 import { SessionPromptEnhancementPicker } from "./session-prompt-enhancement-picker";
 import { SessionReasoningPicker } from "./session-reasoning-picker";
 import { SmartContextPackPicker } from "./smart-context-packs";
@@ -103,7 +108,14 @@ export interface SessionComposerProps {
     transcribing: boolean;
     statusText: string | null;
     statusTone: "success" | "error" | "info" | null;
+    autoTranslateToEnglish: boolean;
+    autoFormat: boolean;
+    formatAvailable: boolean;
     onAction: () => void;
+    onProcessingChange: (options: {
+      autoTranslateToEnglish: boolean;
+      autoFormat: boolean;
+    }) => Promise<void>;
     onStatusDismiss: () => void;
   };
   canSendMessage: boolean;
@@ -115,6 +127,8 @@ export interface SessionComposerProps {
   onWorkspaceRemoval: (workspace: string) => void;
   onSessionModelSelection: (provider: RuntimeProvider, model: string) => void;
   onSessionModeSelection: (mode: RunMode | null) => void;
+  onParallelAgentModeSelection?: (mode: ParallelAgentMode) => void;
+  onAdaptiveControllerOverrideChange?: (override: boolean | null) => void;
   onSessionReasoningSelection: (reasoning: ReasoningMode | null) => void;
   onSessionMemoryEnabledChange: (enabled: boolean) => void;
   onForgetSessionMemory: (memoryId: string) => Promise<unknown> | unknown;
@@ -164,7 +178,7 @@ export interface SessionComposerProps {
     attachmentId: string,
   ) => void;
   onQueuedMessageClearContextAttachments: (messageId: string) => void;
-  onSend: (draft: string) => void;
+  onSend: (draft: string, iterationCount?: number) => void;
   onCancel: () => void;
   isExecuting: boolean;
   isPromptEnhancementActive?: boolean;
@@ -218,6 +232,8 @@ export const SessionComposer = ({
   onWorkspaceRemoval,
   onSessionModelSelection,
   onSessionModeSelection,
+  onParallelAgentModeSelection = () => undefined,
+  onAdaptiveControllerOverrideChange = () => undefined,
   onSessionReasoningSelection,
   onSessionMemoryEnabledChange,
   onForgetSessionMemory,
@@ -312,6 +328,17 @@ export const SessionComposer = ({
         defaultRunMode={defaultRunMode}
         isUsingWorkspaceDefaultMode={isUsingWorkspaceDefaultMode}
         onSessionModeSelection={onSessionModeSelection}
+      />
+
+      <SessionParallelAgentPicker
+        mode={activeSession.parallelAgentMode ?? "disabled"}
+        available={!activeSession.provider.endsWith("-cli")}
+        onChange={onParallelAgentModeSelection}
+      />
+
+      <SessionAdaptiveControllerPicker
+        override={activeSession.adaptiveControllerOverride ?? null}
+        onChange={onAdaptiveControllerOverrideChange}
       />
 
       <SessionPromptEnhancementPicker
@@ -453,22 +480,72 @@ export const SessionComposer = ({
   ]);
 
   const actions = useMemo<AgentComposerAction[]>(() => {
-    const icon = speechInput.transcribing ? (
+    const enabledProcessing = [
+      speechInput.autoTranslateToEnglish ? "translate to English" : null,
+      speechInput.autoFormat ? "format and improve text" : null,
+    ].filter((option): option is string => option !== null);
+    const actionLabel = enabledProcessing.length
+      ? `${speechInputActionLabel} (${enabledProcessing.join(", ")})`
+      : speechInputActionLabel;
+    const glyph = speechInput.transcribing ? (
       <LoaderCircle className="h-4 w-4 animate-spin" />
     ) : speechInput.recording ? (
       <Square className="h-4 w-4 fill-current" />
     ) : (
       <Mic className="h-4 w-4" />
     );
+    const icon = (
+      <>
+        {glyph}
+        {speechInput.autoTranslateToEnglish ? (
+          <span
+            aria-hidden="true"
+            className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-sky-400 text-slate-950"
+          >
+            <Languages className="size-3" />
+          </span>
+        ) : null}
+        {speechInput.autoFormat ? (
+          <span
+            aria-hidden="true"
+            className="absolute -bottom-1 -right-1 flex size-4 items-center justify-center rounded-full bg-amber-400 text-slate-950"
+          >
+            <WandSparkles className="size-3" />
+          </span>
+        ) : null}
+      </>
+    );
     return [
       {
         id: "speech-input",
-        label: speechInputActionLabel,
-        title: speechInputActionLabel,
+        label: actionLabel,
+        title: actionLabel,
         icon,
         disabled: !speechInput.browserSupported || speechInput.transcribing,
         onClick: speechInput.onAction,
+        contextActions: [
+          {
+            label: "Translate to English",
+            checked: speechInput.autoTranslateToEnglish,
+            onSelect: () =>
+              speechInput.onProcessingChange({
+                autoTranslateToEnglish: !speechInput.autoTranslateToEnglish,
+                autoFormat: speechInput.autoFormat,
+              }),
+          },
+          {
+            label: "Format and improve text",
+            checked: speechInput.autoFormat,
+            disabled: !speechInput.formatAvailable,
+            onSelect: () =>
+              speechInput.onProcessingChange({
+                autoTranslateToEnglish: speechInput.autoTranslateToEnglish,
+                autoFormat: !speechInput.autoFormat,
+              }),
+          },
+        ],
         className: cn(
+          "relative",
           speechInput.recording &&
             "border-rose-500/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/15 hover:text-white",
           speechInput.transcribing &&
@@ -481,9 +558,13 @@ export const SessionComposer = ({
       },
     ];
   }, [
+    speechInput.autoFormat,
+    speechInput.formatAvailable,
+    speechInput.autoTranslateToEnglish,
     speechInput.browserSupported,
     speechInput.enabled,
     speechInput.onAction,
+    speechInput.onProcessingChange,
     speechInput.recording,
     speechInput.transcribing,
     speechInputActionLabel,
@@ -548,6 +629,7 @@ export const SessionComposer = ({
         actions={actions}
         runningTaskMessageAction={runningTaskMessageAction}
         queuedMessages={editingMessageId ? [] : queuedMessages}
+        iterationsEnabled={!editingMessageId && !interviewEnabled}
         onModelSelection={onSessionModelSelection}
         onSelectContextFiles={onSelectContextFiles}
         onSelectContextFolders={onSelectContextFolders}

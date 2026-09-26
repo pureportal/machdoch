@@ -81,7 +81,9 @@ export interface WorkspaceSettingsControls {
   effectiveContextWindow: ContextWindow;
   workspaceMemoryDefaultEnabled?: boolean;
   workspaceMemoryOverride?: boolean | null;
+  adaptiveControllerOverride?: boolean | null;
   workspaceMemoryEnabled?: boolean;
+  reasoningBankEnabled?: boolean;
   reasoningProvider?: RuntimeProvider;
   reasoningModel?: string;
   saving: boolean;
@@ -90,6 +92,8 @@ export interface WorkspaceSettingsControls {
   onWorkspaceMemoryOverrideChange?: (
     enabled: boolean | null,
   ) => Promise<void> | void;
+  onAdaptiveControllerOverrideChange?: (enabled: boolean | null) => Promise<void> | void;
+  onReasoningBankEnabledChange?: (enabled: boolean) => Promise<void> | void;
   onReasoningModeChange: (reasoning: ReasoningMode) => Promise<void> | void;
   onReasoningExecutionModeChange: (
     reasoningMode: ReasoningExecutionMode,
@@ -172,6 +176,10 @@ export interface VoiceSettingsControls {
   speechToTextAvailabilityDescription: string;
   speechToTextProvider: SpeechToTextProvider;
   speechToTextProviderAvailability: SpeechToTextProviderAvailability[];
+  speechKeyTerms: string[];
+  speechContext: string;
+  speechAutoTranslateToEnglish: boolean;
+  speechAutoFormat: boolean;
   speechToTextProviderSaving: boolean;
   speechInputDeviceId: string | null;
   speechInputDevicesSupported: boolean;
@@ -193,6 +201,8 @@ export interface VoiceSettingsControls {
   onSpeechInputDeviceChange: (
     inputDeviceId: string | null,
   ) => Promise<void> | void;
+  onSpeechKeyTermsSave: (keyTerms: string[]) => Promise<void> | void;
+  onSpeechContextSave: (speechContext: string) => Promise<void> | void;
   onRefreshSpeechInputDevices: () => Promise<void> | void;
   onAiProviderChange: (provider: VoiceAiProvider) => Promise<void> | void;
   onAutoSpeakResponsesChange: (enabled: boolean) => void;

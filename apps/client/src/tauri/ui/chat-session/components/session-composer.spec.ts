@@ -3,7 +3,15 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterAll, afterEach, beforeAll, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { createSession } from "../../chat-session.model";
 import { RUN_MODE_META } from "../_helpers/session-shell";
 import { SessionComposer, type SessionComposerProps } from "./session-composer";
@@ -82,7 +90,11 @@ const createProps = (
     transcribing: false,
     statusText: null,
     statusTone: null,
+    autoTranslateToEnglish: false,
+    autoFormat: false,
+    formatAvailable: true,
     onAction: noop,
+    onProcessingChange: noopAsync,
     onStatusDismiss: noop,
   },
   canSendMessage: false,
@@ -131,6 +143,164 @@ const createProps = (
 });
 
 describe("SessionComposer enhancement", () => {
+  it("shows enabled speech processing and toggles each option from the microphone menu", async () => {
+    const onProcessingChange = vi.fn(async () => {});
+    render(
+      createElement(
+        SessionComposer,
+        createProps({
+          editingMessageId: null,
+          isExecuting: false,
+          speechInput: {
+            ...createProps().speechInput,
+            enabled: true,
+            autoTranslateToEnglish: true,
+            autoFormat: true,
+            onProcessingChange,
+          },
+        }),
+      ),
+    );
+
+    const microphone = screen.getByRole("button", {
+      name: "Speak to text (translate to English, format and improve text)",
+    });
+    expect(microphone.querySelector(".lucide-languages")).toBeTruthy();
+    expect(microphone.querySelector(".lucide-wand-sparkles")).toBeTruthy();
+    fireEvent.contextMenu(microphone);
+    const translate = await screen.findByRole("menuitemcheckbox", {
+      name: "Translate to English",
+    });
+    expect(translate.getAttribute("aria-checked")).toBe("true");
+    const format = screen.getByRole("menuitemcheckbox", {
+      name: "Format and improve text",
+    });
+    expect(format.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(format);
+    expect(onProcessingChange).toHaveBeenCalledWith({
+      autoTranslateToEnglish: true,
+      autoFormat: false,
+    });
+  });
+
+  it("uses distinct icons for each enabled speech option", () => {
+    const speechInput = createProps().speechInput;
+    const { rerender } = render(
+      createElement(
+        SessionComposer,
+        createProps({
+          editingMessageId: null,
+          isExecuting: false,
+          speechInput: {
+            ...speechInput,
+            enabled: true,
+            autoTranslateToEnglish: true,
+          },
+        }),
+      ),
+    );
+
+    const translateButton = screen.getByRole("button", {
+      name: "Speak to text (translate to English)",
+    });
+    expect(translateButton.querySelector(".lucide-languages")).toBeTruthy();
+    expect(translateButton.querySelector(".lucide-wand-sparkles")).toBeNull();
+
+    rerender(
+      createElement(
+        SessionComposer,
+        createProps({
+          editingMessageId: null,
+          isExecuting: false,
+          speechInput: { ...speechInput, enabled: true, autoFormat: true },
+        }),
+      ),
+    );
+
+    const formatButton = screen.getByRole("button", {
+      name: "Speak to text (format and improve text)",
+    });
+    expect(formatButton.querySelector(".lucide-languages")).toBeNull();
+    expect(formatButton.querySelector(".lucide-wand-sparkles")).toBeTruthy();
+  });
+
+  it("disables formatting when the selected speech provider cannot format text", async () => {
+    const onProcessingChange = vi.fn(async () => {});
+    render(
+      createElement(
+        SessionComposer,
+        createProps({
+          editingMessageId: null,
+          isExecuting: false,
+          speechInput: {
+            ...createProps().speechInput,
+            enabled: true,
+            formatAvailable: false,
+            onProcessingChange,
+          },
+        }),
+      ),
+    );
+
+    fireEvent.contextMenu(
+      screen.getByRole("button", { name: "Speak to text" }),
+    );
+    const format = await screen.findByRole("menuitemcheckbox", {
+      name: "Format and improve text",
+    });
+    expect(format.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(format);
+    expect(onProcessingChange).not.toHaveBeenCalled();
+  });
+
+  it("sends the selected iteration count and resets it after submission", () => {
+    const onSend = vi.fn();
+    render(
+      createElement(
+        SessionComposer,
+        createProps({
+          editingMessageId: null,
+          canSendMessage: true,
+          sendDisabledReason: null,
+          isExecuting: false,
+          onSend,
+        }),
+      ),
+    );
+
+    expect(screen.queryByRole("combobox", { name: "Iterations" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Iterations" }));
+    const iterations = screen.getByRole("combobox", { name: "Iterations" });
+    fireEvent.change(iterations, { target: { value: "3" } });
+    expect(screen.getByRole("button", { name: "Iterations: 3" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    expect(onSend).toHaveBeenCalledWith(EDIT_DRAFT, 3);
+    expect(screen.getByRole("button", { name: "Iterations" })).toBeTruthy();
+  });
+
+  it("queues repeated requests while a task is running", () => {
+    const onRunningTaskMessageActionChange = vi.fn();
+    render(
+      createElement(
+        SessionComposer,
+        createProps({
+          editingMessageId: null,
+          canSendMessage: true,
+          isExecuting: true,
+          runningTaskMessageAction: "steer",
+          onRunningTaskMessageActionChange,
+        }),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Iterations" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Iterations" }), {
+      target: { value: "2" },
+    });
+
+    expect(onRunningTaskMessageActionChange).toHaveBeenCalledWith("queue");
+  });
+
   it("keeps the normal composer available while enhancement is shown in the conversation", () => {
     const markup = renderToStaticMarkup(
       createElement(

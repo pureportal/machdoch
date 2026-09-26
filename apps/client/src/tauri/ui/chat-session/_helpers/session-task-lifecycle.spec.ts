@@ -285,6 +285,11 @@ describe("chat execution lifecycle", () => {
       expectedTasks,
     );
     expect(
+      vi
+        .mocked(runDesktopTask)
+        .mock.calls.map((call) => call[2]?.conversationContext?.wasQueued),
+    ).toEqual([false, true, true, true, false]);
+    expect(
       work.state.activeSession.messages
         .filter((message) => message.role === "user")
         .map((message) => message.content),
@@ -324,6 +329,120 @@ describe("chat execution lifecycle", () => {
     );
     expect(work.state.shellState.queuedSessionMessages).toEqual([]);
   });
+
+  it("keeps queued messages after retrying a reply and sends them afterward", async () => {
+    const work = setup();
+    const first = deferred<TaskResult>();
+    const retry = deferred<TaskResult>();
+    vi.mocked(runDesktopTask)
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(retry.promise)
+      .mockResolvedValue(success("Follow-up"));
+
+    expect(work.submit("Original")).toBe(true);
+    work.enqueue("First follow-up");
+    work.enqueue("Second follow-up");
+    const queuedIds = work.state.shellState.queuedSessionMessages.map(
+      (message) => message.id,
+    );
+
+    first.resolve(success("Original"));
+    await vi.waitFor(() => expect(work.unsettled.current.size).toBe(0));
+    const reply = work.state.activeSession.messages.find(
+      (message) =>
+        message.role === "agent" && message.source?.kind === "execution",
+    );
+    if (!reply) throw new Error("Original reply was not recorded.");
+
+    expect(work.submission.handleRetryMessage(reply)).toBe(true);
+    expect(
+      work.state.shellState.queuedSessionMessages.map((message) => message.id),
+    ).toEqual(queuedIds);
+    expect(work.state.shellState.queuedMessageTombstones).toEqual({});
+
+    retry.resolve(success("Original"));
+    await vi.waitFor(() => expect(work.unsettled.current.size).toBe(0));
+    for (const task of ["First follow-up", "Second follow-up"]) {
+      await processAutomaticChatWork(() => work.options);
+      await vi.waitFor(() => expect(work.unsettled.current.size).toBe(0));
+      expect(vi.mocked(runDesktopTask).mock.calls.at(-1)?.[1]).toBe(task);
+    }
+    expect(work.state.shellState.queuedSessionMessages).toEqual([]);
+  });
+
+  it("keeps queued messages after editing an earlier request and sends them afterward", async () => {
+    const work = setup();
+    const first = deferred<TaskResult>();
+    const edited = deferred<TaskResult>();
+    vi.mocked(runDesktopTask)
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(edited.promise)
+      .mockResolvedValue(success("Follow-up"));
+
+    expect(work.submit("Original")).toBe(true);
+    work.enqueue("Follow-up");
+    const queuedId = work.state.shellState.queuedSessionMessages[0].id;
+    first.resolve(success("Original"));
+    await vi.waitFor(() => expect(work.unsettled.current.size).toBe(0));
+    const request = work.state.activeSession.messages.find(
+      (message) => message.role === "user",
+    );
+    if (!request) throw new Error("Original request was not recorded.");
+
+    expect(work.submission.handleEditMessage(request, "Edited")).toBe(true);
+    expect(work.state.shellState.queuedSessionMessages[0]?.id).toBe(queuedId);
+    expect(work.state.shellState.queuedMessageTombstones).toEqual({});
+
+    edited.resolve(success("Edited"));
+    await vi.waitFor(() => expect(work.unsettled.current.size).toBe(0));
+    await processAutomaticChatWork(() => work.options);
+    await vi.waitFor(() => expect(work.unsettled.current.size).toBe(0));
+    expect(vi.mocked(runDesktopTask).mock.calls.at(-1)?.[1]).toBe("Follow-up");
+    expect(work.state.shellState.queuedSessionMessages).toEqual([]);
+  });
+
+  it.each([
+    ["Continue", "handleContinueTask", "executed"],
+    ["task Retry", "handleRetryTask", "failed"],
+  ] as const)(
+    "keeps queued messages after %s and sends them afterward",
+    async (_label, action, status) => {
+      const work = setup();
+      const first = deferred<TaskResult>();
+      const actionTask = deferred<TaskResult>();
+      vi.mocked(runDesktopTask)
+        .mockReturnValueOnce(first.promise)
+        .mockReturnValueOnce(actionTask.promise)
+        .mockResolvedValue(success("Follow-up"));
+
+      expect(work.submit("Original")).toBe(true);
+      work.enqueue("Follow-up");
+      const queuedId = work.state.shellState.queuedSessionMessages[0].id;
+      first.resolve({
+        ...success("Original"),
+        execution: { ...success("Original").execution, status },
+      });
+      await vi.waitFor(() => expect(work.unsettled.current.size).toBe(0));
+      const reply = work.state.activeSession.messages.find(
+        (message) =>
+          message.role === "agent" && message.source?.kind === "execution",
+      );
+      if (!reply) throw new Error("Original reply was not recorded.");
+
+      work.submission[action](reply);
+      expect(work.state.shellState.queuedSessionMessages[0]?.id).toBe(queuedId);
+      expect(work.state.shellState.queuedMessageTombstones).toEqual({});
+
+      actionTask.resolve(success("Action"));
+      await vi.waitFor(() => expect(work.unsettled.current.size).toBe(0));
+      await processAutomaticChatWork(() => work.options);
+      await vi.waitFor(() => expect(work.unsettled.current.size).toBe(0));
+      expect(vi.mocked(runDesktopTask).mock.calls.at(-1)?.[1]).toBe(
+        "Follow-up",
+      );
+      expect(work.state.shellState.queuedSessionMessages).toEqual([]);
+    },
+  );
 
   it("waits for the native promise after terminal progress and preserves a late cancellation", async () => {
     vi.useFakeTimers();

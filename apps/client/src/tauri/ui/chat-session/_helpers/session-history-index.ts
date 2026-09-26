@@ -11,6 +11,7 @@ import {
   normalizeShellState,
   normalizeSessionTags,
   type ChatSessionMessage,
+  type ChatSessionQueuedMessage,
   type ChatSessionRecord,
   type ShellPersistedState,
 } from "../../chat-session.model";
@@ -73,6 +74,7 @@ export interface SessionHistoryIndexOptions {
 export interface SessionHistoryFilterOptions {
   scope: SessionScopeFilter;
   status: SessionStatusFilter | SessionStatusFilterSelection;
+  queuedSessionMessages?: readonly ChatSessionQueuedMessage[];
   searchQuery?: string;
   projectFilter?: string;
   tagFilters?: string[];
@@ -201,6 +203,7 @@ const sortProjectFacets = (
 const matchesSessionStatusFilters = (
   session: ChatSessionRecord,
   filters: SessionStatusFilter | SessionStatusFilterSelection,
+  queuedSessionMessages: readonly ChatSessionQueuedMessage[],
 ): boolean => {
   const selectedFilters = normalizeSessionStatusFilterSelection(filters).filter(
     isConcreteSessionStatusFilter,
@@ -210,7 +213,7 @@ const matchesSessionStatusFilters = (
     return true;
   }
 
-  const sessionStatus = getSessionOverviewStatus(session);
+  const sessionStatus = getSessionOverviewStatus(session, queuedSessionMessages);
   const hasUnreadResponse = selectedFilters.includes("unread")
     ? hasUnreadCompletedSessionResponse(session)
     : false;
@@ -379,6 +382,7 @@ export const filterSessionHistoryIndex = (
     const matchesStatus = matchesSessionStatusFilters(
       entry.session,
       options.status,
+      options.queuedSessionMessages ?? [],
     );
     const matchesProject = projectFilter ? entry.projectId === projectFilter : true;
 
@@ -508,7 +512,6 @@ export const duplicateSessionRecord = (
   delete nextSession.pinnedAt;
   delete nextSession.timeResetAt;
   delete nextSession.movedToTopAt;
-  delete nextSession.specialSession;
 
   return nextSession;
 };
