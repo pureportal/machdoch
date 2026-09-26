@@ -33,6 +33,7 @@ export const MediaBasicVideoOptions = ({
     videoSettings.width != null || videoSettings.height != null;
   const fixedVideo =
     architecture === "ltx-video" || architecture === "hunyuan-video-1.5-i2v";
+  const fixedGuidance = fixedVideo || architecture === "minimax-h3-ref2va";
   return (
     <>
       <label className={field}>
@@ -102,8 +103,8 @@ export const MediaBasicVideoOptions = ({
         <input
           className={control}
           type="number"
-          min={1}
-          max={60}
+          min={architecture === "minimax-h3-ref2va" ? 24 : 1}
+          max={architecture === "minimax-h3-ref2va" ? 24 : 60}
           step={1}
           value={videoSettings.fps}
           onChange={(event) =>
@@ -178,7 +179,7 @@ export const MediaBasicVideoOptions = ({
           />
         )}
       </label>
-      {!fixedVideo ? (
+      {!fixedGuidance ? (
         <label className={field}>
           <span>Guidance</span>
           <input

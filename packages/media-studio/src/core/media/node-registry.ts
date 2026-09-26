@@ -298,8 +298,7 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "assetId",
         label: "Source asset",
-        description:
-          "A stable Media Studio asset id resolved through the privileged runtime boundary.",
+        description: "",
         group: "Basic",
         kind: "asset",
         required: true,
@@ -394,8 +393,8 @@ export const MEDIA_NODE_DEFINITIONS = [
         description: "",
         group: "Basic",
         kind: "number",
-        required: true,
-        defaultValue: 0,
+        required: false,
+        defaultValue: null,
         examples: [0, 42],
         min: 0,
         max: Number.MAX_SAFE_INTEGER,
@@ -1189,6 +1188,7 @@ export const MEDIA_NODE_DEFINITIONS = [
         defaultValue: "local:hunyuan-video-1.5-i2v-step-distilled",
         examples: [
           "local:hunyuan-video-1.5-i2v-step-distilled",
+          "local:minimax-h3-ref2va",
           "local:wan2.2-ti2v-5b",
           "local:framepack-i2v-hy-13b",
           "local:ltx-video-0.9.8-13b-distilled-fp8",

@@ -5,14 +5,17 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-use rusqlite::{params, OptionalExtension as _};
+use rusqlite::params;
+#[cfg(test)]
+use rusqlite::OptionalExtension as _;
 use serde_json::{Map, Value};
 use sha2::{Digest as _, Sha256};
 
+#[cfg(test)]
+use super::MediaAssetImportDuplicate;
 use super::{
     catalog, database, hardware, model_addon, ImportMediaLocalModelRequest,
-    MediaAssetImportDuplicate, MediaLocalModelImportInspection, MediaLocalModelImportResult,
-    MediaResult, MediaRuntimePaths,
+    MediaLocalModelImportInspection, MediaLocalModelImportResult, MediaResult, MediaRuntimePaths,
 };
 
 pub(crate) const USER_MODEL_ID_PREFIX: &str = "local:user:";
@@ -31,6 +34,7 @@ pub(super) const SUPPORTED_ARCHITECTURES: &[&str] = &[
     "flux-1",
     "flux-2",
     "krea-2",
+    "qwen-image-2.1",
     "wan-2.2-ti2v",
 ];
 const TEXT_TO_IMAGE_CAPABILITIES: &[&str] = &["text-to-image"];
@@ -40,6 +44,12 @@ const MULTI_IMAGE_CAPABILITIES: &[&str] = &[
     "image-to-image",
     "masked-image-edit",
     "multi-reference-edit",
+];
+const QWEN_IMAGE_CAPABILITIES: &[&str] = &[
+    "text-to-image",
+    "image-to-image",
+    "multi-reference-edit",
+    "transparent-output",
 ];
 
 pub(super) struct ParsedSafetensorsHeader {
@@ -116,6 +126,12 @@ pub(super) fn architecture_profile(architecture: &str) -> Option<ArchitecturePro
             speed_score: 40,
             quality_score: 94,
         }),
+        "qwen-image-2.1" => Some(ArchitectureProfile {
+            family: "Qwen-Image 2.1",
+            min_vram_gb: 16.0,
+            speed_score: 42,
+            quality_score: 94,
+        }),
         _ => None,
     }
 }
@@ -130,6 +146,7 @@ pub(crate) fn capabilities_for_architecture(architecture: &str) -> &'static [&'s
             "alpha-video",
             "video-composite",
         ],
+        "qwen-image-2.1" => QWEN_IMAGE_CAPABILITIES,
         "stable-diffusion-2" | "flux-1" => IMAGE_EDIT_CAPABILITIES,
         "stable-diffusion-1" | "stable-diffusion-xl" | "pony" | "flux-2" | "krea-2" => {
             MULTI_IMAGE_CAPABILITIES
@@ -363,6 +380,10 @@ pub(super) fn detect_architecture(
     }
     let metadata = metadata_text(header);
     let explicit = [
+        (
+            "qwen-image-2.1",
+            ["qwen-image-2.1", "qwen image 2.1", "qwen_image_2.1"].as_slice(),
+        ),
         ("krea-2", ["krea-2", "krea2", "krea 2"].as_slice()),
         ("flux-2", ["flux.2", "flux_2", "flux 2"].as_slice()),
         ("flux-1", ["flux.1", "flux_1", "flux 1"].as_slice()),
@@ -387,6 +408,12 @@ pub(super) fn detect_architecture(
         if markers.iter().any(|marker| metadata.contains(marker)) {
             return (Some(architecture.to_string()), "high");
         }
+    }
+    if has_tensor_prefix(header, "transformer_blocks.0.img_mlp.")
+        && has_tensor_prefix(header, "time_text_embed.timestep_embedder.")
+        && has_tensor_prefix(header, "img_in.")
+    {
+        return (Some("qwen-image-2.1".to_string()), "high");
     }
     if has_tensor_prefix(header, "model.diffusion_model.blocks.0.attn.wq.")
         && has_tensor_prefix(header, "model.diffusion_model.txtfusion.")
@@ -621,6 +648,23 @@ fn krea_runtime_descriptor(paths: &MediaRuntimePaths) -> MediaResult<Value> {
     }))
 }
 
+fn qwen21_runtime_descriptor(paths: &MediaRuntimePaths) -> MediaResult<Value> {
+    let runtime_root = paths
+        .models_root()?
+        .join("components")
+        .join("qwen-image-2.1");
+    let canonical_root = super::model_components::ensure_components(
+        &runtime_root,
+        include_str!("qwen21_components.json"),
+    )?;
+    Ok(serde_json::json!({
+        "schemaVersion": 1,
+        "runtimeRoot": canonical_root,
+        "repository": "Qwen/Qwen-Image-2.1",
+        "revision": "790c92633540aa0cb11d9abf19eb46d861714758"
+    }))
+}
+
 pub(super) fn prepare_model_config(
     paths: &MediaRuntimePaths,
     revision_root: &Path,
@@ -644,6 +688,19 @@ pub(super) fn prepare_model_config(
                 crate::atomic_file::AtomicWriteOptions::default(),
             )
             .map_err(|error| format!("failed to publish the KREA runtime manifest: {error}"))?;
+            Ok(Some(config_root))
+        }
+        "qwen-image-2.1" => {
+            let runtime = qwen21_runtime_descriptor(paths)?;
+            super::runtime_setup::installer::validate_directory(&config_root)?;
+            crate::atomic_file::write_file_atomic(
+                &config_root.join("qwen21-runtime.json"),
+                &serde_json::to_vec_pretty(&runtime).map_err(|error| {
+                    format!("failed to encode the Qwen runtime manifest: {error}")
+                })?,
+                crate::atomic_file::AtomicWriteOptions::default(),
+            )
+            .map_err(|error| format!("failed to publish the Qwen runtime manifest: {error}"))?;
             Ok(Some(config_root))
         }
         "stable-diffusion-1" | "stable-diffusion-xl" | "pony" => {
@@ -784,9 +841,24 @@ fn persist_import(
     let profile = architecture_profile(&request.architecture)
         .ok_or_else(|| "architecture is not a supported local model family".to_string())?;
     let source_url = validated_source_url(request.source_url.as_deref())?;
-    let license_name =
+    let requested_license_name =
         validated_optional_text("licenseName", request.license_name.as_deref(), 256)?;
-    let commercial_use = request.commercial_use.as_deref().unwrap_or("unknown");
+    let license_name = if request.architecture == "qwen-image-2.1" {
+        "Qwen Research License Agreement".to_string()
+    } else {
+        requested_license_name
+    };
+    let commercial_use = if request.architecture == "qwen-image-2.1" {
+        "review-required"
+    } else {
+        request.commercial_use.as_deref().unwrap_or("unknown")
+    };
+    let license_source_url = if request.architecture == "qwen-image-2.1" {
+        "https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE"
+    } else {
+        source_url.as_deref().unwrap_or("")
+    };
+    let license_requires_acceptance = i64::from(request.architecture == "qwen-image-2.1");
     let display_name = validated_text("displayName", &request.display_name, 120)?;
     let model_id = format!("{USER_MODEL_ID_PREFIX}{digest}");
     let capabilities = serde_json::to_string(capabilities_for_architecture(&request.architecture))
@@ -813,9 +885,9 @@ fn persist_import(
                license_commercial_use, license_requires_acceptance, recommended, speed_score,
                quality_score, min_vram_gb, expected_download_gb, cost_hint, privacy_summary, limitation, updated_at
              ) VALUES (?1, 'local-diffusers', ?2, ?3, 'local', 'active', ?4, ?5, ?6, ?7, ?8,
-               ?9, ?10, 0, 'safetensors', ?11, NULL, ?12, ?13, 0, 0, ?14, ?15, ?16, ?17,
+               ?9, ?10, 0, 'safetensors', ?11, NULL, ?12, ?13, ?14, 0, ?15, ?16, ?17, ?18,
                'No provider charge; uses local GPU time and power.',
-               'Prompt, checkpoint weights, and generated pixels remain on this device.', ?18, ?4)
+               'Prompt, checkpoint weights, and generated pixels remain on this device.', ?19, ?4)
              ON CONFLICT(id) DO UPDATE SET
                display_name = excluded.display_name, family = excluded.family, lifecycle = 'active',
                lifecycle_checked_at = excluded.lifecycle_checked_at,
@@ -825,6 +897,7 @@ fn persist_import(
                addon_capabilities_json = excluded.addon_capabilities_json,
                license_name = excluded.license_name, license_source_url = excluded.license_source_url,
                license_commercial_use = excluded.license_commercial_use,
+               license_requires_acceptance = excluded.license_requires_acceptance,
                speed_score = excluded.speed_score, quality_score = excluded.quality_score,
                min_vram_gb = excluded.min_vram_gb, expected_download_gb = excluded.expected_download_gb,
                limitation = excluded.limitation, updated_at = excluded.updated_at",
@@ -840,8 +913,9 @@ fn persist_import(
                 request.architecture,
                 addon_capabilities,
                 license_name,
-                source_url.as_deref().unwrap_or(""),
+                license_source_url,
                 commercial_use,
+                license_requires_acceptance,
                 profile.speed_score,
                 profile.quality_score,
                 profile.min_vram_gb,
@@ -925,10 +999,14 @@ pub(crate) fn import_reviewed(
     if source_size != inspection.byte_size {
         return Err("the file changed; select it again before importing".to_string());
     }
-    let component_bytes = if request.architecture == "wan-2.2-ti2v" {
-        super::model_components::manifest_bytes(include_str!("wan_components.json"))?
-    } else {
-        0
+    let component_bytes = match request.architecture.as_str() {
+        "wan-2.2-ti2v" => {
+            super::model_components::manifest_bytes(include_str!("wan_components.json"))?
+        }
+        "qwen-image-2.1" => {
+            super::model_components::manifest_bytes(include_str!("qwen21_components.json"))?
+        }
+        _ => 0,
     };
     let required_bytes = inspection
         .byte_size
@@ -1158,6 +1236,31 @@ mod tests {
             capabilities_for_architecture("stable-diffusion-3"),
             ["text-to-image"]
         );
+        assert_eq!(
+            capabilities_for_architecture("qwen-image-2.1"),
+            QWEN_IMAGE_CAPABILITIES
+        );
+    }
+
+    #[test]
+    fn identifies_qwen_image_21_transformer_without_filename_hints() {
+        let path = temp_path("qwen-transformer");
+        write_safetensors(
+            &path,
+            serde_json::json!({
+                "img_in.weight": {"dtype": "BF16", "shape": [1], "data_offsets": [0, 2]},
+                "time_text_embed.timestep_embedder.linear_1.weight": {"dtype": "BF16", "shape": [1], "data_offsets": [2, 4]},
+                "transformer_blocks.0.img_mlp.gate_up.weight": {"dtype": "BF16", "shape": [1], "data_offsets": [4, 6]}
+            }),
+            &[0; 6],
+        );
+        let inspection = inspect(path.to_str().unwrap()).unwrap();
+        assert_eq!(
+            inspection.detected_architecture.as_deref(),
+            Some("qwen-image-2.1")
+        );
+        assert_eq!(inspection.architecture_confidence, "high");
+        fs::remove_file(path).unwrap();
     }
 
     #[test]

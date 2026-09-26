@@ -115,7 +115,12 @@ fn handle_request(app: &tauri::AppHandle, request: Value) -> Result<Value, Value
             }
             let encoded = serde_json::to_vec(&json!([command, args]))
                 .map_err(|error| json!(error.to_string()))?;
-            if encoded.len() > 1_048_576 {
+            let max_request_bytes = if command == "run_media_flow_agent" {
+                2_200_000
+            } else {
+                1_048_576
+            };
+            if encoded.len() > max_request_bytes {
                 return Err(json!("Media request is too large."));
             }
             let digest = Sha256::digest(&encoded).to_vec();

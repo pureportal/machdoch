@@ -39,6 +39,20 @@ const FRAMEPACK_REQUIRED_FILES: &[&str] = &[
     "image_encoder/model.safetensors",
 ];
 const HUNYUAN_VIDEO_15_ARCHITECTURE: &str = "hunyuan-video-1.5-i2v";
+const MINIMAX_H3_ARCHITECTURE: &str = "minimax-h3-ref2va";
+const MINIMAX_H3_REQUIRED_FILES: &[&str] = &[
+    "diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+    "vae/minimax_h3_video_vae_fp16.safetensors",
+    "vae/minimax_h3_audio_vae_fp32.safetensors",
+    "loras/minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
+    "small_te/config.json",
+    "small_te/tokenizer.json",
+    "small_te/preprocessor_config.json",
+    "small_te/model.safetensors.index.json",
+    "small_te/model-00001-of-00002.safetensors",
+    "small_te/model-00002-of-00002.safetensors",
+    "small_te/mmh3-4b-ClipProj-v3.1.safetensors",
+];
 const HUNYUAN_VIDEO_15_MODEL_REVISION: &str = "854c04a4c8a53d990b418c7478f0802c0fc8c726";
 const HUNYUAN_VIDEO_15_REQUIRED_FILES: &[&str] = &[
     "model_index.json",
@@ -343,6 +357,40 @@ fn is_hunyuan_video_15_i2v_transformer(config: &Value) -> bool {
         && config.get("in_channels").and_then(Value::as_u64) == Some(65)
         && config.get("out_channels").and_then(Value::as_u64) == Some(32)
         && config.get("use_meanflow").and_then(Value::as_bool) == Some(true)
+}
+
+fn minimax_h3_artifact(
+    models_root: &Path,
+    directory: &Path,
+    inventory: DirectoryInventory,
+) -> MediaDiscoveredModelArtifact {
+    let missing = MINIMAX_H3_REQUIRED_FILES
+        .iter()
+        .filter(|relative| !regular_nonempty_file(&directory.join(relative)))
+        .copied()
+        .collect::<Vec<_>>();
+    let ready = missing.is_empty()
+        && !inventory.truncated
+        && inventory.byte_size >= 32 * 1_024 * 1_024 * 1_024;
+    let diagnostic = if ready {
+        "MiniMax H3 Ref2VA is ready.".to_string()
+    } else if !missing.is_empty() {
+        format!("Missing MiniMax H3 files: {}", missing.join(", "))
+    } else {
+        "MiniMax H3 package is incomplete.".to_string()
+    };
+    MediaDiscoveredModelArtifact {
+        path: directory.display().to_string(),
+        relative_path: relative_display(models_root, directory),
+        display_name: "MiniMax H3 Ref2VA".to_string(),
+        kind: "diffusers-model".to_string(),
+        status: if ready { "ready" } else { "incomplete" }.to_string(),
+        architecture: Some(MINIMAX_H3_ARCHITECTURE.to_string()),
+        byte_size: inventory.byte_size,
+        file_count: inventory.file_count,
+        capabilities: vec!["image-to-video".to_string()],
+        diagnostic,
+    }
 }
 
 fn hunyuan_video_15_artifact(
@@ -1100,6 +1148,17 @@ fn discover_with_limits(
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("");
+        if directory_name.eq_ignore_ascii_case("minimax-h3-ref2va") {
+            let inventory = directory_inventory(
+                &directory,
+                max_files.saturating_sub(visited_files),
+                max_depth.saturating_sub(depth),
+            )?;
+            visited_files = visited_files.saturating_add(inventory.file_count as usize);
+            truncated |= inventory.truncated;
+            entries.push(minimax_h3_artifact(&models_root, &directory, inventory));
+            continue;
+        }
         if directory_name.eq_ignore_ascii_case("runtime")
             && directory
                 .parent()

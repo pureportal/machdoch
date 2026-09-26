@@ -289,7 +289,8 @@ fn filter_previews(model: &mut CivitaiCatalogModel, nsfw: bool) {
 
 fn filter_resources(model: &mut CivitaiCatalogModel, base_model: &str) {
     model.model_versions.retain_mut(|version| {
-        if !civitai_compatibility::supports_resource(
+        if !civitai_compatibility::supports_catalog_resource(
+            &model.name,
             &model.model_type,
             version.base_model.as_deref(),
         ) || !civitai_compatibility::supports_version_type(version.base_model_type.as_deref())

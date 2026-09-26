@@ -9,7 +9,7 @@ use tauri::{AppHandle, Manager};
 
 use super::{
     error::{command_result, MediaCommandResult},
-    storage_migration, MediaResult, MediaRuntimePaths,
+    krea_training, storage_migration, MediaResult, MediaRuntimePaths,
 };
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -208,6 +208,7 @@ pub(crate) async fn media_move_asset_storage(
         let control = control_root(&app)?;
         let lease = lock(&control, true)?;
         let mut config = read_config(&control)?;
+        krea_training::ensure_idle(&config.root)?;
         storage_migration::prepare(&control, &mut config, Path::new(&folder))?;
         spawn_move(app, control.clone(), lease, config)?;
         status(&control)

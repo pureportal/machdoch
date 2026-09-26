@@ -222,6 +222,7 @@ async function start() {
           <div className="min-h-0 flex-1">
             {visible && (
               <MediaStudio
+                onOpenPoseChat={() => undefined}
                 providerStatuses={[]}
                 workspaceRoot={null}
                 onOpenProviderSettings={() => undefined}

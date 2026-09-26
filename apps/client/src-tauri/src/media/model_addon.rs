@@ -697,8 +697,15 @@ fn detect_lora_architecture(header: &ParsedSafetensorsHeader) -> (Option<String>
 
     let krea_query = lora_pair_dimensions(header, ".attn.wq").contains(&(6_144, 6_144));
     let krea_key = lora_pair_dimensions(header, ".attn.wk").contains(&(6_144, 1_536));
-    let krea_namespace = has_lora_key_fragment(header, "diffusion_model.blocks.");
+    let krea_namespace = has_lora_key_fragment(header, "diffusion_model.blocks.")
+        || has_lora_key_fragment(header, "base_model.model.blocks.");
     if krea_namespace && krea_query && krea_key {
+        return (Some("krea-2".to_string()), "high");
+    }
+    let krea_diffusers_namespace = has_lora_key_fragment(header, "transformer.transformer_blocks.");
+    let krea_diffusers_query = lora_pair_dimensions(header, ".attn.to_q").contains(&(6_144, 6_144));
+    let krea_diffusers_key = lora_pair_dimensions(header, ".attn.to_k").contains(&(6_144, 1_536));
+    if krea_diffusers_namespace && krea_diffusers_query && krea_diffusers_key {
         return (Some("krea-2".to_string()), "high");
     }
 
@@ -2414,6 +2421,59 @@ mod tests {
         assert_eq!(inspection.detected_architecture.as_deref(), Some("krea-2"));
         assert_eq!(inspection.architecture_confidence, "high");
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn detects_diffusers_krea_2_lora_without_architecture_metadata() {
+        let path = temp_path("krea-2-diffusers-lora");
+        write_safetensors(
+            &path,
+            serde_json::json!({
+                "transformer.transformer_blocks.0.attn.to_q.lora_A.weight": {
+                    "dtype": "F32", "shape": [2, 6144], "data_offsets": [0, 49152]
+                },
+                "transformer.transformer_blocks.0.attn.to_q.lora_B.weight": {
+                    "dtype": "F32", "shape": [6144, 2], "data_offsets": [49152, 98304]
+                },
+                "transformer.transformer_blocks.0.attn.to_k.lora_A.weight": {
+                    "dtype": "F32", "shape": [2, 6144], "data_offsets": [98304, 147456]
+                },
+                "transformer.transformer_blocks.0.attn.to_k.lora_B.weight": {
+                    "dtype": "F32", "shape": [1536, 2], "data_offsets": [147456, 159744]
+                }
+            }),
+            &vec![0; 159744],
+        );
+        let inspection = inspect(path.to_string_lossy().as_ref()).unwrap();
+        assert_eq!(inspection.detected_architecture.as_deref(), Some("krea-2"));
+        assert_eq!(inspection.architecture_confidence, "high");
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn detects_peft_krea_2_lora_without_architecture_metadata() {
+        let path = temp_path("krea-2-peft-lora");
+        write_safetensors(
+            &path,
+            serde_json::json!({
+                "base_model.model.blocks.0.attn.wq.lora_A.weight": {
+                    "dtype": "F32", "shape": [2, 6144], "data_offsets": [0, 49152]
+                },
+                "base_model.model.blocks.0.attn.wq.lora_B.weight": {
+                    "dtype": "F32", "shape": [6144, 2], "data_offsets": [49152, 98304]
+                },
+                "base_model.model.blocks.0.attn.wk.lora_A.weight": {
+                    "dtype": "F32", "shape": [2, 6144], "data_offsets": [98304, 147456]
+                },
+                "base_model.model.blocks.0.attn.wk.lora_B.weight": {
+                    "dtype": "F32", "shape": [1536, 2], "data_offsets": [147456, 159744]
+                }
+            }),
+            &vec![0; 159744],
+        );
+        let inspection = inspect(path.to_string_lossy().as_ref()).unwrap();
+        assert_eq!(inspection.detected_architecture.as_deref(), Some("krea-2"));
+        fs::remove_file(path).unwrap();
     }
 
     #[test]

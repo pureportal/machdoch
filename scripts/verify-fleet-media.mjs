@@ -116,6 +116,21 @@ try {
   });
   await studio.getByRole("button", { name: "Close Civitai" }).click();
   await studio.getByRole("button", { name: "Advanced", exact: true }).click();
+  if (!native) {
+    await studio.getByRole("button", { name: "AI assistant" }).click();
+    await studio
+      .getByRole("textbox", { name: "Message the flow assistant" })
+      .fill("Add an image output");
+    await studio.getByRole("button", { name: "Send", exact: true }).click();
+    await studio.getByText("The flow is ready.").waitFor();
+    assert(
+      fixture.calls.some(
+        (call) =>
+          call.command === "run_media_flow_agent" &&
+          call.args.request.prompt === "Add an image output",
+      ),
+    );
+  }
   await page.screenshot({ path: path.join(output, "advanced.png") });
   await studio.getByRole("button", { name: "Basic", exact: true }).click();
   if (!native) {

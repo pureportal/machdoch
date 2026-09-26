@@ -608,7 +608,7 @@ export const createImageToVideoFlow = ({
       resolution: settings?.resolution ?? "quality-640",
       width: settings?.width ?? null,
       height: settings?.height ?? null,
-      generateAudio: false,
+      generateAudio: videoModelId === "local:minimax-h3-ref2va",
       transparentBackground,
       loopMode,
       fps: settings?.fps ?? 16,
@@ -798,7 +798,7 @@ export const createGeneratedLoopVideoFlow = ({
       resolution: settings?.resolution ?? "quality-640",
       width: settings?.width ?? null,
       height: settings?.height ?? null,
-      generateAudio: false,
+      generateAudio: settings?.modelId === "local:minimax-h3-ref2va",
       transparentBackground: settings?.transparentBackground ?? true,
       loopMode: settings?.loopMode ?? "seamless",
       fps: settings?.fps ?? 16,
@@ -1794,9 +1794,11 @@ const readTaskSeed = (
   const seedEdge = seedEdges[0]!;
   const sourceNode = flow.nodes.find((node) => node.id === seedEdge.fromNodeId);
   const seed = sourceNode?.config.seed;
+  if (sourceNode?.type !== "source.seed" || seedEdge.fromPortId !== "seed") {
+    return undefined;
+  }
+  if (seed == null) return null;
   if (
-    sourceNode?.type !== "source.seed" ||
-    seedEdge.fromPortId !== "seed" ||
     typeof seed !== "number" ||
     !Number.isSafeInteger(seed) ||
     seed < 0
@@ -3689,6 +3691,7 @@ export const compileMediaFlow = ({
     const ltxVideo = videoModel?.architecture === "ltx-video";
     const framepackVideo = videoModel?.architecture === "framepack-i2v";
     const hunyuanVideo15 = videoModel?.architecture === "hunyuan-video-1.5-i2v";
+    const minimaxH3 = videoModel?.architecture === "minimax-h3-ref2va";
     const sameEndpointSource =
       firstFrames[0] !== undefined &&
       lastFrames[0] !== undefined &&
@@ -3699,8 +3702,14 @@ export const compileMediaFlow = ({
       (node) => node.type === "operation.video-composite",
     );
     for (const invalid of [
-      config.generateAudio !== false
-        ? "The local video adapter does not generate synchronized audio; disable audio."
+      config.generateAudio !== minimaxH3
+        ? "Audio setting does not match the selected video model."
+        : null,
+      minimaxH3 && (config.transparentBackground || config.loopMode !== "none" || hasVideoComposite)
+        ? "MiniMax H3 requires opaque, non-looping video."
+        : null,
+      minimaxH3 && !sameEndpointSource
+        ? "MiniMax H3 requires one reference image."
         : null,
       hasVideoComposite && config.transparentBackground !== true
         ? "Animated background compositing requires transparent foreground extraction."
@@ -3715,11 +3724,13 @@ export const compileMediaFlow = ({
         : null,
       typeof config.numFrames !== "number" ||
       !Number.isInteger(config.numFrames) ||
-      config.numFrames < (ltxVideo ? 9 : 17) ||
+      config.numFrames < (minimaxH3 ? 124 : ltxVideo ? 9 : 17) ||
       config.numFrames >
-        (ltxVideo ? 257 : framepackVideo ? 129 : hunyuanVideo15 ? 121 : 33) ||
-      (config.numFrames - 1) % (ltxVideo ? 8 : 4) !== 0
-        ? ltxVideo
+        (minimaxH3 ? 362 : ltxVideo ? 257 : framepackVideo ? 129 : hunyuanVideo15 ? 121 : 33) ||
+      (config.numFrames - (minimaxH3 ? 5 : 1)) % (minimaxH3 ? 17 : ltxVideo ? 8 : 4) !== 0
+        ? minimaxH3
+          ? "MiniMax H3 source frames must be 124–362 in the required 17n+5 form."
+          : ltxVideo
           ? "LTX-Video source frames must be 9–257 in the required 8k+1 form."
           : `${framepackVideo ? "FramePack" : hunyuanVideo15 ? "HunyuanVideo 1.5" : "WAN"} source frames must be 17–${framepackVideo ? 129 : hunyuanVideo15 ? 121 : 33} in the required 4k+1 form.`
         : null,
@@ -3728,6 +3739,9 @@ export const compileMediaFlow = ({
       config.fps < 1 ||
       config.fps > 60
         ? "Playback rate must be an integer from 1 through 60 fps."
+        : null,
+      minimaxH3 && config.fps !== 24
+        ? "MiniMax H3 requires 24 fps."
         : null,
       mediaVideoDimensionsError(config),
       !["preview-512", "quality-640", "quality-768"].includes(

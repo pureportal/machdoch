@@ -23,6 +23,7 @@ pub(super) const BASE_MODELS: &[(&str, &str)] = &[
     ("Flux.1 Krea", "flux-1"),
     ("Flux.2 Klein 4B", "flux-2"),
     ("Krea 2", "krea-2"),
+    ("Qwen 2", "qwen-image-2.1"),
     ("Wan Video 2.2 TI2V-5B", "wan-2.2-ti2v"),
     ("LTXV", "ltx-video"),
 ];
@@ -54,7 +55,12 @@ pub(super) fn supports_resource(model_type: &str, base_model: Option<&str>) -> b
     if kind == "checkpoint" {
         return matches!(
             architecture,
-            "stable-diffusion-1" | "stable-diffusion-xl" | "pony" | "krea-2" | "wan-2.2-ti2v"
+            "stable-diffusion-1"
+                | "stable-diffusion-xl"
+                | "pony"
+                | "krea-2"
+                | "qwen-image-2.1"
+                | "wan-2.2-ti2v"
         );
     }
     if matches!(architecture, "wan-2.2-ti2v" | "ltx-video") {
@@ -63,6 +69,16 @@ pub(super) fn supports_resource(model_type: &str, base_model: Option<&str>) -> b
     model_addon::capabilities_for_model("local-diffusers", Some(architecture))
         .iter()
         .any(|capability| capability.kind == kind)
+}
+
+pub(super) fn supports_catalog_resource(
+    model_name: &str,
+    model_type: &str,
+    base_model: Option<&str>,
+) -> bool {
+    supports_resource(model_type, base_model)
+        && (!base_model.is_some_and(|value| value.eq_ignore_ascii_case("Qwen 2"))
+            || model_name.to_ascii_lowercase().contains("2.1"))
 }
 
 pub(super) fn supports_version_type(base_model_type: Option<&str>) -> bool {
@@ -97,6 +113,7 @@ mod tests {
             ("NoobAI", "stable-diffusion-xl"),
             ("Flux.1 Krea", "flux-1"),
             ("Krea 2", "krea-2"),
+            ("Qwen 2", "qwen-image-2.1"),
             ("SD 3.5 Large", "stable-diffusion-3"),
             ("Wan Video 2.2 TI2V-5B", "wan-2.2-ti2v"),
             ("LTXV", "ltx-video"),
@@ -127,6 +144,16 @@ mod tests {
         assert!(supports_resource(
             "Checkpoint",
             Some("Wan Video 2.2 TI2V-5B")
+        ));
+        assert!(supports_catalog_resource(
+            "Qwen Image 2.1",
+            "Checkpoint",
+            Some("Qwen 2")
+        ));
+        assert!(!supports_catalog_resource(
+            "Qwen Image 2.0",
+            "Checkpoint",
+            Some("Qwen 2")
         ));
         for name in ["LTXV", "Flux.2 Klein 4B"] {
             assert!(supports_resource("LORA", Some(name)), "{name}");

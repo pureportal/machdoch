@@ -170,12 +170,37 @@ const HUNYUAN_VIDEO_15_DIMENSIONS: Readonly<
   },
 };
 
+const MINIMAX_H3_DIMENSIONS: Readonly<
+  Record<MediaVideoResolution, Record<MediaVideoAspectRatio, readonly [number, number]>>
+> = {
+  "preview-512": {
+    "1:1": [512, 512],
+    "16:9": [512, 288],
+    "9:16": [288, 512],
+    "21:9": [512, 224],
+  },
+  "quality-640": {
+    "1:1": [576, 576],
+    "16:9": [640, 384],
+    "9:16": [384, 640],
+    "21:9": [640, 288],
+  },
+  "quality-768": {
+    "1:1": [768, 768],
+    "16:9": [1_024, 576],
+    "9:16": [576, 1_024],
+    "21:9": [1_152, 512],
+  },
+};
+
 export const resolveMediaVideoDimensions = (
   aspectRatio: MediaVideoAspectRatio,
   resolution: MediaVideoResolution,
   architecture?: MediaLocalModelArchitecture | null,
 ): readonly [number, number] =>
-  architecture === "hunyuan-video-1.5-i2v"
+  architecture === "minimax-h3-ref2va"
+    ? MINIMAX_H3_DIMENSIONS[resolution][aspectRatio]
+    : architecture === "hunyuan-video-1.5-i2v"
     ? HUNYUAN_VIDEO_15_DIMENSIONS[resolution][aspectRatio]
     : architecture === "ltx-video" && resolution === "quality-768"
       ? LTX_VIDEO_768_DIMENSIONS[aspectRatio]
@@ -184,7 +209,9 @@ export const resolveMediaVideoDimensions = (
 export const resolveMediaVideoFrameContract = (
   architecture?: MediaLocalModelArchitecture | null,
 ): MediaVideoFrameContract =>
-  architecture === "ltx-video"
+  architecture === "minimax-h3-ref2va"
+    ? { minimum: 124, maximum: 362, stride: 17 }
+    : architecture === "ltx-video"
     ? { minimum: 9, maximum: 257, stride: 8 }
     : {
         minimum: 17,
@@ -208,7 +235,7 @@ export const isMediaVideoFrameCountValid = (
   return (
     numFrames >= contract.minimum &&
     numFrames <= contract.maximum &&
-    (numFrames - 1) % contract.stride === 0
+    (numFrames - contract.minimum) % contract.stride === 0
   );
 };
 
@@ -222,6 +249,16 @@ export const resolveMediaVideoExecutionSettings = (
   config: Record<string, unknown>,
   architecture?: MediaLocalModelArchitecture | null,
 ): MediaVideoExecutionSettings => {
+  if (architecture === "minimax-h3-ref2va") {
+    return {
+      numInferenceSteps:
+        typeof config.numInferenceSteps === "number"
+          ? config.numInferenceSteps
+          : 10,
+      guidanceScale: 1,
+      modelManaged: true,
+    };
+  }
   if (architecture === "ltx-video") {
     return {
       numInferenceSteps: 8,
@@ -265,7 +302,15 @@ export const resolveMediaVideoQualityPresetSettings = (
   );
   return {
     ...preset.settings,
-    numInferenceSteps: execution.numInferenceSteps,
+    numInferenceSteps:
+      architecture === "minimax-h3-ref2va"
+        ? 10
+        : execution.numInferenceSteps,
+    numFrames:
+      architecture === "minimax-h3-ref2va"
+        ? 124
+        : preset.settings.numFrames,
+    fps: architecture === "minimax-h3-ref2va" ? 24 : preset.settings.fps,
     guidanceScale:
       architecture === "framepack-i2v" ? 9 : execution.guidanceScale,
   };
@@ -523,7 +568,8 @@ export const fitMediaVideoDuration = (
     fps <= 0 ||
     fps > 60 ||
     !["none", "ping-pong", "seamless", "crossfade"].includes(loopMode) ||
-    (architecture === "hunyuan-video-1.5-i2v" && loopMode === "seamless")
+    (architecture === "hunyuan-video-1.5-i2v" && loopMode === "seamless") ||
+    (architecture === "minimax-h3-ref2va" && loopMode !== "none")
   ) {
     return null;
   }
@@ -580,6 +626,7 @@ export const summarizeMediaVideoDelivery = (
       String(loopMode),
     ) ||
     (architecture === "hunyuan-video-1.5-i2v" && loopMode === "seamless") ||
+    (architecture === "minimax-h3-ref2va" && loopMode !== "none") ||
     typeof sourceFrameCount !== "number" ||
     !Number.isInteger(sourceFrameCount) ||
     !isMediaVideoFrameCountValid(sourceFrameCount, architecture) ||

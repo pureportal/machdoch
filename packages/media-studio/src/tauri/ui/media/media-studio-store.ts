@@ -244,6 +244,7 @@ const normalizeVideoRecipeSettings = (
     [
       "local:framepack-i2v-hy-13b",
       "local:hunyuan-video-1.5-i2v-step-distilled",
+      "local:minimax-h3-ref2va",
       "local:ltx-video-0.9.8-13b-distilled-fp8",
       "local:ltx-video-0.9.8-2b-distilled-fp8",
       "local:wan2.2-ti2v-5b",
@@ -879,7 +880,7 @@ export const normalizeMediaStudioState = (value: unknown): MediaStudioState => {
     version: 5,
     activeSection: normalizeOneOf<MediaStudioSection>(
       value.activeSection,
-      ["generate", "flow", "library", "runs"],
+      ["generate", "flow", "train", "library", "runs"],
       DEFAULT_MEDIA_STUDIO_STATE.activeSection,
     ),
     target: normalizeOneOf<MediaGenerationTarget>(

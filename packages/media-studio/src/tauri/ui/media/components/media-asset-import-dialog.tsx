@@ -141,6 +141,7 @@ export const MediaAssetImportDialog = ({
   onClose,
 }: MediaAssetImportDialogProps): JSX.Element => {
   const [path, setPath] = useState("");
+  const [hostPath, setHostPath] = useState("");
   const [importType, setImportType] = useState<MediaAssetImportType | null>(
     null,
   );
@@ -567,6 +568,32 @@ export const MediaAssetImportDialog = ({
               ) : null}
             </button>
 
+            {isRemoteMedia() ? (
+              <form
+                className="flex gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const selectedPath = hostPath.trim();
+                  if (selectedPath) selectPath(selectedPath);
+                }}
+              >
+                <input
+                  aria-label="Connected client file path"
+                  value={hostPath}
+                  disabled={loading}
+                  onChange={(event) => setHostPath(event.target.value)}
+                  className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                />
+                <button
+                  type="submit"
+                  disabled={loading || !hostPath.trim()}
+                  className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 disabled:opacity-50"
+                >
+                  Use file
+                </button>
+              </form>
+            ) : null}
+
             {path ? (
               <fieldset>
                 <legend className="mb-2 text-sm font-medium text-slate-200">
@@ -651,12 +678,13 @@ export const MediaAssetImportDialog = ({
                         <option value="">Select base model</option>
                         {MEDIA_MODEL_ARCHITECTURES.filter(
                           (item) =>
-                            importIsAddon ||
-                            ![
-                              "ltx-video",
-                              "framepack-i2v",
-                              "hunyuan-video-1.5-i2v",
-                            ].includes(item.value),
+                            importIsAddon
+                              ? item.value !== "qwen-image-2.1"
+                              : ![
+                                  "ltx-video",
+                                  "framepack-i2v",
+                                  "hunyuan-video-1.5-i2v",
+                                ].includes(item.value),
                         ).map((item) => (
                           <option key={item.value} value={item.value}>
                             {item.label}
@@ -664,33 +692,46 @@ export const MediaAssetImportDialog = ({
                         ))}
                       </select>
                     </label>
-                    <label className="space-y-1 text-xs text-slate-400">
-                      <span>License</span>
-                      <input
-                        value={licenseName}
-                        onChange={(event) => setLicenseName(event.target.value)}
-                        className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
-                      />
-                    </label>
-                    <label className="space-y-1 text-xs text-slate-400">
-                      <span>Commercial use</span>
-                      <select
-                        value={commercialUse}
-                        onChange={(event) =>
-                          setCommercialUse(
-                            event.target.value as
-                              | ""
-                              | "allowed"
-                              | "review-required",
-                          )
-                        }
-                        className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
+                    {architecture === "qwen-image-2.1" && !importIsAddon ? (
+                      <a
+                        href="https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-sky-300 underline sm:col-span-2"
                       >
-                        <option value="">Not set</option>
-                        <option value="allowed">Allowed</option>
-                        <option value="review-required">Review required</option>
-                      </select>
-                    </label>
+                        Qwen Research License · Commercial use requires a separate license
+                      </a>
+                    ) : (
+                      <>
+                        <label className="space-y-1 text-xs text-slate-400">
+                          <span>License</span>
+                          <input
+                            value={licenseName}
+                            onChange={(event) => setLicenseName(event.target.value)}
+                            className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
+                          />
+                        </label>
+                        <label className="space-y-1 text-xs text-slate-400">
+                          <span>Commercial use</span>
+                          <select
+                            value={commercialUse}
+                            onChange={(event) =>
+                              setCommercialUse(
+                                event.target.value as
+                                  | ""
+                                  | "allowed"
+                                  | "review-required",
+                              )
+                            }
+                            className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
+                          >
+                            <option value="">Not set</option>
+                            <option value="allowed">Allowed</option>
+                            <option value="review-required">Review required</option>
+                          </select>
+                        </label>
+                      </>
+                    )}
                   </>
                 ) : null}
                 <label className="space-y-1 text-xs text-slate-400 sm:col-span-2">

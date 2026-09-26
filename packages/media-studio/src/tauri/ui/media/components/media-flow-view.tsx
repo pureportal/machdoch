@@ -70,6 +70,7 @@ import type {
   MediaCompiledPlan,
   MediaAssetCategory,
   MediaAssetRecord,
+  MediaAssetImportResult,
   MediaCapability,
   MediaFlow,
   MediaFlowHead,
@@ -90,6 +91,9 @@ import type {
   MediaPortDataType,
   MediaRunDetail,
 } from "../../../../core/media/contracts.js";
+import type { MediaPoseMap, MediaSavedPoseScene } from "../../../../core/media/pose-map.js";
+import { MediaPoseWorkspace } from "./media-pose-workspace";
+import { invoke } from "../media-platform";
 import { listSelectableMediaModels } from "../../../../core/media/model-library.js";
 import {
   getMediaReferenceConditioningCapabilities,
@@ -208,6 +212,9 @@ import {
 } from "../../flow/flow-theme";
 
 interface MediaFlowViewProps {
+  onGeneratePoseChat: (map: MediaPoseMap | null) => void | Promise<void>;
+  savedPoseScenes?: readonly MediaSavedPoseScene[];
+  onRenamePoseScene?: (id: string, title: string) => void;
   workspaceRoot?: string | null;
   flow: MediaFlow;
   layout: MediaFlowLayout;
@@ -219,9 +226,10 @@ interface MediaFlowViewProps {
   assets?: readonly MediaAssetRecord[];
   onLayoutChange: (layout: MediaFlowLayout) => void;
   onFlowVariablesChange?: (flow: MediaFlow) => void;
+  onPoseAssetsCreated?: (assets: MediaAssetRecord[]) => void;
   onTemplateApply?: (result: InstantiateMediaFlowTemplateResult) => void;
   onNodeConfigChange: (nodeId: string, fieldId: string, value: unknown) => void;
-  onNodeConfigPatch?: (
+  onNodeConfigPatch: (
     nodeId: string,
     values: Readonly<Record<string, unknown>>,
   ) => void;
@@ -1265,7 +1273,39 @@ const NodeFieldEditor = ({
       );
       break;
     case "number":
-      control = (
+      control = node.type === "source.seed" && field.id === "seed" ? (
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <select
+            id={controlId}
+            value={value == null ? "random" : "fixed"}
+            onChange={(event) =>
+              onChange(field.id, event.target.value === "random" ? null : 0)
+            }
+            className={cn(FIELD_CONTROL_CLASS, "h-9 rounded-md border px-3")}
+          >
+            <option value="random">Random</option>
+            <option value="fixed">Fixed</option>
+          </select>
+          {value != null ? (
+            <Input
+              aria-label="Seed value"
+              type="number"
+              value={typeof value === "number" ? value : ""}
+              min={field.min}
+              max={field.max}
+              step={field.step}
+              aria-invalid={issue !== null}
+              aria-describedby={describedBy}
+              onChange={(event) => {
+                if (event.target.value !== "") {
+                  onChange(field.id, event.target.valueAsNumber);
+                }
+              }}
+              className={FIELD_CONTROL_CLASS}
+            />
+          ) : null}
+        </div>
+      ) : (
         <Input
           id={controlId}
           type="number"
@@ -2545,6 +2585,9 @@ const VideoKeyframeReviewPanel = ({
 };
 
 const NodeInspector = ({
+  onGeneratePoseChat,
+  savedPoseScenes,
+  onRenamePoseScene,
   node,
   run,
   flow,
@@ -2554,6 +2597,7 @@ const NodeInspector = ({
   assets,
   assetMetadata,
   categories,
+  onPoseAssetsCreated,
   onNodeConfigChange,
   onNodeConfigPatch,
   onNodeLabelChange,
@@ -2564,6 +2608,9 @@ const NodeInspector = ({
   onNodeRemove,
   onClose,
 }: {
+  onGeneratePoseChat: (map: MediaPoseMap | null) => void | Promise<void>;
+  savedPoseScenes: readonly MediaSavedPoseScene[];
+  onRenamePoseScene?: (id: string, title: string) => void;
   node: MediaFlowNode;
   run: MediaRunDetail | null;
   flow: MediaFlow;
@@ -2573,8 +2620,9 @@ const NodeInspector = ({
   assets: readonly MediaAssetRecord[];
   assetMetadata: Readonly<Record<string, MediaGenerationAssetMetadata>>;
   categories: readonly MediaAssetCategory[];
+  onPoseAssetsCreated: (assets: MediaAssetRecord[]) => void;
   onNodeConfigChange: (nodeId: string, fieldId: string, value: unknown) => void;
-  onNodeConfigPatch?: (
+  onNodeConfigPatch: (
     nodeId: string,
     values: Readonly<Record<string, unknown>>,
   ) => void;
@@ -2596,6 +2644,9 @@ const NodeInspector = ({
     groups[0] ?? "Basic",
   );
   const [nodeLabelDraft, setNodeLabelDraft] = useState(node.label);
+  const [posePresetPending, setPosePresetPending] = useState(false);
+  const latestFlow = useRef(flow);
+  latestFlow.current = flow;
   const [removeReviewOpen, setRemoveReviewOpen] = useState(false);
   useEffect(() => {
     setActiveGroup(groups[0] ?? "Basic");
@@ -2635,6 +2686,32 @@ const NodeInspector = ({
       binding.modality === "image" &&
       outgoing.some((edge) => edge.toNodeId === binding.nodeId),
   );
+  const poseTargetNode = node.type === "source.image"
+    ? flow.edges.flatMap((edge) => edge.fromNodeId === node.id && edge.fromPortId === "image" && edge.toPortId === "image"
+      ? flow.nodes.filter((target) => target.id === edge.toNodeId &&
+        (target.type === "task.generate-image" || target.type === "task.edit-image"))
+      : [])[0]
+    : undefined;
+  const poseTargetModel = imageTaskBinding?.model ??
+    models.find((model) => model.id === poseTargetNode?.config.modelId) ?? null;
+  const poseTargetRatio = poseTargetNode?.config.aspectRatio;
+  const poseAspectRatio: MediaPoseMap["aspectRatio"] =
+    poseTargetRatio === "4:5" || poseTargetRatio === "16:9" || poseTargetRatio === "9:16"
+      ? poseTargetRatio
+      : "1:1";
+  const createInspectorPoseAsset = async (map: MediaPoseMap): Promise<void> => {
+    const flowAtSelection = flow;
+    setPosePresetPending(true);
+    try {
+      const result = await invoke<MediaAssetImportResult>("media_create_pose_map", { map });
+      onPoseAssetsCreated([result.asset]);
+      if (latestFlow.current === flowAtSelection) {
+        onNodeConfigChange(node.id, "assetId", result.asset.id);
+      }
+    } finally {
+      setPosePresetPending(false);
+    }
+  };
   const referenceRoleModel =
     node.type === "source.image"
       ? (imageTaskBinding?.model ?? null)
@@ -2923,7 +3000,7 @@ const NodeInspector = ({
       <section className="mt-5" aria-label="Node settings">
         {definition ? (
           <>
-            {node.type === "task.generate-video" && onNodeConfigPatch ? (
+            {node.type === "task.generate-video" ? (
               <>
                 <VideoKeyframeReviewPanel
                   firstFrame={
@@ -2947,9 +3024,7 @@ const NodeInspector = ({
                 aria-label="Node setting complexity"
                 className={cn(
                   "grid gap-1 rounded-lg border border-slate-800 bg-slate-900/45 p-1",
-                  node.type === "task.generate-video" &&
-                    onNodeConfigPatch &&
-                    "mt-4",
+                  node.type === "task.generate-video" && "mt-4",
                   groups.length === 2 ? "grid-cols-2" : "grid-cols-3",
                 )}
               >
@@ -3014,13 +3089,47 @@ const NodeInspector = ({
                   onChange={(fieldId, value) =>
                     onNodeConfigChange(node.id, fieldId, value)
                   }
-                  onPatch={
-                    onNodeConfigPatch
-                      ? (values) => onNodeConfigPatch(node.id, values)
-                      : undefined
-                  }
+                  onPatch={(values) => onNodeConfigPatch(node.id, values)}
                 />
               ))}
+              {node.type === "source.image" && node.config.referenceRole === "pose" ? (
+                <>
+                  <MediaPoseWorkspace
+                    aspectRatio={poseAspectRatio}
+                    savedScenes={savedPoseScenes}
+                    onRenamePoseScene={onRenamePoseScene}
+                    onLoadScene={(scene) => {
+                      if (poseTargetNode) onNodeConfigChange(poseTargetNode.id, "aspectRatio", scene.aspectRatio);
+                    }}
+                    disabled={posePresetPending}
+                    guidance={{
+                      strength: typeof poseTargetNode?.config.poseStrength === "number" ? poseTargetNode.config.poseStrength : 1,
+                      start: typeof poseTargetNode?.config.poseStart === "number" ? poseTargetNode.config.poseStart : 0,
+                      end: typeof poseTargetNode?.config.poseEnd === "number" ? poseTargetNode.config.poseEnd : 1,
+                    }}
+                    onGuidanceChange={(guidance) => {
+                      if (!poseTargetNode) return;
+                      onNodeConfigPatch(poseTargetNode.id, {
+                        poseStrength: guidance.strength,
+                        poseStart: guidance.start,
+                        poseEnd: guidance.end,
+                      });
+                    }}
+                    onGenerate={onGeneratePoseChat}
+                    onApply={createInspectorPoseAsset}
+                  />
+                  {!poseTargetNode ? <p className="text-xs text-amber-300">Connect this pose source to an image task.</p> :
+                    !poseTargetModel ? <p className="text-xs text-amber-300">Choose a local Stable Diffusion model for this image task.</p> :
+                    poseTargetModel && (poseTargetModel.runtimeReadiness !== "ready" || !poseTargetModel.capabilities.includes("pose-control")) ?
+                      <p className="text-xs text-amber-300">{poseTargetModel.runtimeReadiness !== "ready"
+                        ? "Verify this model in Assets to use a pose."
+                        : poseTargetModel.architecture === "stable-diffusion-2"
+                        ? "SD 2 needs a matching OpenPose ControlNet installed manually."
+                        : ["stable-diffusion-1", "stable-diffusion-xl", "pony"].includes(poseTargetModel.architecture ?? "")
+                          ? "Install OpenPose for this model in Basic."
+                          : "Choose a local Stable Diffusion model to use this pose."}</p> : null}
+                </>
+              ) : null}
             </div>
           </>
         ) : (
@@ -3732,6 +3841,9 @@ const FlowPortabilityPanel = ({
 };
 
 export const MediaFlowView = ({
+  onGeneratePoseChat,
+  savedPoseScenes = [],
+  onRenamePoseScene,
   workspaceRoot = null,
   flow,
   layout,
@@ -3743,6 +3855,7 @@ export const MediaFlowView = ({
   assets = [],
   onLayoutChange,
   onFlowVariablesChange = () => undefined,
+  onPoseAssetsCreated = () => undefined,
   onTemplateApply = () => undefined,
   onNodeConfigChange,
   onNodeConfigPatch,
@@ -5995,6 +6108,7 @@ export const MediaFlowView = ({
           addons={addons}
           assets={assets}
           onApply={onFlowVariablesChange}
+          onPoseAssetsCreated={onPoseAssetsCreated}
           onClose={() => setAgentPanelOpen(false)}
         />
 
@@ -6021,6 +6135,9 @@ export const MediaFlowView = ({
           />
         ) : selectedNode ? (
           <NodeInspector
+            onGeneratePoseChat={onGeneratePoseChat}
+            savedPoseScenes={savedPoseScenes}
+            onRenamePoseScene={onRenamePoseScene}
             key={`${flow.id}:${selectedNode.id}`}
             run={visualRunOverlayProjection ? runOverlay : null}
             node={selectedNode}
@@ -6031,6 +6148,7 @@ export const MediaFlowView = ({
             assets={assets}
             assetMetadata={assetMetadata}
             categories={categories}
+            onPoseAssetsCreated={onPoseAssetsCreated}
             onNodeConfigChange={onNodeConfigChange}
             onNodeConfigPatch={onNodeConfigPatch}
             onNodeLabelChange={onNodeLabelChange}

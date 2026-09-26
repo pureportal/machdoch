@@ -104,11 +104,10 @@ fn execute_started(
     let seed_step = loop_node
         .map(|node| config_number(node, "seedStep", 1.0) as u64)
         .unwrap_or(1);
-    let base_seed = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| e.to_string())?
-        .as_millis() as u64
-        % u32::MAX as u64;
+    let mut seed_bytes = [0_u8; 8];
+    getrandom::fill(&mut seed_bytes)
+        .map_err(|error| format!("failed to generate workflow seed: {error}"))?;
+    let base_seed = u64::from_le_bytes(seed_bytes) & MAX_IMAGE_GENERATION_SEED;
     let mut values = Values::new();
     let mut completed = HashSet::new();
     let mut feedback = String::new();
@@ -160,7 +159,10 @@ fn execute_started(
                 "source.seed" => {
                     output_port = "seed";
                     Some(WorkflowValue::Seed(
-                        config_number(node, "seed", base_seed as f64) as u64,
+                        node.config
+                            .get("seed")
+                            .and_then(Value::as_u64)
+                            .unwrap_or(base_seed),
                     ))
                 }
                 "source.image" => {
@@ -195,7 +197,7 @@ fn execute_started(
                             .unwrap_or(base_seed),
                     }
                     .wrapping_add(u64::from(iteration - 1) * seed_step)
-                        % u32::MAX as u64;
+                        & MAX_IMAGE_GENERATION_SEED;
                     if node.r#type == "task.generate-prompt" {
                         let mut config = Value::Object(node.config.clone());
                         config["prompt"] = json!(prompt);

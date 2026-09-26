@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, Send, X } from "lucide-react";
 import type {
   MediaAssetRecord,
+  MediaAssetImportResult,
   MediaFlow,
   MediaModelAddonDescriptor,
   MediaModelDescriptor,
@@ -12,7 +13,7 @@ import type {
   MediaFlowAgentResult,
 } from "../../../../core/media/flow-agent.js";
 import { createMediaFlowDocumentDigest } from "../../../../core/media/canonicalize.js";
-import { hasMediaHost, invoke, isRemoteMedia } from "../media-platform";
+import { hasMediaHost, invoke } from "../media-platform";
 import { Button } from "../../components/ui/button";
 import { Textarea } from "../../components/ui/textarea";
 
@@ -24,6 +25,7 @@ interface MediaFlowAgentPanelProps {
   addons: readonly MediaModelAddonDescriptor[];
   assets: readonly MediaAssetRecord[];
   onApply: (flow: MediaFlow) => void;
+  onPoseAssetsCreated: (assets: MediaAssetRecord[]) => void;
   onClose: () => void;
 }
 
@@ -47,7 +49,7 @@ export function MediaFlowAgentPanel(props: MediaFlowAgentPanelProps) {
   useEffect(() => {
     end.current?.scrollIntoView?.({ block: "nearest" });
   }, [messages, pending, open]);
-  const supported = hasMediaHost() && !isRemoteMedia();
+  const supported = hasMediaHost();
 
   const submit = async () => {
     const content = prompt.trim();
@@ -118,7 +120,33 @@ export function MediaFlowAgentPanel(props: MediaFlowAgentPanelProps) {
           "The flow changed while the assistant was working. Send your request again to use the latest flow.",
         );
       }
-      if (result.flow) latest.current.onApply(result.flow);
+      if (!Array.isArray(result.poseMaps))
+        throw new Error("The flow assistant returned an invalid pose response. Send your request again.");
+      if (result.flow) {
+        const generated = await Promise.all(
+          result.poseMaps.map(async ({ id, map }) => ({
+            id,
+            asset: (await invoke<MediaAssetImportResult>("media_create_pose_map", { map })).asset,
+          })),
+        );
+        if (sequence !== requestSequence.current) return;
+        if (
+          latest.current.workspaceRoot !== workspaceRoot ||
+          createMediaFlowDocumentDigest(latest.current.flow) !== digest
+        ) {
+          throw new Error("The flow changed while the assistant was working. Send your request again to use the latest flow.");
+        }
+        if (generated.length) latest.current.onPoseAssetsCreated(generated.map((entry) => entry.asset));
+        const assetsById = new Map(generated.map((entry) => [`pose-map:${entry.id}`, entry.asset.id]));
+        latest.current.onApply({
+          ...result.flow,
+          nodes: result.flow.nodes.map((node) =>
+            node.type === "source.image" && assetsById.has(String(node.config.assetId ?? ""))
+              ? { ...node, config: { ...node.config, assetId: assetsById.get(String(node.config.assetId)) } }
+              : node,
+          ),
+        });
+      }
       setMessages((current) => [
         ...current,
         { role: "user", content },
@@ -191,7 +219,7 @@ export function MediaFlowAgentPanel(props: MediaFlowAgentPanelProps) {
       >
         {!supported ? (
           <p className="text-xs text-slate-400">
-            Open Media Studio in the desktop app to use the flow assistant.
+            Connect to a client to use the flow assistant.
           </p>
         ) : null}
         {error ? (

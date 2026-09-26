@@ -1,9 +1,12 @@
-diffusers==0.39.0
-transformers==5.13.0
+diffusers @ git+https://github.com/huggingface/diffusers.git@4295ee3ec58efa6577bc459e9b84ca3f63aa9a96
+transformers==5.17.0
 sentencepiece==0.2.2
 protobuf==7.35.1
 accelerate==1.14.0
 peft==0.19.1
+datasets==5.0.1
+bitsandbytes==0.50.2
+ftfy==6.3.1
 safetensors==0.8.0
 numpy==2.5.2
 Pillow==12.3.0

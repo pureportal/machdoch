@@ -35,6 +35,30 @@ def load_module(name):
 
 
 WORKER = load_module("media_diffusers_worker")
+
+
+class KreaLoraKeyTests(unittest.TestCase):
+    def test_comfy_lora_keys_map_to_diffusers_modules(self):
+        self.assertEqual(
+            WORKER._krea_lora_key("diffusion_model.blocks.0.attn.wq.lora_down.weight"),
+            "transformer.transformer_blocks.0.attn.to_q.lora_A.weight",
+        )
+        self.assertEqual(
+            WORKER._krea_lora_key("model.diffusion_model.blocks.0.attn.wk.lora_B.weight"),
+            "transformer.transformer_blocks.0.attn.to_k.lora_B.weight",
+        )
+        self.assertEqual(
+            WORKER._krea_lora_key("diffusion_model.txtfusion.refiner_blocks.0.attn.wo.lora_up.weight"),
+            "transformer.text_fusion.refiner_blocks.0.attn.to_out.0.lora_B.weight",
+        )
+
+    def test_peft_lora_keys_map_to_diffusers_modules(self):
+        self.assertEqual(
+            WORKER._krea_lora_key("base_model.model.blocks.0.attn.wq.lora_A.weight"),
+            "transformer.transformer_blocks.0.attn.to_q.lora_A.weight",
+        )
+
+
 IMAGE_ADDONS = load_module("media_image_addons")
 VIDEO_ADDONS = load_module("media_video_addons")
 

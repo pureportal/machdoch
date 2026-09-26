@@ -919,13 +919,21 @@ pub(crate) fn compile_remote_image_edit_flow(
     if seed_nodes.len() > 1 {
         return Err("remote image edits accept at most one seed source".to_string());
     }
-    if seed_nodes
+    let connected_seed = seed_nodes
         .first()
-        .is_some_and(|seed| has_exact_edge(&revision.flow, &seed.id, "seed", &task_node.id, "seed"))
-    {
+        .copied()
+        .filter(|seed| has_exact_edge(&revision.flow, &seed.id, "seed", &task_node.id, "seed"));
+    if connected_seed.is_some_and(|seed| {
+        seed.config
+            .get("seed")
+            .is_some_and(|value| !value.is_null())
+    }) {
         return Err("GPT Image 2.5 Sunburst does not support deterministic seeds".to_string());
     }
-    let expected_edge_count = source_nodes.len() + 2 + usize::from(subject_cutout_node.is_some());
+    let expected_edge_count = source_nodes.len()
+        + 2
+        + usize::from(subject_cutout_node.is_some())
+        + usize::from(connected_seed.is_some());
     let has_valid_output_path = subject_cutout_node.map_or_else(
         || {
             has_exact_edge(
@@ -3951,12 +3959,14 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
         }
         "source.seed" => {
             validate_config_keys(node, &["seed"])?;
-            let seed = node
-                .config
-                .get("seed")
+            let seed = node.config.get("seed").filter(|value| !value.is_null());
+            if seed.is_some_and(|value| value.as_u64().is_none()) {
+                return Err(format!("flow node {} requires an integer seed", node.id));
+            }
+            if seed
                 .and_then(Value::as_u64)
-                .ok_or_else(|| format!("flow node {} requires an integer seed", node.id))?;
-            if seed > 9_007_199_254_740_991 {
+                .is_some_and(|value| value > 9_007_199_254_740_991)
+            {
                 return Err(format!(
                     "flow node {} seed must be a JavaScript-safe non-negative integer",
                     node.id
@@ -4291,8 +4301,10 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
             );
             let framepack_video = model_id == "local:framepack-i2v-hy-13b";
             let hunyuan_video = model_id == "local:hunyuan-video-1.5-i2v-step-distilled";
+            let minimax_h3 = model_id == "local:minimax-h3-ref2va";
             if !framepack_video
                 && !hunyuan_video
+                && !minimax_h3
                 && !ltx_video
                 && model_id != "local:wan2.2-ti2v-5b"
                 && !model_id.starts_with(super::model_import::USER_MODEL_ID_PREFIX)
@@ -4315,9 +4327,10 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
             ] {
                 config_bool(node, key)?;
             }
-            if node.config.get("generateAudio").and_then(Value::as_bool) != Some(false)
+            if node.config.get("generateAudio").and_then(Value::as_bool) != Some(minimax_h3)
                 || (!framepack_video
                     && !hunyuan_video
+                    && !minimax_h3
                     && !ltx_video
                     && node
                         .config
@@ -4326,7 +4339,7 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                         != Some(true))
             {
                 return Err(format!(
-                    "flow node {} requires audio=false and any model-specific low-memory acknowledgement",
+                    "flow node {} has an invalid audio or low-memory setting",
                     node.id
                 ));
             }
@@ -4356,6 +4369,17 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                 .get("numFrames")
                 .and_then(Value::as_u64)
                 .ok_or_else(|| format!("flow node {} requires integer numFrames", node.id))?;
+            if minimax_h3
+                && (!(124..=362).contains(&num_frames) || (num_frames - 5) % 17 != 0)
+            {
+                return Err(format!(
+                    "flow node {} numFrames must be 124 through 362 in 17n+5 form",
+                    node.id
+                ));
+            }
+            if minimax_h3 && node.config.get("fps").and_then(Value::as_u64) != Some(24) {
+                return Err(format!("flow node {} MiniMax H3 requires 24 fps", node.id));
+            }
             if ltx_video && (!(9..=257).contains(&num_frames) || (num_frames - 1) % 8 != 0) {
                 return Err(format!(
                     "flow node {} numFrames must be between 9 and 257 in 8k+1 form",
@@ -4370,6 +4394,7 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                 33
             };
             if !ltx_video
+                && !minimax_h3
                 && (!(17..=maximum_frames).contains(&num_frames) || (num_frames - 1) % 4 != 0)
             {
                 return Err(format!(
@@ -6358,6 +6383,40 @@ mod tests {
 
         flow.validate()
             .expect("an unconnected seed source must allow a runtime-random seed");
+    }
+
+    #[test]
+    fn accepts_random_and_fixed_connected_image_seeds() {
+        let mut flow = request("connected-seed", None, "Seed mode").flow;
+        flow.nodes.push(
+            serde_json::from_value(json!({
+                "id": "seed",
+                "type": "source.seed",
+                "version": 1,
+                "label": "Seed",
+                "layer": "source",
+                "config": {"seed": null}
+            }))
+            .unwrap(),
+        );
+        flow.edges.push(
+            serde_json::from_value(json!({
+                "id": "seed-generate",
+                "fromNodeId": "seed",
+                "fromPortId": "seed",
+                "toNodeId": "generate",
+                "toPortId": "seed"
+            }))
+            .unwrap(),
+        );
+
+        flow.validate().expect("a connected random seed is valid");
+        flow.nodes
+            .last_mut()
+            .unwrap()
+            .config
+            .insert("seed".into(), json!(42));
+        flow.validate().expect("a connected fixed seed is valid");
     }
 
     #[test]

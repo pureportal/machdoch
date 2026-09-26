@@ -171,7 +171,10 @@ const createProps = (
   onGenerate: noop,
   onAddReferenceImages: noop,
   onAddBaseImage: noop,
-  onAddPoseImage: noop,
+  onSelectPosePreset: noop,
+  onGeneratePoseChat: noop,
+  onInstallPoseControl: noop,
+  poseInstallPending: false,
   onEditResult: noop,
   onAnimateResult: noop,
   onOpenResult: noop,
@@ -283,6 +286,108 @@ describe("MediaGenerateView", () => {
       }),
     );
   });
+  it("sends a two-person pose to Chat even before pose models are installed", () => {
+    const onGeneratePoseChat = vi.fn();
+    render(createElement(MediaGenerateView, {
+      ...createProps(),
+      onGeneratePoseChat,
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "Create pose map" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add Standing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add Sitting" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open in Pose chat" }));
+    expect(onGeneratePoseChat).toHaveBeenCalledWith({
+      aspectRatio: "1:1",
+      people: [
+        expect.objectContaining({ pose: "standing" }),
+        expect.objectContaining({ pose: "sitting" }),
+      ],
+    });
+    expect(screen.queryByText(/Choose a local Stable Diffusion model/)).toBeNull();
+  });
+  it("keeps saved pose assets in the Assets picker without duplicate actions", () => {
+    const poseAsset = {
+      ...sourceAsset,
+      tags: [{ value: "openpose", label: "OpenPose", source: "technical" as const, confidence: 1, createdAt: sourceAsset.createdAt }],
+    };
+    const onChange = vi.fn();
+    render(createElement(MediaGenerateView, createProps({
+      referenceAssets: [poseAsset],
+      settings: { ...baseState.recipe, poseImageAssetId: poseAsset.id },
+      onChange,
+    })));
+    expect(screen.queryByRole("button", { name: "Use pose 1" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add pose 1 to canvas" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Choose pose image" }));
+    expect(screen.queryByRole("region", { name: "Pose library" })).toBeNull();
+    expect(screen.getByRole("searchbox", { name: "Search pose maps" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Show poses" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create pose map" }));
+    expect(screen.getByRole("region", { name: "Pose library" })).toBeTruthy();
+    expect(screen.getAllByRole("slider", { name: "Map Strength" })).toHaveLength(1);
+    fireEvent.change(screen.getByRole("slider", { name: "Map Strength" }), { target: { value: "1.2" } });
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ poseStrength: 1.2 }));
+  });
+  it("explains the selected model's pose setup even when another model is ready", () => {
+    const poseAsset = { ...sourceAsset, tags: [{ value: "openpose", label: "OpenPose", source: "technical" as const, confidence: 1, createdAt: sourceAsset.createdAt }] };
+    const sd15 = {
+      ...imageModel,
+      id: "local:sd15-pose",
+      architecture: "stable-diffusion-1" as const,
+      displayName: "SD 1.5",
+      installed: true,
+    };
+    render(createElement(MediaGenerateView, createProps({
+      catalog: { ...catalog, models: [imageModel, sd15] },
+      directGenerationModelIds: [imageModel.id, sd15.id],
+      directPoseModelIds: [sd15.id],
+      referenceAssets: [poseAsset],
+      settings: { ...baseState.recipe, poseImageAssetId: poseAsset.id },
+    })));
+    expect(screen.getByText("Choose a local Stable Diffusion model to use a pose.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Install OpenPose/ })).toBeNull();
+  });
+  it("shows pose setup for SD 1.5, SD 2, SDXL, and Pony", () => {
+    const poseAsset = { ...sourceAsset, tags: [{ value: "openpose", label: "OpenPose", source: "technical" as const, confidence: 1, createdAt: sourceAsset.createdAt }] };
+    const sd15 = {
+      ...imageModel,
+      id: "local:sd15-pose",
+      architecture: "stable-diffusion-1" as const,
+      displayName: "SD 1.5",
+      installed: true,
+    };
+    const onInstallPoseControl = vi.fn();
+    const props = createProps({
+      catalog: { ...catalog, models: [sd15] },
+      directGenerationModelIds: [sd15.id],
+      referenceAssets: [poseAsset],
+      settings: { ...baseState.recipe, modelId: sd15.id, poseImageAssetId: poseAsset.id },
+      onInstallPoseControl,
+    });
+    const view = render(createElement(MediaGenerateView, props));
+    fireEvent.click(screen.getByRole("button", { name: /Install OpenPose/ }));
+    expect(onInstallPoseControl).toHaveBeenCalledWith("stable-diffusion-1");
+    const sd2 = { ...sd15, id: "local:sd2-pose", architecture: "stable-diffusion-2" as const };
+    view.rerender(createElement(MediaGenerateView, {
+      ...props,
+      catalog: { ...catalog, models: [sd2] },
+      directGenerationModelIds: [sd2.id],
+      settings: { ...baseState.recipe, modelId: sd2.id, poseImageAssetId: poseAsset.id },
+    }));
+    expect(screen.getByText(/SD 2 needs a matching OpenPose ControlNet/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Install OpenPose/ })).toBeNull();
+    for (const architecture of ["stable-diffusion-xl", "pony"] as const) {
+      const model = { ...sd15, id: `local:${architecture}-pose`, architecture };
+      view.rerender(createElement(MediaGenerateView, {
+        ...props,
+        catalog: { ...catalog, models: [model] },
+        directGenerationModelIds: [model.id],
+        settings: { ...baseState.recipe, modelId: model.id, poseImageAssetId: poseAsset.id },
+      }));
+      fireEvent.click(screen.getByRole("button", { name: /Install OpenPose/ }));
+      expect(onInstallPoseControl).toHaveBeenCalledWith(architecture);
+    }
+  });
   it.each(["remote", "local"] as const)(
     "selects a %s model and reports sampling resets",
     (target) => {
@@ -338,7 +443,7 @@ describe("MediaGenerateView", () => {
             : "Sampling steps set to 4. Guidance reset to model default.",
         ),
       ).toBeTruthy();
-      expect(screen.queryByRole("option")).toBeNull();
+      expect(screen.queryByRole("option", { name: new RegExp(destination.displayName) })).toBeNull();
       fireEvent.click(
         screen.getByRole("button", { name: "Dismiss notification" }),
       );

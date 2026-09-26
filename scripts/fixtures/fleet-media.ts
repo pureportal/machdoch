@@ -129,6 +129,8 @@ export function createMediaFixture() {
         return runtime.saveMediaFlowRevision(
           args.request as Parameters<typeof runtime.saveMediaFlowRevision>[0],
         );
+      case "run_media_flow_agent":
+        return { message: "The flow is ready.", flow: null };
       case "media_generate_images":
         return runtime.generateMediaImages(
           args.request as Parameters<typeof runtime.generateMediaImages>[0],

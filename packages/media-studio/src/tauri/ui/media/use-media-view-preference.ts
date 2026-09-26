@@ -45,6 +45,7 @@ const validators: {
     "lora",
     "embedding",
     "image",
+    "openpose",
     "video",
     "svg",
   ]),

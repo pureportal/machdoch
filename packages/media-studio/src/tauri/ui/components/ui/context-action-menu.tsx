@@ -1,4 +1,4 @@
-import { Copy, X, type LucideIcon } from "lucide-react";
+import { Check, Copy, X, type LucideIcon } from "lucide-react";
 import { ContextMenu } from "radix-ui";
 import { createPortal } from "react-dom";
 import {
@@ -14,6 +14,7 @@ import { copyText } from "../../lib/clipboard";
 export interface ContextMenuAction {
   label: string;
   icon?: LucideIcon;
+  checked?: boolean;
   disabled?: boolean;
   destructive?: boolean;
   onSelect: () => void | Promise<void>;
@@ -196,20 +197,37 @@ export const ContextActionMenu = ({
                 focusTargetRef.current?.focus({ preventScroll: true });
             }}
           >
-            {menuActions.map((action) => (
-              <ContextMenu.Item
-                key={action.label}
-                className="app-menu-item"
-                disabled={action.disabled}
-                data-variant={action.destructive ? "destructive" : undefined}
-                onSelect={() => {
-                  void execute(action);
-                }}
-              >
-                {action.icon ? <action.icon aria-hidden="true" /> : null}
-                {action.label}
-              </ContextMenu.Item>
-            ))}
+            {menuActions.map((action) =>
+              action.checked === undefined ? (
+                <ContextMenu.Item
+                  key={action.label}
+                  className="app-menu-item"
+                  disabled={action.disabled}
+                  data-variant={action.destructive ? "destructive" : undefined}
+                  onSelect={() => {
+                    void execute(action);
+                  }}
+                >
+                  {action.icon ? <action.icon aria-hidden="true" /> : null}
+                  {action.label}
+                </ContextMenu.Item>
+              ) : (
+                <ContextMenu.CheckboxItem
+                  key={action.label}
+                  className="app-menu-item"
+                  checked={action.checked}
+                  disabled={action.disabled}
+                  onCheckedChange={() => {
+                    void execute(action);
+                  }}
+                >
+                  <ContextMenu.ItemIndicator>
+                    <Check aria-hidden="true" />
+                  </ContextMenu.ItemIndicator>
+                  {action.label}
+                </ContextMenu.CheckboxItem>
+              ),
+            )}
           </ContextMenu.Content>
         </ContextMenu.Portal>
       </ContextMenu.Root>

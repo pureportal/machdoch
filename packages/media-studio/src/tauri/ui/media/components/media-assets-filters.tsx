@@ -6,6 +6,7 @@ export type MediaAssetTypeFilter =
   | "lora"
   | "embedding"
   | "image"
+  | "openpose"
   | "video"
   | "svg";
 

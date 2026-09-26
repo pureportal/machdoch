@@ -62,6 +62,9 @@ function FleetMediaStudio(): React.ReactElement {
         ) : null}
         {shell ? (
           <MediaStudio
+            onOpenPoseChat={(map) => {
+              window.parent.postMessage({ type: "machdoch:pose-chat", map }, window.location.origin);
+            }}
             providerStatuses={(shell.runtime?.providerStatuses ?? []).map(
               (provider) => ({
                 provider: provider.provider,

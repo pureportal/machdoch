@@ -24,10 +24,10 @@ pub(crate) fn run() -> Result<(), String> {
         let mut output = std::io::stdout().lock();
         loop {
             let mut line = String::new();
-            let result = std::io::Read::take(&mut input, 1_048_577).read_line(&mut line);
+            let result = std::io::Read::take(&mut input, 2_250_002).read_line(&mut line);
             match result {
                 Ok(0) => break,
-                Ok(_) if line.len() <= 1_048_576 && line.ends_with('\n') => {}
+                Ok(_) if line.len() <= 2_250_001 && line.ends_with('\n') => {}
                 _ => break,
             }
             let response = match serde_json::from_str::<Value>(&line) {

@@ -111,6 +111,7 @@ const createProps = (overrides: Partial<Props> = {}): Props => ({
   verifyingModelId: null,
   onUseAddon: vi.fn(),
   onUseAsReference: vi.fn(),
+  onUseAsPose: vi.fn(),
   onEditImage: vi.fn(),
   onAnimateImage: vi.fn(),
   onOpenVideoAsFlow: vi.fn(),
@@ -127,6 +128,19 @@ const createProps = (overrides: Partial<Props> = {}): Props => ({
 });
 
 describe("MediaAssetsView discovery", () => {
+  it("filters OpenPose assets and opens one as the pose map", () => {
+    const pose = {
+      ...asset,
+      id: "asset:pose",
+      tags: [{ value: "openpose", label: "OpenPose", source: "technical" as const, confidence: 1, createdAt: asset.createdAt }],
+    };
+    const onUseAsPose = vi.fn();
+    render(createElement(MediaAssetsView, createProps({ assets: [asset, pose], onUseAsPose })));
+    fireEvent.click(screen.getByRole("button", { name: "OpenPose" }));
+    expect(screen.getAllByRole("button", { name: /^View / })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Use as pose" }));
+    expect(onUseAsPose).toHaveBeenCalledWith(pose);
+  });
   const catalog = createMediaModelCatalogSnapshot({
     isOpenAiConfigured: true,
     isLocalFluxInstalled: true,
