@@ -423,6 +423,10 @@ export const MediaGenerateView = ({
   const seamlessSupported =
     selectedModel?.capabilities.includes("start-end-to-video") === true;
   const minimaxH3 = selectedModel?.architecture === "minimax-h3-ref2va";
+  const videoFpsError =
+    target === "video" && minimaxH3 && videoSettings.fps !== 24
+      ? "MiniMax H3 requires 24 fps."
+      : null;
   const videoLoopError =
     target === "video" &&
     selectedModel !== null &&
@@ -446,6 +450,7 @@ export const MediaGenerateView = ({
     !referenceImportPending &&
     !imageModelError &&
     !videoLoopError &&
+    !videoFpsError &&
     !missingImage &&
     (target !== "image" ||
       mediaImageSamplingError(settings.sampling ?? {}) === null) &&
@@ -464,6 +469,7 @@ export const MediaGenerateView = ({
     (referenceImportPending ? "Adding image" : null) ??
     imageModelError ??
     videoLoopError ??
+    videoFpsError ??
     samplingError ??
     (missingImage
       ? "Remove or replace the unavailable image."
