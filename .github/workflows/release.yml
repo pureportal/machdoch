@@ -309,7 +309,8 @@ jobs:
             systemd \
             wget \
             xdg-utils \
-            xz-utils
+            xz-utils \
+            zstd
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh
           sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain stable
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
@@ -335,6 +336,15 @@ jobs:
       - name: Install Rust stable
         if: matrix.release_target == 'windows-x64'
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/client/src-tauri -> target
+          shared-key: desktop-${{ matrix.release_target }}
+          add-job-id-key: false
+          cache-workspace-crates: true
+          cache-on-failure: true
 
       - name: Check Windows desktop toolchain
         if: matrix.release_target == 'windows-x64'
@@ -364,7 +374,7 @@ jobs:
       - name: Build RPM installer
         if: matrix.release_target == 'linux-amd64'
         shell: bash
-        run: bash .github/scripts/build-linux-rpm.sh
+        run: node .github/scripts/build-linux-rpm.mjs
 
       - name: List bundle outputs
         shell: bash
@@ -388,7 +398,7 @@ jobs:
         if: matrix.release_target == 'linux-amd64'
         shell: bash
         run: |
-          pnpm build:headless
+          node apps/client/scripts/build-headless-package.mjs
           node .github/scripts/verify-headless-package.mjs apps/client/dist/machdoch-headless.tar.gz
           cp apps/client/dist/machdoch-headless.tar.gz release-assets/
           echo "path=release-assets/machdoch-headless.tar.gz" >> "$GITHUB_OUTPUT"
