@@ -1164,6 +1164,7 @@ export const MEDIA_NODE_DEFINITIONS = [
             "768 px high quality",
             "More spatial detail with substantially higher latency.",
           ),
+          option("quality-2k", "Local 2K", "Local 2K enhancement after H3 generation."),
         ],
       },
       {

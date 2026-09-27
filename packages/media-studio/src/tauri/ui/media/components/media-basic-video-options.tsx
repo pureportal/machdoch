@@ -69,6 +69,11 @@ export const MediaBasicVideoOptions = ({
               </option>
             ),
           )}
+          {architecture === "minimax-h3-ref2va" ? (
+            <option value="quality-2k">
+              {resolveMediaVideoDimensions(videoSettings.aspectRatio, "quality-2k", architecture).join(" × ")} local 2K
+            </option>
+          ) : null}
           <option value="custom">Custom</option>
         </select>
       </label>
@@ -98,14 +103,14 @@ export const MediaBasicVideoOptions = ({
           ))}
         </div>
       ) : null}
-      {architecture !== "minimax-h3-ref2va" ? (
+      {architecture !== "minimax-h3-ref2va" || videoSettings.fps !== 24 ? (
         <label className={field}>
           <span>Frame rate</span>
           <input
             className={control}
             type="number"
-            min={1}
-            max={60}
+            min={architecture === "minimax-h3-ref2va" ? 24 : 1}
+            max={architecture === "minimax-h3-ref2va" ? 24 : 60}
             step={1}
             value={videoSettings.fps}
             onChange={(event) =>

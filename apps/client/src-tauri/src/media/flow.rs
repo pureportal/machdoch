@@ -4318,8 +4318,13 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
             config_enum(
                 node,
                 "resolution",
-                &["preview-512", "quality-640", "quality-768"],
+                &["preview-512", "quality-640", "quality-768", "quality-2k"],
             )?;
+            if !minimax_h3
+                && node.config.get("resolution").and_then(Value::as_str) == Some("quality-2k")
+            {
+                return Err(format!("flow node {} local 2K output requires MiniMax H3", node.id));
+            }
             for key in [
                 "generateAudio",
                 "transparentBackground",

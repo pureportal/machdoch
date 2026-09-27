@@ -61,7 +61,12 @@ describe("media video quality helpers", () => {
         MEDIA_VIDEO_QUALITY_PRESETS[0]!,
         "minimax-h3-ref2va",
       ),
-    ).toMatchObject({ fps: 24, numFrames: 124, numInferenceSteps: 10 });
+    ).toMatchObject({ fps: 24, numFrames: 124, numInferenceSteps: 8 });
+  });
+
+  it("resolves the local H3 2K output separately from the base canvas", () => {
+    expect(resolveMediaVideoDimensions("16:9", "quality-2k", "minimax-h3-ref2va")).toEqual([2560, 1440]);
+    expect(resolveMediaVideoDimensions("9:16", "quality-2k", "minimax-h3-ref2va")).toEqual([1440, 2560]);
   });
 
   it.each([

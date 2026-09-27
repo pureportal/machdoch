@@ -73,6 +73,7 @@
       "python/media_framepack_loading.py": "python/media_framepack_loading.py",
       "python/media_video_loop.py": "python/media_video_loop.py",
       "python/media_video_io.py": "python/media_video_io.py",
+      "python/media_video_2k.py": "python/media_video_2k.py",
       "python/media_video_addons.py": "python/media_video_addons.py",
       "python/media_wan_loading.py": "python/media_wan_loading.py",
       "python/media_svg_model.py": "python/media_svg_model.py",

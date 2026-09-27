@@ -123,7 +123,8 @@ export const readMediaVideoRecipeSettings = (
     resolution:
       config.resolution === "preview-512" ||
       config.resolution === "quality-640" ||
-      config.resolution === "quality-768"
+      config.resolution === "quality-768" ||
+      config.resolution === "quality-2k"
         ? config.resolution
         : DEFAULT_VIDEO_RECIPE_SETTINGS.resolution,
     width: typeof config.width === "number" ? config.width : null,

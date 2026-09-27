@@ -8815,12 +8815,17 @@ def _generate_minimax_h3_video(request: dict[str, Any]) -> dict[str, Any]:
     negative_prompt = request.get("negativePrompt", "")
     if negative_prompt:
         raise WorkerError("MiniMax H3 does not support negative prompts")
+    resolution = request.get("resolution")
+    regenerate_2k = resolution == "quality-2k"
     width, height = _video_dimensions(
-        request.get("aspectRatio"), request.get("resolution"), "minimax-h3-ref2va"
+        request.get("aspectRatio"), "quality-768" if regenerate_2k else resolution,
+        "minimax-h3-ref2va",
     )
     if (request.get("width") is None) != (request.get("height") is None):
         raise WorkerError("Enter both video width and height")
     if request.get("width") is not None:
+        if regenerate_2k:
+            raise WorkerError("Local 2K output uses its fixed aspect-ratio dimensions")
         width, height = request["width"], request["height"]
     frames = request.get("numFrames")
     steps = request.get("numInferenceSteps")
@@ -8863,13 +8868,22 @@ def _generate_minimax_h3_video(request: dict[str, Any]) -> dict[str, Any]:
             ),
         )
     rendered_at = time.perf_counter()
-    _progress("Encoding MiniMax H3 video", 0.85)
     from PIL import Image
 
-    frame_images = [
-        Image.fromarray((frame.clamp(0, 1).numpy() * 255).astype(np.uint8))
-        for frame in video_frames.permute(1, 2, 3, 0)
-    ]
+    regenerator = None
+    if regenerate_2k:
+        from media_video_2k import OUTPUT_SIZES, Video2KRegenerator
+
+        regenerator = Video2KRegenerator(*OUTPUT_SIZES[request["aspectRatio"]])
+    frame_images = []
+    for index, frame in enumerate(video_frames.permute(1, 2, 3, 0)):
+        pixels = (frame.clamp(0, 1).numpy() * 255).astype(np.uint8)
+        if regenerator is not None:
+            pixels = regenerator.process(pixels)
+            _progress(f"Creating local 2K frame {index + 1}/{frames}", 0.80 + 0.08 * (index + 1) / frames)
+        frame_images.append(Image.fromarray(pixels))
+    del video_frames, regenerator
+    _progress("Encoding MiniMax H3 video", 0.89)
     destination, evidence, composite = _encode_video_webm(
         frame_images,
         output_directory,
