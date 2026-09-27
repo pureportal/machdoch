@@ -613,7 +613,7 @@ export const createImageToVideoFlow = ({
       loopMode,
       fps: settings?.fps ?? (videoModelId === "local:minimax-h3-ref2va" ? 24 : 16),
       numFrames: settings?.numFrames ?? (videoModelId === "local:minimax-h3-ref2va" ? 124 : 33),
-      numInferenceSteps: settings?.numInferenceSteps ?? (videoModelId === "local:minimax-h3-ref2va" ? 10 : 30),
+      numInferenceSteps: settings?.numInferenceSteps ?? (videoModelId === "local:minimax-h3-ref2va" ? 8 : 30),
       guidanceScale:
         settings?.guidanceScale ?? (loopMode === "seamless" ? 5 : 9),
       seed: settings?.seed ?? null,

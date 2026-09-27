@@ -254,7 +254,7 @@ export const resolveMediaVideoExecutionSettings = (
       numInferenceSteps:
         typeof config.numInferenceSteps === "number"
           ? config.numInferenceSteps
-          : 10,
+          : 8,
       guidanceScale: 1,
       modelManaged: true,
     };
@@ -304,7 +304,7 @@ export const resolveMediaVideoQualityPresetSettings = (
     ...preset.settings,
     numInferenceSteps:
       architecture === "minimax-h3-ref2va"
-        ? 10
+        ? 8
         : execution.numInferenceSteps,
     numFrames:
       architecture === "minimax-h3-ref2va"
