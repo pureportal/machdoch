@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Fizgig is licensed under the Apache License, Version 2.0 (see `LICENSE`).
+Fizgig is licensed under the Apache License, Version 2.0 (see `LICENSE-fizgig.txt`).
 
 It includes code derived from the third-party projects listed below. Each
 component remains under its upstream license. Permissive components (Apache-2.0,

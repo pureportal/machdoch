@@ -91,7 +91,7 @@ def sample_schedule(steps: int, shift: float = 12.0, mode: str = "comfy"):
         indices = (beta_distribution.ppf(probabilities, 0.5, 0.7) * 999).round().astype(int)
         values = []
         for index in indices:
-            position = (index + 1) / 1000.0
+            position = float(index + 1) / 1000.0
             sigma = shift * position / (1.0 + (shift - 1.0) * position)
             if not values or sigma != values[-1]:
                 values.append(sigma)

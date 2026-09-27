@@ -106,8 +106,6 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
 
     blocks_to_swap parks the LAST n blocks on CPU at load — pair it with
     model.enable_block_swap(n) so the forward moves them just-in-time."""
-    from bitsandbytes.nn import Linear4bit, Params4bit
-
     opener = ShardedSafeOpen if os.path.isdir(path) else MemoryEfficientSafeOpen
     with opener(path) as f:
         keys = set(f.keys())
@@ -130,6 +128,8 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
             _quantizer()                      # fail HERE with the install hint, not mid-stream
         if not quantize:
             mode = "none"
+        if mode == "nf4":
+            from bitsandbytes.nn import Linear4bit, Params4bit
         # fp32 AdaLN only applies to a curve-table (pruned) file — see the docstring.
         _adaln32 = bool(adaln_fp32) and cfg.adaln_t_table_size is not None
 

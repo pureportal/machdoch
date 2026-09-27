@@ -1697,6 +1697,11 @@ def peft_to_kohya(weights_sd: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor
     )
 
     for key, tensor in weights_sd.items():
+        key = re.sub(
+            r"\.(lora_[AB]|lora_down|lora_up)\.default\.weight$",
+            r".\1.weight",
+            key,
+        )
         # Strip one recognized prefix; skip keys that don't have one
         stripped = None
         for pfx in prefixes:

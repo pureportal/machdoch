@@ -23,11 +23,16 @@ from fizgig.minimax.trainer import load_preview_turbo, turbo_adaln_patch
 from fizgig.minimax.vae import IMAGENET_MEAN, IMAGENET_STD, MiniMaxH3VideoVAEDecoder, MiniMaxH3VideoVAEEncoder
 
 
-def release(*objects):
-    for item in objects:
-        del item
+def release():
     gc.collect()
     torch.cuda.empty_cache()
+
+
+def verify_video_vae_checkpoint(path):
+    with safe_open(str(path), framework="pt", device="cpu") as checkpoint:
+        for name in ("encoder.conv_in.weight", "post_quant_conv.weight", "decoder.x_embedder.weight"):
+            if name not in checkpoint.keys() or not torch.count_nonzero(checkpoint.get_tensor(name)):
+                raise ValueError("MiniMax H3 video VAE is damaged. Redownload the video VAE.")
 
 
 def load_video_vae(path, model_type):
@@ -65,7 +70,7 @@ def save_video(path, frames, audio_path):
         ffmpeg, "-loglevel", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{width}x{height}",
         "-r", "24", "-i", "-", "-i", str(audio_path), "-c:v", "libx264",
         "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
-        "-shortest", str(path),
+        "-af", "apad", "-t", str(frames.shape[1] / 24), str(path),
     ]
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
@@ -85,12 +90,14 @@ def render(args, progress=None):
     projection_path = args.small_te / "mmh3-4b-ClipProj-v3.1.safetensors"
     video_vae_path = args.models / "vae/minimax_h3_video_vae_fp16.safetensors"
     audio_vae_path = args.models / "vae/minimax_h3_audio_vae_fp32.safetensors"
-    for path in (args.image, model_path, projection_path, video_vae_path, audio_vae_path, args.lora):
+    for path in (args.image, model_path, projection_path, video_vae_path, audio_vae_path, args.lora, args.style_lora):
+        if path is None:
+            continue
         if not path.is_file():
             raise FileNotFoundError(path)
     if args.width % 32 or args.height % 32 or args.frames < 124 or (args.frames - 5) % 17:
         raise ValueError("H3 requires dimensions divisible by 32 and frames on its 17n+5 grid")
-    args.output.parent.mkdir(parents=True, exist_ok=True)
+    verify_video_vae_checkpoint(video_vae_path)
     print("Encoding reference image", flush=True)
     image = resize_reference(Image.open(args.image), args.width, args.height)
     video_encoder = load_video_vae(video_vae_path, MiniMaxH3VideoVAEEncoder)
@@ -139,6 +146,16 @@ def render(args, progress=None):
     for module in lora_network.unet_loras:
         module.enabled = True
     turbo_adaln_patch(model, adaln_pairs, "cuda", torch.bfloat16)
+    style_network = None
+    if args.style_lora is not None:
+        style_network, style_adaln_pairs = load_preview_turbo(
+            model, str(args.style_lora), args.style_strength, tag="style"
+        )
+        if style_adaln_pairs:
+            raise ValueError("The selected style LoRA has unsupported AdaLN weights")
+        style_network.to("cuda", dtype=torch.bfloat16)
+        for module in style_network.unet_loras:
+            module.enabled = True
     print("Denoising video and audio", flush=True)
     with torch.no_grad():
         video_latent, audio_latent = sample_image(
@@ -151,7 +168,7 @@ def render(args, progress=None):
         )
     video_latent = video_latent.cpu()
     audio_latent = audio_latent.cpu()
-    del model, lora_network, adaln_pairs, text_embeddings, token_tags, reference_latent
+    del model, lora_network, style_network, adaln_pairs, text_embeddings, token_tags, reference_latent
     release()
 
     print("Decoding video", flush=True)
@@ -179,6 +196,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--models", type=Path, required=True)
     parser.add_argument("--lora", type=Path, required=True)
+    parser.add_argument("--style-lora", type=Path)
+    parser.add_argument("--style-strength", type=float, default=0.7)
     parser.add_argument("--small-te", type=Path, required=True)
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=384)
@@ -187,12 +206,16 @@ def main():
     parser.add_argument("--seed", type=int, default=57)
     parser.add_argument("--swap-blocks", type=int, default=44)
     args = parser.parse_args()
+    args.output.parent.mkdir(parents=True, exist_ok=True)
     frames, audio, rate = render(args)
 
     audio_path = args.output.with_suffix(".wav")
     save_audio(audio_path, audio, rate)
     print("Muxing final video", flush=True)
-    save_video(args.output, frames, audio_path)
+    try:
+        save_video(args.output, frames, audio_path)
+    finally:
+        audio_path.unlink(missing_ok=True)
     print(args.output, flush=True)
 
 

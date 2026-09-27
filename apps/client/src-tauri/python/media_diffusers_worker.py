@@ -1109,6 +1109,9 @@ def probe_model(request: dict[str, Any]) -> dict[str, Any]:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         import media_minimax_h3
 
+        media_minimax_h3.verify_video_vae_checkpoint(
+            model_root / "vae/minimax_h3_video_vae_fp16.safetensors"
+        )
         pipeline = None
         pipeline_class_name = "MiniMaxH3DirectRuntime"
         component_names = ["transformer", "text_encoder", "video_vae", "audio_vae", "lora"]
@@ -8760,6 +8763,7 @@ def _generate_minimax_h3_video(request: dict[str, Any]) -> dict[str, Any]:
     device, device_label, device_memory = _device(torch)
     if device != "cuda":
         raise WorkerError("MiniMax H3 requires a supported GPU")
+    conv3d_backend = _configure_video_conv3d_backend(torch, device)
     model = request["model"]
     model_root = _absolute_existing_path(model.get("path"), file=False)
     prompt = _required_text(request, "prompt", 8_000)
@@ -8802,6 +8806,8 @@ def _generate_minimax_h3_video(request: dict[str, Any]) -> dict[str, Any]:
         prompt=prompt,
         models=model_root,
         lora=model_root / "loras" / "minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
+        style_lora=None,
+        style_strength=0.7,
         small_te=model_root / "small_te",
         width=width,
         height=height,
@@ -8809,7 +8815,6 @@ def _generate_minimax_h3_video(request: dict[str, Any]) -> dict[str, Any]:
         steps=steps + 1,
         seed=seed,
         swap_blocks=44,
-        output=output_directory / "unused.mp4",
     )
     _progress("Generating MiniMax H3 video and audio", 0.10)
     with redirect_stdout(sys.stderr):
@@ -8847,7 +8852,7 @@ def _generate_minimax_h3_video(request: dict[str, Any]) -> dict[str, Any]:
         imageio_ffmpeg.get_ffmpeg_exe(), "-loglevel", "error", "-y",
         "-i", str(destination), "-i", str(audio_path),
         "-c:v", "copy", "-c:a", "libopus", "-b:a", "192k",
-        "-t", str(frames / fps), str(muxed_path),
+        "-af", "apad", "-t", str(frames / fps), str(muxed_path),
     ]
     completed = subprocess.run(command, capture_output=True, text=True, check=False)
     if completed.returncode != 0 or not muxed_path.is_file():
@@ -8857,13 +8862,13 @@ def _generate_minimax_h3_video(request: dict[str, Any]) -> dict[str, Any]:
     _progress("Verifying MiniMax H3 output", 0.98)
     verification = subprocess.run(
         [imageio_ffmpeg.get_ffmpeg_exe(), "-v", "error", "-i", str(destination),
-         "-map", "0:a:0", "-f", "null", "-"],
+         "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "-"],
         capture_output=True,
         text=True,
         check=False,
     )
     if verification.returncode != 0:
-        raise WorkerError(f"MiniMax H3 output has no decodable audio: {verification.stderr[-2000:]}")
+        raise WorkerError(f"MiniMax H3 output failed video or audio verification: {verification.stderr[-2000:]}")
     torch.cuda.empty_cache()
     finished_at = time.perf_counter()
     return {
@@ -8883,8 +8888,10 @@ def _generate_minimax_h3_video(request: dict[str, Any]) -> dict[str, Any]:
             },
             "timingSeconds": {"total": finished_at - started_at, "render": rendered_at - started_at},
             "lora": {"strength": 1.0, "fileName": args.lora.name},
+            "sampler": "er_sde",
+            "scheduler": "beta57",
         },
-        "conv3dBackend": _configure_video_conv3d_backend(torch, device),
+        "conv3dBackend": conv3d_backend,
         "conditioningMode": "minimax-h3-reference-image-audio",
         "conditioningFraming": {"referenceImage": source_path.name},
         "endpointRestoration": None,
