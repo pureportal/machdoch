@@ -7,6 +7,7 @@ import {
   PopoverTrigger,
 } from "@machdoch/media-studio/tauri/ui/components/ui/popover.js";
 import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 
 const OPTIONS = [
   { value: "default", label: "Default" },
@@ -34,11 +35,18 @@ export const SessionAdaptiveControllerPicker = ({
           <Button
             type="button"
             variant="outline"
+            size="icon-sm"
+            tooltip={null}
             aria-label={`Adaptive context & compute: ${label}`}
-            className="h-8 gap-1.5 rounded-full border-slate-800 bg-slate-950/70 px-2.5 text-xs text-slate-300"
+            className={cn(
+              "app-composer-toolbar-icon-button h-8 w-8 rounded-full border-slate-800 bg-slate-950/70 p-0 text-slate-400 shadow-none hover:bg-slate-900",
+              override === true &&
+                "border-emerald-500/30 bg-emerald-500/10 text-emerald-100 hover:border-emerald-500/40 hover:bg-emerald-500/15",
+              override === false &&
+                "border-amber-500/30 bg-amber-500/10 text-amber-100 hover:border-amber-500/40 hover:bg-amber-500/15",
+            )}
           >
             <BrainCircuit className="h-3.5 w-3.5" />
-            <span>Adaptive {label}</span>
           </Button>
         </PopoverTrigger>
       </ControlTooltip>

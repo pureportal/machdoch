@@ -24,6 +24,10 @@ import type {
   RunMode,
 } from "../../../../core/runtime-contract.generated.js";
 import type { ParallelAgentMode } from "../../../../core/types.js";
+import {
+  getAvailableParallelAgentModes,
+  resolveParallelAgentMode,
+} from "../../../../core/parallel-agent-capabilities.js";
 import { AppNotification } from "@machdoch/media-studio/tauri/ui/components/ui/notification.js";
 import {
   createMemoryManagementEntries,
@@ -331,8 +335,15 @@ export const SessionComposer = ({
       />
 
       <SessionParallelAgentPicker
-        mode={activeSession.parallelAgentMode ?? "disabled"}
-        available={!activeSession.provider.endsWith("-cli")}
+        mode={resolveParallelAgentMode(
+          activeSession.provider,
+          activeSession.model,
+          activeSession.parallelAgentMode,
+        )}
+        availableModes={getAvailableParallelAgentModes(
+          activeSession.provider,
+          activeSession.model,
+        )}
         onChange={onParallelAgentModeSelection}
       />
 
@@ -349,6 +360,7 @@ export const SessionComposer = ({
       />
 
       <WorkspacePicker
+        iconOnly
         currentWorkspace={activeSession.workspace}
         workspaceLabel={composerWorkspaceLabel}
         recentWorkspaces={recentWorkspaces}
