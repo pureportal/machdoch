@@ -193,6 +193,11 @@ export function Composer({
     !pending &&
     !submitting &&
     failedSubmission === null;
+  const parallelAgentMode = composer.availableParallelAgentModes?.includes(
+    composer.parallelAgentMode ?? "disabled",
+  )
+    ? (composer.parallelAgentMode ?? "disabled")
+    : "disabled";
 
   const submit = (): void => {
     if (canSubmit) void submitDraft();
@@ -386,22 +391,68 @@ export function Composer({
             }
           />
           <OptionMenu
-            disabled={pending || composer.provider.endsWith("-cli")}
-            label={composer.provider.endsWith("-cli") ? "Parallel agents require an API provider" : "Parallel agents"}
-            activeValue={composer.parallelAgentMode ?? "disabled"}
-            activeLabel={{ disabled: "Disabled", "read-only": "Read Only", machdoch: "Full Mode" }[composer.parallelAgentMode ?? "disabled"]}
+            disabled={
+              pending || (composer.availableParallelAgentModes?.length ?? 0) < 2
+            }
+            label="Parallel agents"
+            activeValue={parallelAgentMode}
+            activeLabel={
+              {
+                disabled: "Disabled",
+                "read-only": "Read Only",
+                machdoch: "Full Mode",
+                native: "Native",
+              }[parallelAgentMode]
+            }
             activeIcon={GitFork}
             activeTone="violet"
-            options={[
-              { value: "disabled", label: "Disabled", description: "", icon: CircleOff, tone: "neutral" },
-              { value: "read-only", label: "Read Only", description: "", icon: Search, tone: "neutral" },
-              { value: "machdoch", label: "Full Mode", description: "", icon: GitFork, tone: "violet" },
-            ]}
-            onSelect={(value) => void onCommand({
-              kind: "set-parallel-agent-mode",
-              sessionId: session.id,
-              mode: value as NonNullable<ProductComposer["parallelAgentMode"]>,
-            })}
+            options={(
+              [
+                {
+                  value: "disabled",
+                  label: "Disabled",
+                  description: "",
+                  icon: CircleOff,
+                  tone: "neutral",
+                },
+                {
+                  value: "read-only",
+                  label: "Read Only",
+                  description: "",
+                  icon: Search,
+                  tone: "neutral",
+                },
+                {
+                  value: "machdoch",
+                  label: "Full Mode",
+                  description: "",
+                  icon: GitFork,
+                  tone: "violet",
+                },
+                {
+                  value: "native",
+                  label: "Native",
+                  description: "",
+                  icon: GitFork,
+                  tone: "violet",
+                },
+              ] satisfies OptionMenuItem[]
+            ).filter((option) =>
+              composer.availableParallelAgentModes?.includes(
+                option.value as NonNullable<
+                  ProductComposer["parallelAgentMode"]
+                >,
+              ),
+            )}
+            onSelect={(value) =>
+              void onCommand({
+                kind: "set-parallel-agent-mode",
+                sessionId: session.id,
+                mode: value as NonNullable<
+                  ProductComposer["parallelAgentMode"]
+                >,
+              })
+            }
           />
           <OptionMenu
             disabled={pending}

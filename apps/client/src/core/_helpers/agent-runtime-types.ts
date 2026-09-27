@@ -124,6 +124,7 @@ export interface ModelDrivenExecutionParams {
   modelAdapter?: AgentModelAdapter;
   monitorModelAdapter?: AgentModelAdapter;
   additionalToolDefinitions?: AgentToolDefinition[];
+  scopedWorkerToolDefinitions?: AgentToolDefinition[];
   systemPromptSections?: string[];
   structuredOutput?: AgentModelStructuredOutput;
   resultProtocol?: TaskResultProtocol;
@@ -133,6 +134,7 @@ export interface ModelDrivenExecutionParams {
   onActionOutput?: TaskActionOutputHandler;
   onStreamActivity?: () => void;
   runId?: string;
+  skipUnreachableMcpServers?: boolean;
   signal?: AbortSignal;
 }
 

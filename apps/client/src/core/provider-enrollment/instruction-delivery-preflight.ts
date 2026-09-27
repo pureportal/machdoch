@@ -13,6 +13,8 @@ import type {
   InstructionDeliveryPlan,
 } from "../instruction-system/types.js";
 import type { AgentCliProvider } from "../runtime-contract.generated.js";
+import type { ParallelAgentMode } from "../types.js";
+import { supportsNativeSubagents } from "../parallel-agent-capabilities.js";
 import {
   createProviderProbeEvidence,
   probeProviderCli,
@@ -176,7 +178,7 @@ export const createInstructionDeliveryPlanForRuntime = async (
   resolution: FrozenInstructionSet,
   input: {
     workspaceRoot: string;
-    reasoning?: string;
+    parallelAgentMode?: ParallelAgentMode | undefined;
   },
 ): Promise<InstructionDeliveryPlan> => {
   if (
@@ -188,7 +190,9 @@ export const createInstructionDeliveryPlanForRuntime = async (
       resolution.surface,
     );
     const capability =
-      resolution.providerId === "openai" && input.reasoning === "ultra"
+      resolution.providerId === "openai" &&
+      input.parallelAgentMode === "native" &&
+      supportsNativeSubagents("openai", resolution.model ?? "")
         ? {
             ...baseCapability,
             lifecycle: {
@@ -197,7 +201,7 @@ export const createInstructionDeliveryPlanForRuntime = async (
             },
             evidence: [
               ...baseCapability.evidence,
-              "Ultra reasoning enables the Responses multi-agent beta; inheritance of the parent instructions by every provider-managed subagent has not been independently verified.",
+              "Native mode enables the Responses multi-agent beta; inheritance of the parent instructions by every provider-managed subagent has not been independently verified.",
             ],
           }
         : baseCapability;

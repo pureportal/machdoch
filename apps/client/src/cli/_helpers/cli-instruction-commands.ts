@@ -318,7 +318,7 @@ const resolveProvider = async (
 const validateInstructionSystem = async (
   args: ParsedCliArgs,
 ): Promise<unknown> => {
-  const [{ providerId, model, reasoning }, library] = await Promise.all([
+  const [{ providerId, model }, library] = await Promise.all([
     resolveProvider(args),
     loadInstructionLibrary(),
   ]);
@@ -344,7 +344,6 @@ const validateInstructionSystem = async (
     }
     deliveryPlan = await createInstructionDeliveryPlanForRuntime(resolution, {
       workspaceRoot: args.workspaceRoot,
-      reasoning,
     });
     if (
       deliveryPlan.grade === "unsupported" ||
@@ -718,7 +717,7 @@ export const printInstructionSummary = async (
       return;
     }
     case "resolve": {
-      const { providerId, model, reasoning } = await resolveProvider(args);
+      const { providerId, model } = await resolveProvider(args);
       const surface =
         options.surface ?? (isAgentCliProvider(providerId) ? "cli" : "api");
       const flow =
@@ -745,7 +744,6 @@ export const printInstructionSummary = async (
       });
       const plan = await createInstructionDeliveryPlanForRuntime(resolution, {
         workspaceRoot: args.workspaceRoot,
-        reasoning,
       });
       const value = {
         explanation: explainInstructionResolution(resolution, {

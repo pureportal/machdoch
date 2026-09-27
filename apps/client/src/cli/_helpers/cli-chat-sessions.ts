@@ -70,7 +70,7 @@ export const parseConversationContext = (
   if (
     value.parallelAgentMode !== undefined &&
     (typeof value.parallelAgentMode !== "string" ||
-      !["disabled", "read-only", "machdoch"].includes(value.parallelAgentMode))
+      !["disabled", "read-only", "machdoch", "native"].includes(value.parallelAgentMode))
   )
     throw new CliUsageError("Invalid conversation parallel agent mode.");
   if (
@@ -201,7 +201,7 @@ export const loadChatSession = async (id: string): Promise<CliChatSession> => {
       !["ask", "machdoch"].includes(String(value.mode))) ||
     (value.parallelAgentMode !== undefined &&
       (typeof value.parallelAgentMode !== "string" ||
-        !["disabled", "read-only", "machdoch"].includes(
+        !["disabled", "read-only", "machdoch", "native"].includes(
           value.parallelAgentMode,
         ))) ||
     (value.provider !== undefined &&

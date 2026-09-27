@@ -19,6 +19,7 @@ export interface ExternalAgentCliOutputDecoder {
   getModelCallCount(): number;
   isModelCallCountReported(): boolean;
   hasTerminalResult(): boolean;
+  getFailureMessage?(): string | undefined;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -197,6 +198,7 @@ export class CodexCliOutputDecoder
   private usage: AgentModelStreamUsage | undefined;
   private terminal = false;
   private modelCallCount = 0;
+  private failureMessage: string | undefined;
 
   getFinalOutput(): string {
     return this.finalOutput.trim() || this.diagnostics.join("\n").trim();
@@ -220,6 +222,10 @@ export class CodexCliOutputDecoder
 
   hasTerminalResult(): boolean {
     return this.terminal;
+  }
+
+  getFailureMessage(): string | undefined {
+    return this.failureMessage;
   }
 
   protected processEvent(
@@ -260,6 +266,7 @@ export class CodexCliOutputDecoder
       const message = getString(error, "message");
       if (message) {
         this.recordDiagnostic(message);
+        this.failureMessage = message;
       }
       if (!this.terminal) {
         this.terminal = true;

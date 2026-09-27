@@ -227,7 +227,7 @@ it("does not claim subagent instruction inheritance for the OpenAI multi-agent b
 
   const plan = await createInstructionDeliveryPlanForRuntime(resolution, {
     workspaceRoot: process.cwd(),
-    reasoning: "ultra",
+    parallelAgentMode: "native",
   });
 
   expect(plan.grade).toBe("compatible");

@@ -78,6 +78,7 @@ export interface SpawnedAgentResult {
   modelCallCountReported: boolean;
   usage?: AgentModelStreamUsage;
   retryCount?: number;
+  failureMessage?: string;
   providerShutdownRecovery?: {
     kind: "final-output-exit-timeout" | "child-exit-close-timeout";
     graceMs: number;
@@ -198,6 +199,7 @@ const createExternalAgentFailureReason = (
   stdout: string,
   stderr: string,
   exitCode: number | null,
+  failureMessage?: string,
 ): string => {
   const providerLabel = getAgentCliProviderLabel(provider);
   const combined = [stderr, stdout].filter(Boolean).join("\n");
@@ -220,6 +222,10 @@ const createExternalAgentFailureReason = (
     return `${providerLabel} quota exceeded: ${quotaLine.replace(/^ERROR:\s*/iu, "")}`;
   }
 
+  if (failureMessage) {
+    return `${providerLabel} failed: ${cleanCliText(failureMessage)}`;
+  }
+
   const structuredErrorMessage = extractStructuredErrorMessage(combined);
 
   if (structuredErrorMessage) {
@@ -233,6 +239,15 @@ const createExternalAgentFailureReason = (
 
   if (errorLines.length > 0) {
     return errorLines.slice(-3).join("\n");
+  }
+
+  const lastDiagnostic = combined
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => /(?:^|\s)ERROR(?:\s|:)/iu.test(line))
+    .at(-1);
+  if (lastDiagnostic) {
+    return `${providerLabel} exited with code ${exitCode ?? "unknown"}. Last diagnostic: ${lastDiagnostic.replace(/^\d{4}-\d{2}-\d{2}T\S+Z\s+/u, "")}`;
   }
 
   return (
@@ -302,13 +317,12 @@ const createExternalAgentCompletionContract = (
   resultProtocol: ModelDrivenExecutionParams["resultProtocol"],
   poseChat = false,
 ): string[] => {
-  const completionInstructions =
-    poseChat
-      ? [
-          "Save the requested pose scene through a Machdoch pose tool before replying.",
-          "Describe the saved skeleton briefly, including the characters' positions or actions. Do not describe a rendered image.",
-        ]
-      : delegationMode === "read-only-artifact"
+  const completionInstructions = poseChat
+    ? [
+        "Save the requested pose scene through a Machdoch pose tool before replying.",
+        "Describe the saved skeleton briefly, including the characters' positions or actions. Do not describe a rendered image.",
+      ]
+    : delegationMode === "read-only-artifact"
       ? [
           "Return exactly the artifact or answer requested by the user task.",
           "Preserve any output contract in the user task exactly.",
@@ -335,6 +349,7 @@ const createExternalAgentSystemInstructions = (
   resultProtocol: ModelDrivenExecutionParams["resultProtocol"],
   workspacePresenceAvailable: boolean,
   poseChat = false,
+  scopedWorker = false,
 ): string => {
   const runtimeSectionsBlock =
     runtimeSystemPromptSections.length > 0
@@ -348,7 +363,9 @@ const createExternalAgentSystemInstructions = (
     `Workspace: ${config.workspaceRoot}`,
     `Machdoch mode: ${config.mode}`,
     `Reasoning mode: ${config.reasoning}`,
-    ...(poseChat ? [] : createExternalAgentOperatingInstructions(delegationMode)),
+    ...(poseChat || scopedWorker
+      ? []
+      : createExternalAgentOperatingInstructions(delegationMode)),
     "The user task states whether its message was queued before delivery. A queued message may have been written before earlier work finished. Check its assumptions against the latest outcome, especially after a failure. Proceed when it still makes sense; do not treat queueing alone as evidence that it is stale or canceled.",
     workspacePresenceAvailable && !poseChat
       ? "Other agents may be active in this workspace. If files or Git state change unexpectedly, use the `get_active_workspace_agents` workspace-presence tool; treat its result as advisory context only, never as proof of attribution or a reason to relax workspace safety rules."
@@ -983,6 +1000,7 @@ export const runExternalAgentCommand = async (
       cleanup();
       const usage = outputDecoder.getUsage();
       const retryCount = outputDecoder.getRetryCount();
+      const failureMessage = outputDecoder.getFailureMessage?.();
       const effectiveExitCode =
         exitCode === 0 && structuredResultExitCode !== undefined
           ? structuredResultExitCode
@@ -1003,6 +1021,7 @@ export const runExternalAgentCommand = async (
         modelCallCountReported: outputDecoder.isModelCallCountReported(),
         ...(usage ? { usage } : {}),
         ...(retryCount === undefined ? {} : { retryCount }),
+        ...(failureMessage ? { failureMessage } : {}),
         ...(shutdownRecovery
           ? { providerShutdownRecovery: shutdownRecovery }
           : {}),
@@ -1338,6 +1357,8 @@ interface ExternalAgentCommandFactoryParams {
   enrollmentArgs: readonly string[];
   mcpEnvironmentKeys: readonly string[];
   providerFeatures: readonly string[];
+  nativeSubagents: boolean;
+  scopedWorker: boolean;
 }
 
 type ExternalAgentDelegationMode = "full-access" | "read-only-artifact";
@@ -1354,6 +1375,8 @@ const createCodexArgs = (
   config: RuntimeConfig,
   imageInputs: ModelDrivenExecutionParams["imageInputs"],
   delegationMode: ExternalAgentDelegationMode,
+  nativeSubagents: boolean,
+  scopedWorker: boolean,
 ): ExternalAgentCommand => {
   const contextWindow = config.contextWindow ?? "default";
   assertContextWindowSupportedForProviderModel(
@@ -1367,8 +1390,9 @@ const createCodexArgs = (
     config.reasoning,
   );
   const args = ["exec"];
+  const sandboxed = delegationMode === "read-only-artifact" || scopedWorker;
 
-  if (delegationMode === "read-only-artifact") {
+  if (sandboxed) {
     args.push("--sandbox", "read-only", "--ephemeral");
   } else {
     args.push("--dangerously-bypass-approvals-and-sandbox", "--ephemeral");
@@ -1384,7 +1408,7 @@ const createCodexArgs = (
     config.model,
   );
   args.push("--config", "skills.bundled.enabled=false");
-  args.push("--config", "features.multi_agent=false");
+  args.push("--config", `features.multi_agent=${nativeSubagents}`);
 
   if (reasoningEffort) {
     args.push("--config", `model_reasoning_effort="${reasoningEffort}"`);
@@ -1406,19 +1430,23 @@ const createCodexArgs = (
 
   return {
     args,
-    runDetail:
-      delegationMode === "read-only-artifact"
+    runDetail: scopedWorker
+      ? "Running ephemeral codex exec in a read-only sandbox with scoped Machdoch tools."
+      : sandboxed
         ? "Running ephemeral codex exec with an isolated Machdoch-managed Codex home in a read-only artifact-generation sandbox."
         : "Running ephemeral codex exec with an isolated Machdoch-managed Codex home and native instructions/MCP, while approvals and sandbox are bypassed.",
-    startMessage:
-      delegationMode === "read-only-artifact"
+    startMessage: scopedWorker
+      ? "Starting a scoped Codex CLI worker."
+      : sandboxed
         ? "Starting Codex CLI in constrained read-only artifact mode."
         : "Starting Codex CLI with full local access.",
     successDetail: "codex exec exited successfully.",
     commandLines: [
-      delegationMode === "read-only-artifact"
-        ? "access: read-only artifact generation"
-        : "access: full local access",
+      scopedWorker
+        ? "access: read-only sandbox with scoped Machdoch tools"
+        : sandboxed
+          ? "access: read-only artifact generation"
+          : "access: full local access",
       "Codex home: isolated per run",
       "user config: isolated Machdoch projection",
       "bundled skills: disabled",
@@ -1433,8 +1461,9 @@ const createCodexArgs = (
         : []),
     ],
     metadata: {
-      access:
-        delegationMode === "read-only-artifact"
+      access: scopedWorker
+        ? "scoped-worker"
+        : delegationMode === "read-only-artifact"
           ? "read-only-artifact"
           : "dangerously-bypass-approvals-and-sandbox",
       userConfig: "isolated-machdoch-projection",
@@ -1461,13 +1490,21 @@ const createCodexCommand = ({
   delegationMode,
   enrollmentArgs,
   providerFeatures,
+  nativeSubagents,
+  scopedWorker,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
   if (!providerFeatures.includes("--json")) {
     throw new Error(
       "The selected Codex CLI cannot provide structured result delivery. Upgrade to a version that supports codex exec --json.",
     );
   }
-  const command = createCodexArgs(config, imageInputs, delegationMode);
+  const command = createCodexArgs(
+    config,
+    imageInputs,
+    delegationMode,
+    nativeSubagents,
+    scopedWorker,
+  );
   command.args.splice(-1, 0, ...enrollmentArgs);
   return { ...command, input: prompt };
 };
@@ -1477,6 +1514,8 @@ const createClaudeCommand = ({
   prompt,
   enrollmentArgs,
   providerFeatures,
+  nativeSubagents,
+  scopedWorker,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
   const contextWindow = config.contextWindow ?? "default";
   const model = resolveClaudeCliModelForContextWindow(
@@ -1501,8 +1540,11 @@ const createClaudeCommand = ({
     model,
     "--dangerously-skip-permissions",
     "--no-session-persistence",
-    "--disallowedTools",
-    "Agent",
+    ...(scopedWorker
+      ? ["--tools", ""]
+      : nativeSubagents
+        ? []
+        : ["--disallowedTools", "Agent"]),
     ...enrollmentArgs,
   ];
   const maxTurns = getExecutorTurnLimit(config);
@@ -1524,11 +1566,17 @@ const createClaudeCommand = ({
   return {
     args,
     input: prompt,
-    runDetail: "Running claude -p with permissions skipped.",
-    startMessage: "Starting Claude CLI with full local access.",
+    runDetail: scopedWorker
+      ? "Running claude -p with only scoped Machdoch tools."
+      : "Running claude -p with permissions skipped.",
+    startMessage: scopedWorker
+      ? "Starting a scoped Claude CLI worker."
+      : "Starting Claude CLI with full local access.",
     successDetail: "claude -p exited successfully.",
     commandLines: [
-      "access: dangerously skip permissions",
+      scopedWorker
+        ? "access: scoped Machdoch tools"
+        : "access: dangerously skip permissions",
       ...(effort ? [`effort: ${effort}`] : []),
       ...(contextWindow === "long" ? ["context window: long"] : []),
       ...(maxTurns !== undefined ? [`max turns: ${maxTurns}`] : []),
@@ -1553,6 +1601,8 @@ const createCopilotCommand = ({
   enrollmentArgs,
   mcpEnvironmentKeys,
   providerFeatures,
+  nativeSubagents,
+  scopedWorker,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
   const contextWindow = config.contextWindow ?? "default";
   assertContextWindowSupportedForProviderModel(
@@ -1581,7 +1631,13 @@ const createCopilotCommand = ({
     "--output-format=json",
     "--autopilot",
     "--no-ask-user",
-    "--excluded-tools=task,read_agent,write_agent,list_agents",
+    ...(scopedWorker
+      ? [
+          "--excluded-tools=task,read_agent,write_agent,list_agents,bash,powershell,list_bash,list_powershell,read_bash,read_powershell,stop_bash,stop_powershell,write_bash,write_powershell,apply_patch,create,edit,view,glob,grep,rg,web_fetch,skill,ask_user",
+        ]
+      : nativeSubagents
+        ? []
+        : ["--excluded-tools=task,read_agent,write_agent,list_agents"]),
     `--secret-env-vars=${secretEnvKeys.join(",")}`,
     ...enrollmentArgs,
   ];
@@ -1624,12 +1680,15 @@ const createCopilotCommand = ({
   return {
     args,
     input: prompt,
-    runDetail:
-      "Running copilot with a piped prompt in autopilot mode with all tools, paths, and URLs allowed.",
-    startMessage: "Starting Copilot CLI with full non-interactive permissions.",
+    runDetail: scopedWorker
+      ? "Running copilot with native write and shell tools excluded."
+      : "Running copilot with a piped prompt in autopilot mode with all tools, paths, and URLs allowed.",
+    startMessage: scopedWorker
+      ? "Starting a scoped Copilot CLI worker."
+      : "Starting Copilot CLI with full non-interactive permissions.",
     successDetail: "copilot exited successfully.",
     commandLines: [
-      "access: allow-all",
+      scopedWorker ? "access: scoped Machdoch tools" : "access: allow-all",
       "autopilot: enabled",
       `secret env redaction: ${secretEnvKeys.join(", ")}`,
       `model argument: ${config.model}`,
@@ -1708,7 +1767,10 @@ const executeExternalAgentCliTask = async (
   );
   const delegationMode = getExternalAgentDelegationMode(params);
   const workspacePresence = getWorkspacePresenceEnrollment();
-  const poseChat = Object.hasOwn(params.preparedConversationContext.memory, "poseScene");
+  const poseChat = Object.hasOwn(
+    params.preparedConversationContext.memory,
+    "poseScene",
+  );
   const runtimeSystemInstructions = createExternalAgentSystemInstructions(
     executionConfig,
     [
@@ -1724,6 +1786,7 @@ const executeExternalAgentCliTask = async (
     params.resultProtocol,
     workspacePresence !== undefined,
     poseChat,
+    params.scopedWorkerToolDefinitions !== undefined,
   );
   const resolution = params.taskContext.instructionResolution;
   const instructionPlan = params.instructionDeliveryPlan;
@@ -1757,7 +1820,12 @@ const executeExternalAgentCliTask = async (
       runtimeSystemInstructions,
       machdochCliLaunch: resolveMachdochCliLaunch(),
       localMcp,
-      ...(poseChat ? { localMcpOnly: true } : {}),
+      ...(poseChat || params.scopedWorkerToolDefinitions
+        ? { localMcpOnly: true }
+        : {}),
+      ...(params.skipUnreachableMcpServers
+        ? { skipUnreachableMcpServers: true }
+        : {}),
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
@@ -1766,7 +1834,7 @@ const executeExternalAgentCliTask = async (
         task: params.task,
         mode: params.config.mode,
         status: "blocked",
-        summary: `${providerLabel} execution stopped before launch because run-scoped instruction adaptation failed.`,
+        summary: `${providerLabel} could not start: ${limitText(reason, 450)}`,
         executedTools: [],
         metadata: {
           instructionResolutionId: resolution.resolutionId,
@@ -1819,6 +1887,9 @@ const executeExternalAgentCliTask = async (
       enrollmentArgs: enrollment.args,
       mcpEnvironmentKeys: Object.keys(enrollment.mcpProjection.environment),
       providerFeatures: enrollment.manifest.providerFeatures,
+      nativeSubagents:
+        params.preparedConversationContext.parallelAgentMode === "native",
+      scopedWorker: params.scopedWorkerToolDefinitions !== undefined,
     });
     if (process.platform === "win32") {
       assertWindowsCommandLineLength(
@@ -1843,7 +1914,7 @@ const executeExternalAgentCliTask = async (
         task: params.task,
         mode: params.config.mode,
         status: "blocked",
-        summary: `${providerLabel} execution stopped before launch because the complete request could not be prepared safely.`,
+        summary: `${providerLabel} could not start: ${limitText(reason, 450)}`,
         executedTools: [],
         metadata: {
           instructionResolutionId: resolution.resolutionId,
@@ -2208,7 +2279,11 @@ const executeExternalAgentCliTask = async (
       stdout,
       stderr,
       result.exitCode,
+      result.failureMessage,
     );
+    const summary = reason.startsWith(`${providerLabel} `)
+      ? reason
+      : `${providerLabel} execution failed: ${reason}`;
 
     await emitAgentProgress(
       params.task,
@@ -2240,7 +2315,7 @@ const executeExternalAgentCliTask = async (
         task: params.task,
         mode: params.config.mode,
         status: "failed",
-        summary: `${providerLabel} execution failed before completing the task.`,
+        summary: limitText(summary, 500),
         executedTools: ["shell"],
         metadata: instructionMetadata,
         outputSections: [
@@ -2391,6 +2466,9 @@ export const maybeExecuteExternalAgentProviderTask = async (
       : {}),
     ...(params.additionalToolDefinitions
       ? { additionalToolDefinitions: params.additionalToolDefinitions }
+      : {}),
+    ...(params.scopedWorkerToolDefinitions
+      ? { scopedToolDefinitions: params.scopedWorkerToolDefinitions }
       : {}),
     ...(params.runId ? { runId: params.runId } : {}),
     ...(params.signal ? { signal: params.signal } : {}),

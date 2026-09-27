@@ -173,6 +173,7 @@ describe("runRalphFlow", () => {
     expect(defaultExecutionOptions).toEqual(
       expect.objectContaining({
         runId: "ralph-run-1",
+        skipUnreachableMcpServers: true,
         resolvedInstructions: expect.objectContaining({
           providerId: runtimeConfig.provider,
           model: runtimeConfig.model,

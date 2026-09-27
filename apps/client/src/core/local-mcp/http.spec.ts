@@ -12,6 +12,7 @@ import type {
   ConversationMemoryRuntime,
 } from "../_helpers/agent-tools-shared.js";
 import { startLocalMcpHost } from "./http.js";
+import { createFilesystemToolDefinitions } from "../_helpers/filesystem-tool-definitions.js";
 
 let root: string;
 const cleanup: Array<() => Promise<void>> = [];
@@ -54,6 +55,36 @@ const start = async (additionalToolDefinitions: AgentToolDefinition[] = []) => {
 };
 
 describe("Machdoch run MCP endpoint", () => {
+  it("exposes only scoped worker tools", async () => {
+    const readFile = createFilesystemToolDefinitions().find(
+      (tool) => tool.spec.name === "read_file",
+    );
+    expect(readFile).toBeDefined();
+    const host = await startLocalMcpHost({
+      config: { ...runtimeConfig, workspaceRoot: root },
+      memory: {
+        sessionEnabled: false,
+        sessionEntries: [],
+        globalEnabled: false,
+        globalEntries: [],
+      },
+      scopedToolDefinitions: [readFile!],
+    });
+    cleanup.push(host.close);
+    const client = new Client({ name: "scoped-worker-test", version: "1" });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(host.endpoint.url), {
+        requestInit: {
+          headers: { Authorization: `Bearer ${host.endpoint.token}` },
+        },
+      }) as unknown as Transport,
+    );
+    cleanup.push(() => client.close());
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
+      "read_file",
+    ]);
+  });
+
   it("requires its run token and rejects browser origins and foreign hosts", async () => {
     const { host, client } = await start();
     expect((await fetch(host.endpoint.url)).status).toBe(401);

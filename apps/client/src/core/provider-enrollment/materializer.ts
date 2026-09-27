@@ -89,6 +89,7 @@ interface MaterializeCliEnrollmentParams {
   machdochCliLaunch: MachdochCliLaunch;
   localMcp?: LocalMcpEndpoint;
   localMcpOnly?: boolean;
+  skipUnreachableMcpServers?: boolean;
 }
 
 interface RenderedEnrollmentFiles {
@@ -997,11 +998,26 @@ export const materializeCliEnrollment = async (
         machdochCliLaunch: params.machdochCliLaunch,
         ...(params.localMcp ? { localMcp: params.localMcp } : {}),
         ...(params.localMcpOnly ? { localMcpOnly: true } : {}),
+        ...(params.skipUnreachableMcpServers
+          ? { skipUnreachableMcpServers: true }
+          : {}),
       }),
     ]);
+    const mcpInitializationInstructions = params.localMcpOnly
+      ? []
+      : params.resolution.mcpInitializationInstructions;
+    const projectedMcpServerIds = new Set(
+      projection.servers.map((server) => server.canonicalId),
+    );
     const instructionPayload = renderInstructionTransportPayload(
       params.resolution.renderedEnvelope,
-      params.localMcpOnly ? [] : params.resolution.mcpInitializationInstructions,
+      params.skipUnreachableMcpServers
+        ? mcpInitializationInstructions.filter((snapshot) =>
+            snapshot.serverIds.every((serverId) =>
+              projectedMcpServerIds.has(serverId),
+            ),
+          )
+        : mcpInitializationInstructions,
     );
     const systemInstructions = [
       params.runtimeSystemInstructions.trim(),

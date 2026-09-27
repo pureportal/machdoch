@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AgentCliProvider } from "../runtime-contract.generated.js";
 import type { MachdochCliLaunch } from "./machdoch-cli-launch.js";
@@ -34,6 +35,103 @@ const createLaunch = (root: string, source = false): MachdochCliLaunch => ({
 });
 
 describe("MCP projector", () => {
+  it("omits an unreachable HTTP server for a Ralph enrollment", async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "machdoch-projector-unreachable-"),
+    );
+    roots.push(root);
+    process.env.MACHDOCH_USER_CONFIG_DIR = join(root, "user");
+    const server = createServer();
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const address = server.address();
+    if (!address || typeof address === "string")
+      throw new Error("Expected a TCP port.");
+    const port = address.port;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    const configDirectory = join(root, ".machdoch", "mcp");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(
+      join(configDirectory, "mcp.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        servers: [
+          {
+            id: "blockbench",
+            enabled: true,
+            transport: {
+              type: "streamable-http",
+              url: `http://127.0.0.1:${port}/bb-mcp`,
+            },
+          },
+        ],
+      }),
+    );
+
+    const projection = await projectMcpForProvider("codex-cli", root, {
+      machdochCliLaunch: createLaunch(root),
+      localMcp: { url: "http://127.0.0.1:43125/mcp", token: "runtime-token" },
+      skipUnreachableMcpServers: true,
+    });
+
+    expect(projection.servers.map((entry) => entry.canonicalId)).toEqual([
+      "machdoch",
+    ]);
+    expect(projection.uncoveredServers).toEqual([
+      expect.objectContaining({
+        canonicalId: "blockbench",
+        reason: expect.stringContaining("could not be reached"),
+      }),
+    ]);
+    expect(projection.config.mcpServers).not.toHaveProperty("blockbench");
+  });
+
+  it("keeps a reachable HTTP server in a Ralph enrollment", async () => {
+    const root = await mkdtemp(join(tmpdir(), "machdoch-projector-reachable-"));
+    roots.push(root);
+    process.env.MACHDOCH_USER_CONFIG_DIR = join(root, "user");
+    const server = createServer();
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string")
+        throw new Error("Expected a TCP port.");
+      const configDirectory = join(root, ".machdoch", "mcp");
+      await mkdir(configDirectory, { recursive: true });
+      await writeFile(
+        join(configDirectory, "mcp.json"),
+        JSON.stringify({
+          schemaVersion: 1,
+          servers: [
+            {
+              id: "reachable",
+              enabled: true,
+              transport: {
+                type: "streamable-http",
+                url: `http://127.0.0.1:${address.port}/mcp`,
+              },
+            },
+          ],
+        }),
+      );
+
+      const projection = await projectMcpForProvider("codex-cli", root, {
+        machdochCliLaunch: createLaunch(root),
+        skipUnreachableMcpServers: true,
+      });
+
+      expect(projection.servers.map((entry) => entry.canonicalId)).toEqual([
+        "reachable",
+      ]);
+      expect(projection.uncoveredServers).toEqual([]);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it.each(["codex-cli", "claude-cli", "copilot-cli"] as const)(
     "adds the parent runtime MCP server for %s",
     async (provider) => {
@@ -76,10 +174,22 @@ describe("MCP projector", () => {
     process.env.MACHDOCH_USER_CONFIG_DIR = join(root, "user");
     const configDirectory = join(root, ".machdoch", "mcp");
     await mkdir(configDirectory, { recursive: true });
-    await writeFile(join(configDirectory, "mcp.json"), JSON.stringify({
-      schemaVersion: 1,
-      servers: [{ id: "unrelated", enabled: true, transport: { type: "streamable-http", url: "http://localhost:32123/bb-mcp" } }],
-    }));
+    await writeFile(
+      join(configDirectory, "mcp.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        servers: [
+          {
+            id: "unrelated",
+            enabled: true,
+            transport: {
+              type: "streamable-http",
+              url: "http://localhost:32123/bb-mcp",
+            },
+          },
+        ],
+      }),
+    );
 
     const projection = await projectMcpForProvider("codex-cli", root, {
       machdochCliLaunch: createLaunch(root),
@@ -87,7 +197,9 @@ describe("MCP projector", () => {
       localMcpOnly: true,
     });
 
-    expect(projection.servers.map((server) => server.canonicalId)).toEqual(["machdoch"]);
+    expect(projection.servers.map((server) => server.canonicalId)).toEqual([
+      "machdoch",
+    ]);
   });
 
   it("uses direct native entries first and a named stdio proxy for field loss", async () => {

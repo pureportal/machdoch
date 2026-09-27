@@ -27,6 +27,7 @@ import type {
   McpUncoveredServer,
 } from "./types.js";
 import type { LocalMcpEndpoint } from "../local-mcp/http.js";
+import { isMcpHttpEndpointReachable } from "./mcp-availability.js";
 
 export interface McpProjectionOptions {
   persistent?: boolean;
@@ -34,6 +35,7 @@ export interface McpProjectionOptions {
   machdochCliLaunch?: MachdochCliLaunch;
   localMcp?: LocalMcpEndpoint;
   localMcpOnly?: boolean;
+  skipUnreachableMcpServers?: boolean;
 }
 
 const ENVIRONMENT_TEMPLATE_PATTERN = /\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}/gu;
@@ -563,10 +565,34 @@ export const projectMcpForProvider = async (
     );
   }
   const warnings: string[] = [];
-  const environment = await resolveProjectionEnvironment(enabledServers);
+  const availability = options.skipUnreachableMcpServers
+    ? await Promise.all(
+        enabledServers.map(async (server) => ({
+          server,
+          reachable:
+            server.transport.type === "stdio" ||
+            (await isMcpHttpEndpointReachable(server.transport.url)),
+        })),
+      )
+    : enabledServers.map((server) => ({ server, reachable: true }));
+  const availableServers = availability
+    .filter((entry) => entry.reachable)
+    .map((entry) => entry.server);
+  for (const { server, reachable } of availability) {
+    if (reachable) continue;
+    const reason = `MCP server \`${server.id}\` could not be reached and was omitted from this run.`;
+    warnings.push(reason);
+    uncoveredServers.push({
+      canonicalId: server.id,
+      digest: digestJson({ server, discovery: discovery[server.id] }),
+      capabilities: getCapabilities(discovery[server.id], server),
+      reason,
+    });
+  }
+  const environment = await resolveProjectionEnvironment(availableServers);
   let machdochCliLaunch: MachdochCliLaunch | undefined;
 
-  for (const server of enabledServers) {
+  for (const server of availableServers) {
     const projectedId = createProjectedServerId(
       provider,
       server.id,

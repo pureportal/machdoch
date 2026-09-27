@@ -22,6 +22,7 @@ import type {
   ParallelAgentMode,
   TaskExecutionProgress,
 } from "../../../../core/types.js";
+import { resolveParallelAgentMode } from "../../../../core/parallel-agent-capabilities.js";
 import { scheduleAppNotificationDismiss } from "@machdoch/media-studio/tauri/ui/components/ui/notification-lifecycle.js";
 import {
   applySessionRetentionPolicy,
@@ -2857,6 +2858,11 @@ export const useChatSessionController = (
           ...session,
           provider,
           model,
+          parallelAgentMode: resolveParallelAgentMode(
+            provider,
+            model,
+            session.parallelAgentMode,
+          ),
           updatedAt: Date.now(),
         };
         const nextReasoning = normalizeSessionReasoningOverride(
@@ -2893,6 +2899,11 @@ export const useChatSessionController = (
             ...session,
             provider,
             model,
+            parallelAgentMode: resolveParallelAgentMode(
+              provider,
+              model,
+              session.parallelAgentMode,
+            ),
             updatedAt: Date.now(),
           };
           const nextReasoning = normalizeSessionReasoningOverride(
@@ -2984,7 +2995,11 @@ export const useChatSessionController = (
     if (activeMessageEditRef.current) {
       updateMessageEditSession((session) => ({
         ...session,
-        parallelAgentMode: mode,
+        parallelAgentMode: resolveParallelAgentMode(
+          session.provider,
+          session.model,
+          mode,
+        ),
         updatedAt: Date.now(),
       }));
       return;
@@ -2993,7 +3008,15 @@ export const useChatSessionController = (
       ...previous,
       sessions: previous.sessions.map((session) =>
         session.id === state.activeSessionId
-          ? { ...session, parallelAgentMode: mode, updatedAt: Date.now() }
+          ? {
+              ...session,
+              parallelAgentMode: resolveParallelAgentMode(
+                session.provider,
+                session.model,
+                mode,
+              ),
+              updatedAt: Date.now(),
+            }
           : session,
       ),
     }));
@@ -6656,6 +6679,11 @@ export const useChatSessionController = (
             ...session,
             provider,
             model,
+            parallelAgentMode: resolveParallelAgentMode(
+              provider,
+              model,
+              session.parallelAgentMode,
+            ),
             updatedAt: Date.now(),
           };
         });
@@ -6731,7 +6759,15 @@ export const useChatSessionController = (
         ...previous,
         sessions: previous.sessions.map((session) =>
           session.id === sessionId
-            ? { ...session, parallelAgentMode: mode, updatedAt: Date.now() }
+            ? {
+                ...session,
+                parallelAgentMode: resolveParallelAgentMode(
+                  session.provider,
+                  session.model,
+                  mode,
+                ),
+                updatedAt: Date.now(),
+              }
             : session,
         ),
       }));

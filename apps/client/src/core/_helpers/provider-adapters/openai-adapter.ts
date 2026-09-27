@@ -36,6 +36,8 @@ import {
 } from "./stream-events.js";
 import { normalizeToolResultContent } from "./tool-result-content.js";
 import { resolveProviderPromptCacheDirectives } from "../provider-prompt-cache.js";
+import { supportsNativeSubagents } from "../../parallel-agent-capabilities.js";
+import type { ParallelAgentMode } from "../../types.js";
 
 export const createOpenAITools = (tools: AgentModelToolSpec[]) => {
   return tools.map((tool) => ({
@@ -73,7 +75,7 @@ type OpenAIReasoningEffort =
   | "max";
 
 const OPENAI_MULTI_AGENT_BETA = "responses_multi_agent=v1" as const;
-const OPENAI_ULTRA_MAX_CONCURRENT_SUBAGENTS = 4;
+const OPENAI_NATIVE_MAX_CONCURRENT_SUBAGENTS = 4;
 
 export const createOpenAIReasoningConfig = (
   model: string,
@@ -115,22 +117,19 @@ export const createOpenAIReasoningConfig = (
 
 export const createOpenAIMultiAgentConfig = (
   model: string,
-  reasoning?: ReasoningMode,
+  parallelAgentMode?: ParallelAgentMode,
 ): Pick<BetaResponseCreateParamsNonStreaming, "betas" | "multi_agent"> => {
-  if (!reasoning || reasoning === "default") {
-    return {};
-  }
-
-  assertReasoningModeSupportedForProviderModel(reasoning, "openai", model);
-
-  if (reasoning !== "ultra") {
+  if (
+    parallelAgentMode !== "native" ||
+    !supportsNativeSubagents("openai", model)
+  ) {
     return {};
   }
 
   return {
     multi_agent: {
       enabled: true,
-      max_concurrent_subagents: OPENAI_ULTRA_MAX_CONCURRENT_SUBAGENTS,
+      max_concurrent_subagents: OPENAI_NATIVE_MAX_CONCURRENT_SUBAGENTS,
     },
     betas: [OPENAI_MULTI_AGENT_BETA],
   };
@@ -343,7 +342,10 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
             params.reasoning,
             this.reasoningMode,
           ),
-          ...createOpenAIMultiAgentConfig(params.model, params.reasoning),
+          ...createOpenAIMultiAgentConfig(
+            params.model,
+            params.parallelAgentMode,
+          ),
           ...createOpenAIStructuredOutputTextConfig(params.structuredOutput),
           ...createOpenAIResponseToolSelection(params.tools),
         };
@@ -422,7 +424,7 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
           ),
           ...createOpenAIMultiAgentConfig(
             startParams.model,
-            startParams.reasoning,
+            startParams.parallelAgentMode,
           ),
           ...createOpenAIStructuredOutputTextConfig(
             startParams.structuredOutput,

@@ -708,7 +708,9 @@ pub fn deserialize_host_message(
     deny_unknown_fields
 )]
 pub enum HostRequest {
-    Media { request: Value },
+    Media {
+        request: Value,
+    },
     GetProductSnapshot,
     ExecuteProductCommand {
         command: ProductCommand,
@@ -737,7 +739,9 @@ pub enum HostRequest {
     deny_unknown_fields
 )]
 pub enum HostResponse {
-    Media { response: Value },
+    Media {
+        response: Value,
+    },
     WorkspaceRuns {
         snapshot: Value,
     },
@@ -1189,10 +1193,12 @@ impl ProductCommand {
                 ("provider", self.provider.is_some()),
                 ("model", self.model.is_some()),
             ]),
-            ProductCommandKind::SetSessionMode | ProductCommandKind::SetParallelAgentMode => required.extend([
-                ("sessionId", self.session_id.is_some()),
-                ("mode", self.mode.is_some()),
-            ]),
+            ProductCommandKind::SetSessionMode | ProductCommandKind::SetParallelAgentMode => {
+                required.extend([
+                    ("sessionId", self.session_id.is_some()),
+                    ("mode", self.mode.is_some()),
+                ])
+            }
             ProductCommandKind::SetSessionReasoning => required.extend([
                 ("sessionId", self.session_id.is_some()),
                 ("reasoning", self.reasoning.is_some()),
@@ -1326,11 +1332,15 @@ impl ProductCommand {
             }
             ProductCommandKind::CreateSession => {
                 self.workspace.as_deref().is_none_or(valid_workspace)
-                    && self.special_kind.as_deref().is_none_or(|kind| kind == "pose")
+                    && self
+                        .special_kind
+                        .as_deref()
+                        .is_none_or(|kind| kind == "pose")
                     && (self.pose_scene.is_none() || self.special_kind.as_deref() == Some("pose"))
-                    && self.pose_scene.as_ref().is_none_or(|scene| {
-                        scene.is_object() && scene.to_string().len() <= 24_000
-                    })
+                    && self
+                        .pose_scene
+                        .as_ref()
+                        .is_none_or(|scene| scene.is_object() && scene.to_string().len() <= 24_000)
             }
             ProductCommandKind::ActivateSession
             | ProductCommandKind::ArchiveSession
@@ -1563,7 +1573,10 @@ fn valid_mode(value: Option<&str>) -> bool {
 }
 
 fn valid_parallel_agent_mode(value: Option<&str>) -> bool {
-    matches!(value, Some("disabled" | "read-only" | "machdoch"))
+    matches!(
+        value,
+        Some("disabled" | "read-only" | "machdoch" | "native")
+    )
 }
 
 fn valid_reasoning(value: Option<&str>) -> bool {
@@ -2076,7 +2089,10 @@ mod tests {
         .expect("media command should decode");
 
         assert_eq!(command.kind, ProductCommandKind::GenerateMedia);
-        assert_eq!(command.model_id.as_deref(), Some("openai:gpt-image-2.5-sunburst"));
+        assert_eq!(
+            command.model_id.as_deref(),
+            Some("openai:gpt-image-2.5-sunburst")
+        );
         assert_eq!(command.output_count, Some(2));
         assert_eq!(command.transparent_background, Some(true));
     }
@@ -2196,7 +2212,10 @@ mod tests {
         .expect("padded media command should decode");
 
         assert_eq!(media_run.prompt.as_deref(), Some("Create a geometric owl"));
-        assert_eq!(media_run.model_id.as_deref(), Some("openai:gpt-image-2.5-sunburst"));
+        assert_eq!(
+            media_run.model_id.as_deref(),
+            Some("openai:gpt-image-2.5-sunburst")
+        );
     }
 
     #[test]
@@ -2411,6 +2430,16 @@ mod tests {
         let command = command_payload_with_all_fields("unknown-command");
 
         assert!(serde_json::from_value::<ProductCommand>(command).is_err());
+    }
+
+    #[test]
+    fn command_decoding_accepts_native_parallel_agent_mode() {
+        let mut command = command_payload("set-parallel-agent-mode");
+        command["mode"] = serde_json::json!("native");
+
+        let decoded = serde_json::from_value::<ProductCommand>(command)
+            .expect("native parallel agent mode should decode");
+        assert_eq!(decoded.mode.as_deref(), Some("native"));
     }
 
     #[test]
