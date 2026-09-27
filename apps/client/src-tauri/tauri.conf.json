@@ -55,7 +55,7 @@
     "shortDescription": "Local-first OS AI agent for CLI and desktop.",
     "longDescription": "Machdoch is a local-first AI assistant for Windows and Linux that works with folders, runs tasks, and automates repeatable workflows from the desktop or CLI.",
     "resources": {
-      "resources/whisper/ggml-large-v3-q5_0.bin": "whisper/ggml-large-v3-q5_0.bin",
+      "resources/whisper/ggml-base-q5_1.bin": "whisper/ggml-base-q5_1.bin",
       "resources/whisper/LICENSE-whisper.cpp.txt": "whisper/LICENSE-whisper.cpp.txt",
       "resources/whisper/LICENSE-whisper-model.txt": "whisper/LICENSE-whisper-model.txt",
       "python/media_diffusers_worker.py": "python/media_diffusers_worker.py",

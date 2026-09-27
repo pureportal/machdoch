@@ -7,13 +7,13 @@ import { pipeline } from "node:stream/promises";
 
 const modelPath = resolve(
   import.meta.dirname,
-  "../src-tauri/resources/whisper/ggml-large-v3-q5_0.bin",
+  "../src-tauri/resources/whisper/ggml-base-q5_1.bin",
 );
 const modelUrl =
-  "https://huggingface.co/ggerganov/whisper.cpp/resolve/c521a4b02f422512d734391fdf08bb08c0862f68/ggml-large-v3-q5_0.bin";
-const expectedSize = 1_081_140_203;
+  "https://huggingface.co/ggerganov/whisper.cpp/resolve/c521a4b02f422512d734391fdf08bb08c0862f68/ggml-base-q5_1.bin";
+const expectedSize = 59_707_625;
 const expectedSha256 =
-  "d75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1";
+  "422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898";
 
 const sha256File = async (path) => {
   const hash = createHash("sha256");

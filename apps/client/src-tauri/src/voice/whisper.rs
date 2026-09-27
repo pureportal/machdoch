@@ -10,7 +10,7 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 use super::TranscribedSpeechText;
 
 pub(super) const WHISPER_MAX_AUDIO_BYTES: usize = 64 * 1024 * 1024;
-const MODEL_RESOURCE_PATH: &str = "whisper/ggml-large-v3-q5_0.bin";
+const MODEL_RESOURCE_PATH: &str = "whisper/ggml-base-q5_1.bin";
 
 static WHISPER_CONTEXT: OnceLock<Mutex<Option<WhisperContext>>> = OnceLock::new();
 
@@ -61,13 +61,10 @@ fn transcribe_whisper_blocking(
     let mut state = whisper
         .create_state()
         .map_err(|error| format!("Could not start Whisper: {error}"))?;
-    let mut params = FullParams::new(SamplingStrategy::BeamSearch {
-        beam_size: 5,
-        patience: -1.0,
-    });
+    let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     params.set_language(None);
     params.set_translate(translate_to_english);
-    params.set_no_timestamps(true);
+    params.set_audio_ctx(audio_context_for_samples(audio.len()));
     params.set_print_progress(false);
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
@@ -93,6 +90,10 @@ fn transcribe_whisper_blocking(
         mime_type: "audio/wav".to_string(),
         detected_language,
     })
+}
+
+fn audio_context_for_samples(sample_count: usize) -> i32 {
+    ((sample_count / 320 + 128).next_multiple_of(64)).clamp(256, 1500) as i32
 }
 
 fn decode_wav(audio_bytes: &[u8]) -> Result<Vec<f32>, String> {
@@ -136,10 +137,18 @@ mod tests {
     }
 
     #[test]
+    fn sizes_audio_context_for_short_recordings() {
+        assert_eq!(audio_context_for_samples(16_000), 256);
+        assert_eq!(audio_context_for_samples(2 * 16_000), 256);
+        assert_eq!(audio_context_for_samples(10 * 16_000), 640);
+        assert_eq!(audio_context_for_samples(30 * 16_000), 1500);
+    }
+
+    #[test]
     #[ignore = "requires the downloaded Whisper model"]
     fn bundled_model_transcribes_wav() {
-        let model_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("resources/whisper/ggml-large-v3-q5_0.bin");
+        let model_path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/whisper/ggml-base-q5_1.bin");
         let mut bytes = Cursor::new(Vec::new());
         let spec = hound::WavSpec {
             channels: 1,
