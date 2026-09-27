@@ -41,6 +41,7 @@ export interface WorkspaceSelectProps {
   options: readonly WorkspaceSelectOption[];
   buttonLabel: string;
   active: boolean;
+  iconOnly?: boolean;
   workspaceLocked?: boolean;
   buttonAriaLabel?: string;
   buttonClassName?: string;
@@ -164,10 +165,11 @@ const scoreWorkspaceSelectOption = (
 const WorkspaceSelectButtonContent = ({
   buttonLabel,
   active,
+  iconOnly,
   workspaceLocked,
 }: Pick<
   WorkspaceSelectProps,
-  "active" | "buttonLabel" | "workspaceLocked"
+  "active" | "buttonLabel" | "iconOnly" | "workspaceLocked"
 >): JSX.Element => (
   <>
     {workspaceLocked ? (
@@ -176,11 +178,13 @@ const WorkspaceSelectButtonContent = ({
       <FolderOpen
         className={cn(
           "h-3.5 w-3.5",
-          active ? "text-sky-300" : "text-slate-500",
+          !iconOnly && (active ? "text-sky-300" : "text-slate-500"),
         )}
       />
     )}
-    <span className="min-w-0 flex-1 truncate text-left">{buttonLabel}</span>
+    {!iconOnly ? (
+      <span className="min-w-0 flex-1 truncate text-left">{buttonLabel}</span>
+    ) : null}
   </>
 );
 
@@ -189,6 +193,7 @@ export const WorkspaceSelect = ({
   options,
   buttonLabel,
   active,
+  iconOnly = false,
   workspaceLocked = false,
   buttonAriaLabel,
   buttonClassName,
@@ -236,7 +241,9 @@ export const WorkspaceSelect = ({
           "border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15",
       )
     : cn(
-        "app-composer-toolbar-pill h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs font-medium text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100",
+        iconOnly
+          ? "app-composer-toolbar-icon-button h-8 w-8 rounded-full border-slate-800 bg-slate-950/70 p-0 text-slate-400 shadow-none hover:bg-slate-900"
+          : "app-composer-toolbar-pill h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs font-medium text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100",
         active &&
           "border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15",
       );
@@ -288,6 +295,7 @@ export const WorkspaceSelect = ({
           <Button
             type="button"
             variant="outline"
+            size={iconOnly ? "icon-sm" : "default"}
             aria-label={buttonAriaLabel}
             tooltip={null}
             disabled
@@ -299,6 +307,7 @@ export const WorkspaceSelect = ({
             <WorkspaceSelectButtonContent
               buttonLabel={buttonLabel}
               active={active}
+              iconOnly={iconOnly}
               workspaceLocked={workspaceLocked}
             />
           </Button>
@@ -309,38 +318,48 @@ export const WorkspaceSelect = ({
 
   if ((selectActionOnTrigger || options.length === 0) && action) {
     return (
-      <Button
-        type="button"
-        variant="outline"
-        aria-label={buttonAriaLabel}
-        onClick={selectAction}
-        className={resolvedButtonClassName}
-      >
-        <WorkspaceSelectButtonContent
-          buttonLabel={buttonLabel}
-          active={active}
-          workspaceLocked={workspaceLocked}
-        />
-      </Button>
-    );
-  }
-
-  return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>
+      <ControlTooltip content={iconOnly ? buttonAriaLabel : undefined}>
         <Button
           type="button"
           variant="outline"
+          size={iconOnly ? "icon-sm" : "default"}
+          tooltip={null}
           aria-label={buttonAriaLabel}
+          onClick={selectAction}
           className={resolvedButtonClassName}
         >
           <WorkspaceSelectButtonContent
             buttonLabel={buttonLabel}
             active={active}
+            iconOnly={iconOnly}
             workspaceLocked={workspaceLocked}
           />
         </Button>
-      </PopoverTrigger>
+      </ControlTooltip>
+    );
+  }
+
+  return (
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <ControlTooltip content={iconOnly ? buttonAriaLabel : undefined}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size={iconOnly ? "icon-sm" : "default"}
+            tooltip={null}
+            aria-label={buttonAriaLabel}
+            className={resolvedButtonClassName}
+          >
+            <WorkspaceSelectButtonContent
+              buttonLabel={buttonLabel}
+              active={active}
+              iconOnly={iconOnly}
+              workspaceLocked={workspaceLocked}
+            />
+          </Button>
+        </PopoverTrigger>
+      </ControlTooltip>
       <PopoverContent
         align="start"
         className={cn(

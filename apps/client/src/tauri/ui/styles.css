@@ -1810,6 +1810,7 @@ body {
 
 :root[data-density="compact"] .app-mode-picker-button,
 :root[data-density="compact"] .app-reasoning-picker-button,
+:root[data-density="compact"] .app-composer-toolbar-icon-button,
 :root[data-density="compact"] .app-composer-toggle-button {
   width: 1.85rem !important;
   height: 1.85rem !important;
@@ -1824,6 +1825,7 @@ body {
   :is(
     .app-model-picker-button,
     .app-composer-toolbar-pill,
+    .app-composer-toolbar-icon-button,
     .app-mode-picker-button,
     .app-reasoning-picker-button,
     .app-composer-toggle-button,

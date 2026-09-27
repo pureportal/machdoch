@@ -1911,24 +1911,28 @@ export const SmartContextPackPicker = ({
     ],
   );
   useOptionalRegisterCommands(contextPackCommands);
+  const triggerLabel = contextPacks.length
+    ? `Context packs: ${contextPacks.length}`
+    : "Context packs";
 
   return (
     <>
       <Popover open={open} onOpenChange={handlePopoverOpenChange}>
-        <ControlTooltip content="Context packs">
+        <ControlTooltip content={triggerLabel}>
           <PopoverTrigger asChild>
             <Button
               type="button"
               variant="outline"
-              aria-label="Context packs"
-              className="app-context-pack-trigger h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs font-medium text-slate-300 shadow-none hover:border-sky-500/30 hover:bg-slate-900 hover:text-slate-100"
+              size="icon-sm"
+              tooltip={null}
+              aria-label={triggerLabel}
+              className={cn(
+                "app-context-pack-trigger app-composer-toolbar-icon-button h-8 w-8 rounded-full border-slate-800 bg-slate-950/70 p-0 text-slate-400 shadow-none hover:bg-slate-900",
+                contextPacks.length > 0 &&
+                  "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:border-sky-500/40 hover:bg-sky-500/15",
+              )}
             >
-              <Layers className="h-3.5 w-3.5 text-sky-300" />
-              <span className="hidden sm:inline">
-                {contextPacks.length > 0
-                  ? `Packs (${contextPacks.length})`
-                  : "Packs"}
-              </span>
+              <Layers className="h-3.5 w-3.5" />
             </Button>
           </PopoverTrigger>
         </ControlTooltip>

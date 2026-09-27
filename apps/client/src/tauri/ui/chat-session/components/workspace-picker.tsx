@@ -17,6 +17,7 @@ export interface WorkspacePickerProps {
   hasActiveWorkspace: boolean;
   workspaceLocked: boolean;
   allowNotSet?: boolean;
+  iconOnly?: boolean;
   buttonAriaLabel?: string;
   buttonClassName?: string;
   commandId?: string;
@@ -66,6 +67,7 @@ export const WorkspacePicker = ({
   hasActiveWorkspace,
   workspaceLocked,
   allowNotSet = true,
+  iconOnly = false,
   buttonAriaLabel,
   buttonClassName,
   commandId = "chat.session.workspace.select",
@@ -183,8 +185,12 @@ export const WorkspacePicker = ({
       options={workspaceOptions}
       buttonLabel={workspaceLabel}
       active={hasActiveWorkspace}
+      iconOnly={iconOnly}
       workspaceLocked={workspaceLocked}
-      buttonAriaLabel={buttonAriaLabel}
+      buttonAriaLabel={
+        buttonAriaLabel ??
+        (iconOnly ? `Workspace: ${workspaceLabel}` : undefined)
+      }
       buttonClassName={buttonClassName}
       description={`Workspace target for this session · ${recentWorkspaces.length} configured.`}
       action={{
