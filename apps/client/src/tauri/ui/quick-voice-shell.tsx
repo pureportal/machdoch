@@ -25,10 +25,10 @@ import {
 } from "./chat-session/_helpers/speech-audio";
 import { useSpeechRecorder } from "./chat-session/_helpers/use-speech-recorder";
 import { useSpeechTranscription } from "./chat-session/_helpers/use-speech-transcription";
+import { processUserSpeechText } from "./speech-text-processing";
 import {
   ASSISTANT_SURFACE_READY_EVENT,
   QUICK_VOICE_START_EVENT,
-  processUserSpeechText,
   type UserSpeechToTextSettings,
 } from "./runtime";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
@@ -205,9 +205,8 @@ export const QuickVoiceShell = (): JSX.Element => {
       }
 
       const commandText =
-        provider !== "whisper" &&
-        (speechToTextSettings.autoTranslateToEnglish ||
-          speechToTextSettings.autoFormat)
+        speechToTextSettings.autoTranslateToEnglish ||
+        speechToTextSettings.autoFormat
           ? await processUserSpeechText({
               provider,
               text: transcriptText,

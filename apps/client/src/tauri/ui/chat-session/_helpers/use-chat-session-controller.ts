@@ -8662,8 +8662,6 @@ export const useChatSessionController = (
         autoTranslateToEnglish:
           runtime.userSpeechToTextSettings.autoTranslateToEnglish,
         autoFormat: runtime.userSpeechToTextSettings.autoFormat,
-        formatAvailable:
-          runtime.userSpeechToTextSettings.activeProvider !== "whisper",
         onAction: handleSpeechInputAction,
         onProcessingChange: runtime.handleSpeechToTextProcessingSave,
         onStatusDismiss: speechInput.dismissStatus,
