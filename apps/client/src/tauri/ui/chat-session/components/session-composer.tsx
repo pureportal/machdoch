@@ -114,7 +114,6 @@ export interface SessionComposerProps {
     statusTone: "success" | "error" | "info" | null;
     autoTranslateToEnglish: boolean;
     autoFormat: boolean;
-    formatAvailable: boolean;
     onAction: () => void;
     onProcessingChange: (options: {
       autoTranslateToEnglish: boolean;
@@ -548,7 +547,6 @@ export const SessionComposer = ({
           {
             label: "Format and improve text",
             checked: speechInput.autoFormat,
-            disabled: !speechInput.formatAvailable,
             onSelect: () =>
               speechInput.onProcessingChange({
                 autoTranslateToEnglish: speechInput.autoTranslateToEnglish,
@@ -571,7 +569,6 @@ export const SessionComposer = ({
     ];
   }, [
     speechInput.autoFormat,
-    speechInput.formatAvailable,
     speechInput.autoTranslateToEnglish,
     speechInput.browserSupported,
     speechInput.enabled,

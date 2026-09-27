@@ -4350,20 +4350,6 @@ export const transcribeUserSpeechAudio = async (options: {
   }
 };
 
-export const processUserSpeechText = async (options: {
-  provider: UserSpeechToTextProvider;
-  text: string;
-  autoTranslateToEnglish: boolean;
-  autoFormat: boolean;
-}): Promise<string> => {
-  if (!canInvokeTauriCommands()) {
-    throw new Error(
-      "Speech text processing is only available in the desktop runtime.",
-    );
-  }
-  return tauriCore.invoke<string>("process_user_speech_text", options);
-};
-
 export const loadWorkspaceRuntimeSnapshot = async (
   workspaceRoot: string | null | undefined,
 ): Promise<RuntimeSnapshot | null> => {

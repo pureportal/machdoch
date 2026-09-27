@@ -451,7 +451,6 @@ pub fn run() {
             runtime_snapshot::save_workspace_mcp_config_document,
             voice::synthesize_user_voice_audio,
             voice::transcribe_user_speech_audio,
-            voice::process_user_speech_text
         ])
         .build(context)
         .expect("error while building machdoch desktop shell")

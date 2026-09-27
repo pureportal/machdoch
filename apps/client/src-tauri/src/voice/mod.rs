@@ -168,65 +168,9 @@ pub async fn transcribe_user_speech_audio(
     }
 }
 
-fn speech_text_instruction(auto_translate_to_english: bool, auto_format: bool) -> String {
-    let mut instruction = String::from("Edit the speech transcript below. Return only the edited text. Preserve the speaker's meaning, requests, facts, names, paths, code, and technical terms. Do not add ideas or commentary.");
-    if auto_translate_to_english {
-        instruction.push_str(" Translate non-English speech into natural English. Keep content that is already English in English.");
-    }
-    if auto_format {
-        instruction.push_str(" Correct grammar, punctuation, and wording. Organize distinct requested changes as a Markdown list. Use paragraphs or other Markdown structure when appropriate.");
-    }
-    instruction
-}
-
-#[tauri::command]
-pub async fn process_user_speech_text(
-    provider: String,
-    text: String,
-    auto_translate_to_english: bool,
-    auto_format: bool,
-) -> Result<String, String> {
-    let normalized_provider =
-        SpeechTranscriptionProvider::from_normalized(&provider.trim().to_lowercase())?;
-    let normalized_text = normalize_text(&text)?;
-    if !auto_translate_to_english && !auto_format {
-        return Ok(normalized_text);
-    }
-    if normalized_text.chars().count() > 20_000 {
-        return Err("Speech transcript is too long to process.".to_string());
-    }
-    if normalized_provider == SpeechTranscriptionProvider::Whisper {
-        return if auto_format {
-            Err("Formatting is unavailable with local Whisper.".to_string())
-        } else {
-            Ok(normalized_text)
-        };
-    }
-    let env = crate::runtime_snapshot::load_global_env()?;
-    let client = build_http_client()?;
-    let instruction = speech_text_instruction(auto_translate_to_english, auto_format);
-    match normalized_provider {
-        SpeechTranscriptionProvider::OpenAi => {
-            openai::process_openai_text(&client, &env, &normalized_text, &instruction).await
-        }
-        SpeechTranscriptionProvider::Google => {
-            google::process_google_text(&client, &env, &normalized_text, &instruction).await
-        }
-        SpeechTranscriptionProvider::Whisper => unreachable!(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn speech_text_instruction_requests_markdown_lists_for_distinct_changes() {
-        let instruction = speech_text_instruction(true, true);
-        assert!(instruction.contains("natural English"));
-        assert!(instruction.contains("Markdown list"));
-        assert!(!speech_text_instruction(false, false).contains("Markdown list"));
-    }
 
     #[test]
     fn transcribe_rejects_unsupported_provider() {

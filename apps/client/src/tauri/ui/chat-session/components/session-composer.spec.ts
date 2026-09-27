@@ -92,7 +92,6 @@ const createProps = (
     statusTone: null,
     autoTranslateToEnglish: false,
     autoFormat: false,
-    formatAvailable: true,
     onAction: noop,
     onProcessingChange: noopAsync,
     onStatusDismiss: noop,
@@ -224,7 +223,7 @@ describe("SessionComposer enhancement", () => {
     expect(formatButton.querySelector(".lucide-wand-sparkles")).toBeTruthy();
   });
 
-  it("disables formatting when the selected speech provider cannot format text", async () => {
+  it("allows formatting from the speech input menu", async () => {
     const onProcessingChange = vi.fn(async () => {});
     render(
       createElement(
@@ -235,7 +234,6 @@ describe("SessionComposer enhancement", () => {
           speechInput: {
             ...createProps().speechInput,
             enabled: true,
-            formatAvailable: false,
             onProcessingChange,
           },
         }),
@@ -248,9 +246,12 @@ describe("SessionComposer enhancement", () => {
     const format = await screen.findByRole("menuitemcheckbox", {
       name: "Format and improve text",
     });
-    expect(format.getAttribute("aria-disabled")).toBe("true");
+    expect(format.getAttribute("aria-disabled")).not.toBe("true");
     fireEvent.click(format);
-    expect(onProcessingChange).not.toHaveBeenCalled();
+    expect(onProcessingChange).toHaveBeenCalledWith({
+      autoTranslateToEnglish: false,
+      autoFormat: true,
+    });
   });
 
   it("sends the selected iteration count and resets it after submission", () => {

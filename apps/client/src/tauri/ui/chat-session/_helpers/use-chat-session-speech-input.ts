@@ -4,7 +4,7 @@ import type {
   UserSpeechToTextProvider,
   UserSpeechToTextSettings,
 } from "../../runtime";
-import { processUserSpeechText } from "../../runtime";
+import { processUserSpeechText } from "../../speech-text-processing";
 import {
   resolveAppNotificationDismissMs,
   scheduleAppNotificationDismiss,
@@ -120,8 +120,8 @@ export const useChatSessionSpeechInput = (
       let draftText = transcriptText;
       let processingError: string | null = null;
       if (
-        provider !== "whisper" &&
-        (options.settings.autoTranslateToEnglish || options.settings.autoFormat)
+        options.settings.autoTranslateToEnglish ||
+        options.settings.autoFormat
       ) {
         setStatusText("Processing speech...");
         try {

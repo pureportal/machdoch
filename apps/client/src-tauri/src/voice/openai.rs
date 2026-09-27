@@ -20,8 +20,6 @@ const OPENAI_MAX_INPUT_CHARS: usize = 4096;
 const OPENAI_STT_ENDPOINT: &str = "https://api.openai.com/v1/audio/transcriptions";
 const OPENAI_STT_MODEL: &str = "gpt-transcribe";
 const OPENAI_STT_PROMPT: &str = "Transcribe this short push-to-talk instruction for a desktop AI assistant. Preserve punctuation, filenames, CLI flags, code symbols, and product names when they are clear. If no intelligible speech is present, return an empty transcript. Return only the transcript.";
-const OPENAI_TEXT_ENDPOINT: &str = "https://api.openai.com/v1/chat/completions";
-const OPENAI_TEXT_MODEL: &str = "gpt-4o-mini";
 pub(super) const OPENAI_MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
 
 #[derive(Debug, Deserialize)]
@@ -34,62 +32,6 @@ struct OpenAiTranscriptionResponse {
 #[derive(Debug, Deserialize)]
 struct OpenAiTranscriptionLanguage {
     code: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAiTextResponse {
-    choices: Vec<OpenAiTextChoice>,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAiTextChoice {
-    message: OpenAiTextMessage,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAiTextMessage {
-    content: Option<String>,
-}
-
-pub(super) async fn process_openai_text(
-    client: &Client,
-    env: &std::collections::HashMap<String, String>,
-    text: &str,
-    instruction: &str,
-) -> Result<String, String> {
-    let api_key = get_required_api_key(env, "OPENAI_API_KEY", "OpenAI")?;
-    let response = client
-        .post(OPENAI_TEXT_ENDPOINT)
-        .bearer_auth(api_key)
-        .json(&json!({
-            "model": OPENAI_TEXT_MODEL,
-            "temperature": 0.1,
-            "messages": [
-                { "role": "system", "content": instruction },
-                { "role": "user", "content": text }
-            ]
-        }))
-        .send()
-        .await
-        .map_err(|error| format!("OpenAI speech text processing failed: {error}"))?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "OpenAI speech text processing failed: {}",
-            read_api_error(response).await
-        ));
-    }
-    let parsed = response
-        .json::<OpenAiTextResponse>()
-        .await
-        .map_err(|error| format!("Failed to parse OpenAI speech text response: {error}"))?;
-    normalize_text(
-        parsed
-            .choices
-            .first()
-            .and_then(|choice| choice.message.content.as_deref())
-            .unwrap_or_default(),
-    )
-    .map_err(|_| "OpenAI returned empty processed speech text.".to_string())
 }
 
 fn clamp_openai_speed(value: Option<f64>) -> f64 {
