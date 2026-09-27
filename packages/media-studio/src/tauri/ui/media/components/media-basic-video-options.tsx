@@ -98,23 +98,25 @@ export const MediaBasicVideoOptions = ({
           ))}
         </div>
       ) : null}
-      <label className={field}>
-        <span>Frame rate</span>
-        <input
-          className={control}
-          type="number"
-          min={architecture === "minimax-h3-ref2va" ? 24 : 1}
-          max={architecture === "minimax-h3-ref2va" ? 24 : 60}
-          step={1}
-          value={videoSettings.fps}
-          onChange={(event) =>
-            onVideoChange({
-              ...videoSettings,
-              fps: Number(event.target.value),
-            })
-          }
-        />
-      </label>
+      {architecture !== "minimax-h3-ref2va" ? (
+        <label className={field}>
+          <span>Frame rate</span>
+          <input
+            className={control}
+            type="number"
+            min={1}
+            max={60}
+            step={1}
+            value={videoSettings.fps}
+            onChange={(event) =>
+              onVideoChange({
+                ...videoSettings,
+                fps: Number(event.target.value),
+              })
+            }
+          />
+        </label>
+      ) : null}
       <label className={field}>
         <span>Frames</span>
         <select

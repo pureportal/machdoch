@@ -66,7 +66,7 @@ def prepare_reference_image(image, gen_w: int, gen_h: int, mode: str = "match"):
 
 def _to_array(img):
     import numpy as np
-    return np.asarray(img, dtype="uint8")
+    return np.array(img, dtype="uint8", copy=True)
 
 
 def reference_image_for_latent(path_or_image, latent):

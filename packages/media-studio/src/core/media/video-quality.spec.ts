@@ -56,6 +56,12 @@ describe("media video quality helpers", () => {
     expect(isMediaVideoFrameCountValid(124, "minimax-h3-ref2va")).toBe(true);
     expect(isMediaVideoFrameCountValid(141, "minimax-h3-ref2va")).toBe(true);
     expect(isMediaVideoFrameCountValid(125, "minimax-h3-ref2va")).toBe(false);
+    expect(
+      resolveMediaVideoQualityPresetSettings(
+        MEDIA_VIDEO_QUALITY_PRESETS[0]!,
+        "minimax-h3-ref2va",
+      ),
+    ).toMatchObject({ fps: 24, numFrames: 124, numInferenceSteps: 10 });
   });
 
   it.each([
