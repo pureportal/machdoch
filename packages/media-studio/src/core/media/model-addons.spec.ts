@@ -183,6 +183,48 @@ describe("media model add-on selection", () => {
       ]);
     },
   );
+  it("offers one MiniMax H3 style LoRA", () => {
+    const capabilities = getMediaModelAddonCapabilities(
+      "local-video",
+      "minimax-h3-ref2va",
+    );
+    expect(capabilities).toEqual([
+      {
+        kind: "lora",
+        targetComponents: ["denoiser"],
+        maxActive: 1,
+        supportsSeparateComponentStrengths: false,
+        supportsDenoisingSchedules: false,
+      },
+    ]);
+    const model = {
+      ...createMediaModelCatalogSnapshot({
+        isOpenAiConfigured: false,
+        isLocalFluxInstalled: true,
+      }).models.find((entry) => entry.id === "local:flux-2-klein-4b")!,
+      providerId: "local-video",
+      architecture: "minimax-h3-ref2va" as const,
+      addonCapabilities: capabilities,
+    };
+    const style = {
+      ...addon,
+      architecture: "minimax-h3-ref2va" as const,
+      loraProfile: { ...addon.loraProfile!, networkAlphaCount: 0 },
+    };
+    expect(inspectMediaModelAddonCompatibility(model, style).status).toBe(
+      "compatible",
+    );
+    expect(
+      reconcileMediaModelAddonSelections(
+        model,
+        [style],
+        [
+          createMediaModelAddonSelection(style),
+          createMediaModelAddonSelection(style),
+        ],
+      ),
+    ).toHaveLength(1);
+  });
   it("creates an enabled LoRA selection with neutral strength", () => {
     expect(createMediaModelAddonSelection(addon)).toEqual({
       kind: "lora",

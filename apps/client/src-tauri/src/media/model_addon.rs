@@ -88,6 +88,13 @@ pub(crate) fn capabilities_for_model(
             supports_separate_component_strengths: false,
             supports_denoising_schedules: true,
         }],
+        Some("minimax-h3-ref2va") => vec![MediaModelAddonCapability {
+            kind: "lora".to_string(),
+            target_components: vec!["denoiser".to_string()],
+            max_active: 1,
+            supports_separate_component_strengths: false,
+            supports_denoising_schedules: false,
+        }],
         Some("wan-2.2-ti2v" | "ltx-video" | "framepack-i2v" | "hunyuan-video-1.5-i2v") => {
             vec![MediaModelAddonCapability {
                 kind: "lora".to_string(),
@@ -647,6 +654,15 @@ fn detect_embedding_architecture(
 }
 
 fn detect_lora_architecture(header: &ParsedSafetensorsHeader) -> (Option<String>, &'static str) {
+    if header
+        .tensor_keys
+        .iter()
+        .any(|key| key.starts_with("blocks."))
+        && lora_pair_dimensions(header, ".attn.qkv_proj").contains(&(5_376, 21_504))
+        && lora_pair_dimensions(header, ".attn.out_proj").contains(&(7_168, 5_376))
+    {
+        return (Some("minimax-h3-ref2va".to_string()), "high");
+    }
     if has_lora_key_fragment(header, "transformer.transformer_blocks.")
         && (has_lora_key_fragment(header, ".attn.add_q_proj")
             || has_lora_key_fragment(header, "transformer.transformer_blocks.53."))
@@ -1377,6 +1393,12 @@ fn validate_request(
     if inspection.detected_kind.as_deref() != Some(request.kind.as_str()) {
         return Err("the selected add-on kind does not match the inspected tensors".to_string());
     }
+    if request.architecture == "minimax-h3-ref2va"
+        && (inspection.detected_architecture.as_deref() != Some("minimax-h3-ref2va")
+            || inspection.architecture_confidence != "high")
+    {
+        return Err("Choose a MiniMax H3 style LoRA with a verified tensor layout".to_string());
+    }
     if inspection.detected_architecture.as_deref().is_some()
         && inspection
             .detected_architecture
@@ -1403,7 +1425,11 @@ fn validate_request(
         })?;
     if matches!(
         request.architecture.as_str(),
-        "wan-2.2-ti2v" | "ltx-video" | "framepack-i2v" | "hunyuan-video-1.5-i2v"
+        "wan-2.2-ti2v"
+            | "ltx-video"
+            | "framepack-i2v"
+            | "hunyuan-video-1.5-i2v"
+            | "minimax-h3-ref2va"
     ) && inspection.lora_profile.as_ref().is_none_or(|profile| {
         profile.dialect != "diffusers-peft"
             || profile.algorithm != "lora"
@@ -2421,6 +2447,36 @@ mod tests {
         assert_eq!(inspection.detected_architecture.as_deref(), Some("krea-2"));
         assert_eq!(inspection.architecture_confidence, "high");
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn detects_minimax_h3_style_lora_from_tensor_layout() {
+        let path = temp_path("minimax-h3-style-lora");
+        let mut header = serde_json::Map::new();
+        let mut offset = 0;
+        for (target, input, output) in [("qkv_proj", 5_376, 21_504), ("out_proj", 7_168, 5_376)] {
+            for (suffix, shape) in [("lora_A", vec![2, input]), ("lora_B", vec![output, 2])] {
+                let size = shape.iter().product::<usize>() * 4;
+                header.insert(
+                    format!("blocks.25.attn.{target}.{suffix}.default.weight"),
+                    serde_json::json!({"dtype": "F32", "shape": shape, "data_offsets": [offset, offset + size]}),
+                );
+                offset += size;
+            }
+        }
+        write_safetensors(&path, serde_json::Value::Object(header), &vec![0; offset]);
+        let inspection = inspect(path.to_str().unwrap()).unwrap();
+        assert_eq!(
+            inspection.detected_architecture.as_deref(),
+            Some("minimax-h3-ref2va")
+        );
+        assert_eq!(inspection.architecture_confidence, "high");
+        assert_eq!(inspection.target_components, vec!["denoiser"]);
+        assert_eq!(
+            capabilities_for_model("local-video", Some("minimax-h3-ref2va"))[0].max_active,
+            1
+        );
+        fs::remove_file(path).unwrap();
     }
 
     #[test]

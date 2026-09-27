@@ -1117,7 +1117,7 @@ def probe_model(request: dict[str, Any]) -> dict[str, Any]:
         component_names = ["transformer", "text_encoder", "video_vae", "audio_vae", "lora"]
         probe_diagnostic = "MiniMax H3 components are ready."
         required_methods = []
-        capabilities = ["image-to-video"]
+        capabilities = ["image-to-video", "lora"]
     elif architecture == "framepack-i2v":
         pipeline, _, _, _, _ = _load_framepack_pipeline(
             diffusers,
@@ -8751,6 +8751,42 @@ def _finish_video_memory_observation(
     return evidence
 
 
+def _minimax_h3_style_addon(request: dict[str, Any]) -> tuple[Path | None, float, list[dict[str, Any]]]:
+    addons = request.get("addons")
+    if not isinstance(addons, list) or len(addons) > 1:
+        raise WorkerError("MiniMax H3 accepts one style LoRA")
+    if not addons:
+        return None, 0.7, []
+    addon = addons[0]
+    if not isinstance(addon, dict) or addon.get("kind") != "lora" or addon.get("enabled") is not True:
+        raise WorkerError("MiniMax H3 accepts one enabled style LoRA")
+    if addon.get("targetComponents") != ["denoiser"] or addon.get("textEncoderStrength") is not None or addon.get("denoisingSchedule") is not None:
+        raise WorkerError("MiniMax H3 style LoRAs must target the denoiser for the entire clip")
+    profile = addon.get("loraProfile")
+    if not isinstance(profile, dict) or profile.get("dialect") != "diffusers-peft" or profile.get("algorithm") != "lora" or profile.get("networkAlphaCount") != 0:
+        raise WorkerError("MiniMax H3 style LoRAs require Diffusers PEFT safetensors")
+    strength = addon.get("modelStrength")
+    if isinstance(strength, bool) or not isinstance(strength, (int, float)) or not math.isfinite(strength) or not -2 <= strength <= 2:
+        raise WorkerError("MiniMax H3 style LoRA strength must be between -2 and 2")
+    digest = _required_text(addon, "digest", 64)
+    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise WorkerError("MiniMax H3 style LoRA digest is invalid")
+    path = _absolute_existing_path(addon.get("path"), file=True)
+    evidence = [{
+        "kind": "lora",
+        "addonId": _required_text(addon, "addonId", 256),
+        "digest": digest,
+        "modelStrength": float(strength),
+        "textEncoderStrength": None,
+        "denoisingSchedule": None,
+        "scheduleApplied": False,
+        "adapterName": f"machdoch_{digest[:16]}",
+        "loadedComponents": ["denoiser"],
+        "loraProfile": profile,
+    }]
+    return path, float(strength), evidence
+
+
 def _generate_minimax_h3_video(request: dict[str, Any]) -> dict[str, Any]:
     from argparse import Namespace
     from contextlib import redirect_stdout
@@ -8773,8 +8809,9 @@ def _generate_minimax_h3_video(request: dict[str, Any]) -> dict[str, Any]:
         raise WorkerError("MiniMax H3 uses one reference image")
     if request.get("transparentBackground") or request.get("loopMode") != "none":
         raise WorkerError("MiniMax H3 requires opaque, non-looping video")
-    if request.get("animatedBackground") is not None or request.get("addons"):
-        raise WorkerError("MiniMax H3 does not support these video additions")
+    if request.get("animatedBackground") is not None:
+        raise WorkerError("MiniMax H3 does not support an animated background")
+    style_lora, style_strength, applied_addons = _minimax_h3_style_addon(request)
     negative_prompt = request.get("negativePrompt", "")
     if negative_prompt:
         raise WorkerError("MiniMax H3 does not support negative prompts")
@@ -8806,8 +8843,8 @@ def _generate_minimax_h3_video(request: dict[str, Any]) -> dict[str, Any]:
         prompt=prompt,
         models=model_root,
         lora=model_root / "loras" / "minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
-        style_lora=None,
-        style_strength=0.7,
+        style_lora=style_lora,
+        style_strength=style_strength,
         small_te=model_root / "small_te",
         width=width,
         height=height,
@@ -8879,7 +8916,7 @@ def _generate_minimax_h3_video(request: dict[str, Any]) -> dict[str, Any]:
         "deviceLabel": device_label,
         "deviceMemoryBytes": device_memory,
         "architecture": "minimax-h3-ref2va",
-        "addons": [],
+        "addons": applied_addons,
         "performance": {
             "gpuMemory": {
                 "processIsolation": "one-generation-per-process",
