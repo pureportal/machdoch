@@ -67,6 +67,7 @@ const ARCHITECTURE_ADDON_CAPABILITIES: Readonly<
   "ltx-video": [capability("lora", ["denoiser"], 8, false, false)],
   "framepack-i2v": [capability("lora", ["denoiser"], 8, false, false)],
   "hunyuan-video-1.5-i2v": [capability("lora", ["denoiser"], 8, false, false)],
+  "minimax-h3-ref2va": [capability("lora", ["denoiser"], 1, false, false)],
 };
 
 export const getMediaModelAddonCapabilities = (
@@ -252,6 +253,7 @@ export const inspectMediaModelAddonCompatibility = (
       "ltx-video",
       "framepack-i2v",
       "hunyuan-video-1.5-i2v",
+      "minimax-h3-ref2va",
     ].includes(model.architecture ?? "") &&
     (addon.loraProfile.dialect !== "diffusers-peft" ||
       addon.loraProfile.algorithm !== "lora" ||
