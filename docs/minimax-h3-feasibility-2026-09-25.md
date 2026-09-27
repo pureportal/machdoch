@@ -19,3 +19,21 @@ Machdoch's direct H3 runtime is `apps/client/src-tauri/python/media_minimax_h3.p
 ## Verified render
 
 The requested 10-step Beta57/ER-SDE render completed on the RX 9070 at 640 × 384, 124 frames, and 24 fps. The finished MP4 is `assets/media/caterpillar-h3-final.mp4`. FFmpeg decoded all frames and the stereo audio stream without errors. A frame contact sheet shows the caterpillar crawling, opening its mouth, looking up, and continuing without the previous grid artifact. Whisper Tiny English transcribed the generated speech as “I am bored as fuck.” The Machdoch managed runtime passed its full operation check and recognized the H3 model package as ready. A separate four-step run through Media Studio's worker returned a valid 124-frame VP9/Opus WebM with native audio and a measured 8.47 GiB peak GPU allocation at 512 × 288.
+
+## Five style renders
+
+`assets/media/h3-style-tests/renders.json` records the source images, prompts, seeds, and adapters for the anime, cartoon, 3D, romantic editorial, and action renders. Each final MP4 contains 124 frames at 512 × 288 and 24 fps with a decodable audio stream. Frame inspection confirmed visible motion in all five. The anime and cartoon renders used their respective style LoRAs at strength 0.7 with the LightX2V four-step adapter. The 3D and action renders used the four-step adapter; the romantic editorial render used the LightX2V eight-step adapter. The source PNGs do not record which image model generated them.
+
+Media Studio accepts one imported MiniMax H3 style LoRA in addition to its built-in eight-step adapter. The add-on importer recognizes the tested H3 style tensor layout, and the worker validates the selected LoRA before generation. The downloaded Alibaba PAI Ref2VA accelerator remains untested in a render.
+
+## Quality investigation
+
+The previous caterpillar MP4 is 640 × 384 at 24 fps with 32 kHz stereo AAC audio around 200 kb/s. All 124 frames and the audio decode; the measured near-clipped sample fraction is about 0.001%. The weakest measured frame sharpness is near the end of the clip. The style contact sheet at `assets/media/h3-style-quality-contact-sheet.png` shows that several weak frames also coincide with the subject drifting to an edge of the frame. These observations do not establish that the codec caused the reported audio or visual defects. The 4B substitute conditioner, low render resolution, and use of the eight-step Turbo adapter with a ten-evaluation Beta57/ER-SDE sampler are more plausible quality limits.
+
+The direct renderer and Media Studio now use eight evaluations on the adapter's documented shifted grid with Euler updates for both generated streams. The restored reference at `assets/media/h3-quality-reference-restored.png` is 1411 × 1115, derived from the supplied 550 × 435 image; restoration synthesized detail, so the original remains at `assets/media/h3-quality-reference-original.png` for identity comparison. No new H3 render was run for this investigation because the published community license does not grant use in the EU. Visual and audio improvement from the sampler change remains unverified.
+
+## Local 2K stage
+
+Media Studio offers a local 2K output choice for H3. The worker generates its usual 768-class base video and then runs `media_video_2k.py` on the decoded frames before WebM encoding. This stage uses motion-compensated temporal detail, edge-limited sharpening, and iterative back projection to produce 2560 × 1440 output for 16:9. It does not use MiniMax's unreleased H3-Regenerate-2K checkpoint or reconstruct prompt-dependent detail. A standalone MP4 processor accepts existing video files and retains their audio.
+
+`assets/media/romantic-scene-local-2k.mp4` is a 124-frame, 24 fps, 2560 × 1440 output from the existing H3 romantic editorial clip. It retains the subject's turn and hair gesture and uses the clip's native, varying audio at 3 dB lower gain. The scene script is `scripts/render-romantic-scene-2k.py`. The 2K stage upscales the existing 512 × 288 H3 frames; it does not add new model-generated detail. No new H3 inference was run for this stage because the published license excludes EU use under the standard grant.
