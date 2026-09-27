@@ -42,6 +42,7 @@ import {
 } from "./_helpers/conversation-prompt-context.js";
 import { maybeExecuteExternalAgentProviderTask } from "./_helpers/external-agent-provider.js";
 import { createParallelAgentSessionTool } from "./_helpers/parallel-agent-sessions.js";
+import { resolveParallelAgentMode } from "./parallel-agent-capabilities.js";
 import { finalizePoseSceneResult } from "./_helpers/pose-scene-result.js";
 import { resolveAdaptiveExecutionPlan } from "./adaptive-controller.js";
 import { isAgentCliProvider } from "./_helpers/agent-cli-providers.js";
@@ -1189,6 +1190,9 @@ const runExecutorCycle = async (
         await adapter.startTurn({
           model: config.model,
           reasoning: config.reasoning,
+          ...(conversationContext.parallelAgentMode
+            ? { parallelAgentMode: conversationContext.parallelAgentMode }
+            : {}),
           systemPrompt: executorSystemPrompt,
           userPrompt: executorUserPrompt,
           ...(imageInputs && imageInputs.length > 0 ? { imageInputs } : {}),
@@ -1898,7 +1902,6 @@ const runAutopilotMonitorPass = async (
           reviewInstructionResolution,
           {
             workspaceRoot: config.workspaceRoot,
-            reasoning: reviewConfig.reasoning,
           },
         );
   if (
@@ -2228,7 +2231,7 @@ const runModelDrivenLoop = async (
     providedInstructionPlan ??
     (await createInstructionDeliveryPlanForRuntime(instructionResolution, {
       workspaceRoot: config.workspaceRoot,
-      reasoning: config.reasoning,
+      parallelAgentMode: conversationContext.parallelAgentMode,
     }));
   const instructionPlans = [instructionPlan];
   const instructionReceipts = providedInstructionReceipts ?? [];
@@ -2444,7 +2447,7 @@ export const maybeExecuteModelDrivenTask = async (
         instructionResolution,
         {
           workspaceRoot: executionConfig.workspaceRoot,
-          reasoning: executionConfig.reasoning,
+          parallelAgentMode: params.conversationContext?.parallelAgentMode,
         },
       );
     }
@@ -2456,37 +2459,16 @@ export const maybeExecuteModelDrivenTask = async (
       adaptivePlan,
     );
 
-    if (isAgentCliProvider(params.config.provider) && !params.modelAdapter) {
-      const result = await maybeExecuteExternalAgentProviderTask({
-        ...params,
-        config: executionConfig,
-        preparedConversationContext: preparedConversationContext,
-      });
-      return result
-        ? {
-            ...finalizePoseSceneResult(
-              result,
-              preparedConversationContext.memory,
-            ),
-            ...(preparedConversationContext.reasoningBankRetrievedIds
-              ? {
-                  metadata: {
-                    ...result.metadata,
-                    reasoningBankRetrievedIds:
-                      preparedConversationContext.reasoningBankRetrievedIds,
-                  },
-                }
-              : {}),
-          }
-        : undefined;
-    }
+    const parallelMode = resolveParallelAgentMode(
+      executionConfig.provider,
+      executionConfig.model,
+      params.conversationContext?.parallelAgentMode,
+    );
+    preparedConversationContext.parallelAgentMode = parallelMode;
 
-    const parallelMode =
-      params.conversationContext?.parallelAgentMode ?? "disabled";
     const parallelTool =
-      parallelMode !== "disabled" &&
+      (parallelMode === "read-only" || parallelMode === "machdoch") &&
       !executionConfig.offline &&
-      !isAgentCliProvider(executionConfig.provider) &&
       executionConfig.providerAvailability.some(
         (entry) =>
           entry.provider === executionConfig.provider && entry.configured,
@@ -2501,6 +2483,10 @@ export const maybeExecuteModelDrivenTask = async (
             task: params.task,
             taskContext: params.taskContext,
             mode: parallelMode,
+            ...(instructionPlan
+              ? { instructionDeliveryPlan: instructionPlan }
+              : {}),
+            preparedConversationContext,
             ...(adaptivePlan ? { maxWorkers: adaptivePlan.maxWorkers } : {}),
             ...(params.signal ? { signal: params.signal } : {}),
             ...(params.onStateChange || params.onStreamActivity
@@ -2522,6 +2508,52 @@ export const maybeExecuteModelDrivenTask = async (
               : {}),
           })
         : undefined;
+    if (isAgentCliProvider(params.config.provider) && !params.modelAdapter) {
+      const result = await maybeExecuteExternalAgentProviderTask({
+        ...params,
+        config: executionConfig,
+        preparedConversationContext,
+        ...(parallelTool
+          ? {
+              additionalToolDefinitions: [
+                ...(params.additionalToolDefinitions ?? []),
+                parallelTool.definition,
+              ],
+            }
+          : {}),
+      });
+      if (!result) return undefined;
+      const parallelWorkerFailure = parallelTool?.hasWorkerFailure() ?? false;
+      return {
+        ...finalizePoseSceneResult(result, preparedConversationContext.memory),
+        ...(parallelWorkerFailure && result.status === "executed"
+          ? {
+              status: "failed" as const,
+              summary:
+                "Parallel work failed. Review the worker results and workspace changes.",
+              reason:
+                "A parallel worker failed. Review the worker results and workspace changes before retrying.",
+            }
+          : {}),
+        ...(parallelMode !== "disabled" ||
+        preparedConversationContext.reasoningBankRetrievedIds
+          ? {
+              metadata: {
+                ...result.metadata,
+                ...(parallelMode !== "disabled"
+                  ? { parallelAgentMode: parallelMode, parallelWorkerFailure }
+                  : {}),
+                ...(preparedConversationContext.reasoningBankRetrievedIds
+                  ? {
+                      reasoningBankRetrievedIds:
+                        preparedConversationContext.reasoningBankRetrievedIds,
+                    }
+                  : {}),
+              },
+            }
+          : {}),
+      };
+    }
     const result = await runModelDrivenLoop(
       params.task,
       executionConfig,

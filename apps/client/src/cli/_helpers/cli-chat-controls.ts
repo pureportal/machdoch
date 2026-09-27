@@ -18,6 +18,10 @@ import type { ChatInput } from "./cli-chat-input.js";
 import type { CliChatSession } from "./cli-chat-sessions.js";
 import type { ParallelAgentMode } from "../../core/types.js";
 import {
+  getAvailableParallelAgentModes,
+  resolveParallelAgentMode,
+} from "../../core/parallel-agent-capabilities.js";
+import {
   createTerminalPrompter,
   type InteractivePrompter,
 } from "./cli-prompter.js";
@@ -80,13 +84,23 @@ export const handleChatRuntimeControl = async (
     return true;
   }
   if (command === "parallel") {
-    const choices: ParallelAgentMode[] = ["disabled", "read-only", "machdoch"];
-    if (values.length > 1) usage("[disabled|read-only|machdoch]");
-    const value = values[0] ?? await withChatMenu(input, (prompter) =>
-      prompter.select("Parallel agents", choices.map((mode) => ({ value: mode, label: mode })),
-        { currentValue: state.session.parallelAgentMode }));
+    const choices = getAvailableParallelAgentModes(
+      state.config.provider,
+      state.config.model,
+    );
+    if (values.length > 1) usage(`[${choices.join("|")}]`);
+    const value =
+      values[0] ??
+      (await withChatMenu(input, (prompter) =>
+        prompter.select(
+          "Parallel agents",
+          choices.map((mode) => ({ value: mode, label: mode })),
+          { currentValue: state.session.parallelAgentMode },
+        ),
+      ));
     if (value === undefined) return true;
-    if (!choices.includes(value as ParallelAgentMode)) usage("[disabled|read-only|machdoch]");
+    if (!choices.includes(value as ParallelAgentMode))
+      usage(`[${choices.join("|")}]`);
     state.session.parallelAgentMode = value as ParallelAgentMode;
     state.session.context.parallelAgentMode = value as ParallelAgentMode;
     showChatStatus(state, write);
@@ -192,6 +206,15 @@ export const handleChatRuntimeControl = async (
     const config = await loadChatConfig(nextArgs);
     state.args = nextArgs;
     state.config = config;
+    if (command === "model") {
+      const parallelMode = resolveParallelAgentMode(
+        config.provider,
+        config.model,
+        state.session.parallelAgentMode,
+      );
+      state.session.parallelAgentMode = parallelMode;
+      state.session.context.parallelAgentMode = parallelMode;
+    }
     showChatStatus(state, write);
     return true;
   }

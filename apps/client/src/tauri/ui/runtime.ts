@@ -1853,7 +1853,7 @@ const isFleetControlCommandEvent = (
         value.mode as (typeof FLEET_CONTROL_RUN_MODES)[number],
       )) &&
     (value.kind !== "set-parallel-agent-mode" ||
-      ["disabled", "read-only", "machdoch"].includes(String(value.mode))) &&
+      ["disabled", "read-only", "machdoch", "native"].includes(String(value.mode))) &&
     (value.reasoning === undefined || typeof value.reasoning === "string") &&
     (value.promptEnhancementMode === undefined ||
       typeof value.promptEnhancementMode === "string") &&

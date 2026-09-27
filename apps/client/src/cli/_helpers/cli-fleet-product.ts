@@ -1,6 +1,10 @@
 import { FleetRalphRuntime } from "./cli-fleet-ralph.js";
 import { FleetMediaWorker } from "./cli-fleet-media.js";
-import { isMediaPoseMap, renderMediaPoseSvg, type MediaPoseMap } from "@machdoch/media-studio/core/media/contracts.js";
+import {
+  isMediaPoseMap,
+  renderMediaPoseSvg,
+  type MediaPoseMap,
+} from "@machdoch/media-studio/core/media/contracts.js";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -34,6 +38,10 @@ import {
   resolveWorkspaceMemoryEnabled,
 } from "../../core/memory.js";
 import { getReasoningModesForProviderModel } from "../../core/reasoning-modes.js";
+import {
+  getAvailableParallelAgentModes,
+  resolveParallelAgentMode,
+} from "../../core/parallel-agent-capabilities.js";
 import {
   REASONING_MODES,
   isConfiguredModelProvider,
@@ -161,16 +169,25 @@ const promptPreview = (value: string): string =>
 const sessionTitle = (prompt: string): string =>
   boundedText(prompt.replace(/\s+/gu, " ").trim(), 80) || "New chat";
 
-const readPoseScene = async (session: FleetCliSession): Promise<MediaPoseMap | undefined> => {
+const readPoseScene = async (
+  session: FleetCliSession,
+): Promise<MediaPoseMap | undefined> => {
   if (session.specialKind !== "pose") return undefined;
-  if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu.test(session.id)) return session.poseScene;
-  const path = join(dirname(getUserConfigPath()), "pose-scenes", `${session.id}.json`);
+  if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu.test(session.id))
+    return session.poseScene;
+  const path = join(
+    dirname(getUserConfigPath()),
+    "pose-scenes",
+    `${session.id}.json`,
+  );
   try {
     const value: unknown = JSON.parse(await readFile(path, "utf8"));
-    if (!isMediaPoseMap(value)) throw new Error("The saved pose scene is invalid.");
+    if (!isMediaPoseMap(value))
+      throw new Error("The saved pose scene is invalid.");
     return value;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return session.poseScene;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      return session.poseScene;
     throw error;
   }
 };
@@ -651,7 +668,11 @@ export class FleetCliProductRuntime {
             session.specialKind = "pose";
             session.title = "Pose scene";
             if (command.poseScene) {
-              if (!isMediaPoseMap(command.poseScene)) throw new FleetProductError("invalidRequest", "The pose scene is invalid.");
+              if (!isMediaPoseMap(command.poseScene))
+                throw new FleetProductError(
+                  "invalidRequest",
+                  "The pose scene is invalid.",
+                );
               session.poseScene = command.poseScene;
             }
           }
@@ -716,6 +737,17 @@ export class FleetCliProductRuntime {
       case "set-parallel-agent-mode":
         return await this.commitCommand(command, (state, _id, timestamp) => {
           const session = this.getSession(state, command.sessionId);
+          if (
+            !getAvailableParallelAgentModes(
+              session.provider,
+              session.model,
+            ).includes(command.mode)
+          ) {
+            throw new FleetProductError(
+              "invalidRequest",
+              "Parallel agent mode is unavailable for this model.",
+            );
+          }
           session.parallelAgentMode = command.mode;
           session.updatedAt = timestamp;
           return { record: { sessionId: session.id } };
@@ -838,6 +870,11 @@ export class FleetCliProductRuntime {
       const session = this.getSession(state, command.sessionId);
       session.provider = provider;
       session.model = command.model;
+      session.parallelAgentMode = resolveParallelAgentMode(
+        provider,
+        command.model,
+        session.parallelAgentMode,
+      );
       session.updatedAt = timestamp;
       return { record: { sessionId: session.id } };
     });
@@ -1018,7 +1055,9 @@ export class FleetCliProductRuntime {
         conversationContext: {
           sessionId: session.id,
           parallelAgentMode: session.parallelAgentMode,
-          ...(session.specialKind === "pose" ? { chatType: "pose" as const, poseScene: session.poseScene } : {}),
+          ...(session.specialKind === "pose"
+            ? { chatType: "pose" as const, poseScene: session.poseScene }
+            : {}),
           workspace: { selection: "selected", root: session.workspace },
           history,
           sessionMemoryEnabled: session.sessionMemoryEnabled,
@@ -1480,6 +1519,12 @@ export class FleetCliProductRuntime {
           mode: activeSession.mode,
           defaultMode: config.mode,
           parallelAgentMode: activeSession.parallelAgentMode,
+          availableParallelAgentModes: [
+            ...getAvailableParallelAgentModes(
+              activeSession.provider,
+              activeSession.model,
+            ),
+          ],
           reasoning: activeSession.reasoning,
           defaultReasoning: config.reasoning,
           reasoningOptions: [...REASONING_MODES],

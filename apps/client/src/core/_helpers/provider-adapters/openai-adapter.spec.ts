@@ -129,32 +129,32 @@ describe("OpenAI Responses conformance", () => {
     );
   });
 
-  it("enables four-agent Ultra orchestration for Astra and every GPT-5.6 tier", () => {
-    expect(createOpenAIMultiAgentConfig("gpt-6-astra", "ultra")).toEqual({
+  it("enables native orchestration only for supported models", () => {
+    expect(createOpenAIMultiAgentConfig("gpt-6-astra", "native")).toEqual({
       multi_agent: {
         enabled: true,
         max_concurrent_subagents: 4,
       },
       betas: ["responses_multi_agent=v1"],
     });
-    expect(createOpenAIMultiAgentConfig("gpt-5.6-sol", "ultra")).toEqual({
+    expect(createOpenAIMultiAgentConfig("gpt-5.6-sol", "native")).toEqual({
       multi_agent: {
         enabled: true,
         max_concurrent_subagents: 4,
       },
       betas: ["responses_multi_agent=v1"],
     });
-    expect(createOpenAIMultiAgentConfig("gpt-5.6-terra", "ultra")).toEqual({
+    expect(createOpenAIMultiAgentConfig("gpt-5.6-terra", "native")).toEqual({
       multi_agent: {
         enabled: true,
         max_concurrent_subagents: 4,
       },
       betas: ["responses_multi_agent=v1"],
     });
-    expect(createOpenAIMultiAgentConfig("gpt-5.6-terra", "max")).toEqual({});
-    expect(() => createOpenAIMultiAgentConfig("gpt-5.5", "ultra")).toThrow(
-      "Reasoning mode `ultra` is not supported",
+    expect(createOpenAIMultiAgentConfig("gpt-5.6-terra", "machdoch")).toEqual(
+      {},
     );
+    expect(createOpenAIMultiAgentConfig("gpt-5.5", "native")).toEqual({});
   });
 
   it("constructs GPT-5.6 pro requests independently of effort", async () => {
@@ -374,6 +374,7 @@ describe("OpenAI Responses conformance", () => {
         ...startParams,
         model: "gpt-5.6-sol",
         reasoning: "ultra",
+        parallelAgentMode: "native",
       }),
     ).resolves.toEqual({
       text: "Synthesized result.",
@@ -440,6 +441,7 @@ describe("OpenAI Responses conformance", () => {
         ...startParams,
         model: "gpt-5.6-sol",
         reasoning: "ultra",
+        parallelAgentMode: "native",
         onStreamEvent: (event) => events.push(event),
       }),
     ).resolves.toMatchObject({

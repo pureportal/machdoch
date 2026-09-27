@@ -10,6 +10,10 @@ import {
 } from "./agent-tools-shared.js";
 import { executeToolCall } from "./agent-tools.js";
 import { createProviderAdapter } from "./provider-adapters.js";
+import { isAgentCliProvider } from "./agent-cli-providers.js";
+import { maybeExecuteExternalAgentProviderTask } from "./external-agent-provider.js";
+import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
+import type { InstructionDeliveryPlan } from "../instruction-system/index.js";
 import { observeAgentModelCall } from "../model-usage.js";
 import { assertInstructionInvocationBudget } from "../instruction-system/index.js";
 import type {
@@ -92,6 +96,8 @@ export interface ParallelAgentSessionOptions {
   config: RuntimeConfig;
   task: string;
   taskContext: ResolvedTaskContext;
+  instructionDeliveryPlan?: InstructionDeliveryPlan;
+  preparedConversationContext?: PreparedConversationPromptContext;
   mode: ParallelAgentMode;
   maxWorkers?: number;
   signal?: AbortSignal;
@@ -225,7 +231,7 @@ const validatePlans = async (
   workers: ParallelWorkerPlan[],
   options: ParallelAgentSessionOptions,
 ): Promise<ValidatedWorker[]> => {
-  if (options.mode === "disabled") {
+  if (options.mode === "disabled" || options.mode === "native") {
     throw new Error("Parallel agents are disabled for this session.");
   }
   if (
@@ -355,6 +361,78 @@ const createWorkerTools = (
     }));
 };
 
+const runCliWorker = async (
+  worker: ValidatedWorker,
+  options: ParallelAgentSessionOptions,
+  signal: AbortSignal,
+  tools: AgentToolDefinition[],
+): Promise<{
+  id: string;
+  status: "completed";
+  answer: string;
+  toolCalls: number;
+}> => {
+  if (
+    !options.instructionDeliveryPlan ||
+    !options.preparedConversationContext
+  ) {
+    throw new Error("The CLI worker instruction plan is missing.");
+  }
+  reportWorkerProgress(options, workerModelEvent(worker, 1, "started"));
+  const result = await maybeExecuteExternalAgentProviderTask({
+    task: `Original task: ${options.task}\n\nYour objective: ${worker.objective}`,
+    config: {
+      ...options.config,
+      mode: worker.access === "write" ? "machdoch" : "ask",
+    },
+    taskContext: {
+      ...options.taskContext,
+      executionRole: worker.access === "write" ? "executor" : "generator",
+    },
+    contextSections: [],
+    systemPromptSections: [
+      "You are one parallel worker. Complete only your objective. Do not delegate or write memory.",
+      worker.access === "write"
+        ? `You may edit only these workspace-relative files: ${worker.writePaths.join(", ")}. Use only the scoped Machdoch MCP tools for edits.`
+        : "Read only. Do not modify files or external resources.",
+      worker.readPaths.length > 0
+        ? `Read paths: ${worker.readPaths.join(", ")}.`
+        : "",
+    ].filter(Boolean),
+    preparedConversationContext: {
+      wasQueued: options.preparedConversationContext.wasQueued,
+      workspace: options.preparedConversationContext.workspace,
+      parallelAgentMode: "disabled",
+      sections: [],
+      uiControlEnabled: false,
+      memory: {
+        sessionEnabled: false,
+        sessionEntries: [],
+        workspaceEnabled: false,
+        workspaceEntries: [],
+        globalEnabled: false,
+        globalEntries: [],
+      },
+    },
+    instructionDeliveryPlan: options.instructionDeliveryPlan,
+    scopedWorkerToolDefinitions: tools,
+    signal,
+  });
+  if (!result || result.status !== "executed") {
+    reportWorkerProgress(options, workerModelEvent(worker, 1, "failed"));
+    throw new Error(result?.summary ?? `Worker ${worker.id} could not start.`);
+  }
+  const answer = result.response?.markdown?.trim() || result.summary;
+  if (!answer) throw new Error(`Worker ${worker.id} returned no result.`);
+  reportWorkerProgress(options, workerModelEvent(worker, 1, "completed"));
+  return {
+    id: worker.id,
+    status: "completed",
+    answer: answer.slice(0, MAX_WORKER_TEXT),
+    toolCalls: result.executedTools.length,
+  };
+};
+
 const runWorker = async (
   worker: ValidatedWorker,
   options: ParallelAgentSessionOptions,
@@ -367,6 +445,12 @@ const runWorker = async (
   toolCalls: number;
 }> => {
   const tools = createWorkerTools(options, worker, scopedReads);
+  if (
+    isAgentCliProvider(options.config.provider) &&
+    !options.createWorkerAdapter
+  ) {
+    return runCliWorker(worker, options, signal, tools);
+  }
   const specs = tools.map((tool) => tool.spec);
   const toolMap = new Map(tools.map((tool) => [tool.spec.name, tool]));
   if (signal.aborted)

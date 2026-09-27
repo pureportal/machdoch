@@ -422,7 +422,7 @@ const MIN_VOICE_RATE = 0.8;
 const MAX_VOICE_RATE = 1.4;
 const SPECIAL_SESSION_KINDS = ["quick-voice", "pose"] as const;
 const RUN_MODES: RunMode[] = ["ask", "machdoch"];
-const PARALLEL_AGENT_MODES: ParallelAgentMode[] = ["disabled", "read-only", "machdoch"];
+const PARALLEL_AGENT_MODES: ParallelAgentMode[] = ["disabled", "read-only", "machdoch", "native"];
 
 const normalizeParallelAgentMode = (value: unknown): ParallelAgentMode =>
   typeof value === "string" && PARALLEL_AGENT_MODES.includes(value as ParallelAgentMode)

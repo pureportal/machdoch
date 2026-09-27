@@ -28,6 +28,7 @@ function composer(
     modelCatalog: [],
     mode: "machdoch",
     defaultMode: "machdoch",
+    availableParallelAgentModes: ["disabled", "read-only", "machdoch"],
     reasoning: "default",
     defaultReasoning: "default",
     reasoningOptions: ["default"],
@@ -103,6 +104,9 @@ function harness(
     canSend?: boolean;
     runningTaskId?: string;
     canCancel?: boolean;
+    availableParallelAgentModes?: NonNullable<
+      ProductShell["composer"]
+    >["availableParallelAgentModes"];
   } = {},
 ) {
   const drafts = createComposerDraftStore();
@@ -114,7 +118,13 @@ function harness(
     <Composer
       drafts={drafts}
       canCancel={options.canCancel ?? false}
-      composer={{ ...composer(id, draft), canSend: options.canSend ?? true }}
+      composer={{
+        ...composer(id, draft),
+        canSend: options.canSend ?? true,
+        ...(options.availableParallelAgentModes
+          ? { availableParallelAgentModes: options.availableParallelAgentModes }
+          : {}),
+      }}
       session={{
         ...session(id),
         ...(options.runningTaskId
@@ -150,14 +160,45 @@ describe("composer submission guards", () => {
   it("sends a parallel agent mode change for the active session", async () => {
     const onCommand = vi.fn<ProductCommandHandler>().mockResolvedValue(true);
     harness(onCommand);
-    fireEvent.keyDown(screen.getByRole("button", { name: "Parallel agents: Disabled" }), { key: "ArrowDown" });
+    fireEvent.keyDown(
+      screen.getByRole("button", { name: "Parallel agents: Disabled" }),
+      { key: "ArrowDown" },
+    );
     await act(async () => {
-      fireEvent.click(screen.getByRole("menuitemradio", { name: "Choose Read Only" }));
+      fireEvent.click(
+        screen.getByRole("menuitemradio", { name: "Choose Read Only" }),
+      );
     });
     expect(onCommand).toHaveBeenCalledWith({
       kind: "set-parallel-agent-mode",
       sessionId: "A",
       mode: "read-only",
+    });
+  });
+
+  it("shows Native only when the selected provider and model support it", async () => {
+    const onCommand = vi.fn<ProductCommandHandler>().mockResolvedValue(true);
+    harness(onCommand, "", {
+      availableParallelAgentModes: [
+        "disabled",
+        "read-only",
+        "machdoch",
+        "native",
+      ],
+    });
+    fireEvent.keyDown(
+      screen.getByRole("button", { name: "Parallel agents: Disabled" }),
+      { key: "ArrowDown" },
+    );
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("menuitemradio", { name: "Choose Native" }),
+      );
+    });
+    expect(onCommand).toHaveBeenCalledWith({
+      kind: "set-parallel-agent-mode",
+      sessionId: "A",
+      mode: "native",
     });
   });
 

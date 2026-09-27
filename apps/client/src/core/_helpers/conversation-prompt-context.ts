@@ -17,6 +17,7 @@ import {
 } from "../reasoning-bank.js";
 import type {
   ConversationHistoryEntry,
+  ParallelAgentMode,
   TaskConversationContext,
   TaskExecutionSection,
   UiControlRuntimeInfo,
@@ -220,6 +221,7 @@ export const serializeWorkspaceRunContext = (
 };
 
 export interface PreparedConversationPromptContext {
+  parallelAgentMode?: ParallelAgentMode;
   adaptivePlan?: AdaptiveExecutionPlan;
   wasQueued: boolean;
   workspace: {

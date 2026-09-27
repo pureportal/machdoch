@@ -19,6 +19,7 @@ export interface LocalToolRuntimeOptions {
   memory: ConversationMemoryRuntime;
   uiControl?: UiControlRuntimeInfo;
   additionalToolDefinitions?: AgentToolDefinition[];
+  scopedToolDefinitions?: AgentToolDefinition[];
   runId?: string;
   signal?: AbortSignal;
   onActionOutput?: TaskActionOutputHandler;
@@ -29,7 +30,7 @@ export interface LocalToolRuntimeOptions {
 }
 
 export const createLocalToolRuntime = (options: LocalToolRuntimeOptions) => {
-  const definitions = [
+  const definitions = options.scopedToolDefinitions ?? [
     ...createToolDefinitions(options.config, options.memory, options.uiControl),
     ...(options.additionalToolDefinitions ?? []),
   ];

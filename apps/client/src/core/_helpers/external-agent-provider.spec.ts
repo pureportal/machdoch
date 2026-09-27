@@ -12,6 +12,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer } from "node:net";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -498,6 +499,135 @@ afterEach(async () => {
 });
 
 describe("maybeExecuteExternalAgentProviderTask", () => {
+  it("continues a Ralph agent step when an enrolled MCP server is unreachable", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    const server = createServer();
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const address = server.address();
+    if (!address || typeof address === "string")
+      throw new Error("Expected a TCP port.");
+    const port = address.port;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    const configDirectory = join(workspaceRoot, ".machdoch", "mcp");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(
+      join(configDirectory, "mcp.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        servers: [
+          {
+            id: "blockbench",
+            enabled: true,
+            transport: {
+              type: "streamable-http",
+              url: `http://127.0.0.1:${port}/bb-mcp`,
+            },
+          },
+        ],
+      }),
+    );
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask({
+      ...createParams(workspaceRoot),
+      skipUnreachableMcpServers: true,
+    });
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    const childEnv = call.options.env as NodeJS.ProcessEnv;
+    const configuration = await readFile(
+      join(childEnv.CODEX_HOME!, "config.toml"),
+      "utf8",
+    );
+    expect(configuration).not.toContain("[mcp_servers.blockbench]");
+    writeStructuredAnswer(call, "The Ralph step completed.");
+    call.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: "executed",
+      response: { markdown: "The Ralph step completed." },
+    });
+  });
+
+  it("explains an MCP enrollment failure before starting the CLI", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    const configDirectory = join(workspaceRoot, ".machdoch", "mcp");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(
+      join(configDirectory, "mcp.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        servers: [
+          {
+            id: "machdoch",
+            enabled: true,
+            transport: { type: "stdio", command: "node" },
+          },
+        ],
+      }),
+    );
+
+    const result = await maybeExecuteExternalAgentProviderTask({
+      ...createParams(workspaceRoot),
+      skipUnreachableMcpServers: true,
+    });
+
+    expect(spawnCalls).toHaveLength(0);
+    expect(result).toMatchObject({
+      status: "blocked",
+      summary: expect.stringContaining("server id `machdoch` is reserved"),
+      reason: expect.stringContaining("server id `machdoch` is reserved"),
+    });
+  });
+
+  it("reports a failed Codex turn instead of unrelated MCP stderr", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot),
+    );
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    call.child.stderr.write("MCP server blockbench could not connect.\n");
+    call.child.stdout.write(
+      `${JSON.stringify({
+        type: "turn.failed",
+        error: { message: "The model is unavailable for this account." },
+      })}\n`,
+    );
+    call.child.emit("close", 1, null);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: "failed",
+      summary: "Codex CLI failed: The model is unavailable for this account.",
+      reason: "Codex CLI failed: The model is unavailable for this account.",
+    });
+  });
+
+  it("keeps the last CLI diagnostic when no turn failure message was emitted", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot),
+    );
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    call.child.stderr.write("WARNING: helper alias unavailable\n");
+    call.child.stderr.write(
+      "2026-09-25T22:42:51.321061Z ERROR rmcp::transport::worker: connection refused\n",
+    );
+    call.child.emit("close", 1, null);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: "failed",
+      reason:
+        "Codex CLI exited with code 1. Last diagnostic: ERROR rmcp::transport::worker: connection refused",
+    });
+  });
+
   it("runs codex exec and returns stdout as the agent answer", async () => {
     const workspaceRoot = await createWorkspace();
 
@@ -672,9 +802,14 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
       await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
       const call = spawnCalls[0]!;
-      if (provider === "codex-cli") expect(call.args).toContain("features.multi_agent=false");
-      if (provider === "claude-cli") expect(call.args).toContain("--disallowedTools");
-      if (provider === "copilot-cli") expect(call.args).toContain("--excluded-tools=task,read_agent,write_agent,list_agents");
+      if (provider === "codex-cli")
+        expect(call.args).toContain("features.multi_agent=false");
+      if (provider === "claude-cli")
+        expect(call.args).toContain("--disallowedTools");
+      if (provider === "copilot-cli")
+        expect(call.args).toContain(
+          "--excluded-tools=task,read_agent,write_agent,list_agents",
+        );
       const systemInstructions = await readRunScopedSystemInstructions(
         provider,
         call,
@@ -693,6 +828,78 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         response: { markdown: "Completed delegated work." },
       });
       expect(result?.response?.markdown).not.toContain("MACHDOCH_CONTROL");
+    },
+  );
+
+  it.each([
+    ["codex-cli", "gpt-6-sol", "MACHDOCH_CODEX_CLI_PATH"],
+    ["claude-cli", "claude-opus-4-6", "MACHDOCH_CLAUDE_CLI_PATH"],
+    ["copilot-cli", "gpt-5.4", "MACHDOCH_COPILOT_CLI_PATH"],
+  ] as const)(
+    "enables native subagents for %s",
+    async (provider, model, binaryEnvironmentKey) => {
+      const workspaceRoot = await createWorkspace();
+      process.env[binaryEnvironmentKey] = process.execPath;
+      const params = createParams(workspaceRoot, { provider, model });
+      params.preparedConversationContext = {
+        ...preparedConversationContext,
+        parallelAgentMode: "native",
+      };
+
+      const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      if (provider === "codex-cli") {
+        expect(call.args).toContain("features.multi_agent=true");
+      } else if (provider === "claude-cli") {
+        expect(call.args).not.toContain("--disallowedTools");
+      } else {
+        expect(
+          call.args.some((arg) => arg.startsWith("--excluded-tools=")),
+        ).toBe(false);
+      }
+      writeStructuredAnswer(call, "Completed native work.");
+      call.child.emit("close", 0, null);
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "executed",
+      });
+    },
+  );
+
+  it.each([
+    ["codex-cli", "gpt-6-sol", "MACHDOCH_CODEX_CLI_PATH"],
+    ["claude-cli", "claude-opus-4-6", "MACHDOCH_CLAUDE_CLI_PATH"],
+    ["copilot-cli", "gpt-5.4", "MACHDOCH_COPILOT_CLI_PATH"],
+  ] as const)(
+    "restricts scoped workers on %s",
+    async (provider, model, binaryEnvironmentKey) => {
+      const workspaceRoot = await createWorkspace();
+      process.env[binaryEnvironmentKey] = process.execPath;
+      const params = createParams(workspaceRoot, { provider, model });
+      params.scopedWorkerToolDefinitions = [];
+      const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      if (provider === "codex-cli") {
+        expect(call.args).toContain("read-only");
+        expect(call.args).not.toContain(
+          "--dangerously-bypass-approvals-and-sandbox",
+        );
+      } else if (provider === "claude-cli") {
+        expect(call.args).toContain("--tools");
+        expect(call.args[call.args.indexOf("--tools") + 1]).toBe("");
+      } else {
+        expect(call.args).toContainEqual(
+          expect.stringContaining(
+            "--excluded-tools=task,read_agent,write_agent,list_agents,bash,powershell",
+          ),
+        );
+      }
+      writeStructuredAnswer(call, "Completed scoped work.");
+      call.child.emit("close", 0, null);
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "executed",
+      });
     },
   );
 
@@ -1415,7 +1622,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
       writeStructuredAnswer(call, "Delegated answer.");
       call.child.emit("close", 0, null);
-      await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "executed",
+      });
     },
   );
 
@@ -1487,6 +1696,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(spawnCalls).toHaveLength(0);
     expect(result).toMatchObject({
       status: "blocked",
+      summary: expect.stringContaining(
+        "Claude CLI accepts at most 10485760 bytes",
+      ),
       reason: expect.stringContaining(
         "Claude CLI accepts at most 10485760 bytes",
       ),

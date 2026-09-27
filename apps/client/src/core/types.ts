@@ -172,7 +172,7 @@ export interface TaskConversationContext {
   workspaceRun?: WorkspaceRunSnapshot;
 }
 
-export type ParallelAgentMode = "disabled" | "read-only" | "machdoch";
+export type ParallelAgentMode = "disabled" | "read-only" | "machdoch" | "native";
 
 export interface TaskExecutionMemoryUpdate {
   scope: ConversationMemoryScope;
@@ -342,6 +342,7 @@ export interface AgentModelStructuredOutput {
 export interface AgentModelStartParams {
   model: string;
   reasoning?: ReasoningMode;
+  parallelAgentMode?: ParallelAgentMode;
   systemPrompt: string;
   userPrompt: string;
   imageInputs?: AgentModelImageInput[];
@@ -732,6 +733,7 @@ export interface TaskExecutionFileChanges {
 export interface TaskExecutionOptions {
   signal?: AbortSignal;
   runId?: string;
+  skipUnreachableMcpServers?: boolean;
   onStateChange?: TaskExecutionProgressHandler;
   onActionOutput?: TaskActionOutputHandler;
   onStreamActivity?: () => void;

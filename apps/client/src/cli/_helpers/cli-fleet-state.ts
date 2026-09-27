@@ -41,7 +41,7 @@ export interface FleetCliSession {
   provider: ModelProvider;
   model: string;
   mode: RunMode;
-  parallelAgentMode: "disabled" | "read-only" | "machdoch";
+  parallelAgentMode: "disabled" | "read-only" | "machdoch" | "native";
   reasoning: ReasoningMode;
   createdAt: number;
   updatedAt: number;
@@ -199,7 +199,7 @@ const parseSession = (value: unknown): FleetCliSession => {
     !isModelProvider(value.provider) ||
     !boundedString(value.model, 240) ||
     !modes.has(value.mode) ||
-    (value.parallelAgentMode !== undefined && !["disabled", "read-only", "machdoch"].includes(String(value.parallelAgentMode))) ||
+    (value.parallelAgentMode !== undefined && !["disabled", "read-only", "machdoch", "native"].includes(String(value.parallelAgentMode))) ||
     !reasoningModes.has(value.reasoning) ||
     !finiteTimestamp(value.createdAt) ||
     !finiteTimestamp(value.updatedAt) ||

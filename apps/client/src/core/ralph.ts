@@ -4065,7 +4065,6 @@ const preflightRalphInstructionBoundaries = async (
         ? options.instructionDeliveryPlan
         : await createInstructionDeliveryPlanForRuntime(resolution, {
             workspaceRoot: config.workspaceRoot,
-            reasoning: blockConfig.reasoning,
           });
     boundaries.push({
       identity,
@@ -4204,6 +4203,7 @@ const createExecutionOptions = async (
   return {
     ...(options.signal ? { signal: options.signal } : {}),
     ...(runId ? { runId } : {}),
+    skipUnreachableMcpServers: true,
     ...(onStateChange ? { onStateChange } : {}),
     ...(onActionOutput ? { onActionOutput } : {}),
     ...(conversationContext ? { conversationContext } : {}),

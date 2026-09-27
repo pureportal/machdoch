@@ -385,7 +385,7 @@ const runTaskExecutionStateMachine = async (
                 instructionResolution,
                 {
                   workspaceRoot: config.workspaceRoot,
-                  reasoning: config.reasoning,
+                  parallelAgentMode: options.conversationContext?.parallelAgentMode,
                 },
               );
           }
@@ -396,6 +396,9 @@ const runTaskExecutionStateMachine = async (
             contextSections: runtime.contextSections,
             ...(options.signal ? { signal: options.signal } : {}),
             ...(options.runId ? { runId: options.runId } : {}),
+            ...(options.skipUnreachableMcpServers
+              ? { skipUnreachableMcpServers: true }
+              : {}),
             ...(options.conversationContext
               ? { conversationContext: options.conversationContext }
               : {}),

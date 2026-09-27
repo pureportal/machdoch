@@ -7,6 +7,7 @@ import {
   type MutableRefObject,
 } from "react";
 import { productSnapshotVersion } from "@machdoch/fleet-protocol";
+import { getAvailableParallelAgentModes } from "../../../../core/parallel-agent-capabilities.js";
 import {
   isMediaAssetContextAttachment,
   isTransientChatOperationMessage,
@@ -618,7 +619,7 @@ export const useFleetControl = (options: {
     sessionId: string,
     mode: RuntimeSnapshot["mode"] | null,
   ) => void;
-  onSetParallelAgentMode: (sessionId: string, mode: "disabled" | "read-only" | "machdoch") => void;
+  onSetParallelAgentMode: (sessionId: string, mode: "disabled" | "read-only" | "machdoch" | "native") => void;
   onSetSessionReasoning: (
     sessionId: string,
     reasoning: RuntimeSnapshot["reasoning"] | null,
@@ -969,6 +970,7 @@ export const useFleetControl = (options: {
         mode: options.activeRunMode,
         defaultMode: options.defaultMode,
         parallelAgentMode: options.activeSession.parallelAgentMode,
+        availableParallelAgentModes: [...getAvailableParallelAgentModes(options.activeSession.provider, options.activeSession.model)],
         reasoning: options.activeReasoning,
         defaultReasoning: options.defaultReasoning,
         reasoningOptions: [
@@ -1510,8 +1512,8 @@ export const useFleetControl = (options: {
         }
 
         case "set-parallel-agent-mode": {
-          if (command.sessionId && ["disabled", "read-only", "machdoch"].includes(String(command.mode))) {
-            options.onSetParallelAgentMode(command.sessionId, command.mode as "disabled" | "read-only" | "machdoch");
+          if (command.sessionId && ["disabled", "read-only", "machdoch", "native"].includes(String(command.mode))) {
+            options.onSetParallelAgentMode(command.sessionId, command.mode as "disabled" | "read-only" | "machdoch" | "native");
           }
           break;
         }
