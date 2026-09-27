@@ -4,10 +4,11 @@ import type {
 } from "./contracts.js";
 
 export type MediaVideoAspectRatio = "1:1" | "16:9" | "9:16" | "21:9";
-export type MediaVideoResolution =
+type NativeMediaVideoResolution =
   | "preview-512"
   | "quality-640"
   | "quality-768";
+export type MediaVideoResolution = NativeMediaVideoResolution | "quality-2k";
 export type MediaVideoLoopMode =
   | "none"
   | "ping-pong"
@@ -111,7 +112,7 @@ export const MEDIA_VIDEO_QUALITY_PRESETS: readonly MediaVideoQualityPreset[] = [
 
 const VIDEO_DIMENSIONS: Readonly<
   Record<
-    MediaVideoResolution,
+    NativeMediaVideoResolution,
     Record<MediaVideoAspectRatio, readonly [number, number]>
   >
 > = {
@@ -146,7 +147,7 @@ const LTX_VIDEO_768_DIMENSIONS: Readonly<
 
 const HUNYUAN_VIDEO_15_DIMENSIONS: Readonly<
   Record<
-    MediaVideoResolution,
+    NativeMediaVideoResolution,
     Record<MediaVideoAspectRatio, readonly [number, number]>
   >
 > = {
@@ -171,7 +172,7 @@ const HUNYUAN_VIDEO_15_DIMENSIONS: Readonly<
 };
 
 const MINIMAX_H3_DIMENSIONS: Readonly<
-  Record<MediaVideoResolution, Record<MediaVideoAspectRatio, readonly [number, number]>>
+  Record<NativeMediaVideoResolution, Record<MediaVideoAspectRatio, readonly [number, number]>>
 > = {
   "preview-512": {
     "1:1": [512, 512],
@@ -193,12 +194,23 @@ const MINIMAX_H3_DIMENSIONS: Readonly<
   },
 };
 
+const MINIMAX_H3_2K_DIMENSIONS: Readonly<
+  Record<MediaVideoAspectRatio, readonly [number, number]>
+> = {
+  "1:1": [2048, 2048],
+  "16:9": [2560, 1440],
+  "9:16": [1440, 2560],
+  "21:9": [2560, 1138],
+};
+
 export const resolveMediaVideoDimensions = (
   aspectRatio: MediaVideoAspectRatio,
   resolution: MediaVideoResolution,
   architecture?: MediaLocalModelArchitecture | null,
 ): readonly [number, number] =>
-  architecture === "minimax-h3-ref2va"
+  resolution === "quality-2k"
+    ? MINIMAX_H3_2K_DIMENSIONS[aspectRatio]
+    : architecture === "minimax-h3-ref2va"
     ? MINIMAX_H3_DIMENSIONS[resolution][aspectRatio]
     : architecture === "hunyuan-video-1.5-i2v"
     ? HUNYUAN_VIDEO_15_DIMENSIONS[resolution][aspectRatio]
@@ -377,7 +389,8 @@ export const formatMediaAssetAspectRatio = (
     if (
       resolution === "preview-512" ||
       resolution === "quality-640" ||
-      resolution === "quality-768"
+      resolution === "quality-768" ||
+      resolution === "quality-2k"
     ) {
       const architecture =
         operation.kind === "local-video-generation"
@@ -619,7 +632,7 @@ export const summarizeMediaVideoDelivery = (
   if (
     mediaVideoDimensionsError(config) !== null ||
     !["1:1", "16:9", "9:16", "21:9"].includes(String(aspectRatio)) ||
-    !["preview-512", "quality-640", "quality-768"].includes(
+    !["preview-512", "quality-640", "quality-768", "quality-2k"].includes(
       String(resolution),
     ) ||
     !["none", "ping-pong", "seamless", "crossfade"].includes(

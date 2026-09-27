@@ -1104,7 +1104,7 @@ export interface MediaVideoRecipeSettings {
   seed?: number | null;
   modelId: MediaVideoModelId | null;
   aspectRatio: "1:1" | "16:9" | "9:16" | "21:9";
-  resolution: "preview-512" | "quality-640" | "quality-768";
+  resolution: "preview-512" | "quality-640" | "quality-768" | "quality-2k";
   transparentBackground: boolean;
   loopMode: "none" | "ping-pong" | "seamless" | "crossfade";
   fps: number;
@@ -1852,7 +1852,7 @@ export interface MediaLocalWanVideoGenerationOperation {
   loopBoundaryInspection: MediaVideoLoopBoundaryInspection | null;
   prompt: string;
   negativePrompt: string;
-  resolution: "preview-512" | "quality-640" | "quality-768";
+  resolution: "preview-512" | "quality-640" | "quality-768" | "quality-2k";
   guidanceScale: number;
   numInferenceSteps: number;
   transparentBackground: boolean;
@@ -2563,7 +2563,7 @@ export interface GenerateMediaVideoRequest {
   firstFrameAssetId: string;
   lastFrameAssetId: string;
   aspectRatio: "1:1" | "16:9" | "9:16" | "21:9";
-  resolution: "preview-512" | "quality-640" | "quality-768";
+  resolution: "preview-512" | "quality-640" | "quality-768" | "quality-2k";
   outputFormat: "webm";
   transparentBackground: boolean;
   loopMode: "none" | "ping-pong" | "seamless" | "crossfade";

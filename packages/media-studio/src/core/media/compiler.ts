@@ -3744,10 +3744,16 @@ export const compileMediaFlow = ({
         ? "MiniMax H3 requires 24 fps."
         : null,
       mediaVideoDimensionsError(config),
-      !["preview-512", "quality-640", "quality-768"].includes(
+      !["preview-512", "quality-640", "quality-768", "quality-2k"].includes(
         String(config.resolution),
       )
-        ? "Select a supported native video resolution profile."
+        ? "Select a supported video resolution."
+        : null,
+      config.resolution === "quality-2k" && !minimaxH3
+        ? "Local 2K output requires MiniMax H3."
+        : null,
+      config.resolution === "quality-2k" && (config.width != null || config.height != null)
+        ? "Local 2K output uses fixed dimensions."
         : null,
       typeof config.numInferenceSteps !== "number" ||
       !Number.isInteger(config.numInferenceSteps) ||

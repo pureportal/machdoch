@@ -2340,9 +2340,15 @@ impl GenerateMediaVideoRequest {
         }
         if !matches!(
             self.resolution.as_str(),
-            "preview-512" | "quality-640" | "quality-768"
+            "preview-512" | "quality-640" | "quality-768" | "quality-2k"
         ) {
-            return Err("resolution must be preview-512, quality-640, or quality-768".to_string());
+            return Err("resolution must be preview-512, quality-640, quality-768, or quality-2k".to_string());
+        }
+        if self.resolution == "quality-2k" && !minimax_h3 {
+            return Err("Local 2K output requires MiniMax H3".to_string());
+        }
+        if self.resolution == "quality-2k" && self.width.is_some() {
+            return Err("Local 2K output uses its fixed aspect-ratio dimensions".to_string());
         }
         if self.output_format != "webm" {
             return Err("local video output requires the verified WebM container".to_string());

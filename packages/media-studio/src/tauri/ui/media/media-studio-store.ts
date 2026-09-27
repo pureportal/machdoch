@@ -266,7 +266,7 @@ const normalizeVideoRecipeSettings = (
     ),
     resolution: normalizeOneOf(
       value.resolution,
-      ["preview-512", "quality-640", "quality-768"],
+      ["preview-512", "quality-640", "quality-768", "quality-2k"],
       DEFAULT_VIDEO_RECIPE_SETTINGS.resolution,
     ),
     width: typeof value.width === "number" ? value.width : null,

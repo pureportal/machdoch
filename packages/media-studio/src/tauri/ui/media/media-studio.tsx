@@ -3140,7 +3140,8 @@ export const MediaStudio = ({
               const videoConfig = submittedExecution.videoNode.config;
               const resolution =
                 videoConfig.resolution === "preview-512" ||
-                videoConfig.resolution === "quality-768"
+                videoConfig.resolution === "quality-768" ||
+                videoConfig.resolution === "quality-2k"
                   ? videoConfig.resolution
                   : "quality-640";
               const loopMode =
