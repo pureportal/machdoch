@@ -12,6 +12,7 @@ import {
   modelSupportsImageInput,
   providerSupportsImageInputMediaType,
 } from "../../../../core/model-capabilities.js";
+import { resolveAdaptiveControllerEnabled } from "../../../../shared/adaptive-controller-settings.js";
 import type { RalphInputValue } from "../../../../core/ralph.js";
 import type {
   ReasoningMode,
@@ -1214,6 +1215,24 @@ export const useChatSessionController = (
   const isUsingWorkspaceDefaultMode = !activeComposerSession.mode;
   const isUsingWorkspaceDefaultReasoning = !activeSessionReasoningOverride;
   const hasActiveWorkspace = activeComposerSession.workspace !== null;
+  const workspaceSnapshotMatchesSession =
+    activeComposerSession.workspace === null ||
+    (runtime.runtimeSnapshot !== null &&
+      createWorkspaceRootKey(
+        runtime.runtimeSnapshot.workspaceRoot.replace(/^[\\/]{2}\?[\\/]/u, ""),
+      ) ===
+        createWorkspaceRootKey(
+          activeComposerSession.workspace.replace(/^[\\/]{2}\?[\\/]/u, ""),
+        ));
+  const defaultAdaptiveControllerEnabled =
+    runtime.userDesktopSettingsLoaded && workspaceSnapshotMatchesSession
+      ? resolveAdaptiveControllerEnabled(
+          runtime.userDesktopSettings.adaptiveControllerEnabled,
+          hasActiveWorkspace
+            ? runtime.runtimeSnapshot?.adaptiveControllerOverride
+            : null,
+        )
+      : null;
   const workspaceLocked = isSessionWorkspaceLocked(activeComposerSession);
   const workspaceContextPacks = useMemo(
     () =>
@@ -8611,10 +8630,11 @@ export const useChatSessionController = (
       activeRunMode,
       activeRunModeMeta,
       defaultRunMode,
-      defaultReasoning: workspaceDefaultReasoning,
+      defaultReasoning: normalizedEffectiveReasoning,
       activeReasoning,
       isUsingWorkspaceDefaultMode,
       isUsingWorkspaceDefaultReasoning,
+      defaultAdaptiveControllerEnabled,
       hasActiveWorkspace,
       workspaceLocked,
       recentWorkspaces: state.shellState.recentWorkspaces,

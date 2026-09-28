@@ -75,6 +75,7 @@ export interface SessionComposerProps {
   activeReasoning: ReasoningMode;
   isUsingWorkspaceDefaultMode: boolean;
   isUsingWorkspaceDefaultReasoning: boolean;
+  defaultAdaptiveControllerEnabled?: boolean | null;
   hasActiveWorkspace: boolean;
   workspaceLocked: boolean;
   recentWorkspaces: string[];
@@ -198,6 +199,7 @@ export const SessionComposer = ({
   activeReasoning,
   isUsingWorkspaceDefaultMode,
   isUsingWorkspaceDefaultReasoning,
+  defaultAdaptiveControllerEnabled = null,
   hasActiveWorkspace,
   workspaceLocked,
   recentWorkspaces,
@@ -316,6 +318,26 @@ export const SessionComposer = ({
           : "Configure speak to text";
   const toolbarControls = (
     <>
+      <WorkspacePicker
+        currentWorkspace={activeSession.workspace}
+        workspaceLabel={composerWorkspaceLabel}
+        recentWorkspaces={recentWorkspaces}
+        hasActiveWorkspace={hasActiveWorkspace}
+        workspaceLocked={workspaceLocked}
+        buttonClassName="app-composer-toolbar-pill app-composer-toolbar-control h-8 max-w-40 rounded-full px-3 text-xs font-medium shadow-none"
+        onSelectWorkspace={onWorkspaceSelection}
+        onRemoveWorkspace={onWorkspaceRemoval}
+        onChooseNewWorkspace={onSelectFolder}
+      />
+
+      <SessionModePicker
+        activeRunMode={activeRunMode}
+        activeRunModeMeta={activeRunModeMeta}
+        defaultRunMode={defaultRunMode}
+        isUsingWorkspaceDefaultMode={isUsingWorkspaceDefaultMode}
+        onSessionModeSelection={onSessionModeSelection}
+      />
+
       <SessionReasoningPicker
         provider={activeSession.provider}
         model={activeSession.model}
@@ -325,12 +347,10 @@ export const SessionComposer = ({
         onSessionReasoningSelection={onSessionReasoningSelection}
       />
 
-      <SessionModePicker
-        activeRunMode={activeRunMode}
-        activeRunModeMeta={activeRunModeMeta}
-        defaultRunMode={defaultRunMode}
-        isUsingWorkspaceDefaultMode={isUsingWorkspaceDefaultMode}
-        onSessionModeSelection={onSessionModeSelection}
+      <SessionAdaptiveControllerPicker
+        override={activeSession.adaptiveControllerOverride ?? null}
+        defaultEnabled={defaultAdaptiveControllerEnabled}
+        onChange={onAdaptiveControllerOverrideChange}
       />
 
       <SessionParallelAgentPicker
@@ -346,28 +366,11 @@ export const SessionComposer = ({
         onChange={onParallelAgentModeSelection}
       />
 
-      <SessionAdaptiveControllerPicker
-        override={activeSession.adaptiveControllerOverride ?? null}
-        onChange={onAdaptiveControllerOverrideChange}
-      />
-
       <SessionPromptEnhancementPicker
         mode={promptEnhancementMode}
         webSearchAvailable={promptEnhancementWebSearchAvailable}
         webSearchUnavailableReason={promptEnhancementWebSearchUnavailableReason}
         onModeChange={onPromptEnhancementModeChange}
-      />
-
-      <WorkspacePicker
-        iconOnly
-        currentWorkspace={activeSession.workspace}
-        workspaceLabel={composerWorkspaceLabel}
-        recentWorkspaces={recentWorkspaces}
-        hasActiveWorkspace={hasActiveWorkspace}
-        workspaceLocked={workspaceLocked}
-        onSelectWorkspace={onWorkspaceSelection}
-        onRemoveWorkspace={onWorkspaceRemoval}
-        onChooseNewWorkspace={onSelectFolder}
       />
 
       <SmartContextPackPicker
@@ -407,8 +410,6 @@ export const SessionComposer = ({
         onPressedChange: onSessionMemoryEnabledChange,
         onManage: openSessionMemory,
         manageLabel: "Manage session memory",
-        activeClassName:
-          "border-emerald-500/30 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/15 hover:text-white",
       });
     }
     next.push(
@@ -420,10 +421,6 @@ export const SessionComposer = ({
         pressed: isWorkspaceMemoryActive,
         disabled: !isWorkspaceMemoryAvailable,
         onPressedChange: onUseWorkspaceMemoryChange,
-        activeClassName:
-          "border-amber-500/30 bg-amber-500/10 text-amber-100 hover:bg-amber-500/15 hover:text-white",
-        unavailableClassName:
-          "border-dashed border-slate-800 bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600",
       },
       {
         id: "global-memory",
@@ -433,10 +430,6 @@ export const SessionComposer = ({
         pressed: isGlobalMemoryActive,
         disabled: !isGlobalMemoryAvailable,
         onPressedChange: onUseGlobalMemoryChange,
-        activeClassName:
-          "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
-        unavailableClassName:
-          "border-dashed border-slate-800 bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600",
       },
       {
         id: "interview",
@@ -446,10 +439,6 @@ export const SessionComposer = ({
         pressed: interviewEnabled,
         disabled: interviewDisabled,
         onPressedChange: onInterviewEnabledChange,
-        activeClassName:
-          "border-cyan-500/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/15 hover:text-white",
-        unavailableClassName:
-          "border-dashed border-slate-800 bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600",
       },
       {
         id: "ui-control",
@@ -459,10 +448,6 @@ export const SessionComposer = ({
         pressed: activeSession.uiControlEnabled,
         disabled: !isUiControlAvailable,
         onPressedChange: onUiControlEnabledChange,
-        activeClassName:
-          "border-violet-500/30 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15 hover:text-white",
-        unavailableClassName:
-          "border-dashed border-slate-800 bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600",
       },
     );
     return next;

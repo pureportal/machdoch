@@ -3,6 +3,7 @@ import { getModelContextWindowTokens } from "./model-capabilities.js";
 import { loadWorkspaceConfigFile } from "./config.js";
 import { loadUserConfigFile } from "./env.js";
 import { DEFAULT_USER_DESKTOP_SETTINGS } from "./runtime-contract.generated.js";
+import { resolveAdaptiveControllerEnabled } from "../shared/adaptive-controller-settings.js";
 import type { RuntimeConfig } from "./runtime-contract.generated.js";
 import type { TaskConversationContext } from "./types.js";
 
@@ -71,12 +72,6 @@ const BROAD_SCOPE =
   /\b(architecture|codebase|repository|across|entire|all|multiple|end.to.end|full.featured|production|security|performance)\b/iu;
 const SIMPLE_WORK =
   /\b(what is|explain|summari[sz]e|translate|define|list|show me)\b/iu;
-
-export const resolveAdaptiveControllerEnabled = (
-  globalEnabled: boolean,
-  workspaceOverride?: boolean | null,
-  sessionOverride?: boolean | null,
-): boolean => sessionOverride ?? workspaceOverride ?? globalEnabled;
 
 export const resolveAdaptiveExecutionPlan = async (
   task: string,

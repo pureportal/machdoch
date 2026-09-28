@@ -35,6 +35,7 @@ import {
   getReasoningModesForProvider,
   normalizeReasoningModeForProvider,
 } from "../../reasoning-options";
+import { WorkspaceDefaultIndicator } from "./workspace-default-indicator";
 
 const REASONING_META: Record<
   ReasoningMode,
@@ -42,9 +43,6 @@ const REASONING_META: Record<
     label: string;
     description: string;
     icon: LucideIcon;
-    triggerClassName: string;
-    selectedClassName: string;
-    iconClassName: string;
   }
 > = {
   default: {
@@ -52,96 +50,55 @@ const REASONING_META: Record<
     description:
       "Use the provider or selected model's default reasoning effort.",
     icon: CircleDashed,
-    triggerClassName:
-      "border-slate-800 bg-slate-950/70 text-slate-300 hover:border-cyan-500/30 hover:bg-slate-900 hover:text-cyan-100",
-    selectedClassName: "border-cyan-500/30 bg-cyan-500/10 text-cyan-100",
-    iconClassName: "text-slate-300",
   },
   none: {
     label: "None",
     description:
       "Use the lowest available reasoning setting for latency-sensitive work.",
     icon: CircleOff,
-    triggerClassName:
-      "border-slate-700 bg-slate-900/80 text-slate-200 hover:border-slate-600 hover:bg-slate-900 hover:text-slate-100",
-    selectedClassName: "border-slate-600 bg-slate-800/80 text-slate-100",
-    iconClassName: "text-slate-300",
   },
   minimal: {
     label: "Minimal",
     description:
       "Prefer minimal internal thinking where the provider supports it.",
     icon: SignalZero,
-    triggerClassName:
-      "border-teal-500/25 bg-teal-500/10 text-teal-100 hover:border-teal-400/40 hover:bg-teal-500/15 hover:text-white",
-    selectedClassName: "border-teal-500/30 bg-teal-500/10 text-teal-100",
-    iconClassName: "text-teal-200",
   },
   low: {
     label: "Low",
     description: "Favor speed and lower token use for simple tasks.",
     icon: SignalLow,
-    triggerClassName:
-      "border-cyan-500/25 bg-cyan-500/10 text-cyan-100 hover:border-cyan-400/40 hover:bg-cyan-500/15 hover:text-white",
-    selectedClassName: "border-cyan-500/30 bg-cyan-500/10 text-cyan-100",
-    iconClassName: "text-cyan-200",
   },
   medium: {
     label: "Medium",
     description: "Balance quality, cost, and latency for everyday agent work.",
     icon: SignalMedium,
-    triggerClassName:
-      "border-sky-500/25 bg-sky-500/10 text-sky-100 hover:border-sky-400/40 hover:bg-sky-500/15 hover:text-white",
-    selectedClassName: "border-sky-500/30 bg-sky-500/10 text-sky-100",
-    iconClassName: "text-sky-200",
   },
   high: {
     label: "High",
     description:
       "Spend more effort on planning, coding, and multi-step reasoning.",
     icon: SignalHigh,
-    triggerClassName:
-      "border-amber-500/30 bg-amber-500/10 text-amber-100 hover:border-amber-400/40 hover:bg-amber-500/15 hover:text-white",
-    selectedClassName: "border-amber-500/30 bg-amber-500/10 text-amber-100",
-    iconClassName: "text-amber-200",
   },
   xhigh: {
     label: "XHigh",
     description: "Use extended effort for long-horizon or complex agent tasks.",
     icon: ChevronsUp,
-    triggerClassName:
-      "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-100 hover:border-fuchsia-400/40 hover:bg-fuchsia-500/15 hover:text-white",
-    selectedClassName:
-      "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-100",
-    iconClassName: "text-fuchsia-200",
   },
   max: {
     label: "Max",
     description:
       "Use the highest mapped effort where the provider supports it.",
     icon: Tally5,
-    triggerClassName:
-      "border-rose-500/30 bg-rose-500/10 text-rose-100 hover:border-rose-400/40 hover:bg-rose-500/15 hover:text-white",
-    selectedClassName: "border-rose-500/30 bg-rose-500/10 text-rose-100",
-    iconClassName: "text-rose-200",
   },
   ultra: {
     label: "Ultra",
     description: "Use maximum reasoning effort.",
     icon: Sparkles,
-    triggerClassName:
-      "border-violet-400/35 bg-violet-400/10 text-violet-100 hover:border-violet-300/50 hover:bg-violet-400/15 hover:text-white",
-    selectedClassName: "border-violet-400/35 bg-violet-400/10 text-violet-100",
-    iconClassName: "text-violet-200",
   },
   aeon: {
     label: "Aeon",
     description: "Keep working until stopped.",
     icon: InfinityIcon,
-    triggerClassName:
-      "border-indigo-400/35 bg-indigo-400/10 text-indigo-100 hover:border-indigo-300/50 hover:bg-indigo-400/15 hover:text-white",
-    selectedClassName: "border-indigo-400/35 bg-indigo-400/10 text-indigo-100",
-    iconClassName: "text-indigo-200",
   },
 };
 
@@ -266,17 +223,21 @@ export const SessionReasoningPicker = ({
           <Button
             type="button"
             variant="outline"
-            aria-label={`Reasoning mode: ${activeMeta.label}`}
+            aria-label={`Reasoning mode: ${activeMeta.label}${isUsingWorkspaceDefaultReasoning ? " (workspace default)" : ""}`}
             data-reasoning-mode={displayActiveReasoning}
             data-reasoning-source={
               isUsingWorkspaceDefaultReasoning ? "workspace" : "session"
             }
-            className={cn(
-              "app-reasoning-picker-button h-8 w-8 rounded-full border p-0 shadow-none",
-              activeMeta.triggerClassName,
-            )}
+            data-active={
+              displayActiveReasoning !== "none" &&
+              displayActiveReasoning !== "default"
+            }
+            className="app-reasoning-picker-button app-composer-toolbar-control relative h-8 w-8 rounded-full border p-0 shadow-none"
           >
             <ActiveReasoningIcon className="h-3.5 w-3.5" />
+            {isUsingWorkspaceDefaultReasoning ? (
+              <WorkspaceDefaultIndicator />
+            ) : null}
           </Button>
         </PopoverTrigger>
       </ControlTooltip>
@@ -302,16 +263,11 @@ export const SessionReasoningPicker = ({
             className={cn(
               "flex w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left transition-all",
               isUsingWorkspaceDefaultReasoning
-                ? defaultMeta.selectedClassName
+                ? "border-sky-500/30 bg-sky-500/10 text-sky-100"
                 : "border-slate-800 bg-slate-900/70 text-slate-300 hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
             )}
           >
-            <div
-              className={cn(
-                "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950",
-                defaultMeta.iconClassName,
-              )}
-            >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-sky-200">
               <WorkspaceDefaultReasoningIcon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
@@ -320,7 +276,7 @@ export const SessionReasoningPicker = ({
                   Workspace default
                 </p>
                 {isUsingWorkspaceDefaultReasoning ? (
-                  <Badge className="border-cyan-500/20 bg-cyan-500/10 text-cyan-200">
+                  <Badge className="border-sky-500/20 bg-sky-500/10 text-sky-200">
                     Current
                   </Badge>
                 ) : null}
@@ -348,14 +304,14 @@ export const SessionReasoningPicker = ({
                   className={cn(
                     "flex w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left transition-all",
                     isSelected
-                      ? meta.selectedClassName
+                      ? "border-sky-500/30 bg-sky-500/10 text-sky-100"
                       : "border-slate-800 bg-slate-900/70 text-slate-300 hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
                   )}
                 >
                   <div
                     className={cn(
                       "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950",
-                      meta.iconClassName,
+                      isSelected ? "text-sky-200" : "text-slate-300",
                     )}
                   >
                     <ReasoningIcon className="h-4 w-4" />

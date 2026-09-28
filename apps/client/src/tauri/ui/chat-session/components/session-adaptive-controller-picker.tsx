@@ -8,6 +8,7 @@ import {
 } from "@machdoch/media-studio/tauri/ui/components/ui/popover.js";
 import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
+import { WorkspaceDefaultIndicator } from "./workspace-default-indicator";
 
 const OPTIONS = [
   { value: "default", label: "Default" },
@@ -17,16 +18,21 @@ const OPTIONS = [
 
 export const SessionAdaptiveControllerPicker = ({
   override,
+  defaultEnabled = null,
   onChange,
 }: {
   override: boolean | null;
+  defaultEnabled?: boolean | null;
   onChange: (override: boolean | null) => void;
 }): JSX.Element => {
   const [open, setOpen] = useState(false);
   const value =
     override === null ? "default" : override ? "enabled" : "disabled";
+  const enabled = override ?? defaultEnabled;
   const label =
-    OPTIONS.find((option) => option.value === value)?.label ?? "Default";
+    enabled === null
+      ? "Default"
+      : `${enabled ? "Enabled" : "Disabled"}${override === null ? " (workspace default)" : ""}`;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -38,15 +44,11 @@ export const SessionAdaptiveControllerPicker = ({
             size="icon-sm"
             tooltip={null}
             aria-label={`Adaptive context & compute: ${label}`}
-            className={cn(
-              "app-composer-toolbar-icon-button h-8 w-8 rounded-full border-slate-800 bg-slate-950/70 p-0 text-slate-400 shadow-none hover:bg-slate-900",
-              override === true &&
-                "border-emerald-500/30 bg-emerald-500/10 text-emerald-100 hover:border-emerald-500/40 hover:bg-emerald-500/15",
-              override === false &&
-                "border-amber-500/30 bg-amber-500/10 text-amber-100 hover:border-amber-500/40 hover:bg-amber-500/15",
-            )}
+            data-active={enabled === true}
+            className="app-composer-toolbar-icon-button app-composer-toolbar-control relative h-8 w-8 rounded-full p-0 shadow-none"
           >
             <BrainCircuit className="h-3.5 w-3.5" />
+            {override === null ? <WorkspaceDefaultIndicator /> : null}
           </Button>
         </PopoverTrigger>
       </ControlTooltip>
@@ -60,7 +62,12 @@ export const SessionAdaptiveControllerPicker = ({
             type="button"
             role="menuitemradio"
             aria-checked={value === option.value}
-            className="flex w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800"
+            className={cn(
+              "flex w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800",
+              value === option.value &&
+                enabled === true &&
+                "bg-sky-500/10 text-sky-200",
+            )}
             onClick={() => {
               onChange(
                 option.value === "default" ? null : option.value === "enabled",
@@ -68,7 +75,9 @@ export const SessionAdaptiveControllerPicker = ({
               setOpen(false);
             }}
           >
-            {option.label}
+            {option.value === "default" && defaultEnabled !== null
+              ? `Default (${defaultEnabled ? "Enabled" : "Disabled"})`
+              : option.label}
           </button>
         ))}
       </PopoverContent>
