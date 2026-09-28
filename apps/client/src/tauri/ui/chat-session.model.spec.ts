@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mediaPoseJoints } from "@machdoch/media-studio/core/media/contracts.js";
 import {
   applySessionRetentionPolicy,
+  canChangeSessionWorkspace,
   canDeleteSession,
   canDuplicateSession,
   createInitialShellState,
@@ -31,7 +32,11 @@ import {
   createPreviewFixture,
 } from "./preview/fixtures";
 import { createInitialThinkingTrace } from "./task-thinking.model";
-import { createSessionMessageSettings, getSessionMessageSettings } from "./chat-session/_helpers/session-message-settings";
+import {
+  createSessionMessageSettings,
+  getSessionMessageSettings,
+  getSessionMessageSettingsForReplay,
+} from "./chat-session/_helpers/session-message-settings";
 
 const SESSION_DAY_MS = 24 * 60 * 60 * 1_000;
 
@@ -49,6 +54,33 @@ describe("parallel agent session mode", () => {
     expect(settings.parallelAgentMode).toBe("read-only");
     expect(state.sessions[0]?.parallelAgentMode).toBe("machdoch");
     expect(getSessionMessageSettings({ id: "message", role: "user", content: "task", settings }, changed).parallelAgentMode).toBe("read-only");
+  });
+});
+
+describe("message settings replay", () => {
+  it("keeps message settings except the workspace, which stays with the current session", () => {
+    const oldSession = createSession({
+      workspace: "C:\\Projects\\old",
+      parallelAgentMode: "read-only",
+    });
+    const currentSession = createSession({
+      ...oldSession,
+      workspace: "C:\\Projects\\new",
+      parallelAgentMode: "native",
+    });
+    const message = {
+      id: "request",
+      role: "user" as const,
+      content: "Work here",
+      settings: createSessionMessageSettings(oldSession),
+    };
+
+    expect(getSessionMessageSettingsForReplay(message, currentSession)).toEqual(
+      {
+        ...message.settings,
+        workspace: currentSession.workspace,
+      },
+    );
   });
 });
 
@@ -675,6 +707,53 @@ describe("normalizeShellState", () => {
             },
           ],
         }),
+      ),
+    ).toBe(false);
+  });
+
+  it("requires an explicit override for completed sessions and never switches running sessions", () => {
+    const session = createSession({
+      messages: [
+        { id: "request", taskId: "task", role: "user", content: "Work here" },
+        {
+          id: "response",
+          taskId: "task",
+          role: "agent",
+          content: "Done",
+          outcome: { status: "succeeded" },
+        },
+      ],
+    });
+
+    expect(canChangeSessionWorkspace(createSession())).toBe(true);
+    expect(canChangeSessionWorkspace(session)).toBe(false);
+    expect(canChangeSessionWorkspace(session, true)).toBe(true);
+    expect(
+      canChangeSessionWorkspace(session, true, [
+        {
+          id: "queued",
+          sessionId: session.id,
+          task: "Next step",
+          visibleMessageContent: "Next step",
+          promptHistoryContent: "Next step",
+          contextAttachments: [],
+          status: "queued",
+          createdAt: 1,
+          updatedAt: 1,
+          contentUpdatedAt: 1,
+          attachmentsUpdatedAt: 1,
+          attachmentTombstones: {},
+          blockerUpdatedAt: 1,
+          orderRank: 0,
+          orderUpdatedAt: 1,
+          statusUpdatedAt: 1,
+        },
+      ]),
+    ).toBe(false);
+    expect(
+      canChangeSessionWorkspace(
+        createSession({ ...session, messages: [session.messages[0]!] }),
+        true,
       ),
     ).toBe(false);
   });

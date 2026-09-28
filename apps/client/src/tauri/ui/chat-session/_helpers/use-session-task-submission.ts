@@ -68,7 +68,7 @@ import { normalizeSessionReasoningOverride } from "./session-reasoning";
 import {
   applySessionMessageSettings,
   createSessionMessageSettings,
-  getSessionMessageSettings,
+  getSessionMessageSettingsForReplay,
 } from "./session-message-settings";
 import {
   CONTINUE_TASK_DISPLAY_CONTENT,
@@ -559,9 +559,6 @@ export const useSessionTaskSubmission = (options: {
           currentOptions.runtime.userMemorySettings.globalEnabled,
           currentOptions.uiControlAvailability,
           currentOptions.aiContextMessageLimit,
-          currentOptions.runtime.runtimeSnapshot?.workspaceMemoryEnabled ??
-            currentOptions.runtime.userMemorySettings
-              .workspaceDefaultEnabled !== false,
         ),
         parallelAgentMode: messageSettings.parallelAgentMode,
         adaptiveControllerOverride:
@@ -1427,7 +1424,10 @@ export const useSessionTaskSubmission = (options: {
       }
 
       const sourceSession = getMessageSourceSession(message);
-      const messageSettings = getSessionMessageSettings(message, sourceSession);
+      const messageSettings = getSessionMessageSettingsForReplay(
+        message,
+        sourceSession,
+      );
 
       return submitTaskToSession({
         sessionSnapshot: sourceSession,
@@ -1476,7 +1476,7 @@ export const useSessionTaskSubmission = (options: {
         sessionSnapshot: sourceSession,
         task,
         contextAttachments: getUserMessageContextAttachments(sourceUserMessage),
-        messageSettings: getSessionMessageSettings(
+        messageSettings: getSessionMessageSettingsForReplay(
           sourceUserMessage,
           sourceSession,
         ),

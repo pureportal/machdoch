@@ -22,10 +22,12 @@ import type {
 import type { RunMode } from "../../../../core/runtime-contract.generated.js";
 import {
   isQuickVoiceSession,
+  isTransientChatOperationMessage,
   type ChatSessionRecord,
   type SessionOverviewStatus,
 } from "../../chat-session.model";
 import { getProviderLabel } from "../../model-catalog";
+import { createWorkspaceRootKey } from "../../workspace-management/workspace-management-model";
 import {
   USER_WEB_SEARCH_PROVIDER_ORDER,
   type RuntimeSnapshot,
@@ -559,6 +561,31 @@ export const createConversationContextFromSession = (
   workspaceMemoryEnabled = true,
 ): TaskConversationContext => {
   const history = createAiContextHistory(session.messages, maxHistoryMessages);
+  let earlierWorkspace: string | null | undefined;
+
+  for (let index = session.messages.length - 1; index >= 0; index -= 1) {
+    const message = session.messages[index];
+    const messageWorkspace = message?.settings?.workspace;
+
+    if (
+      message?.role !== "user" ||
+      message.taskAction ||
+      isTransientChatOperationMessage(message) ||
+      messageWorkspace === undefined
+    ) {
+      continue;
+    }
+
+    if (
+      messageWorkspace === null || session.workspace === null
+        ? messageWorkspace !== session.workspace
+        : createWorkspaceRootKey(messageWorkspace) !==
+          createWorkspaceRootKey(session.workspace)
+    ) {
+      earlierWorkspace = messageWorkspace;
+      break;
+    }
+  }
 
   return {
     sessionId: session.id,
@@ -568,6 +595,7 @@ export const createConversationContextFromSession = (
     workspace: session.workspace
       ? { selection: "selected", root: session.workspace }
       : { selection: "not-set" },
+    ...(earlierWorkspace !== undefined ? { earlierWorkspace } : {}),
     history,
     sessionMemoryEnabled: session.sessionMemoryEnabled,
     sessionMemory: session.sessionMemory,

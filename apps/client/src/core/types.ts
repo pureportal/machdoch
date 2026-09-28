@@ -161,6 +161,7 @@ export interface TaskConversationContext {
     selection: "selected" | "not-set";
     root?: string;
   };
+  earlierWorkspace?: string | null;
   history: ConversationHistoryEntry[];
   sessionMemoryEnabled?: boolean;
   sessionMemory?: ConversationMemoryEntry[];

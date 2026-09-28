@@ -17,15 +17,16 @@ export interface WorkspacePickerProps {
   hasActiveWorkspace: boolean;
   highlightSelection?: boolean;
   workspaceLocked: boolean;
+  workspaceSwitchBlocked?: boolean;
   allowNotSet?: boolean;
   iconOnly?: boolean;
   buttonAriaLabel?: string;
   buttonClassName?: string;
   commandId?: string;
   commandViewId?: string;
-  onSelectWorkspace: (workspace: string | null) => void;
+  onSelectWorkspace: (workspace: string | null, overrideLock?: boolean) => void;
   onRemoveWorkspace: (workspace: string) => void;
-  onChooseNewWorkspace: () => Promise<void>;
+  onChooseNewWorkspace: (overrideLock?: boolean) => Promise<void>;
 }
 
 const NOT_SET_WORKSPACE_OPTION_ID = "not-set";
@@ -68,6 +69,7 @@ export const WorkspacePicker = ({
   hasActiveWorkspace,
   highlightSelection,
   workspaceLocked,
+  workspaceSwitchBlocked = false,
   allowNotSet = true,
   iconOnly = false,
   buttonAriaLabel,
@@ -98,10 +100,10 @@ export const WorkspacePicker = ({
         palette: "visible",
         overlayPolicy: "replace-non-modal",
         availability: () =>
-          workspaceLocked
+          workspaceSwitchBlocked
             ? {
                 state: "disabled",
-                reason: "Workspace is locked after the first message",
+                reason: "Finish the current task or remove queued messages",
               }
             : { state: "enabled" },
         children: () => ({
@@ -118,7 +120,8 @@ export const WorkspacePicker = ({
                     title: option.label,
                     keywords: option.path ? [option.path] : undefined,
                     current: currentWorkspaceKey === option.id,
-                    execute: () => onSelectWorkspace(option.path),
+                    execute: () =>
+                      onSelectWorkspace(option.path, workspaceLocked),
                   }),
                 ),
                 {
@@ -126,7 +129,7 @@ export const WorkspacePicker = ({
                   title: "Choose another workspace",
                   keywords: ["browse", "folder"],
                   execute: async () => {
-                    await onChooseNewWorkspace();
+                    await onChooseNewWorkspace(workspaceLocked);
                   },
                 },
               ],
@@ -141,10 +144,10 @@ export const WorkspacePicker = ({
         scope: { kind: "view", ownerId: commandViewId },
         palette: "visible",
         availability: () =>
-          workspaceLocked
+          workspaceSwitchBlocked
             ? {
                 state: "disabled",
-                reason: "Workspace is locked after the first message",
+                reason: "Finish the current task or remove queued messages",
               }
             : recentWorkspaces.length === 0
               ? { state: "disabled", reason: "No recent workspaces" }
@@ -176,6 +179,7 @@ export const WorkspacePicker = ({
       onSelectWorkspace,
       recentWorkspaces,
       workspaceLocked,
+      workspaceSwitchBlocked,
       workspaceOptions,
     ],
   );
@@ -190,20 +194,26 @@ export const WorkspacePicker = ({
       highlightSelection={highlightSelection}
       iconOnly={iconOnly}
       workspaceLocked={workspaceLocked}
+      workspaceSwitchBlocked={workspaceSwitchBlocked}
       buttonAriaLabel={
         buttonAriaLabel ??
-        (iconOnly ? `Workspace: ${workspaceLabel}` : undefined)
+        (workspaceLocked
+          ? `Change workspace: ${workspaceLabel}`
+          : iconOnly
+            ? `Workspace: ${workspaceLabel}`
+            : undefined)
       }
       buttonClassName={buttonClassName}
-      description={`Workspace target for this session · ${recentWorkspaces.length} configured.`}
       action={{
-        label: "Choose new workspace folder",
-        onSelect: onChooseNewWorkspace,
+        label: "Choose another workspace",
+        onSelect: () => onChooseNewWorkspace(workspaceLocked),
       }}
       selectActionOnTrigger={
         recentWorkspaces.length === 0 && (!hasActiveWorkspace || !allowNotSet)
       }
-      onSelectOption={(option) => onSelectWorkspace(option.path)}
+      onSelectOption={(option) =>
+        onSelectWorkspace(option.path, workspaceLocked)
+      }
       onRemoveOption={(option) => {
         if (option.path) {
           onRemoveWorkspace(option.path);

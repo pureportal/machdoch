@@ -44,6 +44,7 @@ export interface WorkspaceSelectProps {
   highlightSelection?: boolean;
   iconOnly?: boolean;
   workspaceLocked?: boolean;
+  workspaceSwitchBlocked?: boolean;
   buttonAriaLabel?: string;
   buttonClassName?: string;
   contentClassName?: string;
@@ -197,6 +198,7 @@ export const WorkspaceSelect = ({
   highlightSelection = true,
   iconOnly = false,
   workspaceLocked = false,
+  workspaceSwitchBlocked = false,
   buttonAriaLabel,
   buttonClassName,
   contentClassName,
@@ -286,9 +288,9 @@ export const WorkspaceSelect = ({
     selectOption(bestMatch);
   };
 
-  if (workspaceLocked) {
+  if (workspaceSwitchBlocked) {
     return (
-      <ControlTooltip content="Workspace locked after first message">
+      <ControlTooltip content="Finish the current task or remove queued messages">
         <span className="inline-flex max-w-full">
           <Button
             type="button"
@@ -316,7 +318,15 @@ export const WorkspaceSelect = ({
 
   if ((selectActionOnTrigger || options.length === 0) && action) {
     return (
-      <ControlTooltip content={iconOnly ? buttonAriaLabel : undefined}>
+      <ControlTooltip
+        content={
+          workspaceLocked
+            ? "Change workspace"
+            : iconOnly
+              ? buttonAriaLabel
+              : undefined
+        }
+      >
         <Button
           type="button"
           variant="outline"
@@ -339,7 +349,15 @@ export const WorkspaceSelect = ({
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
-      <ControlTooltip content={iconOnly ? buttonAriaLabel : undefined}>
+      <ControlTooltip
+        content={
+          workspaceLocked
+            ? "Change workspace"
+            : iconOnly
+              ? buttonAriaLabel
+              : undefined
+        }
+      >
         <PopoverTrigger asChild>
           <Button
             type="button"

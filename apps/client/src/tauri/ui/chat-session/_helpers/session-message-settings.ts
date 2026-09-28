@@ -40,6 +40,14 @@ export const getSessionMessageSettings = (
   );
 };
 
+export const getSessionMessageSettingsForReplay = (
+  message: ChatSessionMessage,
+  session: ChatSessionRecord,
+): ChatSessionMessageSettings => ({
+  ...getSessionMessageSettings(message, session),
+  workspace: session.workspace,
+});
+
 export const applySessionMessageSettings = (
   session: ChatSessionRecord,
   settings: ChatSessionMessageSettings,

@@ -80,6 +80,7 @@ export interface SessionComposerProps {
   defaultAdaptiveControllerEnabled?: boolean | null;
   hasActiveWorkspace: boolean;
   workspaceLocked: boolean;
+  workspaceSwitchBlocked?: boolean;
   recentWorkspaces: string[];
   composerWorkspaceLabel: string;
   sessionMemoryDescription: string;
@@ -128,8 +129,11 @@ export interface SessionComposerProps {
   sendDisabledReason: string | null;
   runningTaskMessageAction: RunningTaskMessageAction;
   queuedMessages: AgentComposerQueuedMessage[];
-  onSelectFolder: () => Promise<void>;
-  onWorkspaceSelection: (workspace: string | null) => void;
+  onSelectFolder: (overrideLock?: boolean) => Promise<void>;
+  onWorkspaceSelection: (
+    workspace: string | null,
+    overrideLock?: boolean,
+  ) => void;
   onWorkspaceRemoval: (workspace: string) => void;
   onSessionModelSelection: (provider: RuntimeProvider, model: string) => void;
   onSessionModeSelection: (mode: RunMode | null) => void;
@@ -204,6 +208,7 @@ export const SessionComposer = ({
   defaultAdaptiveControllerEnabled = null,
   hasActiveWorkspace,
   workspaceLocked,
+  workspaceSwitchBlocked = false,
   recentWorkspaces,
   composerWorkspaceLabel,
   sessionMemoryDescription,
@@ -367,6 +372,7 @@ export const SessionComposer = ({
         hasActiveWorkspace={hasActiveWorkspace}
         highlightSelection={false}
         workspaceLocked={workspaceLocked}
+        workspaceSwitchBlocked={workspaceSwitchBlocked}
         buttonClassName="app-composer-toolbar-pill app-composer-toolbar-control h-8 max-w-40 rounded-full px-3 text-xs font-medium shadow-none"
         onSelectWorkspace={onWorkspaceSelection}
         onRemoveWorkspace={onWorkspaceRemoval}

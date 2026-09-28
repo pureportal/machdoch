@@ -64,6 +64,7 @@ import {
   isNavigableConversationMessage,
 } from "../_helpers/message-navigation";
 import { isRecoveredTaskCrashMessage } from "../_helpers/session-task-continuation";
+import { getMessageWorkspaceRoot } from "../_helpers/message-workspace";
 import { MessageAttachmentsList } from "./context-attachments";
 import { ExecutionInsightRow } from "./execution-insight-row";
 import { MarkdownContent } from "../../components/markdown-content";
@@ -103,8 +104,15 @@ export interface ConversationFeedProps {
   onCancelPromptEnhancement?: () => void;
   onContinueTask: (message: ChatSessionMessage) => void;
   onSaveMessageAsContextPack?: (message: ChatSessionMessage) => void;
-  onOpenWorkspaceFile: (relativePath: string) => void;
-  onOpenAttachment?: (attachment: ChatSessionContextAttachment) => void;
+  onOpenWorkspaceFile: (
+    relativePath: string,
+    line?: number,
+    workspaceRoot?: string | null,
+  ) => void;
+  onOpenAttachment?: (
+    attachment: ChatSessionContextAttachment,
+    workspaceRoot?: string | null,
+  ) => void;
   voicePlayback: {
     supported: boolean;
     speakingMessageId: string | null;
@@ -207,7 +215,7 @@ interface ConversationMessageRowProps {
     content: string,
     canSaveAsContextPack: boolean,
   ) => void;
-  onOpenWorkspaceFile: (relativePath: string) => void;
+  onOpenWorkspaceFile: (relativePath: string, line?: number) => void;
   onMessageElementChange: (
     messageId: string,
     element: HTMLDivElement | null,
@@ -988,6 +996,7 @@ export const ConversationFeed = ({
     onContinueTask,
     onSaveMessageAsContextPack,
     onOpenAttachment,
+    workspaceRoot,
     voicePlayback,
     navigateToMessage,
     startEditing,
@@ -1012,6 +1021,7 @@ export const ConversationFeed = ({
     onContinueTask,
     onSaveMessageAsContextPack,
     onOpenAttachment,
+    workspaceRoot,
     voicePlayback,
     navigateToMessage,
     startEditing,
@@ -1436,7 +1446,17 @@ export const ConversationFeed = ({
                   keywords: [
                     "path" in attachment ? attachment.path : attachment.assetId,
                   ],
-                  execute: () => state().onOpenAttachment?.(attachment),
+                  execute: () => {
+                    const current = state();
+                    current.onOpenAttachment?.(
+                      attachment,
+                      getMessageWorkspaceRoot(
+                        message,
+                        current.visibleMessages,
+                        current.workspaceRoot,
+                      ),
+                    );
+                  },
                 })),
               ),
             },
@@ -1566,60 +1586,79 @@ export const ConversationFeed = ({
           </Button>
         </div>
       ) : null}
-      {renderedMessages.map((message) => (
-        <ConversationMessageRow
-          key={getExecutionMessageRenderKey(message)}
-          message={message}
-          aiContextMessageLimit={normalizedAiContextMessageLimit}
-          canContinueMessage={
-            !isSessionRunning && message.id === latestRetryableAgentMessageId
-          }
-          canRetryMessage={
-            !isSessionRunning && retryableAgentMessageIds.has(message.id)
-          }
-          editContent={editingMessageId === message.id ? editContent : ""}
-          isEditing={editingMessageId === message.id}
-          isActiveEditing={activeEditingId === message.id}
-          isDimmedForEditing={
-            hasActiveMessageEdit && activeEditingId !== message.id
-          }
-          isPromptEnhancing={editingPromptEnhancement?.messageId === message.id}
-          isAiContextStart={cutoffMessageId === message.id}
-          isNavigationHighlighted={
-            highlightedNavigationMessageId === message.id
-          }
-          isNavigationTarget={activeNavigationMessageId === message.id}
-          isOriginalPromptExpanded={expandedOriginalPromptIds.has(message.id)}
-          isSpeakingMessage={voicePlayback.speakingMessageId === message.id}
-          voicePlaybackSupported={voicePlayback.supported}
-          workspaceRoot={workspaceRoot}
-          onRetryTask={onRetryTask}
-          onRetryMessage={onRetryMessage ? retryConversationMessage : undefined}
-          onEditMessage={
-            (onEditMessage || onStartEditMessage) &&
-            !isSessionRunning &&
-            !activeEditingMessageId
-              ? editingMessageId === message.id
-                ? submitEditedMessage
-                : !editingMessageId
-                  ? startEditing
-                  : undefined
-              : undefined
-          }
-          onEditContentChange={setEditContent}
-          onCancelEditing={cancelEditing}
-          onCancelPromptEnhancement={onCancelPromptEnhancement}
-          onContinueTask={onContinueTask}
-          onSaveMessageAsContextPack={onSaveMessageAsContextPack}
-          onOpenWorkspaceFile={onOpenWorkspaceFile}
-          onMessageElementChange={setMessageElement}
-          onOpenAttachment={onOpenAttachment}
-          onSpeakMessage={voicePlayback.onSpeakMessage}
-          onStopSpeaking={voicePlayback.onStopSpeaking}
-          onOpenMessageContextMenu={openMessageContextMenu}
-          onToggleOriginalPrompt={toggleOriginalPrompt}
-        />
-      ))}
+      {renderedMessages.map((message) => {
+        const messageWorkspaceRoot = getMessageWorkspaceRoot(
+          message,
+          visibleMessages,
+          workspaceRoot,
+        );
+
+        return (
+          <ConversationMessageRow
+            key={getExecutionMessageRenderKey(message)}
+            message={message}
+            aiContextMessageLimit={normalizedAiContextMessageLimit}
+            canContinueMessage={
+              !isSessionRunning && message.id === latestRetryableAgentMessageId
+            }
+            canRetryMessage={
+              !isSessionRunning && retryableAgentMessageIds.has(message.id)
+            }
+            editContent={editingMessageId === message.id ? editContent : ""}
+            isEditing={editingMessageId === message.id}
+            isActiveEditing={activeEditingId === message.id}
+            isDimmedForEditing={
+              hasActiveMessageEdit && activeEditingId !== message.id
+            }
+            isPromptEnhancing={
+              editingPromptEnhancement?.messageId === message.id
+            }
+            isAiContextStart={cutoffMessageId === message.id}
+            isNavigationHighlighted={
+              highlightedNavigationMessageId === message.id
+            }
+            isNavigationTarget={activeNavigationMessageId === message.id}
+            isOriginalPromptExpanded={expandedOriginalPromptIds.has(message.id)}
+            isSpeakingMessage={voicePlayback.speakingMessageId === message.id}
+            voicePlaybackSupported={voicePlayback.supported}
+            workspaceRoot={messageWorkspaceRoot}
+            onRetryTask={onRetryTask}
+            onRetryMessage={
+              onRetryMessage ? retryConversationMessage : undefined
+            }
+            onEditMessage={
+              (onEditMessage || onStartEditMessage) &&
+              !isSessionRunning &&
+              !activeEditingMessageId
+                ? editingMessageId === message.id
+                  ? submitEditedMessage
+                  : !editingMessageId
+                    ? startEditing
+                    : undefined
+                : undefined
+            }
+            onEditContentChange={setEditContent}
+            onCancelEditing={cancelEditing}
+            onCancelPromptEnhancement={onCancelPromptEnhancement}
+            onContinueTask={onContinueTask}
+            onSaveMessageAsContextPack={onSaveMessageAsContextPack}
+            onOpenWorkspaceFile={(relativePath, line) =>
+              onOpenWorkspaceFile(relativePath, line, messageWorkspaceRoot)
+            }
+            onMessageElementChange={setMessageElement}
+            onOpenAttachment={
+              onOpenAttachment
+                ? (attachment) =>
+                    onOpenAttachment(attachment, messageWorkspaceRoot)
+                : undefined
+            }
+            onSpeakMessage={voicePlayback.onSpeakMessage}
+            onStopSpeaking={voicePlayback.onStopSpeaking}
+            onOpenMessageContextMenu={openMessageContextMenu}
+            onToggleOriginalPrompt={toggleOriginalPrompt}
+          />
+        );
+      })}
       {promptEnhancementPreview ? (
         <div
           key={promptEnhancementPreview.id}

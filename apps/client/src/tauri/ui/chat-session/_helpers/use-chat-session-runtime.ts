@@ -461,9 +461,15 @@ export const useChatSessionRuntime = (
     useState<SettingsStatusMessage | null>(null);
   const [userMemorySettings, setUserMemorySettings] =
     useState<UserMemorySettings>(createEmptyUserMemorySettings());
-  const [workspaceMemoryEntries, setWorkspaceMemoryEntries] = useState<
-    ConversationMemoryEntry[]
-  >([]);
+  const [workspaceMemorySnapshot, setWorkspaceMemorySnapshot] = useState<{
+    workspaceRoot: string | null;
+    entries: ConversationMemoryEntry[];
+  }>({ workspaceRoot: null, entries: [] });
+  const workspaceMemoryEntries =
+    workspaceMemorySnapshot.workspaceRoot ===
+    (options.activeSessionWorkspace?.trim() || null)
+      ? workspaceMemorySnapshot.entries
+      : [];
   const [memorySetupSaving, setMemorySetupSaving] = useState(false);
   const [memorySetupMessage, setMemorySetupMessage] =
     useState<SettingsStatusMessage | null>(null);
@@ -1210,12 +1216,12 @@ export const useChatSessionRuntime = (
     const workspaceRoot = options.activeSessionWorkspace?.trim();
 
     if (!workspaceRoot) {
-      setWorkspaceMemoryEntries([]);
+      setWorkspaceMemorySnapshot({ workspaceRoot: null, entries: [] });
       return;
     }
 
     const entries = await loadWorkspaceMemoryEntries(workspaceRoot);
-    setWorkspaceMemoryEntries(entries);
+    setWorkspaceMemorySnapshot({ workspaceRoot, entries });
   }, [options.activeSessionWorkspace]);
 
   useEffect(() => {
@@ -1223,20 +1229,20 @@ export const useChatSessionRuntime = (
     const workspaceRoot = options.activeSessionWorkspace?.trim();
 
     if (!workspaceRoot) {
-      setWorkspaceMemoryEntries([]);
+      setWorkspaceMemorySnapshot({ workspaceRoot: null, entries: [] });
       return;
     }
 
     void loadWorkspaceMemoryEntries(workspaceRoot)
       .then((entries) => {
         if (!cancelled) {
-          setWorkspaceMemoryEntries(entries);
+          setWorkspaceMemorySnapshot({ workspaceRoot, entries });
         }
       })
       .catch((error) => {
         if (!cancelled) {
           console.error("Failed to load workspace memory", error);
-          setWorkspaceMemoryEntries([]);
+          setWorkspaceMemorySnapshot({ workspaceRoot, entries: [] });
         }
       });
 
