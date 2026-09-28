@@ -1391,6 +1391,7 @@ export const SmartContextPackPicker = ({
     Record<string, string[]>
   >({});
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const importScopeRef = useRef<SmartContextPackScope | null>(null);
   const packSearchInputRef = useRef<HTMLInputElement | null>(null);
   const matchedPackIds = useMemo(
     () => new Set(matchedContextPackIds),
@@ -1587,6 +1588,7 @@ export const SmartContextPackPicker = ({
 
       if (pack.variables.length > 0) {
         openConfigureView(pack);
+        setOpen(true);
         return;
       }
 
@@ -1689,7 +1691,12 @@ export const SmartContextPackPicker = ({
       const ralphFlowNames = latestUsage[pack.id] ?? [];
 
       if (ralphFlowNames.length > 0 && pendingDeletePackId !== pack.id) {
+        if (!open) {
+          setScopeFilter(getSmartContextPackScope(pack));
+          setPackSearchText("");
+        }
         setPendingDeletePackId(pack.id);
+        setOpen(true);
         return;
       }
 
@@ -1699,6 +1706,7 @@ export const SmartContextPackPicker = ({
     [
       loadRalphPackUsage,
       onDeleteContextPack,
+      open,
       pendingDeletePackId,
       ralphPackUsageById,
     ],
@@ -1742,14 +1750,25 @@ export const SmartContextPackPicker = ({
     const [file] = Array.from(event.target.files ?? []);
 
     if (file) {
-      onImportContextPacks(
-        file,
-        workspaceRoot && scopeFilter !== "global" ? "workspace" : "global",
-      );
+      if (importScopeRef.current === null) {
+        console.error("No context pack import scope selected");
+      } else {
+        onImportContextPacks(file, importScopeRef.current);
+      }
     }
 
+    importScopeRef.current = null;
     event.target.value = "";
   };
+  const openImportPicker = useCallback(
+    (scope?: SmartContextPackScope): void => {
+      importScopeRef.current =
+        scope ??
+        (workspaceRoot && scopeFilter !== "global" ? "workspace" : "global");
+      importInputRef.current?.click();
+    },
+    [scopeFilter, workspaceRoot],
+  );
   const contextPackCommands = useMemo<readonly CommandDefinition[]>(
     () => [
       {
@@ -1855,7 +1874,30 @@ export const SmartContextPackPicker = ({
         scope: { kind: "view", ownerId: "chat" },
         palette: "visible",
         overlayPolicy: "replace-non-modal",
-        execute: () => importInputRef.current?.click(),
+        children: () => ({
+          id: "chat-context-pack-import",
+          title: "Import context packs",
+          searchPlaceholder: "Choose scope",
+          numericSelection: true,
+          groups: [
+            {
+              id: "scope",
+              items: (workspaceRoot
+                ? (["workspace", "global"] as const)
+                : (["global"] as const)
+              ).map(
+                (scope, index): CommandPageItem => ({
+                  id: scope,
+                  title: formatScopeFilterLabel(scope),
+                  numericKey: String(
+                    index + 1,
+                  ) as CommandPageItem["numericKey"],
+                  execute: () => openImportPicker(scope),
+                }),
+              ),
+            },
+          ],
+        }),
       },
       {
         id: "chat.context-pack.export",
@@ -1902,6 +1944,7 @@ export const SmartContextPackPicker = ({
       applyingPackId,
       applyPack,
       onExportContextPacks,
+      openImportPicker,
       openCreateDialog,
       openEditDialog,
       packItems,
@@ -1917,6 +1960,14 @@ export const SmartContextPackPicker = ({
 
   return (
     <>
+      <input
+        ref={importInputRef}
+        type="file"
+        aria-label="Context pack import file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={handleImportFileChange}
+      />
       <Popover open={open} onOpenChange={handlePopoverOpenChange}>
         <ControlTooltip content={triggerLabel}>
           <PopoverTrigger asChild>
@@ -1936,6 +1987,11 @@ export const SmartContextPackPicker = ({
           align="start"
           sideOffset={8}
           className="w-[28rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border-slate-800 bg-slate-950/98 p-0 shadow-xl shadow-slate-950/40 backdrop-blur-xl"
+          onFocusOutside={(event) => {
+            if (view === "configure" || pendingDeletePackId !== null) {
+              event.preventDefault();
+            }
+          }}
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             packSearchInputRef.current?.focus();
@@ -1955,14 +2011,6 @@ export const SmartContextPackPicker = ({
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
-                <input
-                  ref={importInputRef}
-                  type="file"
-                  aria-label="Context pack import file"
-                  accept="application/json,.json"
-                  className="hidden"
-                  onChange={handleImportFileChange}
-                />
                 <Button
                   type="button"
                   variant="outline"
@@ -1973,7 +2021,7 @@ export const SmartContextPackPicker = ({
                       ? "workspace"
                       : "global",
                   ).toLowerCase()} context packs`}
-                  onClick={() => importInputRef.current?.click()}
+                  onClick={() => openImportPicker()}
                   className="h-8 w-8 rounded-full border-slate-800 bg-slate-900/70 text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100"
                 >
                   <Upload className="h-3.5 w-3.5" />

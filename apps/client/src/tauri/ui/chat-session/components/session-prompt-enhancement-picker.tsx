@@ -112,9 +112,18 @@ export const SessionPromptEnhancementPicker = ({
             variant="outline"
             aria-label={`Prompt enhancement: ${activeLabel}`}
             data-active={active}
-            className="app-composer-toolbar-control h-8 w-8 rounded-full border p-0 shadow-none"
+            className={cn(
+              "app-prompt-enhancement-button app-composer-toolbar-control h-8 gap-0.5 rounded-full border p-0 shadow-none",
+              mode === "web-search" ? "w-10" : "w-8",
+            )}
           >
             <Sparkles className="h-3.5 w-3.5" />
+            {mode === "web-search" ? (
+              <Search
+                aria-hidden="true"
+                className="app-composer-mode-icon h-3 w-3"
+              />
+            ) : null}
           </Button>
         </PopoverTrigger>
       </ControlTooltip>

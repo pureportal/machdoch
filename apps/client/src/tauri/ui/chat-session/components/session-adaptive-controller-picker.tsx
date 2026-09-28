@@ -1,5 +1,6 @@
 import { BrainCircuit } from "lucide-react";
-import { useState, type JSX } from "react";
+import { useMemo, useState, type JSX } from "react";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   Popover,
@@ -8,13 +9,11 @@ import {
 } from "@machdoch/media-studio/tauri/ui/components/ui/popover.js";
 import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
+import {
+  ADAPTIVE_CONTROLLER_OPTIONS,
+  createAdaptiveControllerCommand,
+} from "../_helpers/session-toolbar-commands";
 import { WorkspaceDefaultIndicator } from "./workspace-default-indicator";
-
-const OPTIONS = [
-  { value: "default", label: "Default" },
-  { value: "enabled", label: "Enabled" },
-  { value: "disabled", label: "Disabled" },
-] as const;
 
 export const SessionAdaptiveControllerPicker = ({
   override,
@@ -33,6 +32,11 @@ export const SessionAdaptiveControllerPicker = ({
     enabled === null
       ? "Default"
       : `${enabled ? "Enabled" : "Disabled"}${override === null ? " (workspace default)" : ""}`;
+  const commands = useMemo(
+    () => [createAdaptiveControllerCommand(override, defaultEnabled, onChange)],
+    [defaultEnabled, onChange, override],
+  );
+  useOptionalRegisterCommands(commands);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -56,7 +60,7 @@ export const SessionAdaptiveControllerPicker = ({
         align="start"
         className="w-44 rounded-xl border-slate-800 bg-slate-950 p-1 shadow-xl"
       >
-        {OPTIONS.map((option) => (
+        {ADAPTIVE_CONTROLLER_OPTIONS.map((option) => (
           <button
             key={option.value}
             type="button"
@@ -69,9 +73,7 @@ export const SessionAdaptiveControllerPicker = ({
                 "bg-sky-500/10 text-sky-200",
             )}
             onClick={() => {
-              onChange(
-                option.value === "default" ? null : option.value === "enabled",
-              );
+              onChange(option.override);
               setOpen(false);
             }}
           >

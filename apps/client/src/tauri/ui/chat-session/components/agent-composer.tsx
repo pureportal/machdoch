@@ -375,6 +375,7 @@ const renderToggle = (
         size="icon-sm"
         aria-label={toggle.manageLabel ?? `Manage ${toggle.label}`}
         tooltip={toggle.manageLabel ?? `Manage ${toggle.label}`}
+        data-active={toggle.pressed && !toggle.disabled}
         onClick={toggle.onManage}
         className="app-composer-toggle-manage-button app-composer-toolbar-control h-8 w-5 rounded-l-none rounded-r-full border-l-0 px-0 shadow-none"
       >
@@ -574,6 +575,16 @@ export const AgentComposer = ({
   const showCancelButton = isExecuting && (variant === "quick" || !canSubmit);
   const selectedRunningAction =
     runningTaskMessageAction ?? RUNNING_TASK_MESSAGE_ACTIONS[2].id;
+  const selectIterationCount = useCallback(
+    (count: number): void => {
+      setIterationCount(count);
+      setIterationsOpen(false);
+      if (count > 1 && isExecuting && selectedRunningAction === "steer") {
+        onRunningTaskMessageActionChange?.("queue");
+      }
+    },
+    [isExecuting, onRunningTaskMessageActionChange, selectedRunningAction],
+  );
   const selectedRunningActionMeta = getRunningTaskMessageActionMeta(
     selectedRunningAction,
   );
@@ -988,6 +999,26 @@ export const AgentComposer = ({
           execute: () => toggle.onPressedChange(!toggle.pressed),
         }),
       ),
+      ...toggles.flatMap((toggle): CommandDefinition[] =>
+        toggle.onManage
+          ? [
+              {
+                id: `chat.composer.${toggle.id}.manage`,
+                title:
+                  toggle.manageLabel ?? `Manage ${toggle.label.toLowerCase()}`,
+                group: "Chat",
+                scope: { kind: "view", ownerId: "chat" },
+                palette: "visible",
+                overlayPolicy: "replace-non-modal",
+                availability: () =>
+                  inputBlocked
+                    ? { state: "disabled", reason: "The composer is busy" }
+                    : { state: "enabled" },
+                execute: () => toggle.onManage?.(),
+              },
+            ]
+          : [],
+      ),
       ...actions.map(
         (action): CommandDefinition => ({
           id: `chat.composer.${action.id}`,
@@ -1007,6 +1038,68 @@ export const AgentComposer = ({
           execute: () => action.onClick(),
         }),
       ),
+      ...actions.flatMap((action) =>
+        (action.contextActions ?? []).map(
+          (contextAction, index): CommandDefinition => ({
+            id: `chat.composer.${action.id}.option.${index}`,
+            title: `${contextAction.label} for ${action.id.replaceAll("-", " ")}`,
+            group: "Chat",
+            scope: { kind: "view", ownerId: "chat" },
+            palette: "visible",
+            current: () => contextAction.checked ?? false,
+            availability: () =>
+              inputBlocked
+                ? { state: "disabled", reason: "The composer is busy" }
+                : action.disabled || contextAction.disabled
+                  ? {
+                      state: "disabled",
+                      reason: `${action.label} is unavailable`,
+                    }
+                  : { state: "enabled" },
+            execute: () => contextAction.onSelect(),
+          }),
+        ),
+      ),
+      {
+        id: "chat.composer.iterations.select",
+        title: "Choose iterations",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        availability: () =>
+          inputBlocked
+            ? { state: "disabled", reason: "The composer is busy" }
+            : iterationsEnabled
+              ? { state: "enabled" }
+              : {
+                  state: "disabled",
+                  reason: showCancelAlongsideSend
+                    ? "Iterations unavailable while editing a message"
+                    : "Turn off Interview to repeat this request",
+                },
+        children: () => ({
+          id: "chat-composer-iterations",
+          title: "Iterations",
+          searchPlaceholder: "Choose iteration count",
+          groups: [
+            {
+              id: "iterations",
+              items: Array.from(
+                { length: MAX_REQUEST_ITERATIONS },
+                (_, index): CommandPageItem => {
+                  const count = index + 1;
+                  return {
+                    id: String(count),
+                    title: String(count),
+                    current: count === iterationCount,
+                    execute: () => selectIterationCount(count),
+                  };
+                },
+              ),
+            },
+          ],
+        }),
+      },
       {
         id: "chat.task.message-action.select",
         title: "Choose running-task message action",
@@ -1235,6 +1328,8 @@ export const AgentComposer = ({
     imageInputSupported,
     inputBlocked,
     isExecuting,
+    iterationCount,
+    iterationsEnabled,
     onBrowseMediaAssets,
     onCancel,
     onClearContextAttachments,
@@ -1253,6 +1348,7 @@ export const AgentComposer = ({
     selectedRunningAction,
     sendDisabledReason,
     sendLabel,
+    selectIterationCount,
     showCancelAlongsideSend,
     submit,
     toggles,
@@ -1352,7 +1448,9 @@ export const AgentComposer = ({
               tooltip={
                 iterationsEnabled
                   ? `Iterations: ${iterationCount}`
-                  : "Turn off Interview to repeat this request"
+                  : showCancelAlongsideSend
+                    ? "Iterations unavailable while editing a message"
+                    : "Turn off Interview to repeat this request"
               }
               disabled={!iterationsEnabled || inputBlocked}
               className={cn(
@@ -1384,18 +1482,9 @@ export const AgentComposer = ({
               <select
                 aria-label="Iterations"
                 value={iterationCount}
-                onChange={(event) => {
-                  const count = Number(event.target.value);
-                  setIterationCount(count);
-                  setIterationsOpen(false);
-                  if (
-                    count > 1 &&
-                    isExecuting &&
-                    selectedRunningAction === "steer"
-                  ) {
-                    onRunningTaskMessageActionChange?.("queue");
-                  }
-                }}
+                onChange={(event) =>
+                  selectIterationCount(Number(event.target.value))
+                }
                 className="h-9 w-full rounded-lg border border-slate-800 bg-slate-900 px-2 text-sm text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40"
               >
                 {Array.from({ length: MAX_REQUEST_ITERATIONS }, (_, index) => (

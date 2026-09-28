@@ -24,6 +24,8 @@ import type {
   RunMode,
 } from "../../../../core/runtime-contract.generated.js";
 import type { ParallelAgentMode } from "../../../../core/types.js";
+import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
+import type { CommandDefinition } from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 import {
   getAvailableParallelAgentModes,
   resolveParallelAgentMode,
@@ -295,6 +297,46 @@ export const SessionComposer = ({
       ),
     [activeSession.sessionMemory, memorySourceSessions],
   );
+  const memoryCommands = useMemo<readonly CommandDefinition[]>(
+    () =>
+      showSessionMemoryButton
+        ? [
+            {
+              id: "chat.session.memory.forget",
+              title: "Forget session memory",
+              group: "Chat",
+              scope: { kind: "view", ownerId: "chat" },
+              palette: "visible",
+              availability: () =>
+                sessionMemoryEntries.length > 0
+                  ? { state: "enabled" }
+                  : { state: "disabled", reason: "No session memory saved" },
+              children: () => ({
+                id: "chat-session-memory-forget",
+                title: "Forget session memory",
+                searchPlaceholder: "Choose memory",
+                groups: [
+                  {
+                    id: "memories",
+                    items: sessionMemoryEntries.map((entry) => ({
+                      id: entry.id,
+                      title: entry.content,
+                      keywords: entry.sourceLabel
+                        ? [entry.sourceLabel]
+                        : undefined,
+                      execute: async () => {
+                        await onForgetSessionMemory(entry.id);
+                      },
+                    })),
+                  },
+                ],
+              }),
+            },
+          ]
+        : [],
+    [onForgetSessionMemory, sessionMemoryEntries, showSessionMemoryButton],
+  );
+  useOptionalRegisterCommands(memoryCommands);
   const notification =
     statusMessage ??
     (speechInput.statusText
