@@ -41,6 +41,7 @@ export interface WorkspaceSelectProps {
   options: readonly WorkspaceSelectOption[];
   buttonLabel: string;
   active: boolean;
+  highlightSelection?: boolean;
   iconOnly?: boolean;
   workspaceLocked?: boolean;
   buttonAriaLabel?: string;
@@ -193,6 +194,7 @@ export const WorkspaceSelect = ({
   options,
   buttonLabel,
   active,
+  highlightSelection = true,
   iconOnly = false,
   workspaceLocked = false,
   buttonAriaLabel,
@@ -234,19 +236,15 @@ export const WorkspaceSelect = ({
         return firstOption.order - secondOption.order;
       });
   }, [options, workspaceSearchText]);
-  const resolvedButtonClassName = buttonClassName
-    ? cn(
-        buttonClassName,
-        active &&
-          "border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15",
-      )
-    : cn(
-        iconOnly
-          ? "app-composer-toolbar-icon-button h-8 w-8 rounded-full border-slate-800 bg-slate-950/70 p-0 text-slate-400 shadow-none hover:bg-slate-900"
-          : "app-composer-toolbar-pill h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs font-medium text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100",
-        active &&
-          "border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15",
-      );
+  const resolvedButtonClassName = cn(
+    buttonClassName ??
+      (iconOnly
+        ? "app-composer-toolbar-icon-button h-8 w-8 rounded-full border-slate-800 bg-slate-950/70 p-0 text-slate-400 shadow-none hover:bg-slate-900"
+        : "app-composer-toolbar-pill h-8 rounded-full border-slate-800 bg-slate-950/70 px-3 text-xs font-medium text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100"),
+    active &&
+      highlightSelection &&
+      "border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15",
+  );
 
   const handleOpenChange = (nextOpen: boolean): void => {
     setOpen(nextOpen);

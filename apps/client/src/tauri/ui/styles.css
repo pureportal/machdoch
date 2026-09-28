@@ -1779,7 +1779,18 @@ body {
 .app-composer-toolbar .app-composer-toolbar-control {
   border-color: var(--app-border-strong);
   background-color: transparent;
-  color: var(--app-text-muted);
+}
+
+.app-composer-toolbar
+  :is(.app-composer-toolbar-control, .m-composer-model-trigger) {
+  color: var(--app-text-soft);
+}
+
+.app-composer-toolbar
+  :is(.app-composer-toolbar-control, .m-composer-model-trigger):hover:not(
+    :disabled
+  ):not([aria-disabled="true"]) {
+  color: var(--app-text);
 }
 
 .app-composer-toolbar
@@ -1787,7 +1798,6 @@ body {
     [aria-disabled="true"]
   ) {
   background-color: var(--app-hover);
-  color: var(--app-text);
 }
 
 .app-composer-toolbar .app-composer-toolbar-control[data-active="true"] {
