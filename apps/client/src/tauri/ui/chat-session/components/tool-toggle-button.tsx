@@ -29,7 +29,7 @@ export interface ToolToggleButtonProps {
 }
 
 const DEFAULT_BASE_CLASS_NAME =
-  "h-8 w-8 rounded-full border-slate-800 bg-slate-950/70 text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100";
+  "h-8 w-8 rounded-full border-slate-800 bg-slate-950/70 shadow-none hover:bg-slate-900";
 const DEFAULT_DISABLED_CLASS_NAME =
   "cursor-not-allowed border-dashed bg-slate-950/40 text-slate-600 hover:bg-slate-950/40 hover:text-slate-600";
 export const ToolToggleButton = ({

@@ -365,6 +365,7 @@ export const SessionComposer = ({
         workspaceLabel={composerWorkspaceLabel}
         recentWorkspaces={recentWorkspaces}
         hasActiveWorkspace={hasActiveWorkspace}
+        highlightSelection={false}
         workspaceLocked={workspaceLocked}
         buttonClassName="app-composer-toolbar-pill app-composer-toolbar-control h-8 max-w-40 rounded-full px-3 text-xs font-medium shadow-none"
         onSelectWorkspace={onWorkspaceSelection}

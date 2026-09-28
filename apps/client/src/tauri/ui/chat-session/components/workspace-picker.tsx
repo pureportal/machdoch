@@ -15,6 +15,7 @@ export interface WorkspacePickerProps {
   workspaceLabel: string;
   recentWorkspaces: string[];
   hasActiveWorkspace: boolean;
+  highlightSelection?: boolean;
   workspaceLocked: boolean;
   allowNotSet?: boolean;
   iconOnly?: boolean;
@@ -65,6 +66,7 @@ export const WorkspacePicker = ({
   workspaceLabel,
   recentWorkspaces,
   hasActiveWorkspace,
+  highlightSelection,
   workspaceLocked,
   allowNotSet = true,
   iconOnly = false,
@@ -185,6 +187,7 @@ export const WorkspacePicker = ({
       options={workspaceOptions}
       buttonLabel={workspaceLabel}
       active={hasActiveWorkspace}
+      highlightSelection={highlightSelection}
       iconOnly={iconOnly}
       workspaceLocked={workspaceLocked}
       buttonAriaLabel={
