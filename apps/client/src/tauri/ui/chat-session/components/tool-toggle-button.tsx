@@ -1,6 +1,9 @@
 import type { ComponentProps, JSX, ReactNode } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
-import { ControlTooltip, TooltipContent } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
+import {
+  ControlTooltip,
+  TooltipContent,
+} from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 
 type ToolToggleDisabledMode = "aria" | "native";
@@ -63,6 +66,7 @@ export const ToolToggleButton = ({
       size={buttonSize}
       aria-label={label}
       aria-pressed={pressed}
+      data-active={pressed && !disabled}
       aria-disabled={ariaDisabled || undefined}
       disabled={nativeDisabled || undefined}
       tooltip={null}

@@ -111,11 +111,8 @@ export const SessionPromptEnhancementPicker = ({
             type="button"
             variant="outline"
             aria-label={`Prompt enhancement: ${activeLabel}`}
-            className={cn(
-              "h-8 w-8 rounded-full border border-slate-800 bg-slate-950/70 p-0 text-slate-300 shadow-none hover:border-fuchsia-500/30 hover:bg-slate-900 hover:text-fuchsia-100",
-              active &&
-                "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-100",
-            )}
+            data-active={active}
+            className="app-composer-toolbar-control h-8 w-8 rounded-full border p-0 shadow-none"
           >
             <Sparkles className="h-3.5 w-3.5" />
           </Button>
@@ -153,7 +150,7 @@ export const SessionPromptEnhancementPicker = ({
                   className={cn(
                     "flex w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left transition-all",
                     selected
-                      ? "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-100"
+                      ? "border-sky-500/30 bg-sky-500/10 text-sky-100"
                       : "border-slate-800 bg-slate-900/70 text-slate-300 hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
                     disabled &&
                       "cursor-not-allowed border-dashed border-slate-800 bg-slate-950/40 text-slate-600 hover:border-slate-800 hover:bg-slate-950/40 hover:text-slate-600",
@@ -162,7 +159,7 @@ export const SessionPromptEnhancementPicker = ({
                   <div
                     className={cn(
                       "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950",
-                      selected ? "text-fuchsia-200" : "text-slate-300",
+                      selected ? "text-sky-200" : "text-slate-300",
                       disabled && "text-slate-600",
                     )}
                   >

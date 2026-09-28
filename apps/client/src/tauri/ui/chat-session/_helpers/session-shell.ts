@@ -279,20 +279,16 @@ export const RUN_MODE_META = {
     label: "Ask mode",
     description: "Use only read-only function calls.",
     icon: MessageSquare,
-    triggerClassName:
-      "border-amber-500/20 bg-amber-500/10 text-amber-100 hover:bg-amber-500/15 hover:text-white",
-    selectedClassName: "border-amber-500/30 bg-amber-500/10 text-amber-100",
-    iconClassName: "text-amber-300",
+    selectedClassName: "border-sky-500/30 bg-sky-500/10 text-sky-100",
+    iconClassName: "text-sky-200",
     badgeClassName: "border-amber-500/20 bg-amber-500/10 text-amber-200",
   },
   machdoch: {
     label: "Machdoch",
     description: "Let machdoch use all function calls and verify its work.",
     icon: WandSparkles,
-    triggerClassName:
-      "border-violet-500/20 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15 hover:text-white",
-    selectedClassName: "border-violet-500/30 bg-violet-500/10 text-violet-100",
-    iconClassName: "text-violet-300",
+    selectedClassName: "border-sky-500/30 bg-sky-500/10 text-sky-100",
+    iconClassName: "text-sky-200",
     badgeClassName: "border-violet-500/20 bg-violet-500/10 text-violet-200",
   },
 } satisfies Record<
@@ -301,7 +297,6 @@ export const RUN_MODE_META = {
     label: string;
     description: string;
     icon: typeof MessageSquare;
-    triggerClassName: string;
     selectedClassName: string;
     iconClassName: string;
     badgeClassName: string;

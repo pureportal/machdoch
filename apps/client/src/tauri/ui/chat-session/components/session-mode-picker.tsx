@@ -1,4 +1,4 @@
-import { Check, CircleDashed } from "lucide-react";
+import { Check } from "lucide-react";
 import { useCallback, useMemo, useState, type JSX } from "react";
 import type { RunMode } from "../../../../core/runtime-contract.generated.js";
 import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
@@ -16,6 +16,7 @@ import {
 import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { RUN_MODE_META, RUN_MODE_ORDER } from "../_helpers/session-shell";
+import { WorkspaceDefaultIndicator } from "./workspace-default-indicator";
 
 export interface SessionModePickerProps {
   activeRunMode: RunMode;
@@ -34,6 +35,7 @@ export const SessionModePicker = ({
 }: SessionModePickerProps): JSX.Element => {
   const [open, setOpen] = useState(false);
   const ActiveRunModeIcon = activeRunModeMeta.icon;
+  const DefaultRunModeIcon = RUN_MODE_META[defaultRunMode].icon;
   const selectMode = useCallback(
     (mode: RunMode | null): void => {
       onSessionModeSelection(mode);
@@ -92,20 +94,19 @@ export const SessionModePicker = ({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <ControlTooltip content={`Execution mode: ${activeRunModeMeta.label}`}>
+      <ControlTooltip
+        content={`Execution mode: ${activeRunModeMeta.label}${isUsingWorkspaceDefaultMode ? " (workspace default)" : ""}`}
+      >
         <PopoverTrigger asChild>
           <Button
             type="button"
             variant="outline"
-            aria-label={`Execution mode: ${activeRunModeMeta.label}`}
-            className={cn(
-              "app-mode-picker-button h-8 w-8 rounded-full border p-0 text-xs font-medium shadow-none",
-              activeRunModeMeta.triggerClassName,
-            )}
+            aria-label={`Execution mode: ${activeRunModeMeta.label}${isUsingWorkspaceDefaultMode ? " (workspace default)" : ""}`}
+            data-active={activeRunMode === "machdoch"}
+            className="app-mode-picker-button app-composer-toolbar-control relative h-8 w-8 rounded-full border p-0 text-xs font-medium shadow-none"
           >
-            <ActiveRunModeIcon
-              className={cn("h-3.5 w-3.5", activeRunModeMeta.iconClassName)}
-            />
+            <ActiveRunModeIcon className="h-3.5 w-3.5" />
+            {isUsingWorkspaceDefaultMode ? <WorkspaceDefaultIndicator /> : null}
           </Button>
         </PopoverTrigger>
       </ControlTooltip>
@@ -136,7 +137,7 @@ export const SessionModePicker = ({
             )}
           >
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-300">
-              <CircleDashed className="h-4 w-4" />
+              <DefaultRunModeIcon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-3">

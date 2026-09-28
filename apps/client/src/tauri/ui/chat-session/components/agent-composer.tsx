@@ -71,7 +71,6 @@ export interface AgentComposerToggle {
   onManage?: () => void;
   manageLabel?: string;
   activeClassName?: string;
-  unavailableClassName?: string;
 }
 
 export interface AgentComposerAction {
@@ -336,19 +335,21 @@ const renderToggle = (
   const button = (
     <ToolToggleButton
       label={toggle.label}
-      title={toggle.title}
+      title={
+        toggle.title ??
+        `${toggle.label}: ${toggle.disabled ? "Unavailable" : toggle.pressed ? "Enabled" : "Disabled"}`
+      }
       icon={toggle.icon}
       pressed={toggle.pressed}
       disabled={toggle.disabled}
       disabledMode={variant === "quick" ? "native" : "aria"}
       onPressedChange={toggle.onPressedChange}
       baseClassName={variant === "quick" ? iconButtonClassName : undefined}
-      activeClassName={toggle.activeClassName}
-      disabledClassName={toggle.unavailableClassName}
+      activeClassName={variant === "quick" ? toggle.activeClassName : undefined}
       className={
         variant === "session"
           ? cn(
-              "app-composer-toggle-button",
+              "app-composer-toggle-button app-composer-toolbar-control",
               toggle.onManage && "rounded-r-none",
             )
           : undefined
@@ -375,7 +376,7 @@ const renderToggle = (
         aria-label={toggle.manageLabel ?? `Manage ${toggle.label}`}
         tooltip={toggle.manageLabel ?? `Manage ${toggle.label}`}
         onClick={toggle.onManage}
-        className="app-composer-toggle-manage-button h-8 w-5 rounded-l-none rounded-r-full border-l-0 border-slate-800 bg-slate-950/70 px-0 text-slate-500 shadow-none hover:bg-slate-900 hover:text-slate-100"
+        className="app-composer-toggle-manage-button app-composer-toolbar-control h-8 w-5 rounded-l-none rounded-r-full border-l-0 px-0 shadow-none"
       >
         <ChevronDown className="h-3 w-3" />
       </Button>

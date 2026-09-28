@@ -8,7 +8,6 @@ import {
   PopoverTrigger,
 } from "@machdoch/media-studio/tauri/ui/components/ui/popover.js";
 import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
-import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 
 const OPTIONS: { value: ParallelAgentMode; label: string }[] = [
   { value: "disabled", label: "Disabled" },
@@ -47,15 +46,8 @@ export const SessionParallelAgentPicker = ({
             tooltip={null}
             aria-label={`Parallel agents: ${label}`}
             disabled={!available}
-            className={cn(
-              "app-composer-toolbar-icon-button h-8 w-8 rounded-full border-slate-800 bg-slate-950/70 p-0 text-slate-400 shadow-none hover:bg-slate-900",
-              mode === "read-only" &&
-                "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:border-sky-500/40 hover:bg-sky-500/15",
-              mode === "machdoch" &&
-                "border-violet-500/30 bg-violet-500/10 text-violet-100 hover:border-violet-500/40 hover:bg-violet-500/15",
-              mode === "native" &&
-                "border-emerald-500/30 bg-emerald-500/10 text-emerald-100 hover:border-emerald-500/40 hover:bg-emerald-500/15",
-            )}
+            data-active={mode !== "disabled"}
+            className="app-composer-toolbar-icon-button app-composer-toolbar-control h-8 w-8 rounded-full p-0 shadow-none"
           >
             <GitFork className="h-3.5 w-3.5" />
           </Button>

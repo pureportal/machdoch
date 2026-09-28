@@ -1926,11 +1926,7 @@ export const SmartContextPackPicker = ({
               size="icon-sm"
               tooltip={null}
               aria-label={triggerLabel}
-              className={cn(
-                "app-context-pack-trigger app-composer-toolbar-icon-button h-8 w-8 rounded-full border-slate-800 bg-slate-950/70 p-0 text-slate-400 shadow-none hover:bg-slate-900",
-                contextPacks.length > 0 &&
-                  "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:border-sky-500/40 hover:bg-sky-500/15",
-              )}
+              className="app-context-pack-trigger app-composer-toolbar-icon-button app-composer-toolbar-control h-8 w-8 rounded-full p-0 shadow-none"
             >
               <Layers className="h-3.5 w-3.5" />
             </Button>

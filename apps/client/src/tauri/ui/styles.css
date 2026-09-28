@@ -1776,6 +1776,56 @@ body {
   padding: 0.5rem 1rem 0.7rem !important;
 }
 
+.app-composer-toolbar .app-composer-toolbar-control {
+  border-color: var(--app-border-strong);
+  background-color: transparent;
+  color: var(--app-text-muted);
+}
+
+.app-composer-toolbar
+  .app-composer-toolbar-control:hover:not(:disabled):not(
+    [aria-disabled="true"]
+  ) {
+  background-color: var(--app-hover);
+  color: var(--app-text);
+}
+
+.app-composer-toolbar .app-composer-toolbar-control[data-active="true"] {
+  border-color: color-mix(in srgb, var(--app-sky-500) 45%, var(--app-border));
+  background-color: color-mix(in srgb, var(--app-sky-500) 13%, transparent);
+  color: var(--app-sky-200);
+}
+
+.app-composer-toolbar
+  .app-composer-toolbar-control[data-active="true"]:hover:not(:disabled):not(
+    [aria-disabled="true"]
+  ) {
+  background-color: color-mix(in srgb, var(--app-sky-500) 19%, transparent);
+  color: var(--app-sky-100);
+}
+
+.app-composer-toolbar
+  .app-composer-toolbar-control:is(:disabled, [aria-disabled="true"]) {
+  border-style: dashed;
+  background-color: transparent;
+  color: var(--app-text-faint);
+}
+
+.app-composer-toolbar svg.app-composer-default-indicator {
+  width: 0.55rem;
+  height: 0.55rem;
+  color: var(--app-sky-300);
+}
+
+:root[data-theme="light"]
+  .app-composer-toolbar
+  .app-composer-toolbar-control[data-active="true"],
+:root[data-theme="light"]
+  .app-composer-toolbar
+  svg.app-composer-default-indicator {
+  color: var(--app-sky-600);
+}
+
 :root[data-density="compact"] .app-agent-composer-session {
   border-radius: 1rem !important;
   padding: 0.5rem !important;
@@ -1834,6 +1884,13 @@ body {
   svg {
   width: 0.8rem !important;
   height: 0.8rem !important;
+}
+
+:root[data-density="compact"]
+  .app-composer-toolbar
+  svg.app-composer-default-indicator {
+  width: 0.55rem !important;
+  height: 0.55rem !important;
 }
 
 :root[data-density="compact"] .app-context-attachments-list {

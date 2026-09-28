@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   planAdaptiveExecution,
-  resolveAdaptiveControllerEnabled,
   resolveAdaptiveExecutionPlan,
 } from "./adaptive-controller.js";
+import { resolveAdaptiveControllerEnabled } from "../shared/adaptive-controller-settings.js";
 import { saveWorkspaceAdaptiveControllerOverride } from "./config.js";
 import { saveUserDesktopSettingsPatch } from "./env.js";
 import type { RuntimeConfig } from "./runtime-contract.generated.js";
