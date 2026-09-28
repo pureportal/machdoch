@@ -622,7 +622,16 @@ export const prepareConversationPromptContext = async (
       });
   }
   const workspaceRunContext = conversationContext?.workspaceRun;
+  const earlierWorkspace = conversationContext?.earlierWorkspace;
   const promptSections = [
+    earlierWorkspace !== undefined
+      ? [
+          "<workspace_change>",
+          `Earlier messages in this session used ${earlierWorkspace ?? "Not Set"}; the current workspace is ${workspace.selection === "selected" ? (workspace.root ?? workspaceRoot) : "Not Set"}.`,
+          "Use the current workspace for this task. Verify file paths and repository state before relying on earlier conversation from another workspace.",
+          "</workspace_change>",
+        ].join("\n")
+      : undefined,
     conversationContext?.chatType === "pose"
       ? "This is a dedicated Pose chat. Create and refine OpenPose skeleton scenes, including multiple characters. Call pose_scene_get, then save the requested scene with pose_scene_replace or the pose_person_* and pose_joint_set tools. Make every figure's visible joint geometry match the requested action; a standing base pose with merely raised arms is not a climbing pose. Use climbing for climbers and vary the limbs and placement for multiple figures. Use reference images to reconstruct body positions. Do not generate a final image or call an image generation tool. A written pose scene is the deliverable; do not claim success unless a pose tool saved it. Briefly describe the saved pose and invite edits."
       : undefined,

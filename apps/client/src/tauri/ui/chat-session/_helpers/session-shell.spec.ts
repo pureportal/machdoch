@@ -1,6 +1,8 @@
+import { describe, expect, it } from "vitest";
 import { createSession } from "../../chat-session.model.ts";
 import { createPreviewFixture } from "../../preview/fixtures";
 import type { RuntimeSnapshot } from "../../runtime";
+import { createSessionMessageSettings } from "./session-message-settings";
 import {
   createConversationContextFromSession,
   getEffectiveSessionMode,
@@ -144,6 +146,86 @@ describe("session shell helpers", () => {
     expect(context.uiControlEnabled).toBe(true);
     expect(context.uiControl).toEqual(uiControl);
     expect(context.workspace).toEqual({ selection: "not-set" });
+  });
+
+  it("marks earlier messages from another workspace without changing current selection", () => {
+    const oldSession = createSession({ workspace: "C:\\Projects\\first" });
+    const firstRequest = {
+      id: "request",
+      role: "user" as const,
+      content: "Read this project",
+      settings: createSessionMessageSettings(oldSession),
+    };
+    const switched = createSession({
+      workspace: "C:\\Projects\\second",
+      messages: [firstRequest],
+    });
+
+    expect(createConversationContextFromSession(switched, false)).toMatchObject(
+      {
+        workspace: { selection: "selected", root: "C:\\Projects\\second" },
+        earlierWorkspace: "C:\\Projects\\first",
+      },
+    );
+    expect(
+      createConversationContextFromSession(
+        createSession({
+          ...switched,
+          messages: [
+            firstRequest,
+            {
+              ...firstRequest,
+              id: "second",
+              settings: createSessionMessageSettings(switched),
+            },
+          ],
+        }),
+        false,
+      ).earlierWorkspace,
+    ).toBe("C:\\Projects\\first");
+    expect(
+      createConversationContextFromSession(
+        createSession({
+          ...oldSession,
+          workspace: "c:/projects/first/",
+          messages: [firstRequest],
+        }),
+        false,
+      ).earlierWorkspace,
+    ).toBeUndefined();
+    expect(
+      createConversationContextFromSession(
+        createSession({
+          ...oldSession,
+          workspace: null,
+          messages: [firstRequest],
+        }),
+        false,
+      ).earlierWorkspace,
+    ).toBe("C:\\Projects\\first");
+    expect(
+      createConversationContextFromSession(
+        createSession({
+          ...switched,
+          messages: [
+            {
+              ...firstRequest,
+              settings: createSessionMessageSettings(createSession()),
+            },
+          ],
+        }),
+        false,
+      ).earlierWorkspace,
+    ).toBeNull();
+    expect(
+      createConversationContextFromSession(
+        createSession({
+          ...oldSession,
+          messages: [{ ...firstRequest, settings: undefined }],
+        }),
+        false,
+      ).earlierWorkspace,
+    ).toBeUndefined();
   });
 
   it.each([

@@ -3377,6 +3377,17 @@ export const isSessionWorkspaceLocked = (
   );
 };
 
+export const canChangeSessionWorkspace = (
+  session: ChatSessionRecord,
+  overrideLock = false,
+  queuedMessages: readonly ChatSessionQueuedMessage[] = [],
+): boolean => {
+  return (
+    getSessionOverviewStatus(session, queuedMessages) !== "running" &&
+    (!isSessionWorkspaceLocked(session) || overrideLock)
+  );
+};
+
 export const canDeleteSession = (session: ChatSessionRecord): boolean => {
   return (
     !isQuickVoiceSession(session) &&

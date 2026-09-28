@@ -27,6 +27,7 @@ import { resolveParallelAgentMode } from "../../../../core/parallel-agent-capabi
 import { scheduleAppNotificationDismiss } from "@machdoch/media-studio/tauri/ui/components/ui/notification-lifecycle.js";
 import {
   applySessionRetentionPolicy,
+  canChangeSessionWorkspace,
   canDeleteSession,
   canDuplicateSession,
   canPinSession,
@@ -205,7 +206,7 @@ import { normalizeSessionReasoningOverride } from "./session-reasoning";
 import {
   applySessionMessageSettings,
   createSessionMessageSettings,
-  getSessionMessageSettings,
+  getSessionMessageSettingsForReplay,
 } from "./session-message-settings";
 import {
   createConversationContextFromSession,
@@ -1114,9 +1115,20 @@ export const useChatSessionController = (
   );
   const settingsActions = useSessionSettingsActions(state);
   const windowControls = useSessionWindowControls();
+  const workspaceSnapshotMatchesSession =
+    activeComposerSession.workspace === null ||
+    (runtime.runtimeSnapshot !== null &&
+      createWorkspaceRootKey(
+        runtime.runtimeSnapshot.workspaceRoot.replace(/^[\\/]{2}\?[\\/]/u, ""),
+      ) ===
+        createWorkspaceRootKey(
+          activeComposerSession.workspace.replace(/^[\\/]{2}\?[\\/]/u, ""),
+        ));
   const workspaceMemoryEnabled =
     activeComposerSession.workspace !== null &&
-    (runtime.runtimeSnapshot?.workspaceMemoryEnabled ??
+    ((workspaceSnapshotMatchesSession
+      ? runtime.runtimeSnapshot?.workspaceMemoryEnabled
+      : undefined) ??
       runtime.userMemorySettings.workspaceDefaultEnabled !== false);
   const memorySummaryState = createMemorySummaryState({
     session: activeComposerSession,
@@ -1215,15 +1227,6 @@ export const useChatSessionController = (
   const isUsingWorkspaceDefaultMode = !activeComposerSession.mode;
   const isUsingWorkspaceDefaultReasoning = !activeSessionReasoningOverride;
   const hasActiveWorkspace = activeComposerSession.workspace !== null;
-  const workspaceSnapshotMatchesSession =
-    activeComposerSession.workspace === null ||
-    (runtime.runtimeSnapshot !== null &&
-      createWorkspaceRootKey(
-        runtime.runtimeSnapshot.workspaceRoot.replace(/^[\\/]{2}\?[\\/]/u, ""),
-      ) ===
-        createWorkspaceRootKey(
-          activeComposerSession.workspace.replace(/^[\\/]{2}\?[\\/]/u, ""),
-        ));
   const defaultAdaptiveControllerEnabled =
     runtime.userDesktopSettingsLoaded && workspaceSnapshotMatchesSession
       ? resolveAdaptiveControllerEnabled(
@@ -1432,6 +1435,24 @@ export const useChatSessionController = (
   const activeSessionPromptEnhancementBusy =
     activePromptEnhancementPending !== null ||
     activeSessionHasPromptEnhancementPlaceholder;
+  const workspaceSwitchBlocked =
+    !canChangeSessionWorkspace(
+      activeComposerSession,
+      true,
+      activeSessionQueuedMessages,
+    ) ||
+    !canChangeSessionWorkspace(
+      state.activeSession,
+      true,
+      activeSessionQueuedMessages,
+    ) ||
+    activeSessionPromptEnhancementBusy ||
+    [...activeDesktopTasksRef.current.values()].includes(
+      state.activeSession.id,
+    ) ||
+    [...unsettledDesktopTasksRef.current.values()].includes(
+      state.activeSession.id,
+    );
   const activeSessionSendDisabledReason =
     promptEnhancementUnavailableReason ?? activeSessionImageInputError;
   const canComposeMessage =
@@ -2697,28 +2718,102 @@ export const useChatSessionController = (
   };
 
   const applyWorkspaceSelection = useCallback(
-    (workspace: string | null): void => {
+    (workspace: string | null, overrideLock = false): void => {
       const normalizedWorkspace = workspace?.trim() || null;
+      const targetSessionId =
+        activeMessageEditRef.current?.sourceSessionId ??
+        activeSessionIdRef.current;
+      const persistedSession = state.getSessionById(targetSessionId);
+      const targetSession =
+        activeMessageEditRef.current?.session ?? persistedSession;
+
+      if (!targetSession || !persistedSession) {
+        window.alert("Session not found. Select a session and try again.");
+        return;
+      }
+
+      if (
+        targetSession.workspace === normalizedWorkspace ||
+        (targetSession.workspace &&
+          normalizedWorkspace &&
+          createWorkspaceRootKey(targetSession.workspace) ===
+            createWorkspaceRootKey(normalizedWorkspace))
+      ) {
+        return;
+      }
+
+      if (
+        !canChangeSessionWorkspace(
+          targetSession,
+          true,
+          shellStateRef.current.queuedSessionMessages,
+        ) ||
+        !canChangeSessionWorkspace(
+          persistedSession,
+          true,
+          shellStateRef.current.queuedSessionMessages,
+        ) ||
+        promptEnhancementPendingTasks.some(
+          (pending) => pending.sessionId === targetSessionId,
+        ) ||
+        [...activeDesktopTasksRef.current.values()].includes(targetSessionId) ||
+        [...unsettledDesktopTasksRef.current.values()].includes(targetSessionId)
+      ) {
+        window.alert(
+          "Wait for pending tasks to finish or remove queued messages before changing workspaces.",
+        );
+        return;
+      }
+
+      if (isSessionWorkspaceLocked(targetSession)) {
+        if (!overrideLock) {
+          window.alert(
+            "Use the workspace picker to change this session's workspace.",
+          );
+          return;
+        }
+
+        if (
+          !window.confirm(
+            "Change this session's workspace? Earlier messages remain, but future tasks will use the new workspace.",
+          )
+        ) {
+          return;
+        }
+      }
 
       if (activeMessageEditRef.current) {
         updateMessageEditSession((session) =>
-          isSessionWorkspaceLocked(session)
-            ? session
-            : {
+          session.id === targetSessionId &&
+          canChangeSessionWorkspace(
+            session,
+            overrideLock,
+            shellStateRef.current.queuedSessionMessages,
+          )
+            ? {
                 ...session,
                 workspace: normalizedWorkspace,
                 updatedAt: Date.now(),
-              },
+              }
+            : session,
         );
         return;
       }
 
       state.applyShellState((prev) => {
         const targetSession = prev.sessions.find(
-          (session) => session.id === state.activeSessionId,
+          (session) => session.id === targetSessionId,
         );
 
-        if (!targetSession || isSessionWorkspaceLocked(targetSession)) {
+        if (
+          activeSessionIdRef.current !== targetSessionId ||
+          !targetSession ||
+          !canChangeSessionWorkspace(
+            targetSession,
+            overrideLock,
+            prev.queuedSessionMessages,
+          )
+        ) {
           return prev;
         }
 
@@ -2731,7 +2826,7 @@ export const useChatSessionController = (
               )
             : prev.recentWorkspaces,
           sessions: prev.sessions.map((session) =>
-            session.id === state.activeSessionId
+            session.id === targetSessionId
               ? {
                   ...session,
                   workspace: normalizedWorkspace,
@@ -2742,7 +2837,12 @@ export const useChatSessionController = (
         };
       });
     },
-    [state.activeSessionId, state.applyShellState, updateMessageEditSession],
+    [
+      promptEnhancementPendingTasks,
+      state.applyShellState,
+      state.getSessionById,
+      updateMessageEditSession,
+    ],
   );
 
   const applyRemoteWorkspaceSelection = useCallback(
@@ -2842,13 +2942,12 @@ export const useChatSessionController = (
     [state.applyShellState],
   );
 
-  const handleSelectFolder = async (): Promise<void> => {
-    if (isSessionWorkspaceLocked(activeComposerSession)) {
-      return;
-    }
+  const handleSelectFolder = async (overrideLock = false): Promise<void> => {
+    const sessionId = activeSessionIdRef.current;
+    const editingMessageId = activeMessageEditRef.current?.messageId;
 
     if (!isDesktop) {
-      applyWorkspaceSelection("/mock/workspace/path");
+      applyWorkspaceSelection("/mock/workspace/path", overrideLock);
       return;
     }
 
@@ -2860,10 +2959,21 @@ export const useChatSessionController = (
       });
 
       if (selected && typeof selected === "string") {
-        applyWorkspaceSelection(selected);
+        if (
+          activeSessionIdRef.current !== sessionId ||
+          activeMessageEditRef.current?.messageId !== editingMessageId
+        ) {
+          window.alert(
+            "The active session changed. Choose the workspace again.",
+          );
+          return;
+        }
+
+        applyWorkspaceSelection(selected, overrideLock);
       }
     } catch (error) {
       console.error("Failed to select folder", error);
+      window.alert("Could not open the workspace folder picker. Try again.");
     }
   };
 
@@ -3272,10 +3382,11 @@ export const useChatSessionController = (
   const handleOpenWorkspaceFile = (
     relativePath: string,
     line?: number,
+    workspaceRoot = state.activeSession.workspace,
   ): void => {
     showFilePreview({
       kind: "workspace",
-      workspaceRoot: state.activeSession.workspace,
+      workspaceRoot,
       relativePath,
       line,
     });
@@ -4755,7 +4866,10 @@ export const useChatSessionController = (
         return;
       }
 
-      const settings = getSessionMessageSettings(message, sourceSession);
+      const settings = getSessionMessageSettingsForReplay(
+        message,
+        sourceSession,
+      );
       const content =
         settings.promptEnhancementMode !== "off"
           ? (message.promptEnhancement?.originalContent ??
@@ -8637,6 +8751,7 @@ export const useChatSessionController = (
       defaultAdaptiveControllerEnabled,
       hasActiveWorkspace,
       workspaceLocked,
+      workspaceSwitchBlocked,
       recentWorkspaces: state.shellState.recentWorkspaces,
       composerWorkspaceLabel: memorySummaryState.composerWorkspaceLabel,
       sessionMemoryDescription: memorySummaryState.sessionMemoryDescription,

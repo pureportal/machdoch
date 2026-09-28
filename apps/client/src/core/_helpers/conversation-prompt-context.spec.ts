@@ -130,6 +130,66 @@ describe("message delivery prompt context", () => {
 
     expect(context.wasQueued).toBe(wasQueued);
   });
+
+  it("tells the next agent about earlier workspace history without changing the current root", async () => {
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), "machdoch-workspace-switch-"),
+    );
+    workspaceRoots.push(workspaceRoot);
+    const context = await prepareConversationPromptContext(
+      "Continue in this project",
+      { ...runtimeConfig, workspaceRoot },
+      {
+        history: [{ role: "user", content: "Worked in the previous project" }],
+        workspace: { selection: "selected", root: workspaceRoot },
+        earlierWorkspace: "C:\\Projects\\previous",
+        globalMemoryEnabled: false,
+      },
+    );
+
+    expect(context.workspace).toEqual({
+      selection: "selected",
+      root: workspaceRoot,
+    });
+    expect(context.promptBlock).toContain(
+      `Earlier messages in this session used C:\\Projects\\previous; the current workspace is ${workspaceRoot}.`,
+    );
+    expect(context.promptBlock).toContain(
+      "Verify file paths and repository state",
+    );
+  });
+
+  it("loads memory for the new workspace rather than the previous one", async () => {
+    const earlierWorkspace = await mkdtemp(
+      join(tmpdir(), "machdoch-old-workspace-"),
+    );
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), "machdoch-new-workspace-"),
+    );
+    workspaceRoots.push(earlierWorkspace, workspaceRoot);
+    await rememberWorkspaceMemory(earlierWorkspace, "Old repository memory", {
+      key: "old",
+    });
+    await rememberWorkspaceMemory(workspaceRoot, "New repository memory", {
+      key: "new",
+    });
+
+    const context = await prepareConversationPromptContext(
+      "Read the repository memory",
+      { ...runtimeConfig, workspaceRoot },
+      {
+        history: [],
+        workspace: { selection: "selected", root: workspaceRoot },
+        earlierWorkspace,
+        globalMemoryEnabled: false,
+      },
+    );
+
+    expect(
+      context.memory.workspaceEntries?.map((entry) => entry.content),
+    ).toEqual(["New repository memory"]);
+    expect(context.promptBlock).not.toContain("Old repository memory");
+  });
 });
 
 describe("workspace run prompt context", () => {
