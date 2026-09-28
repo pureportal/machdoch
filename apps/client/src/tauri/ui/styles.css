@@ -1817,6 +1817,11 @@ body {
   color: var(--app-sky-300);
 }
 
+.app-composer-toolbar svg.app-composer-mode-icon {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+
 :root[data-theme="light"]
   .app-composer-toolbar
   .app-composer-toolbar-control[data-active="true"],
@@ -1858,12 +1863,24 @@ body {
   gap: 0.35rem !important;
 }
 
-:root[data-density="compact"] .app-mode-picker-button,
-:root[data-density="compact"] .app-reasoning-picker-button,
-:root[data-density="compact"] .app-composer-toolbar-icon-button,
-:root[data-density="compact"] .app-composer-toggle-button {
+:root[data-density="compact"]
+  :is(
+    .app-mode-picker-button,
+    .app-reasoning-picker-button,
+    .app-composer-toolbar-icon-button,
+    .app-parallel-agent-button,
+    .app-prompt-enhancement-button,
+    .app-composer-toggle-button
+  ) {
   width: 1.85rem !important;
   height: 1.85rem !important;
+}
+
+:root[data-density="compact"]
+  :is(.app-parallel-agent-button, .app-prompt-enhancement-button):has(
+    .app-composer-mode-icon
+  ) {
+  width: 2.25rem !important;
 }
 
 :root[data-density="compact"] .app-composer-toggle-manage-button {
@@ -1876,6 +1893,8 @@ body {
     .app-model-picker-button,
     .app-composer-toolbar-pill,
     .app-composer-toolbar-icon-button,
+    .app-parallel-agent-button,
+    .app-prompt-enhancement-button,
     .app-mode-picker-button,
     .app-reasoning-picker-button,
     .app-composer-toggle-button,
@@ -1891,6 +1910,11 @@ body {
   svg.app-composer-default-indicator {
   width: 0.55rem !important;
   height: 0.55rem !important;
+}
+
+:root[data-density="compact"] .app-composer-toolbar svg.app-composer-mode-icon {
+  width: 0.65rem !important;
+  height: 0.65rem !important;
 }
 
 :root[data-density="compact"] .app-context-attachments-list {
