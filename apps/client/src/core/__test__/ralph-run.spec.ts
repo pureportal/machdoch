@@ -3317,7 +3317,8 @@ describe("runRalphFlow", () => {
       expect(result.status).toBe("completed");
       expect(executeTask).toHaveBeenCalledTimes(1);
       expect(
-        result.blockResults.find((entry) => entry.blockId === "interview")?.data,
+        result.blockResults.find((entry) => entry.blockId === "interview")
+          ?.data,
       ).toMatchObject({ summary });
     } finally {
       await rm(workspace, { recursive: true, force: true });
@@ -3333,7 +3334,9 @@ describe("runRalphFlow", () => {
   )(
     "retains every failed $type attempt when $outcome",
     async ({ type, outcome }) => {
-      const workspace = await mkdtemp(join(tmpdir(), "ralph-json-diagnostics-"));
+      const workspace = await mkdtemp(
+        join(tmpdir(), "ralph-json-diagnostics-"),
+      );
       const secret = "configured-json-response-secret";
       vi.stubEnv("OPENAI_API_KEY", secret);
       const malformed = `{"evidence":"${secret}${"é".repeat(40_000)}", "confidence":}`;
@@ -3382,7 +3385,12 @@ describe("runRalphFlow", () => {
           { id: "handled", type: "END", title: "Handled" },
         ],
         edges: [
-          { id: "start-json", from: "start", fromOutput: "SUCCESS", to: "json" },
+          {
+            id: "start-json",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "json",
+          },
           {
             id: "json-handled",
             from: "json",
@@ -3487,10 +3495,15 @@ describe("runRalphFlow", () => {
             attempt: index + 1,
             stage: failure.stage,
             errors: failure.errors,
-            responseText: responseTexts[index]!.replaceAll(secret, "[redacted]"),
+            responseText: responseTexts[index]!.replaceAll(
+              secret,
+              "[redacted]",
+            ),
           });
           if (process.platform !== "win32") {
-            expect((await stat(failure.evidencePath!)).mode & 0o777).toBe(0o600);
+            expect((await stat(failure.evidencePath!)).mode & 0o777).toBe(
+              0o600,
+            );
           }
         }
         const recordText = await readFile(logger.paths!.recordPath, "utf8");
@@ -3523,7 +3536,9 @@ describe("runRalphFlow", () => {
   );
 
   it("reports evidence write failures without replacing parse diagnostics or changing repair attempts", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "ralph-json-evidence-write-"));
+    const workspace = await mkdtemp(
+      join(tmpdir(), "ralph-json-evidence-write-"),
+    );
     const flow = createFlow({
       blocks: [
         { id: "start", type: "START", title: "Start" },
@@ -3601,7 +3616,9 @@ describe("runRalphFlow", () => {
   });
 
   it("retains distinct JSON responses across configured block retries", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "ralph-json-block-retries-"));
+    const workspace = await mkdtemp(
+      join(tmpdir(), "ralph-json-block-retries-"),
+    );
     const flow = createFlow({
       blocks: [
         { id: "start", type: "START", title: "Start" },
@@ -3609,7 +3626,9 @@ describe("runRalphFlow", () => {
           id: "json",
           type: "UTILITY",
           title: "JSON",
-          settings: { retry: { mode: "finite", maxRetries: 2, delaySeconds: 0 } },
+          settings: {
+            retry: { mode: "finite", maxRetries: 2, delaySeconds: 0 },
+          },
           utility: {
             type: "PROMPT_JSON",
             prompt: "Return JSON.",
@@ -3620,7 +3639,12 @@ describe("runRalphFlow", () => {
       ],
       edges: [
         { id: "start-json", from: "start", fromOutput: "SUCCESS", to: "json" },
-        { id: "json-handled", from: "json", fromOutput: "ERROR", to: "handled" },
+        {
+          id: "json-handled",
+          from: "json",
+          fromOutput: "ERROR",
+          to: "handled",
+        },
       ],
     });
     const responses = Array.from(
@@ -3659,7 +3683,9 @@ describe("runRalphFlow", () => {
         expect.arrayContaining(responses),
       );
       expect(
-        evidence.map((entry) => entry.attempt).sort((left, right) => left - right),
+        evidence
+          .map((entry) => entry.attempt)
+          .sort((left, right) => left - right),
       ).toEqual([1, 1, 1, 2, 2, 2]);
     } finally {
       await rm(workspace, { recursive: true, force: true });
@@ -3675,7 +3701,9 @@ describe("runRalphFlow", () => {
   ])(
     "retains parse diagnostics and evidence for response $responseText",
     async ({ responseText, diagnostic }) => {
-      const workspace = await mkdtemp(join(tmpdir(), "ralph-json-parse-error-"));
+      const workspace = await mkdtemp(
+        join(tmpdir(), "ralph-json-parse-error-"),
+      );
       const response = createExecutionResult();
       response.response!.markdown = responseText;
       vi.mocked(executeTask).mockResolvedValueOnce(response);
@@ -7289,6 +7317,112 @@ describe("runRalphFlow", () => {
       await rm(workspace, { recursive: true, force: true });
     }
   }, 180_000);
+
+  it("runs autonomous flows concurrently in separate worktrees", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ralph-concurrent-worktrees-"));
+    const workspace = join(root, "workspace");
+    const flow = createFlow({
+      settings: { autonomy: true },
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        { id: "work", type: "PROMPT", title: "Work", prompt: "Do work." },
+        { id: "success", type: "END", title: "Success" },
+      ],
+      edges: [
+        { id: "start-work", from: "start", fromOutput: "SUCCESS", to: "work" },
+        {
+          id: "work-success",
+          from: "work",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
+      ],
+    });
+    let releaseExecution!: () => void;
+    const execution = new Promise<void>((resolve) => {
+      releaseExecution = resolve;
+    });
+    const executionRoots: string[] = [];
+
+    try {
+      await mkdir(workspace);
+      expect(spawnSync("git", ["init", "-q"], { cwd: workspace }).status).toBe(
+        0,
+      );
+      expect(
+        spawnSync("git", ["config", "user.email", "ralph@example.invalid"], {
+          cwd: workspace,
+        }).status,
+      ).toBe(0);
+      expect(
+        spawnSync("git", ["config", "user.name", "RALPH Test"], {
+          cwd: workspace,
+        }).status,
+      ).toBe(0);
+      await writeFile(join(workspace, "source.txt"), "original\n");
+      expect(
+        spawnSync("git", ["add", "source.txt"], { cwd: workspace }).status,
+      ).toBe(0);
+      expect(
+        spawnSync("git", ["commit", "-qm", "initial"], { cwd: workspace })
+          .status,
+      ).toBe(0);
+      vi.mocked(executeTask).mockImplementation(async (_task, blockConfig) => {
+        executionRoots.push(blockConfig.workspaceRoot);
+        if (executionRoots.length === 2) releaseExecution();
+        await execution;
+        await writeFile(
+          join(blockConfig.workspaceRoot, "source.txt"),
+          blockConfig.workspaceRoot,
+        );
+        return createExecutionResult({ summary: "Finished in worktree." });
+      });
+      const firstLogger = await createRalphRunLogger(workspace, flow, {
+        runId: "isolated-first",
+      });
+      const secondLogger = await createRalphRunLogger(workspace, flow, {
+        runId: "isolated-second",
+      });
+      const config = { ...runtimeConfig, workspaceRoot: workspace };
+      const [first, second] = await Promise.all([
+        runRalphFlow(flow, config, customizations, {
+          logger: firstLogger,
+          isolatedWorktree: true,
+        }),
+        runRalphFlow(flow, config, customizations, {
+          logger: secondLogger,
+          isolatedWorktree: true,
+        }),
+      ]);
+
+      expect(first.summary).not.toContain("workspace writer lease");
+      expect(second.summary).not.toContain("workspace writer lease");
+      expect(executionRoots).toHaveLength(2);
+      expect(executionRoots[0]).not.toBe(executionRoots[1]);
+      expect(await readFile(join(workspace, "source.txt"), "utf8")).toBe(
+        "original\n",
+      );
+      expect(executionRoots).toContain(
+        first.runWorktree?.executionWorkspaceRoot,
+      );
+      expect(executionRoots).toContain(
+        second.runWorktree?.executionWorkspaceRoot,
+      );
+      const firstRecord = JSON.parse(
+        await readFile(firstLogger.paths!.recordPath, "utf8"),
+      ) as RalphRunRecord;
+      expect(firstRecord.runWorktree).toEqual(first.runWorktree);
+      expect(firstRecord.checkpoint?.runWorktree).toEqual(first.runWorktree);
+    } finally {
+      releaseExecution();
+      await rm(root, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 200,
+      });
+    }
+  }, 120_000);
 
   it("fences concurrent autonomous writers across equivalent workspace paths and releases on completion", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-writer-fence-"));

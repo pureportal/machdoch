@@ -365,15 +365,19 @@ describe("cli args public parser", () => {
 
   it("parses Ralph and scheduler command options with numeric boundaries", () => {
     expect(
-      parseCliArgs(["ralph", "run", "flow-one", "--max-transitions", "1"], {
-        currentWorkingDirectory: "C:/workspace",
-      }),
+      parseCliArgs(
+        ["ralph", "run", "flow-one", "--max-transitions", "1", "--isolated"],
+        {
+          currentWorkingDirectory: "C:/workspace",
+        },
+      ),
     ).toMatchObject({
       command: "ralph",
       ralph: {
         action: "run",
         subject: "flow-one",
         maxTransitions: 1,
+        isolated: true,
       },
     });
 

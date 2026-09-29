@@ -51,6 +51,10 @@ import {
   type RalphRunLogPaths,
 } from "./_helpers/create-ralph-storage-paths.helper.js";
 import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
+import {
+  prepareRalphRunWorktree,
+  type RalphRunWorktree,
+} from "./_helpers/ralph-run-worktree.helper.js";
 export {
   getRalphArtifactDirectory,
   getRalphFlowDirectory,
@@ -1311,6 +1315,8 @@ export interface RalphRunLogger {
 
 export interface RalphRunOptions {
   workspaceBoundary?: string;
+  isolatedWorktree?: boolean;
+  runWorktree?: RalphRunWorktree;
   variableValues?: Record<string, string>;
   conversationContext?: TaskConversationContext;
   onStateChange?: TaskExecutionProgressHandler;
@@ -1372,6 +1378,7 @@ export interface RalphRunResult {
   outcome?: RalphRunOutcome;
   progress?: RalphProgressState;
   durability?: RalphRunDurability;
+  runWorktree?: RalphRunWorktree;
 }
 
 export interface RalphRunDurability {
@@ -1506,6 +1513,7 @@ export interface RalphRunCheckpoint {
     eventCount: number;
   };
   durability?: RalphRunDurability;
+  runWorktree?: RalphRunWorktree;
 }
 
 export interface RalphRunRecord {
@@ -1531,6 +1539,7 @@ export interface RalphRunRecord {
   autonomy?: RalphRunAutonomyMetadata;
   outcome?: RalphRunOutcome;
   progress?: RalphProgressState;
+  runWorktree?: RalphRunWorktree;
 }
 
 export interface RalphRunRecordWriteResult {
@@ -1544,6 +1553,7 @@ export interface RalphRunSummary {
   id: string;
   path: string;
   workspaceRoot?: string;
+  worktreePath?: string;
   createdAt: string;
   finishedAt?: string;
   flowId: string;
@@ -3194,29 +3204,11 @@ export const listRalphRunRecords = async (
 
   const pendingEntries = entries.values();
   await Promise.all(
-    Array.from({ length: Math.min(entries.length, 8) }, async () => {
+    Array.from({ length: Math.min(entries.length, 32) }, async () => {
       for (const entry of pendingEntries) {
         if (entry.isDirectory()) {
           const directory = join(runDirectory, entry.name);
           const path = join(directory, "run.json");
-
-          if (!existsSync(path)) {
-            const partialSummary = await createPartialRalphRunSummary(
-              directory,
-              entry.name,
-            );
-
-            if (
-              partialSummary &&
-              (!normalizedFlowId ||
-                normalizeFlowId(partialSummary.flowId) === normalizedFlowId)
-            ) {
-              summaries.push(partialSummary);
-            }
-
-            continue;
-          }
-
           const record = await readRalphRunRecordFile(path);
 
           if (!record) {
@@ -3254,7 +3246,7 @@ export const listRalphRunRecords = async (
             ? join(runDirectory, entry.name)
             : undefined;
 
-        if (!path || !existsSync(path)) {
+        if (!path) {
           continue;
         }
 
@@ -15438,6 +15430,7 @@ const runRalphFlowImpl = async (
         : createLogTimestamp();
     let runResult: RalphRunResult = {
       ...result,
+      ...(options.runWorktree ? { runWorktree: options.runWorktree } : {}),
       status: lifecycleStatus,
       runId,
       startedAt,
@@ -16161,6 +16154,7 @@ const runRalphFlowImpl = async (
         eventCount: events.length,
       },
       durability: { ...durability },
+      ...(options.runWorktree ? { runWorktree: options.runWorktree } : {}),
       ...(autonomyMetadata
         ? { autonomy: cloneRalphRunAutonomyMetadata(autonomyMetadata) }
         : {}),
@@ -17494,6 +17488,66 @@ export const runRalphFlow = async (
     `ralph-${flow.id}-${randomUUID()}`;
 
   try {
+    if (options.isolatedWorktree || options.checkpoint?.runWorktree) {
+      if (!options.logger?.paths || options.workspaceBoundary) {
+        throw new Error(
+          "An isolated RALPH run needs saved run paths and its own workspace boundary.",
+        );
+      }
+      const worktree = await prepareRalphRunWorktree(
+        config.workspaceRoot,
+        options.logger.paths.directory,
+      );
+      if (
+        options.checkpoint?.runWorktree &&
+        options.checkpoint.runWorktree.worktreeRoot !== worktree.worktreeRoot
+      ) {
+        throw new Error("RALPH refused to resume in a different run worktree.");
+      }
+      const isolatedFlow = structuredClone(flow);
+      for (const block of isolatedFlow.blocks) {
+        const workspace = block.settings?.workspace;
+        if (workspace?.mode !== "custom" || !workspace.path) continue;
+        const sourcePath = resolve(config.workspaceRoot, workspace.path);
+        if (!isResolvedPathInsideWorkspace(sourcePath, config.workspaceRoot)) {
+          throw new Error(
+            `RALPH block ${block.id} uses a workspace outside the isolated run.`,
+          );
+        }
+        workspace.path = resolve(
+          worktree.executionWorkspaceRoot,
+          relative(config.workspaceRoot, sourcePath),
+        );
+      }
+      flow = isolatedFlow;
+      const remapCustomizationPath = (path: string): string => {
+        const sourcePath = resolve(path);
+        return isResolvedPathInsideWorkspace(sourcePath, config.workspaceRoot)
+          ? resolve(
+              worktree.executionWorkspaceRoot,
+              relative(config.workspaceRoot, sourcePath),
+            )
+          : path;
+      };
+      customizations = {
+        ...customizations,
+        workspaceRoot: worktree.executionWorkspaceRoot,
+        prompts: customizations.prompts.map((prompt) => ({
+          ...prompt,
+          path: remapCustomizationPath(prompt.path),
+        })),
+        skills: customizations.skills.map((skill) => ({
+          ...skill,
+          path: remapCustomizationPath(skill.path),
+        })),
+      };
+      config = { ...config, workspaceRoot: worktree.executionWorkspaceRoot };
+      options = {
+        ...options,
+        runWorktree: worktree,
+        workspaceBoundary: worktree.executionWorkspaceRoot,
+      };
+    }
     if (options.workspaceBoundary) {
       for (const block of flow.blocks) {
         await assertRalphWorkspaceBoundary(
@@ -17603,13 +17657,18 @@ export const runRalphFlow = async (
               generation: independentLease.lease.generation,
             });
           }
-          const result = createUnexpectedRalphRunResult(flow, validation, {
-            runId,
-            startedAt: recoveryCheckpoint?.startedAt ?? startedAt,
-            reason: failureReason,
-            ...(recoveryCheckpoint ? { checkpoint: recoveryCheckpoint } : {}),
-            durabilityRequired: true,
-          });
+          const result: RalphRunResult = {
+            ...createUnexpectedRalphRunResult(flow, validation, {
+              runId,
+              startedAt: recoveryCheckpoint?.startedAt ?? startedAt,
+              reason: failureReason,
+              ...(recoveryCheckpoint ? { checkpoint: recoveryCheckpoint } : {}),
+              durabilityRequired: true,
+            }),
+            ...(options.runWorktree
+              ? { runWorktree: options.runWorktree }
+              : {}),
+          };
           const record = createRalphRunRecord(
             RALPH_FLOW_SCHEMA_VERSION,
             paths.id,
@@ -17634,15 +17693,18 @@ export const runRalphFlow = async (
       });
     }
 
-    const result = createUnexpectedRalphRunResult(flow, validation, {
-      runId,
-      startedAt: recoveryCheckpoint?.startedAt ?? startedAt,
-      reason: cleanupError
-        ? `${reason} Recovery finalization was incomplete: ${cleanupError}`
-        : reason,
-      ...(recoveryCheckpoint ? { checkpoint: recoveryCheckpoint } : {}),
-      durabilityRequired: Boolean(paths),
-    });
+    const result: RalphRunResult = {
+      ...createUnexpectedRalphRunResult(flow, validation, {
+        runId,
+        startedAt: recoveryCheckpoint?.startedAt ?? startedAt,
+        reason: cleanupError
+          ? `${reason} Recovery finalization was incomplete: ${cleanupError}`
+          : reason,
+        ...(recoveryCheckpoint ? { checkpoint: recoveryCheckpoint } : {}),
+        durabilityRequired: Boolean(paths),
+      }),
+      ...(options.runWorktree ? { runWorktree: options.runWorktree } : {}),
+    };
     try {
       options.logger?.simple({
         kind: "crash",

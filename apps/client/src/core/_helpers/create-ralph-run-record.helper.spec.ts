@@ -406,6 +406,24 @@ describe("createRalphRunSummaryFromRecord", () => {
     expect(summary).not.toHaveProperty("traceLogPath");
   });
 
+  it("lists isolated runs under their source workspace", () => {
+    const summary = createRalphRunSummaryFromRecord(
+      createRecord({
+        runWorktree: {
+          sourceWorkspaceRoot: "/workspace",
+          executionWorkspaceRoot: "/worktrees/run-1",
+          repositoryRoot: "/workspace",
+          worktreeRoot: "/worktrees/run-1",
+          branch: "ralph/run-1",
+        },
+      }),
+      "/runs/run-1/run.json",
+    );
+
+    expect(summary.workspaceRoot).toBe("/workspace");
+    expect(summary.worktreePath).toBe("/worktrees/run-1");
+  });
+
   it.each(["blocked", "crashed"] as const)(
     "marks a %s run recoverable only when it has a checkpoint",
     (status) => {

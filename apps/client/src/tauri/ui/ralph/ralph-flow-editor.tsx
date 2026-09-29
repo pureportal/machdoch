@@ -665,6 +665,7 @@ export const RalphFlowEditor = ({
   const [mediaFlowCatalogRefresh, setMediaFlowCatalogRefresh] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [activeRuns, setActiveRuns] = useState<ActiveRalphRun[]>([]);
+  const [isolatedRun, setIsolatedRun] = useState(false);
   const [generationJob, setGenerationJob] = useState<RalphGenerationJob | null>(
     null,
   );
@@ -1549,16 +1550,20 @@ export const RalphFlowEditor = ({
   const selectedFlowActiveRuns = activeRunsByFlowKey.get(selectedFlowKey) ?? [];
   const selectedFlowPrimaryActiveRun = selectedFlowActiveRuns[0] ?? null;
   const selectedFlowActiveRunCount = selectedFlowActiveRuns.length;
-  const workspaceWriterBlockingRun = getRalphWorkspaceWriterBlockingRun(
-    draftFlow,
-    selectedFlowPrimaryActiveRun !== null,
-    activeRuns,
-  );
+  const workspaceWriterBlockingRun = isolatedRun
+    ? null
+    : getRalphWorkspaceWriterBlockingRun(
+        draftFlow,
+        selectedFlowPrimaryActiveRun !== null,
+        activeRuns,
+      );
   const continuationWorkspaceWriterLeaseRequirement =
-    getRalphContinuationWorkspaceWriterLeaseRequirement(
-      lastRun,
-      dirty ? null : draftFlow,
-    );
+    lastRun?.runWorktree || lastRun?.checkpoint?.runWorktree
+      ? false
+      : getRalphContinuationWorkspaceWriterLeaseRequirement(
+          lastRun,
+          dirty ? null : draftFlow,
+        );
   const continuationWorkspaceWriterBlockingRun =
     getRalphWorkspaceWriterBlockingRunForRequirement(
       continuationWorkspaceWriterLeaseRequirement,
@@ -2156,6 +2161,7 @@ export const RalphFlowEditor = ({
           result.flows.map((flow) => withFlowSummaryScope(flow, scope)),
         )
         .sort(compareFlowSummaries);
+      setFlows(loadedFlows);
 
       const currentId = selectedIdRef.current;
       const currentScope = selectedScopeRef.current;
@@ -5823,7 +5829,7 @@ export const RalphFlowEditor = ({
         scope: runScope,
         flowName,
         requiresWorkspaceWriterLease:
-          doesRalphFlowRequireWorkspaceWriterLease(flowToRun),
+          !isolatedRun && doesRalphFlowRequireWorkspaceWriterLease(flowToRun),
         startedAt: Date.now(),
         status: "running",
         mode: runMode,
@@ -5848,6 +5854,7 @@ export const RalphFlowEditor = ({
       try {
         const result = await runRalphFlow(workspaceRoot, {
           name: flowToRun.id,
+          isolated: isolatedRun,
           scope: runScope,
           taskId,
           mode: runMode,
@@ -13284,6 +13291,19 @@ export const RalphFlowEditor = ({
                       {runPanelTab === "setup" ? (
                         <div className="grid items-start gap-4 xl:grid-cols-[20rem_minmax(0,1fr)]">
                           <aside className="grid gap-4 rounded-xl border border-slate-800 bg-slate-900/35 p-4 xl:sticky xl:top-0">
+                            <label className="flex items-start gap-2 text-xs text-slate-200">
+                              <input
+                                type="checkbox"
+                                checked={isolatedRun}
+                                onChange={(event) =>
+                                  setIsolatedRun(event.target.checked)
+                                }
+                              />
+                              <span>
+                                Separate worktree. Changes stay in the run's
+                                worktree.
+                              </span>
+                            </label>
                             <div className="grid gap-1">
                               <div className="text-sm font-semibold text-white">
                                 Run readiness
@@ -14544,6 +14564,24 @@ export const RalphFlowEditor = ({
                                         label="run summary"
                                       />
                                     </div>
+                                    {selectedRunRecord.runWorktree ? (
+                                      <div className="flex min-w-0 items-center justify-between gap-2 text-xs text-slate-300">
+                                        <span className="min-w-0 break-all">
+                                          Worktree:{" "}
+                                          {
+                                            selectedRunRecord.runWorktree
+                                              .executionWorkspaceRoot
+                                          }
+                                        </span>
+                                        <RalphCopyButton
+                                          value={
+                                            selectedRunRecord.runWorktree
+                                              .executionWorkspaceRoot
+                                          }
+                                          label="worktree path"
+                                        />
+                                      </div>
+                                    ) : null}
                                     {selectedRunRecord.outcome ? (
                                       <div className="grid gap-2 rounded-lg border border-slate-800/80 bg-slate-900/25 p-3 text-xs">
                                         <div className="flex flex-wrap items-center gap-2 text-slate-400">

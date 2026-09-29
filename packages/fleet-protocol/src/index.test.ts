@@ -406,6 +406,7 @@ void test("canonicalizes product command values", () => {
     provider: " openai ",
     model: " gpt-5.6 ",
     reasoning: "high",
+    isolated: true,
   });
 
   assert.deepEqual(ralphRun, {
@@ -418,6 +419,7 @@ void test("canonicalizes product command values", () => {
     provider: "openai",
     model: "gpt-5.6",
     reasoning: "high",
+    isolated: true,
   });
 
   const mediaRun = productCommandSchema.parse({

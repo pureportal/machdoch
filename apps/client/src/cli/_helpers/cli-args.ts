@@ -189,6 +189,7 @@ export const parseCliArgs = (
         "input-json"?: string;
         "input-json-file"?: string;
         "retry-current"?: boolean;
+        isolated?: boolean;
         "max-rounds"?: string;
         "max-transitions"?: string;
         "instruction-boundary-policy"?: string;
@@ -327,6 +328,7 @@ export const parseCliArgs = (
         "input-json": { type: "string" },
         "input-json-file": { type: "string" },
         "retry-current": { type: "boolean" },
+        isolated: { type: "boolean" },
         "max-rounds": { type: "string" },
         "max-transitions": { type: "string" },
         "instruction-boundary-policy": { type: "string" },
@@ -561,6 +563,7 @@ export const parseCliArgs = (
     values?.["input-json-file"],
   );
   const rawRalphRetryCurrent = values?.["retry-current"] === true;
+  const rawRalphIsolated = values?.isolated === true;
   const rawRalphMaxRounds = normalizeOptionalString(values?.["max-rounds"]);
   const rawRalphMaxTransitions = normalizeOptionalString(
     values?.["max-transitions"],
@@ -1643,6 +1646,10 @@ export const parseCliArgs = (
       fail("--params-file is only valid for `machdoch ralph run`.");
     }
 
+    if (action !== "run" && rawRalphIsolated) {
+      fail("--isolated is only valid for `machdoch ralph run`.");
+    }
+
     if (
       action === "resume" &&
       !rawRalphRetryCurrent &&
@@ -1849,6 +1856,7 @@ export const parseCliArgs = (
             ? { inputJsonFile: rawRalphInputJsonFile }
             : {}),
           ...(rawRalphRetryCurrent ? { retryCurrent: true } : {}),
+          ...(rawRalphIsolated ? { isolated: true } : {}),
           ...(ralphMaxRounds !== undefined
             ? { maxRounds: ralphMaxRounds }
             : {}),

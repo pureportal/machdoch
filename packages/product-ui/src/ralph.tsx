@@ -54,6 +54,7 @@ export function Ralph({
   >({});
   const [actionError, setActionError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [isolatedRun, setIsolatedRun] = useState(false);
   const parameterErrorPrefix = useId();
   const selectedFlow =
     ralph.flows.find((flow) => getFlowKey(flow) === selectedFlowKey) ?? null;
@@ -140,6 +141,7 @@ export function Ralph({
         scope: flow.scope,
         flowId: flow.id,
         parameters: commandParameters,
+        ...(isolatedRun ? { isolated: true } : {}),
         provider,
         model,
         reasoning: effectiveReasoning,
@@ -247,6 +249,17 @@ export function Ralph({
                   ))}
                 </select>
               </label>
+              <label
+                className="m-ralph-isolated"
+                title="Changes stay in the run's worktree."
+              >
+                <input
+                  type="checkbox"
+                  checked={isolatedRun}
+                  onChange={(event) => setIsolatedRun(event.target.checked)}
+                />
+                Separate worktree
+              </label>
             </>
           ) : null}
           <div className="m-feature-tabs">
@@ -324,6 +337,7 @@ export function Ralph({
                   <span data-state={run.status}>{run.status}</span>
                 </header>
                 {run.summary ? <p>{run.summary}</p> : null}
+                {run.worktreePath ? <p>{run.worktreePath}</p> : null}
                 <footer>
                   <span>
                     {run.scope} · {formatTimestamp(run.createdAt)}

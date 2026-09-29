@@ -639,6 +639,7 @@ export const summarizeRun = (
     progress: result.progress ?? null,
     autonomy: result.autonomy ?? null,
     durability: result.durability ?? null,
+    runWorktree: result.runWorktree ?? null,
     summary: result.summary,
     missingVariables: result.missingVariables,
     unknownVariables: result.unknownVariables,
@@ -700,6 +701,7 @@ interface RunRalphFlowForCliOptions {
     | "require-match"
     | "original-boundary"
     | "new-boundary";
+  isolated?: boolean;
 }
 
 export const isRecoverableRalphRunStatus = (
@@ -721,6 +723,7 @@ const runRalphFlowForCli = async ({
   inputResponse,
   maxTransitions,
   instructionBoundaryPolicy,
+  isolated,
 }: RunRalphFlowForCliOptions): Promise<RalphRunResult> => {
   const controller = new AbortController();
   const startedAt = new Date().toISOString();
@@ -740,6 +743,7 @@ const runRalphFlowForCli = async ({
       variableValues,
       runId: logger.runId,
       logger,
+      ...(isolated ? { isolatedWorktree: true } : {}),
       signal: controller.signal,
       ...(checkpoint ? { checkpoint } : {}),
       ...(inputResponse ? { inputResponse } : {}),
@@ -1669,6 +1673,7 @@ export const printRalphSummary = async (args: ParsedCliArgs): Promise<void> => {
         customizations,
         variableValues,
         logger,
+        ...(options.isolated ? { isolated: true } : {}),
         ...(options.maxTransitions !== undefined
           ? { maxTransitions: options.maxTransitions }
           : {}),
@@ -1702,6 +1707,11 @@ export const printRalphSummary = async (args: ParsedCliArgs): Promise<void> => {
         writeStdoutLine(result.outcome.reason);
       }
       writeStdoutLine(result.summary);
+      if (result.runWorktree) {
+        writeStdoutLine(
+          `worktree: ${result.runWorktree.executionWorkspaceRoot}`,
+        );
+      }
       writeStdoutLine(`run log: ${runRecord.paths.simpleMarkdownPath}`);
       writeStdoutLine(`trace log: ${runRecord.paths.traceJsonlPath}`);
       for (const event of result.events) {

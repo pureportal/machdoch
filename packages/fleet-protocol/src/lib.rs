@@ -849,6 +849,8 @@ pub struct ProductCommand {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_transitions: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub isolated: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aspect_ratio: Option<String>,
@@ -990,6 +992,8 @@ struct RawProductCommand {
     #[serde(default)]
     max_transitions: Option<u32>,
     #[serde(default)]
+    isolated: Option<bool>,
+    #[serde(default)]
     target: Option<String>,
     #[serde(default)]
     aspect_ratio: Option<String>,
@@ -1052,6 +1056,7 @@ impl<'de> Deserialize<'de> for ProductCommand {
             scope: raw.scope,
             parameters: raw.parameters,
             max_transitions: raw.max_transitions,
+            isolated: raw.isolated,
             target: raw.target,
             aspect_ratio: raw.aspect_ratio,
             output_count: raw.output_count,
@@ -1765,6 +1770,7 @@ impl ProductCommandKind {
                 "model",
                 "reasoning",
                 "maxTransitions",
+                "isolated",
                 "flowId",
                 "parameters",
             ],
@@ -2012,6 +2018,7 @@ mod tests {
             scope: None,
             parameters: None,
             max_transitions: None,
+            isolated: None,
             target: None,
             aspect_ratio: None,
             output_count: None,
@@ -2171,7 +2178,8 @@ mod tests {
             "provider": "openai",
             "model": "gpt-5.6",
             "reasoning": "high",
-            "maxTransitions": 48
+            "maxTransitions": 48,
+            "isolated": true
         }))
         .expect("RALPH command should decode");
 
@@ -2182,6 +2190,7 @@ mod tests {
         assert_eq!(command.model.as_deref(), Some("gpt-5.6"));
         assert_eq!(command.reasoning.as_deref(), Some("high"));
         assert_eq!(command.max_transitions, Some(48));
+        assert_eq!(command.isolated, Some(true));
         assert_eq!(
             command
                 .parameters
