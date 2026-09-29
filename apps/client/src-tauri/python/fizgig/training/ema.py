@@ -45,8 +45,16 @@ class EMAWeights:
         is exactly when GPU headroom is scarcest — a GPU-resident backup (~0.6 GB at LoKR
         factor 8) was part of what tipped 32 GB cards back into the Windows VRAM spill."""
         self._backup = [p.detach().to("cpu", copy=True) for p in self.params]
-        for s, p in zip(self.shadow, self.params):
-            p.data.copy_(s.to(p.device, p.dtype))
+        try:
+            for s, p in zip(self.shadow, self.params):
+                p.data.copy_(s.to(p.device, p.dtype))
+        except Exception:
+            try:
+                for b, p in zip(self._backup, self.params):
+                    p.data.copy_(b.to(p.device, p.dtype))
+            finally:
+                self._backup = None
+            raise
 
     @torch.no_grad()
     def swap_out(self):
@@ -60,8 +68,19 @@ class EMAWeights:
                 "shadow": [s.detach().cpu() for s in self.shadow]}
 
     def load_state_dict(self, sd):
-        self.n = int(sd["n"])
-        if len(sd["shadow"]) != len(self.shadow):
-            raise ValueError(f"EMA state has {len(sd['shadow'])} tensors, network has "
+        update_count = int(sd["n"])
+        checkpoint_shadow = sd["shadow"]
+        if len(checkpoint_shadow) != len(self.shadow):
+            raise ValueError(f"EMA state has {len(checkpoint_shadow)} tensors, network has "
                              f"{len(self.shadow)} — different run configuration?")
-        self.shadow = [t.to(s.device, torch.float32) for t, s in zip(sd["shadow"], self.shadow)]
+        for index, (tensor, shadow) in enumerate(zip(checkpoint_shadow, self.shadow)):
+            if not isinstance(tensor, torch.Tensor):
+                raise TypeError(f"EMA state tensor {index} is not a tensor")
+            if tensor.shape != shadow.shape:
+                raise ValueError(f"EMA state tensor {index} has shape {tuple(tensor.shape)}, "
+                                 f"expected {tuple(shadow.shape)}")
+
+        restored_shadow = [tensor.to(shadow.device, torch.float32)
+                           for tensor, shadow in zip(checkpoint_shadow, self.shadow)]
+        self.n = update_count
+        self.shadow = restored_shadow
