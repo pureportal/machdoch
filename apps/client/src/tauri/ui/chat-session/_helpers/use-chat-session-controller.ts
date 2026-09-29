@@ -3059,6 +3059,11 @@ export const useChatSessionController = (
         provider,
         model,
       );
+      nextState.lastSelectedParallelAgentMode = resolveParallelAgentMode(
+        provider,
+        model,
+        prev.lastSelectedParallelAgentMode,
+      );
 
       if (nextLastSelectedReasoning) {
         nextState.lastSelectedReasoning = nextLastSelectedReasoning;
@@ -3137,22 +3142,30 @@ export const useChatSessionController = (
       }));
       return;
     }
-    state.applyShellState((previous) => ({
-      ...previous,
-      sessions: previous.sessions.map((session) =>
-        session.id === state.activeSessionId
-          ? {
-              ...session,
-              parallelAgentMode: resolveParallelAgentMode(
-                session.provider,
-                session.model,
-                mode,
-              ),
-              updatedAt: Date.now(),
-            }
-          : session,
-      ),
-    }));
+    state.applyShellState((previous) => {
+      const selectedSession = previous.sessions.find(
+        (session) => session.id === state.activeSessionId,
+      );
+      if (!selectedSession) return previous;
+      const selectedMode = resolveParallelAgentMode(
+        selectedSession.provider,
+        selectedSession.model,
+        mode,
+      );
+      return {
+        ...previous,
+        lastSelectedParallelAgentMode: selectedMode,
+        sessions: previous.sessions.map((session) =>
+          session.id === state.activeSessionId
+            ? {
+                ...session,
+                parallelAgentMode: selectedMode,
+                updatedAt: Date.now(),
+              }
+            : session,
+        ),
+      };
+    });
   };
 
   const handleSessionReasoningSelection = (
@@ -6836,7 +6849,13 @@ export const useChatSessionController = (
         });
         const selectionChanged =
           prev.lastSelectedProvider !== provider ||
-          prev.lastSelectedModelByProvider[provider] !== model;
+          prev.lastSelectedModelByProvider[provider] !== model ||
+          prev.lastSelectedParallelAgentMode !==
+            resolveParallelAgentMode(
+              provider,
+              model,
+              prev.lastSelectedParallelAgentMode,
+            );
 
         if (!sessionChanged && !selectionChanged) {
           return prev;
@@ -6849,6 +6868,11 @@ export const useChatSessionController = (
             ...prev.lastSelectedModelByProvider,
             [provider]: model,
           },
+          lastSelectedParallelAgentMode: resolveParallelAgentMode(
+            provider,
+            model,
+            prev.lastSelectedParallelAgentMode,
+          ),
           sessions,
         };
       });
@@ -6902,22 +6926,30 @@ export const useChatSessionController = (
 
   const handleRemoteSetParallelAgentMode = useCallback(
     (sessionId: string, mode: ParallelAgentMode): void => {
-      state.applyShellState((previous) => ({
-        ...previous,
-        sessions: previous.sessions.map((session) =>
-          session.id === sessionId
-            ? {
-                ...session,
-                parallelAgentMode: resolveParallelAgentMode(
-                  session.provider,
-                  session.model,
-                  mode,
-                ),
-                updatedAt: Date.now(),
-              }
-            : session,
-        ),
-      }));
+      state.applyShellState((previous) => {
+        const selectedSession = previous.sessions.find(
+          (session) => session.id === sessionId,
+        );
+        if (!selectedSession) return previous;
+        const selectedMode = resolveParallelAgentMode(
+          selectedSession.provider,
+          selectedSession.model,
+          mode,
+        );
+        return {
+          ...previous,
+          lastSelectedParallelAgentMode: selectedMode,
+          sessions: previous.sessions.map((session) =>
+            session.id === sessionId
+              ? {
+                  ...session,
+                  parallelAgentMode: selectedMode,
+                  updatedAt: Date.now(),
+                }
+              : session,
+          ),
+        };
+      });
     },
     [state.applyShellState],
   );

@@ -1,4 +1,5 @@
 ﻿import { normalizeConversationMemoryEntries } from "../../core/memory.js";
+import { resolveParallelAgentMode } from "../../core/parallel-agent-capabilities.js";
 import {
   MODEL_PROVIDERS,
   REASONING_MODES,
@@ -403,6 +404,7 @@ export interface ShellPersistedState {
   lastSelectedModelByProvider: Partial<Record<RuntimeProvider, string>>;
   lastSelectedMode?: RunMode;
   lastSelectedReasoning?: ReasoningMode;
+  lastSelectedParallelAgentMode: ParallelAgentMode;
   lastSelectedSessionMemoryEnabled: boolean;
   lastSelectedUseWorkspaceMemory: boolean;
   lastSelectedUseGlobalMemory: boolean;
@@ -1472,6 +1474,7 @@ export const createInitialShellState = (): ShellPersistedState => {
       anthropic: getDefaultModelForProvider("anthropic"),
       google: getDefaultModelForProvider("google"),
     },
+    lastSelectedParallelAgentMode: "disabled",
     lastSelectedSessionMemoryEnabled: true,
     lastSelectedUseWorkspaceMemory: true,
     lastSelectedUseGlobalMemory: true,
@@ -3041,7 +3044,10 @@ const normalizeQueuedSessionMessages = (
   );
 };
 
-export const normalizeShellState = (value: unknown): ShellPersistedState => {
+export const normalizeShellState = (
+  value: unknown,
+  knownNormalizedSessions?: ReadonlySet<ChatSessionRecord>,
+): ShellPersistedState => {
   const fallback = createInitialShellState();
 
   if (!isRecord(value) || value.version !== 2) {
@@ -3062,9 +3068,10 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
         continue;
       }
 
-      const normalizedSession = normalizeSessionRecord(
-        session as ChatSessionRecord,
-      );
+      const sessionRecord = session as ChatSessionRecord;
+      const normalizedSession = knownNormalizedSessions?.has(sessionRecord)
+        ? sessionRecord
+        : normalizeSessionRecord(sessionRecord);
       const existingSessionIndex = sessionIndexById.get(normalizedSession.id);
 
       if (existingSessionIndex === undefined) {
@@ -3118,6 +3125,9 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
   );
   const lastSelectedReasoning = normalizeOptionalStoredReasoningMode(
     candidate.lastSelectedReasoning,
+  );
+  const lastSelectedParallelAgentMode = normalizeParallelAgentMode(
+    candidate.lastSelectedParallelAgentMode,
   );
   const lastSelectedSessionMemoryEnabled =
     typeof candidate.lastSelectedSessionMemoryEnabled === "boolean"
@@ -3222,6 +3232,7 @@ export const normalizeShellState = (value: unknown): ShellPersistedState => {
     },
     ...(lastSelectedMode ? { lastSelectedMode } : {}),
     ...(lastSelectedReasoning ? { lastSelectedReasoning } : {}),
+    lastSelectedParallelAgentMode,
     lastSelectedSessionMemoryEnabled,
     lastSelectedUseWorkspaceMemory,
     lastSelectedUseGlobalMemory,
@@ -4111,6 +4122,9 @@ const createRetentionReplacementSession = (
   timestamp: number,
 ): ChatSessionRecord => {
   const provider = state.lastSelectedProvider;
+  const model =
+    state.lastSelectedModelByProvider[provider] ??
+    getDefaultModelForProvider(provider);
 
   return createSession({
     createdAt: timestamp,
@@ -4120,9 +4134,12 @@ const createRetentionReplacementSession = (
     ...(state.lastSelectedReasoning
       ? { reasoning: state.lastSelectedReasoning }
       : {}),
-    model:
-      state.lastSelectedModelByProvider[provider] ??
-      getDefaultModelForProvider(provider),
+    parallelAgentMode: resolveParallelAgentMode(
+      provider,
+      model,
+      state.lastSelectedParallelAgentMode,
+    ),
+    model,
     sessionMemoryEnabled: state.lastSelectedSessionMemoryEnabled,
     useWorkspaceMemory: state.lastSelectedUseWorkspaceMemory,
     useGlobalMemory: state.lastSelectedUseGlobalMemory,

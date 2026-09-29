@@ -41,6 +41,22 @@ import {
 const SESSION_DAY_MS = 24 * 60 * 60 * 1_000;
 
 describe("parallel agent session mode", () => {
+  it("restores the last selected parallel mode from saved shell state", () => {
+    const state = createInitialShellState();
+    const restored = normalizeShellState({
+      ...state,
+      lastSelectedParallelAgentMode: "native",
+    });
+
+    expect(restored.lastSelectedParallelAgentMode).toBe("native");
+    expect(
+      normalizeShellState({
+        ...state,
+        lastSelectedParallelAgentMode: "invalid",
+      }).lastSelectedParallelAgentMode,
+    ).toBe("disabled");
+  });
+
   it("persists the selected mode and freezes it in each message", () => {
     const session = createSession({ parallelAgentMode: "read-only" });
     const settings = createSessionMessageSettings(session);

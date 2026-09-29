@@ -72,6 +72,7 @@ const SHELL_STATE_RECONCILIATION_INTERVAL_MS = 30_000;
 export const createShellStatePatch = (
   baseState: ShellPersistedState,
   nextState: ShellPersistedState,
+  mergedSourceState?: ShellPersistedState,
 ): ShellStatePatch => {
   const { sessions: baseSessions, ...baseTopLevel } = baseState;
   const { sessions: nextSessions, ...nextTopLevel } = nextState;
@@ -94,11 +95,17 @@ export const createShellStatePatch = (
   const baseSessionsById = new Map(
     baseSessions.map((session) => [session.id, session]),
   );
+  const mergedSourceSessionsById = mergedSourceState
+    ? new Map(
+        mergedSourceState.sessions.map((session) => [session.id, session]),
+      )
+    : null;
   const changedSessions = nextSessions.filter((session) => {
     const baseSession = baseSessionsById.get(session.id);
     return (
       !baseSession ||
-      (!Object.is(session, baseSession) &&
+      (mergedSourceSessionsById?.get(session.id) !== baseSession &&
+        !Object.is(session, baseSession) &&
         serializeShellFragment(session) !== serializeShellFragment(baseSession))
     );
   });
@@ -1671,6 +1678,10 @@ const preserveCurrentSessionState = (
     const externalSession = externalSessionsById.get(currentSession.id);
     const baseSession = baseSessionsById.get(currentSession.id);
 
+    if (currentSession === baseSession) {
+      continue;
+    }
+
     if (!externalSession) {
       const sessionTombstone =
         externalState.sessionTombstones?.[currentSession.id] ?? 0;
@@ -2111,6 +2122,16 @@ export const mergeShellStateForPersistence = (
       continue;
     }
 
+    if (localSession === baseSession || localSession === latestSession) {
+      mergedSessionsById.set(sessionId, latestSession);
+      continue;
+    }
+
+    if (latestSession === baseSession) {
+      mergedSessionsById.set(sessionId, localSession);
+      continue;
+    }
+
     const localTimestamp = getSessionPersistenceTimestamp(localSession);
     const latestTimestamp = getSessionPersistenceTimestamp(latestSession);
 
@@ -2248,6 +2269,11 @@ export const mergeShellStateForPersistence = (
     )
       ? latestState.lastSelectedModelByProvider
       : localState.lastSelectedModelByProvider,
+    lastSelectedParallelAgentMode:
+      localState.lastSelectedParallelAgentMode ===
+      baseState.lastSelectedParallelAgentMode
+        ? latestState.lastSelectedParallelAgentMode
+        : localState.lastSelectedParallelAgentMode,
     lastSelectedSessionMemoryEnabled:
       localState.lastSelectedSessionMemoryEnabled ===
       baseState.lastSelectedSessionMemoryEnabled
@@ -2667,25 +2693,16 @@ export const useChatSessionShellState = (
         let latestPersistedState = lastPersistedShellStateRef.current;
         let latestStoreRevision = lastPersistedStoreRevisionRef.current;
 
-        if (!canUseTauriStore()) {
-          const latestSnapshot =
-            await loadShellStateSnapshot(latestPersistedState);
-          latestPersistedState = normalizeShellState(latestSnapshot.state);
-          latestStoreRevision = latestSnapshot.revision;
-        }
-
         let mergedShellState = durableShellStateRef.current;
         let commit: ShellStateCompareAndSwapResult<ShellPersistedState>;
 
-        if (canUseTauriStore()) {
-          const observedRevision = await loadShellStateRevision();
-          if (observedRevision !== latestStoreRevision) {
-            const latestSnapshot = await loadShellStateSnapshot(
-              lastPersistedShellStateRef.current,
-            );
-            latestPersistedState = normalizeShellState(latestSnapshot.state);
-            latestStoreRevision = latestSnapshot.revision;
-          }
+        const observedRevision = await loadShellStateRevision();
+        if (observedRevision !== latestStoreRevision) {
+          const latestSnapshot = await loadShellStateSnapshot(
+            lastPersistedShellStateRef.current,
+          );
+          latestPersistedState = normalizeShellState(latestSnapshot.state);
+          latestStoreRevision = latestSnapshot.revision;
         }
 
         while (true) {
@@ -2697,10 +2714,17 @@ export const useChatSessionShellState = (
           );
           mergedShellState = Object.is(mergedCandidate, durableShellState)
             ? mergedCandidate
-            : normalizeShellState(mergedCandidate);
+            : normalizeShellState(
+                mergedCandidate,
+                new Set(latestPersistedState.sessions),
+              );
           commit = await compareAndSwapShellStatePatch(
             latestStoreRevision,
-            createShellStatePatch(latestPersistedState, mergedShellState),
+            createShellStatePatch(
+              latestPersistedState,
+              mergedShellState,
+              mergedCandidate,
+            ),
             mergedShellState,
           );
 
@@ -3121,7 +3145,7 @@ export const useChatSessionShellState = (
           localMutationRevisionRef.current += 1;
         }
 
-        if (!areShellFragmentsEqual(shellStateRef.current, nextShellState)) {
+        if (shellStateRef.current !== nextShellState) {
           shellStateRef.current = nextShellState;
           durableShellStateRef.current = nextShellState;
           setShellState(nextShellState);

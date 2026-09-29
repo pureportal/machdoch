@@ -15,6 +15,7 @@ import {
   type ShellPersistedState,
 } from "../../chat-session.model";
 import { getDefaultModelForProvider } from "../../model-catalog";
+import { resolveParallelAgentMode } from "../../../../core/parallel-agent-capabilities.js";
 import { normalizeSessionReasoningOverride } from "./session-reasoning";
 import {
   createSessionExportPayload,
@@ -62,6 +63,7 @@ interface NewSessionDefaults extends Pick<
   ChatSessionRecord,
   | "provider"
   | "model"
+  | "parallelAgentMode"
   | "workspace"
   | "sessionMemoryEnabled"
   | "useWorkspaceMemory"
@@ -96,6 +98,11 @@ const createNewSessionDefaults = (
     workspace: workspace ?? null,
     provider,
     model,
+    parallelAgentMode: resolveParallelAgentMode(
+      provider,
+      model,
+      state.lastSelectedParallelAgentMode,
+    ),
     ...(state.lastSelectedMode ? { mode: state.lastSelectedMode } : {}),
     ...(reasoning ? { reasoning } : {}),
     sessionMemoryEnabled: state.lastSelectedSessionMemoryEnabled,
