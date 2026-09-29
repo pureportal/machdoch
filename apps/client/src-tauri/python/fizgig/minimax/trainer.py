@@ -24,7 +24,9 @@ import random
 import re
 import shutil
 import sys
+import tempfile
 import time
+import uuid
 from multiprocessing import Value
 
 import torch
@@ -2190,31 +2192,44 @@ def _save_training_state(output_dir, output_name, network, optimizer, *, epoch, 
     network weights in NATIVE state_dict naming (never the LyCORIS comfy-format rewrite — resume
     load_state_dict needs the module keys), the optimizer state, RNG, and a small JSON. The
     GUI's _detect_latest_state_dir finds the highest-numbered dir and passes it to --resume."""
-    import json
     state_dir = os.path.join(output_dir, f"{output_name}-{epoch:06d}-state")
-    os.makedirs(state_dir, exist_ok=True)
-    try:
-        return _write_state_files(state_dir, network, optimizer, epoch=epoch,
-                                  global_step=global_step, dtype=dtype, extra=extra, ema=ema)
-    except Exception as _first:
-        # Clean the partial dir (no training_state.json = no commit marker, but it would shadow
-        # the previous good state in the GUI's latest-state scan), then retry ONCE after a short
-        # pause. Network filesystems (RunPod volumes) throw transient stream errors that clear
-        # in seconds — a real run lost its epoch-8 state to exactly one of those. If the retry
-        # also fails it is not transient; re-raise and let the caller decide fatality.
-        import shutil
-        import time
-        shutil.rmtree(state_dir, ignore_errors=True)
-        logger.warning("[state] save failed (%s: %s) — retrying once in 5s",
-                       type(_first).__name__, _first)
-        time.sleep(5)
+    os.makedirs(output_dir, exist_ok=True)
+    for attempt in range(2):
+        staging_dir = tempfile.mkdtemp(prefix=f".{os.path.basename(state_dir)}-staging-",
+                                       dir=output_dir)
         try:
-            os.makedirs(state_dir, exist_ok=True)
-            return _write_state_files(state_dir, network, optimizer, epoch=epoch,
-                                      global_step=global_step, dtype=dtype, extra=extra, ema=ema)
-        except Exception:
-            shutil.rmtree(state_dir, ignore_errors=True)
-            raise
+            _write_state_files(staging_dir, network, optimizer, epoch=epoch,
+                               global_step=global_step, dtype=dtype, extra=extra, ema=ema)
+            _publish_training_state(staging_dir, state_dir)
+            logger.info("[state] saved -> %s", state_dir)
+            return state_dir
+        except Exception as error:
+            if attempt:
+                raise
+            logger.warning("[state] save failed (%s: %s) — retrying once in 5s",
+                           type(error).__name__, error)
+            time.sleep(5)
+        finally:
+            if os.path.exists(staging_dir):
+                shutil.rmtree(staging_dir)
+
+
+def _publish_training_state(staging_dir, state_dir):
+    previous_dir = None
+    if os.path.exists(state_dir):
+        previous_dir = f"{state_dir}.previous-{uuid.uuid4().hex}"
+        os.replace(state_dir, previous_dir)
+    try:
+        os.replace(staging_dir, state_dir)
+    except Exception:
+        if previous_dir is not None:
+            os.replace(previous_dir, state_dir)
+        raise
+    if previous_dir is not None:
+        try:
+            shutil.rmtree(previous_dir)
+        except OSError as error:
+            logger.warning("[state] could not remove prior state %s: %s", previous_dir, error)
 
 
 def _write_state_files(state_dir, network, optimizer, *, epoch, global_step,
@@ -2240,7 +2255,6 @@ def _write_state_files(state_dir, network, optimizer, *, epoch, global_step,
     # training_state.json is written LAST on purpose: it is the commit marker. A save that
     # dies partway leaves no json, and both the resume validator and the GUI's latest-state
     # detection treat a json-less dir as not-a-state rather than resuming garbage.
-    logger.info(f"[state] saved -> {state_dir}")
     return state_dir
 
 
@@ -2270,16 +2284,21 @@ def _validate_state_dir(state_dir):
     if not os.path.isdir(state_dir):
         raise RuntimeError(f"[resume] {state_dir} does not exist — was the state folder moved "
                            f"or renamed?")
-    missing = [f for f in ("lora.safetensors", "training_state.json")
+    missing = [f for f in ("lora.safetensors", "optimizer.pt", "training_state.json")
                if not os.path.isfile(os.path.join(state_dir, f))]
     if not missing:
         return
     lines = [
         f"[resume] {state_dir} is not a saved training state — missing {', '.join(missing)}.",
-        "[resume] Pick the folder named like '<lora name>-000012-state'. Renaming a LoRA to "
-        "lora.safetensors does not make one: there would be no optimizer state and no epoch "
-        "to resume from, so the run would quietly start again from scratch.",
     ]
+    if "optimizer.pt" in missing:
+        lines.append("[resume] Choose another complete saved state or start a new run; "
+                     "optimizer progress cannot be recovered from this folder.")
+    else:
+        lines.append("[resume] Pick the folder named like '<lora name>-000012-state'. "
+                     "Renaming a LoRA to lora.safetensors does not make one: there would be no "
+                     "optimizer state and no epoch to resume from, so the run would quietly "
+                     "start again from scratch.")
     try:
         # The usual mistake is picking the parent output directory, one level above the state
         # folders — so if they are sitting right there, name them.
@@ -2355,8 +2374,7 @@ def _load_training_state(state_dir, network, optimizer, *, device):
             f"refusing to resume into a zero-initialised network. The state was almost certainly "
             f"saved with a different config (rank/alpha/factor, network type, or target modules).")
     opt_path = os.path.join(state_dir, "optimizer.pt")
-    if os.path.exists(opt_path):
-        optimizer.load_state_dict(torch.load(opt_path, map_location=device))
+    optimizer.load_state_dict(torch.load(opt_path, map_location=device))
     rng_path = os.path.join(state_dir, "rng.pt")
     if os.path.exists(rng_path):
         try:
