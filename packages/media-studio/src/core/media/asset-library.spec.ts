@@ -60,6 +60,40 @@ describe("collectMediaAssetPages", () => {
     expect(loadPage).toHaveBeenCalledTimes(3);
   });
 
+  it("loads later pages four at a time and keeps their original order", async () => {
+    const items = Array.from({ length: 1_250 }, (_, index) => asset(index));
+    let active = 0;
+    let peakActive = 0;
+    const loadPage = vi.fn(
+      async ({ offset, limit }: { offset: number; limit: number }) => {
+        active += 1;
+        peakActive = Math.max(peakActive, active);
+        await new Promise((resolve) =>
+          setTimeout(resolve, (4 - ((offset / 100) % 4)) * 5),
+        );
+        active -= 1;
+        return page(
+          "database-a:9",
+          offset,
+          items.length,
+          items.slice(offset, offset + limit),
+        );
+      },
+    );
+
+    const snapshot = await collectMediaAssetPages({
+      loadPage,
+      cached: null,
+      pageSize: 100,
+    });
+
+    expect(peakActive).toBe(4);
+    expect(loadPage).toHaveBeenCalledTimes(13);
+    expect(snapshot.items.map((item) => item.id)).toEqual(
+      items.map((item) => item.id),
+    );
+  });
+
   it("reuses a complete cached snapshot when the revision is unchanged", async () => {
     const cached = {
       revision: "database-a:9",
@@ -83,20 +117,22 @@ describe("collectMediaAssetPages", () => {
   });
 
   it("restarts when publication changes the revision between pages", async () => {
-    const firstRevisionItems = Array.from({ length: 4 }, (_, index) =>
+    const firstRevisionItems = Array.from({ length: 8 }, (_, index) =>
       asset(index),
     );
-    const secondRevisionItems = [...firstRevisionItems, asset(4)];
+    const secondRevisionItems = [...firstRevisionItems, asset(8)];
     let calls = 0;
     const loadPage = vi.fn(
       async ({ offset, limit }: { offset: number; limit: number }) => {
         calls += 1;
-        if (calls === 1) {
+        if (calls <= 4) {
           return page(
-            "database-a:10",
+            calls === 3 ? "database-a:11" : "database-a:10",
             offset,
-            4,
-            firstRevisionItems.slice(0, limit),
+            calls === 3
+              ? secondRevisionItems.length
+              : firstRevisionItems.length,
+            firstRevisionItems.slice(offset, offset + limit),
           );
         }
         return page(
@@ -115,8 +151,8 @@ describe("collectMediaAssetPages", () => {
     });
 
     expect(snapshot.revision).toBe("database-a:11");
-    expect(snapshot.items).toHaveLength(5);
-    expect(loadPage).toHaveBeenCalledTimes(5);
+    expect(snapshot.items).toHaveLength(9);
+    expect(loadPage).toHaveBeenCalledTimes(9);
   });
 
   it("rejects a stalled native page instead of returning a partial gallery", async () => {

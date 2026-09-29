@@ -10,6 +10,7 @@ const tauri = vi.hoisted(() => ({
 vi.mock("@tauri-apps/api/core", () => tauri);
 
 import {
+  getMediaModelCatalog,
   importMediaAsset,
   MediaRuntimeError,
   normalizeMediaError,
@@ -20,6 +21,27 @@ beforeEach(() => {
   Object.defineProperty(window, "__TAURI_INTERNALS__", {
     configurable: true,
     value: {},
+  });
+});
+
+describe("media model catalog loading", () => {
+  it("requests catalog rows before runtime readiness on the first Studio load", async () => {
+    const snapshot = { models: [] };
+    tauri.invoke.mockResolvedValue(snapshot);
+
+    await expect(
+      getMediaModelCatalog(["openai", "openai"], false),
+    ).resolves.toBe(snapshot);
+    expect(tauri.invoke).toHaveBeenCalledWith("media_get_model_catalog", {
+      configuredProviderIds: ["openai"],
+      includeRuntimeReadiness: false,
+    });
+
+    await getMediaModelCatalog(["openai"]);
+    expect(tauri.invoke).toHaveBeenLastCalledWith("media_get_model_catalog", {
+      configuredProviderIds: ["openai"],
+      includeRuntimeReadiness: true,
+    });
   });
 });
 

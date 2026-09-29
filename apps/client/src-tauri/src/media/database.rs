@@ -161,9 +161,7 @@ pub(crate) fn get_model_catalog(
     paths: &MediaRuntimePaths,
     configured_provider_ids: &HashSet<String>,
 ) -> MediaResult<MediaModelCatalogSnapshot> {
-    let mut connection = open(paths)?;
-    catalog::synchronize(&mut connection)?;
-    model_addon::reconcile_managed_addon_profiles(paths, &mut connection)?;
+    let connection = open(paths)?;
     catalog::snapshot(&connection, configured_provider_ids)
 }
 
@@ -7960,6 +7958,36 @@ mod tests {
         assert!(resolve_human_review(&paths, &conflicting)
             .unwrap_err()
             .contains("idempotency conflict"));
+        cleanup(&paths);
+    }
+
+    #[test]
+    fn catalog_reads_do_not_resynchronize_static_models() {
+        let paths = test_paths("catalog-read-only");
+        initialize(&paths).unwrap();
+        let connection = open(&paths).unwrap();
+        connection
+            .execute(
+                "UPDATE media_models SET updated_at = 'catalog-read-marker'
+                 WHERE id = 'local:flux-2-klein-4b'",
+                [],
+            )
+            .unwrap();
+
+        let snapshot = get_model_catalog(&paths, &HashSet::new()).unwrap();
+        assert!(snapshot
+            .models
+            .iter()
+            .any(|model| model.id == "local:flux-2-klein-4b"));
+        let updated_at: String = connection
+            .query_row(
+                "SELECT updated_at FROM media_models WHERE id = 'local:flux-2-klein-4b'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(updated_at, "catalog-read-marker");
+        drop(connection);
         cleanup(&paths);
     }
 

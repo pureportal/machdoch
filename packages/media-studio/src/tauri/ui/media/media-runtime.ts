@@ -1549,6 +1549,7 @@ export const refreshMediaLocalDiffusersRuntime =
 
 export const getMediaModelCatalog = async (
   configuredProviderIds: readonly string[],
+  includeRuntimeReadiness = true,
 ): Promise<MediaModelCatalogSnapshot> => {
   const normalizedProviderIds = [
     ...new Set(
@@ -1566,6 +1567,7 @@ export const getMediaModelCatalog = async (
   if (canInvokeNativeRuntime()) {
     return invoke<MediaModelCatalogSnapshot>("media_get_model_catalog", {
       configuredProviderIds: normalizedProviderIds,
+      includeRuntimeReadiness,
     });
   }
   return clone(

@@ -1211,11 +1211,23 @@ pub(crate) fn probe_model(
     model_id: &str,
 ) -> MediaResult<LocalModelRuntimeProbeResult> {
     let script = worker_script(app)?;
-    let (runtime, python) = probe_with_python(app, &script);
-    *app.state::<super::MediaRuntimeState>()
+    let state = app.state::<super::MediaRuntimeState>();
+    let cached_runtime = state
         .local_diffusers_status
         .lock()
-        .map_err(|_| "Media runtime status is unavailable")? = Some(runtime.clone());
+        .map_err(|_| "Media runtime status is unavailable")?
+        .clone();
+    let runtime = match cached_runtime {
+        Some(runtime) if runtime.ready => runtime,
+        _ => state.refresh_local_diffusers_status(app),
+    };
+    let python = if runtime.ready {
+        Some(super::runtime_setup::python_path(
+            &super::runtime_setup::root(app)?,
+        ))
+    } else {
+        None
+    };
     probe_model_with_runtime(paths, model_id, &script, &runtime, python.as_deref())
 }
 
@@ -1705,11 +1717,10 @@ fn resolve_addons(
     Ok(resolved)
 }
 
-fn runnable_model_ids_for_architecture(
+fn runnable_models(
     paths: &MediaRuntimePaths,
     runtime: &LocalDiffusersRuntimeStatus,
-    required_architecture: Option<&str>,
-) -> MediaResult<Vec<String>> {
+) -> MediaResult<Vec<(String, String)>> {
     if !runtime.ready {
         return Ok(Vec::new());
     }
@@ -1718,7 +1729,7 @@ fn runnable_model_ids_for_architecture(
     let connection = database::open(paths)?;
     let mut statement = connection
         .prepare(
-            "SELECT m.id, m.architecture FROM media_models m
+            "SELECT m.id, m.architecture, m.package_type, i.relative_path FROM media_models m
              JOIN media_model_installations i ON i.model_id = m.id
              JOIN media_model_runtime_probes p ON p.model_id = m.id
              WHERE m.provider_id = 'local-diffusers' AND m.target = 'local'
@@ -1730,26 +1741,41 @@ fn runnable_model_ids_for_architecture(
         .map_err(|error| format!("failed to prepare runnable model query: {error}"))?;
     let candidates = statement
         .query_map([fingerprint], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
         })
         .map_err(|error| format!("failed to query runnable local models: {error}"))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("failed to decode runnable local models: {error}"))?;
     let mut runnable = Vec::new();
-    for (model_id, architecture) in candidates {
-        let Some(architecture) = architecture else {
+    let models_root = paths.models_root()?;
+    for (model_id, architecture, package_type, relative_path) in candidates {
+        let (Some(architecture), Some(relative_path)) = (architecture, relative_path) else {
             continue;
         };
-        if !runtime.architectures.contains(&architecture)
-            || required_architecture.is_some_and(|required| required != architecture)
-        {
+        if !runtime.architectures.contains(&architecture) {
             continue;
         }
-        let Ok(model) = installed_model(paths, &model_id) else {
+        let Ok(package_root) = safe_managed_path(&models_root, &relative_path) else {
             continue;
         };
-        if model.architecture == architecture {
-            runnable.push(model_id);
+        let package_path = match package_type.as_str() {
+            "safetensors" => package_root.join("checkpoint.safetensors"),
+            "diffusers" | "transformers" => package_root,
+            _ => continue,
+        };
+        let Ok(metadata) = fs::symlink_metadata(&package_path) else {
+            continue;
+        };
+        if !metadata.file_type().is_symlink()
+            && ((package_type == "safetensors" && metadata.is_file() && metadata.len() > 0)
+                || (package_type != "safetensors" && metadata.is_dir()))
+        {
+            runnable.push((model_id, architecture));
         }
     }
     Ok(runnable)
@@ -1759,67 +1785,77 @@ pub(crate) fn runnable_model_ids(
     paths: &MediaRuntimePaths,
     runtime: &LocalDiffusersRuntimeStatus,
 ) -> MediaResult<Vec<String>> {
-    runnable_model_ids_for_architecture(paths, runtime, None)
-}
-
-pub(crate) fn runnable_reference_model_ids(
-    paths: &MediaRuntimePaths,
-    runtime: &LocalDiffusersRuntimeStatus,
-) -> MediaResult<Vec<String>> {
-    if !runtime
-        .capabilities
-        .contains(&"local-image-edit".to_string())
-    {
-        return Ok(Vec::new());
-    }
-    Ok(runnable_model_ids(paths, runtime)?
+    Ok(runnable_models(paths, runtime)?
         .into_iter()
-        .filter(|model_id| {
-            installed_model(paths, model_id).is_ok_and(|model| {
-                matches!(
-                    model.architecture.as_str(),
-                    "stable-diffusion-1"
-                        | "stable-diffusion-2"
-                        | "stable-diffusion-xl"
-                        | "pony"
-                        | "flux-1"
-                        | "flux-2"
-                        | "krea-2"
-                        | "qwen-image-2.1"
-                        | "intro-svg"
-                )
-            })
-        })
+        .map(|(id, _)| id)
         .collect())
 }
 
-pub(crate) fn runnable_inpainting_model_ids(
+pub(crate) struct RunnableLocalModelIds {
+    pub(crate) generation: Vec<String>,
+    pub(crate) reference_image: Vec<String>,
+    pub(crate) inpainting: Vec<String>,
+    pub(crate) pose: Vec<String>,
+}
+
+pub(crate) fn runnable_local_model_ids(
     paths: &MediaRuntimePaths,
     runtime: &LocalDiffusersRuntimeStatus,
-) -> MediaResult<Vec<String>> {
-    if !runtime
+) -> MediaResult<RunnableLocalModelIds> {
+    let can_edit = runtime
         .capabilities
-        .contains(&"masked-region-inpainting".to_string())
-    {
-        return Ok(Vec::new());
+        .iter()
+        .any(|value| value == "local-image-edit");
+    let can_inpaint = runtime
+        .capabilities
+        .iter()
+        .any(|value| value == "masked-region-inpainting");
+    let can_pose = runtime
+        .capabilities
+        .iter()
+        .any(|value| value == "openpose-controlnet");
+    let mut result = RunnableLocalModelIds {
+        generation: Vec::new(),
+        reference_image: Vec::new(),
+        inpainting: Vec::new(),
+        pose: Vec::new(),
+    };
+    for (model_id, architecture) in runnable_models(paths, runtime)? {
+        let architecture = architecture.as_str();
+        let supports_reference = matches!(
+            architecture,
+            "stable-diffusion-1"
+                | "stable-diffusion-2"
+                | "stable-diffusion-xl"
+                | "pony"
+                | "flux-1"
+                | "flux-2"
+                | "krea-2"
+                | "qwen-image-2.1"
+                | "intro-svg"
+        );
+        let supports_inpainting = matches!(
+            architecture,
+            "stable-diffusion-1"
+                | "stable-diffusion-2"
+                | "stable-diffusion-xl"
+                | "pony"
+                | "flux-1"
+                | "flux-2"
+                | "krea-2"
+        );
+        if can_edit && supports_reference {
+            result.reference_image.push(model_id.clone());
+        }
+        if can_edit && can_inpaint && supports_inpainting {
+            result.inpainting.push(model_id.clone());
+        }
+        if can_pose && openpose_controlnet_path(paths, architecture)?.is_some() {
+            result.pose.push(model_id.clone());
+        }
+        result.generation.push(model_id);
     }
-    Ok(runnable_reference_model_ids(paths, runtime)?
-        .into_iter()
-        .filter(|model_id| {
-            installed_model(paths, model_id).is_ok_and(|model| {
-                matches!(
-                    model.architecture.as_str(),
-                    "stable-diffusion-1"
-                        | "stable-diffusion-2"
-                        | "stable-diffusion-xl"
-                        | "pony"
-                        | "flux-1"
-                        | "flux-2"
-                        | "krea-2"
-                )
-            })
-        })
-        .collect())
+    Ok(result)
 }
 
 fn openpose_controlnet_path(
@@ -1861,28 +1897,6 @@ fn openpose_controlnet_path(
                     .is_some_and(|suffix| suffix == "safetensors")
         });
     Ok(has_weights.then_some(directory))
-}
-
-pub(crate) fn runnable_pose_model_ids(
-    paths: &MediaRuntimePaths,
-    runtime: &LocalDiffusersRuntimeStatus,
-) -> MediaResult<Vec<String>> {
-    if !runtime
-        .capabilities
-        .contains(&"openpose-controlnet".to_string())
-    {
-        return Ok(Vec::new());
-    }
-    let mut models = Vec::new();
-    for model_id in runnable_model_ids(paths, runtime)? {
-        let Ok(model) = installed_model(paths, &model_id) else {
-            continue;
-        };
-        if openpose_controlnet_path(paths, &model.architecture)?.is_some() {
-            models.push(model_id);
-        }
-    }
-    Ok(models)
 }
 
 fn create_staging_directory(paths: &MediaRuntimePaths) -> MediaResult<StagingDirectory> {
@@ -3170,10 +3184,16 @@ const HUNYUAN_VIDEO_15_MODEL_ID: &str = "local:hunyuan-video-1.5-i2v-step-distil
 const MINIMAX_H3_MODEL_ID: &str = "local:minimax-h3-ref2va";
 const MINIMAX_H3_MODEL_REVISION: &str = "minimax-h3-ref2va-pruned-int8-convrot";
 const MINIMAX_H3_FILES: &[(&str, u64)] = &[
-    ("diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors", 20_970_379_616),
+    (
+        "diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+        20_970_379_616,
+    ),
     ("vae/minimax_h3_video_vae_fp16.safetensors", 5_207_808_496),
     ("vae/minimax_h3_audio_vae_fp32.safetensors", 605_254_808),
-    ("loras/minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors", 1_956_193_000),
+    (
+        "loras/minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
+        1_956_193_000,
+    ),
     ("small_te/config.json", 1_505),
     ("small_te/tokenizer.json", 7_032_403),
     ("small_te/preprocessor_config.json", 390),
@@ -3455,7 +3475,10 @@ fn resolve_minimax_h3_model(workspace_root: &str) -> MediaResult<(PathBuf, Strin
         let path = safe_managed_path(&model_root, relative)?;
         let metadata = fs::symlink_metadata(&path)
             .map_err(|error| format!("MiniMax H3 is missing {relative}: {error}"))?;
-        if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() != expected_size {
+        if !metadata.is_file()
+            || metadata.file_type().is_symlink()
+            || metadata.len() != expected_size
+        {
             return Err(format!("MiniMax H3 component {relative} is incomplete"));
         }
         hasher.update(relative.as_bytes());
@@ -4327,7 +4350,10 @@ pub(crate) fn generate_video(
         || response.resolution != request.resolution
         || response.requested_guidance_scale != Some(request.guidance_scale)
         || response.guidance_scale
-            != if matches!(architecture, "ltx-video" | "hunyuan-video-1.5-i2v" | "minimax-h3-ref2va") {
+            != if matches!(
+                architecture,
+                "ltx-video" | "hunyuan-video-1.5-i2v" | "minimax-h3-ref2va"
+            ) {
                 1.0
             } else {
                 request.guidance_scale
@@ -5581,7 +5607,7 @@ time.sleep(60)
     }
 
     #[test]
-    fn runnable_models_require_matching_probe_and_immutable_checkpoint_bytes() {
+    fn runnable_models_use_probe_state_and_validate_checkpoint_on_use() {
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -5621,6 +5647,11 @@ time.sleep(60)
             .unwrap();
         let mut runtime = ready_runtime();
         runtime.architectures = vec!["flux-2".to_string()];
+        runtime.capabilities.extend([
+            "local-image-edit".to_string(),
+            "masked-region-inpainting".to_string(),
+            "openpose-controlnet".to_string(),
+        ]);
         assert!(runnable_model_ids(&paths, &runtime).unwrap().is_empty());
 
         let fingerprint = runtime_fingerprint(&runtime).unwrap();
@@ -5644,8 +5675,19 @@ time.sleep(60)
             runnable_model_ids(&paths, &runtime).unwrap(),
             vec![model_id]
         );
+        let options = runnable_local_model_ids(&paths, &runtime).unwrap();
+        assert_eq!(options.generation, vec![model_id]);
+        assert_eq!(options.reference_image, vec![model_id]);
+        assert_eq!(options.inpainting, vec![model_id]);
+        assert!(options.pose.is_empty());
 
         fs::write(&checkpoint, b"tampered checkpoint fixture!").unwrap();
+        assert_eq!(
+            runnable_model_ids(&paths, &runtime).unwrap(),
+            vec![model_id]
+        );
+        assert!(installed_model(&paths, model_id).is_err());
+        fs::remove_file(&checkpoint).unwrap();
         assert!(runnable_model_ids(&paths, &runtime).unwrap().is_empty());
         let _ = fs::remove_dir_all(root);
     }

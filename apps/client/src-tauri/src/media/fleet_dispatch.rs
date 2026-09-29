@@ -168,8 +168,12 @@ pub(super) async fn invoke(
         }
         "media_initialize_runtime" => {
             check_arguments(&args, &[])?;
-            serde_json::to_value(super::media_initialize_runtime(app.clone()).map_err(error_value)?)
-                .map_err(|error| json!(error.to_string()))?
+            serde_json::to_value(
+                super::media_initialize_runtime(app.clone())
+                    .await
+                    .map_err(error_value)?,
+            )
+            .map_err(|error| json!(error.to_string()))?
         }
         "media_refresh_local_diffusers_runtime" => {
             check_arguments(&args, &[])?;
@@ -439,6 +443,7 @@ pub(super) async fn invoke(
                     argument(&args, "limit")?,
                     argument(&args, "knownRevision")?,
                 )
+                .await
                 .map_err(error_value)?,
             )
             .map_err(|error| json!(error.to_string()))?
@@ -476,17 +481,20 @@ pub(super) async fn invoke(
                     argument(&args, "limit")?,
                     argument(&args, "knownRevision")?,
                 )
+                .await
                 .map_err(error_value)?,
             )
             .map_err(|error| json!(error.to_string()))?
         }
         "media_get_model_catalog" => {
-            check_arguments(&args, &["configuredProviderIds"])?;
+            check_arguments(&args, &["configuredProviderIds", "includeRuntimeReadiness"])?;
             serde_json::to_value(
                 super::media_get_model_catalog(
                     app.clone(),
                     argument(&args, "configuredProviderIds")?,
+                    argument(&args, "includeRuntimeReadiness")?,
                 )
+                .await
                 .map_err(error_value)?,
             )
             .map_err(|error| json!(error.to_string()))?
