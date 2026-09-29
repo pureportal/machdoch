@@ -21,6 +21,9 @@ const corpus = z
           accepted: z.boolean(),
           payload: z.json(),
           gatewayBytes: z.number().int().positive().optional(),
+          repeatSessions: z.number().int().positive().optional(),
+          repeatCommands: z.number().int().positive().optional(),
+          repeatShellWorkspaces: z.number().int().positive().optional(),
         }),
       )
       .min(1),
@@ -48,6 +51,23 @@ const validators = {
 for (const fixture of corpus.cases) {
   void test(`conformance ${fixture.id}`, () => {
     const payload = structuredClone(fixture.payload);
+    const snapshot = (payload as { response?: { snapshot?: { sessions: unknown[]; commands: unknown[]; shell?: { workspaces: unknown[] } } } } | null)?.response?.snapshot;
+    if (fixture.repeatSessions !== undefined) {
+      assert.equal(fixture.target, "snapshot");
+      assert.equal(snapshot?.sessions.length, 1);
+      snapshot!.sessions = Array.from({ length: fixture.repeatSessions }, () => structuredClone(snapshot!.sessions[0]));
+    }
+    if (fixture.repeatCommands !== undefined) {
+      assert.equal(fixture.target, "snapshot");
+      assert.equal(snapshot?.commands.length, 1);
+      snapshot!.commands = Array.from({ length: fixture.repeatCommands }, () => structuredClone(snapshot!.commands[0]));
+    }
+    if (fixture.repeatShellWorkspaces !== undefined) {
+      assert.equal(fixture.target, "snapshot");
+      const shell = snapshot!.shell!;
+      assert.equal(shell.workspaces.length, 1);
+      shell.workspaces = Array.from({ length: fixture.repeatShellWorkspaces }, () => structuredClone(shell.workspaces[0]));
+    }
     if (fixture.gatewayBytes !== undefined) {
       assert.equal(fixture.target, "snapshot");
       const logs = (

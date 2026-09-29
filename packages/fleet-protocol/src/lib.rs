@@ -4,6 +4,7 @@ use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::{error::Error, fmt};
 
+mod media;
 mod snapshot;
 
 pub const GATEWAY_PROTOCOL_VERSION: u32 = 4;
@@ -709,6 +710,7 @@ pub fn deserialize_host_message(
 )]
 pub enum HostRequest {
     Media {
+        #[serde(deserialize_with = "media::deserialize_media_request")]
         request: Value,
     },
     GetProductSnapshot,
@@ -740,6 +742,7 @@ pub enum HostRequest {
 )]
 pub enum HostResponse {
     Media {
+        #[serde(deserialize_with = "media::deserialize_media_response")]
         response: Value,
     },
     WorkspaceRuns {
@@ -1010,6 +1013,9 @@ impl<'de> Deserialize<'de> for ProductCommand {
             .keys()
             .cloned()
             .collect::<Vec<_>>();
+        if payload.get("poseScene").is_some_and(Value::is_null) {
+            return Err(D::Error::custom("poseScene must be an object."));
+        }
         let raw = RawProductCommand::deserialize(payload).map_err(D::Error::custom)?;
         let mut command = Self {
             kind: raw.kind,
@@ -1336,11 +1342,7 @@ impl ProductCommand {
                         .special_kind
                         .as_deref()
                         .is_none_or(|kind| kind == "pose")
-                    && (self.pose_scene.is_none() || self.special_kind.as_deref() == Some("pose"))
-                    && self
-                        .pose_scene
-                        .as_ref()
-                        .is_none_or(|scene| scene.is_object() && scene.to_string().len() <= 24_000)
+                    && self.pose_scene.as_ref().is_none_or(valid_pose_scene)
             }
             ProductCommandKind::ActivateSession
             | ProductCommandKind::ArchiveSession
@@ -1560,6 +1562,64 @@ fn valid_project_name(value: Option<&str>) -> bool {
 
 fn valid_workspace(value: &str) -> bool {
     valid_trimmed_text(Some(value), 12_000)
+}
+
+fn valid_pose_scene(scene: &Value) -> bool {
+    let Some(scene_fields) = scene.as_object() else {
+        return false;
+    };
+    if scene_fields.len() != 2
+        || !matches!(
+            scene_fields.get("aspectRatio").and_then(Value::as_str),
+            Some("1:1" | "4:5" | "16:9" | "9:16")
+        )
+    {
+        return false;
+    }
+    let Some(people) = scene_fields.get("people").and_then(Value::as_array) else {
+        return false;
+    };
+    (1..=4).contains(&people.len()) && people.iter().all(valid_pose_person)
+}
+
+fn valid_pose_person(person: &Value) -> bool {
+    let Some(fields) = person.as_object() else {
+        return false;
+    };
+    if fields.len() != 5 && fields.len() != 6 {
+        return false;
+    }
+    if !matches!(
+        fields.get("pose").and_then(Value::as_str),
+        Some("standing" | "sitting" | "walking" | "waving" | "arms-up")
+    ) || fields.get("mirror").and_then(Value::as_bool).is_none()
+        || !valid_pose_coordinate(fields.get("x"), 0.1, 0.9)
+        || !valid_pose_coordinate(fields.get("y"), 0.35, 1.0)
+        || !valid_pose_coordinate(fields.get("scale"), 0.2, 0.9)
+    {
+        return false;
+    }
+    match fields.get("joints") {
+        None => fields.len() == 5,
+        Some(Value::Array(joints)) => {
+            fields.len() == 6 && joints.len() == 18 && joints.iter().all(valid_pose_joint)
+        }
+        Some(_) => false,
+    }
+}
+
+fn valid_pose_joint(joint: &Value) -> bool {
+    joint.as_object().is_some_and(|fields| {
+        fields.len() == 2
+            && valid_pose_coordinate(fields.get("x"), 0.0, 1.0)
+            && valid_pose_coordinate(fields.get("y"), 0.0, 1.0)
+    })
+}
+
+fn valid_pose_coordinate(value: Option<&Value>, minimum: f64, maximum: f64) -> bool {
+    value
+        .and_then(Value::as_f64)
+        .is_some_and(|value| (minimum..=maximum).contains(&value))
 }
 
 fn valid_tags(value: Option<&[String]>) -> bool {

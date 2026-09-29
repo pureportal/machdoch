@@ -29,6 +29,9 @@ struct Fixture {
     accepted: bool,
     payload: Value,
     gateway_bytes: Option<usize>,
+    repeat_sessions: Option<usize>,
+    repeat_commands: Option<usize>,
+    repeat_shell_workspaces: Option<usize>,
 }
 
 fn expand_gateway_budget(payload: &mut Value, size: usize) {
@@ -68,6 +71,33 @@ fn shared_protocol_conformance() {
     let mut failures = Vec::new();
     for fixture in corpus.cases {
         let mut payload = fixture.payload;
+        for (field, count) in [
+            ("sessions", fixture.repeat_sessions),
+            ("commands", fixture.repeat_commands),
+        ] {
+            if let Some(count) = count {
+                assert!(matches!(fixture.target, Target::Snapshot));
+                let values = payload
+                    .pointer_mut(&format!("/response/snapshot/{field}"))
+                    .expect("repeat fixture must contain a collection")
+                    .as_array_mut()
+                    .expect("repeat fixture collection must be an array");
+                assert_eq!(values.len(), 1);
+                let item = values[0].clone();
+                values.resize(count, item);
+            }
+        }
+        if let Some(count) = fixture.repeat_shell_workspaces {
+            assert!(matches!(fixture.target, Target::Snapshot));
+            let values = payload
+                .pointer_mut("/response/snapshot/shell/workspaces")
+                .expect("repeat fixture must contain shell workspaces")
+                .as_array_mut()
+                .expect("shell workspaces must be an array");
+            assert_eq!(values.len(), 1);
+            let item = values[0].clone();
+            values.resize(count, item);
+        }
         if let Some(size) = fixture.gateway_bytes {
             assert!(matches!(fixture.target, Target::Snapshot));
             expand_gateway_budget(&mut payload, size);

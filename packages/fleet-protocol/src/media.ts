@@ -104,8 +104,13 @@ export const mediaResponseSchema = z.discriminatedUnion("state", [
     state: z.literal("complete"),
     chunk: z.string().max(262144),
     offset: z.number().int().nonnegative(),
-    total: z.number().int().nonnegative(),
-  }),
+    total: z.number().int().nonnegative().max(64 * 1024 * 1024),
+  }).refine(
+    ({ chunk, offset, total }) =>
+      offset <= total &&
+      chunk.length <= total - offset &&
+      (chunk.length > 0 || offset === total),
+  ),
   z.strictObject({ state: z.literal("failed"), error: z.json() }),
   z.strictObject({
     state: z.literal("events"),

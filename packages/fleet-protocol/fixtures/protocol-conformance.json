@@ -2,6 +2,1152 @@
   "version": 1,
   "cases": [
     {
+      "id": "command/create-session/pose-scene/valid-without-special-kind",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "create-session",
+        "poseScene": {
+          "aspectRatio": "4:5",
+          "people": [
+            {
+              "pose": "sitting",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/valid-without-joints",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/valid-with-joints",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "16:9",
+          "people": [
+            {
+              "pose": "arms-up",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false,
+              "joints": [
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 1,
+                  "y": 0.5
+                },
+                {
+                  "x": 0,
+                  "y": 1
+                },
+                {
+                  "x": 1,
+                  "y": 0
+                },
+                {
+                  "x": 0,
+                  "y": 0.5
+                },
+                {
+                  "x": 1,
+                  "y": 1
+                },
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 1,
+                  "y": 0.5
+                },
+                {
+                  "x": 0,
+                  "y": 1
+                },
+                {
+                  "x": 1,
+                  "y": 0
+                },
+                {
+                  "x": 0,
+                  "y": 0.5
+                },
+                {
+                  "x": 1,
+                  "y": 1
+                },
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 1,
+                  "y": 0.5
+                },
+                {
+                  "x": 0,
+                  "y": 1
+                },
+                {
+                  "x": 1,
+                  "y": 0
+                },
+                {
+                  "x": 0,
+                  "y": 0.5
+                },
+                {
+                  "x": 1,
+                  "y": 1
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/valid-four-people-at-bounds",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "9:16",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.1,
+              "y": 0.35,
+              "scale": 0.2,
+              "mirror": false
+            },
+            {
+              "pose": "sitting",
+              "x": 0.9,
+              "y": 1,
+              "scale": 0.9,
+              "mirror": true
+            },
+            {
+              "pose": "walking",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false
+            },
+            {
+              "pose": "waving",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/null-scene",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": null
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/array-scene",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": []
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/invalid-aspect-ratio",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "2:3",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/missing-aspect-ratio",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/unknown-scene-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false
+            }
+          ],
+          "extra": true
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/no-people",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": []
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/five-people",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false
+            },
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false
+            },
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false
+            },
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false
+            },
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/invalid-pose",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "running",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/missing-person-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/unknown-person-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false,
+              "extra": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/x-below-minimum",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.09,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/x-above-maximum",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.91,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/y-below-minimum",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.34,
+              "scale": 0.5,
+              "mirror": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/y-above-maximum",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 1.01,
+              "scale": 0.5,
+              "mirror": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/scale-below-minimum",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.19,
+              "mirror": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/scale-above-maximum",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.91,
+              "mirror": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/non-numeric-coordinate",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": "0.5",
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/non-boolean-mirror",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": "false"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/seventeen-joints",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false,
+              "joints": [
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/nineteen-joints",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false,
+              "joints": [
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/joint-x-below-minimum",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false,
+              "joints": [
+                {
+                  "x": -0.01,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/joint-y-above-maximum",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false,
+              "joints": [
+                {
+                  "x": 0.5,
+                  "y": 1.01
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/unknown-joint-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false,
+              "joints": [
+                {
+                  "x": 0.5,
+                  "y": 0.5,
+                  "extra": true
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/missing-joint-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false,
+              "joints": [
+                {
+                  "x": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.5
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "command/create-session/pose-scene/null-joints",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "create-session",
+        "specialKind": "pose",
+        "poseScene": {
+          "aspectRatio": "1:1",
+          "people": [
+            {
+              "pose": "standing",
+              "x": 0.5,
+              "y": 0.7,
+              "scale": 0.5,
+              "mirror": false,
+              "joints": null
+            }
+          ]
+        }
+      }
+    },
+    {
       "id": "command/create-project/accepted",
       "target": "command",
       "accepted": true,
@@ -4035,6 +5181,1732 @@
         "requestId": "request-1",
         "response": {
           "type": "productSnapshot"
+        }
+      }
+    },
+    {
+      "id": "snapshot/nested-valid",
+      "target": "snapshot",
+      "accepted": true,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "task-1",
+                "task": "task",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0,
+                "logs": [],
+                "timeline": []
+              }
+            ],
+            "commands": [
+              {
+                "commandId": "command-1",
+                "kind": "submit",
+                "createdAt": 0
+              }
+            ],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/shell-session-optional-reasoning",
+      "target": "snapshot",
+      "accepted": true,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [
+                {
+                  "id": "session-1",
+                  "title": "Session",
+                  "status": "idle",
+                  "provider": "provider",
+                  "model": "model",
+                  "effectiveMode": "ask",
+                  "createdAt": 0,
+                  "updatedAt": 0,
+                  "tags": [],
+                  "messageCount": 0,
+                  "promptHistoryCount": 0,
+                  "attachmentCount": 0,
+                  "canRename": true,
+                  "canDelete": true,
+                  "canArchive": true,
+                  "canPin": true,
+                  "canDuplicate": true,
+                  "canBranch": true
+                }
+              ],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/shell-integral-decimals",
+      "target": "snapshot",
+      "accepted": true,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5.0,
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": [],
+              "media": {
+                "loading": false,
+                "generation": {
+                  "prompt": "",
+                  "target": "image",
+                  "aspectRatio": "1:1",
+                  "outputCount": 1.0,
+                  "outputFormat": "png",
+                  "transparentBackground": false,
+                  "available": false
+                },
+                "models": [],
+                "assets": [],
+                "assetCount": 0,
+                "runs": [],
+                "runCount": 0,
+                "busy": false,
+                "updatedAt": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/session-missing-task",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "task-1",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0,
+                "logs": [],
+                "timeline": []
+              }
+            ],
+            "commands": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/session-unknown-field",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "task-1",
+                "task": "task",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0,
+                "logs": [],
+                "timeline": [],
+                "extra": true
+              }
+            ],
+            "commands": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/session-blank-id",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "   ",
+                "task": "task",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0,
+                "logs": [],
+                "timeline": []
+              }
+            ],
+            "commands": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/session-invalid-progress",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "task-1",
+                "task": "task",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0.5,
+                "logs": [],
+                "timeline": []
+              }
+            ],
+            "commands": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/session-invalid-log",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "task-1",
+                "task": "task",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0,
+                "logs": [
+                  {
+                    "createdAt": 0,
+                    "stream": "stdout",
+                    "chunk": false
+                  }
+                ],
+                "timeline": []
+              }
+            ],
+            "commands": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/session-log-unknown-field",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "task-1",
+                "task": "task",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0,
+                "logs": [
+                  {
+                    "createdAt": 0,
+                    "stream": "stdout",
+                    "chunk": "x",
+                    "extra": 1
+                  }
+                ],
+                "timeline": []
+              }
+            ],
+            "commands": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/session-log-chunk-too-long",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "task-1",
+                "task": "task",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0,
+                "logs": [
+                  {
+                    "createdAt": 0,
+                    "stream": "stdout",
+                    "chunk": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                  }
+                ],
+                "timeline": []
+              }
+            ],
+            "commands": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/session-invalid-timeline",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "task-1",
+                "task": "task",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0,
+                "logs": [],
+                "timeline": [
+                  {
+                    "createdAt": 0,
+                    "kind": "step",
+                    "phase": "run",
+                    "label": "x",
+                    "tone": false
+                  }
+                ]
+              }
+            ],
+            "commands": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/session-timeline-unknown-field",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "task-1",
+                "task": "task",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0,
+                "logs": [],
+                "timeline": [
+                  {
+                    "createdAt": 0,
+                    "kind": "step",
+                    "phase": "run",
+                    "label": "x",
+                    "extra": 1
+                  }
+                ]
+              }
+            ],
+            "commands": []
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/session-limit-at",
+      "target": "snapshot",
+      "accepted": true,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "task-1",
+                "task": "task",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0,
+                "logs": [],
+                "timeline": []
+              }
+            ],
+            "commands": []
+          }
+        }
+      },
+      "repeatSessions": 128
+    },
+    {
+      "id": "snapshot/session-limit-above",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "task-1",
+                "task": "task",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0,
+                "logs": [],
+                "timeline": []
+              }
+            ],
+            "commands": []
+          }
+        }
+      },
+      "repeatSessions": 129
+    },
+    {
+      "id": "snapshot/command-blank-id",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [
+              {
+                "commandId": " ",
+                "kind": "submit",
+                "createdAt": 0
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/command-missing-created-at",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [
+              {
+                "commandId": "command-1",
+                "kind": "submit"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/command-unknown-field",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [
+              {
+                "commandId": "command-1",
+                "kind": "submit",
+                "createdAt": 0,
+                "extra": 1
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/command-invalid-optional-field",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [
+              {
+                "commandId": "command-1",
+                "kind": "submit",
+                "createdAt": 0,
+                "taskId": 4
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/command-limit-at",
+      "target": "snapshot",
+      "accepted": true,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [
+              {
+                "commandId": "command-1",
+                "kind": "submit",
+                "createdAt": 0
+              }
+            ]
+          }
+        }
+      },
+      "repeatCommands": 100
+    },
+    {
+      "id": "snapshot/command-limit-above",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [
+              {
+                "commandId": "command-1",
+                "kind": "submit",
+                "createdAt": 0
+              }
+            ]
+          }
+        }
+      },
+      "repeatCommands": 101
+    },
+    {
+      "id": "snapshot/shell-missing-version",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/shell-invalid-version",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 4,
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/shell-unknown-field",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": [],
+              "extra": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/shell-invalid-workspace",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [
+                {
+                  "root": " ",
+                  "label": "A",
+                  "sessionCount": 0
+                }
+              ],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/shell-workspaces-limit-at",
+      "target": "snapshot",
+      "accepted": true,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [
+                {
+                  "root": "workspace",
+                  "label": "A",
+                  "sessionCount": 0
+                }
+              ],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      },
+      "repeatShellWorkspaces": 128
+    },
+    {
+      "id": "snapshot/shell-workspaces-limit-above",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [
+                {
+                  "root": "workspace",
+                  "label": "A",
+                  "sessionCount": 0
+                }
+              ],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      },
+      "repeatShellWorkspaces": 129
+    },
+    {
+      "id": "snapshot/shell-invalid-session",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [
+                {}
+              ],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/shell-invalid-message",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [
+                {}
+              ],
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/shell-invalid-context-pack",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [
+                {}
+              ],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/shell-prompt-history-limit",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": [
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x",
+                "x"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/shell-invalid-optional-composer",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": [],
+              "composer": {}
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/shell-invalid-optional-media",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": [],
+              "media": {}
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/shell-invalid-optional-runtime",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": [],
+              "runtime": {}
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/shell-invalid-optional-project-library",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": [],
+              "projectLibrary": {}
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/shell-optional-sections-valid",
+      "target": "snapshot",
+      "accepted": true,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "task-1",
+                "task": "task",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0,
+                "logs": [],
+                "timeline": []
+              }
+            ],
+            "commands": [
+              {
+                "commandId": "command-1",
+                "kind": "submit",
+                "createdAt": 0
+              }
+            ],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": [],
+              "projectLibrary": {
+                "root": "workspace",
+                "projects": [],
+                "maximumProjects": 1,
+                "maximumConcurrentOperations": 1
+              },
+              "runtime": {
+                "loading": false,
+                "hasAnyProvider": false,
+                "providerStatuses": []
+              },
+              "scheduler": {
+                "loading": false,
+                "jobs": [],
+                "runs": [],
+                "updatedAt": 0
+              },
+              "ralph": {
+                "loading": false,
+                "flows": [],
+                "runs": [],
+                "updatedAt": 0
+              },
+              "instructions": {
+                "loading": false,
+                "profiles": []
+              },
+              "voice": {
+                "supported": false,
+                "autoSpeakResponses": false,
+                "speechInputSupported": false,
+                "speechInputEnabled": false
+              },
+              "quickTask": {
+                "status": "idle",
+                "draft": "",
+                "isExecuting": false,
+                "provider": "",
+                "model": "",
+                "autopilotEnabled": false,
+                "globalMemoryEnabled": false,
+                "uiControlEnabled": false,
+                "attachmentCount": 0
+              },
+              "media": {
+                "loading": false,
+                "generation": {
+                  "prompt": "",
+                  "target": "image",
+                  "aspectRatio": "1:1",
+                  "outputCount": 1,
+                  "outputFormat": "png",
+                  "transparentBackground": false,
+                  "available": false
+                },
+                "models": [],
+                "assets": [],
+                "assetCount": 0,
+                "runs": [],
+                "runCount": 0,
+                "busy": false,
+                "updatedAt": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/shell-valid-project",
+      "target": "snapshot",
+      "accepted": true,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "task-1",
+                "task": "task",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0,
+                "logs": [],
+                "timeline": []
+              }
+            ],
+            "commands": [
+              {
+                "commandId": "command-1",
+                "kind": "submit",
+                "createdAt": 0
+              }
+            ],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": [],
+              "projectLibrary": {
+                "root": "workspace",
+                "projects": [
+                  {
+                    "id": "12345678-1234-4234-8234-123456789abc",
+                    "name": "Project",
+                    "kind": "empty",
+                    "status": "ready",
+                    "createdAt": 0,
+                    "updatedAt": 0,
+                    "workspace": "workspace"
+                  }
+                ],
+                "maximumProjects": 1,
+                "maximumConcurrentOperations": 1
+              },
+              "runtime": {
+                "loading": false,
+                "hasAnyProvider": false,
+                "providerStatuses": []
+              },
+              "scheduler": {
+                "loading": false,
+                "jobs": [],
+                "runs": [],
+                "updatedAt": 0
+              },
+              "ralph": {
+                "loading": false,
+                "flows": [],
+                "runs": [],
+                "updatedAt": 0
+              },
+              "instructions": {
+                "loading": false,
+                "profiles": []
+              },
+              "voice": {
+                "supported": false,
+                "autoSpeakResponses": false,
+                "speechInputSupported": false,
+                "speechInputEnabled": false
+              },
+              "quickTask": {
+                "status": "idle",
+                "draft": "",
+                "isExecuting": false,
+                "provider": "",
+                "model": "",
+                "autopilotEnabled": false,
+                "globalMemoryEnabled": false,
+                "uiControlEnabled": false,
+                "attachmentCount": 0
+              },
+              "media": {
+                "loading": false,
+                "generation": {
+                  "prompt": "",
+                  "target": "image",
+                  "aspectRatio": "1:1",
+                  "outputCount": 1,
+                  "outputFormat": "png",
+                  "transparentBackground": false,
+                  "available": false
+                },
+                "models": [],
+                "assets": [],
+                "assetCount": 0,
+                "runs": [],
+                "runCount": 0,
+                "busy": false,
+                "updatedAt": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/shell-invalid-project-id",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "task-1",
+                "task": "task",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0,
+                "logs": [],
+                "timeline": []
+              }
+            ],
+            "commands": [
+              {
+                "commandId": "command-1",
+                "kind": "submit",
+                "createdAt": 0
+              }
+            ],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": [],
+              "projectLibrary": {
+                "root": "workspace",
+                "projects": [
+                  {
+                    "id": "12345678-1234-9234-8234-123456789abc",
+                    "name": "Project",
+                    "kind": "empty",
+                    "status": "ready",
+                    "createdAt": 0,
+                    "updatedAt": 0,
+                    "workspace": "workspace"
+                  }
+                ],
+                "maximumProjects": 1,
+                "maximumConcurrentOperations": 1
+              },
+              "runtime": {
+                "loading": false,
+                "hasAnyProvider": false,
+                "providerStatuses": []
+              },
+              "scheduler": {
+                "loading": false,
+                "jobs": [],
+                "runs": [],
+                "updatedAt": 0
+              },
+              "ralph": {
+                "loading": false,
+                "flows": [],
+                "runs": [],
+                "updatedAt": 0
+              },
+              "instructions": {
+                "loading": false,
+                "profiles": []
+              },
+              "voice": {
+                "supported": false,
+                "autoSpeakResponses": false,
+                "speechInputSupported": false,
+                "speechInputEnabled": false
+              },
+              "quickTask": {
+                "status": "idle",
+                "draft": "",
+                "isExecuting": false,
+                "provider": "",
+                "model": "",
+                "autopilotEnabled": false,
+                "globalMemoryEnabled": false,
+                "uiControlEnabled": false,
+                "attachmentCount": 0
+              },
+              "media": {
+                "loading": false,
+                "generation": {
+                  "prompt": "",
+                  "target": "image",
+                  "aspectRatio": "1:1",
+                  "outputCount": 1,
+                  "outputFormat": "png",
+                  "transparentBackground": false,
+                  "available": false
+                },
+                "models": [],
+                "assets": [],
+                "assetCount": 0,
+                "runs": [],
+                "runCount": 0,
+                "busy": false,
+                "updatedAt": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/shell-invalid-media-ratio",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "task-1",
+                "task": "task",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0,
+                "logs": [],
+                "timeline": []
+              }
+            ],
+            "commands": [
+              {
+                "commandId": "command-1",
+                "kind": "submit",
+                "createdAt": 0
+              }
+            ],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": [],
+              "projectLibrary": {
+                "root": "workspace",
+                "projects": [],
+                "maximumProjects": 1,
+                "maximumConcurrentOperations": 1
+              },
+              "runtime": {
+                "loading": false,
+                "hasAnyProvider": false,
+                "providerStatuses": []
+              },
+              "scheduler": {
+                "loading": false,
+                "jobs": [],
+                "runs": [],
+                "updatedAt": 0
+              },
+              "ralph": {
+                "loading": false,
+                "flows": [],
+                "runs": [],
+                "updatedAt": 0
+              },
+              "instructions": {
+                "loading": false,
+                "profiles": []
+              },
+              "voice": {
+                "supported": false,
+                "autoSpeakResponses": false,
+                "speechInputSupported": false,
+                "speechInputEnabled": false
+              },
+              "quickTask": {
+                "status": "idle",
+                "draft": "",
+                "isExecuting": false,
+                "provider": "",
+                "model": "",
+                "autopilotEnabled": false,
+                "globalMemoryEnabled": false,
+                "uiControlEnabled": false,
+                "attachmentCount": 0
+              },
+              "media": {
+                "loading": false,
+                "generation": {
+                  "prompt": "",
+                  "target": "image",
+                  "aspectRatio": "auto",
+                  "outputCount": 1,
+                  "outputFormat": "png",
+                  "transparentBackground": false,
+                  "available": false
+                },
+                "models": [],
+                "assets": [],
+                "assetCount": 0,
+                "runs": [],
+                "runCount": 0,
+                "busy": false,
+                "updatedAt": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/shell-invalid-media-count",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [
+              {
+                "taskId": "task-1",
+                "task": "task",
+                "mode": "mode",
+                "state": "state",
+                "message": "message",
+                "cancellable": true,
+                "startedAt": 0,
+                "updatedAt": 0,
+                "progressCount": 0,
+                "logs": [],
+                "timeline": []
+              }
+            ],
+            "commands": [
+              {
+                "commandId": "command-1",
+                "kind": "submit",
+                "createdAt": 0
+              }
+            ],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": [],
+              "projectLibrary": {
+                "root": "workspace",
+                "projects": [],
+                "maximumProjects": 1,
+                "maximumConcurrentOperations": 1
+              },
+              "runtime": {
+                "loading": false,
+                "hasAnyProvider": false,
+                "providerStatuses": []
+              },
+              "scheduler": {
+                "loading": false,
+                "jobs": [],
+                "runs": [],
+                "updatedAt": 0
+              },
+              "ralph": {
+                "loading": false,
+                "flows": [],
+                "runs": [],
+                "updatedAt": 0
+              },
+              "instructions": {
+                "loading": false,
+                "profiles": []
+              },
+              "voice": {
+                "supported": false,
+                "autoSpeakResponses": false,
+                "speechInputSupported": false,
+                "speechInputEnabled": false
+              },
+              "quickTask": {
+                "status": "idle",
+                "draft": "",
+                "isExecuting": false,
+                "provider": "",
+                "model": "",
+                "autopilotEnabled": false,
+                "globalMemoryEnabled": false,
+                "uiControlEnabled": false,
+                "attachmentCount": 0
+              },
+              "media": {
+                "loading": false,
+                "generation": {
+                  "prompt": "",
+                  "target": "image",
+                  "aspectRatio": "1:1",
+                  "outputCount": 9,
+                  "outputFormat": "png",
+                  "transparentBackground": false,
+                  "available": false
+                },
+                "models": [],
+                "assets": [],
+                "assetCount": 0,
+                "runs": [],
+                "runCount": 0,
+                "busy": false,
+                "updatedAt": 0
+              }
+            }
+          }
         }
       }
     },
