@@ -17,7 +17,10 @@ import type {
   InstructionDeliveryPlan,
   InstructionDeliveryReceipt,
 } from "../instruction-system/types.js";
-import type { AgentToolDefinition } from "./agent-tools-shared.js";
+import type {
+  AgentToolDefinition,
+  AgentToolExecutionResult,
+} from "./agent-tools-shared.js";
 import type {
   RuntimeAgentLimitOverrides,
   RuntimeAgentLimits,
@@ -125,6 +128,10 @@ export interface ModelDrivenExecutionParams {
   monitorModelAdapter?: AgentModelAdapter;
   additionalToolDefinitions?: AgentToolDefinition[];
   scopedWorkerToolDefinitions?: AgentToolDefinition[];
+  onScopedWorkerToolResult?: (
+    name: string,
+    result: AgentToolExecutionResult,
+  ) => void;
   systemPromptSections?: string[];
   structuredOutput?: AgentModelStructuredOutput;
   resultProtocol?: TaskResultProtocol;

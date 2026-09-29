@@ -60,6 +60,7 @@ describe("Machdoch run MCP endpoint", () => {
       (tool) => tool.spec.name === "read_file",
     );
     expect(readFile).toBeDefined();
+    const onToolResult = vi.fn();
     const host = await startLocalMcpHost({
       config: { ...runtimeConfig, workspaceRoot: root },
       memory: {
@@ -69,6 +70,7 @@ describe("Machdoch run MCP endpoint", () => {
         globalEntries: [],
       },
       scopedToolDefinitions: [readFile!],
+      onToolResult,
     });
     cleanup.push(host.close);
     const client = new Client({ name: "scoped-worker-test", version: "1" });
@@ -83,6 +85,28 @@ describe("Machdoch run MCP endpoint", () => {
     expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
       "read_file",
     ]);
+    const invalid = await client.callTool({
+      name: "read_file",
+      arguments: { path: "notes.txt" },
+    });
+    expect(invalid.isError).toBe(true);
+    expect(onToolResult).toHaveBeenCalledWith(
+      "read_file",
+      expect.objectContaining({
+        toolResult: expect.objectContaining({ isError: true }),
+      }),
+    );
+    const unknown = await client.callTool({
+      name: "create_file",
+      arguments: {},
+    });
+    expect(unknown.isError).toBe(true);
+    expect(onToolResult).toHaveBeenCalledWith(
+      "create_file",
+      expect.objectContaining({
+        toolResult: expect.objectContaining({ isError: true }),
+      }),
+    );
   });
 
   it("requires its run token and rejects browser origins and foreign hosts", async () => {

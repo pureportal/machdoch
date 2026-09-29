@@ -27,6 +27,7 @@ export interface LocalToolRuntimeOptions {
     definition: AgentToolDefinition,
     result: AgentToolExecutionResult,
   ) => void;
+  onToolResult?: (name: string, result: AgentToolExecutionResult) => void;
 }
 
 export const createLocalToolRuntime = (options: LocalToolRuntimeOptions) => {
@@ -62,6 +63,7 @@ export const createLocalToolRuntime = (options: LocalToolRuntimeOptions) => {
           combinedSignal,
         );
         if (!result) throw new Error(`Tool ${name} did not return a result.`);
+        options.onToolResult?.(name, result);
         const definition = tools.get(name);
         if (definition) options.onResult?.(definition, result);
         return result;

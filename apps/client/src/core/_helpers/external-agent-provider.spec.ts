@@ -919,6 +919,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         expect(call.args).not.toContain(
           "--dangerously-bypass-approvals-and-sandbox",
         );
+        expect(call.args).toContain(
+          'mcp_servers.machdoch.default_tools_approval_mode="approve"',
+        );
       } else if (provider === "claude-cli") {
         expect(call.args).toContain("--tools");
         expect(call.args[call.args.indexOf("--tools") + 1]).toBe("");

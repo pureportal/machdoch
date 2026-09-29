@@ -461,6 +461,98 @@ describe("parallel agent sessions", () => {
     ).rejects.toThrow();
   });
 
+  it("fails a write worker that reports completion without editing its claimed file", async () => {
+    const options = await createOptions("machdoch");
+    const tool = createParallelAgentSessionTool({
+      ...options,
+      createWorkerAdapter: async (): Promise<AgentModelAdapter> => ({
+        startTurn: async () => ({ text: "Done", toolCalls: [] }),
+        continueTurn: async () => ({ text: "", toolCalls: [] }),
+      }),
+    });
+
+    const result = await execute(tool, [
+      worker("first", { access: "write", writePaths: ["first.txt"] }),
+      worker("second", { access: "write", writePaths: ["second.txt"] }),
+    ]);
+
+    expect(result.toolResult.isError).toBe(true);
+    expect(JSON.parse(result.toolResult.output)).toMatchObject([
+      {
+        id: "first",
+        status: "failed",
+        answer: "Worker first did not complete a scoped file edit.",
+      },
+      {
+        id: "second",
+        status: "failed",
+        answer: "Worker second did not complete a scoped file edit.",
+      },
+    ]);
+  });
+
+  it("keeps an earlier tool failure after a later successful call", async () => {
+    const options = await createOptions();
+    await writeFile(
+      join(options.config.workspaceRoot, "notes.txt"),
+      "notes",
+      "utf8",
+    );
+    const tool = createParallelAgentSessionTool({
+      ...options,
+      createWorkerAdapter: async (): Promise<AgentModelAdapter> => {
+        let pass = 0;
+        return {
+          startTurn: async () => ({
+            text: "",
+            toolCalls: [
+              {
+                id: "missing",
+                name: "read_file",
+                arguments: { path: "missing.txt", startLine: 1, endLine: 1 },
+              },
+            ],
+          }),
+          continueTurn: async () => {
+            pass += 1;
+            return pass === 1
+              ? {
+                  text: "",
+                  toolCalls: [
+                    {
+                      id: "present",
+                      name: "read_file",
+                      arguments: {
+                        path: "notes.txt",
+                        startLine: 1,
+                        endLine: 1,
+                      },
+                    },
+                  ],
+                }
+              : { text: "Done", toolCalls: [] };
+          },
+        };
+      },
+    });
+
+    const result = await execute(tool, [worker("first"), worker("second")]);
+
+    expect(result.toolResult.isError).toBe(true);
+    expect(JSON.parse(result.toolResult.output)).toEqual([
+      expect.objectContaining({
+        id: "first",
+        status: "failed",
+        answer: expect.stringContaining("read_file"),
+      }),
+      expect.objectContaining({
+        id: "second",
+        status: "failed",
+        answer: expect.stringContaining("read_file"),
+      }),
+    ]);
+  });
+
   it("settles successful siblings after a worker failure", async () => {
     const options = await createOptions();
     let created = 0;
