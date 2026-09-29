@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
 import {
   PhysicalPosition,
   PhysicalSize,
@@ -12,6 +13,7 @@ import {
 } from "./assistant-surface";
 
 const native = vi.hoisted(() => ({
+  windowExists: true,
   current: vi.fn(),
   primary: vi.fn(),
   fromPoint: vi.fn(),
@@ -26,7 +28,9 @@ const native = vi.hoisted(() => ({
 }));
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => true,
-  invoke: vi.fn(),
+  invoke: vi.fn(async () => {
+    native.windowExists = true;
+  }),
 }));
 vi.mock("@tauri-apps/api/window", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tauri-apps/api/window")>()),
@@ -35,12 +39,14 @@ vi.mock("@tauri-apps/api/window", async (importOriginal) => ({
   primaryMonitor: native.primary,
   monitorFromPoint: native.fromPoint,
   cursorPosition: native.cursor,
-  Window: { getByLabel: async (label: string) => ({ ...native, label }) },
+  Window: {
+    getByLabel: async (label: string) =>
+      native.windowExists ? { ...native, label } : null,
+  },
   getCurrentWindow: () => ({ ...native, label: "quick-voice" }),
 }));
 vi.mock("./runtime", () => ({
   ASSISTANT_POPUP_WINDOW_LABEL: "assistant-popup",
-  ASSISTANT_SURFACE_READY_EVENT: "ready",
   MAIN_WINDOW_LABEL: "main",
   QUICK_VOICE_START_EVENT: "start",
   QUICK_VOICE_WINDOW_LABEL: "quick-voice",
@@ -58,6 +64,7 @@ const makeMonitor = (x: number, scaleFactor = 1): Monitor => ({
 });
 beforeEach(() => {
   vi.clearAllMocks();
+  native.windowExists = true;
   native.current.mockResolvedValue(makeMonitor(-1920));
   native.fromPoint.mockResolvedValue(makeMonitor(0, 1.5));
   native.cursor.mockResolvedValue({ x: 100, y: 100 });
@@ -66,6 +73,19 @@ beforeEach(() => {
 });
 
 describe("display selection and application", () => {
+  it("shows a newly created popup without waiting for its chat view to mount", async () => {
+    native.windowExists = false;
+
+    expect(await showAssistantPopup()).toBe(true);
+    expect(invoke).toHaveBeenCalledWith("ensure_assistant_window", {
+      label: "assistant-popup",
+    });
+    expect(native.show).toHaveBeenCalledOnce();
+    expect(native.setFocus).toHaveBeenCalledOnce();
+    expect(vi.mocked(invoke).mock.invocationCallOrder[0]).toBeLessThan(
+      native.show.mock.invocationCallOrder[0]!,
+    );
+  });
   it("keeps background surfaces on their display while explicit launches can use the cursor display", async () => {
     expect(
       (await resolveAssistantSurfaceLayout("window"))?.monitorBounds.x,
