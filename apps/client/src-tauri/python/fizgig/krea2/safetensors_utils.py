@@ -7,11 +7,16 @@ import numpy as np
 import torch
 import json
 import struct
+import sys
+from pathlib import Path
 from typing import Dict, Any, Union, Optional
 
 from safetensors.torch import load_file
 
 from fizgig.krea2.device_utils import synchronize_device
+
+
+MAX_SAFETENSORS_HEADER_SIZE = 100_000_000
 
 
 def mem_eff_save_file(tensors: Dict[str, torch.Tensor], filename: str, metadata: Dict[str, Any] = None):
@@ -169,7 +174,11 @@ class MemoryEfficientSafeOpen:
         """
         self.filename = filename
         self.file = open(filename, "rb")
-        self.header, self.header_size = self._read_header()
+        try:
+            self.header, self.header_size = self._read_header()
+        except Exception:
+            self.file.close()
+            raise
         self.disable_numpy_memmap = disable_numpy_memmap
 
     def __enter__(self):
@@ -202,11 +211,87 @@ class MemoryEfficientSafeOpen:
         Returns:
             tuple: (header_dict, header_size) containing parsed header and its size.
         """
-        # Read header size (8 bytes, little-endian unsigned long long)
+        file_size = os.fstat(self.file.fileno()).st_size
+        if file_size < 8:
+            raise ValueError("Invalid safetensors file: truncated header length")
+
         header_size = struct.unpack("<Q", self.file.read(8))[0]
-        # Read and decode header JSON
-        header_json = self.file.read(header_size).decode("utf-8")
-        return json.loads(header_json), header_size
+        if header_size == 0 or header_size > file_size - 8:
+            raise ValueError("Invalid safetensors file: truncated header")
+        if header_size > MAX_SAFETENSORS_HEADER_SIZE:
+            raise ValueError("Invalid safetensors file: header is too large")
+
+        try:
+            header = json.loads(self.file.read(header_size).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError("Invalid safetensors file: malformed header") from error
+
+        if not isinstance(header, dict):
+            raise ValueError("Invalid safetensors file: header must be an object")
+
+        metadata = header.get("__metadata__", {})
+        if not isinstance(metadata, dict) or any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in metadata.items()
+        ):
+            raise ValueError("Invalid safetensors file: metadata must contain string pairs")
+
+        payload_size = file_size - 8 - header_size
+        ranges = []
+        for key, tensor in header.items():
+            if key == "__metadata__":
+                continue
+            if not isinstance(tensor, dict) or set(tensor) != {"dtype", "shape", "data_offsets"}:
+                raise ValueError(f"Invalid safetensors tensor {key!r}: malformed metadata")
+
+            dtype = tensor["dtype"]
+            torch_dtype = self._get_torch_dtype(dtype) if isinstance(dtype, str) else None
+            if torch_dtype is None:
+                raise ValueError(f"Invalid safetensors tensor {key!r}: unsupported dtype")
+
+            shape = tensor["shape"]
+            if not isinstance(shape, list) or any(
+                type(dim) is not int or dim < 0 or dim > sys.maxsize for dim in shape
+            ):
+                raise ValueError(f"Invalid safetensors tensor {key!r}: invalid shape")
+
+            offsets = tensor["data_offsets"]
+            if (
+                not isinstance(offsets, list)
+                or len(offsets) != 2
+                or any(type(offset) is not int for offset in offsets)
+            ):
+                raise ValueError(f"Invalid safetensors tensor {key!r}: invalid offsets")
+            start, end = offsets
+            if start < 0 or end < start or end > payload_size:
+                raise ValueError(f"Invalid safetensors tensor {key!r}: offsets outside payload")
+
+            byte_count = end - start
+            element_size = torch.empty((), dtype=torch_dtype).element_size()
+            if byte_count % element_size:
+                raise ValueError(f"Invalid safetensors tensor {key!r}: shape and offsets disagree")
+            element_count = byte_count // element_size
+            if 0 in shape:
+                expected_elements = 0
+            else:
+                expected_elements = 1
+                for dim in shape:
+                    if expected_elements > element_count // dim:
+                        raise ValueError(f"Invalid safetensors tensor {key!r}: shape and offsets disagree")
+                    expected_elements *= dim
+            if expected_elements != element_count:
+                raise ValueError(f"Invalid safetensors tensor {key!r}: shape and offsets disagree")
+            ranges.append((start, end))
+
+        next_offset = 0
+        for start, end in sorted(ranges):
+            if start != next_offset:
+                raise ValueError("Invalid safetensors file: tensor offsets are not contiguous")
+            next_offset = end
+        if next_offset != payload_size:
+            raise ValueError("Invalid safetensors file: payload size does not match tensor offsets")
+
+        return header, header_size
 
     def get_tensor(self, key: str, device: Optional[torch.device] = None, dtype: Optional[torch.dtype] = None):
         """Load a tensor from the file with memory-efficient strategies.
@@ -359,6 +444,15 @@ class MemoryEfficientSafeOpen:
             raise ValueError(f"Unsupported float8 type: {dtype_str} (upgrade PyTorch to support float8 types)")
 
 
+def _unique_json_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Invalid safetensors index: duplicate key {key!r}")
+        result[key] = value
+    return result
+
+
 class ShardedSafeOpen:
     """A directory of sharded safetensors behind the MemoryEfficientSafeOpen interface.
 
@@ -368,29 +462,72 @@ class ShardedSafeOpen:
 
     Shards are opened lazily and kept open: a loader that walks named_parameters() in module
     order touches each shard's keys contiguously, so this is a handful of file handles, not a
-    reopen per tensor. The index is trusted when present; without one the headers are read
-    (cheap — a header is a few tens of KB regardless of shard size).
+    reopen per tensor. Shard headers are read to validate the index or build a map when no
+    index is present.
     """
 
     def __init__(self, dirname: str, disable_numpy_memmap: bool = False):
-        self.dirname = dirname
+        self.dirname = Path(dirname).resolve()
         self.disable_numpy_memmap = disable_numpy_memmap
         self._readers: Dict[str, "MemoryEfficientSafeOpen"] = {}
+        self._shard_paths: Dict[str, Path] = {}
 
         entries = sorted(os.listdir(dirname))
         index = [e for e in entries if e.endswith(".safetensors.index.json")]
+        if len(index) > 1:
+            raise ValueError(f"{dirname}: multiple safetensors indexes")
         if index:
-            with open(os.path.join(dirname, index[0]), "r", encoding="utf-8") as fh:
-                self.weight_map = json.load(fh)["weight_map"]
+            with open(self.dirname / index[0], "r", encoding="utf-8") as fh:
+                try:
+                    document = json.load(fh, object_pairs_hook=_unique_json_object)
+                except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                    raise ValueError(f"{dirname}: malformed safetensors index") from error
+            weight_map = document.get("weight_map") if isinstance(document, dict) else None
+            if not isinstance(weight_map, dict) or not weight_map or any(
+                not isinstance(key, str) or not key or not isinstance(shard, str) or not shard
+                for key, shard in weight_map.items()
+            ):
+                raise ValueError(f"{dirname}: invalid safetensors weight_map")
+
+            shard_keys = {}
+            for key, shard in weight_map.items():
+                shard_keys.setdefault(shard, set()).add(key)
+            for shard, mapped_keys in shard_keys.items():
+                shard_path = self._validate_shard(shard)
+                with MemoryEfficientSafeOpen(shard_path) as reader:
+                    missing_keys = mapped_keys - set(reader.keys())
+                    if missing_keys:
+                        key = sorted(missing_keys)[0]
+                        raise ValueError(f"{dirname}: tensor {key!r} is missing from shard {shard!r}")
+            self.weight_map = weight_map
         else:
             shards = [e for e in entries if e.endswith(".safetensors")]
             if not shards:
                 raise FileNotFoundError(f"{dirname}: no .safetensors shards")
             self.weight_map = {}
             for shard in shards:
-                with MemoryEfficientSafeOpen(os.path.join(dirname, shard)) as f:
+                with MemoryEfficientSafeOpen(self._validate_shard(shard)) as f:
                     for key in f.keys():
+                        if key in self.weight_map:
+                            raise ValueError(f"{dirname}: duplicate tensor key {key!r} in shards")
                         self.weight_map[key] = shard
+
+    def _validate_shard(self, shard: str) -> Path:
+        if (
+            not shard.endswith(".safetensors")
+            or "/" in shard
+            or "\\" in shard
+            or ":" in shard
+            or "\0" in shard
+        ):
+            raise ValueError(f"{self.dirname}: invalid shard name {shard!r}")
+        path = (self.dirname / shard).resolve()
+        if path.parent != self.dirname:
+            raise ValueError(f"{self.dirname}: shard {shard!r} is outside the directory")
+        if not path.is_file():
+            raise ValueError(f"{self.dirname}: missing shard {shard!r}")
+        self._shard_paths[shard] = path
+        return path
 
     def __enter__(self):
         return self
@@ -403,7 +540,7 @@ class ShardedSafeOpen:
     def _reader(self, shard: str) -> "MemoryEfficientSafeOpen":
         reader = self._readers.get(shard)
         if reader is None:
-            reader = MemoryEfficientSafeOpen(os.path.join(self.dirname, shard), self.disable_numpy_memmap)
+            reader = MemoryEfficientSafeOpen(self._shard_paths[shard], self.disable_numpy_memmap)
             self._readers[shard] = reader
         return reader
 
@@ -442,10 +579,7 @@ def load_safetensors(
         synchronize_device(device)
         return state_dict
     else:
-        try:
-            state_dict = load_file(path, device=device)
-        except:
-            state_dict = load_file(path)  # prevent device invalid Error
+        state_dict = load_file(path, device=device)
         if dtype is not None:
             for key in state_dict.keys():
                 state_dict[key] = state_dict[key].to(dtype=dtype)
