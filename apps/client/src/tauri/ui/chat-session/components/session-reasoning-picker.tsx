@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { useCallback, useMemo, useState, type JSX } from "react";
 import type { ReasoningMode } from "../../runtime";
+import { isReasoningMode } from "../../../../core/runtime-contract.generated.js";
+import { getDiscoveredDefaultReasoningMode } from "../../../../core/model-capabilities.js";
 import { getDefaultCommandShortcut } from "@machdoch/media-studio/tauri/ui/commands/command-defaults.js";
 import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import type {
@@ -134,8 +136,28 @@ export const SessionReasoningPicker = ({
     provider,
     model,
   );
-  const activeMeta = REASONING_META[displayActiveReasoning];
-  const defaultMeta = REASONING_META[displayDefaultReasoning];
+  const modelDefaultReasoning = getDiscoveredDefaultReasoningMode(
+    provider,
+    model,
+  );
+  const resultingReasoning =
+    modelDefaultReasoning &&
+    isReasoningMode(modelDefaultReasoning) &&
+    modelDefaultReasoning !== "default"
+      ? normalizeReasoningModeForProvider(
+          modelDefaultReasoning,
+          provider,
+          model,
+        )
+      : null;
+  const displayResultingReasoning = (
+    reasoning: ReasoningMode,
+  ): ReasoningMode =>
+    reasoning === "default" ? (resultingReasoning ?? reasoning) : reasoning;
+  const activeMeta =
+    REASONING_META[displayResultingReasoning(displayActiveReasoning)];
+  const defaultMeta =
+    REASONING_META[displayResultingReasoning(displayDefaultReasoning)];
   const ActiveReasoningIcon = activeMeta.icon;
   const WorkspaceDefaultReasoningIcon = defaultMeta.icon;
   const selectReasoning = useCallback(
@@ -224,13 +246,15 @@ export const SessionReasoningPicker = ({
             type="button"
             variant="outline"
             aria-label={`Reasoning mode: ${activeMeta.label}${isUsingWorkspaceDefaultReasoning ? " (workspace default)" : ""}`}
-            data-reasoning-mode={displayActiveReasoning}
+            data-reasoning-mode={displayResultingReasoning(
+              displayActiveReasoning,
+            )}
             data-reasoning-source={
               isUsingWorkspaceDefaultReasoning ? "workspace" : "session"
             }
             data-active={
-              displayActiveReasoning !== "none" &&
-              displayActiveReasoning !== "default"
+              displayResultingReasoning(displayActiveReasoning) !== "none" &&
+              displayResultingReasoning(displayActiveReasoning) !== "default"
             }
             className="app-reasoning-picker-button app-composer-toolbar-control relative h-8 w-8 rounded-full border p-0 shadow-none"
           >
@@ -282,7 +306,7 @@ export const SessionReasoningPicker = ({
                 ) : null}
               </div>
               <p className="mt-1 text-xs leading-5 text-slate-400">
-                {`Currently ${REASONING_META[displayDefaultReasoning].label}. Use workspace config or environment default.`}
+                {`Currently ${defaultMeta.label}.`}
               </p>
             </div>
           </button>
