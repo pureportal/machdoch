@@ -182,9 +182,12 @@ import {
   isQueuedPromptEnhancementInputCurrent,
 } from "./queued-message-lifecycle";
 import {
+  DEFAULT_REQUEST_ITERATION_MODE,
+  applyEnhancedPromptToQueuedRequestIterations,
   createQueuedRequestIterations,
   getBlockingRequestIteration,
   normalizeRequestIterationCount,
+  type RequestIterationMode,
 } from "./request-iterations";
 import {
   appendContextAttachmentsToTask,
@@ -273,6 +276,7 @@ type ChatInputNeededSubmission =
       messageSettings: ChatSessionMessageSettings;
       promptEnhancementMode: PromptEnhancementMode;
       iterationCount?: number;
+      iterationMode: RequestIterationMode;
       promptEnhancementOriginalContent?: string;
       interviewEnabled: boolean;
       conversationCutoffMessageId?: string;
@@ -6034,6 +6038,7 @@ export const useChatSessionController = (
                       false,
                     ),
                     promptEnhancementMode: promptEnhancementRequest.mode,
+                    iterationMode: DEFAULT_REQUEST_ITERATION_MODE,
                     interviewEnabled: false,
                   },
                   queuedMessageAtDispatch.task,
@@ -6109,8 +6114,8 @@ export const useChatSessionController = (
             );
             let dispatchAttemptStored = false;
 
-            updateQueuedSessionMessages((current) =>
-              current.map((message) => {
+            updateQueuedSessionMessages((current) => {
+              const updatedMessages = current.map((message) => {
                 if (
                   message.id !== refreshedQueuedMessage.id ||
                   !isQueuedPromptEnhancementInputCurrent(
@@ -6123,8 +6128,17 @@ export const useChatSessionController = (
 
                 dispatchAttemptStored = true;
                 return dispatchAttempt.message;
-              }),
-            );
+              });
+
+              return dispatchAttemptStored && enhancedPrompt !== undefined
+                ? applyEnhancedPromptToQueuedRequestIterations(
+                    updatedMessages,
+                    refreshedQueuedMessage,
+                    dispatchAttempt.prompt.task,
+                    dispatchAttempt.message.contentUpdatedAt,
+                  )
+                : updatedMessages;
+            });
 
             if (!dispatchAttemptStored) {
               if (promptEnhancementTaskId) {
@@ -8052,6 +8066,7 @@ export const useChatSessionController = (
           sessionId,
           task: resolvedTask,
           count: iterationCount,
+          mode: submission.iterationMode,
           orderRank,
           contextAttachments: submission.contextAttachments,
           promptEnhancementRequest: createQueuedPromptEnhancementRequest(
@@ -8348,6 +8363,7 @@ export const useChatSessionController = (
             input.interviewEnabled,
           ),
           promptEnhancementMode: input.promptEnhancementMode,
+          iterationMode: DEFAULT_REQUEST_ITERATION_MODE,
           interviewEnabled: input.interviewEnabled,
         },
         prompt,
@@ -8413,6 +8429,7 @@ export const useChatSessionController = (
   const handleSend = (
     draft = activeComposerSession.draft,
     iterationCount = 1,
+    iterationMode: RequestIterationMode = DEFAULT_REQUEST_ITERATION_MODE,
   ): void => {
     const task = draft.trim();
     const currentEdit = activeMessageEditRef.current;
@@ -8476,6 +8493,7 @@ export const useChatSessionController = (
       ),
       promptEnhancementMode: selectedPromptEnhancementMode,
       iterationCount: currentEdit ? 1 : iterationCount,
+      iterationMode,
       interviewEnabled: currentEdit?.interviewEnabled ?? chatInterviewEnabled,
       runningAction: currentEdit
         ? null

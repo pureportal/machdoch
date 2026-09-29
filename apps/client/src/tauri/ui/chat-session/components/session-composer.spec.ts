@@ -272,11 +272,48 @@ describe("SessionComposer enhancement", () => {
     expect(screen.queryByRole("combobox", { name: "Iterations" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Iterations" }));
     const iterations = screen.getByRole("combobox", { name: "Iterations" });
+    expect(screen.getByRole("combobox", { name: "Loop mode" })).toBeTruthy();
     fireEvent.change(iterations, { target: { value: "3" } });
     expect(screen.getByRole("button", { name: "Iterations: 3" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
-    expect(onSend).toHaveBeenCalledWith(EDIT_DRAFT, 3);
+    expect(onSend).toHaveBeenCalledWith(EDIT_DRAFT, 3, "continue");
     expect(screen.getByRole("button", { name: "Iterations" })).toBeTruthy();
+  });
+
+  it("sends the selected loop mode and resets it after submission", () => {
+    const onSend = vi.fn();
+    render(
+      createElement(
+        SessionComposer,
+        createProps({
+          editingMessageId: null,
+          canSendMessage: true,
+          sendDisabledReason: null,
+          isExecuting: false,
+          onSend,
+        }),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Iterations" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Iterations" }), {
+      target: { value: "2" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Loop mode" }), {
+      target: { value: "repeat-prompt-and-continue" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    expect(onSend).toHaveBeenCalledWith(
+      EDIT_DRAFT,
+      2,
+      "repeat-prompt-and-continue",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Iterations" }));
+    expect(
+      (screen.getByRole("combobox", { name: "Loop mode" }) as HTMLSelectElement)
+        .value,
+    ).toBe("continue");
   });
 
   it("queues repeated requests while a task is running", () => {

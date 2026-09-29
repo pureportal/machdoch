@@ -45,6 +45,10 @@ import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import type { RunningTaskMessageAction } from "../../lib/shell-store";
 import type { RuntimeProvider } from "../../model-catalog";
 import { getClipboardImageFiles } from "../_helpers/clipboard-image-files";
+import {
+  DEFAULT_REQUEST_ITERATION_MODE,
+  type RequestIterationMode,
+} from "../_helpers/request-iterations";
 import type { AttachmentSelectionKind } from "../_helpers/session-context-attachments";
 import {
   ContextAttachmentMenuButton,
@@ -147,7 +151,11 @@ export interface AgentComposerProps {
     attachmentId: string,
   ) => void;
   onQueuedMessageClearContextAttachments?: (messageId: string) => void;
-  onSend: (draft: string, iterationCount?: number) => void;
+  onSend: (
+    draft: string,
+    iterationCount?: number,
+    iterationMode?: RequestIterationMode,
+  ) => void;
   onCancel: () => void;
 }
 
@@ -493,9 +501,13 @@ export const AgentComposer = ({
   onCancel,
 }: AgentComposerProps): JSX.Element => {
   const [iterationCount, setIterationCount] = useState(1);
+  const [iterationMode, setIterationMode] = useState<RequestIterationMode>(
+    DEFAULT_REQUEST_ITERATION_MODE,
+  );
   const [iterationsOpen, setIterationsOpen] = useState(false);
   useEffect(() => {
     setIterationCount(1);
+    setIterationMode(DEFAULT_REQUEST_ITERATION_MODE);
     setIterationsOpen(false);
   }, [draftIdentity, iterationsEnabled]);
   useEffect(() => {
@@ -578,7 +590,6 @@ export const AgentComposer = ({
   const selectIterationCount = useCallback(
     (count: number): void => {
       setIterationCount(count);
-      setIterationsOpen(false);
       if (count > 1 && isExecuting && selectedRunningAction === "steer") {
         onRunningTaskMessageActionChange?.("queue");
       }
@@ -601,8 +612,13 @@ export const AgentComposer = ({
     const currentDraft = bufferedDraft.getValue();
     if (!inputBlocked && canSend && currentDraft.trim()) {
       bufferedDraft.flush();
-      onSend(currentDraft, iterationsEnabled ? iterationCount : 1);
+      onSend(
+        currentDraft,
+        iterationsEnabled ? iterationCount : 1,
+        iterationMode,
+      );
       setIterationCount(1);
+      setIterationMode(DEFAULT_REQUEST_ITERATION_MODE);
       setIterationsOpen(false);
     }
   }, [
@@ -611,6 +627,7 @@ export const AgentComposer = ({
     canSend,
     inputBlocked,
     iterationCount,
+    iterationMode,
     iterationsEnabled,
     onSend,
   ]);
@@ -1475,7 +1492,7 @@ export const AgentComposer = ({
             side="top"
             align="end"
             sideOffset={8}
-            className="w-40 rounded-2xl border-slate-800 bg-slate-950/95 p-3 shadow-2xl"
+            className="w-60 rounded-2xl border-slate-800 bg-slate-950/95 p-3 shadow-2xl"
           >
             <label className="grid gap-2 text-xs font-medium text-slate-300">
               <span>Iterations</span>
@@ -1492,6 +1509,23 @@ export const AgentComposer = ({
                     {index + 1}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label className="mt-3 grid gap-2 text-xs font-medium text-slate-300">
+              <span>Loop mode</span>
+              <select
+                aria-label="Loop mode"
+                value={iterationMode}
+                onChange={(event) =>
+                  setIterationMode(event.target.value as RequestIterationMode)
+                }
+                className="h-9 w-full rounded-lg border border-slate-800 bg-slate-900 px-2 text-sm text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40"
+              >
+                <option value="repeat-prompt">Repeat prompt</option>
+                <option value="continue">Continue after first</option>
+                <option value="repeat-prompt-and-continue">
+                  Repeat prompt + continue
+                </option>
               </select>
             </label>
           </PopoverContent>

@@ -27,7 +27,11 @@ import type {
   MediaAssetKind,
   MediaAssetReference,
 } from "@machdoch/media-studio/core/media/contracts.js";
-import { isMediaPoseMap, type MediaPoseMap, type MediaSavedPoseScene } from "@machdoch/media-studio/core/media/contracts.js";
+import {
+  isMediaPoseMap,
+  type MediaPoseMap,
+  type MediaSavedPoseScene,
+} from "@machdoch/media-studio/core/media/contracts.js";
 import type {
   ReasoningMode,
   RunMode,
@@ -117,6 +121,7 @@ export interface ChatSessionRequestIteration {
   groupId: string;
   index: number;
   total: number;
+  mode?: "repeat-prompt" | "continue" | "repeat-prompt-and-continue";
 }
 
 export const MAX_REQUEST_ITERATIONS = 20;
@@ -422,11 +427,17 @@ const MIN_VOICE_RATE = 0.8;
 const MAX_VOICE_RATE = 1.4;
 const SPECIAL_SESSION_KINDS = ["quick-voice", "pose"] as const;
 const RUN_MODES: RunMode[] = ["ask", "machdoch"];
-const PARALLEL_AGENT_MODES: ParallelAgentMode[] = ["disabled", "read-only", "machdoch", "native"];
+const PARALLEL_AGENT_MODES: ParallelAgentMode[] = [
+  "disabled",
+  "read-only",
+  "machdoch",
+  "native",
+];
 
 const normalizeParallelAgentMode = (value: unknown): ParallelAgentMode =>
-  typeof value === "string" && PARALLEL_AGENT_MODES.includes(value as ParallelAgentMode)
-    ? value as ParallelAgentMode
+  typeof value === "string" &&
+  PARALLEL_AGENT_MODES.includes(value as ParallelAgentMode)
+    ? (value as ParallelAgentMode)
     : "disabled";
 const STORED_REASONING_MODES: ReasoningMode[] = [...REASONING_MODES];
 const RUNTIME_PROVIDERS: RuntimeProvider[] = [...RUNNABLE_PROVIDER_ORDER];
@@ -1360,7 +1371,9 @@ export const createSession = (
       ? { movedToTopAt: overrides.movedToTopAt }
       : {}),
     ...(specialSession ? { specialSession } : {}),
-    ...(specialSession === "pose" && isMediaPoseMap(overrides.poseScene) ? { poseScene: overrides.poseScene } : {}),
+    ...(specialSession === "pose" && isMediaPoseMap(overrides.poseScene)
+      ? { poseScene: overrides.poseScene }
+      : {}),
     workspace: overrides.workspace ?? null,
     provider,
     model: overrides.model ?? getDefaultModelForProvider(provider),
@@ -1416,16 +1429,25 @@ export const getSessionTitle = (session: ChatSessionRecord): string => {
   return `${normalized.slice(0, 45)}â€¦`;
 };
 
-export const getSavedPoseScenes = (sessions: readonly ChatSessionRecord[]): MediaSavedPoseScene[] =>
+export const getSavedPoseScenes = (
+  sessions: readonly ChatSessionRecord[],
+): MediaSavedPoseScene[] =>
   [...sessions]
     .filter((session) => session.specialSession === "pose")
     .sort((left, right) => right.updatedAt - left.updatedAt)
     .map((session) => {
-      const request = session.messages.find((message) => message.role === "user" && message.content.trim());
+      const request = session.messages.find(
+        (message) => message.role === "user" && message.content.trim(),
+      );
       return {
         id: session.id,
-        label: session.manualTitle?.trim() || request?.content.trim().slice(0, 60) || "Pose scene",
-        ...(isMediaPoseMap(session.poseScene) ? { map: session.poseScene } : {}),
+        label:
+          session.manualTitle?.trim() ||
+          request?.content.trim().slice(0, 60) ||
+          "Pose scene",
+        ...(isMediaPoseMap(session.poseScene)
+          ? { map: session.poseScene }
+          : {}),
       };
     });
 
@@ -2360,6 +2382,12 @@ const normalizeRequestIteration = (
   const groupId = normalizeString(value.groupId).trim();
   const index = value.index;
   const total = value.total;
+  const mode =
+    value.mode === "repeat-prompt" ||
+    value.mode === "continue" ||
+    value.mode === "repeat-prompt-and-continue"
+      ? value.mode
+      : undefined;
   return groupId &&
     typeof index === "number" &&
     Number.isInteger(index) &&
@@ -2368,7 +2396,7 @@ const normalizeRequestIteration = (
     index >= 1 &&
     index <= total &&
     total <= MAX_REQUEST_ITERATIONS
-    ? { groupId, index, total }
+    ? { groupId, index, total, ...(mode ? { mode } : {}) }
     : undefined;
 };
 
@@ -2768,7 +2796,9 @@ const normalizeSessionRecord = (
     ...session,
     provider,
     ...(specialSession ? { specialSession } : {}),
-    ...(specialSession === "pose" && isMediaPoseMap(session.poseScene) ? { poseScene: session.poseScene } : {}),
+    ...(specialSession === "pose" && isMediaPoseMap(session.poseScene)
+      ? { poseScene: session.poseScene }
+      : {}),
     ...(mode ? { mode } : {}),
     ...(reasoning ? { reasoning } : {}),
     model:
