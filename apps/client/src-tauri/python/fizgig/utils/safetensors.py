@@ -5,6 +5,7 @@ import json
 import os
 import re
 import struct
+import sys
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
@@ -16,6 +17,7 @@ from fizgig.utils.device import synchronize_device
 import logging
 
 logger = logging.getLogger(__name__)
+MAX_SAFETENSORS_HEADER_SIZE = 100_000_000
 
 
 def warm_file_cache(path: str) -> None:
@@ -130,7 +132,11 @@ class MemoryEfficientSafeOpen:
     def __init__(self, filename, disable_numpy_memmap=False):
         self.filename = filename
         self.file = open(filename, "rb")
-        self.header, self.header_size = self._read_header()
+        try:
+            self.header, self.header_size = self._read_header()
+        except Exception:
+            self.file.close()
+            raise
         self.disable_numpy_memmap = disable_numpy_memmap
 
     def __enter__(self):
@@ -146,9 +152,86 @@ class MemoryEfficientSafeOpen:
         return self.header.get("__metadata__", {})
 
     def _read_header(self):
+        file_size = os.fstat(self.file.fileno()).st_size
+        if file_size < 8:
+            raise ValueError("Invalid safetensors file: truncated header length")
+
         header_size = struct.unpack("<Q", self.file.read(8))[0]
-        header_json = self.file.read(header_size).decode("utf-8")
-        return json.loads(header_json), header_size
+        if header_size == 0 or header_size > file_size - 8:
+            raise ValueError("Invalid safetensors file: truncated header")
+        if header_size > MAX_SAFETENSORS_HEADER_SIZE:
+            raise ValueError("Invalid safetensors file: header is too large")
+
+        try:
+            header = json.loads(self.file.read(header_size).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError("Invalid safetensors file: malformed header") from error
+        if not isinstance(header, dict):
+            raise ValueError("Invalid safetensors file: header must be an object")
+
+        metadata = header.get("__metadata__", {})
+        if not isinstance(metadata, dict) or any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in metadata.items()
+        ):
+            raise ValueError("Invalid safetensors file: metadata must contain string pairs")
+
+        payload_size = file_size - 8 - header_size
+        ranges = []
+        for key, tensor in header.items():
+            if key == "__metadata__":
+                continue
+            if not isinstance(tensor, dict) or set(tensor) != {"dtype", "shape", "data_offsets"}:
+                raise ValueError(f"Invalid safetensors tensor {key!r}: malformed metadata")
+
+            dtype = tensor["dtype"]
+            torch_dtype = self._get_torch_dtype(dtype) if isinstance(dtype, str) else None
+            if torch_dtype is None:
+                raise ValueError(f"Invalid safetensors tensor {key!r}: unsupported dtype")
+
+            shape = tensor["shape"]
+            if not isinstance(shape, list) or any(
+                type(dim) is not int or dim < 0 or dim > sys.maxsize for dim in shape
+            ):
+                raise ValueError(f"Invalid safetensors tensor {key!r}: invalid shape")
+
+            offsets = tensor["data_offsets"]
+            if (
+                not isinstance(offsets, list)
+                or len(offsets) != 2
+                or any(type(offset) is not int for offset in offsets)
+            ):
+                raise ValueError(f"Invalid safetensors tensor {key!r}: invalid offsets")
+            start, end = offsets
+            if start < 0 or end < start or end > payload_size:
+                raise ValueError(f"Invalid safetensors tensor {key!r}: offsets outside payload")
+
+            byte_count = end - start
+            element_size = torch.empty((), dtype=torch_dtype).element_size()
+            if byte_count % element_size:
+                raise ValueError(f"Invalid safetensors tensor {key!r}: shape and offsets disagree")
+            element_count = byte_count // element_size
+            if 0 in shape:
+                expected_elements = 0
+            else:
+                expected_elements = 1
+                for dim in shape:
+                    if expected_elements > element_count // dim:
+                        raise ValueError(f"Invalid safetensors tensor {key!r}: shape and offsets disagree")
+                    expected_elements *= dim
+            if expected_elements != element_count:
+                raise ValueError(f"Invalid safetensors tensor {key!r}: shape and offsets disagree")
+            ranges.append((start, end))
+
+        next_offset = 0
+        for start, end in sorted(ranges):
+            if start != next_offset:
+                raise ValueError("Invalid safetensors file: tensor offsets are not contiguous")
+            next_offset = end
+        if next_offset != payload_size:
+            raise ValueError("Invalid safetensors file: payload size does not match tensor offsets")
+
+        return header, header_size
 
     def get_tensor(self, key: str, device: Optional[torch.device] = None, dtype: Optional[torch.dtype] = None):
         """Load a tensor from the file.
@@ -156,7 +239,7 @@ class MemoryEfficientSafeOpen:
         Note: If device is 'cuda', transfer uses pinned memory and non-blocking copy.
         Call torch.cuda.synchronize() before using the tensor.
         """
-        if key not in self.header:
+        if key == "__metadata__" or key not in self.header:
             raise KeyError(f"Tensor '{key}' not found in the file")
 
         metadata = self.header[key]
