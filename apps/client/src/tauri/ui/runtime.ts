@@ -4259,12 +4259,16 @@ export const saveUserSpeechToTextProcessing = async (options: {
     return { ...createDefaultUserSpeechToTextSettings(), ...options };
   }
 
-  const result = await tauriCore.invoke<UserSpeechToTextSettings>(
-    "save_user_speech_to_text_processing",
-    options,
-  );
-  await emitUserSettingsChanged("speech-to-text");
-  return result;
+  try {
+    const result = await tauriCore.invoke<UserSpeechToTextSettings>(
+      "save_user_speech_to_text_processing",
+      options,
+    );
+    await emitUserSettingsChanged("speech-to-text");
+    return result;
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
 };
 
 export const synthesizeUserVoiceAudio = async (options: {
