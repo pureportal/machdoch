@@ -53,6 +53,7 @@ export interface DiscoveredModelCapabilities {
   longContextWindowTokens?: number | null;
   maxOutputTokens?: number | null;
   reasoningModes?: readonly string[] | null;
+  defaultReasoningMode?: string | null;
   supportedImageMediaTypes?: readonly string[] | null;
   voice?: boolean | null;
 }
@@ -107,6 +108,12 @@ export const getDiscoveredReasoningModes = (
   model: string,
 ): readonly string[] | null | undefined =>
   getDiscoveredModelCapabilities(provider, model)?.reasoningModes;
+
+export const getDiscoveredDefaultReasoningMode = (
+  provider: ConfiguredModelProvider,
+  model: string,
+): string | null | undefined =>
+  getDiscoveredModelCapabilities(provider, model)?.defaultReasoningMode;
 
 export const getDiscoveredLongContextWindowTokens = (
   provider: ConfiguredModelProvider,

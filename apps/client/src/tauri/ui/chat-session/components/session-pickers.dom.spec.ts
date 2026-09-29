@@ -20,6 +20,7 @@ import {
 } from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
 import { SessionModePicker } from "./session-mode-picker";
 import { SessionReasoningPicker } from "./session-reasoning-picker";
+import { replaceDiscoveredModelCapabilities } from "../../../../core/model-capabilities.js";
 
 beforeAll(() => {
   class ResizeObserverMock {
@@ -33,6 +34,43 @@ beforeAll(() => {
 afterEach(() => cleanup());
 
 describe("session picker popovers", () => {
+  it("shows the model's resulting reasoning effort for provider default", () => {
+    replaceDiscoveredModelCapabilities("codex-cli", [
+      {
+        id: "gpt-5.6-terra",
+        capabilities: {
+          reasoningModes: ["default", "low", "high"],
+          defaultReasoningMode: "high",
+        },
+      },
+    ]);
+
+    try {
+      render(
+        createElement(
+          TooltipProvider,
+          null,
+          createElement(SessionReasoningPicker, {
+            provider: "codex-cli",
+            model: "gpt-5.6-terra",
+            activeReasoning: "default",
+            defaultReasoning: "default",
+            isUsingWorkspaceDefaultReasoning: true,
+            onSessionReasoningSelection: vi.fn(),
+          }),
+        ),
+      );
+
+      expect(
+        screen
+          .getByLabelText("Reasoning mode: High (workspace default)")
+          .getAttribute("data-reasoning-mode"),
+      ).toBe("high");
+    } finally {
+      replaceDiscoveredModelCapabilities("codex-cli", []);
+    }
+  });
+
   it("portals out of clipped containers and preserves focus inside a parent dialog", async () => {
     const onSelect = vi.fn();
     render(
@@ -170,7 +208,9 @@ describe("session picker popovers", () => {
       ),
     );
 
-    fireEvent.click(screen.getByLabelText("Execution mode: Machdoch"));
+    fireEvent.click(
+      screen.getByLabelText("Execution mode: Machdoch (workspace default)"),
+    );
     const askMode = await screen.findByLabelText("Choose Ask mode");
     fireEvent.click(askMode);
 
