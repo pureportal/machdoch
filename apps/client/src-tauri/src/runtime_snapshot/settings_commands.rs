@@ -228,8 +228,6 @@ pub(super) fn load_user_speech_to_text_settings() -> Result<UserSpeechToTextSett
     let env = load_global_env()?;
     let active_provider =
         resolve_speech_to_text_active_provider(config.speech_to_text.active_provider.as_deref());
-    let auto_format =
-        active_provider != "whisper" && config.speech_to_text.auto_format.unwrap_or(false);
 
     Ok(UserSpeechToTextSettings {
         active_provider,
@@ -242,7 +240,7 @@ pub(super) fn load_user_speech_to_text_settings() -> Result<UserSpeechToTextSett
             .speech_to_text
             .auto_translate_to_english
             .unwrap_or(false),
-        auto_format,
+        auto_format: config.speech_to_text.auto_format.unwrap_or(false),
         provider_availability: get_speech_to_text_provider_availability(&env),
     })
 }
@@ -342,9 +340,6 @@ pub(super) fn save_user_speech_to_text_active_provider_value(
 
     update_user_config_file(|config| {
         config.speech_to_text.active_provider = Some(normalized_provider.clone());
-        if normalized_provider == "whisper" {
-            config.speech_to_text.auto_format = Some(false);
-        }
     })
 }
 
@@ -410,10 +405,6 @@ pub(super) fn save_user_speech_to_text_processing_value(
     auto_translate_to_english: bool,
     auto_format: bool,
 ) -> Result<PathBuf, String> {
-    let (config, _) = load_user_config_file()?;
-    if auto_format && config.speech_to_text.active_provider.as_deref() == Some("whisper") {
-        return Err("Formatting is unavailable with local Whisper.".to_string());
-    }
     update_user_config_file(|config| {
         config.speech_to_text.auto_translate_to_english = Some(auto_translate_to_english);
         config.speech_to_text.auto_format = Some(auto_format);
