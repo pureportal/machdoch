@@ -208,14 +208,21 @@ interface ConversationMessageRowProps {
   onCancelPromptEnhancement?: () => void;
   onEditContentChange: (content: string) => void;
   onEditMessage?: (message: ChatSessionMessage) => void;
-  onOpenAttachment?: (attachment: ChatSessionContextAttachment) => void;
+  onOpenAttachment?: (
+    attachment: ChatSessionContextAttachment,
+    workspaceRoot?: string | null,
+  ) => void;
   onOpenMessageContextMenu: (
     event: MouseEvent<HTMLDivElement>,
     message: ChatSessionMessage,
     content: string,
     canSaveAsContextPack: boolean,
   ) => void;
-  onOpenWorkspaceFile: (relativePath: string, line?: number) => void;
+  onOpenWorkspaceFile: (
+    relativePath: string,
+    line?: number,
+    workspaceRoot?: string | null,
+  ) => void;
   onMessageElementChange: (
     messageId: string,
     element: HTMLDivElement | null,
@@ -307,6 +314,14 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
 
     onRetryTask(message);
   };
+  const openWorkspaceFile = (relativePath: string, line?: number): void => {
+    onOpenWorkspaceFile(relativePath, line, workspaceRoot);
+  };
+  const openAttachment = onOpenAttachment
+    ? (attachment: ChatSessionContextAttachment): void => {
+        onOpenAttachment(attachment, workspaceRoot);
+      }
+    : undefined;
 
   return (
     <div
@@ -544,7 +559,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                   <MarkdownContent
                     content={renderedContent}
                     workspaceRoot={workspaceRoot}
-                    onOpenWorkspaceFile={onOpenWorkspaceFile}
+                    onOpenWorkspaceFile={openWorkspaceFile}
                     className={
                       message.role === "user"
                         ? "app-user-message-text"
@@ -573,7 +588,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                 <MarkdownContent
                   content={originalPromptContent}
                   workspaceRoot={workspaceRoot}
-                  onOpenWorkspaceFile={onOpenWorkspaceFile}
+                  onOpenWorkspaceFile={openWorkspaceFile}
                 />
               </div>
             ) : null}
@@ -581,7 +596,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
             {messageAttachments.length > 0 ? (
               <MessageAttachmentsList
                 attachments={messageAttachments}
-                onOpen={onOpenAttachment}
+                onOpen={openAttachment}
                 align={message.role === "user" ? "end" : "start"}
               />
             ) : null}
@@ -626,7 +641,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                 onContinueTask={
                   canContinueMessage ? () => onContinueTask(message) : undefined
                 }
-                onOpenWorkspaceFile={onOpenWorkspaceFile}
+                onOpenWorkspaceFile={openWorkspaceFile}
               />
             ) : null}
 
@@ -707,6 +722,36 @@ export const ConversationFeed = ({
     string | null
   >(null);
   const messageElementsRef = useRef(new Map<string, HTMLDivElement>());
+  const openCallbacksRef = useRef({ onOpenWorkspaceFile, onOpenAttachment });
+  useLayoutEffect(() => {
+    openCallbacksRef.current = { onOpenWorkspaceFile, onOpenAttachment };
+  }, [onOpenWorkspaceFile, onOpenAttachment]);
+  const openWorkspaceFile = useCallback(
+    (
+      relativePath: string,
+      line?: number,
+      messageWorkspaceRoot?: string | null,
+    ) => {
+      openCallbacksRef.current.onOpenWorkspaceFile(
+        relativePath,
+        line,
+        messageWorkspaceRoot,
+      );
+    },
+    [],
+  );
+  const openAttachment = useCallback(
+    (
+      attachment: ChatSessionContextAttachment,
+      messageWorkspaceRoot?: string | null,
+    ) => {
+      openCallbacksRef.current.onOpenAttachment?.(
+        attachment,
+        messageWorkspaceRoot,
+      );
+    },
+    [],
+  );
   const navigationMessageIds = useMemo(
     () =>
       getNavigableConversationMessages(visibleMessages).map(
@@ -1642,16 +1687,9 @@ export const ConversationFeed = ({
             onCancelPromptEnhancement={onCancelPromptEnhancement}
             onContinueTask={onContinueTask}
             onSaveMessageAsContextPack={onSaveMessageAsContextPack}
-            onOpenWorkspaceFile={(relativePath, line) =>
-              onOpenWorkspaceFile(relativePath, line, messageWorkspaceRoot)
-            }
+            onOpenWorkspaceFile={openWorkspaceFile}
             onMessageElementChange={setMessageElement}
-            onOpenAttachment={
-              onOpenAttachment
-                ? (attachment) =>
-                    onOpenAttachment(attachment, messageWorkspaceRoot)
-                : undefined
-            }
+            onOpenAttachment={onOpenAttachment ? openAttachment : undefined}
             onSpeakMessage={voicePlayback.onSpeakMessage}
             onStopSpeaking={voicePlayback.onStopSpeaking}
             onOpenMessageContextMenu={openMessageContextMenu}
