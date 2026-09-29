@@ -54,7 +54,6 @@ export const AssistantBubbleShell = () => {
   );
   const temporarilyHiddenUntilRef = useRef<number>(0);
   const suppressPrimaryActionUntilRef = useRef<number>(0);
-  const lastVisibilityRef = useRef<boolean | null>(null);
   const lastBubbleSizeRef = useRef<string | null>(null);
   const lastBubblePositionRef = useRef<string | null>(null);
   const lastMonitorTopologyKeyRef = useRef<string | null>(null);
@@ -191,39 +190,23 @@ export const AssistantBubbleShell = () => {
       !disposed && syncGenerationRef.current === syncGeneration;
 
     const setBubbleVisibility = async (visible: boolean): Promise<void> => {
-      if (!isCurrentSync() || lastVisibilityRef.current === visible) {
+      if (!isCurrentSync()) {
         return;
       }
 
-      if (visible) {
-        const isVisible = await currentWindow.isVisible();
-
-        if (!isCurrentSync()) {
-          return;
-        }
-
-        if (!isVisible) {
-          try {
-            await currentWindow.show();
-          } catch {
-            // ignore transient show failures while syncing
-            return;
-          }
-        }
-
-        if (isCurrentSync()) {
-          lastVisibilityRef.current = true;
-        }
+      const isVisible = await currentWindow.isVisible();
+      if (!isCurrentSync() || isVisible === visible) {
         return;
       }
 
       try {
-        await currentWindow.hide();
-        if (isCurrentSync()) {
-          lastVisibilityRef.current = false;
+        if (visible) {
+          await currentWindow.show();
+        } else {
+          await currentWindow.hide();
         }
-      } catch {
-        // ignore no-op hide failures while syncing
+      } catch (error) {
+        console.error("Failed to update assistant bubble visibility", error);
       }
     };
 
@@ -288,6 +271,13 @@ export const AssistantBubbleShell = () => {
           return;
         }
 
+        if (await currentWindow.isMaximized()) {
+          await currentWindow.unmaximize();
+        }
+        if (!isCurrentSync()) {
+          return;
+        }
+
         const shouldHideTemporarily =
           Date.now() < temporarilyHiddenUntilRef.current;
         const shouldHideForFullscreen =
@@ -309,11 +299,16 @@ export const AssistantBubbleShell = () => {
           nextSizeKey !== lastBubbleSizeRef.current ||
           !sizeIsCurrent;
 
-        if (
-          shouldSyncSize &&
-          (await setWindowSize(currentWindow, layout.bubbleSize))
-        ) {
+        if (shouldSyncSize) {
+          if (!(await setWindowSize(currentWindow, layout.bubbleSize))) {
+            await setBubbleVisibility(false);
+            return;
+          }
           lastBubbleSizeRef.current = nextSizeKey;
+        }
+        if (!(await isBubbleSizeCurrent(layout.bubbleSize))) {
+          await setBubbleVisibility(false);
+          return;
         }
 
         const positionIsCurrent = await isBubblePositionCurrent(
@@ -327,15 +322,20 @@ export const AssistantBubbleShell = () => {
           nextPositionKey !== lastBubblePositionRef.current ||
           !positionIsCurrent;
 
-        if (
-          shouldSyncPosition &&
-          (await setWindowPosition(currentWindow, layout.bubblePosition))
-        ) {
+        if (shouldSyncPosition) {
+          if (
+            !(await setWindowPosition(currentWindow, layout.bubblePosition))
+          ) {
+            await setBubbleVisibility(false);
+            return;
+          }
           lastBubblePositionRef.current = nextPositionKey;
           await syncAssistantPopupPosition(layout);
         }
 
-        await setBubbleVisibility(shouldShow);
+        await setBubbleVisibility(
+          shouldShow && Date.now() >= temporarilyHiddenUntilRef.current,
+        );
       } finally {
         // The shared queue starts the next geometry reconciliation only after
         // this generation has either completed or observed that it is stale.
@@ -439,7 +439,6 @@ export const AssistantBubbleShell = () => {
     event.preventDefault();
     event.stopPropagation();
     suppressPrimaryActionUntilRef.current = Date.now() + 800;
-    lastVisibilityRef.current = false;
     temporarilyHiddenUntilRef.current =
       Date.now() + desktopSettings.assistantBubbleTemporarilyHideSeconds * 1000;
     popupStateRequestRef.current += 1;

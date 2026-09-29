@@ -46,10 +46,7 @@ import {
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
-import {
-  ASSISTANT_SURFACE_READY_EVENT,
-  QUICK_CHAT_DROP_EVENT,
-} from "./runtime";
+import { QUICK_CHAT_DROP_EVENT } from "./runtime";
 
 const QUICK_TASK_HISTORY_LIMIT = 6;
 const QUICK_WINDOW_BLUR_HIDE_DELAY_MS = 100;
@@ -307,14 +304,6 @@ export const AssistantPopupShell = (): JSX.Element => {
   });
 
   useEffect(() => {
-    if (isTauri()) {
-      void getCurrentWindow().emit(ASSISTANT_SURFACE_READY_EVENT, {
-        label: getCurrentWindow().label,
-      });
-    }
-  }, []);
-
-  useEffect(() => {
     quickChatPinnedRef.current = quickChatPinned;
   }, [quickChatPinned]);
 
@@ -325,6 +314,7 @@ export const AssistantPopupShell = (): JSX.Element => {
 
     const currentWindow = getCurrentWindow();
     let disposed = false;
+    let hasReceivedFocus = false;
     let unsubscribe: (() => void) | undefined;
     let hideTimeoutId: number | undefined;
 
@@ -342,10 +332,11 @@ export const AssistantPopupShell = (): JSX.Element => {
         clearPendingHide();
 
         if (event.payload) {
+          hasReceivedFocus = true;
           return;
         }
 
-        if (quickChatPinnedRef.current) {
+        if (!hasReceivedFocus || quickChatPinnedRef.current) {
           return;
         }
 
@@ -356,14 +347,32 @@ export const AssistantPopupShell = (): JSX.Element => {
             return;
           }
 
-          void controller
-            .flushPersistence()
-            .catch((error) => {
+          void (async () => {
+            if (await currentWindow.isFocused()) {
+              return;
+            }
+
+            try {
+              await controller.flushPersistence();
+            } catch (error) {
               console.error("Failed to flush Quick Chat state", error);
-            })
-            .finally(() => {
-              void currentWindow.close().catch(() => undefined);
-            });
+            }
+
+            if (
+              disposed ||
+              quickChatPinnedRef.current ||
+              (await currentWindow.isFocused())
+            ) {
+              return;
+            }
+
+            await currentWindow.close();
+          })().catch((error) => {
+            console.error(
+              "Failed to hide Quick Chat after losing focus",
+              error,
+            );
+          });
         }, QUICK_WINDOW_BLUR_HIDE_DELAY_MS);
       })
       .then((unlisten) => {
@@ -373,6 +382,16 @@ export const AssistantPopupShell = (): JSX.Element => {
         }
 
         unsubscribe = unlisten;
+        void currentWindow
+          .isFocused()
+          .then((focused) => {
+            if (!disposed && focused) {
+              hasReceivedFocus = true;
+            }
+          })
+          .catch((error) => {
+            console.error("Failed to inspect Quick Chat focus", error);
+          });
       })
       .catch((error) => {
         console.error("Failed to subscribe to Quick Chat focus changes", error);

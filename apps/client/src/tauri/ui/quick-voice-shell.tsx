@@ -1,5 +1,4 @@
 import { useAssistantDisplayLayout } from "./use-assistant-display-layout";
-import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ArrowUpRight, X } from "lucide-react";
 import {
@@ -27,7 +26,6 @@ import { useSpeechRecorder } from "./chat-session/_helpers/use-speech-recorder";
 import { useSpeechTranscription } from "./chat-session/_helpers/use-speech-transcription";
 import { processUserSpeechText } from "./speech-text-processing";
 import {
-  ASSISTANT_SURFACE_READY_EVENT,
   QUICK_VOICE_START_EVENT,
   type UserSpeechToTextSettings,
 } from "./runtime";
@@ -54,13 +52,6 @@ export const QuickVoiceShell = (): JSX.Element => {
     trackSessionReads: false,
   });
 
-  useEffect(() => {
-    if (isTauri()) {
-      void getCurrentWindow().emit(ASSISTANT_SURFACE_READY_EVENT, {
-        label: getCurrentWindow().label,
-      });
-    }
-  }, []);
   const submitQuickVoiceCommand = controller.submitQuickVoiceCommand;
   const speechToTextSettings = useMemo<UserSpeechToTextSettings>(() => {
     return {

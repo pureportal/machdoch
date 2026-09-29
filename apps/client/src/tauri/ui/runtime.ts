@@ -176,8 +176,6 @@ export const DESKTOP_SETTINGS_CHANGED_EVENT =
   "machdoch://desktop-settings-changed";
 export const USER_SETTINGS_CHANGED_EVENT = "machdoch://user-settings-changed";
 export const QUICK_VOICE_START_EVENT = "machdoch://quick-voice-start";
-export const ASSISTANT_SURFACE_READY_EVENT =
-  "machdoch://assistant-surface-ready";
 export const QUICK_CHAT_DROP_EVENT = "machdoch://quick-chat-drop";
 export const FILE_MANAGER_INVOCATION_EVENT =
   "machdoch://file-manager-invocation";
@@ -1317,6 +1315,7 @@ export interface RalphRestoreFlowRevisionResult {
 
 export interface RalphRunFlowInput {
   name: string;
+  isolated?: boolean;
   scope?: RalphFlowScope;
   params?: Record<string, string>;
   mode?: RunMode;
@@ -1853,7 +1852,9 @@ const isFleetControlCommandEvent = (
         value.mode as (typeof FLEET_CONTROL_RUN_MODES)[number],
       )) &&
     (value.kind !== "set-parallel-agent-mode" ||
-      ["disabled", "read-only", "machdoch", "native"].includes(String(value.mode))) &&
+      ["disabled", "read-only", "machdoch", "native"].includes(
+        String(value.mode),
+      )) &&
     (value.reasoning === undefined || typeof value.reasoning === "string") &&
     (value.promptEnhancementMode === undefined ||
       typeof value.promptEnhancementMode === "string") &&
@@ -5751,6 +5752,7 @@ const createRalphRunArguments = (input: RalphRunFlowInput): string[] => {
   }
 
   const argumentsList = ["run", normalizedName];
+  if (input.isolated) argumentsList.push("--isolated");
 
   appendSchedulerOption(argumentsList, "--scope", input.scope);
   appendSchedulerOption(argumentsList, "--mode", input.mode);

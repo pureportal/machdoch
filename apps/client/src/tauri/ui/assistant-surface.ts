@@ -12,7 +12,6 @@ import {
 } from "@tauri-apps/api/window";
 import {
   ASSISTANT_POPUP_WINDOW_LABEL,
-  ASSISTANT_SURFACE_READY_EVENT,
   MAIN_WINDOW_LABEL,
   QUICK_VOICE_START_EVENT,
   QUICK_VOICE_WINDOW_LABEL,
@@ -165,35 +164,11 @@ const getOrCreateAssistantWindow = async (
     return existingWindow;
   }
 
-  const currentWindow = getCurrentWindow();
-  let resolveReady: (() => void) | undefined;
-  const readyPromise = new Promise<void>((resolve) => {
-    resolveReady = resolve;
-  });
-  const unlisten = await currentWindow.listen<{ label?: string }>(
-    ASSISTANT_SURFACE_READY_EVENT,
-    (event) => {
-      if (event.payload.label === label) {
-        resolveReady?.();
-      }
-    },
-  );
-  let readyTimeout: number | null = null;
-
   try {
     await invoke("ensure_assistant_window", { label });
-    await Promise.race([
-      readyPromise,
-      new Promise<void>((resolve) => {
-        readyTimeout = window.setTimeout(resolve, 3_000);
-      }),
-    ]);
   } catch (error) {
     console.error(`Failed to create assistant window \`${label}\``, error);
     return null;
-  } finally {
-    if (readyTimeout !== null) window.clearTimeout(readyTimeout);
-    unlisten();
   }
 
   return getWindowByLabel(label);
@@ -316,7 +291,8 @@ export const showAssistantPopup = async (popupPositionOverride?: {
   try {
     await applyAssistantPopupLayout(popupWindow, popupPositionOverride);
 
-    await Promise.all([popupWindow.show(), popupWindow.unminimize()]);
+    await popupWindow.unminimize();
+    await popupWindow.show();
     await popupWindow.setFocus();
     return true;
   } catch (error) {
@@ -439,7 +415,8 @@ export const showQuickVoiceWindow = async (): Promise<void> => {
       await setWindowSize(quickVoiceWindow, layout.quickVoiceSize);
     }
 
-    await Promise.all([quickVoiceWindow.show(), quickVoiceWindow.unminimize()]);
+    await quickVoiceWindow.unminimize();
+    await quickVoiceWindow.show();
     await quickVoiceWindow.setFocus();
     await getCurrentWindow().emitTo(
       QUICK_VOICE_WINDOW_LABEL,

@@ -73,7 +73,6 @@ pub(crate) fn sync_assistant_bubble_window<R: Runtime>(app: &AppHandle<R>) -> Re
             .map_err(|error| format!("Failed to create the assistant bubble: {error}"))?;
         let _ = window.set_focusable(false);
         let _ = window.set_skip_taskbar(true);
-        let _ = window.unminimize();
     } else {
         if let Some(window) = app.get_webview_window(ASSISTANT_BUBBLE_WINDOW_LABEL) {
             let _ = window.destroy();
@@ -108,6 +107,7 @@ pub(crate) fn ensure_assistant_window<R: Runtime>(
         ASSISTANT_BUBBLE_WINDOW_LABEL => builder
             .title("machdoch Assistant Bubble")
             .inner_size(128.0, 104.0)
+            .max_inner_size(128.0, 104.0)
             .focused(false)
             .focusable(false)
             .build()
