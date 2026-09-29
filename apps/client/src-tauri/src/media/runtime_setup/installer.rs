@@ -249,6 +249,8 @@ pub(crate) fn install(
             .args(["pip", "install", "--python"])
             .arg(python_path(&root))
             .args([
+                "--no-binary",
+                "diffusers",
                 "--only-binary",
                 ":all:",
                 "--default-index",
