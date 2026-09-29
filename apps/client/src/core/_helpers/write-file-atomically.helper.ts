@@ -92,15 +92,20 @@ export const writeFileAtomically = async (
      */
     beforeCommit?: () => void | Promise<void>;
     mode?: number;
+    temporaryDirectory?: string;
   } = {},
 ): Promise<void> => {
   const directory = dirname(path);
+  const temporaryDirectory = options.temporaryDirectory ?? directory;
   const temporaryPath = join(
-    directory,
+    temporaryDirectory,
     `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
   );
 
   await mkdir(directory, { recursive: true });
+  if (temporaryDirectory !== directory) {
+    await mkdir(temporaryDirectory, { recursive: true });
+  }
   const mode =
     options.mode ??
     (process.platform === "win32"

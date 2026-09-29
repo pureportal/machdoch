@@ -1,7 +1,8 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as atomicPersistence from "../_helpers/write-file-atomically.helper.js";
 import {
   getProviderSyncAutostartPath,
   installProviderSyncAutostart,
@@ -110,6 +111,67 @@ describe("provider sync autostart", () => {
       await expect(readFile(autostartPath, "utf8")).resolves.toContain(
         ", 0, False",
       );
+    },
+  );
+
+  it.runIf(process.platform === "win32")(
+    "keeps temporary launchers outside Startup until the atomic commit",
+    async () => {
+      const appData = await mkdtemp(
+        join(tmpdir(), "machdoch-autostart-staging-"),
+      );
+      roots.push(appData);
+      vi.stubEnv("APPDATA", appData);
+      const autostartPath = getProviderSyncAutostartPath();
+      await installProviderSyncAutostart("C:\\first-workspace");
+      const installedContent = await readFile(autostartPath, "utf8");
+      const writeFileAtomically = atomicPersistence.writeFileAtomically;
+      const beforeCommit = vi.fn(async () => {
+        expect(await readdir(dirname(autostartPath))).toEqual([
+          "machdoch-provider-sync.vbs",
+        ]);
+        expect(await readFile(autostartPath, "utf8")).toBe(installedContent);
+      });
+      vi.spyOn(atomicPersistence, "writeFileAtomically").mockImplementation(
+        (path, data, encoding, options) =>
+          writeFileAtomically(path, data, encoding, {
+            ...options,
+            beforeCommit,
+          }),
+      );
+
+      await installProviderSyncAutostart("C:\\second-workspace");
+
+      expect(beforeCommit).toHaveBeenCalledOnce();
+      expect(await readFile(autostartPath, "utf8")).toContain(
+        "C:\\second-workspace",
+      );
+      expect(
+        await readdir(join(appData, "machdoch", "autostart-staging")),
+      ).toEqual([]);
+    },
+  );
+
+  it.runIf(process.platform === "win32")(
+    "preserves an unchanged launcher without rewriting it",
+    async () => {
+      const appData = await mkdtemp(
+        join(tmpdir(), "machdoch-autostart-unchanged-"),
+      );
+      roots.push(appData);
+      vi.stubEnv("APPDATA", appData);
+      const autostartPath = await installProviderSyncAutostart("C:\\workspace");
+      const previousTimestamp = new Date("2000-01-01T00:00:00.000Z");
+      await utimes(autostartPath, previousTimestamp, previousTimestamp);
+
+      await installProviderSyncAutostart("C:\\workspace");
+
+      expect((await stat(autostartPath)).mtimeMs).toBe(
+        previousTimestamp.getTime(),
+      );
+      expect(await readdir(dirname(autostartPath))).toEqual([
+        "machdoch-provider-sync.vbs",
+      ]);
     },
   );
 });

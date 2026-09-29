@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import { mkdir, rm, stat } from "node:fs/promises";
+import { join } from "node:path";
+import { readFile, rm, stat } from "node:fs/promises";
 import { writeFileAtomically } from "../_helpers/write-file-atomically.helper.js";
 import {
   resolveMachdochCliLaunch,
@@ -29,10 +29,12 @@ const escapeDesktopValue = (value: string): string =>
     .replaceAll("\r", "\\r")
     .replaceAll(" ", "\\s");
 
+const getWindowsAppDataDirectory = (): string =>
+  process.env.APPDATA ?? join(homedir(), "AppData", "Roaming");
+
 const getWindowsStartupDirectory = (): string => {
-  const appData = process.env.APPDATA ?? join(homedir(), "AppData", "Roaming");
   return join(
-    appData,
+    getWindowsAppDataDirectory(),
     "Microsoft",
     "Windows",
     "Start Menu",
@@ -140,8 +142,29 @@ export const installProviderSyncAutostart = async (
   workspaceRoot: string,
 ): Promise<string> => {
   const path = getProviderSyncAutostartPath();
-  await mkdir(dirname(path), { recursive: true });
-  await writeFileAtomically(path, createAutostartContent(workspaceRoot));
+  const content = createAutostartContent(workspaceRoot);
+  const installedContent = await readFile(path, "utf8").catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    },
+  );
+  if (installedContent === content) return path;
+
+  await writeFileAtomically(
+    path,
+    content,
+    "utf8",
+    process.platform === "win32"
+      ? {
+          temporaryDirectory: join(
+            getWindowsAppDataDirectory(),
+            "machdoch",
+            "autostart-staging",
+          ),
+        }
+      : {},
+  );
   return path;
 };
 
