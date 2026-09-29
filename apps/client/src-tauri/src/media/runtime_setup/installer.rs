@@ -16,7 +16,11 @@ const DETECTION_TIMEOUT: Duration = Duration::from_secs(3 * 60);
 const REQUIREMENTS: &str = include_str!("../../../python/media_diffusers_requirements.txt");
 
 pub(crate) fn python_path(root: &Path) -> PathBuf {
-    root.join("environment").join(if cfg!(windows) {
+    environment_python_path(&root.join("environment"))
+}
+
+fn environment_python_path(environment: &Path) -> PathBuf {
+    environment.join(if cfg!(windows) {
         "Scripts/python.exe"
     } else {
         "bin/python"
@@ -48,11 +52,79 @@ fn uv_command(uv: &Path, root: &Path) -> Command {
     command
 }
 
-fn install_packages(uv: &Path, root: &Path, index: &str, packages: &[String]) -> MediaResult<()> {
+fn managed_python_is_valid(
+    uv: &Path,
+    root: &Path,
+    version: &str,
+    run: &mut impl FnMut(&mut Command, Duration) -> MediaResult<String>,
+) -> bool {
+    let Ok(found) = run(
+        uv_command(uv, root).args([
+            "python",
+            "find",
+            "--managed-python",
+            "--no-python-downloads",
+            version,
+        ]),
+        DETECTION_TIMEOUT,
+    ) else {
+        return false;
+    };
+    let Ok(managed_root) = fs::canonicalize(root.join("python")) else {
+        return false;
+    };
+    let Ok(python) = fs::canonicalize(found.trim()) else {
+        return false;
+    };
+    if !python.starts_with(&managed_root) || !python.is_file() {
+        return false;
+    }
+    let actual = run(
+        Command::new(python).args([
+            "-I",
+            "-B",
+            "-c",
+            "import sys; print('.'.join(map(str, sys.version_info[:3])))",
+        ]),
+        DETECTION_TIMEOUT,
+    );
+    matches!(actual, Ok(actual) if actual.trim() == version)
+}
+
+pub(super) fn ensure_managed_python(
+    uv: &Path,
+    root: &Path,
+    version: &str,
+    mut run: impl FnMut(&mut Command, Duration) -> MediaResult<String>,
+) -> MediaResult<()> {
+    if managed_python_is_valid(uv, root, version, &mut run) {
+        return Ok(());
+    }
+    run(
+        uv_command(uv, root).args([
+            "python",
+            "install",
+            version,
+            "--reinstall",
+            "--no-bin",
+            "--no-registry",
+        ]),
+        INSTALL_TIMEOUT,
+    )?;
+    Ok(())
+}
+
+fn install_packages(
+    uv: &Path,
+    root: &Path,
+    environment: &Path,
+    index: &str,
+    packages: &[String],
+) -> MediaResult<()> {
     process::run(
         uv_command(uv, root)
             .args(["pip", "install", "--python"])
-            .arg(python_path(root))
+            .arg(environment_python_path(environment))
             .args([
                 "--only-binary",
                 "torch,torchvision,numpy,pillow,safetensors,sentencepiece,opencv-python-headless",
@@ -104,8 +176,8 @@ pub(super) fn select_accelerator(vendors: &str) -> &'static str {
     }
 }
 
-fn amd_device(root: &Path) -> MediaResult<String> {
-    let output = process::run(Command::new(python_path(root)).args([
+fn amd_device(environment: &Path) -> MediaResult<String> {
+    let output = process::run(Command::new(environment_python_path(environment)).args([
         "-I", "-B", "-c",
         "import torch; devices = [torch.cuda.get_device_properties(i) for i in range(torch.cuda.device_count())]; print(max(devices, key=lambda device: device.total_memory).gcnArchName.split(':')[0])",
     ]), DETECTION_TIMEOUT).map_err(|error| format!("Graphics detection failed: {error}"))?;
@@ -133,16 +205,142 @@ pub(crate) fn validate_directory(path: &Path) -> MediaResult<()> {
     fs::create_dir_all(path).map_err(|error| format!("Could not create setup directory: {error}"))
 }
 
-pub(super) fn remove_managed_environment(root: &Path) -> MediaResult<()> {
-    let root = fs::canonicalize(root).map_err(|error| error.to_string())?;
-    let environment = root.join("environment");
-    validate_directory(&environment)?;
-    let resolved = fs::canonicalize(&environment).map_err(|error| error.to_string())?;
-    if resolved != environment || resolved.parent() != Some(root.as_path()) {
-        return Err("The managed environment must remain inside the setup directory".to_string());
+pub(super) fn remove_environment_directory(path: &Path) -> MediaResult<()> {
+    if !environment_directory_exists(path)? {
+        return Ok(());
     }
-    fs::remove_dir_all(&resolved)
-        .map_err(|error| format!("Could not rebuild the managed environment: {error}"))
+    fs::remove_dir_all(path)
+        .map_err(|error| format!("Could not remove managed environment: {error}"))
+}
+
+fn environment_directory_exists(path: &Path) -> MediaResult<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => Ok(true),
+        Ok(_) => Err(format!(
+            "Managed environment path is not a directory: {}",
+            path.display()
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+pub(super) fn restore_interrupted_environment(
+    root: &Path,
+    mut verify: impl FnMut(&Path) -> MediaResult<()>,
+    mut rename: impl FnMut(&Path, &Path) -> std::io::Result<()>,
+    mut remove: impl FnMut(&Path) -> MediaResult<()>,
+) -> MediaResult<()> {
+    let environment = root.join("environment");
+    let backup = root.join("environment.backup");
+    if !environment_directory_exists(&backup)? {
+        return Ok(());
+    }
+    if !environment_directory_exists(&environment)? {
+        let _guard = RUNTIME_USE
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        rename(&backup, &environment)
+            .map_err(|error| format!("Could not restore the previous environment: {error}"))?;
+    } else if verify(&environment).is_ok() {
+        remove(&backup)?;
+    } else {
+        let _guard = RUNTIME_USE
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        remove(&environment)?;
+        rename(&backup, &environment)
+            .map_err(|error| format!("Could not restore the previous environment: {error}"))?;
+    }
+    Ok(())
+}
+
+fn verify_environment(
+    environment: &Path,
+    worker: &Path,
+    accelerator: &str,
+) -> MediaResult<LocalDiffusersRuntimeStatus> {
+    let runtime = provider_local_diffusers::verify_python_runtime(
+        &environment_python_path(environment),
+        worker,
+    );
+    if !runtime.ready {
+        return Err(runtime.diagnostic);
+    }
+    if matches!(accelerator, "amd" | "nvidia") && runtime.device.as_deref() != Some("cuda") {
+        return Err("The graphics driver could not start GPU execution".to_string());
+    }
+    Ok(runtime)
+}
+
+pub(super) fn replace_environment<T>(
+    root: &Path,
+    prepare: impl FnOnce(&Path) -> MediaResult<()>,
+    mut verify: impl FnMut(&Path) -> MediaResult<T>,
+    mut rename: impl FnMut(&Path, &Path) -> std::io::Result<()>,
+    mut remove: impl FnMut(&Path) -> MediaResult<()>,
+) -> MediaResult<T> {
+    let environment = root.join("environment");
+    let staging = root.join("environment.staging");
+    let backup = root.join("environment.backup");
+    restore_interrupted_environment(
+        root,
+        |environment| verify(environment).map(|_| ()),
+        &mut rename,
+        &mut remove,
+    )?;
+    remove(&staging)?;
+    let prepared = prepare(&staging).and_then(|_| verify(&staging));
+    if let Err(error) = prepared {
+        if let Err(cleanup) = remove(&staging) {
+            return Err(format!("{error}; staging cleanup failed: {cleanup}"));
+        }
+        return Err(error);
+    }
+    let had_environment = environment_directory_exists(&environment)?;
+    {
+        let _guard = RUNTIME_USE
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if had_environment {
+            rename(&environment, &backup)
+                .map_err(|error| format!("Could not preserve the previous environment: {error}"))?;
+        }
+        if let Err(error) = rename(&staging, &environment) {
+            if had_environment {
+                rename(&backup, &environment).map_err(|restore| {
+                    format!("Could not promote the environment: {error}; could not restore the previous environment: {restore}")
+                })?;
+            }
+            remove(&staging)?;
+            return Err(format!("Could not promote the environment: {error}"));
+        }
+    }
+    match verify(&environment) {
+        Ok(runtime) => {
+            if had_environment {
+                if let Err(error) = remove(&backup) {
+                    eprintln!("Could not remove previous Media Studio environment: {error}");
+                }
+            }
+            Ok(runtime)
+        }
+        Err(error) => {
+            let _guard = RUNTIME_USE
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            rename(&environment, &staging).map_err(|move_error| {
+                format!("Promoted environment verification failed: {error}; could not move it aside: {move_error}")
+            })?;
+            if had_environment {
+                rename(&backup, &environment).map_err(|restore| {
+                    format!("Promoted environment verification failed: {error}; could not restore the previous environment: {restore}")
+                })?;
+            }
+            remove(&staging)?;
+            Err(error)
+        }
+    }
 }
 
 pub(crate) fn install(
@@ -162,6 +360,15 @@ pub(crate) fn install(
     lock.try_lock()
         .map_err(|error| format!("Another Media Studio setup is running: {error}"))?;
     report(SetupStatus::running(SetupPhase::Checking));
+    if environment_directory_exists(&root.join("environment.backup"))? {
+        let accelerator = detect_accelerator()?;
+        restore_interrupted_environment(
+            &root,
+            |environment| verify_environment(environment, worker, accelerator).map(|_| ()),
+            |from, to| fs::rename(from, to),
+            remove_environment_directory,
+        )?;
+    }
     let existing = provider_local_diffusers::verify_python_runtime(&python_path(&root), worker);
     if existing.ready {
         return Ok(existing);
@@ -174,7 +381,7 @@ pub(crate) fn install(
         .installers
         .get(&platform)
         .ok_or_else(|| format!("Media Studio setup is not supported on {platform}"))?;
-    for directory in ["tools", "python", "environment", "cache"] {
+    for directory in ["tools", "python", "cache"] {
         validate_directory(&root.join(directory))?;
     }
     let accelerator = detect_accelerator()?;
@@ -189,91 +396,84 @@ pub(crate) fn install(
         .write()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     super::super::model_memory::release_idle()?;
-    process::run(
-        uv_command(&uv, &root).args([
-            "python",
-            "install",
-            &manifest.python_version,
-            "--reinstall",
-            "--no-bin",
-            "--no-registry",
-        ]),
-        INSTALL_TIMEOUT,
-    )?;
-    remove_managed_environment(&root)?;
-    process::run(
-        uv_command(&uv, &root)
-            .args([
-                "venv",
-                "--managed-python",
-                "--no-python-downloads",
-                "--python",
-                &manifest.python_version,
-            ])
-            .arg(root.join("environment")),
-        DETECTION_TIMEOUT,
-    )?;
-    report(SetupStatus::running(SetupPhase::Dependencies));
-    install_packages(
-        &uv,
-        &root,
-        &bundle.index,
-        &[
-            format!("torch=={}", bundle.torch),
-            format!("torchvision=={}", bundle.torchvision),
-        ],
-    )?;
-    if accelerator == "amd" {
-        let device = amd_device(&root)?;
-        install_packages(
-            &uv,
-            &root,
-            &bundle.index,
-            &[
-                format!("torch[device-{device}]=={}", bundle.torch),
-                format!("torchvision[device-{device}]=={}", bundle.torchvision),
-            ],
-        )?;
-    }
-    let requirements = root.join("requirements.txt");
-    fs::write(
-        &requirements,
-        format!(
-            "{REQUIREMENTS}\ntorch=={}\ntorchvision=={}\n",
-            bundle.torch, bundle.torchvision
-        ),
-    )
-    .map_err(|error| error.to_string())?;
-    process::run(
-        uv_command(&uv, &root)
-            .args(["pip", "install", "--python"])
-            .arg(python_path(&root))
-            .args([
-                "--no-binary",
-                "diffusers",
-                "--only-binary",
-                ":all:",
-                "--default-index",
-                "https://pypi.org/simple",
-                "--requirements",
-            ])
-            .arg(requirements),
-        INSTALL_TIMEOUT,
-    )?;
-    report(SetupStatus::running(SetupPhase::Verifying));
-    process::run(
-        uv_command(&uv, &root)
-            .args(["pip", "check", "--python"])
-            .arg(python_path(&root)),
-        DETECTION_TIMEOUT,
-    )?;
+    ensure_managed_python(&uv, &root, &manifest.python_version, process::run)?;
     drop(guard);
-    let runtime = provider_local_diffusers::verify_python_runtime(&python_path(&root), worker);
-    if !runtime.ready {
-        return Err(runtime.diagnostic);
-    }
-    if matches!(accelerator, "amd" | "nvidia") && runtime.device.as_deref() != Some("cuda") {
-        return Err("The graphics driver could not start GPU execution".to_string());
-    }
+    let runtime = replace_environment(
+        &root,
+        |environment| {
+            process::run(
+                uv_command(&uv, &root)
+                    .args([
+                        "venv",
+                        "--managed-python",
+                        "--no-python-downloads",
+                        "--python",
+                        &manifest.python_version,
+                    ])
+                    .arg(environment),
+                DETECTION_TIMEOUT,
+            )?;
+            report(SetupStatus::running(SetupPhase::Dependencies));
+            install_packages(
+                &uv,
+                &root,
+                environment,
+                &bundle.index,
+                &[
+                    format!("torch=={}", bundle.torch),
+                    format!("torchvision=={}", bundle.torchvision),
+                ],
+            )?;
+            if accelerator == "amd" {
+                let device = amd_device(environment)?;
+                install_packages(
+                    &uv,
+                    &root,
+                    environment,
+                    &bundle.index,
+                    &[
+                        format!("torch[device-{device}]=={}", bundle.torch),
+                        format!("torchvision[device-{device}]=={}", bundle.torchvision),
+                    ],
+                )?;
+            }
+            let requirements = root.join("requirements.txt");
+            fs::write(
+                &requirements,
+                format!(
+                    "{REQUIREMENTS}\ntorch=={}\ntorchvision=={}\n",
+                    bundle.torch, bundle.torchvision
+                ),
+            )
+            .map_err(|error| error.to_string())?;
+            process::run(
+                uv_command(&uv, &root)
+                    .args(["pip", "install", "--python"])
+                    .arg(environment_python_path(environment))
+                    .args([
+                        "--no-binary",
+                        "diffusers",
+                        "--only-binary",
+                        ":all:",
+                        "--default-index",
+                        "https://pypi.org/simple",
+                        "--requirements",
+                    ])
+                    .arg(requirements),
+                INSTALL_TIMEOUT,
+            )?;
+            report(SetupStatus::running(SetupPhase::Verifying));
+            process::run(
+                uv_command(&uv, &root)
+                    .args(["pip", "check", "--python"])
+                    .arg(environment_python_path(environment)),
+                DETECTION_TIMEOUT,
+            )?;
+            Ok(())
+        },
+        |environment| verify_environment(environment, worker, accelerator),
+        |from, to| fs::rename(from, to),
+        remove_environment_directory,
+    )?;
     Ok(runtime)
 }
