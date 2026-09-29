@@ -190,6 +190,118 @@ describe("Ralph scope registry helpers", () => {
     }
   });
 
+  it("excludes transient Minimax copies and retires previously registered copies", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-minimax-scopes-"));
+    const sourcePath = "apps/client/src-tauri/python/fizgig/minimax";
+    const copyPaths = [
+      ".tmp/cargo-commit-check/debug/python/fizgig/minimax",
+      ".tmp/h3-cargo-check/debug/python/fizgig/minimax",
+    ];
+
+    try {
+      for (const path of [sourcePath, ...copyPaths]) {
+        const directory = join(workspace, path);
+        await mkdir(directory, { recursive: true });
+        await writeFile(join(directory, "__init__.py"), "", "utf8");
+        await writeFile(join(directory, "model.py"), "", "utf8");
+        await writeFile(join(directory, "trainer.py"), "", "utf8");
+      }
+
+      const evidence = await discoverRalphScopeEvidence(workspace, {
+        excludePaths: [],
+        maxDepth: 8,
+      });
+      const sourceScope = evidence.scopes.find(
+        (scope) => scope.paths[0] === sourcePath,
+      );
+      expect(sourceScope).toBeDefined();
+      expect(evidence.excludePaths).toContain(".tmp");
+      expect(
+        evidence.scopes.some((scope) =>
+          scope.paths.some((path) => path.startsWith(".tmp/")),
+        ),
+      ).toBe(false);
+
+      const emptyRegistry = parseRalphScopeRegistry(undefined, {
+        flowAlias: "test-flow",
+        strategy: "start-to-end",
+      });
+      const registered = updateRalphScopeRegistryFromEvidence(
+        emptyRegistry,
+        evidence,
+        { flowAlias: "test-flow", strategy: "start-to-end" },
+      ).registry;
+      const trackedScope = registered.scopes.find(
+        (scope) => scope.id === sourceScope?.id,
+      )!;
+      const staleCopies = copyPaths.map((path, index) => ({
+        ...trackedScope,
+        id: `stale-minimax-copy-${index}`,
+        paths: [path],
+        globs: [`${path}/**/*`],
+        priority: trackedScope.priority + 1,
+      }));
+      const staleRegistry = {
+        ...registered,
+        scopes: [trackedScope, ...staleCopies],
+        selection: {
+          ...registered.selection,
+          currentScopeId: staleCopies[0]!.id,
+          completedScopeIds: [staleCopies[1]!.id],
+        },
+      };
+      const selection = selectRalphScopeFromRegistry(staleRegistry, {
+        strategy: "priority",
+      });
+      expect(selection.scope?.id).toBe(trackedScope.id);
+      expect(selection.reusedCurrentScope).toBe(false);
+      expect(selection.scopeCluster?.paths).toEqual([sourcePath]);
+      expect(selection.scopeCluster?.globs).toContain(`${sourcePath}/**/*`);
+      expect(
+        selectRalphScopeFromRegistry(staleRegistry, {
+          strategy: "priority",
+          forceNew: true,
+        }).scope?.id,
+      ).toBe(trackedScope.id);
+      expect(assessRalphScopeRegistryAvailability(staleRegistry)).toMatchObject({
+        activeScopeCount: 1,
+        selectableScopeCount: 1,
+      });
+
+      const refreshed = updateRalphScopeRegistryFromEvidence(
+        staleRegistry,
+        { ...evidence, scopes: [...evidence.scopes, ...staleCopies] },
+        { flowAlias: "test-flow", strategy: "start-to-end" },
+      );
+      expect(refreshed.removed).toEqual(staleCopies.map((scope) => scope.id));
+      expect(
+        refreshed.registry.scopes
+          .filter((scope) => staleCopies.some((copy) => copy.id === scope.id))
+          .every((scope) => scope.status === "removed"),
+      ).toBe(true);
+      expect(refreshed.registry.selection.currentScopeId).toBeNull();
+      expect(refreshed.registry.selection.completedScopeIds).toEqual([]);
+
+      const explicitEvidence = await discoverRalphScopeEvidence(workspace, {
+        rootPath: sourcePath,
+        maxDepth: 1,
+      });
+      expect(explicitEvidence.scopes.map((scope) => scope.paths[0])).toEqual([
+        sourcePath,
+      ]);
+      const explicitRegistry = updateRalphScopeRegistryFromEvidence(
+        refreshed.registry,
+        explicitEvidence,
+        { flowAlias: "test-flow", strategy: "start-to-end" },
+      ).registry;
+      expect(
+        selectRalphScopeFromRegistry(explicitRegistry).scope?.paths,
+      ).toEqual([sourcePath]);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("rejects malformed routing and verdict state without reading prose", () => {
     const registry = updateRalphScopeRegistryFromEvidence(
       parseRalphScopeRegistry(undefined, {

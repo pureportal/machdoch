@@ -168,9 +168,12 @@ export interface RalphScopeRegistryCycleResult {
   cycleStarted: boolean;
 }
 
+const TRANSIENT_SCOPE_PATH = ".tmp";
+
 const DEFAULT_SCOPE_SCAN_EXCLUDE_PATHS = [
   ".git",
   ".machdoch",
+  TRANSIENT_SCOPE_PATH,
   "node_modules",
   "dist",
   "build",
@@ -674,6 +677,9 @@ const isExcludedScopePath = (
   });
 };
 
+const isTransientScope = (scope: { paths: readonly string[] }): boolean =>
+  scope.paths.some((path) => isExcludedScopePath(path, [TRANSIENT_SCOPE_PATH]));
+
 const addScopeEvidence = (
   scopes: Map<string, RalphScopeEvidenceScope>,
   scope: RalphScopeEvidenceScope | undefined,
@@ -722,8 +728,10 @@ export const discoverRalphScopeEvidence = async (
 ): Promise<RalphScopeEvidenceDocument> => {
   const rootPath = normalizeRegistryPath(options.rootPath ?? ".");
   const scanRoot = resolve(workspaceRoot, rootPath);
-  const excludePaths =
-    options.excludePaths ?? parseRalphScopeExcludePaths(undefined);
+  const excludePaths = normalizePathList([
+    TRANSIENT_SCOPE_PATH,
+    ...(options.excludePaths ?? parseRalphScopeExcludePaths(undefined)),
+  ]);
   const maxDepth = Math.max(0, Math.trunc(options.maxDepth ?? 4));
   const maxResults = Math.max(1, Math.trunc(options.maxResults ?? 200));
   const scopes = new Map<string, RalphScopeEvidenceScope>();
@@ -787,7 +795,7 @@ export const discoverRalphScopeEvidence = async (
     }
   }
 
-  if (scopes.size === 0) {
+  if (scopes.size === 0 && !isExcludedScopePath(rootPath, excludePaths)) {
     addScopeEvidence(
       scopes,
       createDirectoryEvidenceScope(rootPath, "workspace", []),
@@ -1174,8 +1182,11 @@ export const updateRalphScopeRegistryFromEvidence = (
       currentScopeId: existingRegistry.selection.currentScopeId ?? null,
     },
   };
+  const discoveredScopes = evidence.scopes.filter(
+    (scope) => !isTransientScope(scope),
+  );
   const evidenceById = new Map(
-    evidence.scopes.map((scope) => [scope.id, scope]),
+    discoveredScopes.map((scope) => [scope.id, scope]),
   );
   const existingById = new Map(
     registry.scopes.map((scope) => [scope.id, scope]),
@@ -1185,7 +1196,7 @@ export const updateRalphScopeRegistryFromEvidence = (
   const removed: string[] = [];
   const nextScopes: RalphScopeRegistryScope[] = [];
 
-  for (const scope of evidence.scopes) {
+  for (const scope of discoveredScopes) {
     const existing = existingById.get(scope.id);
     if (!existing) {
       added.push(scope.id);
@@ -1293,7 +1304,9 @@ export const updateRalphScopeRegistryFromEvidence = (
 const getActiveScopes = (
   registry: RalphScopeRegistry,
 ): RalphScopeRegistryScope[] => {
-  return registry.scopes.filter((scope) => scope.status === "active");
+  return registry.scopes.filter(
+    (scope) => scope.status === "active" && !isTransientScope(scope),
+  );
 };
 
 const DEFAULT_SCOPE_OUTCOME_COOLDOWN_MS = 15 * 60_000;
