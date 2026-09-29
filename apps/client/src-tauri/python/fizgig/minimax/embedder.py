@@ -436,7 +436,7 @@ class MiniMaxH3TextEncoder:
         self.device = device
         self.compute_dtype = compute_dtype
         self.cpu_embed = cpu_embed     # embed_tokens left on CPU; see _text_forward()
-        self._cache = {}          # caption -> CPU embedding; see encode()
+        self._cache = {}
         self._image_processor = None   # built on first r2v encode; see encode_with_reference()
 
     def _text_forward(self, ids):
@@ -465,7 +465,7 @@ class MiniMaxH3TextEncoder:
 
     @torch.no_grad()
     def encode(self, caption: str, max_length: int = None) -> torch.Tensor:
-        """Encode one caption to [1, L, 5120]. Memoized by caption text for the caching pass.
+        """Encode one caption to [1, L, 5120]. Memoized by caption and token limit.
 
         Text conditioning does not depend on resolution or on anything else that varies between
         dataset blocks, so a caption that appears more than once — repeated text, or several
@@ -477,7 +477,8 @@ class MiniMaxH3TextEncoder:
         dropped the tail of a long prompt — and worse, the text length sets the media clock
         ORIGIN for the video rows, so a truncated prompt also shifted the render onto a
         different temporal grid than the same prompt in ComfyUI."""
-        hit = self._cache.get(caption)
+        cache_key = (caption, max_length or None)
+        hit = self._cache.get(cache_key)
         if hit is not None:
             return hit.clone()                             # callers must not share storage
         # H3: raw prompt text, NO special tokens (no chat template).
@@ -490,7 +491,7 @@ class MiniMaxH3TextEncoder:
         # norm=Identity -> raw layer-50 output
         emb = self._text_forward(ids).to(self.compute_dtype)  # [1, L, 5120]
         # keep it on CPU: a few hundred KB per caption, and GPU memory is the scarce thing here
-        self._cache[caption] = emb.detach().to("cpu")
+        self._cache[cache_key] = emb.detach().to("cpu")
         return emb
 
     @torch.no_grad()
@@ -499,8 +500,8 @@ class MiniMaxH3TextEncoder:
 
         Requires the encoder to have been built with build_qwen3vl_te() — the text-only
         Qwen3Model has no vision tower and would silently ignore the pixels. NOT memoized: the
-        cache is keyed by caption text alone, which would collide across different reference
-        images for the same caption.
+        text cache has no reference-image identity, so different images for the same caption
+        would collide.
         """
         if not hasattr(self.model, "visual"):
             raise RuntimeError(
@@ -570,10 +571,11 @@ class MiniMaxH3TextEncoder:
         LEFT-padding control diverges by 1.9e-01 — the equivalence is a property of right padding
         specifically, not of batching in general."""
         out = [None] * len(captions)
-        todo = [i for i, c in enumerate(captions) if c not in self._cache]
-        for i, c in enumerate(captions):
-            if c in self._cache:
-                out[i] = self._cache[c].clone()
+        cache_keys = [(caption, max_length or None) for caption in captions]
+        todo = [i for i, key in enumerate(cache_keys) if key not in self._cache]
+        for i, key in enumerate(cache_keys):
+            if key in self._cache:
+                out[i] = self._cache[key].clone()
 
         pad_id = self._pad_id()
         for start in range(0, len(todo), batch_size):
@@ -592,7 +594,7 @@ class MiniMaxH3TextEncoder:
             hs = self._text_forward(ids)
             for r, i in enumerate(idxs):
                 emb = hs[r, : toks[r].numel()].unsqueeze(0).to(self.compute_dtype)
-                self._cache[captions[i]] = emb.detach().to("cpu")
+                self._cache[cache_keys[i]] = emb.detach().to("cpu")
                 out[i] = emb
         return out
 
