@@ -366,6 +366,7 @@ const runCliWorker = async (
   options: ParallelAgentSessionOptions,
   signal: AbortSignal,
   tools: AgentToolDefinition[],
+  onBoundaryViolation: (error: WorkerBoundaryError) => void,
 ): Promise<{
   id: string;
   status: "completed";
@@ -379,58 +380,100 @@ const runCliWorker = async (
     throw new Error("The CLI worker instruction plan is missing.");
   }
   reportWorkerProgress(options, workerModelEvent(worker, 1, "started"));
-  const result = await maybeExecuteExternalAgentProviderTask({
-    task: `Original task: ${options.task}\n\nYour objective: ${worker.objective}`,
-    config: {
-      ...options.config,
-      mode: worker.access === "write" ? "machdoch" : "ask",
+  let toolCalls = 0;
+  let successfulWrites = 0;
+  let failedTool: string | undefined;
+  const trackedTools = tools.map((tool) => ({
+    ...tool,
+    execute: async (...args: Parameters<typeof tool.execute>) => {
+      toolCalls += 1;
+      try {
+        const result = await tool.execute(...args);
+        if (result.toolResult.isError) {
+          failedTool ??= `${tool.spec.name}: ${result.toolResult.output.slice(0, 300)}`;
+        } else if (WRITE_TOOLS.has(tool.spec.name)) {
+          successfulWrites += 1;
+        }
+        return result;
+      } catch (error) {
+        failedTool ??= `${tool.spec.name}: ${error instanceof Error ? error.message : String(error)}`;
+        if (error instanceof WorkerBoundaryError) onBoundaryViolation(error);
+        throw error;
+      }
     },
-    taskContext: {
-      ...options.taskContext,
-      executionRole: worker.access === "write" ? "executor" : "generator",
-    },
-    contextSections: [],
-    systemPromptSections: [
-      "You are one parallel worker. Complete only your objective. Do not delegate or write memory.",
-      worker.access === "write"
-        ? `You may edit only these workspace-relative files: ${worker.writePaths.join(", ")}. Use only the scoped Machdoch MCP tools for edits.`
-        : "Read only. Do not modify files or external resources.",
-      worker.readPaths.length > 0
-        ? `Read paths: ${worker.readPaths.join(", ")}.`
-        : "",
-    ].filter(Boolean),
-    preparedConversationContext: {
-      wasQueued: options.preparedConversationContext.wasQueued,
-      workspace: options.preparedConversationContext.workspace,
-      parallelAgentMode: "disabled",
-      sections: [],
-      uiControlEnabled: false,
-      memory: {
-        sessionEnabled: false,
-        sessionEntries: [],
-        workspaceEnabled: false,
-        workspaceEntries: [],
-        globalEnabled: false,
-        globalEntries: [],
+  }));
+  try {
+    const result = await maybeExecuteExternalAgentProviderTask({
+      task: `Original task: ${options.task}\n\nYour objective: ${worker.objective}`,
+      config: {
+        ...options.config,
+        mode: worker.access === "write" ? "machdoch" : "ask",
       },
-    },
-    instructionDeliveryPlan: options.instructionDeliveryPlan,
-    scopedWorkerToolDefinitions: tools,
-    signal,
-  });
-  if (!result || result.status !== "executed") {
+      taskContext: {
+        ...options.taskContext,
+        executionRole: worker.access === "write" ? "executor" : "generator",
+      },
+      contextSections: [],
+      systemPromptSections: [
+        "You are one parallel worker. Complete only your objective. Do not delegate or write memory.",
+        worker.access === "write"
+          ? `You may edit only these workspace-relative files: ${worker.writePaths.join(", ")}. Use only the scoped Machdoch MCP tools for edits.`
+          : "Read only. Do not modify files or external resources.",
+        worker.readPaths.length > 0
+          ? `Read paths: ${worker.readPaths.join(", ")}.`
+          : "",
+      ].filter(Boolean),
+      preparedConversationContext: {
+        wasQueued: options.preparedConversationContext.wasQueued,
+        workspace: options.preparedConversationContext.workspace,
+        parallelAgentMode: "disabled",
+        sections: [],
+        uiControlEnabled: false,
+        memory: {
+          sessionEnabled: false,
+          sessionEntries: [],
+          workspaceEnabled: false,
+          workspaceEntries: [],
+          globalEnabled: false,
+          globalEntries: [],
+        },
+      },
+      instructionDeliveryPlan: options.instructionDeliveryPlan,
+      scopedWorkerToolDefinitions: trackedTools,
+      onScopedWorkerToolResult: (name, result) => {
+        if (result.toolResult.isError)
+          failedTool ??= `${name}: ${result.toolResult.output.slice(0, 300)}`;
+      },
+      signal,
+    });
+    if (!result || result.status !== "executed") {
+      throw new Error(
+        result?.summary ?? `Worker ${worker.id} could not start.`,
+      );
+    }
+    if (failedTool) {
+      throw new Error(
+        `Worker ${worker.id} had a failed tool call: ${failedTool}`,
+      );
+    }
+    if (worker.access === "write" && successfulWrites === 0) {
+      throw new Error(
+        `Worker ${worker.id} did not complete a scoped file edit.`,
+      );
+    }
+    const answer = result.response?.markdown?.trim() || result.summary;
+    if (!answer) throw new Error(`Worker ${worker.id} returned no result.`);
+    reportWorkerProgress(options, workerModelEvent(worker, 1, "completed"));
+    return {
+      id: worker.id,
+      status: "completed",
+      answer: answer.slice(0, MAX_WORKER_TEXT),
+      toolCalls,
+    };
+  } catch (error) {
     reportWorkerProgress(options, workerModelEvent(worker, 1, "failed"));
-    throw new Error(result?.summary ?? `Worker ${worker.id} could not start.`);
+    throw error;
   }
-  const answer = result.response?.markdown?.trim() || result.summary;
-  if (!answer) throw new Error(`Worker ${worker.id} returned no result.`);
-  reportWorkerProgress(options, workerModelEvent(worker, 1, "completed"));
-  return {
-    id: worker.id,
-    status: "completed",
-    answer: answer.slice(0, MAX_WORKER_TEXT),
-    toolCalls: result.executedTools.length,
-  };
 };
 
 const runWorker = async (
@@ -438,6 +481,7 @@ const runWorker = async (
   options: ParallelAgentSessionOptions,
   signal: AbortSignal,
   scopedReads: boolean,
+  onBoundaryViolation: (error: WorkerBoundaryError) => void,
 ): Promise<{
   id: string;
   status: "completed" | "failed";
@@ -449,7 +493,7 @@ const runWorker = async (
     isAgentCliProvider(options.config.provider) &&
     !options.createWorkerAdapter
   ) {
-    return runCliWorker(worker, options, signal, tools);
+    return runCliWorker(worker, options, signal, tools, onBoundaryViolation);
   }
   const specs = tools.map((tool) => tool.spec);
   const toolMap = new Map(tools.map((tool) => [tool.spec.name, tool]));
@@ -534,14 +578,21 @@ const runWorker = async (
   reportWorkerProgress(options, workerModelEvent(worker, 1, "completed"));
   let toolCalls = 0;
   let answer = "";
-  let lastToolBatchFailed = false;
-  for (let index = 0; index < MAX_WORKER_TURNS; index += 1) {
+  let successfulWrites = 0;
+  let failedTool: string | undefined;
+  for (let index = 0; index <= MAX_WORKER_TURNS; index += 1) {
     if (signal.aborted) throw new Error("Parallel work was cancelled.");
     answer = turn.text.trim() || answer;
     if (turn.toolCalls.length === 0) {
       if (!answer) throw new Error(`Worker ${worker.id} returned no result.`);
-      if (lastToolBatchFailed)
-        throw new Error(`Worker ${worker.id} ended after a failed tool call.`);
+      if (failedTool)
+        throw new Error(
+          `Worker ${worker.id} had a failed tool call: ${failedTool}`,
+        );
+      if (worker.access === "write" && successfulWrites === 0)
+        throw new Error(
+          `Worker ${worker.id} did not complete a scoped file edit.`,
+        );
       return {
         id: worker.id,
         status: "completed",
@@ -549,6 +600,7 @@ const runWorker = async (
         toolCalls,
       };
     }
+    if (index === MAX_WORKER_TURNS) break;
     toolCalls += turn.toolCalls.length;
     if (toolCalls > MAX_WORKER_TOOL_CALLS)
       throw new Error(`Worker ${worker.id} exceeded its tool limit.`);
@@ -585,9 +637,13 @@ const runWorker = async (
           outcome.result.toolResult.isError ? "failed" : "completed",
         ),
       );
+      if (outcome.result.toolResult.isError) {
+        failedTool ??= `${call.name}: ${outcome.result.toolResult.output.slice(0, 300)}`;
+      } else if (WRITE_TOOLS.has(call.name)) {
+        successfulWrites += 1;
+      }
       results.push(outcome.result.toolResult);
     }
-    lastToolBatchFailed = results.some((result) => result.isError === true);
     if (signal.aborted)
       throw signal.reason ?? new Error("Parallel work was cancelled.");
     reportWorkerProgress(
@@ -631,18 +687,6 @@ const runWorker = async (
     );
     if (signal.aborted)
       throw signal.reason ?? new Error("Parallel work was cancelled.");
-    answer = turn.text.trim() || answer;
-    if (turn.toolCalls.length === 0) {
-      if (!answer) throw new Error(`Worker ${worker.id} returned no result.`);
-      if (lastToolBatchFailed)
-        throw new Error(`Worker ${worker.id} ended after a failed tool call.`);
-      return {
-        id: worker.id,
-        status: "completed",
-        answer: answer.slice(0, MAX_WORKER_TEXT),
-        toolCalls,
-      };
-    }
   }
   throw new Error(`Worker ${worker.id} exceeded its turn limit.`);
 };
@@ -766,6 +810,7 @@ export const createParallelAgentSessionTool = (
                   options,
                   workerController.signal,
                   scopedReads,
+                  (error) => controller.abort(error),
                 );
                 reportWorkerProgress(options, {
                   kind: "agent",

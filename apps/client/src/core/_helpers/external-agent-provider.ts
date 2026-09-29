@@ -1412,6 +1412,12 @@ const createCodexArgs = (
   args.push("--config", "skills.bundled.enabled=false");
   args.push("--config", `features.multi_agent=${nativeSubagents}`);
   args.push("--config", `agents.enabled=${nativeSubagents}`);
+  if (scopedWorker) {
+    args.push(
+      "--config",
+      'mcp_servers.machdoch.default_tools_approval_mode="approve"',
+    );
+  }
 
   if (reasoningEffort) {
     args.push("--config", `model_reasoning_effort="${reasoningEffort}"`);
@@ -2476,6 +2482,9 @@ export const maybeExecuteExternalAgentProviderTask = async (
     ...(params.runId ? { runId: params.runId } : {}),
     ...(params.signal ? { signal: params.signal } : {}),
     ...(params.onActionOutput ? { onActionOutput: params.onActionOutput } : {}),
+    ...(params.onScopedWorkerToolResult
+      ? { onToolResult: params.onScopedWorkerToolResult }
+      : {}),
     onResult: (definition, result) => {
       params.onStreamActivity?.();
       if (!toolState.executedTools.includes(definition.backingTool))
