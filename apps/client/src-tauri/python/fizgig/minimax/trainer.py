@@ -581,12 +581,8 @@ from fizgig.training.optimizers import optimizer_lr  # noqa: E402  (shared with 
 
 
 def drop_grad(p) -> None:
-    """Take this step's gradient away from `p` for every optimizer we run: `.grad`, and the
-    accumulation buffer Automagic v3 (non-fused, low-precision params) moves it into from its
-    post-accumulate hook — without this the masked tensor would still step."""
+    """Take this step's gradient away from `p`."""
     p.grad = None
-    if hasattr(p, "_accum_grad"):
-        del p._accum_grad
 
 
 def adapter_vram_gb(params: int, optimizer_type: str = "adamw8bit") -> float:
@@ -4127,12 +4123,10 @@ def train_minimax(
         opt_params = None
         if finetune_fused_backward:
             _attach_fused(params)
-            _automagic = False
             optimizer, optimizer_label = None, "adafactor (rotation, fused backward)"
             logger.info("[h3-ft] optimizer-in-backward: each gradient is consumed and freed "
                         "as it lands (grad clipping and accumulation are off)")
         else:
-            _automagic = False
             optimizer, optimizer_label = _make_ft_optimizer(params)
         logger.info(f"optimizer: {optimizer_label} @ lr={learning_rate:.3e}")
     else:
@@ -4140,18 +4134,9 @@ def train_minimax(
         # structured tensors and the update degrades to lr*m/eps — measured at ~100x the
         # configured LR, which presented as melted anatomy at epoch 1. The floor caps that. It
         # is passed here and nowhere else: Krea 2 has never shown the failure.
-        _automagic = str(optimizer_type or "").lower() == "automagic3"
         optimizer, optimizer_label = create_optimizer(optimizer_type, opt_params, learning_rate,
                                                       optimizer_args, eps_floor_8bit=True)
         logger.info(f"optimizer: {optimizer_label} @ lr={learning_rate:.3e}")
-        if _automagic and optimizer is not None and optimizer.__class__.__name__ == "Automagic3":
-            logger.info("[optimizer] Automagic v3 owns the learning rate from here: %.2e is its start, and "
-                        "the per-step multipliers (adapter ramp, band, phase) are not applied — the "
-                        "controller sets the rate from the update signs. Its own trust-region clip "
-                        "bounds each step; max_grad_norm has no effect on low-precision LoRA params "
-                        "under it.", learning_rate)
-        elif _automagic:
-            _automagic = False        # fell back to AdamW (construction failed, logged above)
 
     limiter = None
     if block_limit and float(block_limit) > 0:
@@ -5281,7 +5266,7 @@ def train_minimax(
         # `or _hn_active or _retire_active` is not decoration: warmup is retired for this
         # family and the ramp is OFF in the Fast preset, so without them this block never
         # runs for the preset most people use and the settings would silently do nothing.
-        if (warmup_steps or ramp is not None or _p1_epochs or _hn_active or _retire_active) and not _automagic:
+        if warmup_steps or ramp is not None or _p1_epochs or _hn_active or _retire_active:
             _wf = (min(1.0, (global_step + 1) / warmup_steps) if warmup_steps else 1.0)
             _rm = ramp.mult if ramp is not None else 1.0
             for _g in optimizer.param_groups:
