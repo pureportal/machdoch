@@ -212,7 +212,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       name: "excludePaths",
       type: "text",
       default:
-        "node_modules, dist, build, coverage, target, .next, .nuxt, .turbo, .cache, vendor, generated, .machdoch",
+        "node_modules, dist, build, coverage, target, .next, .nuxt, .turbo, .cache, vendor, generated, .machdoch, .tmp",
       required: false,
     },
     {
@@ -374,7 +374,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "SCAN_SCOPE_EVIDENCE",
         rootPath: "{{scopeRoot:path=.}}",
         excludePaths:
-          "{{excludePaths:text=node_modules, dist, build, coverage, target, .next, .nuxt, .turbo, .cache, vendor, generated, .machdoch}}",
+          "{{excludePaths:text=node_modules, dist, build, coverage, target, .next, .nuxt, .turbo, .cache, vendor, generated, .machdoch, .tmp}}",
         maxDepth: "{{scopeScanMaxDepth:number=6}}",
         maxResults: "{{scopeScanMaxResults:number=240}}",
       },
@@ -902,7 +902,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "CHANGE_SCOPE_GUARD",
         baselineBlockId: "git-snapshot-before",
         input:
-          '{"scope":{{data:read-active-improvement:json.scope}},"gitSummary":{{data:git-diff-summary}}}',
+          '{"scope":{{data:read-active-improvement:json.scope}},"allowedPaths":{{data:select-improvement-task:tasks.0.likelyFiles}},"gitSummary":{{data:git-diff-summary}}}',
       },
       26,
       -1,
