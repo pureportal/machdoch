@@ -4,6 +4,7 @@ import {
   mkdtemp,
   open,
   readFile,
+  readdir,
   rm,
   stat,
   writeFile,
@@ -60,6 +61,50 @@ describe("atomic file persistence", () => {
     expect(await scavengeAtomicTemporaryFiles(directory, { maxAgeMs: 0 })).toBe(
       0,
     );
+  });
+
+  it("stages a complete replacement outside the destination directory", async () => {
+    const directory = await createTemporaryDirectory("atomic-staging-");
+    const startupDirectory = join(directory, "Startup");
+    const temporaryDirectory = join(directory, "staging");
+    const path = join(startupDirectory, "launcher.vbs");
+    await mkdir(startupDirectory);
+    await writeFile(path, "installed", "utf8");
+
+    await writeFileAtomically(path, "replacement", "utf8", {
+      temporaryDirectory,
+      beforeCommit: async () => {
+        expect(await readdir(startupDirectory)).toEqual(["launcher.vbs"]);
+        expect(await readFile(path, "utf8")).toBe("installed");
+        const stagedFiles = await readdir(temporaryDirectory);
+        expect(stagedFiles).toHaveLength(1);
+        expect(
+          await readFile(join(temporaryDirectory, stagedFiles[0]!), "utf8"),
+        ).toBe("replacement");
+      },
+    });
+
+    expect(await readFile(path, "utf8")).toBe("replacement");
+    expect(await readdir(temporaryDirectory)).toEqual([]);
+  });
+
+  it("removes an external staged file when its commit is rejected", async () => {
+    const directory = await createTemporaryDirectory("atomic-staging-failure-");
+    const temporaryDirectory = join(directory, "staging");
+    const path = join(directory, "record.json");
+    await writeFile(path, "installed", "utf8");
+
+    await expect(
+      writeFileAtomically(path, "replacement", "utf8", {
+        temporaryDirectory,
+        beforeCommit: () => {
+          throw new Error("commit rejected");
+        },
+      }),
+    ).rejects.toThrow("commit rejected");
+
+    expect(await readFile(path, "utf8")).toBe("installed");
+    expect(await readdir(temporaryDirectory)).toEqual([]);
   });
 
   it.runIf(process.platform !== "win32")(
