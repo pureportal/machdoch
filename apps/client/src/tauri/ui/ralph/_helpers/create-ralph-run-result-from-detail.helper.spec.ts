@@ -55,6 +55,13 @@ describe("createRalphRunResultFromDetail", () => {
       status: "blocked",
       outcome,
       progress,
+      runWorktree: {
+        sourceWorkspaceRoot: "C:\\workspace",
+        executionWorkspaceRoot: "C:\\ralph-worktree",
+        repositoryRoot: "C:\\workspace",
+        worktreeRoot: "C:\\ralph-worktree",
+        branch: "ralph/run-1",
+      },
       blockResults: [
         {
           blockId: "persist",
@@ -74,6 +81,7 @@ describe("createRalphRunResultFromDetail", () => {
     ).toMatchObject({
       outcome,
       progress,
+      runWorktree: record.runWorktree,
       blockResults: [{ failure: { kind: "persistence", retryable: false } }],
     });
   });

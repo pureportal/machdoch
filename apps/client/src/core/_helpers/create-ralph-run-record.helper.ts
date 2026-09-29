@@ -298,6 +298,7 @@ export const createRalphRunRecord = (
     ...(result.autonomy ? { autonomy: result.autonomy } : {}),
     ...(result.outcome ? { outcome: result.outcome } : {}),
     ...(result.progress ? { progress: result.progress } : {}),
+    ...(result.runWorktree ? { runWorktree: result.runWorktree } : {}),
     ...(result.durability ? { durability: { ...result.durability } } : {}),
     validation: {
       valid: result.validation.valid,
@@ -329,12 +330,17 @@ export const createRalphRunSummaryFromRecord = (
   record: RalphRunRecord,
   path: string,
 ): RalphRunSummary => {
-  const workspaceRoot = record.checkpoint?.repositoryContext?.workspaceRoot;
+  const workspaceRoot =
+    record.runWorktree?.sourceWorkspaceRoot ??
+    record.checkpoint?.repositoryContext?.workspaceRoot;
   return {
     id: record.id,
     path,
     ...(typeof workspaceRoot === "string" && workspaceRoot.trim()
       ? { workspaceRoot }
+      : {}),
+    ...(record.runWorktree
+      ? { worktreePath: record.runWorktree.executionWorkspaceRoot }
       : {}),
     createdAt: record.createdAt,
     ...(record.finishedAt ? { finishedAt: record.finishedAt } : {}),

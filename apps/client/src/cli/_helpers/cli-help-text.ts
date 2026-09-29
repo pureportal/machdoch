@@ -218,7 +218,7 @@ Usage:
   machdoch ralph create [flow] (--prompt <text>|--prompt-file <path>) [...]
   machdoch ralph interview [flow] --prompt <text> [...]
   machdoch ralph save|delete|revisions|restore <flow> [...]
-  machdoch ralph run <flow> [--param <name=value>...] [--json]
+  machdoch ralph run <flow> [--param <name=value>...] [--isolated] [--json]
   machdoch ralph resume <run-id> (--input-json <json>|--retry-current) [...]
   machdoch ralph runs [flow] [--json]
   machdoch ralph run-detail|log <run-id> [--trace] [--json]
@@ -227,7 +227,9 @@ Usage:
   machdoch ralph watches delete <watch-id>
 
 Use --scope user or --scope workspace to select flow storage. Use
---max-transitions to bound a run and --json for automation.`;
+--max-transitions to bound a run and --json for automation. --isolated runs
+in a separate Git worktree from a clean committed workspace. Changes stay
+in that worktree, and resume uses the same worktree.`;
 
 const MCP_HELP = `machdoch mcp - inspect and use MCP integrations
 

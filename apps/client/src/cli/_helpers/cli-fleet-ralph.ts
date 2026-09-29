@@ -27,6 +27,7 @@ export class FleetRalphRuntime {
       workspace: string;
       scope: RalphFlowScope;
       runId: string;
+      isolated: boolean;
       controller: AbortController;
       settled: Promise<unknown>;
     }
@@ -37,7 +38,9 @@ export class FleetRalphRuntime {
     return this.active.has(taskId);
   }
   isWorkspaceBusy(workspace: string): boolean {
-    return [...this.active.values()].some((run) => run.workspace === workspace);
+    return [...this.active.values()].some(
+      (run) => run.workspace === workspace && !run.isolated,
+    );
   }
 
   async prepare(
@@ -46,13 +49,23 @@ export class FleetRalphRuntime {
     config: RuntimeConfig,
     taskId: string,
   ): Promise<() => void> {
-    if (this.isWorkspaceBusy(workspace))
-      throw new Error("A RALPH run is already active in this workspace.");
     const scope = command.scope;
     const previous =
       command.kind === "ralph-resume-run"
         ? await readRalphRunRecord(workspace, command.runId, { scope })
         : null;
+    const isolated =
+      command.kind === "ralph-run"
+        ? command.isolated === true
+        : Boolean(
+            previous?.record.runWorktree ||
+            previous?.record.checkpoint?.runWorktree,
+          );
+    if (!isolated && this.isWorkspaceBusy(workspace)) {
+      throw new Error(
+        "A shared RALPH run is already active in this workspace.",
+      );
+    }
     if (
       previous &&
       (!previous.record.checkpoint ||
@@ -97,6 +110,9 @@ export class FleetRalphRuntime {
         await runRalphFlow(flow, config, customizations, {
           runId: logger.runId,
           logger,
+          ...(command.kind === "ralph-run" && isolated
+            ? { isolatedWorktree: true }
+            : {}),
           variableValues,
           signal: controller.signal,
           ...(previous?.record.checkpoint
@@ -118,6 +134,7 @@ export class FleetRalphRuntime {
         workspace,
         scope,
         runId: previous?.record.id ?? taskId,
+        isolated,
         controller,
         settled,
       });
@@ -175,6 +192,7 @@ export class FleetRalphRuntime {
               scope,
               status: run.status,
               summary: run.summary,
+              ...(run.worktreePath ? { worktreePath: run.worktreePath } : {}),
               createdAt: Date.parse(run.createdAt),
               blockCount: run.blockCount,
               eventCount: run.eventCount,

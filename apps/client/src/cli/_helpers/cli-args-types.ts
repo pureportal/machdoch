@@ -255,6 +255,7 @@ export interface RalphCliOptions {
   inputJson?: string;
   inputJsonFile?: string;
   retryCurrent?: boolean;
+  isolated?: boolean;
   maxRounds?: number;
   maxTransitions?: number;
   instructionBoundaryPolicy?:

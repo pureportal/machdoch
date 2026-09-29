@@ -965,6 +965,7 @@ export const productCommandSchema = z
       kind: z.literal("ralph-run"),
       flowId: identifier,
       parameters: ralphParametersSchema,
+      isolated: z.boolean().optional(),
     }),
     z.strictObject({
       ...ralphRuntimeCommandShape,
@@ -1224,6 +1225,7 @@ const productRalphRunSchema = z.strictObject({
     "partial",
   ]),
   summary: text,
+  worktreePath: text.optional(),
   createdAt: timestamp,
   finishedAt: optionalTimestamp,
   blockCount: z.number().int().nonnegative(),
