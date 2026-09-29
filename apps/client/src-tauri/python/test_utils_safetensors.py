@@ -118,6 +118,17 @@ class SafetensorsReaderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "shape and offsets disagree"):
             MemoryEfficientSafeOpen(self.path)
 
+    def test_empty_tensor_stride_overflow_fails_when_opening(self):
+        self.write_file({
+            "empty": {
+                "dtype": "F32",
+                "shape": [0, sys.maxsize, sys.maxsize],
+                "data_offsets": [0, 0],
+            }
+        })
+        with self.assertRaisesRegex(ValueError, "invalid shape"):
+            MemoryEfficientSafeOpen(self.path)
+
 
 if __name__ == "__main__":
     unittest.main()

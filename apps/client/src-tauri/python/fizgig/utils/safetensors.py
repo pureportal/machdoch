@@ -194,6 +194,12 @@ class MemoryEfficientSafeOpen:
                 type(dim) is not int or dim < 0 or dim > sys.maxsize for dim in shape
             ):
                 raise ValueError(f"Invalid safetensors tensor {key!r}: invalid shape")
+            if 0 in shape:
+                stride = 1
+                for dim in reversed(shape[1:]):
+                    if stride > sys.maxsize // max(dim, 1):
+                        raise ValueError(f"Invalid safetensors tensor {key!r}: invalid shape")
+                    stride *= max(dim, 1)
 
             offsets = tensor["data_offsets"]
             if (
