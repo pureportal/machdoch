@@ -47,6 +47,7 @@ async fn run_git_read<R: Send + 'static>(
 }
 const MAX_REPOSITORY_SCAN_DIRECTORIES: usize = 50_000;
 const MAX_DISCOVERED_REPOSITORIES: usize = 256;
+const MAX_CONCURRENT_REPOSITORY_INSPECTIONS: usize = 4;
 const MAX_REPOSITORY_SCAN_ISSUES: usize = 20;
 const REPOSITORY_SCAN_IGNORED_DIRECTORIES: &[&str] = &[
     ".cache",
@@ -554,22 +555,41 @@ fn discover_repositories(workspace_root: &str) -> Result<WorkspaceGitRepositoryD
     let (candidates, scan_limited, mut issues) = scan_repository_candidates(&workspace);
     let mut roots = HashSet::new();
     let mut repositories = Vec::new();
-    for candidate in candidates {
-        match inspect_repository_candidate(&workspace, &candidate) {
-            Ok(Some(repository)) if roots.insert(repository.clone()) => {
-                repositories.push(WorkspaceGitRepository {
-                    repository_root: repository.display().to_string(),
-                    relative_path: relative_workspace_path(&workspace, &repository),
-                });
-            }
-            Ok(_) => {}
-            Err(error) => push_discovery_issue(
-                &mut issues,
-                format!(
-                    "Could not inspect {}: {error}",
-                    relative_workspace_path(&workspace, &candidate)
+    for batch in candidates.chunks(MAX_CONCURRENT_REPOSITORY_INSPECTIONS) {
+        let inspected = thread::scope(|scope| {
+            let workers = batch
+                .iter()
+                .map(|candidate| {
+                    let workspace = &workspace;
+                    scope.spawn(move || inspect_repository_candidate(workspace, candidate))
+                })
+                .collect::<Vec<_>>();
+            workers
+                .into_iter()
+                .map(|worker| {
+                    worker.join().unwrap_or_else(|_| {
+                        Err("Git repository inspection stopped unexpectedly.".to_string())
+                    })
+                })
+                .collect::<Vec<_>>()
+        });
+        for (candidate, result) in batch.iter().zip(inspected) {
+            match result {
+                Ok(Some(repository)) if roots.insert(repository.clone()) => {
+                    repositories.push(WorkspaceGitRepository {
+                        repository_root: repository.display().to_string(),
+                        relative_path: relative_workspace_path(&workspace, &repository),
+                    });
+                }
+                Ok(_) => {}
+                Err(error) => push_discovery_issue(
+                    &mut issues,
+                    format!(
+                        "Could not inspect {}: {error}",
+                        relative_workspace_path(&workspace, candidate)
+                    ),
                 ),
-            ),
+            }
         }
     }
     repositories.sort_by(|left, right| {
@@ -958,103 +978,123 @@ fn load_overview(
     repository_root: &str,
 ) -> Result<WorkspaceGitOverview, String> {
     let (workspace, repository) = repository_context(workspace_root, repository_root)?;
-    let status_output = status_output(&repository)?;
-    let (
-        changes,
-        changes_truncated,
-        staged_count,
-        unstaged_count,
-        untracked_count,
-        conflicted_count,
-        total_changes,
-    ) = parse_status(&status_output);
-    let branch = run_optional(
-        "git",
-        &["symbolic-ref", "--quiet", "--short", "HEAD"],
-        &repository,
-    )
-    .filter(|value| !value.is_empty())
-    .unwrap_or_else(|| "Detached HEAD".to_string());
-    let detached = branch == "Detached HEAD";
-    let upstream = run_optional(
-        "git",
-        &[
-            "rev-parse",
-            "--abbrev-ref",
-            "--symbolic-full-name",
-            "@{upstream}",
-        ],
-        &repository,
-    )
-    .filter(|value| !value.is_empty());
-    let (ahead, behind) = upstream
-        .as_ref()
-        .and_then(|_| {
-            run_optional(
+    thread::scope(|scope| {
+        let status_worker = scope.spawn(|| status_output(&repository));
+        let branches_worker = scope.spawn(|| {
+            run_required(
                 "git",
-                &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
+                &[
+                    "for-each-ref",
+                    "--format=%(refname:short)%09%(objectname:short)%09%(upstream:short)%09%(HEAD)%09%(refname)",
+                    "refs/heads",
+                    "refs/remotes",
+                ],
                 &repository,
             )
-        })
-        .and_then(|value| {
-            let mut parts = value.split_whitespace();
-            Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
-        })
-        .unwrap_or((0, 0));
-    let branch_output = run_required(
+        });
+        let remotes_worker = scope.spawn(|| run_required("git", &["remote", "-v"], &repository));
+        let head_worker = scope.spawn(|| {
+            run_optional(
+                "git",
+                &["log", "-1", "--format=%H%x1f%h%x1f%s%x1f%an%x1f%aI"],
+                &repository,
+            )
+        });
+        let branch = run_optional(
+            "git",
+            &["symbolic-ref", "--quiet", "--short", "HEAD"],
+            &repository,
+        )
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "Detached HEAD".to_string());
+        let detached = branch == "Detached HEAD";
+        let upstream = run_optional(
             "git",
             &[
-                "for-each-ref",
-                "--format=%(refname:short)%09%(objectname:short)%09%(upstream:short)%09%(HEAD)%09%(refname)",
-                "refs/heads",
-                "refs/remotes",
+                "rev-parse",
+                "--abbrev-ref",
+                "--symbolic-full-name",
+                "@{upstream}",
             ],
             &repository,
-        )?;
-    let mut local_branches = parse_branches(&branch_output, false);
-    if !detached
-        && !local_branches
-            .iter()
-            .any(|candidate| candidate.name == branch)
-    {
-        local_branches.insert(
-            0,
-            WorkspaceGitBranch {
-                name: branch.clone(),
-                commit: "unborn".to_string(),
-                current: true,
-                upstream: upstream.clone(),
-            },
+        )
+        .filter(|value| !value.is_empty());
+        let (ahead, behind) = upstream
+            .as_ref()
+            .and_then(|_| {
+                run_optional(
+                    "git",
+                    &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
+                    &repository,
+                )
+            })
+            .and_then(|value| {
+                let mut parts = value.split_whitespace();
+                Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
+            })
+            .unwrap_or((0, 0));
+        let branch_output = branches_worker
+            .join()
+            .map_err(|_| "Git branch worker stopped unexpectedly.".to_string())??;
+        let mut local_branches = parse_branches(&branch_output, false);
+        if !detached
+            && !local_branches
+                .iter()
+                .any(|candidate| candidate.name == branch)
+        {
+            local_branches.insert(
+                0,
+                WorkspaceGitBranch {
+                    name: branch.clone(),
+                    commit: "unborn".to_string(),
+                    current: true,
+                    upstream: upstream.clone(),
+                },
+            );
+        }
+        let remote_branches = parse_branches(&branch_output, true);
+        let remotes = parse_remotes(
+            &remotes_worker
+                .join()
+                .map_err(|_| "Git remote worker stopped unexpectedly.".to_string())??,
         );
-    }
-    let remote_branches = parse_branches(&branch_output, true);
-    let remotes = parse_remotes(&run_required("git", &["remote", "-v"], &repository)?);
-    let head_commit = run_optional(
-        "git",
-        &["log", "-1", "--format=%H%x1f%h%x1f%s%x1f%an%x1f%aI"],
-        &repository,
-    )
-    .and_then(|value| parse_head_commit(&value));
-    Ok(WorkspaceGitOverview {
-        workspace_root: workspace.display().to_string(),
-        repository_root: repository.display().to_string(),
-        branch,
-        detached,
-        upstream,
-        ahead,
-        behind,
-        clean: changes.is_empty(),
-        staged_count,
-        unstaged_count,
-        untracked_count,
-        conflicted_count,
-        total_changes,
-        changes,
-        changes_truncated,
-        local_branches,
-        remote_branches,
-        remotes,
-        head_commit,
+        let head_commit = head_worker
+            .join()
+            .map_err(|_| "Git commit worker stopped unexpectedly.".to_string())?
+            .and_then(|value| parse_head_commit(&value));
+        let status_output = status_worker
+            .join()
+            .map_err(|_| "Git status worker stopped unexpectedly.".to_string())??;
+        let (
+            changes,
+            changes_truncated,
+            staged_count,
+            unstaged_count,
+            untracked_count,
+            conflicted_count,
+            total_changes,
+        ) = parse_status(&status_output);
+        Ok(WorkspaceGitOverview {
+            workspace_root: workspace.display().to_string(),
+            repository_root: repository.display().to_string(),
+            branch,
+            detached,
+            upstream,
+            ahead,
+            behind,
+            clean: changes.is_empty(),
+            staged_count,
+            unstaged_count,
+            untracked_count,
+            conflicted_count,
+            total_changes,
+            changes,
+            changes_truncated,
+            local_branches,
+            remote_branches,
+            remotes,
+            head_commit,
+        })
     })
 }
 

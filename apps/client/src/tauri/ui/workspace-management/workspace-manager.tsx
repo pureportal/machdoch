@@ -445,6 +445,23 @@ export const WorkspaceManager = ({
     const requestId = ++gitRepositoriesRequestRef.current;
     setGitRepositoriesLoading(true);
     setGitRepositoriesError(null);
+    const rootOverview = selectedGitRepositoryRootRef.current
+      ? null
+      : loadWorkspaceGitOverview(workspaceRoot, workspaceRoot)
+          .then((overview) => {
+            if (
+              requestId === gitRepositoriesRequestRef.current &&
+              selectedRootRef.current === workspaceRoot &&
+              !selectedGitRepositoryRootRef.current
+            ) {
+              selectedGitRepositoryRootRef.current = overview.repositoryRoot;
+              setSelectedGitRepositoryRoot(overview.repositoryRoot);
+              gitOverviewWorkspaceRootRef.current = workspaceRoot;
+              setGitOverview(overview);
+            }
+            return overview;
+          })
+          .catch(() => null);
     try {
       const discovery = await loadWorkspaceGitRepositories(workspaceRoot);
       if (
@@ -481,6 +498,20 @@ export const WorkspaceManager = ({
         setGitError(null);
         setGitLoading(false);
         return null;
+      }
+      if (rootOverview && nextRepositoryRoot === discovery.workspaceRoot) {
+        const overview = await rootOverview;
+        if (overview?.repositoryRoot === nextRepositoryRoot) {
+          if (
+            requestId === gitRepositoriesRequestRef.current &&
+            selectedRootRef.current === workspaceRoot &&
+            selectedGitRepositoryRootRef.current === nextRepositoryRoot
+          ) {
+            gitOverviewWorkspaceRootRef.current = workspaceRoot;
+            setGitOverview(overview);
+          }
+          return nextRepositoryRoot;
+        }
       }
       await refreshGitOverview(nextRepositoryRoot);
       return nextRepositoryRoot;
@@ -2125,11 +2156,15 @@ export const WorkspaceManager = ({
                       aria-labelledby={`workspace-git-tab-${gitSection}`}
                       className="p-4"
                     >
-                      {gitRepositoriesLoading && !gitRepositories ? (
+                      {gitRepositoriesLoading &&
+                      !gitRepositories &&
+                      !selectedGitOverview ? (
                         <div className="grid h-40 place-items-center">
                           <LoaderCircle className="size-5 animate-spin text-slate-500" />
                         </div>
-                      ) : gitRepositoriesError && !gitRepositories ? (
+                      ) : gitRepositoriesError &&
+                        !gitRepositories &&
+                        !selectedGitOverview ? (
                         <EmptyState
                           icon={Unplug}
                           title="Git unavailable"
