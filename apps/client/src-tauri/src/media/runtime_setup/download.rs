@@ -1,11 +1,14 @@
 use std::{
     fs,
-    io::{Cursor, Read, Write},
-    path::Path,
+    io::{self, Cursor, Read},
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
     time::Duration,
 };
 
 use sha2::{Digest, Sha256};
+
+use crate::atomic_file::{rename_file_atomic, write_file_atomic, AtomicWriteOptions};
 
 use super::super::MediaResult;
 use super::{InstallerArchive, SetupPhase, SetupStatus};
@@ -28,8 +31,8 @@ pub(super) fn install(
             .ok()?;
         valid_digest(&bytes, &archive.sha256).then_some(bytes)
     });
-    let bytes = match cached {
-        Some(bytes) => bytes,
+    let (bytes, cache_archive) = match cached {
+        Some(bytes) => (bytes, false),
         None => {
             let url = format!(
                 "https://github.com/astral-sh/uv/releases/download/{version}/{}",
@@ -70,23 +73,154 @@ pub(super) fn install(
             if !valid_digest(&bytes, &archive.sha256) {
                 return Err("Setup download checksum did not match".to_string());
             }
-            fs::write(&archive_path, &bytes)
-                .map_err(|error| format!("Could not cache setup tools: {error}"))?;
-            bytes
+            (bytes, true)
         }
     };
-    let executable = extract_executable(&bytes, archive)?;
-    let mut file = fs::File::create(&destination).map_err(|error| error.to_string())?;
-    file.write_all(&executable)
-        .and_then(|_| file.sync_all())
-        .map_err(|error| error.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&destination, fs::Permissions::from_mode(0o700))
-            .map_err(|error| error.to_string())?;
-    }
+    publish_download(
+        cache_archive.then_some(archive_path.as_path()),
+        &destination,
+        archive,
+        &bytes,
+        write_file_atomic,
+    )?;
     Ok(destination)
+}
+
+pub(super) fn publish_download(
+    archive_path: Option<&Path>,
+    destination: &Path,
+    archive: &InstallerArchive,
+    bytes: &[u8],
+    mut write: impl FnMut(&Path, &[u8], AtomicWriteOptions) -> io::Result<()>,
+) -> MediaResult<()> {
+    let executable = extract_executable(bytes, archive)?;
+    let archive_file = archive_path
+        .map(|path| PreparedFile::new(path, bytes, AtomicWriteOptions::default(), &mut write))
+        .transpose()
+        .map_err(|error| format!("Could not cache setup tools: {error}"))?;
+    let executable_file = PreparedFile::new(
+        destination,
+        &executable,
+        AtomicWriteOptions::with_unix_mode(0o700),
+        &mut write,
+    )
+    .map_err(|error| error.to_string())?;
+
+    let mut files: Vec<PreparedFile> = archive_file.into_iter().collect();
+    files.push(executable_file);
+    for index in 0..files.len() {
+        if let Err(error) = files[index].publish() {
+            let recovery = files[..=index]
+                .iter()
+                .rev()
+                .filter_map(|file| file.restore().err())
+                .map(|error| error.to_string())
+                .collect::<Vec<_>>();
+            if recovery.is_empty() {
+                return Err(error.to_string());
+            }
+            return Err(format!(
+                "{error}; could not restore setup files: {}",
+                recovery.join("; ")
+            ));
+        }
+    }
+    Ok(())
+}
+
+static NEXT_STAGING_FILE: AtomicU64 = AtomicU64::new(0);
+
+struct StagingFile(PathBuf);
+
+impl StagingFile {
+    fn new(destination: &Path) -> io::Result<Self> {
+        let parent = destination.parent().unwrap_or_else(|| Path::new("."));
+        let name = destination
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy();
+        for _ in 0..16 {
+            let sequence = NEXT_STAGING_FILE.fetch_add(1, Ordering::Relaxed);
+            let path = parent.join(format!(
+                ".{name}.{}.{}.staging",
+                std::process::id(),
+                sequence
+            ));
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(_) => return Ok(Self(path)),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "Could not create setup staging file",
+        ))
+    }
+}
+
+impl Drop for StagingFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
+struct PreparedFile {
+    destination: PathBuf,
+    staged: StagingFile,
+    previous: Option<StagingFile>,
+}
+
+impl PreparedFile {
+    fn new(
+        destination: &Path,
+        bytes: &[u8],
+        options: AtomicWriteOptions,
+        write: &mut impl FnMut(&Path, &[u8], AtomicWriteOptions) -> io::Result<()>,
+    ) -> io::Result<Self> {
+        let staged = StagingFile::new(destination)?;
+        write(&staged.0, bytes, options)
+            .map_err(|error| io::Error::new(error.kind(), format!("staging write: {error}")))?;
+        let previous = match fs::metadata(destination) {
+            Ok(_) => {
+                let previous = StagingFile::new(destination)?;
+                fs::copy(destination, &previous.0).map_err(|error| {
+                    io::Error::new(error.kind(), format!("backup copy: {error}"))
+                })?;
+                fs::OpenOptions::new()
+                    .write(true)
+                    .open(&previous.0)?
+                    .sync_all()?;
+                Some(previous)
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error),
+        };
+        Ok(Self {
+            destination: destination.to_path_buf(),
+            staged,
+            previous,
+        })
+    }
+
+    fn publish(&self) -> io::Result<()> {
+        rename_file_atomic(&self.staged.0, &self.destination)
+    }
+
+    fn restore(&self) -> io::Result<()> {
+        match &self.previous {
+            Some(previous) => rename_file_atomic(&previous.0, &self.destination),
+            None => match fs::remove_file(&self.destination) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(error),
+            },
+        }
+    }
 }
 
 fn valid_digest(bytes: &[u8], expected: &str) -> bool {
