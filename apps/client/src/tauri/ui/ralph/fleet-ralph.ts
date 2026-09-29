@@ -158,8 +158,10 @@ export const loadFleetRalphSnapshot = async (
 ): Promise<FleetShellRalphSnapshot> => {
   const normalizedWorkspace =
     normalizeWorkspaceForTaskComparison(workspaceRoot);
-  const { scopes } = await loadRalphSnapshot(workspaceRoot);
-  const activeTasks = await loadActiveDesktopTasks();
+  const [{ scopes }, activeTasks] = await Promise.all([
+    loadRalphSnapshot(workspaceRoot),
+    loadActiveDesktopTasks(),
+  ]);
   const unmatchedTasks = (activeTasks ?? []).filter(
     (task) =>
       task.kind === "ralph" &&

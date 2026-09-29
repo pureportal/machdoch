@@ -17,10 +17,14 @@ vi.mock("../runtime", () => runtime);
 
 const snapshot = (
   workspaceRoot = "/one",
-  scope: "workspace" | "user" = "workspace",
+  scope?: "workspace" | "user",
 ): RalphSnapshot => ({
   workspaceRoot,
-  scopes: [{ scope, flows: [], runs: [] }],
+  scopes: (scope ? [scope] : (["workspace", "user"] as const)).map((item) => ({
+    scope: item,
+    flows: [],
+    runs: [],
+  })),
 });
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
@@ -55,7 +59,7 @@ describe("RALPH overview loading", () => {
   it("publishes fast workspaces while a slow workspace is still loading and reads global storage once", async () => {
     const slow = deferred<RalphSnapshot>();
     runtime.loadRalphSnapshot.mockImplementation((root, scope) =>
-      root === "/one" && scope === "workspace"
+      root === "/one" && scope === undefined
         ? slow.promise
         : Promise.resolve(snapshot(root, scope)),
     );
@@ -71,11 +75,8 @@ describe("RALPH overview loading", () => {
       result.current.libraries.find((entry) => entry.key === "workspace:/one")
         ?.loading,
     ).toBe(true);
-    expect(
-      runtime.loadRalphSnapshot.mock.calls.filter(
-        ([, scope]) => scope === "user",
-      ),
-    ).toHaveLength(1);
+    expect(runtime.loadRalphSnapshot).toHaveBeenCalledWith("/one", undefined);
+    expect(runtime.loadRalphSnapshot).toHaveBeenCalledTimes(3);
     await act(async () => slow.resolve(snapshot()));
     expect(result.current.libraries.every((entry) => entry.loaded)).toBe(true);
   });
@@ -94,7 +95,7 @@ describe("RALPH overview loading", () => {
         (entry) => entry.workspaceRoot === "/unlisted",
       ),
     ).toBe(true);
-    expect(runtime.loadRalphSnapshot).toHaveBeenCalledTimes(3);
+    expect(runtime.loadRalphSnapshot).toHaveBeenCalledTimes(2);
   });
 
   it("polls activity independently without reloading history until needed", async () => {
@@ -103,19 +104,19 @@ describe("RALPH overview loading", () => {
     );
     await advance(6_000);
     expect(runtime.loadActiveDesktopTasks).toHaveBeenCalledTimes(4);
-    expect(runtime.loadRalphSnapshot).toHaveBeenCalledTimes(3);
+    expect(runtime.loadRalphSnapshot).toHaveBeenCalledTimes(2);
     runtime.loadActiveDesktopTasks.mockResolvedValue([
       createOverviewTask("/two"),
     ]);
     await advance(2_000);
     expect(result.current.tasks).toHaveLength(1);
-    expect(runtime.loadRalphSnapshot.mock.calls.slice(3)).toEqual([
+    expect(runtime.loadRalphSnapshot.mock.calls.slice(2)).toEqual([
       ["/two", "workspace"],
     ]);
     runtime.loadActiveDesktopTasks.mockResolvedValue([]);
     await advance(2_000);
     expect(result.current.tasks).toEqual([]);
-    expect(runtime.loadRalphSnapshot.mock.calls.slice(4)).toEqual([
+    expect(runtime.loadRalphSnapshot.mock.calls.slice(3)).toEqual([
       ["/two", "workspace"],
     ]);
   });
@@ -156,7 +157,7 @@ describe("RALPH overview loading", () => {
   it("bounds concurrency, ignores stale results, and serializes requests through Strict Mode and reactivation", async () => {
     const requests: Array<{
       root: string;
-      scope: "workspace" | "user";
+      scope: "workspace" | "user" | undefined;
       pending: ReturnType<typeof deferred<RalphSnapshot>>;
     }> = [];
     runtime.loadRalphSnapshot.mockImplementation((root, scope) => {
@@ -223,7 +224,7 @@ describe("RALPH overview loading", () => {
     const latest = deferred<RalphSnapshot>();
     let workspaceCalls = 0;
     runtime.loadRalphSnapshot.mockImplementation((root, scope) =>
-      scope === "workspace"
+      scope === undefined
         ? ++workspaceCalls === 1
           ? old.promise
           : latest.promise

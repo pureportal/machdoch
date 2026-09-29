@@ -96,6 +96,33 @@ beforeEach(() => {
 });
 
 describe("loadFleetRalphSnapshot", () => {
+  it("starts loading active tasks while the flow snapshot is pending", async () => {
+    let finishSnapshot!: () => void;
+    runtime.loadRalphSnapshot.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSnapshot = () =>
+            resolve({
+              workspaceRoot: "C:/repo",
+              scopes: [
+                { scope: "workspace", flows: [flow], runs: [] },
+                { scope: "user", flows: [], runs: [] },
+              ],
+            });
+        }),
+    );
+
+    const loading = loadFleetRalphSnapshot("C:/repo");
+
+    expect(runtime.loadRalphSnapshot).toHaveBeenCalledTimes(1);
+    expect(runtime.loadActiveDesktopTasks).toHaveBeenCalledTimes(1);
+    finishSnapshot();
+    await expect(loading).resolves.toMatchObject({
+      workspaceRoot: "C:/repo",
+      flows: [expect.objectContaining({ id: flow.id })],
+    });
+  });
+
   it("matches active tasks once and gives active resumes precedence over stale run state", async () => {
     runtime.loadRalphSnapshot.mockResolvedValue({
       workspaceRoot: "C:/repo",
@@ -240,7 +267,7 @@ describe("loadFleetRalphSnapshot", () => {
     );
   });
 
-  it("propagates snapshot failures without starting additional queries", async () => {
+  it("propagates snapshot failures after starting the independent task query", async () => {
     runtime.loadRalphSnapshot.mockRejectedValueOnce(
       new Error("Read timed out"),
     );
@@ -250,7 +277,7 @@ describe("loadFleetRalphSnapshot", () => {
     );
 
     expect(runtime.loadRalphSnapshot).toHaveBeenCalledTimes(1);
-    expect(runtime.loadActiveDesktopTasks).not.toHaveBeenCalled();
+    expect(runtime.loadActiveDesktopTasks).toHaveBeenCalledTimes(1);
   });
 });
 
