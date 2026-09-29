@@ -33,6 +33,7 @@ export const useRalphOverview = (
   const tasksRef = useRef<ActiveDesktopTaskSummary[]>([]);
   const discoveredRef = useRef(new Map<string, string>());
   const inFlightRef = useRef(new Set<string>());
+  const activeSnapshotRequestsRef = useRef(0);
   const taskRequestRef = useRef<Promise<
     ActiveDesktopTaskSummary[] | null
   > | null>(null);
@@ -60,46 +61,88 @@ export const useRalphOverview = (
     const pump = (): void => {
       if (disposed || !visible()) return;
       for (const key of queued) {
-        if (inFlightRef.current.size >= MAX_SNAPSHOT_REQUESTS) break;
+        if (activeSnapshotRequestsRef.current >= MAX_SNAPSHOT_REQUESTS) break;
         if (inFlightRef.current.has(key)) continue;
         queued.delete(key);
         const entry = entriesRef.current.get(key);
         if (!entry) continue;
-        const revision = revisions.get(key);
-        inFlightRef.current.add(key);
-        entriesRef.current.set(key, { ...entry, loading: true });
+        const requested = [entry];
+        for (const peerKey of queued) {
+          const peer = entriesRef.current.get(peerKey);
+          if (
+            peer &&
+            peer.workspaceRoot === entry.workspaceRoot &&
+            !inFlightRef.current.has(peerKey)
+          ) {
+            queued.delete(peerKey);
+            requested.push(peer);
+          }
+        }
+        const requestedRevisions = new Map(
+          requested.map((library) => [library.key, revisions.get(library.key)]),
+        );
+        for (const library of requested) {
+          inFlightRef.current.add(library.key);
+          entriesRef.current.set(library.key, { ...library, loading: true });
+        }
+        activeSnapshotRequestsRef.current += 1;
         publish();
-        void loadRalphSnapshot(entry.workspaceRoot, entry.scope)
+        void loadRalphSnapshot(
+          entry.workspaceRoot,
+          requested.length === 1 ? entry.scope : undefined,
+        )
           .then((snapshot) => {
-            if (disposed || revision !== revisions.get(key)) return;
-            const scope = snapshot.scopes.find(
-              (value) => value.scope === entry.scope,
-            );
-            if (!scope)
-              throw new Error(
-                "Flow status was not returned. Retry loading flows.",
+            if (disposed) return;
+            for (const library of requested) {
+              if (
+                requestedRevisions.get(library.key) !==
+                revisions.get(library.key)
+              )
+                continue;
+              const scope = snapshot.scopes.find(
+                (value) => value.scope === library.scope,
               );
-            entriesRef.current.set(key, {
-              ...entry,
-              flows: scope.flows,
-              runs: scope.runs,
-              loaded: true,
-              loading: false,
-              error: null,
-            });
+              entriesRef.current.set(
+                library.key,
+                scope
+                  ? {
+                      ...library,
+                      flows: scope.flows,
+                      runs: scope.runs,
+                      loaded: true,
+                      loading: false,
+                      error: null,
+                    }
+                  : {
+                      ...library,
+                      loading: false,
+                      error:
+                        "Flow status was not returned. Retry loading flows.",
+                    },
+              );
+            }
             publish();
           })
           .catch((error: unknown) => {
-            if (disposed || revision !== revisions.get(key)) return;
-            entriesRef.current.set(key, {
-              ...entry,
-              loading: false,
-              error: error instanceof Error ? error.message : String(error),
-            });
+            if (disposed) return;
+            for (const library of requested) {
+              if (
+                requestedRevisions.get(library.key) !==
+                revisions.get(library.key)
+              )
+                continue;
+              entriesRef.current.set(library.key, {
+                ...library,
+                loading: false,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
             publish();
           })
           .finally(() => {
-            inFlightRef.current.delete(key);
+            for (const library of requested)
+              inFlightRef.current.delete(library.key);
+            activeSnapshotRequestsRef.current -= 1;
             pumpRef.current();
           });
       }
