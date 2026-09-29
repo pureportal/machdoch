@@ -2,11 +2,30 @@ import type {
   ChatSessionContextAttachment,
   ChatSessionQueuedMessage,
   ChatSessionQueuedPromptEnhancementRequest,
+  ChatSessionRequestIteration,
 } from "../../chat-session.model";
 import { MAX_REQUEST_ITERATIONS } from "../../chat-session.model";
-import { getConciseTaskObjective } from "./task-action-prompts";
 
 export const CONTINUE_ITERATION_CONTENT = "Continue";
+export const DEFAULT_REQUEST_ITERATION_MODE = "continue" as const;
+
+export type RequestIterationMode = NonNullable<
+  ChatSessionRequestIteration["mode"]
+>;
+
+const createIterationContent = (
+  task: string,
+  mode: RequestIterationMode,
+): string => {
+  switch (mode) {
+    case "repeat-prompt":
+      return task;
+    case "continue":
+      return CONTINUE_ITERATION_CONTENT;
+    case "repeat-prompt-and-continue":
+      return `${task}\n\n---\n\nNext iteration: Continue working on the request above. Use the preceding conversation as context and avoid repeating completed work.`;
+  }
+};
 
 export const normalizeRequestIterationCount = (value: number): number =>
   Number.isInteger(value) && value >= 1 && value <= MAX_REQUEST_ITERATIONS
@@ -17,6 +36,7 @@ export const createQueuedRequestIterations = (input: {
   sessionId: string;
   task: string;
   count: number;
+  mode: RequestIterationMode;
   orderRank: number;
   contextAttachments: ChatSessionContextAttachment[];
   promptEnhancementRequest?: ChatSessionQueuedPromptEnhancementRequest;
@@ -30,19 +50,17 @@ export const createQueuedRequestIterations = (input: {
   return Array.from({ length: count }, (_, offset) => {
     const index = offset + 1;
     const isFirst = index === 1;
-    const content = isFirst ? task : CONTINUE_ITERATION_CONTENT;
+    const content = isFirst ? task : createIterationContent(task, input.mode);
     return {
       id: crypto.randomUUID(),
       sessionId: input.sessionId,
-      task: isFirst
-        ? task
-        : `Continue the work on the original request.\n\nObjective: ${getConciseTaskObjective(task)}\n\nReview the previous iteration and the conversation for full context. Take the next useful step, avoid repeating completed work, and verify the result.`,
+      task: content,
       visibleMessageContent: content,
       promptHistoryContent: content,
       ...(isFirst && input.promptEnhancementRequest
         ? { promptEnhancementRequest: input.promptEnhancementRequest }
         : {}),
-      iteration: { groupId, index, total: count },
+      iteration: { groupId, index, total: count, mode: input.mode },
       contextAttachments: input.contextAttachments.map((attachment) => ({
         ...attachment,
       })),
@@ -56,6 +74,45 @@ export const createQueuedRequestIterations = (input: {
       statusUpdatedAt: input.timestamp,
       createdAt: input.timestamp,
       updatedAt: input.timestamp,
+    };
+  });
+};
+
+export const applyEnhancedPromptToQueuedRequestIterations = (
+  messages: ChatSessionQueuedMessage[],
+  firstMessage: ChatSessionQueuedMessage,
+  enhancedPrompt: string,
+  updatedAt: number,
+): ChatSessionQueuedMessage[] => {
+  const iteration = firstMessage.iteration;
+  const enhancedTask = enhancedPrompt.trim();
+  if (!iteration || iteration.index !== 1 || !enhancedTask) {
+    return messages;
+  }
+
+  return messages.map((message) => {
+    const followUp = message.iteration;
+    if (
+      message.sessionId !== firstMessage.sessionId ||
+      followUp?.groupId !== iteration.groupId ||
+      followUp.index === 1 ||
+      !followUp.mode ||
+      message.status !== "queued" ||
+      message.contentUpdatedAt !== message.createdAt
+    ) {
+      return message;
+    }
+
+    const content = createIterationContent(enhancedTask, followUp.mode);
+    if (content === message.task) return message;
+
+    return {
+      ...message,
+      task: content,
+      visibleMessageContent: content,
+      promptHistoryContent: content,
+      contentUpdatedAt: updatedAt,
+      updatedAt,
     };
   });
 };

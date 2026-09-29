@@ -45,6 +45,7 @@ import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import type { RunningTaskMessageAction } from "../../lib/shell-store";
 import type { RuntimeProvider } from "../../model-catalog";
 import type { PromptEnhancementMode } from "../_helpers/prompt-enhancement";
+import type { RequestIterationMode } from "../_helpers/request-iterations";
 import type { AttachmentSelectionKind } from "../_helpers/session-context-attachments";
 import type {
   SaveSmartContextPackInput,
@@ -188,7 +189,11 @@ export interface SessionComposerProps {
     attachmentId: string,
   ) => void;
   onQueuedMessageClearContextAttachments: (messageId: string) => void;
-  onSend: (draft: string, iterationCount?: number) => void;
+  onSend: (
+    draft: string,
+    iterationCount?: number,
+    iterationMode?: RequestIterationMode,
+  ) => void;
   onCancel: () => void;
   isExecuting: boolean;
   isPromptEnhancementActive?: boolean;
