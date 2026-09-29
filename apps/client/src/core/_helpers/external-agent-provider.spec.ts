@@ -659,6 +659,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).not.toContain("--ignore-user-config");
     expect(call?.args).toContain("skills.bundled.enabled=false");
     expect(call?.args).toContain("features.multi_agent=false");
+    expect(call?.args).toContain("agents.enabled=false");
     expect(call?.args).toContain("--skip-git-repo-check");
     expect(call?.args).toContain("--ignore-rules");
     expect(call?.args).not.toContain("--dangerously-bypass-hook-trust");
@@ -802,8 +803,10 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
       await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
       const call = spawnCalls[0]!;
-      if (provider === "codex-cli")
+      if (provider === "codex-cli") {
         expect(call.args).toContain("features.multi_agent=false");
+        expect(call.args).toContain("agents.enabled=false");
+      }
       if (provider === "claude-cli")
         expect(call.args).toContain("--disallowedTools");
       if (provider === "copilot-cli")
@@ -849,8 +852,12 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       const resultPromise = maybeExecuteExternalAgentProviderTask(params);
       await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
       const call = spawnCalls[0]!;
+      const codexHome = (call.options.env as NodeJS.ProcessEnv).CODEX_HOME;
       if (provider === "codex-cli") {
         expect(call.args).toContain("features.multi_agent=true");
+        expect(call.args).toContain("agents.enabled=true");
+        expect(call.args).not.toContain("--ephemeral");
+        expect(codexHome).toContain("machdoch-instruction-run-");
       } else if (provider === "claude-cli") {
         expect(call.args).not.toContain("--disallowedTools");
       } else {
@@ -863,6 +870,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       await expect(resultPromise).resolves.toMatchObject({
         status: "executed",
       });
+      if (provider === "codex-cli") {
+        await expect(access(codexHome!)).rejects.toBeDefined();
+      }
     },
   );
 

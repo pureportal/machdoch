@@ -1393,10 +1393,12 @@ const createCodexArgs = (
   const sandboxed = delegationMode === "read-only-artifact" || scopedWorker;
 
   if (sandboxed) {
-    args.push("--sandbox", "read-only", "--ephemeral");
+    args.push("--sandbox", "read-only");
   } else {
-    args.push("--dangerously-bypass-approvals-and-sandbox", "--ephemeral");
+    args.push("--dangerously-bypass-approvals-and-sandbox");
   }
+
+  if (!nativeSubagents) args.push("--ephemeral");
 
   args.push(
     "--json",
@@ -1409,6 +1411,7 @@ const createCodexArgs = (
   );
   args.push("--config", "skills.bundled.enabled=false");
   args.push("--config", `features.multi_agent=${nativeSubagents}`);
+  args.push("--config", `agents.enabled=${nativeSubagents}`);
 
   if (reasoningEffort) {
     args.push("--config", `model_reasoning_effort="${reasoningEffort}"`);
@@ -1431,10 +1434,10 @@ const createCodexArgs = (
   return {
     args,
     runDetail: scopedWorker
-      ? "Running ephemeral codex exec in a read-only sandbox with scoped Machdoch tools."
+      ? "Running codex exec in a read-only sandbox with scoped Machdoch tools."
       : sandboxed
-        ? "Running ephemeral codex exec with an isolated Machdoch-managed Codex home in a read-only artifact-generation sandbox."
-        : "Running ephemeral codex exec with an isolated Machdoch-managed Codex home and native instructions/MCP, while approvals and sandbox are bypassed.",
+        ? "Running codex exec with an isolated Machdoch-managed Codex home in a read-only artifact-generation sandbox."
+        : "Running codex exec with an isolated Machdoch-managed Codex home and native instructions/MCP, while approvals and sandbox are bypassed.",
     startMessage: scopedWorker
       ? "Starting a scoped Codex CLI worker."
       : sandboxed
@@ -1468,7 +1471,7 @@ const createCodexArgs = (
           : "dangerously-bypass-approvals-and-sandbox",
       userConfig: "isolated-machdoch-projection",
       codexHome: "isolated",
-      sessionPersistence: "ephemeral",
+      sessionPersistence: nativeSubagents ? "run-scoped" : "ephemeral",
       bundledSkills: false,
       gitRepoCheck: "skipped",
       execpolicyRules: "ignored",
