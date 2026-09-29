@@ -65,12 +65,20 @@ export const parseConversationContext = (
   }
   if (value.sessionId !== undefined && typeof value.sessionId !== "string")
     throw new CliUsageError("Invalid conversation session id.");
+  if (
+    value.earlierWorkspace !== undefined &&
+    value.earlierWorkspace !== null &&
+    typeof value.earlierWorkspace !== "string"
+  )
+    throw new CliUsageError("Invalid conversation earlier workspace.");
   if (value.chatType !== undefined && value.chatType !== "pose")
     throw new CliUsageError("Invalid conversation chat type.");
   if (
     value.parallelAgentMode !== undefined &&
     (typeof value.parallelAgentMode !== "string" ||
-      !["disabled", "read-only", "machdoch", "native"].includes(value.parallelAgentMode))
+      !["disabled", "read-only", "machdoch", "native"].includes(
+        value.parallelAgentMode,
+      ))
   )
     throw new CliUsageError("Invalid conversation parallel agent mode.");
   if (

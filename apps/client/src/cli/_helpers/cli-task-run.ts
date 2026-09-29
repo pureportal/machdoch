@@ -240,46 +240,8 @@ export const resolveConversationContext = async (
   }
 
   return {
+    ...baseContext,
     history: baseContext?.history ?? [],
-    ...(baseContext?.wasQueued !== undefined
-      ? { wasQueued: baseContext.wasQueued }
-      : {}),
-    ...(baseContext?.sessionId !== undefined
-      ? { sessionId: baseContext.sessionId }
-      : {}),
-    ...(baseContext?.chatType !== undefined
-      ? { chatType: baseContext.chatType }
-      : {}),
-    ...(baseContext?.poseScene !== undefined
-      ? { poseScene: baseContext.poseScene }
-      : {}),
-    ...(baseContext?.workspaceMemoryEnabled !== undefined
-      ? { workspaceMemoryEnabled: baseContext.workspaceMemoryEnabled }
-      : {}),
-    ...(baseContext?.workspace !== undefined
-      ? { workspace: baseContext.workspace }
-      : {}),
-    ...(baseContext?.workspaceRun !== undefined
-      ? { workspaceRun: baseContext.workspaceRun }
-      : {}),
-    ...(baseContext?.sessionMemory !== undefined
-      ? { sessionMemory: baseContext.sessionMemory }
-      : {}),
-    ...(baseContext?.sessionMemoryEnabled !== undefined
-      ? { sessionMemoryEnabled: baseContext.sessionMemoryEnabled }
-      : {}),
-    ...(baseContext?.globalMemory !== undefined
-      ? { globalMemory: baseContext.globalMemory }
-      : {}),
-    ...(baseContext?.globalMemoryEnabled !== undefined
-      ? { globalMemoryEnabled: baseContext.globalMemoryEnabled }
-      : {}),
-    ...(baseContext?.uiControl !== undefined
-      ? { uiControl: baseContext.uiControl }
-      : {}),
-    ...(baseContext?.uiControlEnabled !== undefined
-      ? { uiControlEnabled: baseContext.uiControlEnabled }
-      : {}),
     ...(args.sessionMemoryEnabled !== undefined
       ? { sessionMemoryEnabled: args.sessionMemoryEnabled }
       : {}),

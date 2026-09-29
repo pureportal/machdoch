@@ -85,10 +85,13 @@ describe("resolveConversationContext", () => {
   it("preserves explicit conversation state when no CLI overrides are provided", async () => {
     const explicitContext: TaskConversationContext = {
       history: [{ role: "user", content: "Summarize the repo" }],
+      parallelAgentMode: "machdoch",
+      adaptiveControllerOverride: false,
       wasQueued: true,
       sessionId: "conversation-id",
       workspaceMemoryEnabled: false,
       workspace: { selection: "selected", root: "C:/workspace" },
+      earlierWorkspace: "C:/previous-workspace",
       workspaceRun: {
         workspaceRoot: "C:/workspace",
         primaryConfigurationId: null,
@@ -105,15 +108,35 @@ describe("resolveConversationContext", () => {
     ).resolves.toEqual(explicitContext);
   });
 
+  it("keeps Full Mode through the desktop context file", async () => {
+    const workspaceRoot = await createWorkspace();
+    const contextFile = join(workspaceRoot, "conversation.json");
+    await writeFile(
+      contextFile,
+      JSON.stringify({
+        history: [],
+        parallelAgentMode: "machdoch",
+        earlierWorkspace: "C:/previous-workspace",
+      }),
+    );
+
+    await expect(
+      resolveConversationContext(
+        createArgs({ conversationContextFile: contextFile }),
+      ),
+    ).resolves.toMatchObject({
+      history: [],
+      parallelAgentMode: "machdoch",
+      earlierWorkspace: "C:/previous-workspace",
+    });
+  });
+
   it.each([true, false])(
     "preserves queued status %s through the desktop context file",
     async (wasQueued) => {
       const workspaceRoot = await createWorkspace();
       const contextFile = join(workspaceRoot, "conversation.json");
-      await writeFile(
-        contextFile,
-        JSON.stringify({ history: [], wasQueued }),
-      );
+      await writeFile(contextFile, JSON.stringify({ history: [], wasQueued }));
 
       await expect(
         resolveConversationContext(

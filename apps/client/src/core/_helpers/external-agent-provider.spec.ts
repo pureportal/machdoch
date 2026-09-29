@@ -876,6 +876,30 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     },
   );
 
+  it("keeps native Codex agents disabled in Full Mode", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    const params = createParams(workspaceRoot, {
+      provider: "codex-cli",
+      model: "gpt-6-sol",
+    });
+    params.preparedConversationContext = {
+      ...preparedConversationContext,
+      parallelAgentMode: "machdoch",
+    };
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    expect(call.args).toContain("features.multi_agent=false");
+    expect(call.args).toContain("agents.enabled=false");
+    expect(call.args).toContain("--ephemeral");
+
+    writeStructuredAnswer(call, "Completed managed work.");
+    call.child.emit("close", 0, null);
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+  });
+
   it.each([
     ["codex-cli", "gpt-6-sol", "MACHDOCH_CODEX_CLI_PATH"],
     ["claude-cli", "claude-opus-4-6", "MACHDOCH_CLAUDE_CLI_PATH"],
