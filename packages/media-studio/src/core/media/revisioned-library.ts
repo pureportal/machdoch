@@ -127,31 +127,44 @@ export const collectRevisionedMediaPages = async <T extends { id: string }>({
     let changedDuringRead = false;
 
     while (items.length < totalItems) {
-      const page = await loadPage({
-        offset: items.length,
-        limit: pageSize,
-        knownRevision: null,
-      });
-      assertPageEnvelope(page, items.length, libraryLabel);
-      if (
-        page.unchanged ||
-        page.revision !== revision ||
-        page.totalItems !== totalItems
-      ) {
-        changedDuringRead = true;
-        break;
+      const batchSize = Math.min(
+        4,
+        Math.ceil((totalItems - items.length) / pageSize),
+      );
+      const pages = await Promise.all(
+        Array.from({ length: batchSize }, (_, index) =>
+          loadPage({
+            offset: items.length + index * pageSize,
+            limit: pageSize,
+            knownRevision: null,
+          }),
+        ),
+      );
+      for (const page of pages) {
+        const expectedOffset = items.length;
+        assertPageEnvelope(page, expectedOffset, libraryLabel);
+        if (
+          page.unchanged ||
+          page.revision !== revision ||
+          page.totalItems !== totalItems
+        ) {
+          changedDuringRead = true;
+          break;
+        }
+        if (page.items.length === 0) {
+          throw new Error(
+            `${itemLabel} snapshot ${revision} stalled at ${expectedOffset} of ${totalItems} entries.`,
+          );
+        }
+        const expectedLength = Math.min(pageSize, totalItems - expectedOffset);
+        if (page.items.length !== expectedLength) {
+          throw new Error(
+            `The ${libraryLabel} returned ${page.items.length} entries at offset ${expectedOffset}; expected ${expectedLength}.`,
+          );
+        }
+        items.push(...page.items);
       }
-      if (page.items.length === 0) {
-        throw new Error(
-          `${itemLabel} snapshot ${revision} stalled at ${items.length} of ${totalItems} entries.`,
-        );
-      }
-      if (items.length + page.items.length > totalItems) {
-        throw new Error(
-          `A ${itemLabel.toLocaleLowerCase()} page exceeded the advertised snapshot total.`,
-        );
-      }
-      items.push(...page.items);
+      if (changedDuringRead) break;
     }
 
     if (changedDuringRead) continue;

@@ -201,26 +201,25 @@ impl MediaRuntimeState {
                 "Media Studio setup is running.",
             );
         }
-        if let Ok(status) = self.local_diffusers_status.lock() {
-            if let Some(status) = status.as_ref() {
-                return status.clone();
-            }
-        }
-        let probed = provider_local_diffusers::probe(app);
-        if let Ok(mut status) = self.local_diffusers_status.lock() {
-            *status = Some(probed.clone());
-        }
-        probed
+        let mut status = self
+            .local_diffusers_status
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        status
+            .get_or_insert_with(|| provider_local_diffusers::probe(app))
+            .clone()
     }
 
     fn refresh_local_diffusers_status(
         &self,
         app: &AppHandle,
     ) -> provider_local_diffusers::LocalDiffusersRuntimeStatus {
+        let mut status = self
+            .local_diffusers_status
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let probed = provider_local_diffusers::probe(app);
-        if let Ok(mut status) = self.local_diffusers_status.lock() {
-            *status = Some(probed.clone());
-        }
+        *status = Some(probed.clone());
         probed
     }
 
@@ -262,11 +261,19 @@ pub(crate) struct MediaRuntimeStatus {
     local_diffusers: provider_local_diffusers::LocalDiffusersRuntimeStatus,
 }
 
-fn direct_generation_model_ids(
+struct DirectMediaModelIds {
+    generation: Vec<String>,
+    reference_image: Vec<String>,
+    inpainting: Vec<String>,
+    pose: Vec<String>,
+}
+
+fn direct_model_ids(
     paths: &MediaRuntimePaths,
     local_diffusers: &provider_local_diffusers::LocalDiffusersRuntimeStatus,
-) -> MediaResult<Vec<String>> {
-    let mut model_ids = vec![
+) -> MediaResult<DirectMediaModelIds> {
+    let local = provider_local_diffusers::runnable_local_model_ids(paths, local_diffusers)?;
+    let mut generation = vec![
         "openai:gpt-image-2.5-sunburst".to_string(),
         provider_codex::MODEL_ID.to_string(),
         "quiver:arrow-1.1-max".to_string(),
@@ -276,18 +283,8 @@ fn direct_generation_model_ids(
         "local-svg:InternSVG-8B".to_string(),
         "local-svg:VFIG-4B".to_string(),
     ];
-    model_ids.extend(provider_local_diffusers::runnable_model_ids(
-        paths,
-        local_diffusers,
-    )?);
-    Ok(model_ids)
-}
-
-fn direct_reference_image_model_ids(
-    paths: &MediaRuntimePaths,
-    local_diffusers: &provider_local_diffusers::LocalDiffusersRuntimeStatus,
-) -> MediaResult<Vec<String>> {
-    let mut model_ids = vec![
+    generation.extend(local.generation);
+    let mut reference_image = vec![
         "openai:gpt-image-2.5-sunburst".to_string(),
         "quiver:arrow-1.1-max".to_string(),
         "quiver:arrow-1.1".to_string(),
@@ -296,25 +293,13 @@ fn direct_reference_image_model_ids(
         "local-svg:InternSVG-8B".to_string(),
         "local-svg:VFIG-4B".to_string(),
     ];
-    model_ids.extend(provider_local_diffusers::runnable_reference_model_ids(
-        paths,
-        local_diffusers,
-    )?);
-    Ok(model_ids)
-}
-
-fn direct_inpainting_model_ids(
-    paths: &MediaRuntimePaths,
-    local_diffusers: &provider_local_diffusers::LocalDiffusersRuntimeStatus,
-) -> MediaResult<Vec<String>> {
-    provider_local_diffusers::runnable_inpainting_model_ids(paths, local_diffusers)
-}
-
-fn direct_pose_model_ids(
-    paths: &MediaRuntimePaths,
-    local_diffusers: &provider_local_diffusers::LocalDiffusersRuntimeStatus,
-) -> MediaResult<Vec<String>> {
-    provider_local_diffusers::runnable_pose_model_ids(paths, local_diffusers)
+    reference_image.extend(local.reference_image);
+    Ok(DirectMediaModelIds {
+        generation,
+        reference_image,
+        inpainting: local.inpainting,
+        pose: local.pose,
+    })
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -3450,18 +3435,16 @@ pub(crate) fn inspect_ralph_media_run(
 }
 
 struct MediaRuntimeRecovery {
-    recovered_runs: u32,
     queued_run_ids: Vec<String>,
     provider_run_ids: Vec<String>,
     queued_model_install_ids: Vec<String>,
 }
 
 fn recover_runtime_storage(paths: &MediaRuntimePaths) -> MediaResult<MediaRuntimeRecovery> {
-    let recovery = database::initialize(paths)?;
+    database::initialize(paths)?;
     model_install::recover_removals(paths)?;
     model_addon::recover_removals(paths)?;
     Ok(MediaRuntimeRecovery {
-        recovered_runs: recovery.recovered_runs,
         queued_run_ids: database::list_queued_run_ids(paths)?,
         provider_run_ids: provider_mock::recover_interrupted(paths)?,
         queued_model_install_ids: model_install::recover_interrupted(paths)?,
@@ -3481,29 +3464,11 @@ fn resume_runtime_workers(app: &AppHandle, recovery: &MediaRuntimeRecovery) -> M
     Ok(())
 }
 
-pub(crate) fn initialize_runtime(app: &AppHandle) -> MediaResult<MediaRuntimeStatus> {
+pub(crate) fn initialize_runtime(app: &AppHandle) -> MediaResult<()> {
     let paths = MediaRuntimePaths::resolve(app)?;
     let recovery = recover_runtime_storage(&paths)?;
     resume_runtime_workers(app, &recovery)?;
-
-    let local_diffusers = app.state::<MediaRuntimeState>().local_diffusers_status(app);
-    let direct_generation_model_ids = direct_generation_model_ids(&paths, &local_diffusers)?;
-    Ok(MediaRuntimeStatus {
-        schema_version: database::SCHEMA_VERSION,
-        recovered_runs: recovery.recovered_runs,
-        queued_runs: (recovery.queued_run_ids.len() + recovery.provider_run_ids.len()) as u32,
-        active_runs: app.state::<MediaRuntimeState>().active_count(),
-        storage_ready: true,
-        mode: "native",
-        direct_generation_model_ids,
-        direct_reference_image_model_ids: direct_reference_image_model_ids(
-            &paths,
-            &local_diffusers,
-        )?,
-        direct_inpainting_model_ids: direct_inpainting_model_ids(&paths, &local_diffusers)?,
-        direct_pose_model_ids: direct_pose_model_ids(&paths, &local_diffusers)?,
-        local_diffusers,
-    })
+    Ok(())
 }
 
 fn spawn_provider_worker(app: AppHandle, run_id: String) -> MediaResult<()> {
@@ -3612,10 +3577,11 @@ fn spawn_model_install_worker(app: AppHandle, job_id: String) -> MediaResult<()>
 }
 
 #[tauri::command]
-pub(crate) fn media_initialize_runtime(app: AppHandle) -> MediaCommandResult<MediaRuntimeStatus> {
-    command_result(
-        "media_initialize_runtime",
-        (|| {
+pub(crate) async fn media_initialize_runtime(
+    app: AppHandle,
+) -> MediaCommandResult<MediaRuntimeStatus> {
+    let result =
+        tauri::async_runtime::spawn_blocking(move || -> MediaResult<MediaRuntimeStatus> {
             let paths = MediaRuntimePaths::resolve(&app)?;
             database::ensure_initialized(&paths)?;
             let queued_run_ids = database::list_queued_run_ids(&paths)?;
@@ -3632,8 +3598,7 @@ pub(crate) fn media_initialize_runtime(app: AppHandle) -> MediaCommandResult<Med
             let local_diffusers = app
                 .state::<MediaRuntimeState>()
                 .local_diffusers_status(&app);
-            let direct_generation_model_ids =
-                direct_generation_model_ids(&paths, &local_diffusers)?;
+            let direct_model_ids = direct_model_ids(&paths, &local_diffusers)?;
             Ok(MediaRuntimeStatus {
                 schema_version: database::SCHEMA_VERSION,
                 recovered_runs: 0,
@@ -3641,17 +3606,17 @@ pub(crate) fn media_initialize_runtime(app: AppHandle) -> MediaCommandResult<Med
                 active_runs: app.state::<MediaRuntimeState>().active_count(),
                 storage_ready: true,
                 mode: "native",
-                direct_generation_model_ids,
-                direct_reference_image_model_ids: direct_reference_image_model_ids(
-                    &paths,
-                    &local_diffusers,
-                )?,
-                direct_inpainting_model_ids: direct_inpainting_model_ids(&paths, &local_diffusers)?,
-                direct_pose_model_ids: direct_pose_model_ids(&paths, &local_diffusers)?,
+                direct_generation_model_ids: direct_model_ids.generation,
+                direct_reference_image_model_ids: direct_model_ids.reference_image,
+                direct_inpainting_model_ids: direct_model_ids.inpainting,
+                direct_pose_model_ids: direct_model_ids.pose,
                 local_diffusers,
             })
-        })(),
-    )
+        })
+        .await
+        .map_err(|error| format!("Media Studio runtime worker failed: {error}"))
+        .and_then(|result| result);
+    command_result("media_initialize_runtime", result)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -5035,28 +5000,29 @@ pub(crate) fn media_list_runs(
 }
 
 #[tauri::command]
-pub(crate) fn media_list_run_page(
+pub(crate) async fn media_list_run_page(
     app: AppHandle,
     offset: Option<u32>,
     limit: Option<u32>,
     known_revision: Option<String>,
 ) -> MediaCommandResult<MediaRunPage> {
-    command_result(
-        "media_list_run_page",
-        (|| {
-            let paths = MediaRuntimePaths::resolve(&app)?;
-            database::ensure_initialized(&paths)?;
-            let known_revision = known_revision
-                .map(|revision| required_catalog_revision(&revision))
-                .transpose()?;
-            database::list_run_page(
-                &paths,
-                offset.unwrap_or(0),
-                limit.unwrap_or(250).clamp(1, 250),
-                known_revision.as_deref(),
-            )
-        })(),
-    )
+    let result = tauri::async_runtime::spawn_blocking(move || -> MediaResult<MediaRunPage> {
+        let paths = MediaRuntimePaths::resolve(&app)?;
+        database::ensure_initialized(&paths)?;
+        let known_revision = known_revision
+            .map(|revision| required_catalog_revision(&revision))
+            .transpose()?;
+        database::list_run_page(
+            &paths,
+            offset.unwrap_or(0),
+            limit.unwrap_or(250).clamp(1, 250),
+            known_revision.as_deref(),
+        )
+    })
+        .await
+        .map_err(|error| format!("Media Studio run page worker failed: {error}"))
+        .and_then(|result| result);
+    command_result("media_list_run_page", result)
 }
 
 #[tauri::command]
@@ -5129,38 +5095,39 @@ pub(crate) fn media_list_assets(
 }
 
 #[tauri::command]
-pub(crate) fn media_list_asset_page(
+pub(crate) async fn media_list_asset_page(
     app: AppHandle,
     offset: Option<u32>,
     limit: Option<u32>,
     known_revision: Option<String>,
 ) -> MediaCommandResult<MediaAssetPage> {
-    command_result(
-        "media_list_asset_page",
-        (|| {
-            let paths = MediaRuntimePaths::resolve(&app)?;
-            database::ensure_initialized(&paths)?;
-            let known_revision = known_revision
-                .map(|revision| required_catalog_revision(&revision))
-                .transpose()?;
-            database::list_asset_page(
-                &paths,
-                offset.unwrap_or(0),
-                limit.unwrap_or(250).clamp(1, 250),
-                known_revision.as_deref(),
-            )
-        })(),
-    )
+    let result = tauri::async_runtime::spawn_blocking(move || -> MediaResult<MediaAssetPage> {
+        let paths = MediaRuntimePaths::resolve(&app)?;
+        database::ensure_initialized(&paths)?;
+        let known_revision = known_revision
+            .map(|revision| required_catalog_revision(&revision))
+            .transpose()?;
+        database::list_asset_page(
+            &paths,
+            offset.unwrap_or(0),
+            limit.unwrap_or(250).clamp(1, 250),
+            known_revision.as_deref(),
+        )
+    })
+        .await
+        .map_err(|error| format!("Media Studio asset page worker failed: {error}"))
+        .and_then(|result| result);
+    command_result("media_list_asset_page", result)
 }
 
 #[tauri::command]
-pub(crate) fn media_get_model_catalog(
+pub(crate) async fn media_get_model_catalog(
     app: AppHandle,
     configured_provider_ids: Vec<String>,
+    include_runtime_readiness: Option<bool>,
 ) -> MediaCommandResult<MediaModelCatalogSnapshot> {
-    command_result(
-        "media_get_model_catalog",
-        (|| {
+    let result =
+        tauri::async_runtime::spawn_blocking(move || -> MediaResult<MediaModelCatalogSnapshot> {
             if configured_provider_ids.len() > 32 {
                 return Err("configuredProviderIds is limited to 32 entries".to_string());
             }
@@ -5188,17 +5155,22 @@ pub(crate) fn media_get_model_catalog(
             let paths = MediaRuntimePaths::resolve(&app)?;
             database::ensure_initialized(&paths)?;
             let mut snapshot = database::get_model_catalog(&paths, &configured_provider_ids)?;
-            let runtime = app
-                .state::<MediaRuntimeState>()
-                .local_diffusers_status(&app);
-            provider_local_diffusers::annotate_catalog_readiness(
-                &paths,
-                &runtime,
-                &mut snapshot.models,
-            )?;
+            if include_runtime_readiness.unwrap_or(true) {
+                let runtime = app
+                    .state::<MediaRuntimeState>()
+                    .local_diffusers_status(&app);
+                provider_local_diffusers::annotate_catalog_readiness(
+                    &paths,
+                    &runtime,
+                    &mut snapshot.models,
+                )?;
+            }
             Ok(snapshot)
-        })(),
-    )
+        })
+        .await
+        .map_err(|error| format!("Media Studio catalog worker failed: {error}"))
+        .and_then(|result| result);
+    command_result("media_get_model_catalog", result)
 }
 
 #[tauri::command]

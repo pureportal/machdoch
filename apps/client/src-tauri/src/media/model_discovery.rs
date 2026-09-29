@@ -158,7 +158,7 @@ fn directory_inventory(
                     directory.display()
                 )
             })?;
-            let metadata = fs::symlink_metadata(entry.path()).map_err(|error| {
+            let metadata = entry.metadata().map_err(|error| {
                 format!("failed to inspect {}: {error}", entry.path().display())
             })?;
             if metadata.file_type().is_symlink() {
@@ -1295,7 +1295,7 @@ fn discover_with_limits(
                 }
             };
             let path = entry.path();
-            let metadata = match fs::symlink_metadata(&path) {
+            let metadata = match entry.metadata() {
                 Ok(metadata) => metadata,
                 Err(error) => {
                     push_warning(

@@ -536,7 +536,8 @@ export const MediaStudio = ({
   );
   const [runtimeRuns, setRuntimeRuns] = useState<MediaRuntimeRunRecord[]>([]);
   const [runtimeAssets, setRuntimeAssets] = useState<MediaAssetRecord[]>([]);
-  const [runtimeLoading, setRuntimeLoading] = useState(true);
+  const [runsLoading, setRunsLoading] = useState(true);
+  const [assetsLoading, setAssetsLoading] = useState(true);
   const [runtimeError, setRuntimeError] = useState<MediaErrorDetail | null>(
     null,
   );
@@ -622,6 +623,7 @@ export const MediaStudio = ({
   const semanticRedoStack = useRef<MediaFlow[]>([]);
   const [, setSemanticHistoryRevision] = useState(0);
   const runtimeRefreshSequence = useRef(0);
+  const runtimeRefreshInFlight = useRef(false);
   const selectedRunDetailSequence = useRef(0);
   const selectedRunIdRef = useRef<string | null>(selectedRunId);
   const modelCatalogRequestSequence = useRef(0);
@@ -684,53 +686,60 @@ export const MediaStudio = ({
 
   const refreshRuntime = useCallback(async (): Promise<void> => {
     const refreshSequence = ++runtimeRefreshSequence.current;
+    runtimeRefreshInFlight.current = true;
     const detailSequence = selectedRunDetailSequence.current;
     const requestedRunId = selectedRunIdRef.current;
     const requestedQueueJob = requestedRunId
       ? generationQueue.getJob(requestedRunId)
       : null;
-    try {
-      const [runs, assets, detail] = await Promise.all([
-        listMediaRuns(),
-        listMediaAssets(),
-        requestedRunId ? getMediaGenerationRunDetail(requestedRunId) : null,
-      ]);
-      if (
-        !mediaStudioMounted.current ||
-        refreshSequence !== runtimeRefreshSequence.current
-      ) {
-        return;
+    const isCurrent = () =>
+      mediaStudioMounted.current &&
+      refreshSequence === runtimeRefreshSequence.current;
+    const reportError = (error: unknown) => {
+      if (isCurrent()) {
+        setRuntimeError(normalizeMediaError(error, "refresh_media_runtime"));
       }
-      setRuntimeRuns(runs);
-      setRuntimeAssets(assets);
-      if (
-        detailSequence === selectedRunDetailSequence.current &&
-        selectedRunIdRef.current === requestedRunId
-      ) {
+    };
+    const runsRequest = listMediaRuns()
+      .then((runs) => {
+        if (isCurrent()) setRuntimeRuns(runs);
+      })
+      .catch(reportError)
+      .finally(() => {
+        if (isCurrent()) setRunsLoading(false);
+      });
+    const assetsRequest = listMediaAssets()
+      .then((assets) => {
+        if (isCurrent()) setRuntimeAssets(assets);
+      })
+      .catch(reportError)
+      .finally(() => {
+        if (isCurrent()) setAssetsLoading(false);
+      });
+    const detailRequest = Promise.resolve(
+      requestedRunId ? getMediaGenerationRunDetail(requestedRunId) : null,
+    )
+      .then((detail) => {
+        if (
+          !isCurrent() ||
+          detailSequence !== selectedRunDetailSequence.current ||
+          selectedRunIdRef.current !== requestedRunId
+        ) {
+          return;
+        }
         if (detail) {
           setSelectedRun(detail);
         } else if (requestedQueueJob) {
           setSelectedRun(generationJobToRunDetail(requestedQueueJob));
           setSelectedRunRecipe(requestedQueueJob.recipe);
         }
-        if (detail?.failure) {
-          presentRunFailure(detail.failure);
-        }
-      }
-    } catch (error: unknown) {
-      if (
-        mediaStudioMounted.current &&
-        refreshSequence === runtimeRefreshSequence.current
-      ) {
-        setRuntimeError(normalizeMediaError(error, "refresh_media_runtime"));
-      }
+        if (detail?.failure) presentRunFailure(detail.failure);
+      })
+      .catch(reportError);
+    try {
+      await Promise.all([runsRequest, assetsRequest, detailRequest]);
     } finally {
-      if (
-        mediaStudioMounted.current &&
-        refreshSequence === runtimeRefreshSequence.current
-      ) {
-        setRuntimeLoading(false);
-      }
+      if (isCurrent()) runtimeRefreshInFlight.current = false;
     }
   }, [presentRunFailure]);
 
@@ -799,11 +808,15 @@ export const MediaStudio = ({
       }),
     [configuredProviderIds],
   );
+  const runtimeInitialized = runtimeStatus !== null;
   const refreshModelCatalog =
     useCallback(async (): Promise<MediaModelCatalogSnapshot | null> => {
       const requestSequence = ++modelCatalogRequestSequence.current;
       try {
-        const snapshot = await getMediaModelCatalog(configuredProviderIds);
+        const snapshot = await getMediaModelCatalog(
+          configuredProviderIds,
+          runtimeInitialized,
+        );
         if (requestSequence === modelCatalogRequestSequence.current) {
           setModelCatalog(snapshot);
           return snapshot;
@@ -816,7 +829,7 @@ export const MediaStudio = ({
         }
       }
       return null;
-    }, [configuredProviderIds]);
+    }, [configuredProviderIds, runtimeInitialized]);
 
   const runtimeSetup = useMediaRuntimeSetup(async () => {
     const requestSequence = ++modelCatalogRequestSequence.current;
@@ -1071,7 +1084,6 @@ export const MediaStudio = ({
         if (!cancelled) {
           setRuntimeStatus(status);
         }
-        return refreshRuntime();
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -1080,6 +1092,7 @@ export const MediaStudio = ({
           );
         }
       });
+    void refreshRuntime();
 
     return () => {
       cancelled = true;
@@ -1117,15 +1130,18 @@ export const MediaStudio = ({
   }, [refreshModelCatalog]);
 
   useEffect(() => {
+    if (runsLoading || assetsLoading) return;
     const hasActiveRun = runtimeRuns.some((run) =>
       ["queued", "running", "canceling"].includes(run.status),
     );
-    const timeout = window.setTimeout(
-      () => void refreshRuntime(),
+    const interval = window.setInterval(
+      () => {
+        if (!runtimeRefreshInFlight.current) void refreshRuntime();
+      },
       hasActiveRun ? 450 : 3_000,
     );
-    return () => window.clearTimeout(timeout);
-  }, [refreshRuntime, runtimeRuns]);
+    return () => window.clearInterval(interval);
+  }, [assetsLoading, refreshRuntime, runsLoading, runtimeRuns]);
 
   useEffect(() => {
     if (!flowRunOverlayId) return;
@@ -4629,7 +4645,7 @@ export const MediaStudio = ({
   const persistenceError = saveError ?? loadError;
   const runInspectorOpen =
     loaded &&
-    !runtimeLoading &&
+    !runsLoading &&
     state.activeSection === "runs" &&
     (selectedRun !== null || selectedRunLoading);
   const runtimeErrorNotice = runtimeError ? (
@@ -4862,14 +4878,14 @@ export const MediaStudio = ({
             </Suspense>
           ) : null}
           {loaded &&
-          runtimeLoading &&
-          ["library", "runs"].includes(state.activeSection) ? (
+          ((state.activeSection === "library" && assetsLoading) ||
+            (state.activeSection === "runs" && runsLoading)) ? (
             <div role="status" className="p-6 text-sm text-slate-400">
               Loading{" "}
               {state.activeSection === "library" ? "assets" : "activity"}…
             </div>
           ) : null}
-          {loaded && !runtimeLoading && state.activeSection === "library" ? (
+          {loaded && !assetsLoading && state.activeSection === "library" ? (
             <MediaAssetsView
               discoveredFiles={workspaceModelDiscovery?.entries ?? []}
               assets={runtimeAssets}
@@ -5005,7 +5021,7 @@ export const MediaStudio = ({
               onDeleteAsset={deleteAsset}
             />
           ) : null}
-          {loaded && !runtimeLoading && state.activeSection === "runs" ? (
+          {loaded && !runsLoading && state.activeSection === "runs" ? (
             <MediaRunsView
               errorNotice={runtimeErrorNotice}
               runs={combinedRuns}
