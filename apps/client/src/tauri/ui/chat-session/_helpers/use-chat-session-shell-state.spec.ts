@@ -5,7 +5,11 @@ import {
   type ChatSessionQueuedMessage,
   type ShellPersistedState,
 } from "../../chat-session.model";
-import { mergeShellStateForPersistence } from "./use-chat-session-shell-state";
+import {
+  createShellStatePatch,
+  mergeShellStateForPersistence,
+  mergeShellStateFromExternalUpdate,
+} from "./use-chat-session-shell-state";
 
 const createQueuedMessage = (
   overrides: Partial<ChatSessionQueuedMessage> = {},
@@ -39,6 +43,115 @@ const createState = (
     queuedSessionMessages,
   };
 };
+
+describe("external shell-state updates", () => {
+  it("adopts a remote update when local sessions are unchanged", () => {
+    const base = createState([]);
+    const external = {
+      ...base,
+      recentWorkspaces: ["remote-workspace"],
+    };
+
+    expect(mergeShellStateFromExternalUpdate(base, base, external, false)).toBe(
+      external,
+    );
+  });
+
+  it("keeps local session input alongside a remote update", () => {
+    const base = createState([]);
+    const currentSession = {
+      ...base.sessions[0],
+      draft: "Local input",
+      draftUpdatedAt: base.sessions[0].draftUpdatedAt + 1,
+      updatedAt: base.sessions[0].updatedAt + 1,
+    };
+    const current = { ...base, sessions: [currentSession] };
+    const external = {
+      ...base,
+      recentWorkspaces: ["remote-workspace"],
+    };
+
+    const merged = mergeShellStateFromExternalUpdate(
+      current,
+      base,
+      external,
+      false,
+    );
+
+    expect(merged.sessions[0].draft).toBe("Local input");
+    expect(merged.recentWorkspaces).toEqual(["remote-workspace"]);
+  });
+});
+
+describe("shell-state conflict patches", () => {
+  it("retains local input and remote changes while omitting unchanged sessions", () => {
+    const initial = createState([]);
+    const base = normalizeShellState({
+      ...initial,
+      sessions: [
+        initial.sessions[0],
+        createSession({ id: "session-2" }),
+        createSession({ id: "session-3" }),
+      ],
+    });
+    const local = {
+      ...base,
+      sessions: base.sessions.map((session) =>
+        session.id === "session-1"
+          ? {
+              ...session,
+              draft: "Local input",
+              draftUpdatedAt: session.draftUpdatedAt + 1,
+              updatedAt: session.updatedAt + 1,
+            }
+          : session,
+      ),
+    };
+    const external = normalizeShellState({
+      ...base,
+      sessions: base.sessions.map((session) =>
+        session.id === "session-2"
+          ? {
+              ...session,
+              manualTitle: "Remote title",
+              updatedAt: session.updatedAt + 1,
+            }
+          : session,
+      ),
+    });
+
+    const merged = mergeShellStateForPersistence(local, base, external);
+    const normalized = normalizeShellState(merged);
+    const normalizedWithKnownSessions = normalizeShellState(
+      merged,
+      new Set(external.sessions),
+    );
+    const patch = createShellStatePatch(external, normalized, merged);
+
+    expect(normalizedWithKnownSessions).toEqual(normalized);
+    expect(
+      normalizedWithKnownSessions.sessions.find(
+        (session) => session.id === "session-2",
+      ),
+    ).toBe(external.sessions.find((session) => session.id === "session-2"));
+    expect(
+      normalizedWithKnownSessions.sessions.find(
+        (session) => session.id === "session-1",
+      ),
+    ).not.toBe(local.sessions.find((session) => session.id === "session-1"));
+    expect(
+      merged.sessions.find((session) => session.id === "session-1")?.draft,
+    ).toBe("Local input");
+    expect(
+      merged.sessions.find((session) => session.id === "session-2")
+        ?.manualTitle,
+    ).toBe("Remote title");
+    expect(patch).toEqual(createShellStatePatch(external, normalized));
+    expect(patch.sessions).toEqual([
+      normalized.sessions.find((session) => session.id === "session-1"),
+    ]);
+  });
+});
 
 describe("queued message persistence", () => {
   it("preserves enhancement attempts when another window changes queue order", () => {
