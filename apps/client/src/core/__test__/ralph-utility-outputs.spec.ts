@@ -141,7 +141,7 @@ describe("getRalphUtilityOutputs", () => {
     {
       name: "CHANGE_SCOPE_GUARD",
       utility: { type: "CHANGE_SCOPE_GUARD" },
-      outputs: ["IN_SCOPE", "OUT_OF_SCOPE", "EMPTY", "ERROR"],
+      outputs: ["IN_SCOPE", "OUT_OF_SCOPE", "ADVISORY", "EMPTY", "ERROR"],
     },
     {
       name: "SCAN_SCOPE_EVIDENCE",

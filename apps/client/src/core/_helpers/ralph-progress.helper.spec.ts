@@ -37,6 +37,50 @@ const result = (
 });
 
 describe("RALPH progress detector", () => {
+  it("advances repository coverage without crediting repeated selection of the same scope", () => {
+    const block: RalphFlowBlock = {
+      id: "select",
+      type: "UTILITY",
+      title: "Select",
+      utility: { type: "SELECT_SCOPE" },
+    };
+    const selected = (
+      id: string,
+      reused: boolean,
+    ): RalphBlockExecutionResult => ({
+      ...result("select", {
+        scope: { id },
+        cycle: 1,
+        reusedCurrentScope: reused,
+      }),
+      output: "SELECTED",
+    });
+    const first = assessRalphProgress(
+      createRalphProgressState(),
+      block,
+      selected("alpha", false),
+      1,
+      { maxStagnantTransitions: 20, maxRepeatedCycle: 3 },
+    );
+    const repeated = assessRalphProgress(
+      first.state,
+      block,
+      selected("alpha", true),
+      2,
+      { maxStagnantTransitions: 20, maxRepeatedCycle: 3 },
+    );
+    const next = assessRalphProgress(
+      repeated.state,
+      block,
+      selected("beta", false),
+      3,
+      { maxStagnantTransitions: 20, maxRepeatedCycle: 3 },
+    );
+    expect(first.evidence.meaningful).toBe(true);
+    expect(repeated.evidence.meaningful).toBe(false);
+    expect(next.evidence.meaningful).toBe(true);
+    expect(next.state.consecutiveNoProgress).toBe(0);
+  });
   it("does not treat repeated model output as progress and detects a cycle", () => {
     let state = createRalphProgressState();
     for (let transition = 1; transition <= 3; transition += 1) {

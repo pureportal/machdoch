@@ -45,7 +45,8 @@ export interface RalphVerificationCommandSelection {
   reviewTier: RalphReviewTier;
   protocolValid: boolean;
   command: string;
-  source: "variable" | "detected";
+  cwd: string;
+  source: "variable" | "task" | "detected";
   focusedCommand: string;
   standardCommand: string;
   broadCommand: string;
@@ -192,17 +193,39 @@ export const resolveRalphVerificationCommand = (input: {
         ? standardCommand
         : broadCommand;
   const configuredCommand = input.configuredCommand?.trim() ?? "";
+  const taskCommand = readTrimmedString(selection.verificationCommand);
+  const taskCwd = readTrimmedString(selection.verificationCwd);
+  if (taskCommand && !taskCwd) {
+    throw new Error(
+      "Task verification requires an explicit working directory.",
+    );
+  }
+  const requestedCommand = configuredCommand || taskCommand || detectedCommand;
+  const nativeCargoCommand = readTrimmedString(commands.nativeCargoCommand);
+  const nativeCommand = nativeCargoCommand
+    ? requestedCommand.replace(/^cargo(?=\s)/u, nativeCargoCommand)
+    : requestedCommand;
+  const pythonCommand = readTrimmedString(commands.pythonCommand);
+  const command = pythonCommand
+    ? nativeCommand.replace(/^python(?:3)?(?=\s)/u, pythonCommand)
+    : nativeCommand;
+  if (!command.trim()) {
+    throw new Error(
+      "No verification command covers the selected task. Provide verificationCommand and verificationCwd.",
+    );
+  }
 
   return {
     tier,
     reviewTier,
     protocolValid:
       declaredTier !== undefined && declaredReviewTier !== undefined,
-    command:
-      configuredCommand ||
-      detectedCommand ||
-      readString(commands.verificationCommand),
-    source: configuredCommand ? "variable" : "detected",
+    command,
+    cwd:
+      taskCommand && !configuredCommand
+        ? taskCwd
+        : readTrimmedString(commands.rootPath) || ".",
+    source: configuredCommand ? "variable" : taskCommand ? "task" : "detected",
     focusedCommand,
     standardCommand,
     broadCommand,
@@ -248,7 +271,12 @@ export const resolveRalphCodeImprovementPlan = (input: {
 
   return {
     planId: `improvement-${input
-      .stableDigest({ scopeId, taskIds, decision })
+      .stableDigest({
+        scopeId,
+        taskIds,
+        decision,
+        cycle: input.selection.cycle,
+      })
       .slice(0, 32)}`,
     decision,
     rationale: input.draft.rationale,

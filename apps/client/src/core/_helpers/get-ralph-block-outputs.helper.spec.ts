@@ -65,7 +65,7 @@ describe("getRalphUtilityOutputs", () => {
     [{ type: "MARK_JSON_TASK" }, ["SUCCESS", "NOT_FOUND", "INVALID", "ERROR"]],
     [
       { type: "CHANGE_SCOPE_GUARD" },
-      ["IN_SCOPE", "OUT_OF_SCOPE", "EMPTY", "ERROR"],
+      ["IN_SCOPE", "OUT_OF_SCOPE", "ADVISORY", "EMPTY", "ERROR"],
     ],
     [{ type: "SCAN_SCOPE_EVIDENCE" }, ["SUCCESS", "EMPTY", "ERROR"]],
     [{ type: "UPDATE_SCOPE_REGISTRY" }, ["SUCCESS", "EMPTY", "ERROR"]],

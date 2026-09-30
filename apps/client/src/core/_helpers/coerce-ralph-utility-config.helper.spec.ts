@@ -5,6 +5,29 @@ import {
 } from "./coerce-ralph-utility-config.helper.ts";
 
 describe("coerceRalphUtilityConfig", () => {
+  it("retains task strategies and rejects invalid selection strategies", () => {
+    expect(
+      coerceRalphUtilityConfig({
+        type: "SELECT_JSON_TASK",
+        strategy: "end-to-start",
+      }),
+    ).toMatchObject({ strategy: "end-to-start" });
+    expect(() =>
+      coerceRalphUtilityConfig({ type: "SELECT_SCOPE", strategy: "invalid" }),
+    ).toThrow(InvalidRalphUtilityConfigurationError);
+  });
+  it("retains scope strategy and numeric templates for runtime resolution", () => {
+    expect(
+      coerceRalphUtilityConfig({
+        type: "SELECT_SCOPE",
+        strategy: "{{scopeSelectionStrategy:text=priority}}",
+        maxTasks: "{{maxTasks:number=1}}",
+      }),
+    ).toMatchObject({
+      strategy: "{{scopeSelectionStrategy:text=priority}}",
+      maxTasks: "{{maxTasks:number=1}}",
+    });
+  });
   it.each([undefined, null, "", 42, false, [], {}])(
     "rejects missing or unsupported utility type input %#",
     (value) => {

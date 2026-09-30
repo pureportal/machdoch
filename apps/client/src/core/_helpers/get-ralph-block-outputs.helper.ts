@@ -74,7 +74,7 @@ export const getRalphUtilityOutputs = (
     case "MARK_JSON_TASK":
       return ["SUCCESS", "NOT_FOUND", "INVALID", "ERROR"];
     case "CHANGE_SCOPE_GUARD":
-      return ["IN_SCOPE", "OUT_OF_SCOPE", "EMPTY", "ERROR"];
+      return ["IN_SCOPE", "OUT_OF_SCOPE", "ADVISORY", "EMPTY", "ERROR"];
     case "SCAN_SCOPE_EVIDENCE":
     case "UPDATE_SCOPE_REGISTRY":
       return ["SUCCESS", "EMPTY", "ERROR"];

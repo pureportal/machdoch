@@ -6,6 +6,7 @@ import type {
 } from "../ralph.js";
 import type { RalphStarterFlow } from "../ralph-starter-flows.js";
 import { RALPH_VALIDATOR_JSON_SCHEMA } from "../_helpers/parse-ralph-validator-json-result.helper.js";
+import { enableContinuousRalphScopeCycles } from "./continuous-scope-cycle.js";
 
 const VERIFICATION_TIMEOUT_SECONDS = 30 * 60;
 
@@ -26,6 +27,8 @@ const taskSchema = {
     "proposedBehavior",
     "acceptanceCriteria",
     "verificationPlan",
+    "verificationCommand",
+    "verificationCwd",
     "verificationTier",
     "reviewTier",
     "rollbackNotes",
@@ -70,6 +73,8 @@ const taskSchema = {
       minItems: 1,
       items: { type: "string", minLength: 1 },
     },
+    verificationCommand: { type: "string", minLength: 1 },
+    verificationCwd: { type: "string", minLength: 1 },
     verificationTier: {
       type: "string",
       enum: ["focused", "standard", "broad"],
@@ -544,7 +549,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         maxAttempts: 2,
         schema: planDraftSchema,
         prompt:
-          "Turn discovery {{data:propose-improvements:output}}, research {{summary:improvement-research}}, selected scope {{result:select-scope}}, commands {{result:detect-selected-commands}}, completed history {{result:read-completed-improvements}}, and deferred history {{result:read-deferred-improvements}} into a persistent portfolio. Resume still-relevant deferred packages with stable task ids and updated evidence. Return decision IMPLEMENT only when meaningful work remains. IMPLEMENT must retain every currently eligible meaningful package rather than selecting one and discarding the rest. Usually return 2-5 dependency-aware tasks; return one only when only one meaningful package exists. Each IMPLEMENT task must have status planned, stable kebab-case id, priority, likelyFiles, concrete evidence, bounded acceptance criteria, verification and review tiers, and rollback notes. DEFER only when unavailable external credentials or state block every task. STOP only with evidence that no meaningful candidate remains under {{meaningfulThreshold:text=}}. STOP and DEFER require empty tasks. Return only schema-valid JSON.",
+          "Turn discovery {{data:propose-improvements:output}}, research {{summary:improvement-research}}, selected scope {{result:select-scope}}, commands {{result:detect-selected-commands}}, completed history {{result:read-completed-improvements}}, and deferred history {{result:read-deferred-improvements}} into a persistent portfolio. Resume still-relevant deferred packages with stable task ids and updated evidence. Return decision IMPLEMENT only when meaningful work remains. IMPLEMENT must retain every currently eligible meaningful package rather than selecting one and discarding the rest. Usually return 2-5 dependency-aware tasks; return one only when only one meaningful package exists. Each IMPLEMENT task must have status planned, stable kebab-case id, priority, likelyFiles, concrete evidence, bounded acceptance criteria, verification and review tiers, rollback notes, an executable verificationCommand, and workspace-relative verificationCwd that reach its actual language and changed behavior. Use business logic tests only; do not render components or run browser, navigation, visual, or UI interaction tests. DEFER only when unavailable external credentials or state block every task. STOP only with evidence that no meaningful candidate remains under {{meaningfulThreshold:text=}}. STOP and DEFER require empty tasks. Return only schema-valid JSON.",
       },
       8,
       0,
@@ -720,9 +725,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "RUN_CHECK",
         command: "{{data:select-verification-command:output.command}}",
-        fallbackCommand:
-          "{{data:detect-project-commands:focusedVerificationCommand}}",
-        cwd: "{{data:detect-project-commands:rootPath}}",
+        cwd: "{{data:select-verification-command:output.cwd}}",
         timeoutSeconds: VERIFICATION_TIMEOUT_SECONDS,
       },
       18,
@@ -781,9 +784,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "RUN_CHECK",
         command: "{{data:select-verification-command:output.command}}",
-        fallbackCommand:
-          "{{data:detect-project-commands:focusedVerificationCommand}}",
-        cwd: "{{data:detect-project-commands:rootPath}}",
+        cwd: "{{data:select-verification-command:output.cwd}}",
         timeoutSeconds: VERIFICATION_TIMEOUT_SECONDS,
       },
       22,
@@ -2538,9 +2539,11 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
   ],
 };
 
+enableContinuousRalphScopeCycles(autonomousCodeImprovementLoopFlow);
+
 export const autonomousCodeImprovementLoopStarterFlow = {
   id: "autonomous-code-improvement-loop",
-  version: 24,
+  version: 26,
   defaultAlias: "autonomous-code-improvement-loop",
   category: "Code Quality",
   tags: ["autonomous", "improvement", "portfolio", "validation"],
@@ -2551,8 +2554,8 @@ export const autonomousCodeImprovementLoopStarterFlow = {
         "starter-autonomous-code-improvement-loop:persistent-plan-verification",
       baselineBlockId: "baseline-verification",
       candidateBlockId: "run-verification",
-      baselineInconclusiveTargetId: "count-improvement-pass",
-      candidateInconclusiveTargetId: "visual-decision",
+      baselineInconclusiveTargetId: "mark-improvement-task-deferred",
+      candidateInconclusiveTargetId: "mark-improvement-task-deferred",
       routeOverrides: [],
     },
     terminalOutcomes: [

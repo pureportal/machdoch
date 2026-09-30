@@ -4,12 +4,6 @@ import { mkdir, readdir, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { writeJsonAtomically } from "./write-file-atomically.helper.js";
 
-export const RALPH_SCOPE_EVIDENCE_SCHEMA =
-  "machdoch.ralph.scopeEvidence" as const;
-export const RALPH_SCOPE_REGISTRY_SCHEMA =
-  "machdoch.ralph.scopeRegistry" as const;
-export const RALPH_SCOPE_REGISTRY_SCHEMA_VERSION = 2 as const;
-
 export const RALPH_SCOPE_SELECTION_STRATEGIES = [
   "start-to-end",
   "round-robin",
@@ -61,8 +55,6 @@ export interface RalphScopeEvidenceScope {
 }
 
 export interface RalphScopeEvidenceDocument {
-  schema: typeof RALPH_SCOPE_EVIDENCE_SCHEMA;
-  schemaVersion: typeof RALPH_SCOPE_REGISTRY_SCHEMA_VERSION;
   generatedAt: string;
   workspaceRoot: string;
   rootPath: string;
@@ -110,8 +102,6 @@ export interface RalphScopeRegistryHistoryEntry {
 }
 
 export interface RalphScopeRegistry {
-  schema: typeof RALPH_SCOPE_REGISTRY_SCHEMA;
-  schemaVersion: typeof RALPH_SCOPE_REGISTRY_SCHEMA_VERSION;
   flowAlias: string;
   updatedAt: string;
   selection: RalphScopeRegistrySelection;
@@ -803,8 +793,6 @@ export const discoverRalphScopeEvidence = async (
   }
 
   return {
-    schema: RALPH_SCOPE_EVIDENCE_SCHEMA,
-    schemaVersion: RALPH_SCOPE_REGISTRY_SCHEMA_VERSION,
     generatedAt: options.now ?? new Date().toISOString(),
     workspaceRoot: resolve(workspaceRoot),
     rootPath,
@@ -823,8 +811,6 @@ const createDefaultRegistry = (
   now: string,
 ): RalphScopeRegistry => {
   return {
-    schema: RALPH_SCOPE_REGISTRY_SCHEMA,
-    schemaVersion: RALPH_SCOPE_REGISTRY_SCHEMA_VERSION,
     flowAlias,
     updatedAt: now,
     selection: {
@@ -987,12 +973,6 @@ export const parseRalphScopeRegistry = (
   if (!isRecord(value)) {
     throw new Error("Expected a Ralph scope registry record.");
   }
-  if (
-    value.schema !== RALPH_SCOPE_REGISTRY_SCHEMA ||
-    value.schemaVersion !== RALPH_SCOPE_REGISTRY_SCHEMA_VERSION
-  ) {
-    throw new Error("Expected a supported Ralph scope registry schema.");
-  }
   if (!isRecord(value.selection)) {
     throw new Error("Expected Ralph scope registry selection state.");
   }
@@ -1024,8 +1004,6 @@ export const parseRalphScopeRegistry = (
       : null;
 
   return {
-    schema: RALPH_SCOPE_REGISTRY_SCHEMA,
-    schemaVersion: RALPH_SCOPE_REGISTRY_SCHEMA_VERSION,
     flowAlias:
       typeof value.flowAlias === "string" && value.flowAlias.trim()
         ? value.flowAlias
@@ -1106,12 +1084,7 @@ export const parseRalphScopeRegistry = (
 export const parseRalphScopeEvidence = (
   value: unknown,
 ): RalphScopeEvidenceDocument | undefined => {
-  if (
-    !isRecord(value) ||
-    value.schema !== RALPH_SCOPE_EVIDENCE_SCHEMA ||
-    value.schemaVersion !== RALPH_SCOPE_REGISTRY_SCHEMA_VERSION ||
-    !Array.isArray(value.scopes)
-  ) {
+  if (!isRecord(value) || !Array.isArray(value.scopes)) {
     return undefined;
   }
 
@@ -1141,8 +1114,6 @@ export const parseRalphScopeEvidence = (
   });
 
   return {
-    schema: RALPH_SCOPE_EVIDENCE_SCHEMA,
-    schemaVersion: RALPH_SCOPE_REGISTRY_SCHEMA_VERSION,
     generatedAt: now,
     workspaceRoot:
       typeof value.workspaceRoot === "string" ? value.workspaceRoot : "",
@@ -1381,7 +1352,7 @@ export const assessRalphScopeRegistryAvailability = (
     (scope) => !completedScopeIds.has(scope.id),
   );
   const nonTerminalScopes = activeScopes.filter(
-    (scope) => !isRalphScopeCoverageTerminalOutcome(scope.lastOutcome),
+    (scope) => !completedScopeIds.has(scope.id),
   );
   const nextEligibleAt = activeScopes
     .map((scope) => scope.eligibleAfter)
@@ -1406,9 +1377,7 @@ export const assessRalphScopeRegistryAvailability = (
 
   const exhausted =
     activeScopes.length === 0 ||
-    activeScopes.every((scope) =>
-      isRalphScopeCoverageTerminalOutcome(scope.lastOutcome),
-    );
+    activeScopes.every((scope) => completedScopeIds.has(scope.id));
 
   return {
     status: exhausted ? "exhausted" : "deferred",

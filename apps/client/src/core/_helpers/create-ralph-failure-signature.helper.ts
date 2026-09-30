@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 import type { RalphBlockExecutionResult } from "../ralph.js";
+import {
+  diagnoseRalphVerificationFailure,
+  normalizeRalphFailureDiagnosticText,
+} from "./ralph-verification-diagnostics.helper.js";
 
 export const MAX_RALPH_FAILURE_SIGNATURE_CHARS = 8_000;
 
@@ -13,6 +17,7 @@ export const isRepeatableRalphFailureResult = (
   return (
     result.status === "error" ||
     result.output === "FAILED" ||
+    result.output === "INCONCLUSIVE" ||
     result.output === "INVALID" ||
     result.output === "TIMEOUT" ||
     result.output === "HTTP_ERROR" ||
@@ -21,16 +26,7 @@ export const isRepeatableRalphFailureResult = (
 };
 
 const compactFailureSignatureText = (value: string): string => {
-  const normalized = value
-    .replace(
-      /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b/gu,
-      "<timestamp>",
-    )
-    .replace(
-      /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/giu,
-      "<uuid>",
-    )
-    .replace(/\b\d+(?:\.\d+)?\s*ms\b/giu, "<duration>");
+  const normalized = normalizeRalphFailureDiagnosticText(value);
   return normalized.length > MAX_RALPH_FAILURE_SIGNATURE_CHARS
     ? normalized.slice(0, MAX_RALPH_FAILURE_SIGNATURE_CHARS)
     : normalized;
@@ -107,6 +103,19 @@ export const createRalphFailureSignature = (
       ? {}
       : { data: serializeFailureSignatureValue(result.data) }),
   };
+
+  const diagnostic = diagnoseRalphVerificationFailure(JSON.stringify(payload));
+  if (diagnostic) {
+    return createHash("sha256")
+      .update(
+        JSON.stringify({
+          blockId: result.blockId,
+          output: result.output,
+          category: diagnostic.category,
+        }),
+      )
+      .digest("hex");
+  }
 
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 };

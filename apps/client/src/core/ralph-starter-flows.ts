@@ -122,21 +122,6 @@ const normalizeTemplateFlow = (flow: RalphFlow): RalphFlow => {
     }
 
     const utility = { ...block.utility };
-    for (const key of [
-      "maxAttempts",
-      "maxTasks",
-      "maxResults",
-      "maxDepth",
-    ] as const) {
-      if (typeof utility[key] === "string") {
-        delete utility[key];
-      }
-    }
-
-    if (utility.strategy?.startsWith("{{")) {
-      delete utility.strategy;
-    }
-
     return {
       ...block,
       ...(settings ? { settings } : {}),
@@ -144,14 +129,7 @@ const normalizeTemplateFlow = (flow: RalphFlow): RalphFlow => {
     };
   });
 
-  if (normalized.variables) {
-    // Flow persistence derives variables from placeholders and stores them in
-    // name order. Declaration order does not affect execution, so template
-    // identity must use the same canonical order before and after persistence.
-    normalized.variables = [...normalized.variables].sort((left, right) =>
-      left.name.localeCompare(right.name),
-    );
-  }
+  normalized.variables = discoverRalphFlowVariables(normalized);
 
   return normalized;
 };
@@ -465,6 +443,9 @@ const applyVerificationProtocol = (
     ]),
   );
   flow.edges = flow.edges.map((edge) => {
+    if (edge.from === baseline.id && edge.fromOutput === "ERROR") {
+      return { ...edge, to: protocol.baselineInconclusiveTargetId };
+    }
     const to = routeOverrides.get(edge.id);
     return to ? { ...edge, to } : edge;
   });
@@ -490,6 +471,16 @@ const applyVerificationProtocol = (
     baselineBlockId: baseline.id,
     verificationPlanId: protocol.planId,
   };
+
+  for (const block of flow.blocks) {
+    if (
+      block.type === "UTILITY" &&
+      block.utility.type === "MARK_JSON_TASK" &&
+      block.utility.status === "completed"
+    ) {
+      block.utility = { ...block.utility, verificationBlockId: candidate.id };
+    }
+  }
 
   for (const block of flow.blocks) {
     if (
@@ -677,7 +668,13 @@ export const applyRalphStarterFlowProtocol = (
     ) {
       return {
         ...block,
-        utility: { ...block.utility, cwd: RALPH_REPOSITORY_ROOT },
+        utility: {
+          ...block.utility,
+          cwd: RALPH_REPOSITORY_ROOT,
+          ...(block.utility.type === "CHANGE_SCOPE_GUARD"
+            ? { enforce: true, baselineBlockId: "git-snapshot-before" }
+            : {}),
+        },
       };
     }
     return block;
@@ -687,6 +684,42 @@ export const applyRalphStarterFlowProtocol = (
     typeof flow.settings?.autonomy === "object"
       ? flow.settings.autonomy
       : { enabled: flow.settings?.autonomy !== false };
+  for (const block of flow.blocks) {
+    if (block.type === "UTILITY" && block.utility.condition?.style === "json-path") {
+      const condition = block.utility.condition;
+      const variable = flow.variables?.find((candidate) => condition.path === `variables.${candidate.name}`);
+      if (variable?.type === "boolean" && condition.operator === "equals" && (condition.value === "true" || condition.value === "false")) {
+        block.utility.condition = { ...condition, operator: "is-one-of", matchValues: [condition.value] };
+        delete block.utility.condition.value;
+      }
+    }
+    if (
+      block.type === "UTILITY" &&
+      block.utility.type === "CHANGE_SCOPE_GUARD"
+    ) {
+      const errorRoute = flow.edges.find(
+        (edge) => edge.from === block.id && edge.fromOutput === "ERROR",
+      );
+      if (errorRoute) {
+        flow.edges.push({
+          id: `${block.id}-advisory`,
+          from: block.id,
+          fromOutput: "ADVISORY",
+          to: errorRoute.to,
+        });
+      }
+    }
+    if (
+      block.type === "UTILITY" &&
+      block.utility.type === "APPEND_JSONL" &&
+      block.utility.workOutcome === "DEFER"
+    ) {
+      block.utility = {
+        ...block.utility,
+        input: '{"outcome":"DEFER","scopeRoot":"{{scopeRoot:path=.}}"}',
+      };
+    }
+  }
   flow.settings = {
     ...flow.settings,
     autonomy: {
@@ -711,7 +744,11 @@ export const applyRalphStarterFlowProtocol = (
 };
 
 export const STARTER_RALPH_FLOWS: readonly RalphStarterFlow[] =
-  RAW_STARTER_RALPH_FLOWS.map(applyRalphStarterFlowProtocol);
+  RAW_STARTER_RALPH_FLOWS.map((starter) => {
+    const current = applyRalphStarterFlowProtocol(starter);
+    current.flow.variables = discoverRalphFlowVariables(current.flow);
+    return current;
+  });
 
 export const getRalphStarterFlow = (
   id: string,

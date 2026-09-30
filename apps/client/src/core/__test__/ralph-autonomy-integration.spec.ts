@@ -11,6 +11,7 @@ import {
 } from "../_helpers/ralph-scope-registry.helper.js";
 import { runRalphFlow } from "../ralph.js";
 import { STARTER_RALPH_FLOWS } from "../ralph-starter-flows.js";
+import { enableContinuousRalphScopeCycles } from "../ralph-starter-flows/continuous-scope-cycle.js";
 import {
   createFlow,
   customizations,
@@ -34,6 +35,141 @@ const createWorkspace = async (): Promise<string> => {
 };
 
 describe("RALPH autonomy integration", () => {
+  it("continues completed coverage cycles without triggering stagnation guards", async () => {
+    const workspace = await createWorkspace();
+    await writeFile(join(workspace, "package.json"), "{}", "utf8");
+    const registryPath = ".machdoch/ralph/scope-registry/continuous.json";
+    const scopeUtility = {
+      registryPath,
+      flowAlias: "continuous",
+      strategy: "priority",
+    };
+    const flow = createFlow({
+      id: "continuous-coverage",
+      settings: {
+        autonomy: { maxStagnantTransitions: 16, maxRepeatedCycle: 3 },
+      },
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "begin-scope-cycle",
+          type: "UTILITY",
+          title: "Begin",
+          utility: { type: "BEGIN_SCOPE_CYCLE", ...scopeUtility },
+        },
+        {
+          id: "scan",
+          type: "UTILITY",
+          title: "Scan",
+          utility: { type: "SCAN_SCOPE_EVIDENCE", rootPath: "." },
+        },
+        {
+          id: "update",
+          type: "UTILITY",
+          title: "Update",
+          utility: { type: "UPDATE_SCOPE_REGISTRY", ...scopeUtility },
+        },
+        {
+          id: "select",
+          type: "UTILITY",
+          title: "Select",
+          utility: { type: "SELECT_SCOPE", ...scopeUtility },
+        },
+        {
+          id: "mark",
+          type: "UTILITY",
+          title: "Mark",
+          utility: {
+            type: "MARK_SCOPE_RESULT",
+            ...scopeUtility,
+            scopeOutcome: "completed",
+          },
+        },
+        {
+          id: "completion-report",
+          type: "UTILITY",
+          title: "Report",
+          utility: { type: "FINAL_REPORT" },
+        },
+        { id: "success", type: "END", title: "Success", outcome: "no-op" },
+        { id: "deferred", type: "END", title: "Deferred", outcome: "deferred" },
+      ],
+      edges: [
+        {
+          id: "start-begin",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "begin-scope-cycle",
+        },
+        {
+          id: "begin-scan",
+          from: "begin-scope-cycle",
+          fromOutput: "SUCCESS",
+          to: "scan",
+        },
+        {
+          id: "scan-update",
+          from: "scan",
+          fromOutput: "SUCCESS",
+          to: "update",
+        },
+        {
+          id: "update-select",
+          from: "update",
+          fromOutput: "SUCCESS",
+          to: "select",
+        },
+        {
+          id: "select-mark",
+          from: "select",
+          fromOutput: "SELECTED",
+          to: "mark",
+        },
+        {
+          id: "mark-select",
+          from: "mark",
+          fromOutput: "SUCCESS",
+          to: "select",
+        },
+        {
+          id: "select-report",
+          from: "select",
+          fromOutput: "EXHAUSTED",
+          to: "completion-report",
+        },
+        {
+          id: "report-success",
+          from: "completion-report",
+          fromOutput: "SUCCESS",
+          to: "success",
+        },
+      ],
+    });
+    enableContinuousRalphScopeCycles(flow);
+    const wait = flow.blocks.find(
+      (block) => block.id === "wait-for-scope-cycle",
+    );
+    if (wait?.type === "UTILITY") {
+      wait.utility.delaySeconds = 0;
+    }
+    const result = await runRalphFlow(
+      flow,
+      { ...runtimeConfig, workspaceRoot: workspace },
+      customizations,
+      { maxTransitions: 60 },
+    );
+    expect(result.outcome?.status, result.summary).toBe("budget-exhausted");
+    expect(
+      result.blockResults.filter(
+        (entry) =>
+          entry.blockId === "begin-scope-cycle" &&
+          (entry.data as { cycleStarted?: boolean })?.cycleStarted,
+      ).length,
+    ).toBeGreaterThanOrEqual(3);
+    expect(
+      result.blockResults.some((entry) => entry.output === "STALLED"),
+    ).toBe(false);
+  }, 60_000);
   it("turns a premature successful END into a resumable verification blocker", async () => {
     const workspace = await createWorkspace();
     await writeFile(join(workspace, "premature.flag"), "present\n", "utf8");
@@ -672,6 +808,29 @@ describe("RALPH autonomy integration", () => {
           },
         },
         {
+          id: "task-baseline",
+          type: "UTILITY",
+          title: "Task baseline",
+          utility: {
+            type: "RUN_CHECK",
+            command: "node --version",
+            verificationRole: "baseline",
+            verificationPlanId: "portfolio-task",
+          },
+        },
+        {
+          id: "task-candidate",
+          type: "UTILITY",
+          title: "Task candidate",
+          utility: {
+            type: "RUN_CHECK",
+            command: "node --version",
+            verificationRole: "candidate",
+            verificationPlanId: "portfolio-task",
+            baselineBlockId: "task-baseline",
+          },
+        },
+        {
           id: "mark-completed",
           type: "UTILITY",
           title: "Mark task completed",
@@ -759,8 +918,20 @@ describe("RALPH autonomy integration", () => {
           to: "assess",
         },
         {
-          id: "verifying-complete",
+          id: "verifying-baseline",
           from: "mark-verifying",
+          fromOutput: "SUCCESS",
+          to: "task-baseline",
+        },
+        {
+          id: "task-baseline-candidate",
+          from: "task-baseline",
+          fromOutput: "SUCCESS",
+          to: "task-candidate",
+        },
+        {
+          id: "task-verified-complete",
+          from: "task-candidate",
           fromOutput: "SUCCESS",
           to: "mark-completed",
         },
@@ -869,6 +1040,29 @@ describe("RALPH autonomy integration", () => {
           },
         },
         {
+          id: "task-baseline",
+          type: "UTILITY",
+          title: "Task baseline",
+          utility: {
+            type: "RUN_CHECK",
+            command: "node --version",
+            verificationRole: "baseline",
+            verificationPlanId: "portfolio-task",
+          },
+        },
+        {
+          id: "task-candidate",
+          type: "UTILITY",
+          title: "Task candidate",
+          utility: {
+            type: "RUN_CHECK",
+            command: "node --version",
+            verificationRole: "candidate",
+            verificationPlanId: "portfolio-task",
+            baselineBlockId: "task-baseline",
+          },
+        },
+        {
           id: "mark-completed",
           type: "UTILITY",
           title: "Mark task completed",
@@ -946,8 +1140,20 @@ describe("RALPH autonomy integration", () => {
           to: "mark-verifying",
         },
         {
-          id: "verifying-complete",
+          id: "verifying-baseline",
           from: "mark-verifying",
+          fromOutput: "SUCCESS",
+          to: "task-baseline",
+        },
+        {
+          id: "task-baseline-candidate",
+          from: "task-baseline",
+          fromOutput: "SUCCESS",
+          to: "task-candidate",
+        },
+        {
+          id: "task-verified-complete",
+          from: "task-candidate",
           fromOutput: "SUCCESS",
           to: "mark-completed",
         },

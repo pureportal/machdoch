@@ -65,14 +65,22 @@ export const validateRalphFlow = (
   if (!flow.id.trim()) {
     addRalphValidationIssue(errors, "flow-id-required", "flow id is required.");
   } else if (!FLOW_ID_PATTERN.test(flow.id)) {
-    addRalphValidationIssue(errors, "flow-id-invalid", `flow id \`${flow.id}\` must match ${FLOW_ID_PATTERN.source}.`);
+    addRalphValidationIssue(
+      errors,
+      "flow-id-invalid",
+      `flow id \`${flow.id}\` must match ${FLOW_ID_PATTERN.source}.`,
+    );
   }
 
   if (flow.alias !== undefined) {
     const alias = flow.alias.trim();
 
     if (!alias) {
-      addRalphValidationIssue(errors, "flow-alias-empty", "flow alias cannot be empty.");
+      addRalphValidationIssue(
+        errors,
+        "flow-alias-empty",
+        "flow alias cannot be empty.",
+      );
     } else if (!FLOW_ID_PATTERN.test(alias)) {
       addRalphValidationIssue(
         errors,
@@ -83,7 +91,11 @@ export const validateRalphFlow = (
   }
 
   if (!flow.name.trim()) {
-    addRalphValidationIssue(errors, "flow-name-required", "flow name is required.");
+    addRalphValidationIssue(
+      errors,
+      "flow-name-required",
+      "flow name is required.",
+    );
   }
 
   if (
@@ -170,7 +182,13 @@ export const validateRalphFlow = (
     }
   }
 
+  const hasAutonomyProgressLimits =
+    typeof autonomy === "object" &&
+    autonomy.enabled !== false &&
+    (autonomy.maxStagnantTransitions ?? 0) > 0 &&
+    (autonomy.maxRepeatedCycle ?? 0) > 0;
   if (
+    !hasAutonomyProgressLimits &&
     flow.settings?.maxTransitions === undefined &&
     hasGraphCycle(flow, graphIndex)
   ) {
@@ -203,7 +221,9 @@ export const validateRalphFlow = (
     warnings,
     ...(options.config ? { config: options.config } : {}),
   };
-  const { blockIds, startBlocks } = validateRalphFlowBlocks(blockValidationOptions);
+  const { blockIds, startBlocks } = validateRalphFlowBlocks(
+    blockValidationOptions,
+  );
 
   const blocksById = graphIndex.blocksById;
 
@@ -310,9 +330,14 @@ export const validateRalphFlow = (
 
     const groupDepthIssue = getRalphGroupDepthIssue(block, blocksById);
     if (groupDepthIssue === "cycle") {
-      addRalphValidationIssue(errors, "group-parent-cycle", `${block.id} has a cyclic group parent chain.`, {
-        blockId: block.id,
-      });
+      addRalphValidationIssue(
+        errors,
+        "group-parent-cycle",
+        `${block.id} has a cyclic group parent chain.`,
+        {
+          blockId: block.id,
+        },
+      );
     } else if (groupDepthIssue === "too-deep") {
       addRalphValidationIssue(
         errors,
@@ -377,7 +402,11 @@ export const validateRalphFlow = (
   const annotationLinkIds = new Set<string>();
   for (const annotationLink of flow.annotationLinks ?? []) {
     if (!annotationLink.id.trim()) {
-      addRalphValidationIssue(errors, "annotation-link-id-required", "annotation link id is required.");
+      addRalphValidationIssue(
+        errors,
+        "annotation-link-id-required",
+        "annotation link id is required.",
+      );
     } else if (annotationLinkIds.has(annotationLink.id)) {
       addRalphValidationIssue(
         errors,
@@ -408,17 +437,32 @@ export const validateRalphFlow = (
   const edgeIds = new Set<string>();
   for (const edge of flow.edges) {
     if (!edge.id.trim()) {
-      addRalphValidationIssue(errors, "edge-id-required", "edge id is required.", {
-        edgeId: edge.id,
-      });
+      addRalphValidationIssue(
+        errors,
+        "edge-id-required",
+        "edge id is required.",
+        {
+          edgeId: edge.id,
+        },
+      );
     } else if (!EDGE_ID_PATTERN.test(edge.id)) {
-      addRalphValidationIssue(errors, "edge-id-invalid", `edge id \`${edge.id}\` must match ${EDGE_ID_PATTERN.source}.`, {
-        edgeId: edge.id,
-      });
+      addRalphValidationIssue(
+        errors,
+        "edge-id-invalid",
+        `edge id \`${edge.id}\` must match ${EDGE_ID_PATTERN.source}.`,
+        {
+          edgeId: edge.id,
+        },
+      );
     } else if (edgeIds.has(edge.id)) {
-      addRalphValidationIssue(errors, "edge-id-duplicate", `edge id \`${edge.id}\` is duplicated.`, {
-        edgeId: edge.id,
-      });
+      addRalphValidationIssue(
+        errors,
+        "edge-id-duplicate",
+        `edge id \`${edge.id}\` is duplicated.`,
+        {
+          edgeId: edge.id,
+        },
+      );
     }
 
     edgeIds.add(edge.id);
@@ -492,15 +536,17 @@ export const validateRalphFlow = (
     }
 
     if (startBlocks.length === 1 && !reachable.has(block.id)) {
-      addRalphValidationIssue(warnings, "unreachable-block", `${block.id} is unreachable from START.`, {
-        blockId: block.id,
-      });
+      addRalphValidationIssue(
+        warnings,
+        "unreachable-block",
+        `${block.id} is unreachable from START.`,
+        {
+          blockId: block.id,
+        },
+      );
     }
 
-    if (
-      isExecutableRalphBlock(block) &&
-      !blockIdsWithPathToEnd.has(block.id)
-    ) {
+    if (isExecutableRalphBlock(block) && !blockIdsWithPathToEnd.has(block.id)) {
       addRalphValidationIssue(
         warnings,
         "no-terminal-path",
@@ -512,7 +558,11 @@ export const validateRalphFlow = (
 
   for (const variable of variables) {
     if (!variable.name.trim()) {
-      addRalphValidationIssue(errors, "variable-name-required", "variable name is required.");
+      addRalphValidationIssue(
+        errors,
+        "variable-name-required",
+        "variable name is required.",
+      );
     }
 
     if (

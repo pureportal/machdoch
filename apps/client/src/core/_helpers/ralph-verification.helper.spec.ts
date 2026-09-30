@@ -18,6 +18,37 @@ const observation = (
   });
 
 describe("RALPH structured verification", () => {
+  it("rejects a successful test process that executed no tests", () => {
+    const candidate = observation(0, "Ran 0 tests in 0.000s\nOK");
+    expect(candidate.processOutcome.kind).toBe("execution-error");
+    expect(
+      compareRalphVerificationObservations(
+        observation(0, "Ran 3 tests in 0.01s\nOK"),
+        candidate,
+      ).disposition,
+    ).toBe("ENVIRONMENT_UNAVAILABLE");
+    expect(
+      observation(0, "running 3 tests\ntest result: ok\nrunning 0 tests")
+        .processOutcome.kind,
+    ).toBe("passed");
+  });
+  it("classifies missing libclang before comparing unstable build output", () => {
+    const baseline = observation(
+      101,
+      "thread 'main' (100) panicked: Unable to find libclang",
+    );
+    const candidate = observation(
+      101,
+      "Compiling dependency\nthread 'main' (200) panicked: Unable to find libclang",
+    );
+    expect(baseline.outputFingerprint).toBe(candidate.outputFingerprint);
+    expect(
+      compareRalphVerificationObservations(baseline, candidate),
+    ).toMatchObject({
+      disposition: "ENVIRONMENT_UNAVAILABLE",
+      reason: expect.stringContaining("LIBCLANG_PATH"),
+    });
+  });
   it("accepts only the exact same process failure as baseline-equivalent", () => {
     const baseline = observation(1, "opaque failure");
     const candidate = observation(1, "opaque failure");

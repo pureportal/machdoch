@@ -2335,7 +2335,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
 
 export const autonomousUiImprovementLoopStarterFlow = {
   id: "autonomous-ui-improvement-loop",
-  version: 20,
+  version: 22,
   defaultAlias: "autonomous-ui-improvement-loop",
   category: "Design Quality",
   tags: ["autonomous", "ui", "design", "visual-check"],
@@ -2345,8 +2345,8 @@ export const autonomousUiImprovementLoopStarterFlow = {
       planId: "starter-autonomous-ui-improvement-loop:frozen-verification",
       baselineBlockId: "baseline-verification",
       candidateBlockId: "run-verification",
-      baselineInconclusiveTargetId: "count-ui-improvement-pass",
-      candidateInconclusiveTargetId: "resolve-runtime-urls",
+      baselineInconclusiveTargetId: "defer-scope",
+      candidateInconclusiveTargetId: "defer-scope",
       routeOverrides: [
         {
           edgeId: "snapshot-to-baseline",

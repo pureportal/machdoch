@@ -1622,7 +1622,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
 
 export const featureImplementationChecklistLoopStarterFlow = {
   id: "full-feature-implementation",
-  version: 19,
+  version: 21,
   defaultAlias: "feature-implementation-checklist-loop",
   category: "Implementation",
   tags: ["feature", "research", "visual-check"],
@@ -1632,8 +1632,8 @@ export const featureImplementationChecklistLoopStarterFlow = {
       planId: "starter-full-feature-implementation:frozen-verification",
       baselineBlockId: "baseline-verification",
       candidateBlockId: "run-configured-checks",
-      baselineInconclusiveTargetId: "count-implementation-pass",
-      candidateInconclusiveTargetId: "visual-decision",
+      baselineInconclusiveTargetId: "mark-tasks-deferred",
+      candidateInconclusiveTargetId: "mark-tasks-deferred",
       routeOverrides: [],
     },
     terminalOutcomes: [
