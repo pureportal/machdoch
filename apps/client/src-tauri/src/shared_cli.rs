@@ -7,10 +7,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[cfg(machdoch_embedded_runtime)]
-use std::sync::Mutex;
-#[cfg(any(machdoch_embedded_runtime, test))]
-use std::time::SystemTime;
 #[cfg(any(machdoch_embedded_runtime, test))]
 use std::{fs, fs::File, path::Path};
 
@@ -22,6 +18,8 @@ use zeroize::Zeroizing;
 #[cfg(any(machdoch_embedded_runtime, test))]
 use crate::atomic_file::{write_file_atomic, AtomicWriteOptions};
 use crate::child_process::SupervisedChild;
+#[cfg(any(machdoch_embedded_runtime, test))]
+use crate::cooperative_file_lock::with_cooperative_file_lock;
 
 #[cfg(all(unix, any(machdoch_embedded_runtime, test)))]
 use std::os::unix::fs::PermissionsExt;
@@ -32,18 +30,6 @@ const EMBEDDED_CLI_BUNDLE: &str = include_str!(concat!(env!("OUT_DIR"), "/machdo
 const EMBEDDED_NODE_BINARY: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/machdoch-node.bin"));
 const BUILD_NODE_REQUIREMENT: &str = "Node.js >= 20.10";
 const MAX_SIDE_EFFECT_FREE_CLI_OUTPUT_BYTES: u64 = 8 * 1024 * 1024;
-
-#[cfg(any(machdoch_embedded_runtime, test))]
-struct VerifiedRuntimeFile {
-    path: PathBuf,
-    len: u64,
-    modified: Option<SystemTime>,
-}
-
-#[cfg(machdoch_embedded_runtime)]
-static EMBEDDED_CLI_ENTRY: Mutex<Option<VerifiedRuntimeFile>> = Mutex::new(None);
-#[cfg(machdoch_embedded_runtime)]
-static EMBEDDED_NODE_RUNTIME: Mutex<Option<VerifiedRuntimeFile>> = Mutex::new(None);
 
 pub(crate) struct SharedCliCommand {
     pub(crate) command: Command,
@@ -244,7 +230,6 @@ fn resolve_repo_root() -> Option<PathBuf> {
 #[cfg(machdoch_embedded_runtime)]
 fn write_embedded_cli_entry() -> Result<PathBuf, String> {
     materialize_cached_runtime_file(
-        &EMBEDDED_CLI_ENTRY,
         || {
             format!(
                 "machdoch-cli-{}-{:016x}.cjs",
@@ -260,7 +245,6 @@ fn write_embedded_cli_entry() -> Result<PathBuf, String> {
 #[cfg(machdoch_embedded_runtime)]
 fn write_embedded_node_runtime() -> Result<PathBuf, String> {
     materialize_cached_runtime_file(
-        &EMBEDDED_NODE_RUNTIME,
         || {
             let suffix = if cfg!(windows) { ".exe" } else { "" };
             format!(
@@ -276,74 +260,17 @@ fn write_embedded_node_runtime() -> Result<PathBuf, String> {
 
 #[cfg(machdoch_embedded_runtime)]
 fn materialize_cached_runtime_file(
-    cache: &Mutex<Option<VerifiedRuntimeFile>>,
     create_file_name: impl FnOnce() -> String,
     contents: &[u8],
     executable: bool,
 ) -> Result<PathBuf, String> {
-    let mut cached = cache
-        .lock()
-        .map_err(|_| "The bundled CLI runtime cache lock is unavailable.".to_string())?;
     let runtime_directory = get_runtime_directory()?;
-    if let Some(verified) = cached.as_ref() {
-        if verified.path.parent() == Some(runtime_directory.as_path())
-            && verified_runtime_file_is_unchanged(verified, executable)
-        {
-            return Ok(verified.path.clone());
-        }
-    }
-
-    let runtime_path = materialize_cached_runtime_file_in_directory(
+    materialize_cached_runtime_file_in_directory(
         &runtime_directory,
         &create_file_name(),
         contents,
         executable,
-    )?;
-    let metadata = fs::symlink_metadata(&runtime_path).map_err(|error| {
-        format!(
-            "Failed to inspect the bundled CLI runtime file at {}: {error}",
-            runtime_path.display()
-        )
-    })?;
-    *cached = Some(VerifiedRuntimeFile {
-        path: runtime_path.clone(),
-        len: metadata.len(),
-        modified: metadata.modified().ok(),
-    });
-
-    Ok(runtime_path)
-}
-
-#[cfg(any(machdoch_embedded_runtime, test))]
-fn verified_runtime_file_is_unchanged(verified: &VerifiedRuntimeFile, executable: bool) -> bool {
-    let Ok(metadata) = fs::symlink_metadata(&verified.path) else {
-        return false;
-    };
-    let Some(expected_modified) = verified.modified else {
-        return false;
-    };
-
-    let permissions_are_valid = runtime_permissions_are_valid(&metadata, executable);
-
-    metadata.file_type().is_file()
-        && metadata.len() == verified.len
-        && metadata.modified().ok() == Some(expected_modified)
-        && permissions_are_valid
-}
-
-#[cfg(any(machdoch_embedded_runtime, test))]
-fn runtime_permissions_are_valid(metadata: &fs::Metadata, executable: bool) -> bool {
-    #[cfg(unix)]
-    {
-        let required_mode = if executable { 0o500 } else { 0o400 };
-        metadata.permissions().mode() & required_mode == required_mode
-    }
-
-    #[cfg(not(unix))]
-    {
-        let _ = (metadata, executable);
-        true
-    }
+    )
 }
 
 #[cfg(any(machdoch_embedded_runtime, test))]
@@ -354,7 +281,9 @@ fn materialize_cached_runtime_file_in_directory(
     executable: bool,
 ) -> Result<PathBuf, String> {
     let runtime_path = runtime_directory.join(file_name);
-    materialize_cached_runtime_file_contents(&runtime_path, contents, executable)?;
+    with_cooperative_file_lock(&runtime_path, || {
+        materialize_cached_runtime_file_contents(&runtime_path, contents, executable)
+    })?;
 
     Ok(runtime_path)
 }
@@ -542,7 +471,6 @@ mod tests {
         read_bounded_cli_stream, run_side_effect_free_json_command_with_command,
         sanitize_node_options, MAX_SIDE_EFFECT_FREE_CLI_OUTPUT_BYTES,
     };
-    use super::{verified_runtime_file_is_unchanged, VerifiedRuntimeFile};
 
     const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_SHARED_CLI_TEST_CHILD_MODE";
 
@@ -714,56 +642,6 @@ mod tests {
     }
 
     #[test]
-    fn cached_fast_path_requires_a_modification_timestamp() {
-        let directory = temp_runtime_directory("missing-modified");
-        let runtime_path = directory.join("machdoch-node-test.bin");
-        fs::create_dir_all(&directory).expect("test runtime directory should be created");
-        fs::write(&runtime_path, b"runtime").expect("runtime should be written");
-        let verified = VerifiedRuntimeFile {
-            path: runtime_path,
-            len: b"runtime".len() as u64,
-            modified: None,
-        };
-
-        assert!(!verified_runtime_file_is_unchanged(&verified, false));
-        cleanup(&directory);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn cached_fast_path_rejects_missing_runtime_permissions() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let directory = temp_runtime_directory("permissions");
-        let runtime_path = directory.join("machdoch-node-test.bin");
-        fs::create_dir_all(&directory).expect("test runtime directory should be created");
-        fs::write(&runtime_path, b"runtime").expect("runtime should be written");
-        let initial_metadata = fs::symlink_metadata(&runtime_path)
-            .expect("initial runtime metadata should be readable");
-        let verified = VerifiedRuntimeFile {
-            path: runtime_path.clone(),
-            len: initial_metadata.len(),
-            modified: initial_metadata.modified().ok(),
-        };
-        let mut permissions = initial_metadata.permissions();
-        permissions.set_mode(0o600);
-        fs::set_permissions(&runtime_path, permissions)
-            .expect("runtime permissions should be changed");
-
-        assert!(!verified_runtime_file_is_unchanged(&verified, true));
-
-        let mut permissions = fs::metadata(&runtime_path)
-            .expect("runtime metadata should be readable")
-            .permissions();
-        permissions.set_mode(0o200);
-        fs::set_permissions(&runtime_path, permissions)
-            .expect("runtime permissions should be changed");
-
-        assert!(!verified_runtime_file_is_unchanged(&verified, false));
-        cleanup(&directory);
-    }
-
-    #[test]
     fn concurrent_runtime_materialization_is_idempotent() {
         let directory = temp_runtime_directory("concurrent");
         let file_name = Arc::new("machdoch-node-test.bin".to_string());
@@ -815,27 +693,31 @@ mod tests {
     }
 
     #[test]
-    fn leftover_configuration_lock_does_not_block_runtime_materialization() {
-        let directory = temp_runtime_directory("leftover-lock");
+    fn runtime_materialization_waits_for_the_artifact_lock() {
+        let directory = temp_runtime_directory("artifact-lock");
         let file_name = "machdoch-node-test.bin";
         let runtime_path = directory.join(file_name);
-        let lock_path = directory.join(format!("{file_name}.machdoch.lock"));
-        let owner_token = "interrupted-materialization";
-        let owner_path = lock_path.join(format!("owner.{owner_token}"));
         let contents = b"complete embedded runtime";
-        fs::create_dir_all(&owner_path).expect("reported lock structure should be created");
-        fs::write(
-            owner_path.join("owner.json"),
-            format!(
-                r#"{{"token":"{owner_token}","pid":{}}}"#,
-                std::process::id()
-            ),
-        )
-        .expect("reported lock owner should be written");
+        fs::create_dir_all(&directory).expect("runtime directory should be created");
+        let lock = crate::cooperative_file_lock::acquire_cooperative_file_lock(&runtime_path)
+            .expect("artifact lock should be acquired");
+        let worker_directory = directory.clone();
+        let worker = thread::spawn(move || {
+            materialize_cached_runtime_file_in_directory(
+                &worker_directory,
+                file_name,
+                contents,
+                false,
+            )
+        });
 
-        let materialized =
-            materialize_cached_runtime_file_in_directory(&directory, file_name, contents, false)
-                .expect("a leftover configuration lock must not block runtime startup");
+        thread::sleep(Duration::from_millis(50));
+        assert!(!worker.is_finished());
+        drop(lock);
+        let materialized = worker
+            .join()
+            .expect("materialization worker should not panic")
+            .expect("materialization worker should complete after lock release");
 
         assert_eq!(materialized, runtime_path);
         assert_eq!(
