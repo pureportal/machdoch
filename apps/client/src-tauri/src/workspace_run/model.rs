@@ -231,7 +231,7 @@ pub struct RunHealthStatus {
     pub message: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum RunHealthState {
     Pending,

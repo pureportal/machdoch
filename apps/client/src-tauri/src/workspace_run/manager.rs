@@ -5,7 +5,7 @@ use std::{
     process::{Child, ExitStatus, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver, TryRecvError},
+        mpsc::{self, Receiver},
         Arc, Mutex,
     },
     thread::{self, JoinHandle},
@@ -23,7 +23,7 @@ use crate::{
 };
 
 use super::{
-    health::check_health,
+    health::{start_health_probe, HealthProbe, HealthProbeStartError},
     model::{
         CompositeStartOrder, RunConfiguration, RunConfigurationDocument, RunConfigurationStatus,
         RunFailure, RunFailureKind, RunHealthCheck, RunHealthState, RunHealthStatus,
@@ -40,6 +40,21 @@ const MAX_LOG_LINE_BYTES: usize = 4_096;
 const LOG_EVENT_DELAY: Duration = Duration::from_millis(150);
 const LOG_READER_JOIN_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_LOG_EVENT_ENTRIES: usize = 200;
+
+enum HealthProbeSchedule {
+    Started(HealthProbe),
+    Deferred,
+}
+
+fn schedule_health_probe(
+    result: Result<HealthProbe, HealthProbeStartError>,
+) -> HealthProbeSchedule {
+    match result {
+        Ok(probe) => HealthProbeSchedule::Started(probe),
+        Err(HealthProbeStartError::CapacityExhausted) => HealthProbeSchedule::Deferred,
+        Err(error) => HealthProbeSchedule::Started(HealthProbe::failed(error.to_string())),
+    }
+}
 
 pub(super) struct RunWorkspaceHandoffSnapshot {
     pub snapshot: Option<RunWorkspaceSnapshot>,
@@ -72,6 +87,25 @@ struct AttemptMonitorContext<'a> {
     cancel: &'a AtomicBool,
     health_check: Option<&'a RunHealthCheck>,
     settings: &'a UserWorkspaceRunSettings,
+}
+
+#[cfg(test)]
+struct SequentialAdmissionGate {
+    configuration_id: String,
+    reached: mpsc::Sender<()>,
+    resume: Mutex<Receiver<()>>,
+}
+
+#[cfg(test)]
+impl SequentialAdmissionGate {
+    fn wait(&self) {
+        let _ = self.reached.send(());
+        let _ = self
+            .resume
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .recv();
+    }
 }
 
 impl LogReaderWorker {
@@ -123,6 +157,8 @@ pub struct RunManager {
     log_event_sink: Mutex<Option<LogEventSink>>,
     #[cfg(test)]
     settings_override: Mutex<Option<UserWorkspaceRunSettings>>,
+    #[cfg(test)]
+    sequential_admission_gate: Mutex<Option<Arc<SequentialAdmissionGate>>>,
 }
 
 impl Default for RunManager {
@@ -134,6 +170,8 @@ impl Default for RunManager {
             log_event_sink: Mutex::new(None),
             #[cfg(test)]
             settings_override: Mutex::new(None),
+            #[cfg(test)]
+            sequential_admission_gate: Mutex::new(None),
         }
     }
 }
@@ -300,6 +338,7 @@ impl RunManager {
         let document = self.configuration_document_for_operation(&workspace)?;
         let configuration = resolve_configuration(&document, configuration_id)?;
         self.stop_resolved_configuration(&workspace, configuration);
+        self.wait_for_configuration_stop(&workspace, configuration, Duration::from_secs(15))?;
         let snapshot = self.snapshot_for_path(&workspace, &document)?;
         self.emit(snapshot.clone());
         Ok(snapshot)
@@ -547,7 +586,13 @@ impl RunManager {
                             break;
                         }
                         let task_id = task.id().to_string();
-                        match manager.start_task(workspace.clone(), task, settings.clone()) {
+                        match manager.start_sequential_task(
+                            workspace.clone(),
+                            task,
+                            settings.clone(),
+                            &id,
+                            &cancel,
+                        ) {
                             Ok(true) => started_tasks.push(task_id.clone()),
                             Ok(false) => {}
                             Err(_) => {
@@ -591,6 +636,32 @@ impl RunManager {
         configuration: RunConfiguration,
         settings: UserWorkspaceRunSettings,
     ) -> Result<bool, String> {
+        self.start_task_with_admission(workspace, configuration, settings, None)
+    }
+
+    fn start_sequential_task(
+        self: &Arc<Self>,
+        workspace: PathBuf,
+        configuration: RunConfiguration,
+        settings: UserWorkspaceRunSettings,
+        composite_id: &str,
+        composite_cancel: &Arc<AtomicBool>,
+    ) -> Result<bool, String> {
+        self.start_task_with_admission(
+            workspace,
+            configuration,
+            settings,
+            Some((composite_id, composite_cancel)),
+        )
+    }
+
+    fn start_task_with_admission(
+        self: &Arc<Self>,
+        workspace: PathBuf,
+        configuration: RunConfiguration,
+        settings: UserWorkspaceRunSettings,
+        composite_admission: Option<(&str, &Arc<AtomicBool>)>,
+    ) -> Result<bool, String> {
         let RunConfiguration::Task {
             id,
             working_directory,
@@ -601,6 +672,10 @@ impl RunManager {
             return Err("Only task configurations can launch a process.".to_string());
         };
         let resolved_working_directory = resolve_working_directory(&workspace, working_directory)?;
+        #[cfg(test)]
+        if composite_admission.is_some() {
+            self.wait_for_sequential_admission_gate(id);
+        }
         let cancel = Arc::new(AtomicBool::new(false));
         let generation = {
             let mut inner = self
@@ -609,6 +684,14 @@ impl RunManager {
                 .map_err(|_| "Run manager state is unavailable.".to_string())?;
             if inner.shutdown {
                 return Err("Machdoch is shutting down.".to_string());
+            }
+            if let Some((composite_id, composite_cancel)) = composite_admission {
+                let admitted = inner.workspaces.get(&workspace).is_some_and(|runtime| {
+                    composite_admission_is_current(runtime, composite_id, composite_cancel)
+                });
+                if !admitted {
+                    return Ok(false);
+                }
             }
             let existing = inner
                 .workspaces
@@ -656,6 +739,33 @@ impl RunManager {
             );
         });
         Ok(true)
+    }
+
+    #[cfg(test)]
+    fn set_sequential_admission_gate(&self, gate: Arc<SequentialAdmissionGate>) {
+        *self
+            .sequential_admission_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(gate);
+    }
+
+    #[cfg(test)]
+    fn wait_for_sequential_admission_gate(&self, configuration_id: &str) {
+        let mut pending_gate = self
+            .sequential_admission_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let gate = if pending_gate
+            .as_ref()
+            .is_some_and(|gate| gate.configuration_id == configuration_id)
+        {
+            pending_gate.take()
+        } else {
+            None
+        };
+        if let Some(gate) = gate {
+            gate.wait();
+        }
     }
 
     fn supervise_task(
@@ -861,7 +971,7 @@ impl RunManager {
         } = context;
         let mut next_health_check =
             health_check.map(|_| Instant::now() + Duration::from_millis(settings.startup_delay_ms));
-        let mut pending_health_check: Option<mpsc::Receiver<Result<(), String>>> = None;
+        let mut pending_health_check: Option<HealthProbe> = None;
         let mut consecutive_failures = 0_u32;
 
         loop {
@@ -892,18 +1002,20 @@ impl RunManager {
                 Ok(None) => {}
             }
 
-            let completed_health_check =
-                pending_health_check
-                    .as_ref()
-                    .and_then(|receiver| match receiver.try_recv() {
-                        Ok(result) => Some(result),
-                        Err(TryRecvError::Empty) => None,
-                        Err(TryRecvError::Disconnected) => {
-                            Some(Err("Health check worker stopped unexpectedly.".to_string()))
-                        }
-                    });
+            let completed_health_check = pending_health_check.as_mut().and_then(HealthProbe::poll);
             if let Some(result) = completed_health_check {
                 pending_health_check = None;
+                if cancel.load(Ordering::SeqCst) {
+                    self.set_state(
+                        workspace,
+                        configuration_id,
+                        generation,
+                        RunLifecycleState::Stopping,
+                    );
+                    terminate_managed_process(child, child_job);
+                    let _ = child.wait();
+                    return AttemptOutcome::Stopped;
+                }
                 let Some(check) = health_check else {
                     terminate_managed_process(child, child_job);
                     let _ = child.wait();
@@ -914,41 +1026,60 @@ impl RunManager {
                 match result {
                     Ok(()) => {
                         consecutive_failures = 0;
-                        self.update_health(
+                        if !self.update_health(
                             workspace,
                             configuration_id,
                             generation,
                             RunHealthState::Healthy,
                             0,
                             None,
-                        );
-                        self.set_state(
+                            cancel,
+                        ) {
+                            terminate_managed_process(child, child_job);
+                            let _ = child.wait();
+                            return AttemptOutcome::Stopped;
+                        }
+                        self.set_active_state(
                             workspace,
                             configuration_id,
                             generation,
                             RunLifecycleState::Running,
+                            cancel,
                         );
                     }
                     Err(error) => {
                         consecutive_failures = consecutive_failures.saturating_add(1);
-                        self.update_health(
+                        if !self.update_health(
                             workspace,
                             configuration_id,
                             generation,
                             RunHealthState::Failed,
                             consecutive_failures,
                             Some(error.clone()),
-                        );
+                            cancel,
+                        ) {
+                            terminate_managed_process(child, child_job);
+                            let _ = child.wait();
+                            return AttemptOutcome::Stopped;
+                        }
                         if consecutive_failures >= settings.health_check_failure_threshold {
-                            self.set_state(
+                            if !self.set_active_state(
                                 workspace,
                                 configuration_id,
                                 generation,
                                 RunLifecycleState::Unhealthy,
-                            );
+                                cancel,
+                            ) {
+                                terminate_managed_process(child, child_job);
+                                let _ = child.wait();
+                                return AttemptOutcome::Stopped;
+                            }
                             if check.restart_on_failure {
                                 terminate_managed_process(child, child_job);
                                 let _ = child.wait();
+                                if cancel.load(Ordering::SeqCst) {
+                                    return AttemptOutcome::Stopped;
+                                }
                                 return AttemptOutcome::Unhealthy(format!(
                                     "Health check failed {consecutive_failures} consecutive times: {error}"
                                 ));
@@ -965,12 +1096,18 @@ impl RunManager {
                     if Instant::now() >= next_check {
                         let check = check.clone();
                         let timeout_ms = settings.health_check_timeout_ms;
-                        let (sender, receiver) = mpsc::channel();
-                        thread::spawn(move || {
-                            let _ = sender.send(check_health(&check, timeout_ms));
-                        });
-                        pending_health_check = Some(receiver);
-                        next_health_check = None;
+                        match schedule_health_probe(start_health_probe(check, timeout_ms)) {
+                            HealthProbeSchedule::Started(probe) => {
+                                pending_health_check = Some(probe);
+                                next_health_check = None;
+                            }
+                            HealthProbeSchedule::Deferred => {
+                                next_health_check = Some(
+                                    Instant::now()
+                                        + Duration::from_millis(settings.health_check_interval_ms),
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -988,6 +1125,9 @@ impl RunManager {
         restart_times: &mut VecDeque<Instant>,
         cancel: &AtomicBool,
     ) -> bool {
+        if cancel.load(Ordering::SeqCst) {
+            return false;
+        }
         let now = Instant::now();
         let window = Duration::from_millis(policy.window_ms);
         while restart_times
@@ -1018,20 +1158,20 @@ impl RunManager {
             return false;
         }
 
-        restart_times.push_back(now);
-        let restart_index = restart_times.len().saturating_sub(1).min(20) as u32;
+        let restart_index = restart_times.len().min(20) as u32;
         let multiplier = 1_u64.checked_shl(restart_index).unwrap_or(u64::MAX);
         let delay_ms = policy
             .backoff_ms
             .saturating_mul(multiplier)
             .min(policy.max_backoff_ms);
-        self.increment_restart(workspace, configuration_id, generation);
-        self.set_state(
-            workspace,
-            configuration_id,
-            generation,
-            RunLifecycleState::Restarting,
-        );
+        if !self.update_active_task(workspace, configuration_id, generation, cancel, |runtime| {
+            runtime.restart_count = runtime.restart_count.saturating_add(1);
+            runtime.pid = None;
+            runtime.state = RunLifecycleState::Restarting;
+        }) {
+            return false;
+        }
+        restart_times.push_back(now);
         self.append_log(
             workspace,
             configuration_id,
@@ -1140,7 +1280,10 @@ impl RunManager {
                             .tasks
                             .get(*id)
                             .is_none_or(|task| task.cancel.is_none())
-                    })
+                    }) && runtime
+                        .composite_cancellations
+                        .get(configuration.id())
+                        .is_none()
                 })
                 .unwrap_or(false);
             if all_stopped {
@@ -1250,7 +1393,15 @@ impl RunManager {
         exit_code: Option<i32>,
     ) {
         self.update_task(workspace, configuration_id, generation, |runtime| {
-            runtime.state = RunLifecycleState::Crashed;
+            runtime.state = if runtime
+                .cancel
+                .as_ref()
+                .is_some_and(|cancel| cancel.load(Ordering::SeqCst))
+            {
+                RunLifecycleState::Stopped
+            } else {
+                RunLifecycleState::Crashed
+            };
             runtime.pid = None;
             runtime.stopped_at = Some(now_millis());
             runtime.exit_code = exit_code;
@@ -1260,7 +1411,15 @@ impl RunManager {
 
     fn finish_unhealthy(&self, workspace: &Path, configuration_id: &str, generation: u64) {
         self.update_task(workspace, configuration_id, generation, |runtime| {
-            runtime.state = RunLifecycleState::Unhealthy;
+            runtime.state = if runtime
+                .cancel
+                .as_ref()
+                .is_some_and(|cancel| cancel.load(Ordering::SeqCst))
+            {
+                RunLifecycleState::Stopped
+            } else {
+                RunLifecycleState::Unhealthy
+            };
             runtime.pid = None;
             runtime.stopped_at = Some(now_millis());
             runtime.cancel = None;
@@ -1279,11 +1438,17 @@ impl RunManager {
         });
     }
 
-    fn increment_restart(&self, workspace: &Path, configuration_id: &str, generation: u64) {
-        self.update_task(workspace, configuration_id, generation, |runtime| {
-            runtime.restart_count = runtime.restart_count.saturating_add(1);
-            runtime.pid = None;
-        });
+    fn set_active_state(
+        &self,
+        workspace: &Path,
+        configuration_id: &str,
+        generation: u64,
+        state: RunLifecycleState,
+        cancel: &AtomicBool,
+    ) -> bool {
+        self.update_active_task(workspace, configuration_id, generation, cancel, |runtime| {
+            runtime.state = state;
+        })
     }
 
     fn update_health(
@@ -1294,15 +1459,47 @@ impl RunManager {
         state: RunHealthState,
         consecutive_failures: u32,
         message: Option<String>,
-    ) {
-        self.update_task(workspace, configuration_id, generation, |runtime| {
+        cancel: &AtomicBool,
+    ) -> bool {
+        self.update_active_task(workspace, configuration_id, generation, cancel, |runtime| {
             runtime.health = Some(RunHealthStatus {
                 state,
                 checked_at: Some(now_millis()),
                 consecutive_failures,
                 message,
             });
-        });
+        })
+    }
+
+    fn update_active_task(
+        &self,
+        workspace: &Path,
+        configuration_id: &str,
+        generation: u64,
+        cancel: &AtomicBool,
+        update: impl FnOnce(&mut TaskRuntime),
+    ) -> bool {
+        let changed = self
+            .inner
+            .lock()
+            .ok()
+            .and_then(|mut inner| {
+                let task = inner
+                    .workspaces
+                    .get_mut(workspace)?
+                    .tasks
+                    .get_mut(configuration_id)?;
+                if task.generation != generation || cancel.load(Ordering::SeqCst) {
+                    return Some(false);
+                }
+                update(task);
+                Some(true)
+            })
+            .unwrap_or(false);
+        if changed {
+            self.publish_workspace(workspace);
+        }
+        changed
     }
 
     fn update_task(
@@ -1350,7 +1547,12 @@ impl RunManager {
             else {
                 return;
             };
-            if task.generation != generation {
+            if task.generation != generation
+                || task
+                    .cancel
+                    .as_ref()
+                    .is_some_and(|cancel| cancel.load(Ordering::SeqCst))
+            {
                 return;
             }
             task.recent_failures.push_back(RunFailure {
@@ -1548,6 +1750,19 @@ impl RunManager {
             sink(batch);
         }
     }
+}
+
+fn composite_admission_is_current(
+    runtime: &WorkspaceRuntime,
+    composite_id: &str,
+    composite_cancel: &Arc<AtomicBool>,
+) -> bool {
+    runtime
+        .composite_cancellations
+        .get(composite_id)
+        .is_some_and(|current| {
+            Arc::ptr_eq(current, composite_cancel) && !composite_cancel.load(Ordering::SeqCst)
+        })
 }
 
 fn workspace_runtime_is_active(runtime: &WorkspaceRuntime) -> bool {
@@ -1871,6 +2086,38 @@ mod tests {
         CHILD_PROCESS_TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    #[test]
+    fn sequential_admission_requires_the_current_uncancelled_coordinator() {
+        let mut runtime = WorkspaceRuntime::default();
+        let coordinator = Arc::new(AtomicBool::new(false));
+        runtime
+            .composite_cancellations
+            .insert("fullstack".to_string(), Arc::clone(&coordinator));
+
+        assert!(composite_admission_is_current(
+            &runtime,
+            "fullstack",
+            &coordinator
+        ));
+
+        coordinator.store(true, Ordering::SeqCst);
+        assert!(!composite_admission_is_current(
+            &runtime,
+            "fullstack",
+            &coordinator
+        ));
+
+        let replacement = Arc::new(AtomicBool::new(false));
+        runtime
+            .composite_cancellations
+            .insert("fullstack".to_string(), replacement);
+        assert!(!composite_admission_is_current(
+            &runtime,
+            "fullstack",
+            &coordinator
+        ));
     }
 
     fn use_workspace_run_settings(manager: &RunManager, settings: UserWorkspaceRunSettings) {
@@ -2729,6 +2976,208 @@ mod tests {
         manager
             .stop(workspace.to_string_lossy().as_ref(), None)
             .expect("sequential composite should stop");
+        assert!(manager
+            .inner
+            .lock()
+            .expect("manager state should be available")
+            .workspaces
+            .get(&workspace)
+            .is_none_or(|runtime| !runtime.composite_cancellations.contains_key("application")));
+        manager.shutdown();
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn stopping_a_sequential_composite_waits_for_admission_cleanup() {
+        let _process_test = serialize_child_process_test();
+        let workspace = temporary_workspace("sequential-stop-admission");
+        let marker = workspace.join("server-starts");
+        let manager = Arc::new(RunManager::default());
+        let prepare = task_configuration(
+            "prepare",
+            "output-exit",
+            ".",
+            RunRestartPolicy::default(),
+            None,
+            None,
+        );
+        let server = task_configuration(
+            "server",
+            "count-hold",
+            ".",
+            RunRestartPolicy::default(),
+            None,
+            Some(&marker),
+        );
+        let composite = RunConfiguration::Composite {
+            id: "application".to_string(),
+            name: "Application".to_string(),
+            primary: false,
+            children: vec!["prepare".to_string(), "server".to_string()],
+            start_order: CompositeStartOrder::Sequence,
+        };
+        save_test_document(
+            &manager,
+            &workspace,
+            "application",
+            vec![prepare, server, composite],
+        );
+
+        let (reached_sender, reached) = mpsc::channel();
+        let (resume, resume_receiver) = mpsc::channel();
+        manager.set_sequential_admission_gate(Arc::new(SequentialAdmissionGate {
+            configuration_id: "server".to_string(),
+            reached: reached_sender,
+            resume: Mutex::new(resume_receiver),
+        }));
+        manager
+            .start(workspace.to_string_lossy().as_ref(), None)
+            .expect("sequential composite should start");
+        reached
+            .recv_timeout(Duration::from_secs(10))
+            .expect("coordinator should reach child admission");
+
+        let manager_for_stop = Arc::clone(&manager);
+        let workspace_root = workspace.to_string_lossy().to_string();
+        let (finished_sender, finished) = mpsc::channel();
+        let stop_worker = thread::spawn(move || {
+            let _ = finished_sender.send(manager_for_stop.stop(&workspace_root, None));
+        });
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !manager
+            .inner
+            .lock()
+            .expect("manager state should be available")
+            .workspaces
+            .get(&workspace)
+            .and_then(|runtime| runtime.composite_cancellations.get("application"))
+            .is_some_and(|cancel| cancel.load(Ordering::SeqCst))
+        {
+            assert!(
+                Instant::now() < deadline,
+                "stop should cancel the coordinator"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(finished.recv_timeout(Duration::from_millis(150)).is_err());
+
+        resume
+            .send(())
+            .expect("coordinator should still be waiting");
+        finished
+            .recv_timeout(Duration::from_secs(10))
+            .expect("stop should finish after coordinator cleanup")
+            .expect("stop should succeed");
+        stop_worker.join().expect("stop worker should join");
+        assert!(
+            !marker.exists(),
+            "cancelled coordinator must not start a child"
+        );
+        manager.shutdown();
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn restarting_a_sequential_composite_rejects_stale_child_admission() {
+        let _process_test = serialize_child_process_test();
+        let workspace = temporary_workspace("sequential-restart-admission");
+        let marker = workspace.join("server-starts");
+        let manager = Arc::new(RunManager::default());
+        let prepare = task_configuration(
+            "prepare",
+            "output-exit",
+            ".",
+            RunRestartPolicy::default(),
+            None,
+            None,
+        );
+        let server = task_configuration(
+            "server",
+            "count-hold",
+            ".",
+            RunRestartPolicy::default(),
+            None,
+            Some(&marker),
+        );
+        let composite = RunConfiguration::Composite {
+            id: "application".to_string(),
+            name: "Application".to_string(),
+            primary: false,
+            children: vec!["prepare".to_string(), "server".to_string()],
+            start_order: CompositeStartOrder::Sequence,
+        };
+        save_test_document(
+            &manager,
+            &workspace,
+            "application",
+            vec![prepare, server, composite],
+        );
+
+        let (reached_sender, reached) = mpsc::channel();
+        let (resume, resume_receiver) = mpsc::channel();
+        manager.set_sequential_admission_gate(Arc::new(SequentialAdmissionGate {
+            configuration_id: "server".to_string(),
+            reached: reached_sender,
+            resume: Mutex::new(resume_receiver),
+        }));
+        manager
+            .start(workspace.to_string_lossy().as_ref(), None)
+            .expect("sequential composite should start");
+        reached
+            .recv_timeout(Duration::from_secs(10))
+            .expect("coordinator should reach child admission");
+
+        let manager_for_restart = Arc::clone(&manager);
+        let workspace_root = workspace.to_string_lossy().to_string();
+        let (finished_sender, finished) = mpsc::channel();
+        let restart_worker = thread::spawn(move || {
+            let _ = finished_sender.send(manager_for_restart.restart(&workspace_root, None));
+        });
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !manager
+            .inner
+            .lock()
+            .expect("manager state should be available")
+            .workspaces
+            .get(&workspace)
+            .and_then(|runtime| runtime.composite_cancellations.get("application"))
+            .is_some_and(|cancel| cancel.load(Ordering::SeqCst))
+        {
+            assert!(
+                Instant::now() < deadline,
+                "restart should cancel the coordinator"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(finished.recv_timeout(Duration::from_millis(150)).is_err());
+
+        resume
+            .send(())
+            .expect("coordinator should still be waiting");
+        finished
+            .recv_timeout(Duration::from_secs(10))
+            .expect("restart should finish after coordinator cleanup")
+            .expect("restart should succeed");
+        restart_worker.join().expect("restart worker should join");
+        wait_for_status(
+            &manager,
+            &workspace,
+            "server",
+            Duration::from_secs(10),
+            |status| status.state == RunLifecycleState::Running,
+        );
+        let marker_deadline = Instant::now() + Duration::from_secs(10);
+        while !marker.exists() && Instant::now() < marker_deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        let starts = fs::read_to_string(&marker)
+            .expect("replacement child should start")
+            .lines()
+            .count();
+        assert_eq!(starts, 1, "stale coordinator must not start a child");
+        manager
+            .stop(workspace.to_string_lossy().as_ref(), None)
+            .expect("replacement composite should stop");
         manager.shutdown();
         let _ = fs::remove_dir_all(workspace);
     }
@@ -2835,6 +3284,135 @@ mod tests {
             .expect("unhealthy task should stop explicitly");
         manager.shutdown();
         let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn health_results_require_the_active_generation_and_cancellation_state() {
+        let manager = RunManager::default();
+        let workspace = PathBuf::from("health-result-admission");
+        let active_cancel = Arc::new(AtomicBool::new(false));
+        let stale_cancel = AtomicBool::new(false);
+        {
+            let mut inner = manager
+                .inner
+                .lock()
+                .expect("manager state should be available");
+            let task = inner
+                .workspaces
+                .entry(workspace.clone())
+                .or_default()
+                .tasks
+                .entry("server".to_string())
+                .or_default();
+            task.generation = 2;
+            task.cancel = Some(Arc::clone(&active_cancel));
+            task.health = Some(RunHealthStatus {
+                state: RunHealthState::Pending,
+                checked_at: None,
+                consecutive_failures: 0,
+                message: None,
+            });
+        }
+
+        manager.update_health(
+            &workspace,
+            "server",
+            1,
+            RunHealthState::Failed,
+            1,
+            Some("stale probe".to_string()),
+            &stale_cancel,
+        );
+        active_cancel.store(true, Ordering::SeqCst);
+        manager.update_health(
+            &workspace,
+            "server",
+            2,
+            RunHealthState::Failed,
+            1,
+            Some("cancelled probe".to_string()),
+            &active_cancel,
+        );
+
+        let state = manager
+            .inner
+            .lock()
+            .expect("manager state should be available");
+        let health = state
+            .workspaces
+            .get(&workspace)
+            .and_then(|runtime| runtime.tasks.get("server"))
+            .and_then(|task| task.health.as_ref())
+            .expect("active task should retain its health status");
+        assert_eq!(health.state, RunHealthState::Pending);
+        assert_eq!(health.consecutive_failures, 0);
+        assert!(health.message.is_none());
+    }
+
+    #[test]
+    fn cancellation_wins_over_late_supervisor_failures() {
+        for unhealthy in [false, true] {
+            let manager = RunManager::default();
+            let workspace = PathBuf::from("late-supervisor-failure");
+            {
+                let mut inner = manager
+                    .inner
+                    .lock()
+                    .expect("manager state should be available");
+                let task = inner
+                    .workspaces
+                    .entry(workspace.clone())
+                    .or_default()
+                    .tasks
+                    .entry("server".to_string())
+                    .or_default();
+                task.generation = 1;
+                task.state = RunLifecycleState::Stopping;
+                task.cancel = Some(Arc::new(AtomicBool::new(true)));
+                task.pid = Some(123);
+            }
+            manager.record_failure(
+                &workspace,
+                "server",
+                1,
+                RunFailureKind::Health,
+                "late failure".to_string(),
+            );
+            if unhealthy {
+                manager.finish_unhealthy(&workspace, "server", 1);
+            } else {
+                manager.finish_crashed(&workspace, "server", 1, Some(1));
+            }
+            let inner = manager
+                .inner
+                .lock()
+                .expect("manager state should be available");
+            let task = &inner.workspaces[&workspace].tasks["server"];
+            assert_eq!(task.state, RunLifecycleState::Stopped);
+            assert!(task.recent_failures.is_empty());
+            assert!(task.pid.is_none());
+            assert!(task.cancel.is_none());
+        }
+    }
+
+    #[test]
+    fn health_probe_capacity_exhaustion_does_not_create_a_failure_or_restart() {
+        for error in [HealthProbeStartError::CapacityExhausted] {
+            let schedule = schedule_health_probe(Err(error));
+            let mut failure_results = 0;
+            let mut restart_requested = false;
+
+            match schedule {
+                HealthProbeSchedule::Started(_) => {
+                    failure_results += 1;
+                    restart_requested = true;
+                }
+                HealthProbeSchedule::Deferred => {}
+            }
+
+            assert_eq!(failure_results, 0);
+            assert!(!restart_requested);
+        }
     }
 
     #[test]
