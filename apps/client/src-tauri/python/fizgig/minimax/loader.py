@@ -19,6 +19,7 @@ The frozen base is what LoRA/FT trains on top of; the fp32 output-head island st
 """
 
 import os
+from collections.abc import Mapping
 
 import torch
 import torch.nn as nn
@@ -61,9 +62,62 @@ def config_from_checkpoint(keys, table_shape=None) -> MiniMaxH3Config:
     if "adaln_t_table" in keys:
         if table_shape is None:
             raise ValueError("pruned checkpoint: adaln_t_table shape is required")
+        if len(table_shape) != 2:
+            raise ValueError(
+                "pruned checkpoint: adaln_t_table must have shape [table_size, time_embed_dim]")
         size, dim = int(table_shape[0]), int(table_shape[1])
         return MiniMaxH3Config(adaln_t_table_size=size, time_embed_dim=dim)
     return MiniMaxH3Config()
+
+
+def _checkpoint_tensor_shape(reader, name: str) -> tuple[int, ...]:
+    """Return a checkpoint tensor's shape without reading its payload."""
+    if isinstance(reader, MemoryEfficientSafeOpen):
+        return tuple(reader.header[name]["shape"])
+    if isinstance(reader, ShardedSafeOpen):
+        shard = reader.weight_map[name]
+        return tuple(reader._reader(shard).header[name]["shape"])
+    raise TypeError(f"unsupported checkpoint reader: {type(reader).__name__}")
+
+
+def validate_dit_checkpoint_tensors(
+        expected_shapes: Mapping[str, tuple[int, ...]],
+        checkpoint_shapes: Mapping[str, tuple[int, ...]],
+) -> None:
+    """Ensure a checkpoint supplies every DiT tensor with its model-compatible shape."""
+    missing = sorted(set(expected_shapes) - set(checkpoint_shapes))
+    if missing:
+        raise ValueError(
+            f"MiniMax H3 DiT checkpoint is missing {len(missing)} required tensor(s), "
+            f"including {missing[0]!r}.")
+
+    incompatible = sorted(
+        (name, tuple(expected_shapes[name]), tuple(checkpoint_shapes[name]))
+        for name in expected_shapes
+        if tuple(expected_shapes[name]) != tuple(checkpoint_shapes[name])
+    )
+    if incompatible:
+        name, expected, actual = incompatible[0]
+        raise ValueError(
+            f"MiniMax H3 DiT checkpoint tensor {name!r} has incompatible shape "
+            f"{actual}; expected {expected}.")
+
+
+def quantized_weight_scale_shapes(
+        expected_shapes: Mapping[str, tuple[int, ...]],
+        quantized_modules: Mapping[str, object],
+) -> dict[str, tuple[int, int]]:
+    """Return the required per-output-row scale shape for each quantized Linear."""
+    scale_shapes = {}
+    for module_path in quantized_modules:
+        weight_name = f"{module_path}.weight"
+        weight_shape = expected_shapes.get(weight_name)
+        if weight_shape is None or len(weight_shape) != 2:
+            raise ValueError(
+                f"MiniMax H3 DiT checkpoint marks {module_path!r} as quantized, but it does "
+                "not correspond to a model Linear weight.")
+        scale_shapes[f"{module_path}.weight_scale"] = (weight_shape[0], 1)
+    return scale_shapes
 
 
 def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
@@ -111,7 +165,7 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
         keys = set(f.keys())
         table_shape = None
         if "adaln_t_table" in keys:
-            table_shape = tuple(f.get_tensor("adaln_t_table").shape)
+            table_shape = _checkpoint_tensor_shape(f, "adaln_t_table")
         cfg = config_from_checkpoint(keys, table_shape)
         # `<module>.comfy_quant` marks a pre-quantized Linear; the config rides in the blob.
         quant_conf = {k[: -len(".comfy_quant")]: parse_comfy_quant(f.get_tensor(k))
@@ -141,6 +195,18 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
 
         with torch.device("meta"):
             model = MiniMaxH3DiT(cfg)
+
+            expected_shapes = {
+                name: tuple(tensor.shape) for name, tensor in model.state_dict().items()
+            }
+            expected_shapes.update(quantized_weight_scale_shapes(expected_shapes, quant_conf))
+            checkpoint_buffer_names = tuple(
+                name for name, _ in model.named_buffers() if name in expected_shapes
+            )
+            checkpoint_shapes = {
+                name: _checkpoint_tensor_shape(f, name) for name in keys & expected_shapes.keys()
+            }
+            validate_dit_checkpoint_tensors(expected_shapes, checkpoint_shapes)
 
             # Swap the NF4-target Linears for Linear4bit shells — INSIDE the meta context.
             # Outside it, each Linear4bit constructor eagerly allocates a full fp32 weight on CPU
@@ -246,9 +312,7 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
                     mod.W_q, mod.scale, mod.zero, mod.qmeta = (
                         mod.W_q.cpu(), mod.scale.cpu(), mod.zero.cpu(), mod.qmeta.cpu())
 
-        for name, param in model.named_parameters():
-            if name not in keys:
-                continue
+        for name, _ in model.named_parameters():
             if mode == "int8" and name.rsplit(".", 1)[0] in quant_conf:
                 continue                      # already placed as int8 buffers above
             w = _read_weight(name)
@@ -267,10 +331,9 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
                 target = torch.device("cpu") if _parked(name) else dev
                 setattr(parent, leaf, nn.Parameter(keep.to(target), requires_grad=False))
         # buffers (rope.inv_freq, and adaln_t_table on a pruned file)
-        for name, _ in model.named_buffers():
-            if name in keys:
-                parent, leaf = _owner_and_leaf(model, name)
-                parent.register_buffer(leaf, f.get_tensor(name).to(torch.float32).to(dev))
+        for name in checkpoint_buffer_names:
+            parent, leaf = _owner_and_leaf(model, name)
+            parent.register_buffer(leaf, f.get_tensor(name).to(torch.float32).to(dev))
     # tells the forward not to demote t_emb — an fp32 projection needs an fp32 input.
     model.adaln_fp32 = _adaln32
     model.eval()
