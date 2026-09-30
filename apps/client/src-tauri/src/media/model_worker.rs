@@ -8,7 +8,7 @@ use std::{
 
 use crate::child_process::SupervisedChild;
 
-use super::{worker_output::WorkerProgress, MediaResult};
+use super::{worker_deadline::WorkerDeadline, worker_output::WorkerProgress, MediaResult};
 
 const RESPONSE_LIMIT: usize = 2 * 1024 * 1024;
 const DIAGNOSTIC_LIMIT: usize = 256 * 1024;
@@ -162,15 +162,18 @@ impl ResidentWorker {
             let result = stdin.write_all(&bytes).and_then(|_| stdin.flush());
             let _ = written.send((stdin, result));
         });
-        let started = Instant::now();
+        let mut deadline = WorkerDeadline::new(command, timeout, Instant::now());
         let result = (|| loop {
             monitor(None)?;
-            for event in self.progress.try_iter() {
-                monitor(Some(event))?;
-            }
             if let Ok((stdin, result)) = writing.try_recv() {
                 self.child.stdin = Some(stdin);
                 result.map_err(|error| format!("Could not write model request: {error}"))?;
+            }
+            for event in self.progress.try_iter() {
+                if self.child.stdin.is_some() {
+                    deadline.record_progress(&event, Instant::now());
+                }
+                monitor(Some(event))?;
             }
             let response = if self.child.stdin.is_some() {
                 self.responses.try_recv()
@@ -213,7 +216,7 @@ impl ResidentWorker {
                 Err(mpsc::TryRecvError::Disconnected) => return Err("Model worker crashed".into()),
                 Err(mpsc::TryRecvError::Empty) => {}
             }
-            if started.elapsed() >= timeout {
+            if deadline.expired(Instant::now()) {
                 return Err("Local model worker timed out: execution deadline exceeded".into());
             }
             if !self.alive()? {

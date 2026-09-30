@@ -45,6 +45,7 @@ mod subject_cutout;
 mod svg;
 mod transform;
 mod video_loop;
+mod worker_deadline;
 mod worker_output;
 pub(crate) mod workflow;
 pub(crate) mod workflow_models;

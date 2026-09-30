@@ -2605,10 +2605,6 @@ fn expected_image_inference_steps(architecture: &str, model_policy: &str) -> Med
     }
 }
 
-fn image_generation_timeout(_architecture: &str, _has_conditioning: bool) -> Duration {
-    GENERATION_TIMEOUT
-}
-
 pub(crate) fn generate(
     app: &AppHandle,
     paths: &MediaRuntimePaths,
@@ -2808,7 +2804,7 @@ pub(crate) fn generate(
         &script,
         "generate",
         Some(&encoded),
-        image_generation_timeout(&model.architecture, has_conditioning),
+        GENERATION_TIMEOUT,
         Some((paths, &request.run_id)),
     )?;
     let response = decode_generation_response(&output)?;
@@ -4775,16 +4771,6 @@ mod tests {
             capabilities: vec!["lora".to_string(), "textual-inversion".to_string()],
             diagnostic: "ready".to_string(),
         }
-    }
-
-    #[test]
-    fn uses_the_standard_generation_deadline_for_image_backends() {
-        assert_eq!(image_generation_timeout("krea-2", true), GENERATION_TIMEOUT);
-        assert_eq!(
-            image_generation_timeout("krea-2", false),
-            GENERATION_TIMEOUT
-        );
-        assert_eq!(image_generation_timeout("flux-2", true), GENERATION_TIMEOUT);
     }
 
     #[cfg(target_os = "windows")]
