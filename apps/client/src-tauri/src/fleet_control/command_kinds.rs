@@ -17,6 +17,7 @@ const SESSION_ID_COMMANDS: &[&str] = &[
     "set-session-model",
     "set-session-mode",
     "set-parallel-agent-mode",
+    "set-goal-mode",
     "set-session-reasoning",
     "set-session-workspace",
     "clear-session-workspace",

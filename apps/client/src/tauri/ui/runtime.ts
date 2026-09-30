@@ -1403,6 +1403,7 @@ const FLEET_CONTROL_COMMAND_KINDS = [
   "set-session-model",
   "set-session-mode",
   "set-parallel-agent-mode",
+  "set-goal-mode",
   "set-session-reasoning",
   "set-session-workspace",
   "clear-session-workspace",
@@ -1845,6 +1846,8 @@ const isFleetControlCommandEvent = (
       ["disabled", "read-only", "machdoch", "native"].includes(
         String(value.mode),
       )) &&
+    (value.kind !== "set-goal-mode" ||
+      ["machdoch", "native"].includes(String(value.mode))) &&
     (value.reasoning === undefined || typeof value.reasoning === "string") &&
     (value.promptEnhancementMode === undefined ||
       typeof value.promptEnhancementMode === "string") &&

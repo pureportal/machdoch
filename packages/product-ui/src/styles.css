@@ -1,5 +1,6 @@
 @import "./theme.css";
 @import "./primitives.css";
+@import "./goal-control.css";
 
 .machdoch-product {
   --m-topbar-height: 40px;

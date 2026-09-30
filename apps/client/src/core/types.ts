@@ -14,6 +14,7 @@ import type {
   InstructionSourceKind,
 } from "./instruction-system/types.js";
 import type { WorkspaceRunSnapshot } from "../shared/workspace-run.js";
+import type { GoalMode, SessionGoal } from "../shared/goals.js";
 
 export type ToolRiskLevel = "low" | "medium" | "high";
 
@@ -102,11 +103,13 @@ export type TaskDeterministicAction =
   | { kind: "create-file"; path: string; content: string };
 
 export type TaskResultProtocol =
+  | { kind: "goal-evaluation" }
   | { kind: "ralph-iteration" }
   | { kind: "ralph-validator" }
   | { kind: "ralph-route"; labels: string[] };
 
 export type TaskExecutionControl =
+  | { kind: "goal-evaluation"; decision: "complete" | "continue" | "blocked" }
   | { kind: "ralph-iteration"; decision: "DONE" | "CONTINUE" }
   | {
       kind: "ralph-validator";
@@ -154,6 +157,7 @@ export interface TaskConversationContext {
   sessionId?: string;
   adaptiveControllerOverride?: boolean | null;
   parallelAgentMode?: ParallelAgentMode;
+  goalMode?: GoalMode;
   wasQueued?: boolean;
   chatType?: "pose";
   poseScene?: import("@machdoch/media-studio/core/media/contracts.js").MediaPoseMap;
@@ -173,7 +177,11 @@ export interface TaskConversationContext {
   workspaceRun?: WorkspaceRunSnapshot;
 }
 
-export type ParallelAgentMode = "disabled" | "read-only" | "machdoch" | "native";
+export type ParallelAgentMode =
+  | "disabled"
+  | "read-only"
+  | "machdoch"
+  | "native";
 
 export interface TaskExecutionMemoryUpdate {
   scope: ConversationMemoryScope;
@@ -574,6 +582,7 @@ export interface TaskExecutionTimeoutState {
 }
 
 export interface TaskExecutionProgress {
+  goal?: SessionGoal | null;
   task: string;
   mode: RunMode;
   state: TaskExecutionState;
@@ -732,6 +741,8 @@ export interface TaskExecutionFileChanges {
 }
 
 export interface TaskExecutionOptions {
+  nativeGoal?: string | undefined;
+  captureGoalEvidence?: boolean;
   signal?: AbortSignal;
   runId?: string;
   skipUnreachableMcpServers?: boolean;

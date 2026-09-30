@@ -891,6 +891,7 @@ pub enum ProductCommandKind {
     SetSessionModel,
     SetSessionMode,
     SetParallelAgentMode,
+    SetGoalMode,
     SetSessionReasoning,
     SetSessionWorkspace,
     ClearSessionWorkspace,
@@ -1204,7 +1205,7 @@ impl ProductCommand {
                 ("provider", self.provider.is_some()),
                 ("model", self.model.is_some()),
             ]),
-            ProductCommandKind::SetSessionMode | ProductCommandKind::SetParallelAgentMode => {
+            ProductCommandKind::SetSessionMode | ProductCommandKind::SetParallelAgentMode | ProductCommandKind::SetGoalMode => {
                 required.extend([
                     ("sessionId", self.session_id.is_some()),
                     ("mode", self.mode.is_some()),
@@ -1384,6 +1385,9 @@ impl ProductCommand {
             ProductCommandKind::SetParallelAgentMode => {
                 valid_identifier(self.session_id.as_deref())
                     && valid_parallel_agent_mode(self.mode.as_deref())
+            }
+            ProductCommandKind::SetGoalMode => {
+                valid_identifier(self.session_id.as_deref()) && matches!(self.mode.as_deref(), Some("machdoch" | "native"))
             }
             ProductCommandKind::SetSessionReasoning => {
                 valid_identifier(self.session_id.as_deref())
@@ -1736,6 +1740,7 @@ impl ProductCommandKind {
             Self::SetSessionModel => &["kind", "commandId", "sessionId", "provider", "model"],
             Self::SetSessionMode => &["kind", "commandId", "sessionId", "mode"],
             Self::SetParallelAgentMode => &["kind", "commandId", "sessionId", "mode"],
+            Self::SetGoalMode => &["kind", "commandId", "sessionId", "mode"],
             Self::SetSessionReasoning => &["kind", "commandId", "sessionId", "reasoning"],
             Self::SetSessionWorkspace => &["kind", "commandId", "sessionId", "workspace"],
             Self::SetPromptEnhancementMode => {
@@ -1828,6 +1833,7 @@ impl ProductCommandKind {
             Self::SetSessionModel => "set-session-model",
             Self::SetSessionMode => "set-session-mode",
             Self::SetParallelAgentMode => "set-parallel-agent-mode",
+            Self::SetGoalMode => "set-goal-mode",
             Self::SetSessionReasoning => "set-session-reasoning",
             Self::SetSessionWorkspace => "set-session-workspace",
             Self::ClearSessionWorkspace => "clear-session-workspace",
@@ -2357,6 +2363,7 @@ mod tests {
             ("set-session-model", &["sessionId", "provider", "model"][..]),
             ("set-session-mode", &["sessionId", "mode"][..]),
             ("set-parallel-agent-mode", &["sessionId", "mode"][..]),
+            ("set-goal-mode", &["sessionId", "mode"][..]),
             ("set-session-reasoning", &["sessionId", "reasoning"][..]),
             ("set-session-workspace", &["sessionId", "workspace"][..]),
             ("clear-session-workspace", &["sessionId"][..]),
@@ -2446,6 +2453,7 @@ mod tests {
             "set-session-model",
             "set-session-mode",
             "set-parallel-agent-mode",
+            "set-goal-mode",
             "set-session-reasoning",
             "set-session-workspace",
             "clear-session-workspace",

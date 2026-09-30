@@ -27,6 +27,11 @@ export const validateTaskResultProtocol = (
       ? { kind: "ralph-iteration" }
       : undefined;
   }
+  if (value.kind === "goal-evaluation") {
+    return hasExactKeys(value, ["kind"])
+      ? { kind: "goal-evaluation" }
+      : undefined;
+  }
   if (value.kind === "ralph-validator") {
     return hasExactKeys(value, ["kind"])
       ? { kind: "ralph-validator" }
@@ -60,6 +65,19 @@ export const createTaskResultControlSchema = (
   }
 
   switch (protocol.kind) {
+    case "goal-evaluation":
+      return {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          kind: { const: "goal-evaluation" },
+          decision: {
+            type: "string",
+            enum: ["complete", "continue", "blocked"],
+          },
+        },
+        required: ["kind", "decision"],
+      };
     case "ralph-iteration":
       return {
         type: "object",
@@ -105,6 +123,12 @@ export const createTaskResultControlOptions = (
   }
 
   switch (protocol.kind) {
+    case "goal-evaluation":
+      return [
+        { kind: "goal-evaluation", decision: "complete" },
+        { kind: "goal-evaluation", decision: "continue" },
+        { kind: "goal-evaluation", decision: "blocked" },
+      ];
     case "ralph-iteration":
       return [
         { kind: "ralph-iteration", decision: "DONE" },
@@ -138,6 +162,14 @@ export const parseTaskExecutionControl = (
   }
 
   switch (protocol.kind) {
+    case "goal-evaluation":
+      return hasExactKeys(value, ["decision", "kind"]) &&
+        value.kind === "goal-evaluation" &&
+        (value.decision === "complete" ||
+          value.decision === "continue" ||
+          value.decision === "blocked")
+        ? { kind: "goal-evaluation", decision: value.decision }
+        : undefined;
     case "ralph-iteration":
       return hasExactKeys(value, ["decision", "kind"]) &&
         value.kind === "ralph-iteration" &&

@@ -2,6 +2,45 @@
   "version": 1,
   "cases": [
     {
+      "id": "command/set-goal-mode/managed",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "set-goal-mode",
+        "sessionId": "session-1",
+        "mode": "machdoch"
+      }
+    },
+    {
+      "id": "command/set-goal-mode/native",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "set-goal-mode",
+        "sessionId": "session-1",
+        "mode": "native"
+      }
+    },
+    {
+      "id": "command/set-goal-mode/invalid-mode",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-goal-mode",
+        "sessionId": "session-1",
+        "mode": "disabled"
+      }
+    },
+    {
+      "id": "command/set-goal-mode/missing-session",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-goal-mode",
+        "mode": "native"
+      }
+    },
+    {
       "id": "command/create-session/pose-scene/valid-without-special-kind",
       "target": "command",
       "accepted": true,

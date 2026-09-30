@@ -40,6 +40,50 @@ import {
 
 const SESSION_DAY_MS = 24 * 60 * 60 * 1_000;
 
+describe("session goal state", () => {
+  it("restores the mode and goal while preserving the mode in message settings", () => {
+    const goal = {
+      id: "goal-1",
+      objective: "All auth tests pass",
+      mode: "native" as const,
+      status: "paused" as const,
+      turns: 2,
+      tokensUsed: 120,
+      elapsedMs: 1_000,
+      reason: "Paused by user.",
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const session = createSession({
+      provider: "claude-cli",
+      goalMode: "native",
+      goal,
+    });
+    const restored = normalizeShellState({
+      ...createInitialShellState(),
+      lastSelectedGoalMode: "native",
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+    expect(restored.lastSelectedGoalMode).toBe("native");
+    expect(restored.sessions[0]).toMatchObject({ goalMode: "native", goal });
+    expect(createSessionMessageSettings(session).goalMode).toBe("native");
+  });
+
+  it("uses managed mode for unsupported providers and rejects malformed goal state", () => {
+    const session = createSession({
+      provider: "codex-cli",
+      goalMode: "native",
+    });
+    expect(session.goalMode).toBe("machdoch");
+    const restored = normalizeShellState({
+      ...createInitialShellState(),
+      sessions: [{ ...session, goal: { objective: "Fix auth" } }],
+    });
+    expect(restored.sessions[0]?.goal).toBeUndefined();
+  });
+});
+
 describe("parallel agent session mode", () => {
   it("restores the last selected parallel mode from saved shell state", () => {
     const state = createInitialShellState();
@@ -60,7 +104,10 @@ describe("parallel agent session mode", () => {
   it("persists the selected mode and freezes it in each message", () => {
     const session = createSession({ parallelAgentMode: "read-only" });
     const settings = createSessionMessageSettings(session);
-    const changed = createSession({ ...session, parallelAgentMode: "machdoch" });
+    const changed = createSession({
+      ...session,
+      parallelAgentMode: "machdoch",
+    });
     const state = normalizeShellState({
       ...createInitialShellState(),
       activeSessionId: changed.id,
@@ -69,7 +116,12 @@ describe("parallel agent session mode", () => {
 
     expect(settings.parallelAgentMode).toBe("read-only");
     expect(state.sessions[0]?.parallelAgentMode).toBe("machdoch");
-    expect(getSessionMessageSettings({ id: "message", role: "user", content: "task", settings }, changed).parallelAgentMode).toBe("read-only");
+    expect(
+      getSessionMessageSettings(
+        { id: "message", role: "user", content: "task", settings },
+        changed,
+      ).parallelAgentMode,
+    ).toBe("read-only");
   });
 });
 
@@ -104,7 +156,10 @@ describe("adaptive controller session override", () => {
   it("persists the override and freezes it in message settings", () => {
     const session = createSession({ adaptiveControllerOverride: false });
     const settings = createSessionMessageSettings(session);
-    const updated = createSession({ ...session, adaptiveControllerOverride: true });
+    const updated = createSession({
+      ...session,
+      adaptiveControllerOverride: true,
+    });
     const state = normalizeShellState({
       ...createInitialShellState(),
       activeSessionId: updated.id,
@@ -112,35 +167,79 @@ describe("adaptive controller session override", () => {
     });
     expect(settings.adaptiveControllerOverride).toBe(false);
     expect(state.sessions[0]?.adaptiveControllerOverride).toBe(true);
-    expect(getSessionMessageSettings({ id: "message", role: "user", content: "task", settings }, updated).adaptiveControllerOverride).toBe(false);
+    expect(
+      getSessionMessageSettings(
+        { id: "message", role: "user", content: "task", settings },
+        updated,
+      ).adaptiveControllerOverride,
+    ).toBe(false);
   });
 });
 
 describe("pose chats", () => {
   it("keeps the starting scene and chat type across session normalization", () => {
-    const poseScene = { aspectRatio: "1:1" as const, people: [{ pose: "standing" as const, x: 0.5, y: 0.92, scale: 0.8, mirror: false }] };
-    const session = createSession({ specialSession: "pose", poseScene, workspace: null });
-    const state = createInitialShellState();
-    const normalized = normalizeShellState({ ...state, activeSessionId: session.id, sessions: [session] });
-    expect(normalized.sessions[0]?.specialSession).toBe("pose");
-    expect(normalized.sessions[0]?.poseScene).toEqual(poseScene);
-    expect(getSessionTitle(normalized.sessions[0]!)).toBe("Pose scene");
-    expect(getSavedPoseScenes(normalized.sessions)).toEqual([{ id: session.id, label: "Pose scene", map: poseScene }]);
-  });
-
-  it("lists a generated scene by its request and keeps its editable joints", () => {
     const poseScene = {
-      aspectRatio: "4:5" as const,
-      people: [0.25, 0.5, 0.75].map((x) => ({ pose: "climbing" as const, x, y: 0.9, scale: 0.5, mirror: false, joints: mediaPoseJoints("climbing") })),
+      aspectRatio: "1:1" as const,
+      people: [
+        {
+          pose: "standing" as const,
+          x: 0.5,
+          y: 0.92,
+          scale: 0.8,
+          mirror: false,
+        },
+      ],
     };
     const session = createSession({
       specialSession: "pose",
       poseScene,
       workspace: null,
-      messages: [{ id: "request", role: "user", content: "3 persons climbing a rock", createdAt: 1 }],
     });
-    expect(getSavedPoseScenes([session])).toEqual([{ id: session.id, label: "3 persons climbing a rock", map: poseScene }]);
-    expect(getSavedPoseScenes([{ ...session, manualTitle: "Climbers" }])).toEqual([{ id: session.id, label: "Climbers", map: poseScene }]);
+    const state = createInitialShellState();
+    const normalized = normalizeShellState({
+      ...state,
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+    expect(normalized.sessions[0]?.specialSession).toBe("pose");
+    expect(normalized.sessions[0]?.poseScene).toEqual(poseScene);
+    expect(getSessionTitle(normalized.sessions[0]!)).toBe("Pose scene");
+    expect(getSavedPoseScenes(normalized.sessions)).toEqual([
+      { id: session.id, label: "Pose scene", map: poseScene },
+    ]);
+  });
+
+  it("lists a generated scene by its request and keeps its editable joints", () => {
+    const poseScene = {
+      aspectRatio: "4:5" as const,
+      people: [0.25, 0.5, 0.75].map((x) => ({
+        pose: "climbing" as const,
+        x,
+        y: 0.9,
+        scale: 0.5,
+        mirror: false,
+        joints: mediaPoseJoints("climbing"),
+      })),
+    };
+    const session = createSession({
+      specialSession: "pose",
+      poseScene,
+      workspace: null,
+      messages: [
+        {
+          id: "request",
+          role: "user",
+          content: "3 persons climbing a rock",
+          createdAt: 1,
+        },
+      ],
+    });
+    expect(getSavedPoseScenes([session])).toEqual([
+      { id: session.id, label: "3 persons climbing a rock", map: poseScene },
+    ]);
+    expect(
+      getSavedPoseScenes([{ ...session, manualTitle: "Climbers" }]),
+    ).toEqual([{ id: session.id, label: "Climbers", map: poseScene }]);
     expect(getSavedPoseScenes([{ ...session, poseScene: undefined }])).toEqual([
       { id: session.id, label: "3 persons climbing a rock" },
     ]);
@@ -1063,6 +1162,7 @@ describe("normalizeShellState", () => {
       model: "gpt-5.5",
       mode: "ask",
       parallelAgentMode: "disabled",
+      goalMode: "machdoch",
       adaptiveControllerOverride: null,
       reasoning: "high",
       sessionMemoryEnabled: false,

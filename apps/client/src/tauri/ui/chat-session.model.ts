@@ -1,6 +1,12 @@
 ﻿import { normalizeConversationMemoryEntries } from "../../core/memory.js";
 import { resolveParallelAgentMode } from "../../core/parallel-agent-capabilities.js";
 import {
+  isSessionGoal,
+  resolveGoalMode,
+  type GoalMode,
+  type SessionGoal,
+} from "../../shared/goals.js";
+import {
   MODEL_PROVIDERS,
   REASONING_MODES,
   VALID_TOOLS,
@@ -175,6 +181,7 @@ export interface ChatSessionMessageSettings {
   model: string;
   mode?: RunMode;
   parallelAgentMode: ParallelAgentMode;
+  goalMode?: GoalMode;
   adaptiveControllerOverride?: boolean | null;
   reasoning?: ReasoningMode;
   sessionMemoryEnabled: boolean;
@@ -287,6 +294,8 @@ export interface ChatSessionRecord {
   model: string;
   mode?: RunMode;
   parallelAgentMode?: ParallelAgentMode;
+  goalMode?: GoalMode;
+  goal?: SessionGoal | null;
   adaptiveControllerOverride?: boolean | null;
   reasoning?: ReasoningMode;
   draft: string;
@@ -405,6 +414,7 @@ export interface ShellPersistedState {
   lastSelectedMode?: RunMode;
   lastSelectedReasoning?: ReasoningMode;
   lastSelectedParallelAgentMode: ParallelAgentMode;
+  lastSelectedGoalMode?: GoalMode;
   lastSelectedSessionMemoryEnabled: boolean;
   lastSelectedUseWorkspaceMemory: boolean;
   lastSelectedUseGlobalMemory: boolean;
@@ -1381,6 +1391,8 @@ export const createSession = (
     model: overrides.model ?? getDefaultModelForProvider(provider),
     ...(mode ? { mode } : {}),
     parallelAgentMode: normalizeParallelAgentMode(overrides.parallelAgentMode),
+    goalMode: resolveGoalMode(provider, overrides.goalMode),
+    ...(isSessionGoal(overrides.goal) ? { goal: overrides.goal } : {}),
     adaptiveControllerOverride: overrides.adaptiveControllerOverride ?? null,
     ...(reasoning ? { reasoning } : {}),
     draft: overrides.draft ?? "",
@@ -1475,6 +1487,7 @@ export const createInitialShellState = (): ShellPersistedState => {
       google: getDefaultModelForProvider("google"),
     },
     lastSelectedParallelAgentMode: "disabled",
+    lastSelectedGoalMode: "machdoch",
     lastSelectedSessionMemoryEnabled: true,
     lastSelectedUseWorkspaceMemory: true,
     lastSelectedUseGlobalMemory: true,
@@ -2569,6 +2582,10 @@ const normalizeMessageSettings = (
     model,
     ...(mode ? { mode } : {}),
     parallelAgentMode: normalizeParallelAgentMode(value.parallelAgentMode),
+    goalMode: resolveGoalMode(
+      value.provider,
+      value.goalMode === "native" ? "native" : "machdoch",
+    ),
     adaptiveControllerOverride:
       typeof value.adaptiveControllerOverride === "boolean"
         ? value.adaptiveControllerOverride
@@ -3233,6 +3250,8 @@ export const normalizeShellState = (
     ...(lastSelectedMode ? { lastSelectedMode } : {}),
     ...(lastSelectedReasoning ? { lastSelectedReasoning } : {}),
     lastSelectedParallelAgentMode,
+    lastSelectedGoalMode:
+      candidate.lastSelectedGoalMode === "native" ? "native" : "machdoch",
     lastSelectedSessionMemoryEnabled,
     lastSelectedUseWorkspaceMemory,
     lastSelectedUseGlobalMemory,
@@ -4139,6 +4158,7 @@ const createRetentionReplacementSession = (
       model,
       state.lastSelectedParallelAgentMode,
     ),
+    goalMode: resolveGoalMode(provider, state.lastSelectedGoalMode),
     model,
     sessionMemoryEnabled: state.lastSelectedSessionMemoryEnabled,
     useWorkspaceMemory: state.lastSelectedUseWorkspaceMemory,

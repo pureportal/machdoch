@@ -1,4 +1,9 @@
-﻿import { isTauri } from "@tauri-apps/api/core";
+﻿import {
+  isGoalCommand,
+  resolveGoalMode,
+  type GoalMode,
+} from "../../../../shared/goals.js";
+import { isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { reconcileRecoveredTaskResults } from "./recovered-task-result";
 import { useAutomaticChatWork } from "./use-automatic-chat-work";
@@ -2990,6 +2995,7 @@ export const useChatSessionController = (
           ...session,
           provider,
           model,
+          goalMode: resolveGoalMode(provider, session.goalMode),
           parallelAgentMode: resolveParallelAgentMode(
             provider,
             model,
@@ -3126,6 +3132,22 @@ export const useChatSessionController = (
 
       return nextState;
     });
+  };
+
+  const handleGoalModeSelection = (mode: GoalMode): void => {
+    state.applyShellState((previous) => ({
+      ...previous,
+      lastSelectedGoalMode: mode,
+      sessions: previous.sessions.map((session) =>
+        session.id === state.activeSessionId
+          ? {
+              ...session,
+              goalMode: resolveGoalMode(session.provider, mode),
+              updatedAt: Date.now(),
+            }
+          : session,
+      ),
+    }));
   };
 
   const handleParallelAgentModeSelection = (mode: ParallelAgentMode): void => {
@@ -7325,6 +7347,13 @@ export const useChatSessionController = (
     onUpdateSessionDraft: handleRemoteUpdateSessionDraft,
     onSetSessionModel: handleRemoteSetSessionModel,
     onSetSessionMode: handleRemoteSetSessionMode,
+    onSetGoalMode: (sessionId, mode) => {
+      state.updateSessionById(sessionId, (session) => ({
+        ...session,
+        goalMode: resolveGoalMode(session.provider, mode),
+        updatedAt: Date.now(),
+      }));
+    },
     onSetParallelAgentMode: handleRemoteSetParallelAgentMode,
     onSetSessionReasoning: handleRemoteSetSessionReasoning,
     onSetSessionWorkspace: applyRemoteWorkspaceSelection,
@@ -8063,7 +8092,25 @@ export const useChatSessionController = (
   }, [chatInterview]);
 
   const submitResolvedChatInputNeededSubmission = useCallback(
-    (submission: ChatInputNeededSubmission, resolvedTask: string): void => {
+    (
+      incomingSubmission: ChatInputNeededSubmission,
+      resolvedTask: string,
+    ): void => {
+      const submission: ChatInputNeededSubmission =
+        incomingSubmission.kind === "active-session" &&
+        isGoalCommand(resolvedTask)
+          ? {
+              ...incomingSubmission,
+              promptEnhancementMode: "off",
+              interviewEnabled: false,
+              iterationCount: 1,
+              messageSettings: {
+                ...incomingSubmission.messageSettings,
+                promptEnhancementMode: "off",
+                interviewEnabled: false,
+              },
+            }
+          : incomingSubmission;
       if (submission.kind === "quick-task") {
         if (
           submitQuickVoiceCommand(resolvedTask, submission.contextAttachments)
@@ -8462,6 +8509,14 @@ export const useChatSessionController = (
     iterationMode: RequestIterationMode = DEFAULT_REQUEST_ITERATION_MODE,
   ): void => {
     const task = draft.trim();
+    const goalCommand = isGoalCommand(task);
+    if (
+      task === "/goal pause" &&
+      getActiveDesktopTaskIdForSession(activeComposerSession.id)
+    ) {
+      requestTaskCancellation(activeComposerSession);
+      return;
+    }
     const currentEdit = activeMessageEditRef.current;
     const activeComposerTaskId = getActiveDesktopTaskIdForSession(
       activeComposerSession.id,
@@ -8476,7 +8531,7 @@ export const useChatSessionController = (
       (currentEdit &&
         (activeSessionPromptEnhancementBusy || activeComposerTaskId)) ||
       (!currentEdit && activePromptEnhancementInput === task) ||
-      promptEnhancementUnavailableReason
+      (!goalCommand && promptEnhancementUnavailableReason)
     ) {
       return;
     }
@@ -8546,7 +8601,7 @@ export const useChatSessionController = (
         : {}),
     };
 
-    if (requestChatInputNeededValues(submission)) {
+    if (!goalCommand && requestChatInputNeededValues(submission)) {
       return;
     }
 
@@ -8885,6 +8940,7 @@ export const useChatSessionController = (
       onSessionModelSelection: handleSessionModelSelection,
       onSessionModeSelection: handleSessionModeSelection,
       onParallelAgentModeSelection: handleParallelAgentModeSelection,
+      onGoalModeSelection: handleGoalModeSelection,
       onAdaptiveControllerOverrideChange:
         handleAdaptiveControllerOverrideChange,
       onSessionReasoningSelection: handleSessionReasoningSelection,

@@ -105,6 +105,54 @@ const runChat = async (
 };
 
 describe("interactive chat workflows", () => {
+  it("preserves natural-language quotes in goal objectives and attachments through goal controls", async () => {
+    const path = join(workspace, "README.md");
+    await writeFile(path, "Auth test instructions.");
+    const executeTask = vi.fn<typeof printTaskPreview>(async (args) =>
+      result(args.task!),
+    );
+    await runChat(
+      [
+        `/attach "${path}"`,
+        "/goal",
+        "/goal Fix user's auth tests",
+        "Next task",
+        "/exit",
+      ],
+      executeTask,
+    );
+    expect(executeTask.mock.calls.map(([args]) => args.task)).toEqual([
+      "/goal",
+      "/goal Fix user's auth tests",
+      "Next task",
+    ]);
+    expect(executeTask.mock.calls[1]?.[0].contextPaths).toEqual([path]);
+    expect(executeTask.mock.calls[2]?.[0].contextPaths).toBeUndefined();
+  });
+  it("routes goal commands and persists the selected mode", async () => {
+    const executeTask = vi.fn<typeof printTaskPreview>(async (args) => ({
+      ...result(args.task!),
+      execution: {
+        ...result(args.task!).execution,
+        metadata: { goalMode: "native" },
+      },
+    }));
+    await runChat(
+      ["/goal mode native", "/goal All tests pass", "/goal", "/exit"],
+      executeTask,
+    );
+    expect(executeTask.mock.calls.map(([args]) => args.task)).toEqual([
+      "/goal mode native",
+      "/goal All tests pass",
+      "/goal",
+    ]);
+    expect(executeTask.mock.calls[1]?.[1]?.conversationContext?.goalMode).toBe(
+      "native",
+    );
+    expect((await listChatSessions()).sessions[0]?.context.goalMode).toBe(
+      "native",
+    );
+  });
   it("rejects unknown commands, changes runtime controls, and continues after task errors", async () => {
     const executeTask = vi
       .fn<typeof printTaskPreview>()

@@ -3,6 +3,7 @@ import {
   MAX_SESSION_MEMORY_ENTRIES,
   mergeConversationMemoryEntries,
 } from "../../../../core/memory.js";
+import { isSessionGoal } from "../../../../shared/goals.js";
 import type { RunMode } from "../../../../core/runtime-contract.generated.js";
 import {
   isQuickVoiceSession,
@@ -561,6 +562,7 @@ export const useSessionTaskSubmission = (options: {
           currentOptions.aiContextMessageLimit,
         ),
         parallelAgentMode: messageSettings.parallelAgentMode,
+        goalMode: messageSettings.goalMode ?? "machdoch",
         adaptiveControllerOverride:
           messageSettings.adaptiveControllerOverride ?? null,
         wasQueued:
@@ -1049,6 +1051,12 @@ export const useSessionTaskSubmission = (options: {
 
       currentOptions.progressRoutesRef.current.set(taskId, {
         onProgress: (progress) => {
+          if (progress.goal !== undefined) {
+            currentOptions.state.updateSessionById(sessionId, (session) => ({
+              ...session,
+              goal: progress.goal ?? null,
+            }));
+          }
           const assistantText = progress.assistantText?.trim();
 
           if (assistantText) {
@@ -1254,6 +1262,31 @@ export const useSessionTaskSubmission = (options: {
             return;
           }
 
+          const goalMetadata = taskRun.execution.metadata;
+          if (
+            goalMetadata &&
+            (goalMetadata.goal === null || isSessionGoal(goalMetadata.goal))
+          ) {
+            currentOptions.state.applyShellState((previous) => ({
+              ...previous,
+              lastSelectedGoalMode:
+                goalMetadata.goalMode === "native" ? "native" : "machdoch",
+              sessions: previous.sessions.map((session) =>
+                session.id === sessionId
+                  ? {
+                      ...session,
+                      goal: isSessionGoal(goalMetadata.goal)
+                        ? goalMetadata.goal
+                        : null,
+                      goalMode:
+                        goalMetadata.goalMode === "native"
+                          ? "native"
+                          : "machdoch",
+                    }
+                  : session,
+              ),
+            }));
+          }
           const sessionMemoryUpdates =
             taskRun.execution.memoryUpdates
               ?.filter((update) => update.scope === "session")

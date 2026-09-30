@@ -1027,16 +1027,19 @@ const runExecutorCycle = async (
 ): Promise<ExecutorCycleOutcome> => {
   throwIfExecutionAborted(signal);
 
-  const toolDefinitions = [
-    ...createToolDefinitions(
-      config,
-      conversationContext.memory,
-      conversationContext.uiControlEnabled
-        ? conversationContext.uiControl
-        : undefined,
-    ),
-    ...(additionalToolDefinitions ?? []),
-  ];
+  const toolDefinitions =
+    resultProtocol?.kind === "goal-evaluation"
+      ? []
+      : [
+          ...createToolDefinitions(
+            config,
+            conversationContext.memory,
+            conversationContext.uiControlEnabled
+              ? conversationContext.uiControl
+              : undefined,
+          ),
+          ...(additionalToolDefinitions ?? []),
+        ];
   const finalResponseTool = createFinalResponseTool(resultProtocol);
   const toolSpecs = [
     ...toolDefinitions.map((toolDefinition) => toolDefinition.spec),
@@ -2513,6 +2516,9 @@ export const maybeExecuteModelDrivenTask = async (
         ...params,
         config: executionConfig,
         preparedConversationContext,
+        ...(params.resultProtocol?.kind === "goal-evaluation"
+          ? { scopedWorkerToolDefinitions: [] }
+          : {}),
         ...(parallelTool
           ? {
               additionalToolDefinitions: [

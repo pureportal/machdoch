@@ -2269,6 +2269,10 @@ export const mergeShellStateForPersistence = (
     )
       ? latestState.lastSelectedModelByProvider
       : localState.lastSelectedModelByProvider,
+    lastSelectedGoalMode:
+      localState.lastSelectedGoalMode === baseState.lastSelectedGoalMode
+        ? latestState.lastSelectedGoalMode
+        : localState.lastSelectedGoalMode,
     lastSelectedParallelAgentMode:
       localState.lastSelectedParallelAgentMode ===
       baseState.lastSelectedParallelAgentMode

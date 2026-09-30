@@ -8,6 +8,7 @@
     "./styles.css": "./src/styles.css",
     "./theme.css": "./src/theme.css",
     "./primitives.css": "./src/primitives.css",
+    "./goal-control.css": "./src/goal-control.css",
     "./fleet-api": "./src/fleet-api.ts"
   },
   "scripts": {

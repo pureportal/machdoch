@@ -5,6 +5,27 @@ const eventLine = (value: Record<string, unknown>): string =>
   `${JSON.stringify(value)}\n`;
 
 describe("Copilot CLI output decoder", () => {
+  it("captures completed tool evidence without using assistant text as a tool result", () => {
+    const decoder = new CopilotCliOutputDecoder(true);
+    decoder.push(
+      eventLine({
+        type: "tool.execution_complete",
+        data: {
+          toolCallId: "test-1",
+          success: false,
+          result: { content: "Two tests failed." },
+        },
+      }),
+    );
+    decoder.push(
+      eventLine({
+        type: "assistant.message",
+        data: { content: "All tests passed." },
+      }),
+    );
+    expect(decoder.getToolEvidence()).toContain("Two tests failed.");
+    expect(decoder.getToolEvidence()).not.toContain("All tests passed.");
+  });
   it("keeps intermediate messages separate from the final answer and result", () => {
     const decoder = new CopilotCliOutputDecoder();
     const output = [

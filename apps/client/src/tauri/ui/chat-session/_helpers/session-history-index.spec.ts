@@ -11,6 +11,8 @@ import {
   type SessionHistoryIndexEntryCache,
 } from "./session-history-index";
 
+import { describe, expect, it } from "vitest";
+
 const createHistorySession = ({
   id,
   title,
@@ -464,6 +466,48 @@ describe("workspace facets", () => {
 });
 
 describe("session duplication and import", () => {
+  it.each(["duplicate", "branch"] as const)(
+    "keeps goal preferences without inheriting the source goal on %s",
+    (mode) => {
+      const goal = {
+        id: "source-goal",
+        objective: "All auth tests pass",
+        mode: "native" as const,
+        status: "paused" as const,
+        turns: 2,
+        tokensUsed: 100,
+        elapsedMs: 1_000,
+        reason: "",
+        createdAt: 1,
+        updatedAt: 2,
+      };
+      const source = createSession({
+        provider: "claude-cli",
+        goalMode: "native",
+        goal,
+        messages: [
+          {
+            id: "message",
+            taskId: "task",
+            role: "user",
+            content: "/goal All auth tests pass",
+          },
+          {
+            id: "answer",
+            taskId: "task",
+            role: "agent",
+            content: "Paused.",
+            outcome: { status: "cancelled" },
+          },
+        ],
+      });
+      const copied = duplicateSessionRecord(source, mode);
+      expect(copied.id).not.toBe(source.id);
+      expect(copied.goalMode).toBe("native");
+      expect(copied.goal).toBeUndefined();
+      expect(source.goal).toEqual(goal);
+    },
+  );
   it("does not duplicate Quick Chat records", () => {
     const quickSession = createSession({
       id: "quick-session",

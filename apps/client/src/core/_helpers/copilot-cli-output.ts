@@ -50,6 +50,19 @@ const formatDisplayText = (content: string): string =>
   content.endsWith("\n") ? `${content}\n` : `${content}\n\n`;
 
 export class CopilotCliOutputDecoder implements ExternalAgentCliOutputDecoder {
+  private readonly goalToolCalls = new Set<string>();
+  private toolEvidence = "";
+
+  constructor(private readonly captureToolEvidence = false) {}
+
+  getToolEvidence(): string {
+    return this.toolEvidence;
+  }
+
+  getToolCallCount(): number {
+    return this.goalToolCalls.size;
+  }
+
   private pendingLine = "";
   private discardingOversizedLine = false;
   private readonly incompleteMessages = new Map<
@@ -187,6 +200,16 @@ export class CopilotCliOutputDecoder implements ExternalAgentCliOutputDecoder {
     }
 
     if (
+      this.captureToolEvidence &&
+      event.type === "tool.execution_complete" &&
+      event.data !== undefined
+    )
+      this.toolEvidence =
+        `${this.toolEvidence}\n${JSON.stringify(event.data).slice(-12_000)}`.slice(
+          -32_000,
+        );
+
+    if (
       event.type === "session.task_complete" &&
       event.agentId === undefined &&
       isRecord(event.data)
@@ -254,6 +277,14 @@ export class CopilotCliOutputDecoder implements ExternalAgentCliOutputDecoder {
       data.chunkCount > 1
         ? data.chunkCount
         : undefined;
+    if (Array.isArray(data.toolRequests)) {
+      for (const request of data.toolRequests) {
+        if (isRecord(request))
+          this.goalToolCalls.add(
+            String(request.toolCallId ?? request.id ?? JSON.stringify(request)),
+          );
+      }
+    }
     const hasToolRequests =
       Array.isArray(data.toolRequests) && data.toolRequests.length > 0;
 
