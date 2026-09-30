@@ -16,6 +16,19 @@ const createResult = (
 });
 
 describe("createRalphFailureSignature", () => {
+  it("groups repeated inconclusive prerequisite failures despite process and build noise", () => {
+    const failure = (pid: number, progress: string) =>
+      createResult({
+        output: "INCONCLUSIVE",
+        status: "completed",
+        data: {
+          stderr: `${progress}\nthread 'main' (${pid}) panicked: Unable to find libclang`,
+        },
+      });
+    expect(createRalphFailureSignature(failure(100, "Compiling a"))).toBe(
+      createRalphFailureSignature(failure(200, "Compiling b")),
+    );
+  });
   it.each([
     "ERROR",
     "FAILED",

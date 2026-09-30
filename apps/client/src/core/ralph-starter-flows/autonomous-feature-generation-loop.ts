@@ -2216,7 +2216,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
 
 export const autonomousFeatureGenerationLoopStarterFlow = {
   id: "autonomous-feature-generation-loop",
-  version: 19,
+  version: 21,
   defaultAlias: "autonomous-feature-generation-loop",
   category: "Implementation",
   tags: ["autonomous", "feature", "loop"],
@@ -2226,8 +2226,8 @@ export const autonomousFeatureGenerationLoopStarterFlow = {
       planId: "starter-autonomous-feature-generation-loop:frozen-verification",
       baselineBlockId: "baseline-verification",
       candidateBlockId: "run-verification",
-      baselineInconclusiveTargetId: "count-implementation-pass",
-      candidateInconclusiveTargetId: "visual-decision",
+      baselineInconclusiveTargetId: "mark-tasks-deferred",
+      candidateInconclusiveTargetId: "mark-tasks-deferred",
       routeOverrides: [],
     },
     terminalOutcomes: [

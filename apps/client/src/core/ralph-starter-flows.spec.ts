@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   STARTER_RALPH_FLOWS,
   applyRalphStarterFlowProtocol,
@@ -1215,7 +1215,12 @@ describe("Ralph starter flows", () => {
         type: "UTILITY",
         utility: {
           type: "RUN_CHECK",
-          cwd: "{{data:detect-project-commands:rootPath}}",
+          cwd:
+            starterFlowId === "autonomous-code-improvement-loop"
+              ? "{{data:select-verification-command:output.cwd}}"
+              : starterFlowId === "autonomous-refactoring-flow"
+                ? "{{data:select-validation-command:output.cwd}}"
+                : "{{data:detect-project-commands:rootPath}}",
         },
       });
     }
@@ -1311,7 +1316,7 @@ describe("Ralph starter flows", () => {
     }
   });
 
-  it("caps bundled starter flows that contain cycles", () => {
+  it("guards cyclic starters with transition or progress limits", () => {
     for (const starterFlow of STARTER_RALPH_FLOWS) {
       if (!hasGraphCycle(starterFlow.flow)) {
         continue;
@@ -1320,8 +1325,19 @@ describe("Ralph starter flows", () => {
       const validation = validateRalphFlow(starterFlow.flow);
       const maxTransitions = starterFlow.flow.settings?.maxTransitions;
 
-      expect(maxTransitions).toEqual(expect.any(Number));
-      expect(maxTransitions ?? 0).toBeGreaterThanOrEqual(1);
+      if (maxTransitions === undefined) {
+        expect(
+          starterFlow.flow.variables?.find(
+            (variable) => variable.name === "continuous",
+          )?.default,
+        ).toBe("true");
+        expect(starterFlow.flow.settings?.autonomy).toMatchObject({
+          maxStagnantTransitions: 48,
+          maxRepeatedCycle: 3,
+        });
+      } else {
+        expect(maxTransitions).toBeGreaterThanOrEqual(1);
+      }
       expect(validation.warnings).not.toContain("flow-cycle-without-cap");
     }
   });
@@ -1329,9 +1345,7 @@ describe("Ralph starter flows", () => {
   it("allocates a sustained outer budget to multi-unit starters", () => {
     for (const starterFlowId of [
       "autonomous-feature-generation-loop",
-      "autonomous-code-improvement-loop",
       "autonomous-ui-improvement-loop",
-      "autonomous-refactoring-flow",
       "security-fix-loop",
     ]) {
       expect(
@@ -1382,7 +1396,11 @@ describe("Ralph starter flows", () => {
           expect.objectContaining({
             from: "select-scope",
             fromOutput: "DEFERRED",
-            to: expect.stringContaining("deferred-outcome"),
+            to:
+              testCase.flowId === "autonomous-code-improvement-loop" ||
+              testCase.flowId === "autonomous-refactoring-flow"
+                ? "continue-deferred-scope-cycles"
+                : expect.stringContaining("deferred-outcome"),
           }),
           expect.objectContaining({
             from: "record-exhausted-outcome",
@@ -1392,7 +1410,11 @@ describe("Ralph starter flows", () => {
           expect.objectContaining({
             from: "completion-report",
             fromOutput: "SUCCESS",
-            to: "success",
+            to:
+              testCase.flowId === "autonomous-code-improvement-loop" ||
+              testCase.flowId === "autonomous-refactoring-flow"
+                ? "continue-scope-cycles"
+                : "success",
           }),
           expect.objectContaining({
             from: "final-report",
@@ -2118,7 +2140,7 @@ describe("Ralph starter flows", () => {
     );
   });
 
-  it("ships the refactor starter with validation fallback, workspace-tolerant final scan, and pass counter", () => {
+  it("ships the refactor starter with frozen task verification, final scan, and pass counter", () => {
     const starterFlow = getRalphStarterFlow("autonomous-refactoring-flow");
     const flow = starterFlow?.flow;
     const passCounter = flow?.blocks.find(
@@ -2227,9 +2249,7 @@ describe("Ralph starter flows", () => {
       utility: {
         type: "RUN_CHECK",
         command: "{{data:select-validation-command:output.command}}",
-        fallbackCommand:
-          "{{data:detect-project-commands:focusedVerificationCommand}}",
-        cwd: "{{data:detect-project-commands:rootPath}}",
+        cwd: "{{data:select-validation-command:output.cwd}}",
         timeoutSeconds: 1800,
       },
     });
@@ -2591,7 +2611,9 @@ describe("Ralph starter flows", () => {
     });
     expect(flow).toMatchObject({
       name: "Autonomous Code Improvement Loop",
-      settings: { maxTransitions: 5_000 },
+      settings: {
+        autonomy: { maxStagnantTransitions: 48, maxRepeatedCycle: 3 },
+      },
     });
     expect(activePlanFile).toMatchObject({
       type: "path",
@@ -2920,7 +2942,7 @@ describe("Ralph starter flows", () => {
         expect.objectContaining({
           from: "select-scope",
           fromOutput: "DEFERRED",
-          to: "record-deferred-outcome",
+          to: "continue-deferred-scope-cycles",
         }),
         expect.objectContaining({
           from: "append-deferred-improvement-plan",
@@ -2975,15 +2997,118 @@ describe("Ralph starter flows", () => {
         expect.objectContaining({
           from: "select-scope",
           fromOutput: "DEFERRED",
-          to: "record-deferred-outcome",
+          to: "continue-deferred-scope-cycles",
         }),
         expect.objectContaining({
           from: "completion-report",
           fromOutput: "SUCCESS",
-          to: "success",
+          to: "continue-scope-cycles",
         }),
       ]),
     );
+  });
+
+  it.each(["autonomous-code-improvement-loop", "autonomous-refactoring-flow"])(
+    "waits for scope cooldowns when continuous mode is enabled in %s",
+    (id) => {
+      const flow = getRalphStarterFlow(id)!.flow;
+      const gate = flow.blocks.find(
+        (block) => block.id === "continue-deferred-scope-cycles",
+      );
+      const wait = flow.blocks.find(
+        (block) => block.id === "wait-for-eligible-scope",
+      );
+      if (
+        gate?.type !== "UTILITY" ||
+        wait?.type !== "UTILITY" ||
+        !gate.utility.condition ||
+        !wait.utility.condition
+      ) {
+        throw new Error("Missing continuous scope eligibility controls.");
+      }
+      const selection = (nextEligibleAt: string) =>
+        new Map([
+          [
+            "select-scope",
+            asStarterResult({ data: { availability: { nextEligibleAt } } }),
+          ],
+        ]);
+      const context = {
+        runLog: [],
+        variables: { continuous: "true" },
+        resultsByBlock: selection("2026-09-30T10:02:00.000Z"),
+      };
+      expect(
+        evaluateRalphUtilityCondition(gate.utility.condition, context),
+      ).toBe(true);
+      expect(
+        evaluateRalphUtilityCondition(gate.utility.condition, {
+          ...context,
+          variables: { continuous: "false" },
+        }),
+      ).toBe(false);
+      expect(
+        evaluateRalphUtilityCondition(gate.utility.condition, {
+          ...context,
+          resultsByBlock: selection(""),
+        }),
+      ).toBe(false);
+      const clock = vi
+        .spyOn(Date, "now")
+        .mockReturnValue(Date.parse("2026-09-30T10:01:00.000Z"));
+      try {
+        expect(
+          evaluateRalphUtilityCondition(wait.utility.condition, context),
+        ).toBe(false);
+        expect(
+          evaluateRalphUtilityCondition(wait.utility.condition, {
+            ...context,
+            resultsByBlock: selection("2026-09-30T10:00:00.000Z"),
+          }),
+        ).toBe(true);
+      } finally {
+        clock.mockRestore();
+      }
+    },
+  );
+
+  it("evaluates boolean variable controls against their persisted string values", () => {
+    for (const { flow } of STARTER_RALPH_FLOWS) {
+      const flags = new Set(
+        flow.variables
+          ?.filter((variable) => variable.type === "boolean")
+          .map((variable) => `variables.${variable.name}`),
+      );
+      for (const block of flow.blocks) {
+        if (block.type !== "UTILITY" || block.utility.type !== "CONDITION") {
+          continue;
+        }
+        const condition = block.utility.condition;
+        if (
+          condition?.style !== "json-path" ||
+          !condition.path ||
+          !flags.has(condition.path) ||
+          condition.conditions?.length
+        ) {
+          continue;
+        }
+        const name = condition.path.slice("variables.".length);
+        expect(
+          evaluateRalphUtilityCondition(condition, {
+            runLog: [],
+            variables: { [name]: "true" },
+          }),
+          `${flow.id}/${block.id}`,
+        ).toBe(true);
+        expect(
+          evaluateRalphUtilityCondition(condition, {
+            runLog: [],
+            variables: { [name]: "false" },
+          }),
+          `${flow.id}/${block.id}`,
+        ).toBe(false);
+      }
+    }
   });
 
   it("keeps bundled git-diff validators tolerant of shared workspace changes", () => {
@@ -3586,7 +3711,7 @@ describe("Ralph starter flows", () => {
         expect.objectContaining({
           from: "completion-report",
           fromOutput: "SUCCESS",
-          to: "success",
+          to: "continue-scope-cycles",
         }),
         expect.objectContaining({
           from: "final-report",

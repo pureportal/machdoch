@@ -262,6 +262,36 @@ const getProgressChannel = (
       reason: "A durable work item changed state.",
     };
   }
+  if (
+    block.utility.type === "SELECT_SCOPE" &&
+    isRecord(result.data) &&
+    isRecord(result.data.scope)
+  ) {
+    return {
+      channel: { kind: "utility", utilityType: "SELECT_SCOPE" },
+      channelLabel: "scope-selection",
+      fingerprint: hash({
+        scopeId: result.data.scope.id,
+        cycle: result.data.cycle,
+      }),
+      eligible:
+        result.output === "SELECTED" &&
+        result.data.reusedCurrentScope === false,
+      initialIsProgress: true,
+      reason: "Repository coverage advanced to another eligible scope.",
+    };
+  }
+  if (block.utility.type === "BEGIN_SCOPE_CYCLE" && isRecord(result.data)) {
+    return {
+      channel: { kind: "utility", utilityType: "BEGIN_SCOPE_CYCLE" },
+      channelLabel: "scope-cycle",
+      fingerprint: hash(result.data.cycle),
+      eligible:
+        result.output === "SUCCESS" && result.data.cycleStarted === true,
+      initialIsProgress: true,
+      reason: "A completed repository coverage cycle was renewed.",
+    };
+  }
   if (block.utility.type === "CHANGE_SCOPE_GUARD") {
     return {
       channel: { kind: "scope-verification" },

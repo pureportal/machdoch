@@ -4,6 +4,9 @@ import { Ajv2020, type ErrorObject } from "ajv/dist/2020.js";
 import * as addFormatsModule from "ajv-formats";
 import type { FormatsPlugin } from "ajv-formats";
 import { spawnSync } from "node:child_process";
+import { queryRalphJsonl } from "./_helpers/ralph-jsonl-query.helper.js";
+import { readRalphExecutionHistoryResults } from "./_helpers/ralph-execution-history.helper.js";
+export { readRalphExecutionHistoryResults } from "./_helpers/ralph-execution-history.helper.js";
 import { existsSync } from "node:fs";
 import {
   appendFile,
@@ -131,6 +134,14 @@ import {
   type RalphScopeSelectionStrategy,
 } from "./_helpers/ralph-scope-registry.helper.js";
 import { resolveRalphRetryDecision } from "./_helpers/resolve-ralph-retry-decision.helper.js";
+import { getRalphTaskVerification } from "./_helpers/ralph-task-verification.helper.js";
+import { findRalphExecutionCause } from "./_helpers/ralph-execution-cause.helper.js";
+import {
+  findRalphProjectCommandRoot,
+  detectRalphPythonTestCommand,
+  quoteRalphCommandArgument,
+  resolveRalphPythonCommand,
+} from "./_helpers/ralph-project-commands.helper.js";
 import {
   scavengeAtomicTemporaryFiles,
   writeFileAtomically,
@@ -819,6 +830,7 @@ export interface RalphUtilityConfig {
   fallbackCommand?: string;
   verificationRole?: "baseline" | "candidate" | "supplemental";
   baselineBlockId?: string;
+  verificationBlockId?: string;
   verificationPlanId?: string;
   cwd?: string;
   env?: Record<string, string>;
@@ -2452,72 +2464,6 @@ const appendRalphExecutionHistoryResult = async (
     getRalphExecutionHistoryPath(paths),
     `${JSON.stringify({ kind: "block-result", result })}\n`,
   );
-};
-
-export const readRalphExecutionHistoryResults = async (
-  paths: RalphRunLogPaths | undefined,
-): Promise<RalphBlockExecutionResult[]> => {
-  if (!paths) {
-    return [];
-  }
-  const historyPath = getRalphExecutionHistoryPath(paths);
-  let content: string;
-  try {
-    content = await readFile(historyPath, "utf8");
-  } catch (error) {
-    if (isFileNotFoundError(error)) {
-      return [];
-    }
-    throw new Error(
-      `Could not read Ralph execution history at ${historyPath}: ${error instanceof Error ? error.message : String(error)}`,
-      { cause: error },
-    );
-  }
-  const results: RalphBlockExecutionResult[] = [];
-  const seen = new Set<string>();
-  const lines = content.split(/\r?\n/u);
-  const hasTerminatingNewline = content.endsWith("\n");
-
-  for (const [index, line] of lines.entries()) {
-    if (!line.trim()) {
-      continue;
-    }
-    try {
-      const entry = JSON.parse(line) as unknown;
-      const result =
-        isRecord(entry) &&
-        entry.kind === "block-result" &&
-        isRecord(entry.result)
-          ? (entry.result as unknown as RalphBlockExecutionResult)
-          : undefined;
-      if (
-        !result ||
-        typeof result.blockId !== "string" ||
-        typeof result.output !== "string"
-      ) {
-        throw new Error("entry is not a Ralph block-result record");
-      }
-      const key =
-        result.operationId ??
-        `${results.length}:${result.blockId}:${result.attempt}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        results.push(result);
-      }
-    } catch (error) {
-      const isPartialCrashTail =
-        index === lines.length - 1 && !hasTerminatingNewline;
-      if (isPartialCrashTail) {
-        break;
-      }
-      throw new Error(
-        `Corrupt Ralph execution history at ${historyPath}:${index + 1}: ${error instanceof Error ? error.message : String(error)}`,
-        { cause: error },
-      );
-    }
-  }
-
-  return results;
 };
 
 export interface RalphFileMutationLock {
@@ -4238,6 +4184,9 @@ const emitRunEvent = async (
   onEvent: RalphRunOptions["onEvent"],
 ): Promise<void> => {
   events.push(event);
+  if (events.length > MAX_RALPH_CHECKPOINT_EVENTS) {
+    events.splice(0, events.length - MAX_RALPH_CHECKPOINT_EVENTS);
+  }
   try {
     await onEvent?.(event);
   } catch {
@@ -5696,9 +5645,27 @@ const attachRalphVerificationEvidence = (
     role: utility.verificationRole,
     planId: utility.verificationPlanId ?? block.id,
     observation,
+    verifiedAt: createLogTimestamp(),
   };
   data.verification = verification;
+  if (observation.diagnostic) {
+    data.diagnostic = observation.diagnostic;
+  }
   if (utility.verificationRole !== "candidate") {
+    if (
+      observation.processOutcome.kind === "timed-out" ||
+      observation.processOutcome.kind === "execution-error" ||
+      observation.diagnostic
+    ) {
+      return createUtilityResult(
+        block,
+        "INCONCLUSIVE",
+        observation.diagnostic
+          ? `${block.title}: ${observation.diagnostic.message} ${observation.diagnostic.retryCondition}`
+          : `${block.title} could not execute verification.`,
+        data,
+      );
+    }
     return undefined;
   }
 
@@ -5749,7 +5716,8 @@ const attachRalphVerificationEvidence = (
       ? "FAILED"
       : comparison.disposition === "INCONCLUSIVE" ||
           comparison.disposition === "ENVIRONMENT_UNAVAILABLE" ||
-          comparison.disposition === "TIMEOUT"
+          comparison.disposition === "TIMEOUT" ||
+          comparison.disposition === "BASELINE_EQUIVALENT_FAILURE"
         ? "INCONCLUSIVE"
         : "SUCCESS";
   return createUtilityResult(
@@ -5787,28 +5755,65 @@ const executeCommandUtilityBlock = async (
   const acceptedExitCodes = checkMode
     ? Array.from({ length: 256 }, (_, index) => index)
     : (utility.acceptedExitCodes ?? [0]);
+  const timeoutMs = getUtilityTimeoutMs(
+    utility,
+    checkMode
+      ? DEFAULT_RALPH_UTILITY_CHECK_TIMEOUT_MS
+      : DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS,
+  );
+  const deadline = Date.now() + timeoutMs;
+  const nativeVerification =
+    checkMode &&
+    !!utility.verificationRole &&
+    /(?:\bcargo\s|run-cargo\.mjs)/u.test(command);
+  const cargoTarget = nativeVerification
+    ? resolve(
+        cwd,
+        utility.env?.CARGO_TARGET_DIR ??
+          process.env.CARGO_TARGET_DIR ??
+          "target/ralph-verification",
+      )
+    : undefined;
+  let verificationLock: RalphFileMutationLock | undefined;
 
   try {
+    if (cargoTarget) {
+      while (!verificationLock) {
+        signal?.throwIfAborted();
+        if (Date.now() >= deadline) {
+          throw new Error(
+            "Native verification timed out waiting for another check to release its build artifacts.",
+          );
+        }
+        try {
+          verificationLock = await acquireRalphFileMutationLock(
+            join(cargoTarget, ".verification"),
+            context?.runId ?? operationId ?? randomUUID(),
+          );
+        } catch (error) {
+          if (!(error instanceof RalphMutationLeaseActiveError)) {
+            throw error;
+          }
+          await delay(0.25, signal);
+        }
+      }
+    }
     const result = await executeLocalCommand(
       invocation.executable,
       invocation.args,
       {
         cwd,
-        timeoutMs: getUtilityTimeoutMs(
-          utility,
-          checkMode
-            ? DEFAULT_RALPH_UTILITY_CHECK_TIMEOUT_MS
-            : DEFAULT_RALPH_UTILITY_COMMAND_TIMEOUT_MS,
-        ),
+        timeoutMs: Math.max(1, deadline - Date.now()),
         maxBufferBytes:
           utility.maxOutputBytes ?? DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES,
         acceptedExitCodes,
         ...(signal ? { signal } : {}),
-        ...(utility.env || operationId
+        ...(utility.env || operationId || cargoTarget
           ? {
               env: {
                 ...process.env,
                 ...(utility.env ?? {}),
+                ...(cargoTarget ? { CARGO_TARGET_DIR: cargoTarget } : {}),
                 ...(operationId ? { RALPH_OPERATION_ID: operationId } : {}),
               },
             }
@@ -5889,6 +5894,8 @@ const executeCommandUtilityBlock = async (
       return createUtilityResult(block, "INCONCLUSIVE", summary, data);
     }
     return createUtilityResult(block, "ERROR", summary, data);
+  } finally {
+    await verificationLock?.release();
   }
 };
 
@@ -6250,7 +6257,27 @@ const executeAppendJsonlUtilityBlock = async (
       config.workspaceRoot,
     );
     mutationLock = await acquireRalphFileMutationLock(path, context.runId);
-    const json = getWritableJsonInput(utility, context);
+    const input = getWritableJsonInput(utility, context);
+    const cause =
+      utility.workOutcome &&
+      utility.workOutcome !== "DONE" &&
+      utility.workOutcome !== "STOP"
+        ? findRalphExecutionCause(
+            context.executionHistory ?? [...context.resultsByBlock.values()],
+          )
+        : undefined;
+    const json =
+      utility.workOutcome && isRecord(input)
+        ? {
+            ...input,
+            at:
+              context.operationLedger?.get(context.currentOperationId ?? "")
+                ?.startedAt ?? createLogTimestamp(),
+            runId: context.runId,
+            blockId: block.id,
+            ...(cause ? { cause } : {}),
+          }
+        : input;
     const validation = validateUtilityJsonValue(json, utility.schema);
 
     if (!validation.valid) {
@@ -6287,10 +6314,7 @@ const executeAppendJsonlUtilityBlock = async (
             `Invalid APPEND_JSONL operation ledger at ${ledgerPath}.`,
           );
         }
-        if (parsedLedger.source === "unversioned") {
-          await writeJsonAtomically(ledgerPath, parsedLedger.ledger);
-        }
-        operations = parsedLedger.ledger.operations;
+        operations = parsedLedger.operations;
       }
       const prior = operations[operationId];
       if (prior?.state === "completed") {
@@ -6454,54 +6478,6 @@ const executeAppendJsonlUtilityBlock = async (
   }
 };
 
-interface JsonlEntry {
-  line: number;
-  value: unknown;
-}
-
-const readJsonlEntries = async (
-  path: string,
-): Promise<{
-  entries: JsonlEntry[];
-  invalid: Array<{ line: number; error: string }>;
-}> => {
-  const content = await readFile(path, "utf8");
-  const entries: JsonlEntry[] = [];
-  const invalid: Array<{ line: number; error: string }> = [];
-
-  content.split(/\r?\n/u).forEach((line, index) => {
-    const trimmed = line.trim();
-
-    if (!trimmed) {
-      return;
-    }
-
-    try {
-      entries.push({ line: index + 1, value: parseStrictJsonText(trimmed) });
-    } catch (error) {
-      invalid.push({
-        line: index + 1,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  });
-
-  return { entries, invalid };
-};
-
-const validateJsonlEntries = (
-  entries: readonly JsonlEntry[],
-  schema: unknown,
-): JsonSchemaValidationResult => {
-  const errors = entries.flatMap((entry) =>
-    validateUtilityJsonValue(entry.value, schema).errors.map(
-      (error) => `line ${entry.line}: ${error}`,
-    ),
-  );
-
-  return { valid: errors.length === 0, errors };
-};
-
 const executeReadJsonlUtilityBlock = async (
   block: RalphUtilityBlock,
   utility: RalphUtilityConfig,
@@ -6520,7 +6496,10 @@ const executeReadJsonlUtilityBlock = async (
   const path = resolveUtilityPath(rawPath, config.workspaceRoot);
 
   try {
-    const { entries, invalid } = await readJsonlEntries(path);
+    const { entries, invalid, totalCount, validation } = await queryRalphJsonl(path, {
+      ...(typeof utility.maxResults === "number" ? { maxResults: utility.maxResults } : {}),
+      validate: (value) => validateUtilityJsonValue(value, utility.schema).errors,
+    });
 
     if (invalid.length > 0) {
       return createUtilityResult(
@@ -6531,7 +6510,6 @@ const executeReadJsonlUtilityBlock = async (
       );
     }
 
-    const validation = validateJsonlEntries(entries, utility.schema);
     if (!validation.valid) {
       return createUtilityResult(
         block,
@@ -6541,11 +6519,7 @@ const executeReadJsonlUtilityBlock = async (
       );
     }
 
-    const limit =
-      typeof utility.maxResults === "number" && utility.maxResults >= 0
-        ? utility.maxResults
-        : entries.length;
-    const selectedEntries = entries.slice(0, limit);
+    const selectedEntries = entries;
     const output = selectedEntries.length > 0 ? "SUCCESS" : "EMPTY";
 
     return createUtilityResult(
@@ -6557,7 +6531,7 @@ const executeReadJsonlUtilityBlock = async (
       {
         path,
         count: selectedEntries.length,
-        totalCount: entries.length,
+        totalCount,
         entries: selectedEntries.map((entry) => entry.value),
         lineNumbers: selectedEntries.map((entry) => entry.line),
         validation,
@@ -6598,7 +6572,12 @@ const executeQueryJsonlUtilityBlock = async (
   const path = resolveUtilityPath(rawPath, config.workspaceRoot);
 
   try {
-    const { entries, invalid } = await readJsonlEntries(path);
+    const { entries, invalid, totalCount, validation } = await queryRalphJsonl(path, {
+      ...(typeof utility.maxResults === "number" ? { maxResults: utility.maxResults } : {}),
+      ...(utility.order ? { order: utility.order } : {}),
+      validate: (value) => validateUtilityJsonValue(value, utility.schema).errors,
+      matches: (value) => !utility.condition || evaluateRalphUtilityCondition(utility.condition, context, value),
+    });
 
     if (invalid.length > 0) {
       return createUtilityResult(
@@ -6609,7 +6588,6 @@ const executeQueryJsonlUtilityBlock = async (
       );
     }
 
-    const validation = validateJsonlEntries(entries, utility.schema);
     if (!validation.valid) {
       return createUtilityResult(
         block,
@@ -6619,24 +6597,7 @@ const executeQueryJsonlUtilityBlock = async (
       );
     }
 
-    const matchedEntries = utility.condition
-      ? entries.filter((entry) =>
-          evaluateRalphUtilityCondition(
-            utility.condition!,
-            context,
-            entry.value,
-          ),
-        )
-      : entries;
-    const limit =
-      typeof utility.maxResults === "number" && utility.maxResults >= 0
-        ? utility.maxResults
-        : matchedEntries.length;
-    const orderedEntries =
-      utility.order === "newest"
-        ? [...matchedEntries].reverse()
-        : matchedEntries;
-    const selectedEntries = orderedEntries.slice(0, limit);
+    const selectedEntries = entries;
     const output = selectedEntries.length > 0 ? "SUCCESS" : "EMPTY";
 
     return createUtilityResult(
@@ -6648,7 +6609,7 @@ const executeQueryJsonlUtilityBlock = async (
       {
         path,
         count: selectedEntries.length,
-        totalCount: entries.length,
+        totalCount,
         entries: selectedEntries.map((entry) => entry.value),
         lineNumbers: selectedEntries.map((entry) => entry.line),
         validation,
@@ -7992,6 +7953,33 @@ const executeMarkJsonTaskUtilityBlock = async (
       );
     }
 
+    const verifications =
+      requestedStatus === "completed"
+        ? candidates.map((candidate) =>
+            getRalphTaskVerification(
+              context.executionHistory ?? [...context.resultsByBlock.values()],
+              candidate,
+              utility.verificationBlockId,
+              { runId: context.runId, ...(context.currentOperationId ? { operationId: context.currentOperationId } : {}) },
+            ),
+          )
+        : [];
+    if (
+      requestedStatus === "completed" &&
+      verifications.some((evidence) => !evidence)
+    ) {
+      return createUtilityResult(
+        block,
+        "INVALID",
+        `${block.title} requires passing candidate verification after the task's latest state change.`,
+        {
+          path,
+          taskIds: candidates.map((candidate) => getJsonTaskId(candidate)!),
+          requestedStatus,
+        },
+      );
+    }
+
     let transitions: ReturnType<typeof transitionRalphWorkItemState>[];
     try {
       transitions = candidates.map((candidate) =>
@@ -8029,6 +8017,11 @@ const executeMarkJsonTaskUtilityBlock = async (
         });
       }
       if (transition.to === "completed") {
+        candidate.verification = {
+          ...verifications[index],
+          runId: context.runId,
+          operationId: context.currentOperationId,
+        };
         candidate.completedAt = now;
         delete candidate.deferredAt;
         delete candidate.nextEligibleAt;
@@ -8567,7 +8560,11 @@ const executeLoopCounterUtilityBlock = async (
           return !Number.isFinite(updatedAt) || updatedAt >= retentionCutoff;
         })
         .slice(-10_000);
-      counters[name] = Object.fromEntries(retainedEntries);
+      if (retainedEntries.length === 0) {
+        delete counters[name];
+      } else {
+        counters[name] = Object.fromEntries(retainedEntries);
+      }
     }
     const group = isRecord(counters[counterName])
       ? { ...counters[counterName] }
@@ -8594,8 +8591,11 @@ const executeLoopCounterUtilityBlock = async (
       count,
       updatedAt: new Date().toISOString(),
     };
+    delete counters[counterName];
     counters[counterName] = group;
-    await writeUtilityJsonOutput(path, { counters });
+    await writeUtilityJsonOutput(path, {
+      counters: Object.fromEntries(Object.entries(counters).slice(-10_000)),
+    });
 
     return createUtilityResult(
       block,
@@ -8627,9 +8627,14 @@ const getScopeRegistryFlowAlias = (utility: RalphUtilityConfig): string => {
 const getScopeRegistryStrategy = (
   utility: RalphUtilityConfig,
 ): RalphScopeSelectionStrategy => {
-  return (
-    normalizeRalphScopeSelectionStrategy(utility.strategy) ?? "round-robin"
-  );
+  if (utility.strategy === undefined) {
+    return "round-robin";
+  }
+  const strategy = normalizeRalphScopeSelectionStrategy(utility.strategy);
+  if (!strategy) {
+    throw new Error(`Invalid scope selection strategy: ${utility.strategy}`);
+  }
+  return strategy;
 };
 
 const resolveScopeRegistryUtilityPath = async (
@@ -11153,7 +11158,7 @@ const executeChangeScopeGuardUtilityBlock = async (
     if (rules.paths.length === 0 && rules.globs.length === 0) {
       return createUtilityResult(
         block,
-        "IN_SCOPE",
+        "ADVISORY",
         `${block.title} found no configured scope restrictions.`,
         {
           cwd,
@@ -11186,7 +11191,11 @@ const executeChangeScopeGuardUtilityBlock = async (
       .map((file) => file.path);
     const isEnforced = utility.enforce === true;
     const output =
-      outOfScopeFiles.length > 0 && isEnforced ? "OUT_OF_SCOPE" : "IN_SCOPE";
+      outOfScopeFiles.length > 0
+        ? isEnforced
+          ? "OUT_OF_SCOPE"
+          : "ADVISORY"
+        : "IN_SCOPE";
     const blockingOutOfScopeFiles = isEnforced ? outOfScopeFiles : [];
     const advisoryOutOfScopeFiles = isEnforced ? [] : outOfScopeFiles;
 
@@ -11196,7 +11205,7 @@ const executeChangeScopeGuardUtilityBlock = async (
       outOfScopeFiles.length > 0
         ? isEnforced
           ? `${block.title} found ${outOfScopeFiles.length} out-of-scope file(s).`
-          : `${block.title} confirmed scoped flow can continue and recorded ${outOfScopeFiles.length} unrelated workspace file(s).`
+          : `${block.title} could not establish scope for ${outOfScopeFiles.length} file(s).`
         : `${block.title} confirmed changed files stay in scope.`,
       {
         cwd,
@@ -11280,61 +11289,6 @@ const createPackageScriptCommand = (
     : `${packageManager} ${scriptName}`;
 };
 
-const PROJECT_COMMAND_MANIFESTS = [
-  "package.json",
-  "Cargo.toml",
-  "pyproject.toml",
-  "go.mod",
-] as const;
-
-const getExistingDirectoryForProjectCommandDetection = async (
-  path: string,
-): Promise<string> => {
-  const metadata = await stat(path).catch(() => null);
-
-  if (metadata?.isFile()) {
-    return dirname(path);
-  }
-
-  if (metadata?.isDirectory()) {
-    return path;
-  }
-
-  return path;
-};
-
-const findProjectCommandRoot = async (
-  requestedRootPath: string,
-  workspaceRoot: string,
-): Promise<string> => {
-  const normalizedWorkspaceRoot = resolve(workspaceRoot);
-  let currentPath = resolve(
-    await getExistingDirectoryForProjectCommandDetection(requestedRootPath),
-  );
-
-  while (isResolvedPathInsideWorkspace(currentPath, normalizedWorkspaceRoot)) {
-    if (
-      PROJECT_COMMAND_MANIFESTS.some((manifest) =>
-        existsSync(join(currentPath, manifest)),
-      )
-    ) {
-      return currentPath;
-    }
-
-    if (currentPath === normalizedWorkspaceRoot) {
-      break;
-    }
-
-    const parentPath = dirname(currentPath);
-    if (parentPath === currentPath) {
-      break;
-    }
-    currentPath = parentPath;
-  }
-
-  return resolve(requestedRootPath);
-};
-
 const executeDetectProjectCommandsUtilityBlock = async (
   block: RalphUtilityBlock,
   utility: RalphUtilityConfig,
@@ -11354,7 +11308,7 @@ const executeDetectProjectCommandsUtilityBlock = async (
       );
     }
 
-    const rootPath = await findProjectCommandRoot(
+    const { rootPath, pythonScope } = await findRalphProjectCommandRoot(
       requestedRootPath,
       config.workspaceRoot,
     );
@@ -11392,7 +11346,7 @@ const executeDetectProjectCommandsUtilityBlock = async (
     let targetUrl: string | undefined;
     const packageJsonPath = join(rootPath, "package.json");
 
-    if (existsSync(packageJsonPath)) {
+    if (!pythonScope && existsSync(packageJsonPath)) {
       const packageJson = await readJsonFile(packageJsonPath);
       if (isRecord(packageJson)) {
         manifests.push("package.json");
@@ -11455,41 +11409,59 @@ const executeDetectProjectCommandsUtilityBlock = async (
       }
     }
 
-    if (existsSync(join(rootPath, "Cargo.toml"))) {
+    const nativeRunnerPath = join(rootPath, "..", "scripts", "run-cargo.mjs");
+    const cargo = existsSync(nativeRunnerPath)
+      ? `node ${quoteRalphCommandArgument(nativeRunnerPath)} `
+      : "cargo ";
+    if (!pythonScope && existsSync(join(rootPath, "Cargo.toml"))) {
       manifests.push("Cargo.toml");
       commands.push(
         {
           kind: "typecheck",
-          command: "cargo check",
+          command: `${cargo}check --locked`,
           source: "Cargo.toml",
           confidence: "high",
         },
         {
           kind: "build",
-          command: "cargo build",
+          command: `${cargo}build --locked`,
           source: "Cargo.toml",
           confidence: "high",
         },
         {
           kind: "test",
-          command: "cargo test",
+          command: `${cargo}test --locked --lib`,
           source: "Cargo.toml",
           confidence: "high",
         },
       );
     }
 
-    if (existsSync(join(rootPath, "pyproject.toml"))) {
-      manifests.push("pyproject.toml");
-      commands.push({
-        kind: "test",
-        command: "python -m pytest",
-        source: "pyproject.toml",
-        confidence: "medium",
-      });
+    let pythonCommand: string | undefined;
+    if (pythonScope || existsSync(join(rootPath, "pyproject.toml"))) {
+      if (existsSync(join(rootPath, "pyproject.toml"))) {
+        manifests.push("pyproject.toml");
+      }
+      pythonCommand = await resolveRalphPythonCommand(
+        rootPath,
+        config.workspaceRoot,
+      );
+      const pythonTestCommand = await detectRalphPythonTestCommand(
+        pythonScope ?? rootPath,
+        rootPath,
+        pythonCommand,
+      );
+      if (pythonTestCommand) {
+        commands.push({
+          kind: "test",
+          command: pythonTestCommand,
+          source: pythonScope ?? "pyproject.toml",
+          confidence: "medium",
+        });
+      }
     }
 
-    if (existsSync(join(rootPath, "go.mod"))) {
+    if (!pythonScope && existsSync(join(rootPath, "go.mod"))) {
       manifests.push("go.mod");
       commands.push(
         {
@@ -11532,26 +11504,31 @@ const executeDetectProjectCommandsUtilityBlock = async (
           : verificationCommands.slice(0, 1);
     let standardVerificationCommands = [
       ...typecheckCommands,
-      ...(lintCommands.length > 0 ? lintCommands : testCommands.slice(0, 1)),
+      ...lintCommands,
+      ...testCommands.slice(0, 1),
     ];
     let broadVerificationCommands = verificationCommands;
     const cargoOnly = manifests.length === 1 && manifests[0] === "Cargo.toml";
     if (cargoOnly) {
-      standardVerificationCommands = ["cargo test"];
-      broadVerificationCommands = ["cargo test --all-targets"];
+      standardVerificationCommands = [`${cargo}test --locked --lib`];
+      broadVerificationCommands = [`${cargo}test --locked --lib`];
     } else if (manifests.includes("Cargo.toml")) {
-      if (!standardVerificationCommands.includes("cargo test")) {
-        standardVerificationCommands.push("cargo test");
+      if (
+        !standardVerificationCommands.includes(`${cargo}test --locked --lib`)
+      ) {
+        standardVerificationCommands.push(`${cargo}test --locked --lib`);
       }
-      broadVerificationCommands = broadVerificationCommands
-        .filter((command) => command !== "cargo check")
-        .map((command) =>
-          command === "cargo test" ? "cargo test --all-targets" : command,
-        );
+      broadVerificationCommands = broadVerificationCommands.filter(
+        (command) => command !== `${cargo}check --locked`,
+      );
     }
     const data = {
       rootPath,
       requestedRootPath,
+      ...(manifests.includes("Cargo.toml")
+        ? { nativeCargoCommand: cargo.trim() }
+        : {}),
+      ...(pythonCommand ? { pythonCommand } : {}),
       ...(repositoryContext ? { repositoryContext } : {}),
       ...(repositoryBaseline ? { repositoryBaseline } : {}),
       manifests,
@@ -12214,6 +12191,11 @@ const executeFinalReportUtilityBlock = async (
       );
     }
 
+    if (context.finalReports) {
+      context.finalReports = context.finalReports.filter(
+        (artifact) => artifact.block.id !== block.id,
+      );
+    }
     context.finalReports?.push({
       flow,
       block,
@@ -14344,6 +14326,12 @@ const updateResultContext = (
   context.runLog.push(
     `${result.blockId}: ${result.output} - ${result.summary}`,
   );
+  if (context.runLog.length > MAX_RALPH_CHECKPOINT_LOG_ENTRIES) {
+    context.runLog.splice(
+      0,
+      context.runLog.length - MAX_RALPH_CHECKPOINT_LOG_ENTRIES,
+    );
+  }
 };
 
 const normalizeComparableRepositoryPath = (value: string): string => {
@@ -15453,6 +15441,7 @@ const runRalphFlowImpl = async (
     try {
       const persistedHistory = await readRalphExecutionHistoryResults(
         logger?.paths,
+        MAX_RALPH_CHECKPOINT_BLOCK_RESULTS,
       );
       if (persistedHistory.length > runResult.blockResults.length) {
         runResult.blockResults = persistedHistory;
@@ -15865,11 +15854,14 @@ const runRalphFlowImpl = async (
     );
   }
 
-  const events: RalphRunEvent[] = checkpoint ? [...checkpoint.events] : [];
+  const events: RalphRunEvent[] = checkpoint
+    ? checkpoint.events.slice(-MAX_RALPH_CHECKPOINT_EVENTS)
+    : [];
   let persistedExecutionHistory: RalphBlockExecutionResult[];
   try {
     persistedExecutionHistory = await readRalphExecutionHistoryResults(
       logger?.paths,
+      MAX_RALPH_CHECKPOINT_BLOCK_RESULTS,
     );
   } catch (error) {
     markDurabilityDegraded(error);
@@ -16757,6 +16749,17 @@ const runRalphFlowImpl = async (
     if (appendResultToHistory) {
       blockResults.push(result);
       historyByOperationId.set(operationId, result);
+      if (blockResults.length > MAX_RALPH_CHECKPOINT_BLOCK_RESULTS) {
+        const removed = blockResults.splice(
+          0,
+          blockResults.length - MAX_RALPH_CHECKPOINT_BLOCK_RESULTS,
+        );
+        for (const previous of removed) {
+          if (previous.operationId) {
+            historyByOperationId.delete(previous.operationId);
+          }
+        }
+      }
     }
     resultContext.operationLedger?.set(operationId, {
       id: operationId,
@@ -16768,6 +16771,26 @@ const runRalphFlowImpl = async (
       output: result.output,
       summary: result.summary,
     });
+    if (
+      resultContext.operationLedger &&
+      resultContext.operationLedger.size > MAX_RALPH_OPERATION_LEDGER_ENTRIES
+    ) {
+      for (const [id, entry] of resultContext.operationLedger) {
+        if (
+          resultContext.operationLedger.size <=
+          MAX_RALPH_OPERATION_LEDGER_ENTRIES
+        ) {
+          break;
+        }
+        if (
+          entry.state === "completed" ||
+          entry.state === "reconciled" ||
+          entry.state === "routed"
+        ) {
+          resultContext.operationLedger.delete(id);
+        }
+      }
+    }
     updateResultContext(resultContext, result);
     let progressAssessment =
       autonomyMetadata && block.type !== "END" && resultContext.progress

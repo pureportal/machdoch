@@ -3480,7 +3480,7 @@ describe("runRalphFlow", () => {
         for (const [index, failure] of failures.entries()) {
           expect(failure.persistenceError).toBeUndefined();
           expect(failure.evidencePath).toContain(
-            join(logger.paths!.directory, "json-attempts"),
+            join(await realpath(logger.paths!.directory), "json-attempts"),
           );
           const savedText = await readFile(failure.evidencePath!, "utf8");
           expect(savedText).not.toContain(secret);
@@ -3576,7 +3576,7 @@ describe("runRalphFlow", () => {
         runId: "json-evidence-write",
       });
       await writeFile(
-        join(logger.paths!.directory, "json-attempts"),
+        join(await realpath(logger.paths!.directory), "json-attempts"),
         "blocked",
         "utf8",
       );
@@ -4525,7 +4525,7 @@ describe("runRalphFlow", () => {
     }
   });
 
-  it("accepts an exact process failure reproduced from the frozen baseline", async () => {
+  it("defers an exact process failure reproduced from the frozen baseline", async () => {
     const workspace = await mkdtemp(
       join(tmpdir(), "ralph-inconclusive-checkpoint-"),
     );
@@ -4575,7 +4575,7 @@ describe("runRalphFlow", () => {
         {
           id: "candidate-done",
           from: "candidate",
-          fromOutput: "SUCCESS",
+          fromOutput: "INCONCLUSIVE",
           to: "done",
         },
       ],
@@ -4593,7 +4593,7 @@ describe("runRalphFlow", () => {
       );
 
       expect(candidate).toMatchObject({
-        output: "SUCCESS",
+        output: "INCONCLUSIVE",
         data: {
           verification: {
             comparison: { disposition: "BASELINE_EQUIVALENT_FAILURE" },
@@ -5339,15 +5339,7 @@ describe("runRalphFlow", () => {
               "if (-not $? -or ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0)) { if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; exit 1 }",
             ].join("; ")
           : "pnpm typecheck";
-      const expectedStandardVerificationCommand =
-        process.platform === "win32"
-          ? [
-              "pnpm typecheck",
-              "if (-not $? -or ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0)) { if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; exit 1 }",
-              "pnpm lint",
-              "if (-not $? -or ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0)) { if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; exit 1 }",
-            ].join("; ")
-          : "pnpm typecheck && pnpm lint";
+      const expectedStandardVerificationCommand = expectedVerificationCommand;
 
       expect(result.status).toBe("completed");
       expect(
@@ -5370,7 +5362,7 @@ describe("runRalphFlow", () => {
     }
   });
 
-  it("keeps Cargo verification tiers distinct", async () => {
+  it("uses compilation for focused Cargo checks and library tests for behavioral checks", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-cargo-commands-"));
 
     try {
@@ -5423,8 +5415,8 @@ describe("runRalphFlow", () => {
       expect(focused).not.toContain("cargo test");
       expect(standard).toContain("cargo test");
       expect(standard).not.toContain("--all-targets");
-      expect(broad).toContain("cargo test --all-targets");
-      expect(new Set([focused, standard, broad]).size).toBe(3);
+      expect(broad).toContain("cargo test --locked --lib");
+      expect(new Set([focused, standard, broad]).size).toBe(2);
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -5629,7 +5621,7 @@ describe("runRalphFlow", () => {
               {
                 id: "guard-to-success",
                 from: "scope-guard",
-                fromOutput: "IN_SCOPE",
+                fromOutput: "ADVISORY",
                 to: "success",
               },
               {
@@ -5650,7 +5642,7 @@ describe("runRalphFlow", () => {
           expect.arrayContaining([
             expect.objectContaining({
               blockId: "scope-guard",
-              output: "IN_SCOPE",
+              output: "ADVISORY",
               data: expect.objectContaining({
                 enforcement: "advisory",
                 outOfScopeFiles: [],
@@ -6400,7 +6392,7 @@ describe("runRalphFlow", () => {
     GIT_SCOPE_GUARD_TEST_TIMEOUT_MS,
   );
 
-  it("rejects version 1 scope registries without inferring outcome labels", async () => {
+  it("rejects invalid scope outcomes without inferring their meaning", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-registry-"));
     const registryPath =
       ".machdoch/ralph/scope-registry/test-flow.scope-registry.json";
@@ -6422,8 +6414,6 @@ describe("runRalphFlow", () => {
       await writeFile(
         persistedRegistryPath,
         JSON.stringify({
-          schema: "machdoch.ralph.scopeRegistry",
-          schemaVersion: 1,
           flowAlias: "test-flow",
           updatedAt: "2026-06-25T10:00:00.000Z",
           selection: {
@@ -6551,10 +6541,12 @@ describe("runRalphFlow", () => {
       );
       const registry = JSON.parse(
         await readFile(persistedRegistryPath, "utf8"),
-      ) as { schemaVersion: number };
+      ) as { scopes: Array<{ lastOutcome: string }> };
 
       expect(result.status).toBe("crashed");
-      expect(registry.schemaVersion).toBe(1);
+      expect(registry.scopes[0]?.lastOutcome).toBe(
+        "DEFERRED_AFTER_BOUNDED_REPAIR",
+      );
       expect(result.blockResults).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -6565,7 +6557,7 @@ describe("runRalphFlow", () => {
             blockId: "update-registry",
             output: "ERROR",
             error: expect.stringContaining(
-              "Expected a supported Ralph scope registry schema.",
+              "Expected a valid persisted Ralph scope outcome.",
             ),
           }),
         ]),
@@ -9798,7 +9790,7 @@ describe("runRalphFlow", () => {
     }
   });
 
-  it("upgrades an unversioned APPEND_JSONL ledger before reconciling a completed operation", async () => {
+  it("rejects an unversioned APPEND_JSONL ledger without rewriting it", async () => {
     const workspace = await mkdtemp(
       join(tmpdir(), "ralph-append-ledger-upgrade-"),
     );
@@ -9886,15 +9878,14 @@ describe("runRalphFlow", () => {
         await readFile(`${path}.ralph-operations.json`, "utf8"),
       ) as { schemaVersion?: number };
 
-      expect(result.status).toBe("completed");
+      expect(result.status).toBe("blocked");
       await expect(readFile(path, "utf8")).resolves.toBe(intended);
-      expect(ledger.schemaVersion).toBe(1);
+      expect(ledger.schemaVersion).toBeUndefined();
       expect(
         result.blockResults.find((entry) => entry.blockId === "append"),
       ).toMatchObject({
         operationId,
-        output: "SUCCESS",
-        data: expect.objectContaining({ reconciled: true }),
+        output: "ERROR",
       });
     } finally {
       await rm(workspace, { recursive: true, force: true });
@@ -10208,6 +10199,29 @@ describe("runRalphFlow", () => {
           },
         },
         {
+          id: "baseline",
+          type: "UTILITY",
+          title: "Baseline",
+          utility: {
+            type: "RUN_CHECK",
+            command: "node --version",
+            verificationRole: "baseline",
+            verificationPlanId: "task-tests",
+          },
+        },
+        {
+          id: "candidate",
+          type: "UTILITY",
+          title: "Candidate",
+          utility: {
+            type: "RUN_CHECK",
+            command: "node --version",
+            verificationRole: "candidate",
+            verificationPlanId: "task-tests",
+            baselineBlockId: "baseline",
+          },
+        },
+        {
           id: "mark-complete",
           type: "UTILITY",
           title: "Mark complete",
@@ -10246,6 +10260,18 @@ describe("runRalphFlow", () => {
         {
           id: "mark-verifying-complete",
           from: "mark-verifying",
+          fromOutput: "SUCCESS",
+          to: "baseline",
+        },
+        {
+          id: "baseline-candidate",
+          from: "baseline",
+          fromOutput: "SUCCESS",
+          to: "candidate",
+        },
+        {
+          id: "candidate-complete",
+          from: "candidate",
           fromOutput: "SUCCESS",
           to: "mark-complete",
         },
@@ -10615,6 +10641,18 @@ describe("runRalphFlow", () => {
               id: "task-1",
               status: "completed",
               stateHistory,
+              selectedAt: now,
+              completedAt: now,
+              verification: {
+                runId,
+                operationId: "pending-mark",
+                blockId: "candidate",
+                planId: "task-tests",
+                command: "node --version",
+                cwd: workspace,
+                fingerprint: "a".repeat(64),
+                verifiedAt: now,
+              },
             },
           ],
         }),

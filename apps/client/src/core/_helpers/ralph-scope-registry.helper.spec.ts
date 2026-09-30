@@ -16,8 +16,6 @@ import {
 
 const createEvidence = (): RalphScopeEvidenceDocument => {
   return {
-    schema: "machdoch.ralph.scopeEvidence",
-    schemaVersion: 2,
     generatedAt: "2026-06-25T10:00:00.000Z",
     workspaceRoot: "/workspace",
     rootPath: ".",
@@ -263,10 +261,12 @@ describe("Ralph scope registry helpers", () => {
           forceNew: true,
         }).scope?.id,
       ).toBe(trackedScope.id);
-      expect(assessRalphScopeRegistryAvailability(staleRegistry)).toMatchObject({
-        activeScopeCount: 1,
-        selectableScopeCount: 1,
-      });
+      expect(assessRalphScopeRegistryAvailability(staleRegistry)).toMatchObject(
+        {
+          activeScopeCount: 1,
+          selectableScopeCount: 1,
+        },
+      );
 
       const refreshed = updateRalphScopeRegistryFromEvidence(
         staleRegistry,
@@ -342,18 +342,6 @@ describe("Ralph scope registry helpers", () => {
         { flowAlias: "test-flow", strategy: "risk-first" },
       ),
     ).toThrow("Expected a valid Ralph scope selection strategy.");
-    expect(() =>
-      parseRalphScopeRegistry(
-        { ...registry, schemaVersion: 3 },
-        { flowAlias: "test-flow", strategy: "risk-first" },
-      ),
-    ).toThrow("Expected a supported Ralph scope registry schema.");
-    expect(() =>
-      parseRalphScopeRegistry(
-        { ...registry, schemaVersion: 1 },
-        { flowAlias: "test-flow", strategy: "risk-first" },
-      ),
-    ).toThrow("Expected a supported Ralph scope registry schema.");
     expect(() =>
       parseRalphScopeRegistry(
         {
@@ -612,14 +600,13 @@ describe("Ralph scope registry helpers", () => {
       assessRalphScopeRegistryAvailability(exhausted, {
         now: "2026-06-25T10:02:00.000Z",
       }).status,
-    ).toBe("exhausted");
+    ).toBe("deferred");
   });
 
   it("advances a lifie-style completed UI scope only after it is marked", () => {
     const registry = parseRalphScopeRegistry(
       {
         schema: "machdoch.ralph.scopeRegistry",
-        schemaVersion: 2,
         flowAlias: "autonomous-ui-improvement-loop",
         selection: {
           strategy: "round-robin",
@@ -705,7 +692,6 @@ describe("Ralph scope registry helpers", () => {
     const registry = parseRalphScopeRegistry(
       {
         schema: "machdoch.ralph.scopeRegistry",
-        schemaVersion: 2,
         flowAlias: "autonomous-ui-improvement-loop",
         selection: {
           strategy: "ui-first",
@@ -781,7 +767,6 @@ describe("Ralph scope registry helpers", () => {
     const registry = parseRalphScopeRegistry(
       {
         schema: "machdoch.ralph.scopeRegistry",
-        schemaVersion: 2,
         flowAlias: "autonomous-code-improvement-loop",
         selection: {
           strategy: "start-to-end",

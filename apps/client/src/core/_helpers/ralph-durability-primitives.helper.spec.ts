@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -28,14 +35,21 @@ describe("Ralph durability primitives", () => {
         acquireRalphFileMutationLock(target, "second"),
       ]);
       const acquired = attempts.filter(
-        (attempt): attempt is PromiseFulfilledResult<Awaited<ReturnType<typeof acquireRalphFileMutationLock>>> =>
-          attempt.status === "fulfilled",
+        (
+          attempt,
+        ): attempt is PromiseFulfilledResult<
+          Awaited<ReturnType<typeof acquireRalphFileMutationLock>>
+        > => attempt.status === "fulfilled",
       );
-      const rejected = attempts.filter((attempt) => attempt.status === "rejected");
+      const rejected = attempts.filter(
+        (attempt) => attempt.status === "rejected",
+      );
 
       expect(acquired).toHaveLength(1);
       expect(rejected).toHaveLength(1);
-      await expect(acquired[0]!.value.assertOwnership()).resolves.toBeUndefined();
+      await expect(
+        acquired[0]!.value.assertOwnership(),
+      ).resolves.toBeUndefined();
       await acquired[0]!.value.release();
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -58,7 +72,9 @@ describe("Ralph durability primitives", () => {
 
       await expect(readFile(lockPath, "utf8")).resolves.toBe(replacement);
       await second.release();
-      await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(readFile(lockPath, "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -69,9 +85,9 @@ describe("Ralph durability primitives", () => {
     const ownerGroupId = "owner-1";
     const groupedTarget = join(directory, "grouped.json");
     const incidentalTarget = join(directory, "incidental.json");
-    let incidentalLock: Awaited<
-      ReturnType<typeof acquireRalphFileMutationLock>
-    > | undefined;
+    let incidentalLock:
+      | Awaited<ReturnType<typeof acquireRalphFileMutationLock>>
+      | undefined;
 
     try {
       await acquireRalphFileMutationLock(
@@ -87,7 +103,9 @@ describe("Ralph durability primitives", () => {
 
       await releaseActiveRalphFileMutationLocks(ownerGroupId);
 
-      await expect(readFile(`${groupedTarget}.ralph.lock`, "utf8")).rejects.toMatchObject({
+      await expect(
+        readFile(`${groupedTarget}.ralph.lock`, "utf8"),
+      ).rejects.toMatchObject({
         code: "ENOENT",
       });
       await expect(
@@ -95,6 +113,46 @@ describe("Ralph durability primitives", () => {
       ).resolves.toContain(`unrelated:${ownerGroupId}`);
     } finally {
       await incidentalLock?.release();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("retains a bounded history tail while validating earlier records", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ralph-history-bounded-"));
+    const paths = createPaths(directory);
+    const records = Array.from({ length: 12 }, (_, index) =>
+      JSON.stringify({
+        kind: "block-result",
+        result: {
+          blockId: `block-${index}`,
+          operationId: `operation-${index}`,
+          output: "SUCCESS",
+          status: "completed",
+          attempt: 1,
+          summary: "Complete",
+        },
+      }),
+    );
+    try {
+      await writeFile(
+        join(directory, "execution-history.jsonl"),
+        `${records.join("\n")}\n`,
+        "utf8",
+      );
+      expect(
+        (await readRalphExecutionHistoryResults(paths, 3)).map(
+          (result) => result.blockId,
+        ),
+      ).toEqual(["block-9", "block-10", "block-11"]);
+      await writeFile(
+        join(directory, "execution-history.jsonl"),
+        `not-json\n${records.join("\n")}\n`,
+        "utf8",
+      );
+      await expect(readRalphExecutionHistoryResults(paths, 3)).rejects.toThrow(
+        "Corrupt Ralph execution history",
+      );
+    } finally {
       await rm(directory, { recursive: true, force: true });
     }
   });

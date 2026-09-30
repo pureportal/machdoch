@@ -118,6 +118,56 @@ const result = (
 });
 
 describe("RALPH evidence-based outcome", () => {
+  it("retains the concrete cause and retry condition when work is deferred", () => {
+    const outcome = deriveRalphRunOutcome({
+      flow,
+      lifecycleStatus: "blocked",
+      terminalBlockId: "defer",
+      autonomy,
+      blockResults: [
+        result("verify", "INCONCLUSIVE", {
+          diagnostic: {
+            category: "missing-libclang",
+            message: "libclang is unavailable",
+            retryCondition: "Install LLVM",
+          },
+        }),
+        result("report", "SUCCESS"),
+      ],
+    });
+    expect(outcome).toMatchObject({
+      status: "deferred",
+      verified: false,
+      reason: expect.stringContaining("libclang"),
+      nextAction: "Install LLVM",
+    });
+  });
+
+  it("does not accept advisory scope findings as positive evidence", () => {
+    const outcome = deriveRalphRunOutcome({
+      flow,
+      lifecycleStatus: "completed",
+      terminalBlockId: "done",
+      autonomy,
+      blockResults: [
+        result("diff", "SUCCESS", { changedFiles: ["src/a.ts"] }),
+        result("scope", "IN_SCOPE", {
+          advisoryOutOfScopeFiles: ["outside.ts"],
+        }),
+        result("verify", "SUCCESS", {
+          verification: {
+            role: "candidate",
+            comparison: { disposition: "PASSED" },
+          },
+        }),
+        result("report", "SUCCESS"),
+      ],
+    });
+    expect(outcome).toMatchObject({
+      status: "verification-inconclusive",
+      verified: false,
+    });
+  });
   it("fails closed when an autonomy flow omits the evidence contract", () => {
     const outcome = deriveRalphRunOutcome({
       flow: {

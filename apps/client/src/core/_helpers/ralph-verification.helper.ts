@@ -1,4 +1,10 @@
 import { createHash } from "node:crypto";
+import {
+  diagnoseRalphVerificationFailure,
+  diagnoseRalphEmptyVerification,
+  normalizeRalphFailureDiagnosticText,
+  type RalphVerificationDiagnostic,
+} from "./ralph-verification-diagnostics.helper.js";
 
 export type RalphVerificationDisposition =
   | "PASSED"
@@ -20,6 +26,7 @@ export interface RalphVerificationObservation {
   cwd: string;
   processOutcome: RalphVerificationProcessOutcome;
   outputFingerprint: string;
+  diagnostic?: RalphVerificationDiagnostic;
 }
 
 export interface RalphVerificationComparison {
@@ -60,9 +67,15 @@ export const createRalphVerificationObservation = (input: {
   executionError?: string;
   timedOut?: boolean;
 }): RalphVerificationObservation => {
+  const output = `${input.stdout ?? ""}\n${input.stderr ?? ""}\n${input.executionError ?? ""}`;
+  const emptyVerification = diagnoseRalphEmptyVerification(output);
+  const diagnostic =
+    input.exitCode !== 0
+      ? (diagnoseRalphVerificationFailure(output) ?? emptyVerification)
+      : emptyVerification;
   const processOutcome: RalphVerificationProcessOutcome = input.timedOut
     ? { kind: "timed-out" }
-    : input.executionError || input.exitCode === null
+    : input.executionError || input.exitCode === null || emptyVerification
       ? { kind: "execution-error" }
       : input.exitCode === 0
         ? { kind: "passed" }
@@ -72,10 +85,13 @@ export const createRalphVerificationObservation = (input: {
     command: input.command.trim(),
     cwd: normalizeCwd(input.cwd),
     processOutcome,
-    outputFingerprint: fingerprint({
-      stdout: input.stdout ?? "",
-      stderr: input.stderr ?? "",
-    }),
+    outputFingerprint: fingerprint(
+      diagnostic ?? {
+        stdout: normalizeRalphFailureDiagnosticText(input.stdout ?? ""),
+        stderr: normalizeRalphFailureDiagnosticText(input.stderr ?? ""),
+      },
+    ),
+    ...(diagnostic ? { diagnostic } : {}),
   };
 };
 
@@ -96,13 +112,13 @@ const isProcessOutcome = (
   return (
     record.kind === "failed" &&
     hasExactKeys(record, ["exitCode", "kind"]) &&
-      typeof record.exitCode === "number" &&
-      Number.isInteger(record.exitCode) &&
-      record.exitCode !== 0
+    typeof record.exitCode === "number" &&
+    Number.isInteger(record.exitCode) &&
+    record.exitCode !== 0
   );
 };
 
-const isObservation = (
+export const isRalphVerificationObservation = (
   value: unknown,
 ): value is RalphVerificationObservation => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -111,10 +127,11 @@ const isObservation = (
   const record = value as Record<string, unknown>;
   return (
     hasExactKeys(record, [
-    "command",
-    "cwd",
-    "outputFingerprint",
-    "processOutcome",
+      "command",
+      "cwd",
+      "outputFingerprint",
+      "processOutcome",
+      ...(record.diagnostic === undefined ? [] : ["diagnostic"]),
     ]) &&
     typeof record.command === "string" &&
     record.command.length > 0 &&
@@ -122,7 +139,18 @@ const isObservation = (
     record.cwd.length > 0 &&
     typeof record.outputFingerprint === "string" &&
     /^[a-f0-9]{64}$/u.test(record.outputFingerprint) &&
-    isProcessOutcome(record.processOutcome)
+    isProcessOutcome(record.processOutcome) &&
+    (record.diagnostic === undefined ||
+      (!!record.diagnostic &&
+        typeof record.diagnostic === "object" &&
+        hasExactKeys(record.diagnostic as Record<string, unknown>, [
+          "category",
+          "message",
+          "retryCondition",
+        ]) &&
+        Object.values(record.diagnostic).every(
+          (entry) => typeof entry === "string" && entry.length > 0,
+        )))
   );
 };
 
@@ -141,17 +169,24 @@ export const compareRalphVerificationObservations = (
         : "invalid",
   };
 
-  if (!isObservation(baseline) || !isObservation(candidate)) {
+  if (
+    !isRalphVerificationObservation(baseline) ||
+    !isRalphVerificationObservation(candidate)
+  ) {
     return {
       disposition: "INCONCLUSIVE",
       reason: "Baseline or candidate verification state was malformed.",
       ...common,
     };
   }
-  if (baseline.command !== candidate.command || baseline.cwd !== candidate.cwd) {
+  if (
+    baseline.command !== candidate.command ||
+    baseline.cwd !== candidate.cwd
+  ) {
     return {
       disposition: "INCONCLUSIVE",
-      reason: "Baseline and candidate used different commands or working directories.",
+      reason:
+        "Baseline and candidate used different commands or working directories.",
       ...common,
     };
   }
@@ -182,6 +217,13 @@ export const compareRalphVerificationObservations = (
       ...common,
     };
   }
+  if (candidate.diagnostic) {
+    return {
+      disposition: "ENVIRONMENT_UNAVAILABLE",
+      reason: `${candidate.diagnostic.message} ${candidate.diagnostic.retryCondition}`,
+      ...common,
+    };
+  }
   if (baseline.processOutcome.kind === "passed") {
     return {
       disposition: "REGRESSION",
@@ -196,14 +238,16 @@ export const compareRalphVerificationObservations = (
   ) {
     return {
       disposition: "BASELINE_EQUIVALENT_FAILURE",
-      reason: "The candidate reproduced the exact baseline process failure.",
+      reason:
+        "The candidate still fails the baseline command; matching failures do not establish that the changed code was verified.",
       ...common,
     };
   }
 
   return {
     disposition: "INCONCLUSIVE",
-    reason: "Both runs failed, but no authoritative structured evidence proves equivalence or regression.",
+    reason:
+      "Both runs failed, but no authoritative structured evidence proves equivalence or regression.",
     ...common,
   };
 };

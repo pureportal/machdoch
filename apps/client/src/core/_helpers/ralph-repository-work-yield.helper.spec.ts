@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assessRalphRepositoryWorkYield,
   resolveRalphCodeImprovementPlan,
+  resolveRalphVerificationCommand,
   resolveRalphVisualRuntime,
   type RalphRepositoryObservation,
   type RalphWorkSelectionIdentity,
@@ -111,6 +112,36 @@ describe("RALPH repository work yield", () => {
 });
 
 describe("RALPH deterministic starter transforms", () => {
+  it("uses task verification with the detected Python executable and explicit working directory", () => {
+    expect(
+      resolveRalphVerificationCommand({
+        selection: {
+          verificationCommand: "python -m unittest discover",
+          verificationCwd: "python",
+          verificationTier: "focused",
+          reviewTier: "standard",
+        },
+        commands: {
+          pythonCommand: "& 'C:/Python/python.exe'",
+          focusedVerificationCommand: "cargo check",
+          rootPath: "native",
+        },
+      }),
+    ).toMatchObject({
+      command: "& 'C:/Python/python.exe' -m unittest discover",
+      cwd: "python",
+      source: "task",
+    });
+    expect(() =>
+      resolveRalphVerificationCommand({
+        selection: { verificationCommand: "cargo test" },
+        commands: {},
+      }),
+    ).toThrow("working directory");
+    expect(() =>
+      resolveRalphVerificationCommand({ selection: {}, commands: {} }),
+    ).toThrow("No verification command");
+  });
   it("creates collision-safe improvement plan identities from structured task ids", () => {
     const resolve = (taskIds: string[]) =>
       resolveRalphCodeImprovementPlan({

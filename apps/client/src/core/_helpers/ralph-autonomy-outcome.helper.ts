@@ -7,6 +7,7 @@ import type {
 } from "../ralph.js";
 import type { RalphProgressState } from "./ralph-progress.helper.js";
 import type { RalphVerificationDisposition } from "./ralph-verification.helper.js";
+import { findRalphExecutionCause } from "./ralph-execution-cause.helper.js";
 
 export type RalphRunOutcomeStatus =
   | "succeeded"
@@ -86,36 +87,6 @@ const getRecordedWorkOutcome = (
       };
     }
   }
-  return undefined;
-};
-
-const BLOCKING_EXECUTION_OUTPUTS = new Set([
-  "ERROR",
-  "FAILED",
-  "INCONCLUSIVE",
-  "INVALID",
-  "NOT_FOUND",
-  "OUT_OF_SCOPE",
-  "TIMEOUT",
-]);
-
-const getBlockingCauseBefore = (
-  results: readonly RalphBlockExecutionResult[],
-  resultIndex: number,
-): { blockId: string; summary: string } | undefined => {
-  for (let index = resultIndex - 1; index >= 0; index -= 1) {
-    const result = results[index]!;
-    if (
-      result.status === "error" ||
-      BLOCKING_EXECUTION_OUTPUTS.has(result.output)
-    ) {
-      return {
-        blockId: result.blockId,
-        summary: result.error ?? result.summary,
-      };
-    }
-  }
-
   return undefined;
 };
 
@@ -258,9 +229,17 @@ const getScopeEvidence = (
       scopeBlockIds.has(result.blockId) &&
       (result.output === "IN_SCOPE" ||
         result.output === "OUT_OF_SCOPE" ||
+        result.output === "ADVISORY" ||
         result.output === "EMPTY")
     ) {
-      return { output: result.output, blockId: result.blockId };
+      const advisoryFiles = isRecord(result.data)
+        ? result.data.advisoryOutOfScopeFiles
+        : undefined;
+      const output =
+        Array.isArray(advisoryFiles) && advisoryFiles.length > 0
+          ? "ADVISORY"
+          : result.output;
+      return { output, blockId: result.blockId };
     }
   }
   return undefined;
@@ -351,10 +330,10 @@ export const deriveRalphRunOutcome = (input: {
       block.id === terminalBlockId && block.type === "END",
   );
   const recorded = getRecordedWorkOutcome(flow, blockResults);
-  const invalidCause =
-    recorded?.outcome === "INVALID"
-      ? getBlockingCauseBefore(blockResults, recorded.resultIndex)
-      : undefined;
+  const invalidCause = findRalphExecutionCause(
+    blockResults,
+    recorded?.resultIndex,
+  );
   const verification = getVerification(flow, blockResults);
   const graphChanges = getChangedFiles(flow, blockResults);
   const changes = repositoryEvidence
@@ -496,11 +475,13 @@ export const deriveRalphRunOutcome = (input: {
     return createOutcome(
       "deferred",
       autonomy?.deferred.at(-1)?.reason ??
+        invalidCause?.summary ??
         "Work was explicitly deferred with durable state.",
       {
         evidence,
         retryable: true,
         nextAction:
+          invalidCause?.retryCondition ??
           "Resume when the deferred prerequisite or retry condition is ready.",
       },
     );
@@ -540,7 +521,8 @@ export const deriveRalphRunOutcome = (input: {
     strict &&
     (verification?.disposition === "ENVIRONMENT_UNAVAILABLE" ||
       verification?.disposition === "TIMEOUT" ||
-      verification?.disposition === "INCONCLUSIVE")
+      verification?.disposition === "INCONCLUSIVE" ||
+      verification?.disposition === "BASELINE_EQUIVALENT_FAILURE")
   ) {
     return createOutcome(
       "verification-inconclusive",
@@ -682,12 +664,6 @@ export const deriveRalphRunOutcome = (input: {
       },
     );
   }
-  if (verification.disposition === "BASELINE_EQUIVALENT_FAILURE") {
-    limitations.push(
-      "The verification command still fails, but it has no semantic failures beyond the frozen baseline.",
-    );
-  }
-
   return createOutcome(
     "succeeded",
     "Repository changes passed scope and semantic baseline verification, and the final report completed.",

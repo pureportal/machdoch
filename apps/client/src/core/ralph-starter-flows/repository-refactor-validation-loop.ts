@@ -1,6 +1,7 @@
 import type { RalphFlow } from "../ralph.js";
 import type { RalphStarterFlow } from "../ralph-starter-flows.js";
 import { RALPH_VALIDATOR_JSON_SCHEMA } from "../_helpers/parse-ralph-validator-json-result.helper.js";
+import { enableContinuousRalphScopeCycles } from "./continuous-scope-cycle.js";
 
 const RALPH_REFACTOR_VALIDATION_COMMAND_TIMEOUT_SECONDS = 30 * 60;
 
@@ -436,6 +437,15 @@ const autonomousRefactoringFlow: RalphFlow = {
             "verificationTier",
             "reviewTier",
           ],
+          allOf: [
+            {
+              if: {
+                properties: { outcome: { const: "IMPLEMENT" } },
+                required: ["outcome"],
+              },
+              then: { required: ["verificationCommand", "verificationCwd"] },
+            },
+          ],
           properties: {
             outcome: { type: "string", enum: ["IMPLEMENT", "STOP", "DEFER"] },
             outcomeReason: { type: "string" },
@@ -512,6 +522,8 @@ const autonomousRefactoringFlow: RalphFlow = {
             },
             risks: { type: "array", items: { type: "string" } },
             verification: { type: "array", items: { type: "string" } },
+            verificationCommand: { type: "string", minLength: 1 },
+            verificationCwd: { type: "string", minLength: 1 },
             verificationTier: {
               type: "string",
               enum: ["focused", "standard", "broad"],
@@ -520,7 +532,7 @@ const autonomousRefactoringFlow: RalphFlow = {
           },
         },
         prompt:
-          "Refine, rescore, and select from provisional refactor portfolio {{data:propose-refactor-packages:output}} after focused research {{summary:refactor-research}}. Inspect selected scope {{result:select-scope}} without editing files. Prioritize coupling, complexity, churn, duplication, test ownership, runtime failures, coverage, and dependency boundaries over raw line count; security-only hardening is low priority in this nonsecurity refactor flow. Return outcome IMPLEMENT with tightly related passes for the highest-leverage evidence-backed package, STOP with passes [] when no meaningful package remains, or DEFER with passes [] only for unavailable external state. Include outcomeReason. Public APIs, dependencies, schemas, and migrations may change when required and verified. Make bounded reversible assumptions without human approval and return only schema-valid JSON.",
+          "Refine, rescore, and select from provisional refactor portfolio {{data:propose-refactor-packages:output}} after focused research {{summary:refactor-research}}. Inspect selected scope {{result:select-scope}} without editing files. Prioritize coupling, complexity, churn, duplication, test ownership, runtime failures, coverage, and dependency boundaries over raw line count; security-only hardening is low priority in this nonsecurity refactor flow. Return outcome IMPLEMENT with tightly related passes for the highest-leverage evidence-backed package, STOP with passes [] when no meaningful package remains, or DEFER with passes [] only for unavailable external state. Include outcomeReason. Public APIs, dependencies, schemas, and migrations may change when required and verified. Declare an executable verificationCommand and workspace-relative verificationCwd that reach the selected code. Use business logic tests only; do not render components or run browser, navigation, visual, or UI interaction tests. Make bounded reversible assumptions without human approval and return only schema-valid JSON.",
       },
     },
     {
@@ -606,7 +618,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: {
         type: "LOOP_COUNTER",
         counterName:
-          "repository-refactor-validation-loop.refactor-pass.{{data:select-scope:scope.id}}",
+          "repository-refactor-validation-loop.refactor-pass.{{data:select-scope:scope.id}}.{{data:select-scope:cycle}}",
         maxAttempts: "{{maxRefactorPasses:number=3}}",
       },
     },
@@ -667,9 +679,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: {
         type: "RUN_CHECK",
         command: "{{data:select-validation-command:output.command}}",
-        fallbackCommand:
-          "{{data:detect-project-commands:focusedVerificationCommand}}",
-        cwd: "{{data:detect-project-commands:rootPath}}",
+        cwd: "{{data:select-validation-command:output.cwd}}",
         timeoutSeconds: RALPH_REFACTOR_VALIDATION_COMMAND_TIMEOUT_SECONDS,
       },
     },
@@ -700,7 +710,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Repair only the current refactor failures identified by validation {{result:run-validation-checks}} or final scan {{data:final-refactor-scan:output}}, comparing signatures with pre-change baseline {{result:baseline-validation}}. Treat those artifacts and refactor plan {{data:audit-against-policy:output}} as an authoritative handoff; do not redo discovery, package selection, or planning. Keep changes scoped to selected scope cluster {{result:select-scope}}, preserve intended behavior, update consumers/tests/imports/exports as needed, run focused checks when useful, then stop this agent session. If validation is unavailable, document that in {{notesFile:path=.machdoch/ralph/refactor/RALPH_REFACTOR_NOTES.md}} and continue.",
+        "Repair only the current refactor failures identified by validation {{result:run-validation-checks}} or final scan {{data:final-refactor-scan:output}}, comparing signatures with pre-change baseline {{result:baseline-validation}}. Treat those artifacts and refactor plan {{data:audit-against-policy:output}} as an authoritative handoff; do not redo discovery, package selection, or planning. Keep changes scoped to selected scope cluster {{result:select-scope}}, preserve intended behavior, update consumers/tests/imports/exports as needed, run focused checks when useful, then stop this agent session. If validation is unavailable, retain the work and defer the scope with the concrete prerequisite; do not repair around toolchain failures.",
     },
     {
       id: "git-diff-summary",
@@ -1705,9 +1715,11 @@ const autonomousRefactoringFlow: RalphFlow = {
   ],
 };
 
+enableContinuousRalphScopeCycles(autonomousRefactoringFlow);
+
 export const repositoryRefactorValidationLoopStarterFlow = {
   id: "autonomous-refactoring-flow",
-  version: 21,
+  version: 23,
   defaultAlias: "repository-refactor-validation-loop",
   category: "Code Quality",
   tags: ["refactor", "tests", "validation"],
@@ -1717,8 +1729,8 @@ export const repositoryRefactorValidationLoopStarterFlow = {
       planId: "starter-autonomous-refactoring-flow:frozen-verification",
       baselineBlockId: "baseline-validation",
       candidateBlockId: "run-validation-checks",
-      baselineInconclusiveTargetId: "count-refactor-pass",
-      candidateInconclusiveTargetId: "git-diff-summary",
+      baselineInconclusiveTargetId: "defer-scope",
+      candidateInconclusiveTargetId: "defer-scope",
       routeOverrides: [
         {
           edgeId: "snapshot-to-baseline",

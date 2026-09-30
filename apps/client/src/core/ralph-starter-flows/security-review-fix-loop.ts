@@ -1332,7 +1332,7 @@ const securityFixLoopFlow: RalphFlow = {
 
 export const securityReviewFixLoopStarterFlow = {
   id: "security-fix-loop",
-  version: 17,
+  version: 19,
   defaultAlias: "security-review-fix-loop",
   category: "Security",
   tags: ["optional", "review", "fix", "tests"],
@@ -1342,8 +1342,8 @@ export const securityReviewFixLoopStarterFlow = {
       planId: "starter-security-fix-loop:frozen-verification",
       baselineBlockId: "baseline-verification",
       candidateBlockId: "run-verification",
-      baselineInconclusiveTargetId: "security-check",
-      candidateInconclusiveTargetId: "git-diff-summary",
+      baselineInconclusiveTargetId: "defer-scope",
+      candidateInconclusiveTargetId: "defer-scope",
       routeOverrides: [],
     },
     terminalOutcomes: [

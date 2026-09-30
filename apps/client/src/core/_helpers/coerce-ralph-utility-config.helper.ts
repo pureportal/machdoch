@@ -16,6 +16,7 @@ import {
   normalizeRalphScopeSelectionStrategy,
 } from "./ralph-scope-registry.helper.js";
 import type { RalphDeterministicJsonTransform } from "./ralph-repository-work-yield.helper.js";
+import { hasRalphPlaceholders } from "./ralph-placeholders.helper.js";
 
 export const RALPH_UTILITY_TYPES = [
   "WAIT",
@@ -64,7 +65,7 @@ export const RALPH_UTILITY_TYPES = [
 type RalphUtilityType = (typeof RALPH_UTILITY_TYPES)[number];
 
 export class InvalidRalphUtilityConfigurationError extends TypeError {
-  readonly field: "type" | "condition" | "deterministicTransform";
+  readonly field: "type" | "condition" | "deterministicTransform" | "strategy";
   readonly value: unknown;
 
   constructor(
@@ -583,7 +584,30 @@ export const coerceRalphUtilityConfig = (
   );
   const pattern = coerceFirstString(record.pattern);
   const glob = coerceFirstString(record.glob, record.patterns, record.globs);
-  const strategy = normalizeRalphScopeSelectionStrategy(record.strategy);
+  const strategy =
+    typeof record.strategy === "string" && hasRalphPlaceholders(record.strategy)
+      ? record.strategy
+      : type === "SELECT_JSON_TASK" &&
+          typeof record.strategy === "string" &&
+          [
+            "random",
+            "random-seeded",
+            "end-to-start",
+            "priority",
+            "least-recent",
+            "least-validated",
+            "risk-first",
+            "start-to-end",
+            "round-robin",
+          ].includes(record.strategy)
+        ? record.strategy
+        : normalizeRalphScopeSelectionStrategy(record.strategy);
+  if (record.strategy !== undefined && strategy === undefined) {
+    throw new InvalidRalphUtilityConfigurationError(
+      "strategy",
+      record.strategy,
+    );
+  }
   const deterministicTransform = coerceDeterministicJsonTransform(
     record.deterministicTransform,
   );
@@ -737,6 +761,9 @@ export const coerceRalphUtilityConfig = (
     ...(typeof record.input === "string" ? { input: record.input } : {}),
     ...(typeof record.baseline === "string"
       ? { baseline: record.baseline }
+      : {}),
+    ...(typeof record.verificationBlockId === "string"
+      ? { verificationBlockId: record.verificationBlockId }
       : {}),
     ...(typeof record.expression === "string"
       ? { expression: record.expression }
