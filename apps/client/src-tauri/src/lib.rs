@@ -452,6 +452,7 @@ pub fn run() {
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
                 desktop_shell::placement::save(app);
+                app.state::<fleet::FleetConnectionState>().shutdown();
                 media::model_memory::shutdown();
                 app.state::<desktop_shell::display_layout::DisplayLayoutState>()
                     .shutdown();
