@@ -39,10 +39,11 @@ const RALPH_GRACEFUL_STOP_TIMEOUT_MS: u64 = 30_000;
 const RALPH_RESPONSE_CAPTURE_LIMIT_BYTES: usize = 128 * 1024 * 1024;
 static NEXT_RALPH_CANCEL_REQUEST_ID: AtomicU64 = AtomicU64::new(0);
 
-fn ralph_command_timeout_ms(action: &str) -> u64 {
+fn ralph_command_timeout_ms(action: &str) -> Option<u64> {
     match action {
-        "snapshot" | "list" | "runs" => 30_000,
-        _ => RALPH_COMMAND_TIMEOUT_MS,
+        "run" | "resume" => None,
+        "snapshot" | "list" | "runs" => Some(30_000),
+        _ => Some(RALPH_COMMAND_TIMEOUT_MS),
     }
 }
 
@@ -383,7 +384,9 @@ pub(super) fn execute_ralph_command(
                     ));
                 }
 
-                if started_at.elapsed() >= Duration::from_millis(timeout_ms) {
+                if let Some(timeout_ms) =
+                    timeout_ms.filter(|limit| started_at.elapsed() >= Duration::from_millis(*limit))
+                {
                     emit_progress_event(
                         &progress_app_handle,
                         &progress_window_label,
@@ -510,12 +513,15 @@ mod tests {
     #[test]
     fn ralph_status_queries_do_not_share_the_execution_timeout() {
         for action in ["snapshot", "list", "runs"] {
-            assert_eq!(ralph_command_timeout_ms(action), 30_000);
+            assert_eq!(ralph_command_timeout_ms(action), Some(30_000));
         }
-        for action in ["run", "resume", "create", "interview", "save", "delete"] {
+        for action in ["run", "resume"] {
+            assert_eq!(ralph_command_timeout_ms(action), None);
+        }
+        for action in ["create", "interview", "save", "delete"] {
             assert_eq!(
                 ralph_command_timeout_ms(action),
-                crate::desktop_task::RALPH_COMMAND_TIMEOUT_MS
+                Some(crate::desktop_task::RALPH_COMMAND_TIMEOUT_MS)
             );
         }
     }

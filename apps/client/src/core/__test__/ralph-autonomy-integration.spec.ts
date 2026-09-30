@@ -1453,7 +1453,7 @@ describe("RALPH autonomy integration", () => {
       starter.flow,
       { ...runtimeConfig, workspaceRoot: workspace },
       { ...customizations, workspaceRoot: workspace },
-      { runId: "starter-security-no-op" },
+      { runId: "starter-security-no-op", variableValues: { continuous: "false" } },
     );
 
     expect(

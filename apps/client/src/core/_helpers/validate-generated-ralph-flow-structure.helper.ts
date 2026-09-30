@@ -1,7 +1,5 @@
-import {
-  hasGraphCycle,
-  type RalphFlow,
-} from "../ralph.js";
+import { hasGraphCycle, type RalphFlow } from "../ralph.js";
+import { resolveRalphAutonomyPolicy } from "./resolve-ralph-autonomy-policy.helper.js";
 
 export interface RalphGenerationStructureValidation {
   decision: "DONE" | "RETRY";
@@ -19,9 +17,7 @@ const RALPH_GENERATION_EXAMPLE_BLOCK_IDS = new Set([
   "review-result",
 ]);
 
-const createGeneratedRalphFlowQualityWarnings = (
-  flow: RalphFlow,
-): string[] => {
+const createGeneratedRalphFlowQualityWarnings = (flow: RalphFlow): string[] => {
   const warnings: string[] = [];
   const visualBlocks = flow.blocks.filter(
     (block) => block.type === "NOTE" || block.type === "GROUP",
@@ -49,10 +45,23 @@ export const validateGeneratedRalphFlowStructure = (
   flow: RalphFlow,
 ): RalphGenerationStructureValidation => {
   const issues: string[] = [];
+  const autonomy = resolveRalphAutonomyPolicy(
+    flow.settings?.autonomy,
+    undefined,
+  );
+  const hasContinuousRecovery =
+    autonomy.enabled &&
+    autonomy.restartToBlockId &&
+    autonomy.maxStagnantTransitions > 0 &&
+    autonomy.maxRepeatedCycle >= 2;
 
-  if (hasGraphCycle(flow) && flow.settings?.maxTransitions === undefined) {
+  if (
+    hasGraphCycle(flow) &&
+    flow.settings?.maxTransitions === undefined &&
+    !hasContinuousRecovery
+  ) {
     issues.push(
-      "The generated graph has a cycle but no settings.maxTransitions cap.",
+      "The generated graph has a cycle but no settings.maxTransitions cap or autonomous continuation policy.",
     );
   }
 

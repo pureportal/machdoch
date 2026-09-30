@@ -1,7 +1,6 @@
 import type { RalphFlow } from "../ralph.js";
 import type { RalphStarterFlow } from "../ralph-starter-flows.js";
 import { RALPH_VALIDATOR_JSON_SCHEMA } from "../_helpers/parse-ralph-validator-json-result.helper.js";
-import { enableContinuousRalphScopeCycles } from "./continuous-scope-cycle.js";
 
 const RALPH_REFACTOR_VALIDATION_COMMAND_TIMEOUT_SECONDS = 30 * 60;
 
@@ -11,9 +10,8 @@ const autonomousRefactoringFlow: RalphFlow = {
   alias: "repository-refactor-validation-loop",
   name: "Repository Refactor & Validation Loop",
   description:
-    "Bounded autonomous refactor cycle that continues across eligible scopes, validates each completed package, and stops only after the current scope cycle is complete.",
+    "Continuously refactors repository scopes and validates each change.",
   settings: {
-    maxTransitions: 5_000,
     autonomy: {
       recoverFailedEnd: true,
       maxRecoveryAttempts: 3,
@@ -1715,11 +1713,9 @@ const autonomousRefactoringFlow: RalphFlow = {
   ],
 };
 
-enableContinuousRalphScopeCycles(autonomousRefactoringFlow);
-
 export const repositoryRefactorValidationLoopStarterFlow = {
   id: "autonomous-refactoring-flow",
-  version: 23,
+  version: 24,
   defaultAlias: "repository-refactor-validation-loop",
   category: "Code Quality",
   tags: ["refactor", "tests", "validation"],

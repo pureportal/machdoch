@@ -57,9 +57,8 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
   alias: "autonomous-feature-generation-loop",
   name: "Autonomous Feature Generation Loop",
   description:
-    "Bounded autonomous feature cycle that persists a project constitution, scores several product opportunities, implements the best shippable goal, and defers exhausted goals before continuing.",
+    "Continuously selects, implements, and verifies feature goals.",
   settings: {
-    maxTransitions: 5_000,
     autonomy: {
       recoverFailedEnd: true,
       maxRecoveryAttempts: 3,
@@ -2216,7 +2215,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
 
 export const autonomousFeatureGenerationLoopStarterFlow = {
   id: "autonomous-feature-generation-loop",
-  version: 21,
+  version: 22,
   defaultAlias: "autonomous-feature-generation-loop",
   category: "Implementation",
   tags: ["autonomous", "feature", "loop"],

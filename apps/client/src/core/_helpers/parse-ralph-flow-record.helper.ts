@@ -106,6 +106,18 @@ const coerceAutonomySetting = (
   if (typeof value.enabled === "boolean") {
     policy.enabled = value.enabled;
   }
+  if (
+    typeof value.restartToBlockId === "string" &&
+    value.restartToBlockId.trim()
+  ) {
+    policy.restartToBlockId = value.restartToBlockId.trim();
+  }
+  if (
+    typeof value.restartDelaySeconds === "number" &&
+    Number.isFinite(value.restartDelaySeconds)
+  ) {
+    policy.restartDelaySeconds = value.restartDelaySeconds;
+  }
   if (typeof value.recoverFailedEnd === "boolean") {
     policy.recoverFailedEnd = value.recoverFailedEnd;
   }

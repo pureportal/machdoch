@@ -6,7 +6,6 @@ import type {
 } from "../ralph.js";
 import type { RalphStarterFlow } from "../ralph-starter-flows.js";
 import { RALPH_VALIDATOR_JSON_SCHEMA } from "../_helpers/parse-ralph-validator-json-result.helper.js";
-import { enableContinuousRalphScopeCycles } from "./continuous-scope-cycle.js";
 
 const VERIFICATION_TIMEOUT_SECONDS = 30 * 60;
 
@@ -148,9 +147,8 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
   alias: "autonomous-code-improvement-loop",
   name: "Autonomous Code Improvement Loop",
   description:
-    "Autonomous code-improvement cycle that retains and verifies an evidence-backed portfolio until it is complete or genuinely blocked.",
+    "Continuously improves code through scoped work and verification.",
   settings: {
-    maxTransitions: 5_000,
     autonomy: {
       recoverFailedEnd: true,
       maxRecoveryAttempts: 3,
@@ -2539,11 +2537,9 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
   ],
 };
 
-enableContinuousRalphScopeCycles(autonomousCodeImprovementLoopFlow);
-
 export const autonomousCodeImprovementLoopStarterFlow = {
   id: "autonomous-code-improvement-loop",
-  version: 26,
+  version: 27,
   defaultAlias: "autonomous-code-improvement-loop",
   category: "Code Quality",
   tags: ["autonomous", "improvement", "portfolio", "validation"],

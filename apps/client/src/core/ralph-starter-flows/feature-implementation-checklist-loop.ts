@@ -57,9 +57,8 @@ const fullFeatureImplementationFlow: RalphFlow = {
   alias: "feature-implementation-checklist-loop",
   name: "Feature Implementation Checklist Loop",
   description:
-    "Bounded, resumable autonomous feature implementation cycle with evidence-backed objective fallback, baseline-aware verification, visual review, durable outcomes, and graceful deferral without human input.",
+    "Implements and verifies feature tasks, then continues with the next objective.",
   settings: {
-    maxTransitions: 500,
     autonomy: {
       recoverFailedEnd: true,
       maxRecoveryAttempts: 3,
@@ -1622,7 +1621,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
 
 export const featureImplementationChecklistLoopStarterFlow = {
   id: "full-feature-implementation",
-  version: 21,
+  version: 22,
   defaultAlias: "feature-implementation-checklist-loop",
   category: "Implementation",
   tags: ["feature", "research", "visual-check"],

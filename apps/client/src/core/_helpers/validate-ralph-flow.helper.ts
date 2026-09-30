@@ -113,6 +113,17 @@ export const validateRalphFlow = (
   const autonomy = flow.settings?.autonomy;
   if (typeof autonomy === "object" && autonomy !== null) {
     if (
+      autonomy.restartDelaySeconds !== undefined &&
+      (!Number.isFinite(autonomy.restartDelaySeconds) ||
+        autonomy.restartDelaySeconds < 0)
+    ) {
+      addRalphValidationIssue(
+        errors,
+        "flow-autonomy-restart-delay-invalid",
+        "flow settings.autonomy.restartDelaySeconds must be a finite number >= 0.",
+      );
+    }
+    if (
       autonomy.maxRecoveryAttempts !== undefined &&
       (!Number.isInteger(autonomy.maxRecoveryAttempts) ||
         autonomy.maxRecoveryAttempts < 0)
@@ -226,6 +237,26 @@ export const validateRalphFlow = (
   );
 
   const blocksById = graphIndex.blocksById;
+
+  const restartToBlockId =
+    typeof autonomy === "object" && autonomy !== null
+      ? autonomy.restartToBlockId?.trim()
+      : undefined;
+  if (restartToBlockId) {
+    const restartTarget = blocksById.get(restartToBlockId);
+    if (
+      !restartTarget ||
+      (restartTarget.type !== "START" &&
+        !isExecutableRalphBlock(restartTarget)) ||
+      restartTarget.type === "END"
+    ) {
+      addRalphValidationIssue(
+        errors,
+        "flow-autonomy-restart-target-invalid",
+        `flow settings.autonomy.restartToBlockId must reference an executable non-terminal block; received \`${restartToBlockId}\`.`,
+      );
+    }
+  }
 
   const deferToBlockId =
     typeof autonomy === "object" && autonomy !== null

@@ -88,6 +88,7 @@ const autonomy: RalphRunAutonomyMetadata = {
   enabled: true,
   policy: {
     recoverFailedEnd: true,
+    restartDelaySeconds: 60,
     maxRecoveryAttempts: 3,
     backoff: {
       initialDelaySeconds: 1,

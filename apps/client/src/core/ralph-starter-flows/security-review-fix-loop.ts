@@ -10,9 +10,8 @@ const securityFixLoopFlow: RalphFlow = {
   alias: "security-review-fix-loop",
   name: "Security Review & Fix Loop",
   description:
-    "Optional bounded autonomous security cycle that reviews risk-first scopes, records a verification baseline, repairs findings, and defers exhausted scopes without human intervention.",
+    "Continuously reviews security risks and verifies fixes across repository scopes.",
   settings: {
-    maxTransitions: 5_000,
     autonomy: {
       recoverFailedEnd: true,
       maxRecoveryAttempts: 3,
@@ -1332,7 +1331,7 @@ const securityFixLoopFlow: RalphFlow = {
 
 export const securityReviewFixLoopStarterFlow = {
   id: "security-fix-loop",
-  version: 19,
+  version: 20,
   defaultAlias: "security-review-fix-loop",
   category: "Security",
   tags: ["optional", "review", "fix", "tests"],
