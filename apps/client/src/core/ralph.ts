@@ -134,6 +134,7 @@ import {
   type RalphScopeSelectionStrategy,
 } from "./_helpers/ralph-scope-registry.helper.js";
 import { resolveRalphRetryDecision } from "./_helpers/resolve-ralph-retry-decision.helper.js";
+import { resolveRalphContinuation } from "./_helpers/ralph-continuation.helper.js";
 import { getRalphTaskVerification } from "./_helpers/ralph-task-verification.helper.js";
 import { findRalphExecutionCause } from "./_helpers/ralph-execution-cause.helper.js";
 import {
@@ -378,6 +379,7 @@ const DEFAULT_RALPH_WORK_ITEM_DEFER_MS = 30 * 60_000;
 const MAX_RALPH_CHECKPOINT_BLOCK_RESULTS = 1_000;
 const MAX_RALPH_CHECKPOINT_EVENTS = 2_000;
 const MAX_RALPH_CHECKPOINT_LOG_ENTRIES = 1_000;
+const MAX_RALPH_AUTONOMY_HISTORY = 100;
 const DEFAULT_RALPH_SEARCH_EXCLUDED_DIRECTORIES = new Set([
   ".git",
   ".machdoch",
@@ -664,6 +666,8 @@ export interface RalphAutonomyBackoffPolicy {
 
 export interface RalphAutonomyPolicy {
   enabled?: boolean;
+  restartToBlockId?: string;
+  restartDelaySeconds?: number;
   recoverFailedEnd?: boolean;
   maxRecoveryAttempts?: number;
   backoff?: RalphAutonomyBackoffPolicy;
@@ -715,6 +719,8 @@ export interface RalphRunAutonomyMetadata {
   enabled: true;
   policy: {
     recoverFailedEnd: boolean;
+    restartToBlockId?: string;
+    restartDelaySeconds: number;
     maxRecoveryAttempts: number;
     backoff: {
       initialDelaySeconds: number;
@@ -6496,10 +6502,16 @@ const executeReadJsonlUtilityBlock = async (
   const path = resolveUtilityPath(rawPath, config.workspaceRoot);
 
   try {
-    const { entries, invalid, totalCount, validation } = await queryRalphJsonl(path, {
-      ...(typeof utility.maxResults === "number" ? { maxResults: utility.maxResults } : {}),
-      validate: (value) => validateUtilityJsonValue(value, utility.schema).errors,
-    });
+    const { entries, invalid, totalCount, validation } = await queryRalphJsonl(
+      path,
+      {
+        ...(typeof utility.maxResults === "number"
+          ? { maxResults: utility.maxResults }
+          : {}),
+        validate: (value) =>
+          validateUtilityJsonValue(value, utility.schema).errors,
+      },
+    );
 
     if (invalid.length > 0) {
       return createUtilityResult(
@@ -6572,12 +6584,20 @@ const executeQueryJsonlUtilityBlock = async (
   const path = resolveUtilityPath(rawPath, config.workspaceRoot);
 
   try {
-    const { entries, invalid, totalCount, validation } = await queryRalphJsonl(path, {
-      ...(typeof utility.maxResults === "number" ? { maxResults: utility.maxResults } : {}),
-      ...(utility.order ? { order: utility.order } : {}),
-      validate: (value) => validateUtilityJsonValue(value, utility.schema).errors,
-      matches: (value) => !utility.condition || evaluateRalphUtilityCondition(utility.condition, context, value),
-    });
+    const { entries, invalid, totalCount, validation } = await queryRalphJsonl(
+      path,
+      {
+        ...(typeof utility.maxResults === "number"
+          ? { maxResults: utility.maxResults }
+          : {}),
+        ...(utility.order ? { order: utility.order } : {}),
+        validate: (value) =>
+          validateUtilityJsonValue(value, utility.schema).errors,
+        matches: (value) =>
+          !utility.condition ||
+          evaluateRalphUtilityCondition(utility.condition, context, value),
+      },
+    );
 
     if (invalid.length > 0) {
       return createUtilityResult(
@@ -7960,7 +7980,12 @@ const executeMarkJsonTaskUtilityBlock = async (
               context.executionHistory ?? [...context.resultsByBlock.values()],
               candidate,
               utility.verificationBlockId,
-              { runId: context.runId, ...(context.currentOperationId ? { operationId: context.currentOperationId } : {}) },
+              {
+                runId: context.runId,
+                ...(context.currentOperationId
+                  ? { operationId: context.currentOperationId }
+                  : {}),
+              },
             ),
           )
         : [];
@@ -14677,11 +14702,17 @@ const cloneRalphRunAutonomyMetadata = (
     ...metadata.policy,
     backoff: { ...metadata.policy.backoff },
   },
-  recoveryAttempts: metadata.recoveryAttempts.map((attempt) => ({
-    ...attempt,
-  })),
-  recovered: metadata.recovered.map((recovered) => ({ ...recovered })),
-  deferred: metadata.deferred.map((deferred) => ({ ...deferred })),
+  recoveryAttempts: metadata.recoveryAttempts
+    .slice(-MAX_RALPH_AUTONOMY_HISTORY)
+    .map((attempt) => ({
+      ...attempt,
+    })),
+  recovered: metadata.recovered
+    .slice(-MAX_RALPH_AUTONOMY_HISTORY)
+    .map((recovered) => ({ ...recovered })),
+  deferred: metadata.deferred
+    .slice(-MAX_RALPH_AUTONOMY_HISTORY)
+    .map((deferred) => ({ ...deferred })),
   ...(metadata.exhaustion ? { exhaustion: { ...metadata.exhaustion } } : {}),
 });
 
@@ -14699,6 +14730,10 @@ const createRalphRunAutonomyMetadata = (
         enabled: true as const,
         policy: {
           recoverFailedEnd: policy.recoverFailedEnd,
+          restartDelaySeconds: policy.restartDelaySeconds,
+          ...(policy.restartToBlockId
+            ? { restartToBlockId: policy.restartToBlockId }
+            : {}),
           maxRecoveryAttempts: policy.maxRecoveryAttempts,
           backoff: { ...policy.backoff },
           transitionExhaustion: policy.transitionExhaustion,
@@ -14717,6 +14752,10 @@ const createRalphRunAutonomyMetadata = (
 
   metadata.policy = {
     recoverFailedEnd: policy.recoverFailedEnd,
+    restartDelaySeconds: policy.restartDelaySeconds,
+    ...(policy.restartToBlockId
+      ? { restartToBlockId: policy.restartToBlockId }
+      : {}),
     maxRecoveryAttempts: policy.maxRecoveryAttempts,
     backoff: { ...policy.backoff },
     transitionExhaustion: policy.transitionExhaustion,
@@ -15841,6 +15880,26 @@ const runRalphFlowImpl = async (
   }
 
   const blockMap = getRalphBlockById(flow);
+  for (const targetId of [
+    autonomyPolicy.restartToBlockId,
+    autonomyPolicy.deferToBlockId,
+  ]) {
+    if (!targetId) continue;
+    const target = blockMap.get(targetId);
+    if (
+      !target ||
+      (target.type !== "START" && !isExecutableRalphBlock(target)) ||
+      (targetId === autonomyPolicy.restartToBlockId && target.type === "END")
+    ) {
+      return finishRun(
+        createBlockedRunResult(
+          flow,
+          validation,
+          `RALPH autonomy target \`${targetId}\` must be an executable block.`,
+        ),
+      );
+    }
+  }
   const start = flow.blocks.find(
     (block): block is RalphStartBlock => block.type === "START",
   );
@@ -16326,6 +16385,64 @@ const runRalphFlowImpl = async (
     return retryCheckpoint;
   };
 
+  const continueAutonomously = async (
+    block: RalphFlowBlock,
+    result: RalphBlockExecutionResult,
+    operationId: string,
+    kind: "terminal" | "recovery",
+  ): Promise<boolean> => {
+    const continuation = resolveRalphContinuation(
+      autonomyPolicy,
+      resultContext.variables,
+      block.id,
+      kind,
+    );
+    if (!continuation || options.signal?.aborted) {
+      return false;
+    }
+    errorCounts.clear();
+    recoveryCounts.clear();
+    repeatedFailures.clear();
+    if (resultContext.progress) {
+      resultContext.progress.consecutiveNoProgress = 0;
+      resultContext.progress.recent = [];
+      delete resultContext.progress.stalledReason;
+    }
+    if (kind === "recovery" && autonomyMetadata) {
+      const deferred: RalphAutonomyDeferredWork = {
+        blockId: block.id,
+        output: result.output,
+        attempts: result.attempt,
+        reason: result.error ?? result.summary,
+        routedToBlockId: continuation.blockId,
+      };
+      autonomyMetadata.deferred.push(deferred);
+      result.recovery = { disposition: "deferred", attempt: result.attempt };
+    }
+    nextRetryAt = new Date(
+      Date.now() + continuation.delaySeconds * 1_000,
+    ).toISOString();
+    markOperationRouted(operationId, continuation.blockId);
+    currentBlockId = continuation.blockId;
+    transitions += 1;
+    syncTotalTransitions();
+    await emitRunEvent(
+      events,
+      {
+        type: "edge-route",
+        from: block.id,
+        output: result.output,
+        to: continuation.blockId,
+      },
+      options.onEvent,
+    );
+    await persistRunBoundary(
+      continuation.blockId,
+      `Continuing at \`${continuation.blockId}\` after a cooldown.`,
+    );
+    return true;
+  };
+
   if (checkpoint) {
     for (let index = blockResults.length - 1; index >= 0; index -= 1) {
       const priorResult = blockResults[index];
@@ -16351,6 +16468,17 @@ const runRalphFlowImpl = async (
   syncTotalTransitions();
 
   while (currentBlockId) {
+    if (autonomyMetadata) {
+      for (const history of [
+        autonomyMetadata.recoveryAttempts,
+        autonomyMetadata.recovered,
+        autonomyMetadata.deferred,
+      ]) {
+        if (history.length > MAX_RALPH_AUTONOMY_HISTORY) {
+          history.splice(0, history.length - MAX_RALPH_AUTONOMY_HISTORY);
+        }
+      }
+    }
     if (durability.status === "degraded" && durability.required) {
       const summary = `Ralph durability failed; execution stopped before further side effects: ${durability.error ?? "unknown persistence error"}.`;
       return finishRun({
@@ -16387,11 +16515,40 @@ const runRalphFlowImpl = async (
     }
 
     if (nextRetryAt) {
-      const remainingMs = Date.parse(nextRetryAt) - Date.now();
-      if (remainingMs > 0) {
-        await delay(remainingMs / 1_000, options.signal).catch(() => undefined);
+      while (!options.signal?.aborted) {
+        const remainingMs = Date.parse(nextRetryAt) - Date.now();
+        if (remainingMs <= 0) break;
+        await delay(
+          Math.min(
+            remainingMs,
+            Math.max(250, Math.floor(leaseDurationMs / 3)),
+          ) / 1_000,
+          options.signal,
+        ).catch(() => undefined);
+        if (options.signal?.aborted) break;
+        try {
+          await assertWorkspaceWriterOwnership();
+          await heartbeatRunOwnership();
+        } catch (error) {
+          if (
+            error instanceof RalphRunOwnershipLostError ||
+            error instanceof RalphRunStoreOwnershipError
+          ) {
+            markOwnershipLost(error);
+          } else {
+            markDurabilityDegraded(error);
+          }
+          break;
+        }
       }
-      nextRetryAt = undefined;
+      if (!options.signal?.aborted) nextRetryAt = undefined;
+      if (
+        options.signal?.aborted ||
+        ownershipLost ||
+        (durability.status === "degraded" && durability.required)
+      ) {
+        continue;
+      }
     }
 
     const totalTransitions = syncTotalTransitions();
@@ -16935,6 +17092,9 @@ const runRalphFlowImpl = async (
       },
       options.onEvent,
     );
+    if (options.signal?.aborted) {
+      continue;
+    }
     if (progressAssessment?.stalled) {
       const summary =
         progressAssessment.state.stalledReason ??
@@ -16947,6 +17107,9 @@ const runRalphFlowImpl = async (
         output: result.output,
         reason: summary,
       };
+      if (await continueAutonomously(block, result, operationId, "recovery")) {
+        continue;
+      }
       return finishRun({
         flow: flow.id,
         status: "blocked",
@@ -17009,6 +17172,11 @@ const runRalphFlowImpl = async (
         };
         if (autonomyMetadata) {
           autonomyMetadata.exhaustion = exhaustion;
+        }
+        if (
+          await continueAutonomously(block, result, operationId, "recovery")
+        ) {
+          continue;
         }
 
         if (
@@ -17077,6 +17245,12 @@ const runRalphFlowImpl = async (
     }
 
     if (block.type === "END") {
+      if (
+        block.outcome !== "cancelled" &&
+        (await continueAutonomously(block, result, operationId, "terminal"))
+      ) {
+        continue;
+      }
       const status = getRunStatusForEndBlock(block);
       const summary = `Ralph flow \`${flow.name}\` reached terminal block \`${block.id}\`.`;
       const deferred = [...(autonomyMetadata?.deferred ?? [])]
@@ -17177,10 +17351,6 @@ const runRalphFlowImpl = async (
             validation,
           });
         }
-        await delay(delaySeconds, options.signal).catch(() => undefined);
-        if (!options.signal?.aborted) {
-          nextRetryAt = undefined;
-        }
         transitions += 1;
         syncTotalTransitions();
         continue;
@@ -17196,6 +17366,9 @@ const runRalphFlowImpl = async (
       };
       autonomyMetadata.exhaustion = exhaustion;
       const defersToCurrentBlock = autonomyPolicy.deferToBlockId === block.id;
+      if (await continueAutonomously(block, result, operationId, "recovery")) {
+        continue;
+      }
       result.recovery = {
         disposition:
           autonomyPolicy.recoveryExhaustion === "defer" && !defersToCurrentBlock
@@ -17283,12 +17456,6 @@ const runRalphFlowImpl = async (
             validation,
           });
         }
-        await delay(retryDecision.delaySeconds, options.signal).catch(
-          () => undefined,
-        );
-        if (!options.signal?.aborted) {
-          nextRetryAt = undefined;
-        }
         transitions += 1;
         syncTotalTransitions();
         continue;
@@ -17309,6 +17476,12 @@ const runRalphFlowImpl = async (
     }
 
     if (!nextBlockId) {
+      if (
+        isRecoverableRalphBlockResult(block, result) &&
+        (await continueAutonomously(block, result, operationId, "recovery"))
+      ) {
+        continue;
+      }
       const summary = `Ralph flow crashed at \`${block.id}\`: no edge handles output ${result.output}.`;
       await emitRunEvent(
         events,

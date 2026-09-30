@@ -186,6 +186,52 @@ describe("createRalphFlowWithAgent", () => {
     }
   });
 
+  it("persists an autonomous repeating flow without a total transition cap", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "ralph-generation-continuous-"),
+    );
+    try {
+      const flow = createFlow({
+        id: "continuous-repository-review",
+        alias: "continuous-repository-review",
+        settings: {
+          autonomy: {
+            restartToBlockId: "start",
+            restartDelaySeconds: 60,
+            deferToBlockId: "fix-tsc",
+            maxStagnantTransitions: 48,
+            maxRepeatedCycle: 3,
+          },
+        },
+        variables: [
+          {
+            name: "continuous",
+            type: "boolean",
+            default: "true",
+            required: false,
+          },
+        ],
+      });
+      vi.mocked(executeTask).mockResolvedValue(createSubmittedFlowResult(flow));
+      const result = await createRalphFlowWithAgent(workspace, {
+        name: "continuous-repository-review",
+        prompt: "Create an autonomous repeating repository review.",
+        maxRounds: 1,
+        config: runtimeConfig,
+        customizations,
+      });
+      expect(result.status).toBe("created");
+      const saved = JSON.parse(await readFile(result.flowPath, "utf8"));
+      expect(saved.settings.maxTransitions).toBeUndefined();
+      expect(saved.settings.autonomy).toMatchObject({
+        restartToBlockId: "start",
+        restartDelaySeconds: 60,
+      });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("uses a structured Ralph tool submission from output sections", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-generation-"));
 

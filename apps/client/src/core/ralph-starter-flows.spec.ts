@@ -1342,15 +1342,17 @@ describe("Ralph starter flows", () => {
     }
   });
 
-  it("allocates a sustained outer budget to multi-unit starters", () => {
-    for (const starterFlowId of [
-      "autonomous-feature-generation-loop",
-      "autonomous-ui-improvement-loop",
-      "security-fix-loop",
-    ]) {
+  it("continues every starter without a default transition ceiling", () => {
+    for (const { flow } of STARTER_RALPH_FLOWS) {
+      expect(flow.settings?.maxTransitions).toBeUndefined();
+      expect(flow.settings?.autonomy).toMatchObject({
+        restartToBlockId: "start",
+        restartDelaySeconds: 60,
+      });
       expect(
-        getRalphStarterFlow(starterFlowId)?.flow.settings?.maxTransitions,
-      ).toBe(5_000);
+        flow.variables?.find((variable) => variable.name === "continuous")
+          ?.default,
+      ).toBe("true");
     }
   });
 
@@ -1396,11 +1398,7 @@ describe("Ralph starter flows", () => {
           expect.objectContaining({
             from: "select-scope",
             fromOutput: "DEFERRED",
-            to:
-              testCase.flowId === "autonomous-code-improvement-loop" ||
-              testCase.flowId === "autonomous-refactoring-flow"
-                ? "continue-deferred-scope-cycles"
-                : expect.stringContaining("deferred-outcome"),
+            to: "continue-deferred-scope-cycles",
           }),
           expect.objectContaining({
             from: "record-exhausted-outcome",
@@ -1410,11 +1408,7 @@ describe("Ralph starter flows", () => {
           expect.objectContaining({
             from: "completion-report",
             fromOutput: "SUCCESS",
-            to:
-              testCase.flowId === "autonomous-code-improvement-loop" ||
-              testCase.flowId === "autonomous-refactoring-flow"
-                ? "continue-scope-cycles"
-                : "success",
+            to: "continue-scope-cycles",
           }),
           expect.objectContaining({
             from: "final-report",
@@ -1673,7 +1667,7 @@ describe("Ralph starter flows", () => {
     });
     expect(flow).toMatchObject({
       name: "Autonomous Feature Generation Loop",
-      settings: { maxTransitions: 5_000 },
+      settings: { autonomy: { restartToBlockId: "start" } },
     });
     expect(
       flow?.blocks.find((block) => block.id === "find-active-goal"),
@@ -2003,7 +1997,7 @@ describe("Ralph starter flows", () => {
       default: "3",
     });
     expect(flow).toMatchObject({
-      settings: { maxTransitions: 500 },
+      settings: { autonomy: { restartToBlockId: "start" } },
     });
     expect(passCounter).toMatchObject({
       type: "UTILITY",

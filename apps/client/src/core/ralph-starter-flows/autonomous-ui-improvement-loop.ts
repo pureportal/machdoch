@@ -25,9 +25,8 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
   alias: "autonomous-ui-improvement-loop",
   name: "Autonomous UI Improvement Loop",
   description:
-    "Bounded autonomous UI cycle that scores evidence-backed work packages, applies the design policy, verifies code and visual states, defers exhausted packages, and can be scheduled repeatedly.",
+    "Continuously improves UI scopes and verifies code and visual states.",
   settings: {
-    maxTransitions: 5_000,
     autonomy: {
       recoverFailedEnd: true,
       maxRecoveryAttempts: 3,
@@ -2335,7 +2334,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
 
 export const autonomousUiImprovementLoopStarterFlow = {
   id: "autonomous-ui-improvement-loop",
-  version: 22,
+  version: 23,
   defaultAlias: "autonomous-ui-improvement-loop",
   category: "Design Quality",
   tags: ["autonomous", "ui", "design", "visual-check"],

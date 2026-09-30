@@ -37,6 +37,7 @@ describe("resolveRalphAutonomyPolicy", () => {
       ),
     ).toEqual({
       enabled: true,
+      restartDelaySeconds: 60,
       recoverFailedEnd: true,
       maxRecoveryAttempts: 2,
       backoff: {

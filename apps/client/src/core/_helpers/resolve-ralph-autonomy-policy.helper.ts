@@ -2,6 +2,8 @@ import type { RalphAutonomyPolicy, RalphAutonomySetting } from "../ralph.js";
 
 export interface ResolvedRalphAutonomyPolicy {
   enabled: boolean;
+  restartToBlockId?: string;
+  restartDelaySeconds: number;
   recoverFailedEnd: boolean;
   maxRecoveryAttempts: number;
   backoff: {
@@ -19,6 +21,7 @@ export interface ResolvedRalphAutonomyPolicy {
 export const DEFAULT_RALPH_AUTONOMY_POLICY: Readonly<ResolvedRalphAutonomyPolicy> =
   {
     enabled: false,
+    restartDelaySeconds: 60,
     recoverFailedEnd: true,
     maxRecoveryAttempts: 3,
     backoff: {
@@ -74,6 +77,9 @@ export const resolveRalphAutonomyPolicy = (
 ): ResolvedRalphAutonomyPolicy => {
   const flowPolicy = getPolicyRecord(flowSetting);
   const runPolicy = getPolicyRecord(runSetting);
+  const restartToBlockId = (
+    runPolicy?.restartToBlockId ?? flowPolicy?.restartToBlockId
+  )?.trim();
   const initialDelaySeconds = toNonNegativeFiniteNumber(
     runPolicy?.backoff?.initialDelaySeconds ??
       flowPolicy?.backoff?.initialDelaySeconds,
@@ -96,6 +102,11 @@ export const resolveRalphAutonomyPolicy = (
     enabled: getSettingEnabled(
       runSetting,
       getSettingEnabled(flowSetting, DEFAULT_RALPH_AUTONOMY_POLICY.enabled),
+    ),
+    ...(restartToBlockId ? { restartToBlockId } : {}),
+    restartDelaySeconds: toNonNegativeFiniteNumber(
+      runPolicy?.restartDelaySeconds ?? flowPolicy?.restartDelaySeconds,
+      DEFAULT_RALPH_AUTONOMY_POLICY.restartDelaySeconds,
     ),
     recoverFailedEnd:
       runPolicy?.recoverFailedEnd ??

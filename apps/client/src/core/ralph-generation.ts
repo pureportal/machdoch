@@ -1101,6 +1101,36 @@ const RALPH_GENERATION_FLOW_CANDIDATE_SCHEMA: RalphGenerationJsonSchema = {
       additionalProperties: false,
       properties: {
         maxTransitions: { type: "integer" },
+        autonomy: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            enabled: { type: "boolean" },
+            restartToBlockId: { type: "string", minLength: 1 },
+            restartDelaySeconds: { type: "number", minimum: 0 },
+            recoverFailedEnd: { type: "boolean" },
+            maxRecoveryAttempts: { type: "integer", minimum: 0 },
+            transitionExhaustion: {
+              type: "string",
+              enum: ["checkpoint", "crash"],
+            },
+            recoveryExhaustion: { type: "string", enum: ["defer", "block"] },
+            deferToBlockId: { type: "string", minLength: 1 },
+            maxStagnantTransitions: { type: "integer", minimum: 0 },
+            maxRepeatedCycle: { type: "integer", minimum: 2 },
+            backoff: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                initialDelaySeconds: { type: "number", minimum: 0 },
+                multiplier: { type: "number", minimum: 1 },
+                maxDelaySeconds: { type: "number", minimum: 0 },
+              },
+              required: [],
+            },
+          },
+          required: [],
+        },
       },
       required: [],
     },
@@ -2273,7 +2303,7 @@ const createRalphGeneratorSystemPrompt = (): string => {
     "Use the flow id and alias supplied by Ralph; do not invent or reuse identity values from other flows.",
     "Prefer a compact graph with meaningful block titles, stable kebab-case ids, explicit routes, and readable positions.",
     "Omit NOTE and GROUP blocks by default. Add zero, one, or multiple visual blocks only when they materially improve readability for a complex graph; never route execution through them.",
-    "Set settings.maxTransitions on any cyclic graph.",
+    "Autonomous repeating flows use settings.autonomy.restartToBlockId pointing to START, restartDelaySeconds for cooldown, deferToBlockId for exhausted work, and a continuous boolean variable defaulting to true. Keep retries and repair passes finite. Set settings.maxTransitions only when a bounded run is requested.",
     "Use UI_ANALYZE, MCP blocks, package checks, and command utilities only when they materially help satisfy the requested workflow.",
     "For non-trivial requests, call ralph_submit_generation_plan before submitting the final flow candidate.",
     "Call ralph_validate_candidate_flow or ralph_submit_flow_candidate with the complete flow before your final response.",
@@ -2324,7 +2354,7 @@ const createFlowGenerationTask = (
     "- Add variables directly in prompts using {{name:type=default}}, for example {{scope:path=ALL}}.",
     "- Use block result placeholders such as {{lastResult}}, {{summary:block-id}}, and {{result:block-id}} where useful.",
     "- Use structured utility data placeholders such as {{data:block-id:path.to.value}} where useful.",
-    "- Set settings.maxTransitions on flows with cycles.",
+    "- Autonomous repeating flows use settings.autonomy.restartToBlockId pointing to START and a cooldown. Route exhausted work to deferToBlockId. Include a continuous boolean variable defaulting to true. Keep per-work retries finite; omit settings.maxTransitions unless a bounded run is requested.",
     "- Keep generated flows compact: prefer one useful loop with meaningful nodes, and combine related steps when that keeps the graph readable.",
     "- Decide from the user's request, in whichever language it uses, whether UI/browser/screenshot evidence is relevant. Use UI_ANALYZE only when it materially helps satisfy that request; do not add UI_ANALYZE just to satisfy validation.",
     "- UI_ANALYZE must not start or restart servers. Use server.mode=existing with a healthUrl/targetUrl for already-running apps, or server.mode=none for screenshots/static evidence.",
@@ -2368,7 +2398,24 @@ const createFlowGenerationTask = (
         description: "Short description",
         guidance:
           "Optional flow-wide guidance delivered after resolved instruction files.",
-        settings: { maxTransitions: 30 },
+        settings: {
+          autonomy: {
+            restartToBlockId: "start",
+            restartDelaySeconds: 60,
+            deferToBlockId: "main-task",
+            maxRecoveryAttempts: 3,
+            maxStagnantTransitions: 48,
+            maxRepeatedCycle: 3,
+          },
+        },
+        variables: [
+          {
+            name: "continuous",
+            type: "boolean",
+            default: "true",
+            required: false,
+          },
+        ],
         blocks: [
           {
             id: "start",

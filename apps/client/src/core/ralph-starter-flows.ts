@@ -12,6 +12,7 @@ import { autonomousUiImprovementLoopStarterFlow } from "./ralph-starter-flows/au
 import { featureImplementationChecklistLoopStarterFlow } from "./ralph-starter-flows/feature-implementation-checklist-loop.js";
 import { repositoryRefactorValidationLoopStarterFlow } from "./ralph-starter-flows/repository-refactor-validation-loop.js";
 import { securityReviewFixLoopStarterFlow } from "./ralph-starter-flows/security-review-fix-loop.js";
+import { enableContinuousRalphScopeCycles } from "./ralph-starter-flows/continuous-scope-cycle.js";
 
 export type RalphStarterFlowId =
   | "security-fix-loop"
@@ -658,6 +659,20 @@ export const applyRalphStarterFlowProtocol = (
 
   applyVerificationProtocol(flow, protocol.verification);
   applyTerminalOutcomeProtocol(flow, protocol.terminalOutcomes);
+  if (flow.blocks.some((block) => block.id === "completion-report")) {
+    enableContinuousRalphScopeCycles(flow);
+  }
+  if (!flow.variables?.some((variable) => variable.name === "continuous")) {
+    flow.variables = [
+      ...(flow.variables ?? []),
+      {
+        name: "continuous",
+        type: "boolean",
+        default: "true",
+        required: false,
+      },
+    ];
+  }
   assertStarterSafetyRoutes(flow);
   flow.blocks = flow.blocks.map((block) => {
     if (
@@ -685,11 +700,24 @@ export const applyRalphStarterFlowProtocol = (
       ? flow.settings.autonomy
       : { enabled: flow.settings?.autonomy !== false };
   for (const block of flow.blocks) {
-    if (block.type === "UTILITY" && block.utility.condition?.style === "json-path") {
+    if (
+      block.type === "UTILITY" &&
+      block.utility.condition?.style === "json-path"
+    ) {
       const condition = block.utility.condition;
-      const variable = flow.variables?.find((candidate) => condition.path === `variables.${candidate.name}`);
-      if (variable?.type === "boolean" && condition.operator === "equals" && (condition.value === "true" || condition.value === "false")) {
-        block.utility.condition = { ...condition, operator: "is-one-of", matchValues: [condition.value] };
+      const variable = flow.variables?.find(
+        (candidate) => condition.path === `variables.${candidate.name}`,
+      );
+      if (
+        variable?.type === "boolean" &&
+        condition.operator === "equals" &&
+        (condition.value === "true" || condition.value === "false")
+      ) {
+        block.utility.condition = {
+          ...condition,
+          operator: "is-one-of",
+          matchValues: [condition.value],
+        };
         delete block.utility.condition.value;
       }
     }
@@ -724,6 +752,8 @@ export const applyRalphStarterFlowProtocol = (
     ...flow.settings,
     autonomy: {
       ...autonomy,
+      restartToBlockId: "start",
+      restartDelaySeconds: 60,
       maxStagnantTransitions: 48,
       maxRepeatedCycle: 3,
     },
