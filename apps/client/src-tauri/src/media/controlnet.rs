@@ -83,7 +83,11 @@ pub(super) fn install_openpose(
             .map_err(|error| error.to_string())?;
     let files = manifests.get(profile).ok_or("Unknown OpenPose model")?;
     model_components::ensure_components(
-        &paths.models_root()?.join("controlnet").join("openpose").join(profile),
+        &paths
+            .models_root()?
+            .join("controlnet")
+            .join("openpose")
+            .join(profile),
         &files.to_string(),
     )
 }

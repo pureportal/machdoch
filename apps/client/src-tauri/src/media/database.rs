@@ -16,8 +16,7 @@ use sha2::{Digest as _, Sha256};
 use super::{
     catalog,
     error::MediaError,
-    model_addon,
-    provider_codex,
+    model_addon, provider_codex,
     provider_images::{self, GeneratedImageBatch},
     provider_local_diffusers::{LocalGeneratedImageBatch, LocalGeneratedVideo},
     provider_openai,
@@ -1240,7 +1239,9 @@ pub(crate) fn begin_remote_image_generation(
             |row| row.get::<_, String>(0),
         )
         .optional()
-        .map_err(|error| format!("failed to inspect unresolved image provider submissions: {error}"))?;
+        .map_err(|error| {
+            format!("failed to inspect unresolved image provider submissions: {error}")
+        })?;
     if let Some(job_id) = unresolved_job_id {
         return Err(format!(
             "A matching image request ({job_id}) may already have been accepted and charged. Review that provider decision before generating again."
@@ -3353,7 +3354,9 @@ pub(crate) fn fail_remote_image_generation(
                      WHERE run_id = ?1 AND attempt = 1 AND status = 'submitting'",
                     params![run_id, provider_request_id, diagnostic, timestamp],
                 )
-                .map_err(|error| format!("failed to close rejected image provider submission: {error}"))?;
+                .map_err(|error| {
+                    format!("failed to close rejected image provider submission: {error}")
+                })?;
         }
         append_event(
             &transaction,
@@ -4598,7 +4601,9 @@ pub(crate) fn mark_openpose_asset(
     asset_id: &str,
 ) -> MediaResult<MediaAssetRecord> {
     let asset = get_asset(paths, asset_id)?;
-    let mut tags = asset.tags.iter()
+    let mut tags = asset
+        .tags
+        .iter()
         .filter(|tag| tag.source == "technical")
         .map(|tag| (tag.value.clone(), tag.label.clone()))
         .collect::<Vec<_>>();
@@ -7325,7 +7330,10 @@ mod tests {
         let detail = get_run_detail(&paths, &request.run_id).unwrap();
         assert_eq!(detail.run.status, "canceled");
         assert_eq!(detail.provider_jobs[0].status, "canceled");
-        assert_eq!(detail.provider_jobs[0].policy.adapter_id, "local.transformers-svg");
+        assert_eq!(
+            detail.provider_jobs[0].policy.adapter_id,
+            "local.transformers-svg"
+        );
         assert!(!detail.provider_jobs[0].review_required);
         cleanup(&paths);
     }
@@ -7344,20 +7352,43 @@ mod tests {
         let detail = get_run_detail(&paths, &request.run_id).unwrap();
         assert_eq!(detail.run.executor, "codex-cli-image");
         assert_eq!(detail.provider_jobs[0].scenario, provider_codex::MODEL_ID);
-        assert_eq!(detail.provider_jobs[0].policy.adapter_id, "codex-cli.image-generation");
-        assert_eq!(detail.provider_jobs[0].policy.output_visibility, "local-file");
-        assert_ne!(provider_codex::request_digest(&request).unwrap(), provider_openai::request_digest(&request).unwrap());
+        assert_eq!(
+            detail.provider_jobs[0].policy.adapter_id,
+            "codex-cli.image-generation"
+        );
+        assert_eq!(
+            detail.provider_jobs[0].policy.output_visibility,
+            "local-file"
+        );
+        assert_ne!(
+            provider_codex::request_digest(&request).unwrap(),
+            provider_openai::request_digest(&request).unwrap()
+        );
         initialize(&paths).unwrap();
-        assert_eq!(get_run_detail(&paths, &request.run_id).unwrap().run.status, "needs-review");
+        assert_eq!(
+            get_run_detail(&paths, &request.run_id).unwrap().run.status,
+            "needs-review"
+        );
         request.run_id = "run:codex:2".into();
-        assert!(begin_remote_image_generation(&paths, &request).unwrap_err().contains("may already"));
-        resolve_synchronous_provider_review(&paths, "provider:run:codex:1:1", "confirm-not-accepted-and-retry").unwrap();
+        assert!(begin_remote_image_generation(&paths, &request)
+            .unwrap_err()
+            .contains("may already"));
+        resolve_synchronous_provider_review(
+            &paths,
+            "provider:run:codex:1:1",
+            "confirm-not-accepted-and-retry",
+        )
+        .unwrap();
         assert!(begin_remote_image_generation(&paths, &request).unwrap());
         cleanup(&paths);
     }
 
     async fn verify_live_image_generation(use_codex: bool) {
-        let paths = test_paths(if use_codex { "live-codex-image" } else { "live-openai-image" });
+        let paths = test_paths(if use_codex {
+            "live-codex-image"
+        } else {
+            "live-openai-image"
+        });
         initialize(&paths).unwrap();
         insert_openai_test_revision(&paths);
         let mut request = openai_request("run:live-image");
@@ -7373,17 +7404,30 @@ mod tests {
         let batch = if use_codex {
             provider_codex::generate(&paths, &request, &env).await
         } else {
-            let api_key = env.get("OPENAI_API_KEY").expect("OpenAI API key required for live verification");
+            let api_key = env
+                .get("OPENAI_API_KEY")
+                .expect("OpenAI API key required for live verification");
             provider_openai::generate(&paths, &request, api_key).await
-        }.expect("live image generation must succeed");
+        }
+        .expect("live image generation must succeed");
         let detail = complete_remote_image_generation(&paths, &request, &batch).unwrap();
         assert_eq!(detail.run.status, "completed");
         assert_eq!(detail.assets.len(), 1);
         let image_path = paths.blobs.join(&batch.assets[0].relative_path);
         let bytes = fs::read(&image_path).unwrap();
-        assert_eq!(format!("{:x}", Sha256::digest(&bytes)), batch.assets[0].digest);
+        assert_eq!(
+            format!("{:x}", Sha256::digest(&bytes)),
+            batch.assets[0].digest
+        );
         provider_images::validate_image(&bytes, "png", 0).unwrap();
-        println!("{}: {}x{} PNG, {} bytes, saved to {}", request.model_id, batch.assets[0].width, batch.assets[0].height, bytes.len(), image_path.display());
+        println!(
+            "{}: {}x{} PNG, {} bytes, saved to {}",
+            request.model_id,
+            batch.assets[0].width,
+            batch.assets[0].height,
+            bytes.len(),
+            image_path.display()
+        );
     }
 
     #[tokio::test]
@@ -7808,7 +7852,10 @@ mod tests {
         );
         let operation = detail.assets[0].operation.as_ref().unwrap();
         assert_eq!(operation["kind"], "remote-image-edit");
-        assert_eq!(operation["modelSnapshot"], "gpt-image-2.5-sunburst-2026-09-08");
+        assert_eq!(
+            operation["modelSnapshot"],
+            "gpt-image-2.5-sunburst-2026-09-08"
+        );
         assert_eq!(operation["sources"][0]["role"], "base");
         assert_eq!(operation["sources"][0]["uploadBytes"], 17);
         assert_eq!(operation["metadataStrippedBeforeUpload"], true);
@@ -8025,23 +8072,24 @@ mod tests {
         assert!(!codex.configured);
         assert!(codex.installed);
         assert_eq!(codex.package_type, "agent-cli");
-        let codex_configured = get_model_catalog(
-            &paths,
-            &HashSet::from(["codex-cli".to_string()]),
-        )
-        .unwrap();
-        assert!(codex_configured
-            .models
-            .iter()
-            .find(|model| model.id == "codex-cli:image-generation")
-            .unwrap()
-            .configured);
-        assert!(!codex_configured
-            .models
-            .iter()
-            .find(|model| model.id == "openai:gpt-image-2.5-sunburst")
-            .unwrap()
-            .configured);
+        let codex_configured =
+            get_model_catalog(&paths, &HashSet::from(["codex-cli".to_string()])).unwrap();
+        assert!(
+            codex_configured
+                .models
+                .iter()
+                .find(|model| model.id == "codex-cli:image-generation")
+                .unwrap()
+                .configured
+        );
+        assert!(
+            !codex_configured
+                .models
+                .iter()
+                .find(|model| model.id == "openai:gpt-image-2.5-sunburst")
+                .unwrap()
+                .configured
+        );
         let flux = initial
             .models
             .iter()

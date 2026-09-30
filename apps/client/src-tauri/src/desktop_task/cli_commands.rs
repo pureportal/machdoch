@@ -30,8 +30,7 @@ use super::{
     },
     process::{
         hide_child_process_window, read_bounded_stream_text, read_bounded_stream_text_with_limit,
-        read_stderr, SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
-        SUBPROCESS_OUTPUT_TRUNCATED_MARKER,
+        read_stderr, SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES, SUBPROCESS_OUTPUT_TRUNCATED_MARKER,
     },
     registry::normalize_task_id,
     InstructionCommandRequest, McpCommandRequest, ProviderSyncCommandRequest,
@@ -517,11 +516,7 @@ fn scheduler_cli_spec(arguments: &[String]) -> &'static AuxiliaryCliSpec {
 
 pub(super) fn execute_scheduler_command(request: SchedulerCommandRequest) -> Result<Value, String> {
     let spec = scheduler_cli_spec(&request.arguments);
-    run_auxiliary_json_command(
-        &request.workspace_root,
-        request.arguments,
-        spec,
-    )
+    run_auxiliary_json_command(&request.workspace_root, request.arguments, spec)
 }
 
 pub(super) fn start_scheduler_service(request: SchedulerCommandRequest) -> Result<u32, String> {
@@ -619,7 +614,10 @@ pub(super) fn execute_provider_sync_command(
     )
 }
 
-pub(super) fn execute_media_flow_agent(workspace_root: &str, input: &Value) -> Result<Value, String> {
+pub(super) fn execute_media_flow_agent(
+    workspace_root: &str,
+    input: &Value,
+) -> Result<Value, String> {
     let contents = serde_json::to_string(input).map_err(|error| error.to_string())?;
     if contents.len() > 2 * 1024 * 1024 {
         return Err("Media Studio assistant input exceeds 2 MiB.".to_string());

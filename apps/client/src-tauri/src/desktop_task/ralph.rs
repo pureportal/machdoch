@@ -301,9 +301,8 @@ pub(super) fn execute_ralph_command(
     let progress_task_id = task_id.clone();
     let stdout_worker = thread::spawn(move || read_ralph_stdout(stdout));
     let stderr_app_handle = app_handle.clone();
-    let stderr_worker = thread::spawn(move || {
-        read_stderr(stderr, stderr_app_handle, window_label, task_id)
-    });
+    let stderr_worker =
+        thread::spawn(move || read_stderr(stderr, stderr_app_handle, window_label, task_id));
 
     let started_at = Instant::now();
     let status = loop {
