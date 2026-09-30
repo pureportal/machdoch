@@ -25,6 +25,7 @@ chrono = { version = "0.4.44", default-features = false, features = ["clock", "s
 enigo = "0.6.1"
 font8x8 = "0.3"
 hound = "3.5"
+hickory-resolver = { version = "=0.26.3", default-features = false, features = ["tokio", "system-config"] }
 getrandom = "0.3"
 github-copilot-sdk = { version = "=1.0.7-preview.2", default-features = false }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }

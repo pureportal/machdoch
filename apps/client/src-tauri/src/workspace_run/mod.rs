@@ -1,5 +1,6 @@
 mod control;
 mod health;
+mod health_dns;
 mod manager;
 pub mod model;
 mod persistence;
