@@ -20,14 +20,23 @@ impl Fixture {
             root.join("worker.py"),
             r#"import json, os, pathlib, sys, time
 root = pathlib.Path(__file__).parent
+def emit_progress(request):
+    count = request.get('progressSteps', 0)
+    for index in range(count):
+        print('MACHDOCH_PROGRESS ' + json.dumps({'stage': 'Sampling', 'progress': (index + 1) / count}), file=sys.stderr, flush=True)
+        time.sleep(request.get('progressDelay', 0))
 if sys.argv[1] != 'serve':
-    if sys.argv[1] == 'canny':
-        time.sleep((json.load(sys.stdin) or {}).get('delay', 0))
+    request = json.load(sys.stdin) if sys.argv[1] in ('canny', 'generate-video') else {}
+    emit_progress(request)
+    if request.get('delay'):
+        (root / 'active').write_text(str(os.getpid()))
+        time.sleep(request['delay'])
     print(json.dumps({'pid': os.getpid()}))
     sys.exit(0)
 for line in sys.stdin:
     envelope = json.loads(line)
     request = envelope.get('request') or {}
+    emit_progress(request)
     if request.get('delay'):
         (root / 'active').write_text(str(os.getpid()))
         time.sleep(request['delay'])
@@ -213,28 +222,114 @@ fn failure_crash_and_deadline_release_worker_resources() {
 }
 
 #[test]
-fn early_response_does_not_bypass_a_blocked_input_deadline() {
-    let fixture = Fixture::new();
-    fs::write(
-        fixture.root.join("worker.py"),
-        r#"import json, sys, time
-sys.stdin.buffer.read(1)
-print(json.dumps({'result': {}, 'retentionSeconds': 120}), flush=True)
-time.sleep(2)
-"#,
-    )
-    .unwrap();
-    let (work, _) = fixture.work("generate", serde_json::json!({}));
-    let mut worker = ResidentWorker::spawn(work.process, "test".into()).unwrap();
-    let input =
-        serde_json::to_vec(&serde_json::json!({"prompt": "x".repeat(1024 * 1024)})).unwrap();
-    let error = worker
-        .request("generate", Some(&input), Duration::from_millis(500), |_| {
+fn resident_and_isolated_generation_survive_with_advancing_progress() {
+    for command in ["generate", "generate-video"] {
+        let fixture = Fixture::new();
+        let stopping = AtomicBool::new(false);
+        let mut resident = None;
+        let (mut work, _) = fixture.work(
+            command,
+            serde_json::json!({"progressSteps":6,"progressDelay":0.3}),
+        );
+        work.timeout = Duration::from_secs(1);
+        let started = Instant::now();
+        let output = execute(&mut resident, &work, &stopping).unwrap();
+        assert!(started.elapsed() > work.timeout);
+        assert!(output.status.success());
+        release(&mut resident).unwrap();
+        assert_reaped(pid(&output));
+    }
+}
+
+#[test]
+fn resident_and_isolated_generation_time_out_after_progress_stops() {
+    for command in ["generate", "generate-video"] {
+        let fixture = Fixture::new();
+        let (work, _) = fixture.work(
+            command,
+            serde_json::json!({"progressSteps":3,"progressDelay":0.2,"delay":30}),
+        );
+        let started = Instant::now();
+        let mut steps = 0;
+        let mut monitor = |event: Option<worker_output::WorkerProgress>| {
+            if event.is_some() {
+                steps += 1;
+            }
             Ok(())
-        })
-        .unwrap_err();
-    assert!(error.contains("deadline"), "{error}");
-    assert!(!worker.alive().unwrap());
+        };
+        let error = if command == "generate" {
+            let mut worker = ResidentWorker::spawn(work.process, "test".into()).unwrap();
+            let result = worker.request(
+                command,
+                work.input.as_deref(),
+                Duration::from_secs(1),
+                &mut monitor,
+            );
+            assert!(!worker.alive().unwrap());
+            result.unwrap_err()
+        } else {
+            let work = Work {
+                timeout: Duration::from_secs(1),
+                ..work
+            };
+            run_isolated(&work, &mut monitor).unwrap_err()
+        };
+        assert_eq!(steps, 3);
+        assert!(started.elapsed() > Duration::from_millis(1300));
+        assert!(error.contains("deadline"), "{error}");
+        let worker_pid = fs::read_to_string(fixture.root.join("active"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_reaped(worker_pid);
+    }
+}
+
+#[test]
+fn early_response_does_not_bypass_a_blocked_input_deadline() {
+    for command in ["generate", "generate-video"] {
+        let fixture = Fixture::new();
+        fs::write(
+            fixture.root.join("worker.py"),
+            r#"import json, os, pathlib, sys, time
+sys.stdin.buffer.read(1)
+(pathlib.Path(__file__).parent / 'active').write_text(str(os.getpid()))
+print(json.dumps({'result': {}, 'retentionSeconds': 120}), flush=True)
+for index in range(20):
+    print('MACHDOCH_PROGRESS ' + json.dumps({'stage': 'Sampling', 'progress': (index + 1) / 20}), file=sys.stderr, flush=True)
+    time.sleep(0.1)
+"#,
+        )
+        .unwrap();
+        let (work, _) = fixture.work(command, serde_json::json!({}));
+        let input =
+            serde_json::to_vec(&serde_json::json!({"prompt": "x".repeat(1024 * 1024)})).unwrap();
+        let error = if command == "generate" {
+            let mut worker = ResidentWorker::spawn(work.process, "test".into()).unwrap();
+            let result =
+                worker.request(
+                    command,
+                    Some(&input),
+                    Duration::from_millis(500),
+                    |_| Ok(()),
+                );
+            assert!(!worker.alive().unwrap());
+            result.unwrap_err()
+        } else {
+            let work = Work {
+                input: Some(input),
+                timeout: Duration::from_millis(500),
+                ..work
+            };
+            run_isolated(&work, |_| Ok(())).unwrap_err()
+        };
+        assert!(error.contains("deadline"), "{error}");
+        let worker_pid = fs::read_to_string(fixture.root.join("active"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_reaped(worker_pid);
+    }
 }
 
 #[test]

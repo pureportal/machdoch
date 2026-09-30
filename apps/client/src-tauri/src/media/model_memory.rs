@@ -12,8 +12,8 @@ use std::{
 use crate::child_process::SupervisedChild;
 
 use super::{
-    database, model_worker::ResidentWorker, subject_cutout, worker_output, MediaResult,
-    MediaRuntimePaths,
+    database, model_worker::ResidentWorker, subject_cutout, worker_deadline::WorkerDeadline,
+    worker_output, MediaResult, MediaRuntimePaths,
 };
 
 const WATCHDOG_INTERVAL: Duration = Duration::from_secs(5);
@@ -348,16 +348,19 @@ fn run_isolated(
                 .map_err(|error| format!("Could not write model request: {error}"))
         })
     });
-    let started = Instant::now();
+    let mut deadline = WorkerDeadline::new(&work.command, work.timeout, Instant::now());
     let result: MediaResult<std::process::ExitStatus> = (|| loop {
         monitor(None)?;
         for event in progress.try_iter() {
+            if writer.as_ref().is_none_or(|writer| writer.is_finished()) {
+                deadline.record_progress(&event, Instant::now());
+            }
             monitor(Some(event))?;
         }
         if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
             break Ok(status);
         }
-        if started.elapsed() >= work.timeout {
+        if deadline.expired(Instant::now()) {
             break Err("Local model worker timed out: execution deadline exceeded".into());
         }
         thread::sleep(Duration::from_millis(50));
