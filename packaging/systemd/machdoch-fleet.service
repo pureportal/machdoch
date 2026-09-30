@@ -1,5 +1,5 @@
-# Install as /etc/systemd/system/machdoch-fleet.service after following
-# docs/fleet-background-service.md. Run the agent as an unprivileged account.
+# Install as /etc/systemd/system/machdoch-fleet.service.
+# Run the agent as an unprivileged account.
 [Unit]
 Description=Machdoch headless Fleet host
 Wants=network-online.target

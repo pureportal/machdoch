@@ -48,19 +48,10 @@
     "typecheck:test": "pnpm --filter @machdoch/client typecheck:test",
     "typecheck:ui": "pnpm --filter @machdoch/client typecheck:ui",
     "verify": "pnpm run check && pnpm run typecheck && pnpm run test && pnpm run build",
-    "verify:fleet-ui": "node scripts/verify-fleet-ui.mjs",
-    "verify:fleet-review": "node --import @oxc-node/core/register scripts/verify-fleet-review.mjs",
-    "verify:fleet-settings": "node --import @oxc-node/core/register scripts/verify-fleet-settings.mjs",
-    "verify:responsive-ui": "node scripts/verify-responsive-ui.mjs",
-    "verify:fleet-projects": "oxnode scripts/verify-fleet-projects.ts",
-    "verify:fleet-previews": "oxnode scripts/verify-fleet-previews.ts",
-    "verify:chat-ui": "node scripts/verify-chat-ui.mjs",
-    "verify:media-ui": "node scripts/verify-media-ui.mjs",
     "version:bump": "node scripts/bump-version.mjs",
     "version:major": "node scripts/bump-version.mjs major",
     "version:minor": "node scripts/bump-version.mjs minor",
-    "version:patch": "node scripts/bump-version.mjs patch",
-    "verify:fleet-media": "node --import @oxc-node/core/register scripts/verify-fleet-media.mjs"
+    "version:patch": "node scripts/bump-version.mjs patch"
   },
   "engines": {
     "node": ">=22.13",

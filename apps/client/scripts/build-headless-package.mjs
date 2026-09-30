@@ -46,10 +46,6 @@ try {
     join(repositoryRoot, "packaging/systemd/machdoch-fleet.service"),
     join(root, "machdoch-fleet.service"),
   );
-  await cp(
-    join(repositoryRoot, "docs/fleet-background-service.md"),
-    join(root, "README.md"),
-  );
   await writeFile(
     join(root, "package.json"),
     `${JSON.stringify({ name: "machdoch-headless", version: metadata.version, private: true, engines: metadata.engines }, null, 2)}\n`,
