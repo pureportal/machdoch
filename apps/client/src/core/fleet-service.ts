@@ -189,7 +189,7 @@ export async function manageFleetService(
     );
   if (dependencies.uid === 0 && action !== "unit")
     throw new Error(
-      "Install the user service as its regular service account. For system-wide startup, use the dedicated-account systemd template in docs/fleet-background-service.md.",
+      "Install the user service as its regular service account. For system-wide startup, use the dedicated-account systemd template (machdoch-fleet.service) from the headless package.",
     );
   if (!isAbsolute(dependencies.configHome))
     throw new Error(
