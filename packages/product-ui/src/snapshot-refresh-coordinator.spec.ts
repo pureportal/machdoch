@@ -111,6 +111,30 @@ describe("SnapshotRefreshCoordinator", () => {
     expect(snapshots).toEqual(["current"]);
   });
 
+  it("runs a command refresh after an active poll", async () => {
+    const requests = [createDeferred<string>(), createDeferred<string>()];
+    const snapshots: string[] = [];
+    let requestCount = 0;
+    const coordinator = new SnapshotRefreshCoordinator({
+      fetchSnapshot: () => requests[requestCount++]!.promise,
+      onSnapshot: (snapshot) => snapshots.push(snapshot),
+      onError: () => undefined,
+    });
+
+    const poll = coordinator.poll();
+    const commandRefresh = coordinator.request();
+
+    requests[0]!.resolve("before command");
+    await flush();
+
+    expect(requestCount).toBe(2);
+    expect(snapshots).toEqual([]);
+    requests[1]!.resolve("after command");
+    await Promise.all([poll, commandRefresh]);
+
+    expect(snapshots).toEqual(["after command"]);
+  });
+
   it("shares completion while a refresh remains unresolved", () => {
     const refresh = createDeferred<string>();
     const coordinator = new SnapshotRefreshCoordinator({
