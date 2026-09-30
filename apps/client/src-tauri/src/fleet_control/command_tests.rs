@@ -41,6 +41,7 @@ fn command_request(kind: ProductCommandKind) -> ProductCommand {
         scope: None,
         parameters: None,
         max_transitions: None,
+        isolated: None,
         target: None,
         aspect_ratio: None,
         output_count: None,
@@ -307,7 +308,10 @@ fn media_generation_requires_a_complete_bounded_recipe() {
     .expect("a complete media recipe should normalize");
 
     assert_eq!(event.kind, "generate-media");
-    assert_eq!(event.model_id.as_deref(), Some("openai:gpt-image-2.5-sunburst"));
+    assert_eq!(
+        event.model_id.as_deref(),
+        Some("openai:gpt-image-2.5-sunburst")
+    );
     assert_eq!(event.output_count, Some(2));
 
     let error = normalize_command(ProductCommand {
