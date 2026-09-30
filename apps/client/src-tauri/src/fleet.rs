@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::Manager;
+use tokio_util::sync::CancellationToken;
 
 mod config;
 mod gateway;
@@ -19,6 +20,13 @@ use config::{
 #[derive(Clone, Default)]
 pub struct FleetConnectionState {
     inner: Arc<Mutex<FleetConnectionInner>>,
+    monitor_stop: CancellationToken,
+}
+
+impl FleetConnectionState {
+    pub(crate) fn shutdown(&self) {
+        self.monitor_stop.cancel();
+    }
 }
 
 #[derive(Default)]
@@ -106,7 +114,11 @@ pub fn initialize(app_handle: &tauri::AppHandle) -> Result<(), String> {
     let observation = load_fleet_connection_config();
     let initial_error = observation.as_ref().err().cloned();
     synchronize_connection_config(app_handle.clone(), state.inner.clone(), observation)?;
-    spawn_config_monitor(app_handle.clone(), state.inner.clone());
+    spawn_config_monitor(
+        app_handle.clone(),
+        state.inner.clone(),
+        state.monitor_stop.clone(),
+    );
     initial_error.map_or(Ok(()), Err)
 }
 
@@ -312,20 +324,49 @@ fn spawn_gateway(
     });
 }
 
-fn spawn_config_monitor(app_handle: tauri::AppHandle, state: Arc<Mutex<FleetConnectionInner>>) {
+fn spawn_config_monitor(
+    app_handle: tauri::AppHandle,
+    state: Arc<Mutex<FleetConnectionInner>>,
+    stop: CancellationToken,
+) {
     tauri::async_runtime::spawn(async move {
-        loop {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            if let Err(error) = synchronize_connection_config(
-                app_handle.clone(),
-                state.clone(),
-                load_fleet_connection_config(),
-            ) {
-                eprintln!("Failed to synchronize Fleet connection configuration: {error}");
-                return;
-            }
-        }
+        monitor_config_updates(
+            stop,
+            || tokio::time::sleep(std::time::Duration::from_secs(1)),
+            || {
+                synchronize_connection_config(
+                    app_handle.clone(),
+                    state.clone(),
+                    load_fleet_connection_config(),
+                )
+            },
+        )
+        .await;
     });
+}
+
+async fn monitor_config_updates<Wait, WaitFuture, Synchronize>(
+    stop: CancellationToken,
+    mut wait_for_next_update: Wait,
+    mut synchronize: Synchronize,
+) where
+    Wait: FnMut() -> WaitFuture,
+    WaitFuture: std::future::Future<Output = ()>,
+    Synchronize: FnMut() -> Result<(), String>,
+{
+    loop {
+        tokio::select! {
+            biased;
+            _ = stop.cancelled() => return,
+            _ = wait_for_next_update() => {}
+        }
+        if stop.is_cancelled() {
+            return;
+        }
+        if let Err(error) = synchronize() {
+            eprintln!("Failed to synchronize Fleet connection configuration: {error}");
+        }
+    }
 }
 
 fn synchronize_connection_config(
@@ -551,5 +592,72 @@ mod tests {
             .expect("removing invalid configuration should recover state");
         assert_eq!(inner.phase, FleetConnectionPhase::Disabled);
         assert!(inner.last_error.is_none());
+    }
+
+    #[tokio::test]
+    async fn monitor_retries_after_a_failed_synchronization() {
+        let stop = CancellationToken::new();
+        let attempts = Arc::new(Mutex::new(vec![]));
+        let mut results = [Err("transient failure".to_string()), Ok(())].into_iter();
+        let attempts_for_synchronize = attempts.clone();
+        let stop_after_success = stop.clone();
+
+        monitor_config_updates(
+            stop,
+            || std::future::ready(()),
+            move || {
+                let result = results.next().expect("monitor should stop after recovery");
+                attempts_for_synchronize
+                    .lock()
+                    .expect("attempts should be available")
+                    .push(result.is_ok());
+                if result.is_ok() {
+                    stop_after_success.cancel();
+                }
+                result
+            },
+        )
+        .await;
+
+        assert_eq!(
+            *attempts.lock().expect("attempts should be available"),
+            vec![false, true]
+        );
+    }
+
+    #[tokio::test]
+    async fn monitor_stops_while_waiting_for_the_next_update() {
+        let stop = CancellationToken::new();
+        let (wait_started_sender, wait_started_receiver) = tokio::sync::oneshot::channel();
+        let wait_started_sender = Arc::new(Mutex::new(Some(wait_started_sender)));
+        let monitor_stop = stop.clone();
+        let monitor = tokio::spawn(monitor_config_updates(
+            monitor_stop,
+            {
+                let wait_started_sender = wait_started_sender.clone();
+                move || {
+                    let wait_started_sender = wait_started_sender.clone();
+                    async move {
+                        if let Some(sender) = wait_started_sender
+                            .lock()
+                            .expect("wait signal should be available")
+                            .take()
+                        {
+                            sender.send(()).expect("wait should start once");
+                        }
+                        std::future::pending::<()>().await;
+                    }
+                }
+            },
+            || panic!("shutdown should stop the monitor before synchronization"),
+        ));
+
+        wait_started_receiver
+            .await
+            .expect("monitor should wait for its next update");
+        stop.cancel();
+        monitor
+            .await
+            .expect("monitor should stop after cancellation");
     }
 }
