@@ -213,6 +213,31 @@ fn failure_crash_and_deadline_release_worker_resources() {
 }
 
 #[test]
+fn early_response_does_not_bypass_a_blocked_input_deadline() {
+    let fixture = Fixture::new();
+    fs::write(
+        fixture.root.join("worker.py"),
+        r#"import json, sys, time
+sys.stdin.buffer.read(1)
+print(json.dumps({'result': {}, 'retentionSeconds': 120}), flush=True)
+time.sleep(2)
+"#,
+    )
+    .unwrap();
+    let (work, _) = fixture.work("generate", serde_json::json!({}));
+    let mut worker = ResidentWorker::spawn(work.process, "test".into()).unwrap();
+    let input =
+        serde_json::to_vec(&serde_json::json!({"prompt": "x".repeat(1024 * 1024)})).unwrap();
+    let error = worker
+        .request("generate", Some(&input), Duration::from_millis(500), |_| {
+            Ok(())
+        })
+        .unwrap_err();
+    assert!(error.contains("deadline"), "{error}");
+    assert!(!worker.alive().unwrap());
+}
+
+#[test]
 fn cancellation_and_monitor_failures_reap_in_flight_workers() {
     for reason in ["generation was canceled", "database unavailable"] {
         let fixture = Fixture::new();

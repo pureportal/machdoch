@@ -54,10 +54,22 @@ pub(crate) fn sync_quick_voice_shortcut_with_settings<R: Runtime>(
                     if event.state == ShortcutState::Pressed {
                         let app = app.clone();
                         tauri::async_runtime::spawn(async move {
-                            let _ = window::show_quick_voice_window(
-                                &app,
-                                Some(QUICK_VOICE_SHORTCUT_SOURCE),
-                            );
+                            match tauri::async_runtime::spawn_blocking(move || {
+                                window::show_quick_voice_window(
+                                    &app,
+                                    Some(QUICK_VOICE_SHORTCUT_SOURCE),
+                                )
+                            })
+                            .await
+                            {
+                                Ok(Ok(())) => {}
+                                Ok(Err(error)) => {
+                                    eprintln!("Failed to show Quick Voice: {error}");
+                                }
+                                Err(error) => {
+                                    eprintln!("Quick Voice window task failed: {error}");
+                                }
+                            }
                         });
                     }
                 })

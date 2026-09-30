@@ -125,10 +125,14 @@ pub fn clear_webview_cache(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn ensure_assistant_window(app: AppHandle, label: String) -> Result<(), String> {
-    window::ensure_assistant_window(&app, &label)
-        .map(|_| ())
-        .map_err(|error| format!("Failed to create assistant window `{label}`: {error}"))
+pub async fn ensure_assistant_window(app: AppHandle, label: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        window::ensure_assistant_window(&app, &label)
+            .map(|_| ())
+            .map_err(|error| format!("Failed to create assistant window `{label}`: {error}"))
+    })
+    .await
+    .map_err(|error| format!("Assistant window creation task failed: {error}"))?
 }
 
 #[tauri::command]

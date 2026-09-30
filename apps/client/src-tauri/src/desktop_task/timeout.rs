@@ -72,6 +72,7 @@ impl DesktopTaskTimeout {
         state.mark_activity();
         state.cancellable = progress["cancellable"].as_bool().unwrap_or(false);
         progress["timeout"] = state.snapshot();
+        drop(state);
         emit(progress);
         Ok(())
     }
@@ -99,7 +100,9 @@ impl DesktopTaskTimeout {
             state.idle_timeout_ms = u64::from(minutes) * 60_000;
         }
         state.mark_activity();
-        emit(state.snapshot());
+        let snapshot = state.snapshot();
+        drop(state);
+        emit(snapshot);
         Ok(())
     }
 
@@ -185,5 +188,36 @@ mod tests {
         assert!(timeout.reset(None, |_| {}).is_err());
         timeout.finish().unwrap();
         assert!(timeout.reset(None, |_| {}).is_err());
+    }
+
+    #[test]
+    fn progress_notification_releases_the_timeout_state() {
+        let timeout = DesktopTaskTimeout::new("main".to_string(), 20);
+        timeout
+            .record_progress(json!({"cancellable": true}), |progress| {
+                assert!(timeout.state.try_lock().is_ok());
+                timeout
+                    .reset(Some(30), |snapshot| {
+                        assert_eq!(snapshot["idleTimeoutMs"], 1_800_000);
+                    })
+                    .unwrap();
+                assert_eq!(progress["timeout"]["idleTimeoutMs"], 1_200_000);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn reset_notification_can_finish_the_timeout() {
+        let timeout = DesktopTaskTimeout::new("main".to_string(), 20);
+        timeout
+            .reset(Some(30), |snapshot| {
+                assert!(timeout.state.try_lock().is_ok());
+                timeout.finish().unwrap();
+                assert_eq!(snapshot["idleTimeoutMs"], 1_800_000);
+            })
+            .unwrap();
+        assert!(timeout
+            .reset(None, |_| panic!("finished timeout must not emit"))
+            .is_err());
     }
 }

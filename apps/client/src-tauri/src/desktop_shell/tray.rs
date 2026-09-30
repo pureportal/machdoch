@@ -53,8 +53,16 @@ pub(crate) fn create_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
                 button_state: MouseButtonState::Up,
                 ..
             } => {
-                let app = tray.app_handle();
-                show_tray_menu_window(app, position.x, position.y, rect);
+                let app = tray.app_handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = tauri::async_runtime::spawn_blocking(move || {
+                        show_tray_menu_window(&app, position.x, position.y, rect);
+                    })
+                    .await
+                    {
+                        eprintln!("Tray menu window task failed: {error}");
+                    }
+                });
             }
             _ => {}
         });
