@@ -53,6 +53,31 @@ LATENT_RGB_FACTORS = [
 LATENT_RGB_BIAS = [0.057426, -0.022078, -0.071449]
 
 
+def sampling_geometry(width: int, height: int, *, spatial: int = 16) -> tuple[int, int]:
+    """Validate pixel dimensions and return the corresponding latent height and width."""
+    dimensions = {"width": width, "height": height}
+    if any(not isinstance(value, int) or isinstance(value, bool) or value <= 0
+           for value in dimensions.values()):
+        raise ValueError("sampling width and height must be positive integers")
+    if not isinstance(spatial, int) or isinstance(spatial, bool) or spatial <= 0:
+        raise ValueError("sampling spatial scale must be a positive integer")
+
+    grid = spatial * 2
+    undersized = [f"{name}={value}" for name, value in dimensions.items() if value < grid]
+    if undersized:
+        raise ValueError(
+            f"sampling dimensions must be at least {grid}px; {', '.join(undersized)} "
+            "would produce a zero-sized latent grid"
+        )
+    misaligned = [f"{name}={value}" for name, value in dimensions.items() if value % grid]
+    if misaligned:
+        raise ValueError(
+            f"sampling dimensions must be multiples of {grid}px; got {', '.join(misaligned)}"
+        )
+
+    return height // spatial, width // spatial
+
+
 def sample_schedule(steps: int, shift: float = 12.0, mode: str = "comfy"):
     """Descending sigmas 1 -> 0 on H3's shifted grid: sigma = shift*u / (1 + (shift-1)*u).
 
@@ -219,10 +244,7 @@ def _sample_image_impl(model, text_embeds, *, width=512, height=512, steps=8, cf
     VRAM, Windows pages to system RAM rather than raising, so the render succeeds at ~100x the
     cost and every exception-driven fallback stays quiet. Wall time is the only symptom.
     """
-    lat_h, lat_w = height // spatial, width // spatial
-    # The DiT patchifies 2x2, so the latent grid must be even (compute_loss crops for the same
-    # reason on the training side).
-    lat_h, lat_w = (lat_h // 2) * 2, (lat_w // 2) * 2
+    lat_h, lat_w = sampling_geometry(width, height, spatial=spatial)
     from fizgig.minimax.model import latent_frames_for_pixels, pixel_frames_for_latent
     latent_t = latent_frames_for_pixels(int(num_frames), exact=exact_frames)
     pixel_frames = pixel_frames_for_latent(latent_t)        # the snapped-down truth
