@@ -168,15 +168,12 @@ export type UserVoiceAiProvider = AudioProvider;
 export type UserSpeechToTextProvider = Exclude<SpeechToTextProvider, "none">;
 
 export const MAIN_WINDOW_LABEL = "main";
-export const ASSISTANT_BUBBLE_WINDOW_LABEL = "assistant-bubble";
-export const ASSISTANT_POPUP_WINDOW_LABEL = "assistant-popup";
 export const QUICK_VOICE_WINDOW_LABEL = "quick-voice";
 export const TRAY_MENU_WINDOW_LABEL = "tray-menu";
 export const DESKTOP_SETTINGS_CHANGED_EVENT =
   "machdoch://desktop-settings-changed";
 export const USER_SETTINGS_CHANGED_EVENT = "machdoch://user-settings-changed";
 export const QUICK_VOICE_START_EVENT = "machdoch://quick-voice-start";
-export const QUICK_CHAT_DROP_EVENT = "machdoch://quick-chat-drop";
 export const FILE_MANAGER_INVOCATION_EVENT =
   "machdoch://file-manager-invocation";
 
@@ -593,13 +590,6 @@ export interface InstructionMutationResult {
   workspace?: { id: string; root: string } & Record<string, unknown>;
   recovered?: boolean;
   reset?: boolean;
-}
-
-export interface MonitorBoundsInput {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
 }
 
 export interface DroppedPathEntry {
@@ -3045,12 +3035,6 @@ const normalizeUserDesktopSettings = (
   return {
     ...settings,
     quickVoiceShortcut,
-    assistantBubbleTemporarilyHideSeconds: clampIntegerSetting(
-      settings.assistantBubbleTemporarilyHideSeconds,
-      DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.min,
-      DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.max,
-      DEFAULT_USER_DESKTOP_SETTINGS.assistantBubbleTemporarilyHideSeconds,
-    ),
     aiContextMaxMessages: clampIntegerSetting(
       settings.aiContextMaxMessages,
       DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.min,
@@ -4046,24 +4030,6 @@ export const subscribeToDesktopSettingsChanged = async (
   } catch (error) {
     console.error("Failed to subscribe to desktop settings updates", error);
     return () => {};
-  }
-};
-
-export const detectFullscreenWindowOnMonitor = async (
-  monitor: MonitorBoundsInput,
-): Promise<boolean> => {
-  if (!canInvokeTauriCommands()) {
-    return false;
-  }
-
-  try {
-    return await tauriCore.invoke<boolean>(
-      "detect_fullscreen_window_on_monitor",
-      { monitor },
-    );
-  } catch (error) {
-    console.error("Failed to detect fullscreen window on monitor", error);
-    return false;
   }
 };
 

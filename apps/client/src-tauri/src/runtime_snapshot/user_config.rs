@@ -194,9 +194,6 @@ fn merge_typed_user_config(original: Value, typed: &UserConfigFile) -> Result<Va
             "autostartMinimized",
             "autostartToTray",
             "alwaysRunAsAdministrator",
-            "assistantBubbleEnabled",
-            "assistantBubbleHideWhenFullscreen",
-            "assistantBubbleTemporarilyHideSeconds",
             "aiContextMaxMessages",
             "chatIdleTimeoutMinutes",
             "inactiveSessionArchiveDays",
@@ -384,7 +381,7 @@ mod tests {
         let original = serde_json::json!({
             "apiKeys": { "openai": "old" },
             "desktop": {
-                "assistantBubbleEnabled": true,
+                "aiContextMaxMessages": 60,
                 "futurePortableSetting": "keep-me"
             },
             "workspaceRun": {
@@ -402,13 +399,13 @@ mod tests {
         typed
             .api_keys
             .insert("openai".to_string(), "new".to_string());
-        typed.desktop.assistant_bubble_enabled = Some(false);
+        typed.desktop.ai_context_max_messages = Some(80);
         typed.workspace_run.health_check_timeout_ms = Some(3_000);
 
         let merged = merge_typed_user_config(original, &typed).expect("merge should succeed");
 
         assert_eq!(merged["apiKeys"]["openai"], "new");
-        assert_eq!(merged["desktop"]["assistantBubbleEnabled"], false);
+        assert_eq!(merged["desktop"]["aiContextMaxMessages"], 80);
         assert_eq!(merged["desktop"]["futurePortableSetting"], "keep-me");
         assert_eq!(merged["workspaceRun"]["healthCheckTimeoutMs"], 3_000);
         assert_eq!(merged["workspaceRun"]["futureTimingSetting"], "keep-me");

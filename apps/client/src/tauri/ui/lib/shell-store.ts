@@ -46,7 +46,6 @@ export type {
   AppShellState,
   MainAppId,
   OnboardingState,
-  QuickChatBubbleStyle,
   RalphFlowLibraryMode,
   RalphSettings,
   RunningTaskMessageAction,
@@ -593,11 +592,6 @@ export const saveAppearanceSettings = async (
           normalizedSettings.accent !== normalizedBase.accent
             ? normalizedSettings.accent
             : latest.accent,
-        quickChatBubbleStyle:
-          normalizedSettings.quickChatBubbleStyle !==
-          normalizedBase.quickChatBubbleStyle
-            ? normalizedSettings.quickChatBubbleStyle
-            : latest.quickChatBubbleStyle,
       };
 
       await saveRequiredStoredValueUnlocked({

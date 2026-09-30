@@ -6,7 +6,6 @@ import type {
   AppearanceAccent,
   AppearanceDensity,
   AppearanceTheme,
-  QuickChatBubbleStyle,
 } from "../../../lib/shell-store";
 import {
   ChoiceButtons,
@@ -55,13 +54,6 @@ const ACCENT_OPTIONS = [
   label: string;
   swatchClassName: string;
 }>;
-
-const QUICK_CHAT_BUBBLE_STYLE_OPTIONS = [
-  { value: "classic", label: "Classic" },
-  { value: "glass", label: "Glass" },
-  { value: "pulse", label: "Pulse" },
-  { value: "orbit", label: "Orbit" },
-] as const satisfies ReadonlyArray<ChoiceOption<QuickChatBubbleStyle>>;
 
 export const AppearanceSettingsPanel = ({
   setup,
@@ -148,18 +140,6 @@ export const AppearanceSettingsPanel = ({
             );
           })}
         </div>
-      </SettingPanel>
-
-      <SettingPanel label="Quick Chat bubble">
-        <ChoiceButtons
-          label="Quick Chat bubble style"
-          value={setup.settings.quickChatBubbleStyle}
-          options={QUICK_CHAT_BUBBLE_STYLE_OPTIONS}
-          disabled={setup.saving}
-          onChange={(quickChatBubbleStyle) =>
-            savePartial({ quickChatBubbleStyle })
-          }
-        />
       </SettingPanel>
 
       <SettingsAutoSaveStatus

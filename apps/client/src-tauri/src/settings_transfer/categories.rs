@@ -15,9 +15,6 @@ use zeroize::Zeroizing;
 use crate::runtime_contract_generated::{
     DEFAULT_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
     DEFAULT_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
-    DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_ENABLED,
-    DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_HIDE_WHEN_FULLSCREEN,
-    DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
     DEFAULT_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
     DEFAULT_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES,
@@ -27,13 +24,11 @@ use crate::runtime_contract_generated::{
     DEFAULT_USER_REVIEW_MODEL_MODE, MAX_CONFIGURED_AUTOPILOT_ITERATIONS,
     MAX_CONFIGURED_EXECUTOR_TURNS, MAX_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
     MAX_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
-    MAX_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
     MAX_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
     MAX_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     MAX_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES, MAX_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
     MIN_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
     MIN_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
-    MIN_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
     MIN_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
     MIN_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     MIN_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES, MIN_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
@@ -332,7 +327,6 @@ fn normalize_appearance(value: Option<Value>) -> Value {
         "theme": select("theme", &["dark", "light"], "dark"),
         "density": select("density", &["comfortable", "compact"], "comfortable"),
         "accent": select("accent", &["sky", "emerald", "violet", "amber"], "sky"),
-        "quickChatBubbleStyle": select("quickChatBubbleStyle", &["classic", "glass", "pulse", "orbit"], "classic"),
     })
 }
 
@@ -348,9 +342,6 @@ fn snapshot_desktop_appearance<R: Runtime>(app: &AppHandle<R>) -> Result<Categor
     let appearance = normalize_appearance(store.get(APPEARANCE_STORAGE_KEY));
     let value = json!({
         "desktop": {
-            "assistantBubbleEnabled": bool_or(desktop.get("assistantBubbleEnabled"), DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_ENABLED),
-            "assistantBubbleHideWhenFullscreen": bool_or(desktop.get("assistantBubbleHideWhenFullscreen"), DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_HIDE_WHEN_FULLSCREEN),
-            "assistantBubbleTemporarilyHideSeconds": u64_clamped(desktop.get("assistantBubbleTemporarilyHideSeconds"), u64::from(DEFAULT_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS), u64::from(MIN_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS), u64::from(MAX_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS)),
             "aiContextMaxMessages": u64_clamped(desktop.get("aiContextMaxMessages"), u64::from(DEFAULT_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES), u64::from(MIN_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES), u64::from(MAX_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES)),
             "chatIdleTimeoutMinutes": u64_clamped(desktop.get("chatIdleTimeoutMinutes"), u64::from(DEFAULT_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES), u64::from(MIN_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES), u64::from(MAX_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES)),
             "inactiveSessionArchiveDays": u64_clamped(desktop.get("inactiveSessionArchiveDays"), u64::from(DEFAULT_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS), u64::from(MIN_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS), u64::from(MAX_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS)),
@@ -361,7 +352,7 @@ fn snapshot_desktop_appearance<R: Runtime>(app: &AppHandle<R>) -> Result<Categor
         "appearance": appearance,
     });
     validate_desktop_appearance_value(&value)?;
-    create_json_snapshot(SettingsCategoryId::DesktopAppearance, value, 9, false)
+    create_json_snapshot(SettingsCategoryId::DesktopAppearance, value, 6, false)
 }
 
 fn snapshot_global_memory() -> Result<CategorySnapshot, String> {
@@ -1048,7 +1039,7 @@ fn snapshot_semantics(snapshot: &CategorySnapshot) -> Result<(u32, bool), String
             (count, count == 0)
         }
         (SettingsCategoryId::AgentProviderPreferences, CategorySnapshotData::Json(_)) => (6, false),
-        (SettingsCategoryId::DesktopAppearance, CategorySnapshotData::Json(_)) => (9, false),
+        (SettingsCategoryId::DesktopAppearance, CategorySnapshotData::Json(_)) => (6, false),
         (SettingsCategoryId::ChatVoicePreferences, CategorySnapshotData::Json(_)) => {
             (CHAT_VOICE_PREFERENCE_ITEM_COUNT as usize, false)
         }
@@ -1339,9 +1330,6 @@ fn validate_desktop_appearance_value(value: &Value) -> Result<(), String> {
     require_exact_keys(
         desktop,
         &[
-            "assistantBubbleEnabled",
-            "assistantBubbleHideWhenFullscreen",
-            "assistantBubbleTemporarilyHideSeconds",
             "aiContextMaxMessages",
             "chatIdleTimeoutMinutes",
             "inactiveSessionArchiveDays",
@@ -1350,28 +1338,14 @@ fn validate_desktop_appearance_value(value: &Value) -> Result<(), String> {
             "quickVoiceMaxMessages",
         ],
     )?;
-    if !desktop
-        .get("assistantBubbleEnabled")
-        .is_some_and(Value::is_boolean)
-        || !desktop
-            .get("assistantBubbleHideWhenFullscreen")
-            .is_some_and(Value::is_boolean)
-        || !(u64::from(MIN_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS)
-            ..=u64::from(MAX_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS))
-            .contains(
-                &desktop
-                    .get("assistantBubbleTemporarilyHideSeconds")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0),
-            )
-        || !(u64::from(MIN_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES)
-            ..=u64::from(MAX_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES))
-            .contains(
-                &desktop
-                    .get("aiContextMaxMessages")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0),
-            )
+    if !(u64::from(MIN_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES)
+        ..=u64::from(MAX_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES))
+        .contains(
+            &desktop
+                .get("aiContextMaxMessages")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+        )
         || !(u64::from(MIN_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES)
             ..=u64::from(MAX_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES))
             .contains(
@@ -1419,16 +1393,7 @@ fn validate_desktop_appearance_value(value: &Value) -> Result<(), String> {
         .get("appearance")
         .and_then(Value::as_object)
         .ok_or_else(|| "Appearance preferences are invalid.".to_string())?;
-    require_exact_keys(
-        appearance,
-        &[
-            "version",
-            "theme",
-            "density",
-            "accent",
-            "quickChatBubbleStyle",
-        ],
-    )?;
+    require_exact_keys(appearance, &["version", "theme", "density", "accent"])?;
     if appearance.get("version").and_then(Value::as_u64) != Some(1)
         || !appearance
             .get("theme")
@@ -1442,10 +1407,6 @@ fn validate_desktop_appearance_value(value: &Value) -> Result<(), String> {
             .get("accent")
             .and_then(Value::as_str)
             .is_some_and(|value| ["sky", "emerald", "violet", "amber"].contains(&value))
-        || !appearance
-            .get("quickChatBubbleStyle")
-            .and_then(Value::as_str)
-            .is_some_and(|value| ["classic", "glass", "pulse", "orbit"].contains(&value))
     {
         return Err("Appearance preferences are invalid.".to_string());
     }

@@ -11,7 +11,6 @@ import {
   Window,
 } from "@tauri-apps/api/window";
 import {
-  ASSISTANT_POPUP_WINDOW_LABEL,
   MAIN_WINDOW_LABEL,
   QUICK_VOICE_START_EVENT,
   QUICK_VOICE_WINDOW_LABEL,
@@ -19,15 +18,8 @@ import {
 
 import {
   computeAssistantSurfaceLayout,
-  clampSurfacePosition,
   type AssistantSurfaceLayout,
 } from "./assistant-surface-geometry";
-export {
-  ASSISTANT_BUBBLE_DIMENSIONS,
-  ASSISTANT_POPUP_DIMENSIONS,
-  QUICK_VOICE_DIMENSIONS,
-} from "./assistant-surface-geometry";
-export type { AssistantSurfaceLayout } from "./assistant-surface-geometry";
 export const DISPLAY_LAYOUT_CHANGED_EVENT = "machdoch://display-layout-changed";
 type MonitorSnapshot = Awaited<ReturnType<typeof monitorFromPoint>>;
 
@@ -77,41 +69,6 @@ const resolveTargetMonitor = async (
   return null;
 };
 
-export const resolveMonitorTopologyKey = async (): Promise<string | null> => {
-  if (!isTauri()) {
-    return null;
-  }
-
-  try {
-    const monitors = await availableMonitors();
-
-    return monitors
-      .map((monitor) => {
-        const scaleFactor =
-          typeof monitor.scaleFactor === "number" &&
-          Number.isFinite(monitor.scaleFactor)
-            ? monitor.scaleFactor.toFixed(3)
-            : "1.000";
-
-        return [
-          monitor.position.x,
-          monitor.position.y,
-          monitor.size.width,
-          monitor.size.height,
-          monitor.workArea.position.x,
-          monitor.workArea.position.y,
-          monitor.workArea.size.width,
-          monitor.workArea.size.height,
-          scaleFactor,
-        ].join(":");
-      })
-      .sort()
-      .join("|");
-  } catch {
-    return null;
-  }
-};
-
 export const resolveAssistantSurfaceLayout = async (
   target: "cursor" | "window" = "cursor",
 ): Promise<AssistantSurfaceLayout | null> => {
@@ -151,27 +108,27 @@ export const setWindowPosition = async (
   }
 };
 
-const getOrCreateAssistantWindow = async (
-  label: typeof ASSISTANT_POPUP_WINDOW_LABEL | typeof QUICK_VOICE_WINDOW_LABEL,
-): Promise<Window | null> => {
+const getOrCreateQuickVoiceWindow = async (): Promise<Window | null> => {
   if (!isTauri()) {
-    return getWindowByLabel(label);
+    return getWindowByLabel(QUICK_VOICE_WINDOW_LABEL);
   }
 
-  const existingWindow = await getWindowByLabel(label);
+  const existingWindow = await getWindowByLabel(QUICK_VOICE_WINDOW_LABEL);
 
   if (existingWindow) {
     return existingWindow;
   }
 
   try {
-    await invoke("ensure_assistant_window", { label });
+    await invoke("ensure_assistant_window", {
+      label: QUICK_VOICE_WINDOW_LABEL,
+    });
   } catch (error) {
-    console.error(`Failed to create assistant window \`${label}\``, error);
+    console.error("Failed to create the Quick Voice window", error);
     return null;
   }
 
-  return getWindowByLabel(label);
+  return getWindowByLabel(QUICK_VOICE_WINDOW_LABEL);
 };
 
 export const setWindowSize = async (
@@ -191,136 +148,13 @@ export const setWindowSize = async (
   }
 };
 
-const applyAssistantPopupLayout = async (
-  popupWindow: Window | null,
-  popupPositionOverride?: { x: number; y: number },
-  resolvedLayout?: AssistantSurfaceLayout,
-): Promise<void> => {
-  if (!popupWindow) {
-    return;
-  }
-
-  const layout = resolvedLayout ?? (await resolveAssistantSurfaceLayout());
-
-  if (!layout) {
-    return;
-  }
-
-  await setWindowPosition(
-    popupWindow,
-    clampSurfacePosition(
-      popupPositionOverride ?? layout.popupPosition,
-      layout.popupSize,
-      layout.workArea,
-    ),
-  );
-  await setWindowSize(popupWindow, layout.popupSize);
-};
-
-const closeWindowByLabel = async (
-  label: string,
-  description: string,
-): Promise<void> => {
-  const window = await getWindowByLabel(label);
-
-  if (!window) {
-    return;
-  }
-
+export const hideTransientAssistantWindows = async (): Promise<void> => {
+  const window = await getWindowByLabel(QUICK_VOICE_WINDOW_LABEL);
+  if (!window) return;
   try {
     await window.close();
   } catch (error) {
-    console.error(`Failed to close ${description}`, error);
-  }
-};
-
-export const hideAssistantPopup = async (): Promise<void> => {
-  await closeWindowByLabel(ASSISTANT_POPUP_WINDOW_LABEL, "the assistant popup");
-};
-
-export const hideTransientAssistantWindows = async (): Promise<void> => {
-  await Promise.all([
-    hideAssistantPopup(),
-    closeWindowByLabel(QUICK_VOICE_WINDOW_LABEL, "the Quick Voice window"),
-  ]);
-};
-
-export const syncAssistantPopupPosition = async (
-  layout?: AssistantSurfaceLayout,
-): Promise<void> => {
-  const popupWindow = await getWindowByLabel(ASSISTANT_POPUP_WINDOW_LABEL);
-
-  if (!popupWindow) {
-    return;
-  }
-
-  if (!(await popupWindow.isVisible())) {
-    return;
-  }
-
-  await applyAssistantPopupLayout(popupWindow, undefined, layout);
-};
-
-export const isAssistantPopupVisible = async (): Promise<boolean> => {
-  const popupWindow = await getWindowByLabel(ASSISTANT_POPUP_WINDOW_LABEL);
-
-  if (!popupWindow) {
-    return false;
-  }
-
-  try {
-    return await popupWindow.isVisible();
-  } catch (error) {
-    console.error("Failed to inspect the assistant popup visibility", error);
-    return false;
-  }
-};
-
-export const showAssistantPopup = async (popupPositionOverride?: {
-  x: number;
-  y: number;
-}): Promise<boolean> => {
-  const popupWindow = await getOrCreateAssistantWindow(
-    ASSISTANT_POPUP_WINDOW_LABEL,
-  );
-
-  if (!popupWindow) {
-    return false;
-  }
-
-  try {
-    await applyAssistantPopupLayout(popupWindow, popupPositionOverride);
-
-    await popupWindow.unminimize();
-    await popupWindow.show();
-    await popupWindow.setFocus();
-    return true;
-  } catch (error) {
-    console.error("Failed to show the assistant popup", error);
-    return false;
-  }
-};
-
-export const toggleAssistantPopup = async (popupPositionOverride?: {
-  x: number;
-  y: number;
-}): Promise<boolean> => {
-  const popupWindow = await getWindowByLabel(ASSISTANT_POPUP_WINDOW_LABEL);
-
-  if (!popupWindow) {
-    return showAssistantPopup(popupPositionOverride);
-  }
-
-  try {
-    if (await popupWindow.isVisible()) {
-      await popupWindow.close();
-      return false;
-    }
-
-    return await showAssistantPopup(popupPositionOverride);
-  } catch (error) {
-    console.error("Failed to toggle the assistant popup", error);
-    return false;
+    console.error("Failed to close the Quick Voice window", error);
   }
 };
 
@@ -399,9 +233,7 @@ export const quitMachdoch = async (): Promise<void> => {
 };
 
 export const showQuickVoiceWindow = async (): Promise<void> => {
-  const quickVoiceWindow = await getOrCreateAssistantWindow(
-    QUICK_VOICE_WINDOW_LABEL,
-  );
+  const quickVoiceWindow = await getOrCreateQuickVoiceWindow();
 
   if (!quickVoiceWindow) {
     return;

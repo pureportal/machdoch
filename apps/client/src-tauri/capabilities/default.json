@@ -1,13 +1,7 @@
 {
   "identifier": "default",
   "description": "Default capability for the main machdoch desktop window.",
-  "windows": [
-    "main",
-    "assistant-bubble",
-    "assistant-popup",
-    "quick-voice",
-    "tray-menu"
-  ],
+  "windows": ["main", "quick-voice", "tray-menu"],
   "permissions": [
     "core:default",
     "core:window:default",

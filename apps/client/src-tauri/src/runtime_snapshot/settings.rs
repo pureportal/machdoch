@@ -21,7 +21,6 @@ use crate::runtime_contract_generated::{
     MAX_CONFIGURED_AUTOPILOT_ITERATIONS, MAX_CONFIGURED_EXECUTOR_TURNS,
     MAX_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
     MAX_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
-    MAX_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
     MAX_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
     MAX_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     MAX_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES, MAX_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
@@ -29,7 +28,6 @@ use crate::runtime_contract_generated::{
     MAX_WORKSPACE_RUN_HEALTH_CHECK_TIMEOUT_MS, MAX_WORKSPACE_RUN_SEQUENTIAL_READINESS_TIMEOUT_MS,
     MAX_WORKSPACE_RUN_STARTUP_DELAY_MS, MIN_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
     MIN_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
-    MIN_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
     MIN_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
     MIN_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     MIN_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES, MIN_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
@@ -43,13 +41,6 @@ const MAX_WORKSPACE_MEMORY_ENTRIES: usize = 64;
 const MAX_MEMORY_CONTENT_LENGTH: usize = 280;
 const MAX_MEMORY_SEARCH_TERMS: usize = 8;
 const MAX_MEMORY_SEARCH_TERM_LENGTH: usize = 48;
-
-pub(super) fn clamp_assistant_bubble_hide_seconds(value: u32) -> u32 {
-    value.clamp(
-        MIN_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
-        MAX_DESKTOP_SETTING_ASSISTANT_BUBBLE_TEMPORARILY_HIDE_SECONDS,
-    )
-}
 
 pub(super) fn clamp_quick_voice_silence_seconds(value: f64) -> f64 {
     if !value.is_finite() {
@@ -344,11 +335,6 @@ pub(super) fn normalize_user_desktop_settings_input(
         autostart_minimized: settings.autostart_minimized,
         autostart_to_tray: settings.autostart_to_tray,
         always_run_as_administrator: settings.always_run_as_administrator,
-        assistant_bubble_enabled: settings.assistant_bubble_enabled,
-        assistant_bubble_hide_when_fullscreen: settings.assistant_bubble_hide_when_fullscreen,
-        assistant_bubble_temporarily_hide_seconds: clamp_assistant_bubble_hide_seconds(
-            settings.assistant_bubble_temporarily_hide_seconds,
-        ),
         ai_context_max_messages: clamp_ai_context_message_limit(settings.ai_context_max_messages),
         adaptive_controller_enabled: settings.adaptive_controller_enabled,
         chat_idle_timeout_minutes: settings.chat_idle_timeout_minutes.clamp(

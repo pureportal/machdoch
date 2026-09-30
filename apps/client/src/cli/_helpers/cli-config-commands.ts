@@ -144,22 +144,6 @@ const DESKTOP_CONFIG_SETTINGS = {
     type: "boolean",
     description: "Request elevation for packaged desktop launches on Windows.",
   },
-  "assistant-bubble-enabled": {
-    key: "assistantBubbleEnabled",
-    type: "boolean",
-    description: "Show the desktop assistant bubble while Machdoch is running.",
-  },
-  "assistant-bubble-hide-when-fullscreen": {
-    key: "assistantBubbleHideWhenFullscreen",
-    type: "boolean",
-    description: "Hide the assistant bubble while another app is fullscreen.",
-  },
-  "assistant-bubble-temporarily-hide-seconds": {
-    key: "assistantBubbleTemporarilyHideSeconds",
-    type: "number",
-    description: "Seconds to temporarily hide the assistant bubble.",
-    ...DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds,
-  },
   "ai-context-max-messages": {
     key: "aiContextMaxMessages",
     type: "integer",

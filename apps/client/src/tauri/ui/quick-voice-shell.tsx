@@ -42,7 +42,7 @@ const VOICE_ACTIVITY_THRESHOLD = 0.012;
 const VOICE_ACTIVITY_FRAME_COUNT = 2;
 
 export const QuickVoiceShell = (): JSX.Element => {
-  useAssistantDisplayLayout("quickVoice");
+  useAssistantDisplayLayout();
   useAppearanceSettings();
   const controller = useChatSessionController({
     enableBackgroundMaintenance: false,

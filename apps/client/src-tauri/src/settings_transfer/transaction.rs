@@ -1226,9 +1226,6 @@ fn apply_desktop(
         .ok_or_else(|| "Imported desktop preferences are invalid.".to_string())?;
     let local = ensure_object_member(root, "desktop");
     for key in [
-        "assistantBubbleEnabled",
-        "assistantBubbleHideWhenFullscreen",
-        "assistantBubbleTemporarilyHideSeconds",
         "aiContextMaxMessages",
         "chatIdleTimeoutMinutes",
         "inactiveSessionArchiveDays",
