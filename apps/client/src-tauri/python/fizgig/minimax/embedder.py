@@ -15,6 +15,7 @@ Output: [1, L, 5120] bf16, exactly what the DiT's condition_proj expects.
 """
 
 import os
+from collections import OrderedDict
 
 import torch
 import torch.nn as nn
@@ -38,6 +39,36 @@ _QWEN3_32B_TRUNC50 = dict(
 _NF4_SUFFIXES = (".self_attn.q_proj.weight", ".self_attn.k_proj.weight",
                  ".self_attn.v_proj.weight", ".self_attn.o_proj.weight",
                  ".mlp.gate_proj.weight", ".mlp.up_proj.weight", ".mlp.down_proj.weight")
+
+_TEXT_EMBEDDING_CACHE_CAPACITY = 128
+
+
+class TextEmbeddingCache:
+    """A fixed-capacity, access-ordered cache for CPU text embeddings."""
+
+    def __init__(self, capacity: int = _TEXT_EMBEDDING_CACHE_CAPACITY):
+        if capacity < 1:
+            raise ValueError("Text embedding cache capacity must be positive")
+        self.capacity = capacity
+        self._entries = OrderedDict()
+
+    def get(self, key):
+        embedding = self._entries.get(key)
+        if embedding is not None:
+            self._entries.move_to_end(key)
+        return embedding
+
+    def put(self, key, embedding) -> None:
+        self._entries[key] = embedding
+        self._entries.move_to_end(key)
+        if len(self._entries) > self.capacity:
+            self._entries.popitem(last=False)
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+    def keys(self):
+        return tuple(self._entries)
 
 
 # ---------------------------------------------------------------------------
@@ -430,13 +461,13 @@ class MiniMaxH3TextEncoder:
     """Loads the bf16 TE, NF4 on GPU, and encodes captions to [1, L, 5120] bf16."""
 
     def __init__(self, model, tokenizer, device="cuda", compute_dtype=torch.bfloat16,
-                 cpu_embed=False):
+                 cpu_embed=False, cache_capacity: int = _TEXT_EMBEDDING_CACHE_CAPACITY):
         self.model = model.eval()
         self.tokenizer = tokenizer
         self.device = device
         self.compute_dtype = compute_dtype
         self.cpu_embed = cpu_embed     # embed_tokens left on CPU; see _text_forward()
-        self._cache = {}
+        self._cache = TextEmbeddingCache(cache_capacity)
         self._image_processor = None   # built on first r2v encode; see encode_with_reference()
 
     def _text_forward(self, ids):
@@ -463,9 +494,16 @@ class MiniMaxH3TextEncoder:
         pid = getattr(self.tokenizer, "pad_token_id", None)
         return 151643 if pid is None else int(pid)
 
+    def _cached_embedding(self, cache_key):
+        embedding = self._cache.get(cache_key)
+        return None if embedding is None else embedding.clone()
+
+    def _cache_embedding(self, cache_key, embedding) -> None:
+        self._cache.put(cache_key, embedding.detach().to("cpu"))
+
     @torch.no_grad()
     def encode(self, caption: str, max_length: int = None) -> torch.Tensor:
-        """Encode one caption to [1, L, 5120]. Memoized by caption and token limit.
+        """Encode one caption to [1, L, 5120]. Memoized by caption and token limit in an LRU cache.
 
         Text conditioning does not depend on resolution or on anything else that varies between
         dataset blocks, so a caption that appears more than once — repeated text, or several
@@ -478,9 +516,9 @@ class MiniMaxH3TextEncoder:
         ORIGIN for the video rows, so a truncated prompt also shifted the render onto a
         different temporal grid than the same prompt in ComfyUI."""
         cache_key = (caption, max_length or None)
-        hit = self._cache.get(cache_key)
+        hit = self._cached_embedding(cache_key)
         if hit is not None:
-            return hit.clone()                             # callers must not share storage
+            return hit                                     # callers must not share storage
         # H3: raw prompt text, NO special tokens (no chat template).
         _tk = dict(add_special_tokens=False, return_tensors="pt")
         if max_length:                                     # None/0 -> no cap, as ComfyUI does
@@ -491,7 +529,7 @@ class MiniMaxH3TextEncoder:
         # norm=Identity -> raw layer-50 output
         emb = self._text_forward(ids).to(self.compute_dtype)  # [1, L, 5120]
         # keep it on CPU: a few hundred KB per caption, and GPU memory is the scarce thing here
-        self._cache[cache_key] = emb.detach().to("cpu")
+        self._cache_embedding(cache_key, emb)
         return emb
 
     @torch.no_grad()
@@ -572,16 +610,23 @@ class MiniMaxH3TextEncoder:
         specifically, not of batching in general."""
         out = [None] * len(captions)
         cache_keys = [(caption, max_length or None) for caption in captions]
-        todo = [i for i, key in enumerate(cache_keys) if key not in self._cache]
         for i, key in enumerate(cache_keys):
-            if key in self._cache:
-                out[i] = self._cache[key].clone()
+            hit = self._cached_embedding(key)
+            if hit is not None:
+                out[i] = hit
+
+        missing = {}
+        for i, key in enumerate(cache_keys):
+            if out[i] is None:
+                missing.setdefault(key, []).append(i)
+        todo = list(missing)
 
         pad_id = self._pad_id()
         for start in range(0, len(todo), batch_size):
-            idxs = todo[start:start + batch_size]
+            keys = todo[start:start + batch_size]
             toks = []
-            for i in idxs:
+            for key in keys:
+                i = missing[key][0]
                 _tk = dict(add_special_tokens=False, return_tensors="pt")
                 if max_length:                      # None -> no cap, matching ComfyUI
                     _tk.update(truncation=True, max_length=max_length)
@@ -592,10 +637,11 @@ class MiniMaxH3TextEncoder:
             for r, t in enumerate(toks):
                 ids[r, : t.numel()] = t
             hs = self._text_forward(ids)
-            for r, i in enumerate(idxs):
+            for r, key in enumerate(keys):
                 emb = hs[r, : toks[r].numel()].unsqueeze(0).to(self.compute_dtype)
-                self._cache[cache_keys[i]] = emb.detach().to("cpu")
-                out[i] = emb
+                self._cache_embedding(key, emb)
+                for position, i in enumerate(missing[key]):
+                    out[i] = emb if position == 0 else emb.clone()
         return out
 
 
