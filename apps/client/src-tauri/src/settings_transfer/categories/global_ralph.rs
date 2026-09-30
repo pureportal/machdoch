@@ -10,10 +10,10 @@ use zeroize::Zeroizing;
 
 use super::{
     create_file_snapshot, create_json_snapshot, is_windows_reparse_point, normalized_model,
-    normalized_runtime_provider, nullable_enum, require_exact_keys, required_trimmed_string,
-    sha256_hex, validate_runtime_selection, verify_regular_contained_file,
+    normalized_runtime_provider, nullable_enum, read_verified_text_file, require_exact_keys,
+    required_trimmed_string, sha256_hex, validate_runtime_selection, verify_regular_contained_file,
     verify_unlinked_directory_chain, CategorySnapshot, FileSnapshotEntry, SettingsCategoryId,
-    MAX_RALPH_FLOW_BYTES, MAX_SAFE_INTEGER, MAX_TOTAL_PLAINTEXT_BYTES,
+    SnapshotTextReadError, MAX_RALPH_FLOW_BYTES, MAX_SAFE_INTEGER, MAX_TOTAL_PLAINTEXT_BYTES,
     RALPH_CORE_VALIDATION_TIMEOUT, RALPH_PREFERENCE_ITEM_COUNT, RALPH_SETTINGS_STORAGE_KEY,
     REASONING_MODES, STORE_FILE,
 };
@@ -278,9 +278,20 @@ pub(super) fn snapshot_flows() -> Result<CategorySnapshot, String> {
             if path.extension().and_then(|value| value.to_str()) != Some("json") {
                 continue;
             }
-            verify_regular_contained_file(&global_root, &path, MAX_RALPH_FLOW_BYTES)?;
-            let content = fs::read_to_string(&path)
-                .map_err(|_| "A global RALPH flow must contain valid UTF-8 JSON.".to_string())?;
+            let expected_bytes =
+                verify_regular_contained_file(&global_root, &path, MAX_RALPH_FLOW_BYTES)?;
+            let content = read_verified_text_file(&path, expected_bytes, MAX_RALPH_FLOW_BYTES)
+                .map_err(|error| match error {
+                    SnapshotTextReadError::ChangedDuringRead => {
+                        "A global RALPH flow changed while it was being read.".to_string()
+                    }
+                    SnapshotTextReadError::ExceedsLimit => {
+                        "A selected settings file exceeds the transfer limit.".to_string()
+                    }
+                    SnapshotTextReadError::Read | SnapshotTextReadError::InvalidUtf8 => {
+                        "A global RALPH flow must contain valid UTF-8 JSON.".to_string()
+                    }
+                })?;
             let value = serde_json::from_str::<Value>(&content)
                 .map_err(|_| "A global RALPH flow contains invalid JSON.".to_string())?;
             let id = validate_flow(&value)?;
