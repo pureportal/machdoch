@@ -981,7 +981,9 @@ pub(crate) fn compile_remote_image_edit_flow(
 
     let provider_policy = local_string_config(task_node, "providerPolicy")?;
     if !matches!(provider_policy.as_str(), "auto" | "remote") {
-        return Err("the GPT Image 2.5 Sunburst edit executor requires remote provider policy".to_string());
+        return Err(
+            "the GPT Image 2.5 Sunburst edit executor requires remote provider policy".to_string(),
+        );
     }
     let model_id = task_node
         .config
@@ -990,7 +992,9 @@ pub(crate) fn compile_remote_image_edit_flow(
         .ok_or_else(|| "the remote edit task requires a pinned modelId".to_string())?
         .to_string();
     if model_id != "openai:gpt-image-2.5-sunburst" {
-        return Err("remote image edit execution currently requires GPT Image 2.5 Sunburst".to_string());
+        return Err(
+            "remote image edit execution currently requires GPT Image 2.5 Sunburst".to_string(),
+        );
     }
     if task_node
         .config
@@ -1006,7 +1010,8 @@ pub(crate) fn compile_remote_image_edit_flow(
         })
     {
         return Err(
-            "GPT Image 2.5 Sunburst does not accept LoRA adapters or textual-inversion embeddings".to_string(),
+            "GPT Image 2.5 Sunburst does not accept LoRA adapters or textual-inversion embeddings"
+                .to_string(),
         );
     }
     let output_count = local_u32_config(task_node, "outputCount")?;
@@ -4323,7 +4328,10 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
             if !minimax_h3
                 && node.config.get("resolution").and_then(Value::as_str) == Some("quality-2k")
             {
-                return Err(format!("flow node {} local 2K output requires MiniMax H3", node.id));
+                return Err(format!(
+                    "flow node {} local 2K output requires MiniMax H3",
+                    node.id
+                ));
             }
             for key in [
                 "generateAudio",
@@ -4374,9 +4382,7 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                 .get("numFrames")
                 .and_then(Value::as_u64)
                 .ok_or_else(|| format!("flow node {} requires integer numFrames", node.id))?;
-            if minimax_h3
-                && (!(124..=362).contains(&num_frames) || (num_frames - 5) % 17 != 0)
-            {
+            if minimax_h3 && (!(124..=362).contains(&num_frames) || (num_frames - 5) % 17 != 0) {
                 return Err(format!(
                     "flow node {} numFrames must be 124 through 362 in 17n+5 form",
                     node.id

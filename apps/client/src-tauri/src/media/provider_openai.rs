@@ -7,7 +7,9 @@ use sha2::{Digest as _, Sha256};
 
 use super::{
     flow::RemoteImageEditFlowPlan,
-    provider_images::{publish_image, GeneratedImageBatch, ImageGenerationFailure, MAX_IMAGE_BYTES},
+    provider_images::{
+        publish_image, GeneratedImageBatch, ImageGenerationFailure, MAX_IMAGE_BYTES,
+    },
     GenerateMediaImagesRequest, MediaProviderPolicySnapshot, MediaResult, MediaRuntimePaths,
 };
 
@@ -441,8 +443,7 @@ mod tests {
     use super::*;
     use crate::media::{
         flow::{RemoteImageEditFlowPlan, RemoteImageEditSource},
-        subject_cutout,
-        MediaImageOutputBranch, MediaRunPlanNodeSnapshot, MediaRunPlanSnapshot,
+        subject_cutout, MediaImageOutputBranch, MediaRunPlanNodeSnapshot, MediaRunPlanSnapshot,
         MediaRunPlanStepSnapshot,
     };
 

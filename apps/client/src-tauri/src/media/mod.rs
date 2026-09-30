@@ -1,22 +1,22 @@
-mod fleet_store;
-pub(crate) mod fleet_transfer;
-pub(crate) mod fleet_worker;
-pub(crate) mod fleet;
-mod fleet_dispatch;
 mod analysis;
 mod catalog;
 mod civitai_addon;
 mod civitai_catalog;
-mod civitai_credentials;
+pub(crate) mod civitai_commands;
 mod civitai_compatibility;
+mod civitai_credentials;
 mod civitai_download;
 mod civitai_storage;
-pub(crate) mod civitai_commands;
 mod controlnet;
 mod database;
 mod error;
 mod executor;
 mod exporting;
+pub(crate) mod fleet;
+mod fleet_dispatch;
+mod fleet_store;
+pub(crate) mod fleet_transfer;
+pub(crate) mod fleet_worker;
 mod flow;
 mod hardware;
 mod image_sampling;
@@ -27,16 +27,16 @@ mod model_addon;
 mod model_components;
 mod model_discovery;
 mod model_import;
-mod model_resource_edit;
 mod model_install;
 pub(crate) mod model_memory;
+mod model_resource_edit;
 mod model_worker;
+mod pose_map;
 mod provider_codex;
 mod provider_images;
 mod provider_local_diffusers;
 mod provider_mock;
 mod provider_openai;
-mod pose_map;
 mod provider_svg;
 pub(crate) mod runtime_setup;
 pub(crate) mod storage;
@@ -108,7 +108,10 @@ impl Drop for ActiveMediaRun<'_> {
 }
 
 pub(crate) fn has_pending_shutdown_work(app: &AppHandle) -> MediaResult<bool> {
-    if storage::read_config(&storage::control_root(app)?)?.migration.is_some() {
+    if storage::read_config(&storage::control_root(app)?)?
+        .migration
+        .is_some()
+    {
         return Ok(true);
     }
     let state = app.state::<MediaRuntimeState>();
@@ -2316,7 +2319,9 @@ impl GenerateMediaVideoRequest {
             && !minimax_h3
             && !ltx_video
             && self.model_id != "local:wan2.2-ti2v-5b"
-            && !self.model_id.starts_with(model_import::USER_MODEL_ID_PREFIX)
+            && !self
+                .model_id
+                .starts_with(model_import::USER_MODEL_ID_PREFIX)
         {
             return Err("selected model is not an executable local video adapter".to_string());
         }
@@ -2327,7 +2332,10 @@ impl GenerateMediaVideoRequest {
             self.resolution.as_str(),
             "preview-512" | "quality-640" | "quality-768" | "quality-2k"
         ) {
-            return Err("resolution must be preview-512, quality-640, quality-768, or quality-2k".to_string());
+            return Err(
+                "resolution must be preview-512, quality-640, quality-768, or quality-2k"
+                    .to_string(),
+            );
         }
         if self.resolution == "quality-2k" && !minimax_h3 {
             return Err("Local 2K output requires MiniMax H3".to_string());
@@ -2344,12 +2352,14 @@ impl GenerateMediaVideoRequest {
         ) {
             return Err("loopMode must be none, ping-pong, seamless, or crossfade".to_string());
         }
-        if (hunyuan_video || minimax_h3)
-            && self.first_frame_asset_id != self.last_frame_asset_id
-        {
+        if (hunyuan_video || minimax_h3) && self.first_frame_asset_id != self.last_frame_asset_id {
             return Err(format!(
                 "{} requires the same image on both frame ports",
-                if minimax_h3 { "MiniMax H3" } else { "HunyuanVideo 1.5" }
+                if minimax_h3 {
+                    "MiniMax H3"
+                } else {
+                    "HunyuanVideo 1.5"
+                }
             ));
         }
         if hunyuan_video && self.loop_mode == "seamless" {
@@ -2387,7 +2397,9 @@ impl GenerateMediaVideoRequest {
             && (!(124..=362).contains(&self.num_frames)
                 || !(self.num_frames - 5).is_multiple_of(17))
         {
-            return Err("MiniMax H3 numFrames must be 124 through 362 in the 17n+5 form".to_string());
+            return Err(
+                "MiniMax H3 numFrames must be 124 through 362 in the 17n+5 form".to_string(),
+            );
         }
         if !ltx_video
             && !minimax_h3
@@ -3774,7 +3786,10 @@ pub(crate) async fn media_import_local_model(
             } else {
                 tauri::async_runtime::spawn_blocking(move || {
                     let result = model_import::import_reviewed(&paths, &request)?;
-                    if let Err(error) = civitai_addon::remove_staged_source_after_import(&paths, &request.source_path) {
+                    if let Err(error) = civitai_addon::remove_staged_source_after_import(
+                        &paths,
+                        &request.source_path,
+                    ) {
                         eprintln!("Could not clean Civitai download after import: {error}");
                     }
                     Ok(result)
@@ -3861,8 +3876,12 @@ pub(crate) async fn media_submit_krea_training(
     request: krea_training::KreaTrainingRequest,
 ) -> MediaCommandResult<krea_training::KreaTrainingJob> {
     let result = match MediaRuntimePaths::resolve(&app) {
-        Ok(paths) => tauri::async_runtime::spawn_blocking(move || krea_training::submit(&app, &paths, request))
-            .await.map_err(|error| format!("Training worker failed: {error}")).and_then(|result| result),
+        Ok(paths) => tauri::async_runtime::spawn_blocking(move || {
+            krea_training::submit(&app, &paths, request)
+        })
+        .await
+        .map_err(|error| format!("Training worker failed: {error}"))
+        .and_then(|result| result),
         Err(error) => Err(error),
     };
     command_result("media_submit_krea_training", result)
@@ -3873,13 +3892,18 @@ pub(crate) async fn media_get_krea_training_status(
     app: AppHandle,
     request_id: String,
 ) -> MediaCommandResult<krea_training::KreaTrainingStatus> {
-    let result = MediaRuntimePaths::resolve(&app).and_then(|paths| krea_training::status(&paths, &request_id));
+    let result = MediaRuntimePaths::resolve(&app)
+        .and_then(|paths| krea_training::status(&paths, &request_id));
     command_result("media_get_krea_training_status", result)
 }
 
 #[tauri::command]
-pub(crate) async fn media_cancel_krea_training(app: AppHandle, request_id: String) -> MediaCommandResult<()> {
-    let result = MediaRuntimePaths::resolve(&app).and_then(|paths| krea_training::cancel(&paths, &request_id));
+pub(crate) async fn media_cancel_krea_training(
+    app: AppHandle,
+    request_id: String,
+) -> MediaCommandResult<()> {
+    let result = MediaRuntimePaths::resolve(&app)
+        .and_then(|paths| krea_training::cancel(&paths, &request_id));
     command_result("media_cancel_krea_training", result)
 }
 
@@ -3888,13 +3912,18 @@ pub(crate) async fn media_resume_krea_training(
     app: AppHandle,
     request_id: String,
 ) -> MediaCommandResult<()> {
-    let result = MediaRuntimePaths::resolve(&app).and_then(|paths| krea_training::resume(&app, &paths, &request_id));
+    let result = MediaRuntimePaths::resolve(&app)
+        .and_then(|paths| krea_training::resume(&app, &paths, &request_id));
     command_result("media_resume_krea_training", result)
 }
 
 #[tauri::command]
-pub(crate) async fn media_finish_krea_training(app: AppHandle, request_id: String) -> MediaCommandResult<()> {
-    let result = MediaRuntimePaths::resolve(&app).and_then(|paths| krea_training::remove_job(&paths, &request_id));
+pub(crate) async fn media_finish_krea_training(
+    app: AppHandle,
+    request_id: String,
+) -> MediaCommandResult<()> {
+    let result = MediaRuntimePaths::resolve(&app)
+        .and_then(|paths| krea_training::remove_job(&paths, &request_id));
     command_result("media_finish_krea_training", result)
 }
 
@@ -4642,30 +4671,33 @@ pub(crate) async fn media_generate_svg(
             Some(0.1),
         )?;
 
-        let batch = match provider_svg::generate(&app, &paths, &request, reference_plan.as_ref(), &env)
-            .await
-        {
-            Ok(batch) => batch,
-            Err(failure) => {
-                let failure_paths = paths.clone();
-                let run_id = request.run_id.clone();
-                let diagnostic = failure.diagnostic.clone();
-                let acceptance_unknown = failure.acceptance_unknown;
-                let provider_request_id = failure.provider_request_id.clone();
-                tauri::async_runtime::spawn_blocking(move || {
-                    database::fail_remote_image_generation(
-                        &failure_paths,
-                        &run_id,
-                        &diagnostic,
-                        acceptance_unknown,
-                        provider_request_id.as_deref(),
-                    )
-                })
+        let batch =
+            match provider_svg::generate(&app, &paths, &request, reference_plan.as_ref(), &env)
                 .await
-                .map_err(|error| format!("SVG failure worker could not be joined: {error}"))??;
-                return database::get_run_detail(&paths, &request.run_id);
-            }
-        };
+            {
+                Ok(batch) => batch,
+                Err(failure) => {
+                    let failure_paths = paths.clone();
+                    let run_id = request.run_id.clone();
+                    let diagnostic = failure.diagnostic.clone();
+                    let acceptance_unknown = failure.acceptance_unknown;
+                    let provider_request_id = failure.provider_request_id.clone();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        database::fail_remote_image_generation(
+                            &failure_paths,
+                            &run_id,
+                            &diagnostic,
+                            acceptance_unknown,
+                            provider_request_id.as_deref(),
+                        )
+                    })
+                    .await
+                    .map_err(|error| {
+                        format!("SVG failure worker could not be joined: {error}")
+                    })??;
+                    return database::get_run_detail(&paths, &request.run_id);
+                }
+            };
         database::transition_nodes_by_type(
             &paths,
             &request.run_id,
@@ -5019,9 +5051,9 @@ pub(crate) async fn media_list_run_page(
             known_revision.as_deref(),
         )
     })
-        .await
-        .map_err(|error| format!("Media Studio run page worker failed: {error}"))
-        .and_then(|result| result);
+    .await
+    .map_err(|error| format!("Media Studio run page worker failed: {error}"))
+    .and_then(|result| result);
     command_result("media_list_run_page", result)
 }
 
@@ -5114,9 +5146,9 @@ pub(crate) async fn media_list_asset_page(
             known_revision.as_deref(),
         )
     })
-        .await
-        .map_err(|error| format!("Media Studio asset page worker failed: {error}"))
-        .and_then(|result| result);
+    .await
+    .map_err(|error| format!("Media Studio asset page worker failed: {error}"))
+    .and_then(|result| result);
     command_result("media_list_asset_page", result)
 }
 
@@ -5376,7 +5408,8 @@ pub(crate) async fn media_read_pose_scene(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error.to_string()),
     };
-    let map: pose_map::PoseMap = serde_json::from_str(&source).map_err(|error| error.to_string())?;
+    let map: pose_map::PoseMap =
+        serde_json::from_str(&source).map_err(|error| error.to_string())?;
     map.validate()?;
     serde_json::from_str(&source)
         .map(Some)
@@ -5389,7 +5422,8 @@ pub(crate) async fn media_write_pose_scene(
     map: serde_json::Value,
 ) -> Result<(), String> {
     let path = pose_scene_path(&session_id)?;
-    let pose: pose_map::PoseMap = serde_json::from_value(map.clone()).map_err(|error| error.to_string())?;
+    let pose: pose_map::PoseMap =
+        serde_json::from_value(map.clone()).map_err(|error| error.to_string())?;
     pose.validate()?;
     tauri::async_runtime::spawn_blocking(move || {
         crate::cooperative_file_lock::with_cooperative_file_lock(&path, || {

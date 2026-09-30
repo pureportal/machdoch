@@ -1598,11 +1598,9 @@ pub(crate) fn policy_snapshot(
 ) -> MediaProviderPolicySnapshot {
     let (adapter_id, endpoint_version, output_visibility) =
         match (request.model_id.as_str(), request.mode.as_str()) {
-            ("local-svg:IntroSVG-Qwen2.5-VL-7B", _) => (
-                "local.transformers-svg",
-                "generate-svg",
-                "local-file",
-            ),
+            ("local-svg:IntroSVG-Qwen2.5-VL-7B", _) => {
+                ("local.transformers-svg", "generate-svg", "local-file")
+            }
             (model, "vectorize") if model.starts_with("quiver:") => (
                 "quiver.svg-vectorize",
                 "v1/svgs/vectorizations",

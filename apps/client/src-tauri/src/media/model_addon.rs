@@ -2820,7 +2820,10 @@ mod tests {
             .find(|addon| addon.id == result.addon_id)
             .unwrap();
         assert_eq!(edited.display_name, "Edited embedding");
-        assert_eq!(edited.source_url.as_deref(), Some("https://example.com/embedding"));
+        assert_eq!(
+            edited.source_url.as_deref(),
+            Some("https://example.com/embedding")
+        );
         assert_eq!(edited.license.name, "MIT");
         assert_eq!(edited.license.commercial_use, "allowed");
         assert_eq!(edited.default_token.as_deref(), Some("<edited-style>"));
@@ -2907,15 +2910,19 @@ mod tests {
         assert_eq!(addon.trigger_words, vec!["gallerylight"]);
         assert_eq!(addon.lora_profile, expected_lora_profile);
         assert_eq!(addon.source_metadata.as_ref(), Some(&source_metadata));
-        update_details(&paths, &super::super::model_resource_edit::UpdateMediaModelResourceRequest {
-            resource_id: result.addon_id.clone(),
-            display_name: "Edited LoRA".to_string(),
-            architecture: edited_architecture.to_string(),
-            source_url: None,
-            license_name: None,
-            commercial_use: None,
-            trigger_words: vec!["edited phrase".to_string(), "EDITED PHRASE".to_string()],
-        }).unwrap();
+        update_details(
+            &paths,
+            &super::super::model_resource_edit::UpdateMediaModelResourceRequest {
+                resource_id: result.addon_id.clone(),
+                display_name: "Edited LoRA".to_string(),
+                architecture: edited_architecture.to_string(),
+                source_url: None,
+                license_name: None,
+                commercial_use: None,
+                trigger_words: vec!["edited phrase".to_string(), "EDITED PHRASE".to_string()],
+            },
+        )
+        .unwrap();
         reconcile_managed_addon_profiles(&paths, &mut connection).unwrap();
         let reloaded = catalog::snapshot(&connection, &Default::default()).unwrap();
         let edited = reloaded
