@@ -236,9 +236,6 @@ const createEmptyUserDesktopSettings = (): UserDesktopSettings => {
     autostartMinimized: false,
     autostartToTray: false,
     alwaysRunAsAdministrator: false,
-    assistantBubbleEnabled: true,
-    assistantBubbleHideWhenFullscreen: true,
-    assistantBubbleTemporarilyHideSeconds: 6,
     aiContextMaxMessages: 60,
     adaptiveControllerEnabled: true,
     inactiveSessionArchiveDays: 7,
@@ -267,12 +264,7 @@ const getDesktopSettingsSavedMessage = (
   const administratorDescription = settings.alwaysRunAsAdministrator
     ? " Packaged Windows launches will request administrator permissions."
     : "";
-  const surfacesDescription = [
-    settings.assistantBubbleEnabled ? "bubble" : null,
-    settings.quickVoiceEnabled ? "quick voice" : null,
-  ]
-    .filter((entry): entry is string => entry !== null)
-    .join(" + ");
+  const surfacesDescription = settings.quickVoiceEnabled ? "quick voice" : "";
 
   if (!settings.autostartEnabled) {
     return surfacesDescription.length > 0

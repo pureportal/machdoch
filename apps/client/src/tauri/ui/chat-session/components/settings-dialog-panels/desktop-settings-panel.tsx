@@ -62,12 +62,6 @@ export const normalizeDesktopSettingsDraft = (
 
   return {
     ...settings,
-    assistantBubbleTemporarilyHideSeconds: clampIntegerSetting(
-      settings.assistantBubbleTemporarilyHideSeconds,
-      DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.min,
-      DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.max,
-      DEFAULT_USER_DESKTOP_SETTINGS.assistantBubbleTemporarilyHideSeconds,
-    ),
     aiContextMaxMessages: clampIntegerSetting(
       settings.aiContextMaxMessages,
       DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.min,
@@ -119,11 +113,6 @@ export const hasDesktopSettingsDraftChanges = (
     left.autostartMinimized !== right.autostartMinimized ||
     left.autostartToTray !== right.autostartToTray ||
     left.alwaysRunAsAdministrator !== right.alwaysRunAsAdministrator ||
-    left.assistantBubbleEnabled !== right.assistantBubbleEnabled ||
-    left.assistantBubbleHideWhenFullscreen !==
-      right.assistantBubbleHideWhenFullscreen ||
-    left.assistantBubbleTemporarilyHideSeconds !==
-      right.assistantBubbleTemporarilyHideSeconds ||
     left.aiContextMaxMessages !== right.aiContextMaxMessages ||
     left.adaptiveControllerEnabled !== right.adaptiveControllerEnabled ||
     left.chatIdleTimeoutMinutes !== right.chatIdleTimeoutMinutes ||
@@ -253,8 +242,6 @@ export const DesktopSettingsPanel = ({
       field:
         | "autostartEnabled"
         | "alwaysRunAsAdministrator"
-        | "assistantBubbleEnabled"
-        | "assistantBubbleHideWhenFullscreen"
         | "quickVoiceEnabled",
       disabled = (): boolean => false,
     ): CommandDefinition => ({
@@ -341,17 +328,6 @@ export const DesktopSettingsPanel = ({
         "settings.desktop.administrator.toggle",
         "Toggle always run as administrator",
         "alwaysRunAsAdministrator",
-      ),
-      toggleCommand(
-        "settings.desktop.bubble.toggle",
-        "Toggle floating assistant bubble",
-        "assistantBubbleEnabled",
-      ),
-      toggleCommand(
-        "settings.desktop.bubble-fullscreen.toggle",
-        "Toggle hiding the bubble in fullscreen apps",
-        "assistantBubbleHideWhenFullscreen",
-        () => !state().draft.assistantBubbleEnabled,
       ),
       toggleCommand(
         "settings.desktop.quick-chat.toggle",
@@ -468,71 +444,6 @@ export const DesktopSettingsPanel = ({
               onCheckedChange={(checked) =>
                 setDraft({ ...draft, alwaysRunAsAdministrator: checked })
               }
-            />
-          </SettingPanel>
-        </div>
-      </SettingsCard>
-
-      <SettingsCard title="Assistant surfaces">
-        <div className="grid gap-0">
-          <SettingPanel label="Floating bubble">
-            <SettingsToggle
-              label="Floating bubble"
-              checked={draft.assistantBubbleEnabled}
-              disabled={setup.saving}
-              onCheckedChange={(checked) =>
-                setDraft({ ...draft, assistantBubbleEnabled: checked })
-              }
-            />
-          </SettingPanel>
-
-          <SettingPanel
-            label="Fullscreen apps"
-            detail={
-              draft.assistantBubbleEnabled
-                ? undefined
-                : "Available when the floating bubble is enabled."
-            }
-          >
-            <ChoiceButtons
-              label="Floating bubble in fullscreen apps"
-              value={draft.assistantBubbleHideWhenFullscreen ? "hide" : "show"}
-              options={[
-                { value: "hide", label: "Hide bubble" },
-                { value: "show", label: "Keep visible" },
-              ]}
-              disabled={setup.saving || !draft.assistantBubbleEnabled}
-              onChange={(value) => {
-                setDraft({
-                  ...draft,
-                  assistantBubbleHideWhenFullscreen: value === "hide",
-                });
-              }}
-            />
-          </SettingPanel>
-
-          <SettingPanel
-            label="Temporary hide"
-            detail="Seconds before the bubble returns."
-          >
-            <SettingsNumberInput
-              aria-label="Temporary bubble hide duration in seconds"
-              min={
-                DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.min
-              }
-              max={
-                DESKTOP_SETTING_BOUNDS.assistantBubbleTemporarilyHideSeconds.max
-              }
-              step="1"
-              value={draft.assistantBubbleTemporarilyHideSeconds}
-              disabled={setup.saving || !draft.assistantBubbleEnabled}
-              onValueChange={(value) => {
-                setDraft({
-                  ...draft,
-                  assistantBubbleTemporarilyHideSeconds: value,
-                });
-              }}
-              className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
             />
           </SettingPanel>
         </div>

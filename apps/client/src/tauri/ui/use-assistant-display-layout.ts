@@ -8,10 +8,7 @@ import {
   setWindowSize,
 } from "./assistant-surface";
 
-/** Reflow existing surfaces after docking/DPI changes without recreating their session. */
-export const useAssistantDisplayLayout = (
-  kind: "popup" | "quickVoice",
-): void => {
+export const useAssistantDisplayLayout = (): void => {
   useEffect(() => {
     if (!isTauri()) return;
     const current = getCurrentWindow();
@@ -28,15 +25,9 @@ export const useAssistantDisplayLayout = (
           pending = false;
           const layout = await resolveAssistantSurfaceLayout("window");
           if (!layout || disposed) continue;
-          await setWindowPosition(
-            current,
-            kind === "popup" ? layout.popupPosition : layout.quickVoicePosition,
-          );
+          await setWindowPosition(current, layout.quickVoicePosition);
           if (disposed) break;
-          await setWindowSize(
-            current,
-            kind === "popup" ? layout.popupSize : layout.quickVoiceSize,
-          );
+          await setWindowSize(current, layout.quickVoiceSize);
         }
       } finally {
         running = false;
@@ -64,5 +55,5 @@ export const useAssistantDisplayLayout = (
       disposed = true;
       for (const unlisten of unlisteners) unlisten();
     };
-  }, [kind]);
+  }, []);
 };

@@ -2,11 +2,29 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_RALPH_SETTINGS,
   DEFAULT_TERMINAL_PROFILE_SETTINGS,
+  normalizeAppearanceSettings,
   normalizeRalphSettings,
   normalizeTerminalProfileSettings,
 } from "./shell-store-normalizers.helper";
 
 describe("Shell store normalizers", () => {
+  it("persists only the current appearance preferences", () => {
+    expect(
+      normalizeAppearanceSettings({
+        version: 1,
+        theme: "light",
+        density: "compact",
+        accent: "violet",
+        unrelatedPreference: true,
+      }),
+    ).toEqual({
+      version: 1,
+      theme: "light",
+      density: "compact",
+      accent: "violet",
+    });
+  });
+
   it("returns shared defaults for invalid persisted records", () => {
     expect(normalizeRalphSettings("invalid")).toBe(DEFAULT_RALPH_SETTINGS);
     expect(normalizeRalphSettings({ workspaceRoot: "C:\\Project" })).toBe(

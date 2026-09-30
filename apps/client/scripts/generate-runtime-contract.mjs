@@ -554,9 +554,6 @@ export interface UserDesktopSettings {
   autostartMinimized: boolean;
   autostartToTray: boolean;
   alwaysRunAsAdministrator: boolean;
-  assistantBubbleEnabled: boolean;
-  assistantBubbleHideWhenFullscreen: boolean;
-  assistantBubbleTemporarilyHideSeconds: number;
   aiContextMaxMessages: number;
   adaptiveControllerEnabled: boolean;
   chatIdleTimeoutMinutes: number;

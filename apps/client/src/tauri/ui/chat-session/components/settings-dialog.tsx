@@ -1106,45 +1106,6 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
         }),
       },
       {
-        id: "settings.appearance.quick-chat-style.select",
-        title: "Choose Quick Chat bubble style",
-        group: "Settings: Appearance",
-        scope,
-        availability: () =>
-          !active("appearance")
-            ? { state: "hidden" }
-            : state().props.appearanceSetup.saving
-              ? { state: "disabled", reason: "Appearance is saving." }
-              : { state: "enabled" },
-        children: () => ({
-          id: "settings.appearance.quick-chat-style.select.page",
-          title: "Choose Quick Chat bubble style",
-          searchPlaceholder: "Search styles",
-          numericSelection: true,
-          groups: [
-            {
-              id: "styles",
-              items: (["classic", "glass", "pulse", "orbit"] as const).map(
-                (quickChatBubbleStyle, index) => ({
-                  id: quickChatBubbleStyle,
-                  title: `${quickChatBubbleStyle[0]?.toUpperCase()}${quickChatBubbleStyle.slice(1)}`,
-                  current:
-                    state().props.appearanceSetup.settings
-                      .quickChatBubbleStyle === quickChatBubbleStyle,
-                  numericKey: numericKey(index),
-                  execute: () =>
-                    void state().props.appearanceSetup.onSave({
-                      ...state().props.appearanceSetup.settings,
-                      quickChatBubbleStyle,
-                      version: 1,
-                    }),
-                }),
-              ),
-            },
-          ],
-        }),
-      },
-      {
         id: "settings.voice.speech-input.select",
         title: "Choose speech-input provider",
         group: "Settings: Voice",

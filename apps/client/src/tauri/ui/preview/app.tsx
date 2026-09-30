@@ -1,28 +1,7 @@
 import { Suspense, lazy, useEffect, type JSX } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentShellWindowLabel } from "../lib/shell-store";
-import {
-  ASSISTANT_BUBBLE_WINDOW_LABEL,
-  ASSISTANT_POPUP_WINDOW_LABEL,
-  QUICK_VOICE_WINDOW_LABEL,
-  TRAY_MENU_WINDOW_LABEL,
-} from "../runtime";
-
-const AssistantBubbleShell = lazy(async () => {
-  const module = await import("../assistant-bubble-shell");
-
-  return {
-    default: module.AssistantBubbleShell,
-  };
-});
-
-const AssistantPopupShell = lazy(async () => {
-  const module = await import("../assistant-popup-shell");
-
-  return {
-    default: module.AssistantPopupShell,
-  };
-});
+import { QUICK_VOICE_WINDOW_LABEL, TRAY_MENU_WINDOW_LABEL } from "../runtime";
 
 const ChatSession = lazy(async () => {
   const module = await import("../chat-session-shell");
@@ -49,8 +28,6 @@ const TrayMenuShell = lazy(async () => {
 });
 
 const previewWindowLabels = new Set<string>([
-  ASSISTANT_BUBBLE_WINDOW_LABEL,
-  ASSISTANT_POPUP_WINDOW_LABEL,
   QUICK_VOICE_WINDOW_LABEL,
   TRAY_MENU_WINDOW_LABEL,
 ]);
@@ -82,12 +59,7 @@ const WindowLoadingFallback = ({
 }: {
   windowLabel: string | null;
 }): JSX.Element => {
-  if (windowLabel === ASSISTANT_BUBBLE_WINDOW_LABEL) {
-    return <div className="fixed inset-0 overflow-hidden bg-transparent" />;
-  }
-
   if (
-    windowLabel === ASSISTANT_POPUP_WINDOW_LABEL ||
     windowLabel === QUICK_VOICE_WINDOW_LABEL ||
     windowLabel === TRAY_MENU_WINDOW_LABEL
   ) {
@@ -113,22 +85,6 @@ const MainWindowReady = (): null => {
 export const App = (): JSX.Element => {
   const windowLabel = getPreviewWindowLabel();
   const fallback = <WindowLoadingFallback windowLabel={windowLabel} />;
-
-  if (windowLabel === ASSISTANT_BUBBLE_WINDOW_LABEL) {
-    return (
-      <Suspense fallback={fallback}>
-        <AssistantBubbleShell />
-      </Suspense>
-    );
-  }
-
-  if (windowLabel === ASSISTANT_POPUP_WINDOW_LABEL) {
-    return (
-      <Suspense fallback={fallback}>
-        <AssistantPopupShell />
-      </Suspense>
-    );
-  }
 
   if (windowLabel === QUICK_VOICE_WINDOW_LABEL) {
     return (

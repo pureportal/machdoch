@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
 pub(crate) mod display_layout;
@@ -34,12 +34,10 @@ pub(crate) use startup::{
     restart_as_administrator_if_needed, StartupState,
 };
 pub(crate) use tray::create_tray;
-pub(crate) use window::{handle_window_event, sync_assistant_bubble_window};
+pub(crate) use window::handle_window_event;
 
 pub(crate) const AUTOSTART_LAUNCH_ARG: &str = "--autostart";
 pub(crate) const MAIN_WINDOW_LABEL: &str = "main";
-pub(crate) const ASSISTANT_BUBBLE_WINDOW_LABEL: &str = "assistant-bubble";
-pub(crate) const ASSISTANT_POPUP_WINDOW_LABEL: &str = "assistant-popup";
 pub(crate) const QUICK_VOICE_WINDOW_LABEL: &str = "quick-voice";
 pub(crate) const TRAY_MENU_WINDOW_LABEL: &str = "tray-menu";
 pub(crate) const QUICK_VOICE_START_EVENT: &str = "machdoch://quick-voice-start";
@@ -64,15 +62,6 @@ pub(crate) struct LaunchContext {
     pub(crate) file_manager_invocation: Option<FileManagerInvocation>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MonitorBoundsInput {
-    pub x: i32,
-    pub y: i32,
-    pub width: u32,
-    pub height: u32,
-}
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct QuickVoiceStartPayload {
@@ -91,11 +80,6 @@ pub(crate) fn create_desktop_launch_id() -> String {
 #[tauri::command]
 pub fn get_desktop_launch_id(state: tauri::State<'_, DesktopLaunchId>) -> String {
     state.0.clone()
-}
-
-#[tauri::command]
-pub fn detect_fullscreen_window_on_monitor(monitor: MonitorBoundsInput) -> Result<bool, String> {
-    window::detect_fullscreen_window_on_monitor(monitor)
 }
 
 #[tauri::command]

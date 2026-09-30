@@ -702,17 +702,6 @@
         "alwaysRunAsAdministrator": {
           "type": "boolean"
         },
-        "assistantBubbleEnabled": {
-          "type": "boolean"
-        },
-        "assistantBubbleHideWhenFullscreen": {
-          "type": "boolean"
-        },
-        "assistantBubbleTemporarilyHideSeconds": {
-          "type": "integer",
-          "minimum": 2,
-          "maximum": 30
-        },
         "aiContextMaxMessages": {
           "type": "integer",
           "minimum": 1,
@@ -759,9 +748,6 @@
         "autostartMinimized",
         "autostartToTray",
         "alwaysRunAsAdministrator",
-        "assistantBubbleEnabled",
-        "assistantBubbleHideWhenFullscreen",
-        "assistantBubbleTemporarilyHideSeconds",
         "aiContextMaxMessages",
         "adaptiveControllerEnabled",
         "chatIdleTimeoutMinutes",
@@ -788,20 +774,6 @@
         "alwaysRunAsAdministrator": {
           "type": "boolean",
           "default": false
-        },
-        "assistantBubbleEnabled": {
-          "type": "boolean",
-          "default": true
-        },
-        "assistantBubbleHideWhenFullscreen": {
-          "type": "boolean",
-          "default": true
-        },
-        "assistantBubbleTemporarilyHideSeconds": {
-          "type": "integer",
-          "minimum": 2,
-          "maximum": 30,
-          "default": 6
         },
         "aiContextMaxMessages": {
           "type": "integer",

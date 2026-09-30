@@ -148,9 +148,6 @@ export const DEFAULT_USER_DESKTOP_SETTINGS = {
   "autostartMinimized": false,
   "autostartToTray": false,
   "alwaysRunAsAdministrator": false,
-  "assistantBubbleEnabled": true,
-  "assistantBubbleHideWhenFullscreen": true,
-  "assistantBubbleTemporarilyHideSeconds": 6,
   "aiContextMaxMessages": 60,
   "adaptiveControllerEnabled": true,
   "chatIdleTimeoutMinutes": 20,
@@ -162,10 +159,6 @@ export const DEFAULT_USER_DESKTOP_SETTINGS = {
   "quickVoiceMaxMessages": 50
 } as const satisfies UserDesktopSettings;
 export const DESKTOP_SETTING_BOUNDS = {
-  "assistantBubbleTemporarilyHideSeconds": {
-    "min": 2,
-    "max": 30
-  },
   "aiContextMaxMessages": {
     "min": 1,
     "max": 200
@@ -506,9 +499,6 @@ export interface UserDesktopSettings {
   autostartMinimized: boolean;
   autostartToTray: boolean;
   alwaysRunAsAdministrator: boolean;
-  assistantBubbleEnabled: boolean;
-  assistantBubbleHideWhenFullscreen: boolean;
-  assistantBubbleTemporarilyHideSeconds: number;
   aiContextMaxMessages: number;
   adaptiveControllerEnabled: boolean;
   chatIdleTimeoutMinutes: number;

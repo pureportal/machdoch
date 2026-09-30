@@ -46,14 +46,12 @@ export type RalphFlowLibraryMode = "workspace" | "user" | "all";
 export type AppearanceTheme = "dark" | "light";
 export type AppearanceDensity = "comfortable" | "compact";
 export type AppearanceAccent = "sky" | "emerald" | "violet" | "amber";
-export type QuickChatBubbleStyle = "classic" | "glass" | "pulse" | "orbit";
 
 export interface AppearanceSettings {
   version: 1;
   theme: AppearanceTheme;
   density: AppearanceDensity;
   accent: AppearanceAccent;
-  quickChatBubbleStyle: QuickChatBubbleStyle;
 }
 
 export interface TerminalProfileSettings {
@@ -67,7 +65,6 @@ export const DEFAULT_APPEARANCE_SETTINGS = {
   theme: "dark",
   density: "comfortable",
   accent: "sky",
-  quickChatBubbleStyle: "classic",
 } as const satisfies AppearanceSettings;
 
 export const DEFAULT_TERMINAL_PROFILE_SETTINGS = {
@@ -296,11 +293,6 @@ export const normalizeAppearanceSettings = (
       value.accent,
       ["sky", "emerald", "violet", "amber"],
       DEFAULT_APPEARANCE_SETTINGS.accent,
-    ),
-    quickChatBubbleStyle: normalizeOneOf(
-      value.quickChatBubbleStyle,
-      ["classic", "glass", "pulse", "orbit"],
-      DEFAULT_APPEARANCE_SETTINGS.quickChatBubbleStyle,
     ),
   };
 };

@@ -176,7 +176,6 @@ pub(crate) fn emit_import_reload_events<R: Runtime>(
             APPEARANCE_SETTINGS_CHANGED_EVENT,
             serde_json::json!({ "originWindowLabel": null, "updatedAt": now_millis() }),
         );
-        let _ = crate::desktop_shell::sync_assistant_bubble_window(app);
     }
     if categories.contains(&SettingsCategoryId::GlobalContextPacks)
         || categories.contains(&SettingsCategoryId::ChatVoicePreferences)

@@ -193,7 +193,7 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
     id: "appearance",
     label: "Appearance",
     group: "App",
-    description: "Theme, density, and launcher style.",
+    description: "Theme, density, and accent.",
     keywords: [
       "accent",
       "compact",
@@ -202,16 +202,11 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
       "sage",
       "violet",
       "amber",
-      "classic",
-      "glass",
-      "pulse",
-      "orbit",
       "theme",
       "dark",
       "light",
       "density",
       "color",
-      "bubble",
     ],
   },
   {
@@ -222,10 +217,6 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
     keywords: [
       "administrator",
       "sign in",
-      "floating",
-      "fullscreen",
-      "temporary",
-      "hide",
       "retention",
       "deletion",
       "sessions",
@@ -591,7 +582,9 @@ export const createConversationContextFromSession = (
     sessionId: session.id,
     adaptiveControllerOverride: session.adaptiveControllerOverride ?? null,
     ...(session.specialSession === "pose" ? { chatType: "pose" as const } : {}),
-    ...(session.specialSession === "pose" && session.poseScene ? { poseScene: session.poseScene } : {}),
+    ...(session.specialSession === "pose" && session.poseScene
+      ? { poseScene: session.poseScene }
+      : {}),
     workspace: session.workspace
       ? { selection: "selected", root: session.workspace }
       : { selection: "not-set" },

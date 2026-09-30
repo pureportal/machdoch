@@ -1,4 +1,3 @@
-import { listen } from "@tauri-apps/api/event";
 import {
   getCurrentWindow,
   type DragDropEvent as TauriDragDropEvent,
@@ -11,13 +10,10 @@ const TEXT_PLAIN_TYPE = "text/plain";
 const MOZ_URL_TYPE = "text/x-moz-url";
 const URL_DROP_PROTOCOLS = new Set(["http:", "https:", "mailto:", "ftp:"]);
 
-export interface SessionDropPayload {
+interface SessionDropPayload {
   paths?: string[];
   references?: string[];
   text?: string;
-}
-
-interface BrowserSessionDropPayload extends SessionDropPayload {
   imageFiles?: File[];
 }
 
@@ -34,29 +30,6 @@ const normalizeStringList = (value: unknown): string[] => {
         .filter((entry) => entry.length > 0),
     ),
   );
-};
-
-const normalizeSessionDropPayload = (
-  value: unknown,
-): SessionDropPayload | null => {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  const record = value as Record<string, unknown>;
-  const paths = normalizeStringList(record.paths);
-  const references = normalizeStringList(record.references);
-  const text = typeof record.text === "string" ? record.text.trim() : "";
-
-  if (paths.length === 0 && references.length === 0 && !text) {
-    return null;
-  }
-
-  return {
-    ...(paths.length > 0 ? { paths } : {}),
-    ...(references.length > 0 ? { references } : {}),
-    ...(text ? { text } : {}),
-  };
 };
 
 const getDataTransferTypes = (dataTransfer: DataTransfer): string[] => {
@@ -98,10 +71,7 @@ const parseUriList = (value: string): string[] => {
     .filter((line) => line.length > 0 && !line.startsWith("#"));
 };
 
-const getTransferData = (
-  dataTransfer: DataTransfer,
-  type: string,
-): string => {
+const getTransferData = (dataTransfer: DataTransfer, type: string): string => {
   try {
     return dataTransfer.getData(type).trim();
   } catch {
@@ -153,8 +123,10 @@ const getDroppedText = (
 
 const createBrowserSessionDropPayload = (
   dataTransfer: DataTransfer,
-): BrowserSessionDropPayload | null => {
-  const uriValues = parseUriList(getTransferData(dataTransfer, TEXT_URI_LIST_TYPE));
+): SessionDropPayload | null => {
+  const uriValues = parseUriList(
+    getTransferData(dataTransfer, TEXT_URI_LIST_TYPE),
+  );
   const mozUrl = getTransferData(dataTransfer, MOZ_URL_TYPE)
     .split(/\r?\n/u)
     .map((line) => line.trim())
@@ -211,11 +183,7 @@ export const useSessionFileDrops = (options: {
     target: FileDropTarget,
   ) => void | Promise<void>;
   onAppendText?: (text: string, target: FileDropTarget) => void | Promise<void>;
-  onAttachImageFiles?: (
-    files: File[],
-    target: FileDropTarget,
-  ) => Promise<void>;
-  forwardedDropEventName?: string;
+  onAttachImageFiles?: (files: File[], target: FileDropTarget) => Promise<void>;
 }): { isActive: boolean } => {
   const [isNativeDropActive, setIsNativeDropActive] = useState(false);
   const [isBrowserDropActive, setIsBrowserDropActive] = useState(false);
@@ -225,29 +193,37 @@ export const useSessionFileDrops = (options: {
 
   const attachDropPayload = useCallback(
     async (
-      payload: BrowserSessionDropPayload | SessionDropPayload,
+      payload: SessionDropPayload,
       target: FileDropTarget,
     ): Promise<void> => {
       const handlers = optionsRef.current;
       const operations: Promise<unknown>[] = [];
 
       if (payload.paths?.length) {
-        operations.push(Promise.resolve(handlers.onAttachPaths(payload.paths, target)));
+        operations.push(
+          Promise.resolve(handlers.onAttachPaths(payload.paths, target)),
+        );
       }
 
       if (payload.references?.length) {
         operations.push(
-          Promise.resolve(handlers.onAttachReferences?.(payload.references, target)),
+          Promise.resolve(
+            handlers.onAttachReferences?.(payload.references, target),
+          ),
         );
       }
 
       if (payload.text) {
-        operations.push(Promise.resolve(handlers.onAppendText?.(payload.text, target)));
+        operations.push(
+          Promise.resolve(handlers.onAppendText?.(payload.text, target)),
+        );
       }
 
-      if ("imageFiles" in payload && payload.imageFiles?.length) {
+      if (payload.imageFiles?.length) {
         operations.push(
-          Promise.resolve(handlers.onAttachImageFiles?.(payload.imageFiles, target)),
+          Promise.resolve(
+            handlers.onAttachImageFiles?.(payload.imageFiles, target),
+          ),
         );
       }
 
@@ -304,56 +280,7 @@ export const useSessionFileDrops = (options: {
       disposed = true;
       unsubscribe?.();
     };
-  }, [
-    attachDropPayload,
-    options.fileDropTarget,
-    options.isDesktop,
-  ]);
-
-  useEffect(() => {
-    const fileDropTarget = options.fileDropTarget;
-    const eventName = options.forwardedDropEventName;
-
-    if (!fileDropTarget || !eventName || !options.isDesktop) {
-      return;
-    }
-
-    let disposed = false;
-    let unsubscribe: (() => void) | undefined;
-
-    void listen<unknown>(eventName, (event) => {
-      const payload = normalizeSessionDropPayload(event.payload);
-
-      if (!payload) {
-        return;
-      }
-
-      void attachDropPayload(payload, fileDropTarget).catch((error) => {
-        console.error("Failed to attach forwarded dropped content", error);
-      });
-    })
-      .then((unlisten) => {
-        if (disposed) {
-          unlisten();
-          return;
-        }
-
-        unsubscribe = unlisten;
-      })
-      .catch((error) => {
-        console.error("Failed to subscribe to forwarded dropped content", error);
-      });
-
-    return () => {
-      disposed = true;
-      unsubscribe?.();
-    };
-  }, [
-    attachDropPayload,
-    options.fileDropTarget,
-    options.forwardedDropEventName,
-    options.isDesktop,
-  ]);
+  }, [attachDropPayload, options.fileDropTarget, options.isDesktop]);
 
   useEffect(() => {
     const fileDropTarget = options.fileDropTarget;
@@ -394,7 +321,10 @@ export const useSessionFileDrops = (options: {
         return;
       }
 
-      browserDragDepthRef.current = Math.max(0, browserDragDepthRef.current - 1);
+      browserDragDepthRef.current = Math.max(
+        0,
+        browserDragDepthRef.current - 1,
+      );
 
       if (browserDragDepthRef.current === 0) {
         setIsBrowserDropActive(false);
@@ -436,10 +366,7 @@ export const useSessionFileDrops = (options: {
       browserDragDepthRef.current = 0;
       setIsBrowserDropActive(false);
     };
-  }, [
-    attachDropPayload,
-    options.fileDropTarget,
-  ]);
+  }, [attachDropPayload, options.fileDropTarget]);
 
   return { isActive: isNativeDropActive || isBrowserDropActive };
 };

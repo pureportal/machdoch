@@ -203,10 +203,6 @@ pub fn run() {
                 eprintln!("Failed to initialize workspace run control: {error}");
             }
 
-            if let Err(error) = desktop_shell::sync_assistant_bubble_window(app.handle()) {
-                eprintln!("Failed to initialize the assistant bubble window: {error}");
-            }
-
             desktop_shell::display_layout::initialize(app.handle());
 
             Ok(())
@@ -229,7 +225,6 @@ pub fn run() {
             idle_shutdown::set_shutdown_when_idle,
             idle_shutdown::has_pending_shutdown_work,
             idle_shutdown::shutdown_if_idle,
-            desktop_shell::detect_fullscreen_window_on_monitor,
             desktop_shell::clear_webview_cache,
             desktop_shell::ensure_assistant_window,
             desktop_shell::get_desktop_launch_id,

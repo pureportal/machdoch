@@ -17,7 +17,6 @@ const applyAppearanceSettings = (settings: AppearanceSettings): void => {
   root.dataset.theme = settings.theme;
   root.dataset.density = settings.density;
   root.dataset.accent = settings.accent;
-  root.dataset.quickChatBubbleStyle = settings.quickChatBubbleStyle;
   root.classList.toggle("dark", settings.theme === "dark");
   root.style.colorScheme = settings.theme;
 };

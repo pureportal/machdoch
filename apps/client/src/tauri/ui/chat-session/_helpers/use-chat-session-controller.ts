@@ -623,7 +623,6 @@ export interface UseChatSessionControllerOptions {
   settingsSurfaceOpen?: boolean;
   trackSessionReads?: boolean;
   fileDropTarget?: FileDropTarget;
-  forwardedDropEventName?: string;
 }
 
 const CLIPBOARD_IMAGE_MEDIA_TYPES: readonly AgentModelImageMediaType[] = [
@@ -5073,7 +5072,6 @@ export const useChatSessionController = (
     onAttachReferences: handleAttachReferences,
     onAppendText: handleAppendDroppedText,
     onAttachImageFiles: handlePasteContextImages,
-    forwardedDropEventName: options.forwardedDropEventName,
   });
 
   const clearSessionComposerInput = useCallback(

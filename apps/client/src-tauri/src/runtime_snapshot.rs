@@ -305,12 +305,6 @@ pub async fn save_user_desktop_settings(
         |settings| crate::desktop_shell::sync_quick_voice_shortcut_with_settings(&app, settings),
     )?;
 
-    if let Err(error) = crate::desktop_shell::sync_assistant_bubble_window(&app) {
-        eprintln!(
-            "Failed to sync the assistant bubble window after saving desktop settings: {error}"
-        );
-    }
-
     let next_settings = load_user_desktop_settings(&app)?;
 
     if next_settings.always_run_as_administrator {
