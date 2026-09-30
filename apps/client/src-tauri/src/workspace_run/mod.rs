@@ -102,49 +102,66 @@ pub struct PrecheckRunConfigurationRequest {
 }
 
 #[tauri::command]
-pub fn get_workspace_run_configuration_document(
+pub async fn get_workspace_run_configuration_document(
     state: tauri::State<'_, WorkspaceRunState>,
     workspace_root: String,
 ) -> Result<RunConfigurationDocument, String> {
-    state.manager.load_configuration_document(&workspace_root)
+    let manager = state.manager();
+    tauri::async_runtime::spawn_blocking(move || {
+        manager.load_configuration_document(&workspace_root)
+    })
+    .await
+    .map_err(|error| format!("Run configuration reader failed: {error}"))?
 }
 
 #[tauri::command]
-pub fn save_workspace_run_configuration_document(
+pub async fn save_workspace_run_configuration_document(
     state: tauri::State<'_, WorkspaceRunState>,
     request: SaveRunConfigurationRequest,
 ) -> Result<RunWorkspaceSnapshot, String> {
-    state
-        .manager
-        .save_configuration_document(&request.workspace_root, &request.document)
+    let manager = state.manager();
+    tauri::async_runtime::spawn_blocking(move || {
+        manager.save_configuration_document(&request.workspace_root, &request.document)
+    })
+    .await
+    .map_err(|error| format!("Run configuration writer failed: {error}"))?
 }
 
 #[tauri::command]
-pub fn get_workspace_run_snapshot(
+pub async fn get_workspace_run_snapshot(
     state: tauri::State<'_, WorkspaceRunState>,
     workspace_root: String,
 ) -> Result<RunWorkspaceSnapshot, String> {
-    state.manager.snapshot(&workspace_root)
+    let manager = state.manager();
+    tauri::async_runtime::spawn_blocking(move || manager.snapshot(&workspace_root))
+        .await
+        .map_err(|error| format!("Run snapshot reader failed: {error}"))?
 }
 
 #[tauri::command]
-pub fn start_workspace_run_configuration(
+pub async fn start_workspace_run_configuration(
     state: tauri::State<'_, WorkspaceRunState>,
     request: RunConfigurationRequest,
 ) -> Result<RunWorkspaceSnapshot, String> {
-    state
-        .manager
-        .start(&request.workspace_root, request.configuration_id.as_deref())
+    let manager = state.manager();
+    tauri::async_runtime::spawn_blocking(move || {
+        manager.start(&request.workspace_root, request.configuration_id.as_deref())
+    })
+    .await
+    .map_err(|error| format!("Run startup worker failed: {error}"))?
 }
 
 #[tauri::command]
-pub fn stop_workspace_run_configuration(
+pub async fn stop_workspace_run_configuration(
     state: tauri::State<'_, WorkspaceRunState>,
     request: RunConfigurationRequest,
 ) -> Result<RunWorkspaceSnapshot, String> {
-    state
-        .manager
-        .stop(&request.workspace_root, request.configuration_id.as_deref())
+    let manager = state.manager();
+    tauri::async_runtime::spawn_blocking(move || {
+        manager.stop(&request.workspace_root, request.configuration_id.as_deref())
+    })
+    .await
+    .map_err(|error| format!("Run shutdown worker failed: {error}"))?
 }
 
 #[tauri::command]
@@ -161,11 +178,15 @@ pub async fn restart_workspace_run_configuration(
 }
 
 #[tauri::command]
-pub fn precheck_workspace_run_configuration_json(
+pub async fn precheck_workspace_run_configuration_json(
     request: PrecheckRunConfigurationRequest,
 ) -> Result<RunConfigurationDocument, String> {
-    let workspace = resolve_workspace_root_path(&request.workspace_root)?;
-    precheck_document(&workspace, &request.document_json)
+    tauri::async_runtime::spawn_blocking(move || {
+        let workspace = resolve_workspace_root_path(&request.workspace_root)?;
+        precheck_document(&workspace, &request.document_json)
+    })
+    .await
+    .map_err(|error| format!("Run configuration validation worker failed: {error}"))?
 }
 
 pub(crate) fn enrich_conversation_context(

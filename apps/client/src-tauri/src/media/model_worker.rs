@@ -172,7 +172,12 @@ impl ResidentWorker {
                 self.child.stdin = Some(stdin);
                 result.map_err(|error| format!("Could not write model request: {error}"))?;
             }
-            match self.responses.try_recv() {
+            let response = if self.child.stdin.is_some() {
+                self.responses.try_recv()
+            } else {
+                Err(mpsc::TryRecvError::Empty)
+            };
+            match response {
                 Ok(response) => {
                     let envelope: serde_json::Value = serde_json::from_slice(&response?)
                         .map_err(|error| format!("Model worker returned invalid JSON: {error}"))?;
@@ -220,12 +225,6 @@ impl ResidentWorker {
             self.stop()?;
         }
         writer.join().map_err(|_| "Model request writer failed")?;
-        if self.child.stdin.is_none() {
-            if let Ok((stdin, result)) = writing.try_recv() {
-                self.child.stdin = Some(stdin);
-                result.map_err(|error| format!("Could not write model request: {error}"))?;
-            }
-        }
         result.map_err(|error| {
             let tail = self
                 .diagnostics
