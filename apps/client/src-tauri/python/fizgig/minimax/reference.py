@@ -13,7 +13,8 @@ Two modes, both DOWN-ONLY (a reference is never upscaled):
   max   — scale so the short edge is at most 2048. The node's note: "best identity fidelity",
           at the cost of speed, since reference tokens ride through every sampling step.
 
-Both then round each side to a multiple of 32 (CANVAS_MULTIPLE) with a floor of one multiple.
+Both then align each side down to a multiple of 32 (CANVAS_MULTIPLE). References whose scaled
+side is below one multiple are rejected because no valid positive down-only canvas exists.
 """
 
 import math
@@ -33,8 +34,12 @@ def reference_canvas(ref_w: int, ref_h: int, gen_w: int, gen_h: int, mode: str =
         scale = min(1.0, REF_IMAGE_SHORT_EDGE / float(min(ref_w, ref_h)))
     else:
         raise ValueError(f"reference sizing mode must be 'match' or 'max', got {mode!r}")
-    tw = max(CANVAS_MULTIPLE, round(ref_w * scale / CANVAS_MULTIPLE) * CANVAS_MULTIPLE)
-    th = max(CANVAS_MULTIPLE, round(ref_h * scale / CANVAS_MULTIPLE) * CANVAS_MULTIPLE)
+    tw = math.floor(ref_w * scale / CANVAS_MULTIPLE) * CANVAS_MULTIPLE
+    th = math.floor(ref_h * scale / CANVAS_MULTIPLE) * CANVAS_MULTIPLE
+    if tw == 0 or th == 0:
+        raise ValueError(
+            f"reference dimensions must remain at least {CANVAS_MULTIPLE}px after scaling"
+        )
     return int(tw), int(th)
 
 
