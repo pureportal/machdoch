@@ -70,6 +70,7 @@ Machdoch can also:
 - **Reuse context.** Keep workspace or global memory, instruction files, and context packs for recurring work.
 - **Use Quick Chat and voice.** Open the small desktop assistant with <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd> by default. Set up speech input and spoken replies in **Settings > Voice**.
 - **Reach other computers.** Connect hosts to a self-hosted **Fleet Manager** for remote access. See the [Fleet Manager guide](apps/fleet-manager/README.md) for setup.
+- **Shut down after work finishes on Windows.** Enable the power button in the title bar. Shutdown waits for work across all chats and windows, queued messages, automatic retries, and media jobs, then forces other applications to close. Select the button again to cancel.
 
 ![Media Studio showing two generated image variations](./apps/landing/public/images/app-media.webp)
 
@@ -103,6 +104,7 @@ A workspace is a working folder, not a security boundary. Before using Machdoch 
 | Browser automation will not start | Install Edge or Chrome, then restart Machdoch. |
 | An image attachment is rejected | Select a model with image input and check the image format and size. |
 | A scheduled job did not run | Check that the job is enabled, its workspace exists, and the computer and scheduler were running. Review the job history. |
+| Shutdown after work does not occur | Resolve or remove failed queued messages and finish pending media reviews. If the power button turns off with an error, fix the reported problem and enable it again. |
 | Local media generation is unavailable | Check model and runtime details in **Media Studio** and follow any readiness guidance. |
 
 Use `machdoch --help` or `machdoch config` for terminal diagnostics. For updates, see [all releases](https://github.com/pureportal/machdoch/releases). To report a problem, open a [GitHub issue](https://github.com/pureportal/machdoch/issues) with the app version, operating system, steps to reproduce, and the error message. Remove keys and private data first.

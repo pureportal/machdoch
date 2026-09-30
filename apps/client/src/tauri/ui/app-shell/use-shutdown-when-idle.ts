@@ -1,20 +1,20 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState } from "react";
-import type { UserAgentLimitsSettings } from "../../../core/runtime-contract.generated.js";
-import type { ShellPersistedState } from "../chat-session.model";
-import { loadShellStateSnapshot } from "../lib/shell-store";
+import {
+  loadShellStateRevision,
+  loadShellStateSnapshot,
+} from "../lib/shell-store";
 import { hasPendingMediaGeneration } from "@machdoch/media-studio/tauri/ui/media/media-generation-service.js";
-import { hasPendingChatWork, IdleShutdownMonitor } from "./shutdown-when-idle";
+import {
+  hasPendingLocalChatWork,
+  IdleShutdownMonitor,
+  PendingChatWorkInspector,
+  type ShutdownWhenIdleOptions,
+} from "./shutdown-when-idle";
 import { startAutomaticWorkPump } from "./automatic-work-pump";
 
-export interface ShutdownWhenIdleOptions {
-  ready: boolean;
-  state: ShellPersistedState;
-  settings: UserAgentLimitsSettings;
-  hasUnsettledWork: () => boolean;
-  flush: () => Promise<void>;
-}
+export type { ShutdownWhenIdleOptions } from "./shutdown-when-idle";
 
 export const useShutdownWhenIdle = (options: ShutdownWhenIdleOptions) => {
   const [enabled, setEnabled] = useState(false);
@@ -24,30 +24,38 @@ export const useShutdownWhenIdle = (options: ShutdownWhenIdleOptions) => {
   const latest = useRef(options);
   latest.current = options;
   const monitor = useRef(new IdleShutdownMonitor());
+  const chatWorkInspector = useRef(
+    new PendingChatWorkInspector(
+      loadShellStateRevision,
+      loadShellStateSnapshot,
+    ),
+  );
   const activityPump = useRef<ReturnType<typeof startAutomaticWorkPump> | null>(
     null,
   );
-  const busy = (): boolean =>
-    !latest.current.ready ||
-    latest.current.hasUnsettledWork() ||
-    hasPendingChatWork(latest.current.state, latest.current.settings) ||
-    hasPendingMediaGeneration();
-
   useEffect(() => {
     if (!isTauri()) return;
     activityPump.current = startAutomaticWorkPump(
       async () => {
+        const inspected = latest.current;
+        const work = await chatWorkInspector.current.inspect(
+          () => latest.current,
+        );
         await invoke("set_window_pending_chat_work", {
           pending:
-            !latest.current.ready ||
-            latest.current.hasUnsettledWork() ||
-            hasPendingChatWork(latest.current.state, latest.current.settings),
+            work.busy ||
+            hasPendingLocalChatWork(latest.current) ||
+            latest.current.state !== inspected.state ||
+            latest.current.settings !== inspected.settings,
         });
       },
       (error) => {
         console.error("Failed to synchronize chat activity", error);
         monitor.current.setEnabled(false);
         setEnabled(false);
+        setError(
+          `Shutdown could not be checked: ${error instanceof Error ? error.message : String(error)}`,
+        );
         void invoke("set_shutdown_when_idle", { enabled: false }).catch(
           (error: unknown) =>
             console.error("Failed to disable shutdown mode", error),
@@ -102,22 +110,25 @@ export const useShutdownWhenIdle = (options: ShutdownWhenIdleOptions) => {
     const pump = startAutomaticWorkPump(
       async () => {
         try {
+          const inspected = latest.current;
+          const busy = (): boolean =>
+            hasPendingLocalChatWork(latest.current) ||
+            hasPendingMediaGeneration() ||
+            latest.current.state !== inspected.state ||
+            latest.current.settings !== inspected.settings;
           const finished = await monitor.current.check(
             async () => {
               if (busy()) return { busy: true, revision: 0 };
-              await latest.current.flush();
-              const snapshot = await loadShellStateSnapshot(
-                latest.current.state,
+              const work = await chatWorkInspector.current.inspect(
+                () => latest.current,
               );
+              if (work.busy) return work;
               const nativeBusy = await invoke<boolean>(
                 "has_pending_shutdown_work",
               );
               return {
-                busy:
-                  busy() ||
-                  nativeBusy ||
-                  hasPendingChatWork(snapshot.state, latest.current.settings),
-                revision: snapshot.revision,
+                busy: busy() || nativeBusy,
+                revision: work.revision,
               };
             },
             async (expectedRevision) => {
