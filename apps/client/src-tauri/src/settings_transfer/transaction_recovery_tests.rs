@@ -1,5 +1,10 @@
 use super::*;
-use std::process::Command;
+use std::{
+    io::Cursor,
+    process::Command,
+    sync::mpsc,
+    time::{Duration, Instant},
+};
 use tauri::test::{mock_builder, mock_context, noop_assets, MockRuntime};
 
 const CASE_ENV: &str = "MACHDOCH_SETTINGS_RECOVERY_CASE";
@@ -138,6 +143,23 @@ impl Fixture {
 }
 
 #[test]
+fn recovery_artifact_reads_are_bounded_and_verify_expected_length() {
+    let valid = read_bounded_recovery_artifact(Cursor::new(b"valid"), 5, 5)
+        .expect("an unchanged in-limit recovery artifact should be readable");
+    assert_eq!(&*valid, b"valid");
+    assert_eq!(
+        read_bounded_recovery_artifact(Cursor::new(b"oversized"), 10, 5)
+            .expect_err("a recovery artifact beyond the configured limit must fail"),
+        RecoveryArtifactReadError::ExceedsLimit
+    );
+    assert_eq!(
+        read_bounded_recovery_artifact(Cursor::new(b"changed"), 5, 10)
+            .expect_err("a recovery artifact that changed after inspection must fail"),
+        RecoveryArtifactReadError::ChangedDuringRead
+    );
+}
+
+#[test]
 fn persisted_file_states_round_trip() {
     let cases = (0..4)
         .flat_map(|u| (0..4).map(move |m| vec![u, m]))
@@ -263,6 +285,78 @@ fn failed_persisted_restoration_retains_retry_data() {
                 fixture.assert_files(&states, true);
                 fixture.assert_cleaned();
             }
+        },
+    );
+}
+
+#[test]
+fn no_journal_recovery_preserves_an_active_payload_stage() {
+    isolated_cases(
+        "no_journal_recovery_preserves_an_active_payload_stage",
+        vec![Vec::new()],
+        |_| {
+            let root = get_user_config_directory().unwrap();
+            secure_directory(&root).unwrap();
+            let app = mock_builder().build(mock_context(noop_assets())).unwrap();
+            let mut stage = IncomingPayloadStage::create("active-payload-stage", 1).unwrap();
+            stage.append(0, b"x").unwrap();
+            let stage_root = stage.root.clone();
+            let (completed_sender, completed_receiver) = mpsc::channel();
+            let handle = app.handle().clone();
+            let recovery = std::thread::spawn(move || {
+                completed_sender
+                    .send(recover_pending_transaction(&handle))
+                    .unwrap();
+            });
+
+            let lock_candidate_prefix = format!("{JOURNAL_FILE}.machdoch.lock.candidate.");
+            let deadline = Instant::now() + Duration::from_secs(1);
+            while !fs::read_dir(&root).unwrap().flatten().any(|entry| {
+                entry.file_type().unwrap().is_dir()
+                    && entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(&lock_candidate_prefix)
+            }) {
+                assert!(
+                    Instant::now() < deadline,
+                    "recovery did not request the lifecycle lock"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert!(stage_root.join(PAYLOAD_FILE).exists());
+            assert!(completed_receiver
+                .recv_timeout(Duration::from_millis(200))
+                .is_err());
+
+            drop(stage);
+            completed_receiver.recv().unwrap().unwrap();
+            recovery.join().unwrap();
+            assert!(!stage_root.exists());
+            assert!(!root.join(TRANSACTION_DIRECTORY).exists());
+        },
+    );
+}
+
+#[test]
+fn no_journal_recovery_removes_abandoned_staging() {
+    isolated_cases(
+        "no_journal_recovery_removes_abandoned_staging",
+        vec![Vec::new()],
+        |_| {
+            let root = get_user_config_directory().unwrap();
+            secure_directory(&root).unwrap();
+            let app = mock_builder().build(mock_context(noop_assets())).unwrap();
+            let abandoned = root
+                .join(TRANSACTION_DIRECTORY)
+                .join("stage-abandoned-payload");
+            secure_directory(&abandoned).unwrap();
+            fs::write(abandoned.join(PAYLOAD_FILE), b"abandoned staged payload").unwrap();
+
+            recover_pending_transaction(app.handle()).unwrap();
+
+            assert!(!abandoned.exists());
+            assert!(!root.join(TRANSACTION_DIRECTORY).exists());
         },
     );
 }

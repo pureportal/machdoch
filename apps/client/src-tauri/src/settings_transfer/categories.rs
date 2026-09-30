@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
     fs,
+    io::Read,
     path::{Component, Path, PathBuf},
     time::Duration,
 };
@@ -677,7 +678,7 @@ fn verify_regular_contained_file(
     root: &Path,
     path: &Path,
     maximum_bytes: u64,
-) -> Result<(), String> {
+) -> Result<u64, String> {
     let metadata = fs::symlink_metadata(path)
         .map_err(|_| "A selected settings file could not be inspected.".to_string())?;
     let multiple_hard_links = has_multiple_hard_links(path, &metadata)?;
@@ -700,7 +701,56 @@ fn verify_regular_contained_file(
     if !canonical_path.starts_with(&canonical_root) {
         return Err("A selected settings file escapes its global settings directory.".to_string());
     }
-    Ok(())
+    Ok(metadata.len())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum SnapshotTextReadError {
+    Read,
+    ExceedsLimit,
+    ChangedDuringRead,
+    InvalidUtf8,
+}
+
+pub(super) fn read_verified_text_file(
+    path: &Path,
+    expected_bytes: u64,
+    maximum_bytes: u64,
+) -> Result<String, SnapshotTextReadError> {
+    let file = fs::File::open(path).map_err(|_| SnapshotTextReadError::Read)?;
+    read_bounded_utf8(file, expected_bytes, maximum_bytes)
+}
+
+fn read_bounded_utf8<R: Read>(
+    mut reader: R,
+    expected_bytes: u64,
+    maximum_bytes: u64,
+) -> Result<String, SnapshotTextReadError> {
+    if expected_bytes > maximum_bytes {
+        return Err(SnapshotTextReadError::ExceedsLimit);
+    }
+    let capacity = usize::try_from(maximum_bytes).map_err(|_| SnapshotTextReadError::Read)?;
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(capacity)
+        .map_err(|_| SnapshotTextReadError::Read)?;
+    reader
+        .by_ref()
+        .take(maximum_bytes)
+        .read_to_end(&mut bytes)
+        .map_err(|_| SnapshotTextReadError::Read)?;
+    let mut extra = [0_u8; 1];
+    if reader
+        .read(&mut extra)
+        .map_err(|_| SnapshotTextReadError::Read)?
+        != 0
+    {
+        return Err(SnapshotTextReadError::ExceedsLimit);
+    }
+    if bytes.len() as u64 != expected_bytes {
+        return Err(SnapshotTextReadError::ChangedDuringRead);
+    }
+    String::from_utf8(bytes).map_err(|_| SnapshotTextReadError::InvalidUtf8)
 }
 
 fn validate_frontmatter(content: &str) -> Result<(), String> {
@@ -767,7 +817,8 @@ fn collect_tree_files(
             if !name.ends_with(suffix) {
                 continue;
             }
-            verify_regular_contained_file(global_root, &path, MAX_TEXT_FILE_BYTES)?;
+            let expected_bytes =
+                verify_regular_contained_file(global_root, &path, MAX_TEXT_FILE_BYTES)?;
             let relative = path
                 .strip_prefix(scan_root)
                 .map_err(|_| "A customization path is outside its global directory.".to_string())?;
@@ -778,8 +829,18 @@ fn collect_tree_files(
                 format!("{relative_prefix}/{relative}")
             };
             validate_wire_path(&wire_path)?;
-            let content = fs::read_to_string(&path)
-                .map_err(|_| "A customization file must contain valid UTF-8 text.".to_string())?;
+            let content = read_verified_text_file(&path, expected_bytes, MAX_TEXT_FILE_BYTES)
+                .map_err(|error| match error {
+                    SnapshotTextReadError::ChangedDuringRead => {
+                        "A customization file changed while it was being read.".to_string()
+                    }
+                    SnapshotTextReadError::ExceedsLimit => {
+                        "A selected settings file exceeds the transfer limit.".to_string()
+                    }
+                    SnapshotTextReadError::Read | SnapshotTextReadError::InvalidUtf8 => {
+                        "A customization file must contain valid UTF-8 text.".to_string()
+                    }
+                })?;
             validate_frontmatter(&content)?;
             files.push(FileSnapshotEntry {
                 relative_path: wire_path,
@@ -1979,9 +2040,31 @@ pub(crate) fn store_file() -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::{Cell, RefCell};
+    use std::{
+        cell::{Cell, RefCell},
+        io::Cursor,
+    };
 
     use super::*;
+
+    #[test]
+    fn snapshot_text_reads_are_bounded_and_detect_size_changes() {
+        assert_eq!(
+            read_bounded_utf8(Cursor::new(b"valid"), 5, 5)
+                .expect("an unchanged in-limit file should be readable"),
+            "valid"
+        );
+        assert_eq!(
+            read_bounded_utf8(Cursor::new(b"oversized"), 5, 5)
+                .expect_err("a source beyond the configured limit must fail"),
+            SnapshotTextReadError::ExceedsLimit
+        );
+        assert_eq!(
+            read_bounded_utf8(Cursor::new(b"changed"), 5, 10)
+                .expect_err("a source that changed after inspection must fail"),
+            SnapshotTextReadError::ChangedDuringRead
+        );
+    }
 
     #[test]
     fn snapshot_resource_locks_release_after_an_interrupted_operation() {

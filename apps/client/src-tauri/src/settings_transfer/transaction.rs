@@ -190,6 +190,7 @@ impl<R: Runtime> Drop for PreparedTransaction<R> {
 pub(crate) struct IncomingPayloadStage {
     root: PathBuf,
     file: Option<fs::File>,
+    _lifecycle_lock: CooperativeFileLock,
     expected_bytes: u64,
     written_bytes: u64,
     digest: Sha256,
@@ -330,6 +331,7 @@ impl IncomingPayloadStage {
             return Err("INVALID_PAYLOAD_SIZE".to_string());
         }
         secure_directory(config_root)?;
+        let lifecycle_lock = acquire_cooperative_file_lock(&config_root.join(JOURNAL_FILE))?;
         let base = config_root.join(TRANSACTION_DIRECTORY);
         secure_directory(&base)?;
         let root = base.join(format!("stage-{transfer_id}"));
@@ -351,6 +353,7 @@ impl IncomingPayloadStage {
         Ok(Self {
             root,
             file: Some(file),
+            _lifecycle_lock: lifecycle_lock,
             expected_bytes,
             written_bytes: 0,
             digest: Sha256::new(),
@@ -1884,11 +1887,18 @@ fn load_journal(root: &Path, path: &Path) -> Result<TransactionJournal, String> 
     verify_existing_regular_file(path, root)?;
     let metadata = fs::metadata(path)
         .map_err(|_| "The pending settings-transfer journal could not be inspected.".to_string())?;
-    if metadata.len() > 64 * 1024 {
-        return Err("The pending settings-transfer journal is oversized.".to_string());
-    }
-    let raw = fs::read(path)
-        .map_err(|_| "The pending settings-transfer journal could not be read.".to_string())?;
+    let raw =
+        read_recovery_artifact(path, metadata.len(), 64 * 1024).map_err(|error| match error {
+            RecoveryArtifactReadError::ExceedsLimit => {
+                "The pending settings-transfer journal is oversized.".to_string()
+            }
+            RecoveryArtifactReadError::ChangedDuringRead => {
+                "The pending settings-transfer journal changed while it was being read.".to_string()
+            }
+            RecoveryArtifactReadError::Read => {
+                "The pending settings-transfer journal could not be read.".to_string()
+            }
+        })?;
     let journal = serde_json::from_slice::<TransactionJournal>(&raw)
         .map_err(|_| "The pending settings-transfer journal is invalid.".to_string())?;
     let valid_post_commit = match journal.phase {
@@ -1923,13 +1933,19 @@ fn load_backup(root: &Path, journal: &TransactionJournal) -> Result<ResourceBack
     verify_existing_regular_file(&path, root)?;
     let metadata = fs::metadata(&path)
         .map_err(|_| "Pending settings rollback data could not be inspected.".to_string())?;
-    if metadata.len() > MAX_RECOVERY_BACKUP_BYTES as u64 {
-        return Err("Pending settings rollback data is oversized.".to_string());
-    }
-    let raw = Zeroizing::new(
-        fs::read(&path)
-            .map_err(|_| "Pending settings rollback data could not be read.".to_string())?,
-    );
+    let raw = read_recovery_artifact(&path, metadata.len(), MAX_RECOVERY_BACKUP_BYTES).map_err(
+        |error| match error {
+            RecoveryArtifactReadError::ExceedsLimit => {
+                "Pending settings rollback data is oversized.".to_string()
+            }
+            RecoveryArtifactReadError::ChangedDuringRead => {
+                "Pending settings rollback data changed while it was being read.".to_string()
+            }
+            RecoveryArtifactReadError::Read => {
+                "Pending settings rollback data could not be read.".to_string()
+            }
+        },
+    )?;
     if sha256_hex(&raw) != journal.backup_sha256 {
         return Err("Pending settings rollback data failed its integrity check.".to_string());
     }
@@ -1942,6 +1958,56 @@ fn load_backup(root: &Path, journal: &TransactionJournal) -> Result<ResourceBack
     Ok(backup)
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum RecoveryArtifactReadError {
+    Read,
+    ExceedsLimit,
+    ChangedDuringRead,
+}
+
+fn read_recovery_artifact(
+    path: &Path,
+    expected_bytes: u64,
+    maximum_bytes: usize,
+) -> Result<Zeroizing<Vec<u8>>, RecoveryArtifactReadError> {
+    let file = fs::File::open(path).map_err(|_| RecoveryArtifactReadError::Read)?;
+    read_bounded_recovery_artifact(file, expected_bytes, maximum_bytes)
+}
+
+fn read_bounded_recovery_artifact<R: std::io::Read>(
+    mut reader: R,
+    expected_bytes: u64,
+    maximum_bytes: usize,
+) -> Result<Zeroizing<Vec<u8>>, RecoveryArtifactReadError> {
+    let maximum_bytes =
+        u64::try_from(maximum_bytes).map_err(|_| RecoveryArtifactReadError::Read)?;
+    if expected_bytes > maximum_bytes {
+        return Err(RecoveryArtifactReadError::ExceedsLimit);
+    }
+    let capacity = usize::try_from(expected_bytes).map_err(|_| RecoveryArtifactReadError::Read)?;
+    let mut bytes = Zeroizing::new(Vec::new());
+    bytes
+        .try_reserve_exact(capacity)
+        .map_err(|_| RecoveryArtifactReadError::Read)?;
+    bytes.resize(capacity, 0);
+    match reader.read_exact(&mut bytes) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
+            return Err(RecoveryArtifactReadError::ChangedDuringRead);
+        }
+        Err(_) => return Err(RecoveryArtifactReadError::Read),
+    }
+    let mut extra = [0_u8; 1];
+    if reader
+        .read(&mut extra)
+        .map_err(|_| RecoveryArtifactReadError::Read)?
+        != 0
+    {
+        return Err(RecoveryArtifactReadError::ChangedDuringRead);
+    }
+    Ok(bytes)
+}
+
 fn journal_phase_requires_rollback(phase: &JournalPhase) -> bool {
     matches!(phase, JournalPhase::Committing)
 }
@@ -1950,8 +2016,14 @@ pub(crate) fn recover_pending_transaction<R: Runtime>(app: &AppHandle<R>) -> Res
     let root = get_user_config_directory()?;
     secure_directory(&root)?;
     let journal_path = root.join(JOURNAL_FILE);
-    if !journal_path.exists() {
-        return cleanup_retired_transaction_artifacts(&root);
+    while !journal_path.exists() {
+        let lifecycle_lock = acquire_cooperative_file_lock(&journal_path)?;
+        if !journal_path.exists() {
+            let result = cleanup_retired_transaction_artifacts(&root);
+            drop(lifecycle_lock);
+            return result;
+        }
+        drop(lifecycle_lock);
     }
     let journal = load_journal(&root, &journal_path)?;
     let locks = acquire_transaction_locks(&root, &journal.categories)?;

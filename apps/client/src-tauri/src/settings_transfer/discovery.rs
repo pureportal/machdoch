@@ -573,7 +573,8 @@ fn label_from_fullname(fullname: &str) -> Option<String> {
 }
 
 pub(crate) fn parse_resolved_service(service: &ResolvedService) -> Option<ResolvedRendezvous> {
-    if !service.is_valid()
+    if service.get_port() == 0
+        || !service.is_valid()
         || service.get_properties().iter().count() != 3
         || service.get_property_val_str("txtvers") != Some("1")
         || service.get_property_val_str("protovers")
@@ -718,6 +719,43 @@ pub(crate) fn create_qr_svg(value: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn resolved_service(port: u16) -> ResolvedService {
+        let properties = HashMap::from([
+            ("txtvers".to_string(), "1".to_string()),
+            (
+                "protovers".to_string(),
+                format!("{PROTOCOL_MAJOR}.{PROTOCOL_MINOR}"),
+            ),
+            ("sid".to_string(), encode_sid(&[7; 16])),
+        ]);
+        ServiceInfo::new(
+            SERVICE_TYPE,
+            "Machdoch Transfer TEST",
+            "sender.local.",
+            "192.168.1.10",
+            port,
+            properties,
+        )
+        .expect("resolved service fixture should be valid")
+        .as_resolved_service()
+    }
+
+    #[test]
+    fn resolved_services_with_zero_port_are_ignored() {
+        assert!(parse_resolved_service(&resolved_service(0)).is_none());
+    }
+
+    #[test]
+    fn resolved_services_with_valid_port_remain_discoverable() {
+        let rendezvous = parse_resolved_service(&resolved_service(42_000))
+            .expect("valid resolved service should be discoverable");
+
+        assert_eq!(
+            rendezvous.endpoints,
+            vec![SocketAddr::from(([192, 168, 1, 10], 42_000))]
+        );
+    }
 
     #[test]
     fn prefix_validation_accepts_direct_peers_and_rejects_routed_peers() {
