@@ -15,6 +15,7 @@ import {
   type ShellPersistedState,
 } from "../../chat-session.model";
 import { getDefaultModelForProvider } from "../../model-catalog";
+import { resolveGoalMode } from "../../../../shared/goals.js";
 import { resolveParallelAgentMode } from "../../../../core/parallel-agent-capabilities.js";
 import { normalizeSessionReasoningOverride } from "./session-reasoning";
 import {
@@ -46,6 +47,7 @@ export interface CreateNewSessionOptions {
 const isReusableNewSession = (session: ChatSessionRecord): boolean => {
   return (
     !session.specialSession &&
+    !session.goal &&
     typeof session.archivedAt !== "number" &&
     typeof session.pinnedAt !== "number" &&
     !session.manualTitle?.trim() &&
@@ -64,6 +66,7 @@ interface NewSessionDefaults extends Pick<
   | "provider"
   | "model"
   | "parallelAgentMode"
+  | "goalMode"
   | "workspace"
   | "sessionMemoryEnabled"
   | "useWorkspaceMemory"
@@ -103,6 +106,7 @@ const createNewSessionDefaults = (
       model,
       state.lastSelectedParallelAgentMode,
     ),
+    goalMode: resolveGoalMode(provider, state.lastSelectedGoalMode),
     ...(state.lastSelectedMode ? { mode: state.lastSelectedMode } : {}),
     ...(reasoning ? { reasoning } : {}),
     sessionMemoryEnabled: state.lastSelectedSessionMemoryEnabled,

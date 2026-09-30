@@ -1,3 +1,4 @@
+import { GoalControl } from "./goal-control";
 import type { ProductSession, ProductShell } from "@machdoch/fleet-protocol";
 import {
   ArrowUp,
@@ -454,6 +455,38 @@ export function Composer({
               })
             }
           />
+          {session.specialKind !== "pose" ? (
+            <GoalControl
+              mode={composer.goalMode ?? "machdoch"}
+              modes={composer.availableGoalModes ?? ["machdoch"]}
+              goal={composer.goal}
+              running={composer.isExecuting}
+              disabled={pending}
+              onModeChange={(mode) =>
+                void onCommand({
+                  kind: "set-goal-mode",
+                  sessionId: session.id,
+                  mode,
+                })
+              }
+              onCommand={(prompt) =>
+                void onCommand({
+                  kind: "submit-message",
+                  sessionId: session.id,
+                  prompt,
+                  promptEnhancementMode: "off",
+                  interviewEnabled: false,
+                })
+              }
+              onPause={() => {
+                if (session.runningTaskId)
+                  void onCommand({
+                    kind: "cancel",
+                    taskId: session.runningTaskId,
+                  });
+              }}
+            />
+          ) : null}
           <OptionMenu
             disabled={pending}
             label="Prompt enhancement"

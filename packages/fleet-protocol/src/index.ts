@@ -1,4 +1,4 @@
-import {
+﻿import {
   mediaRequestSchema,
   mediaResponseSchema,
 } from "@machdoch/fleet-protocol/media";
@@ -878,6 +878,11 @@ export const productCommandSchema = z
     }),
     z.strictObject({
       ...sessionCommandShape,
+      kind: z.literal("set-goal-mode"),
+      mode: z.enum(["machdoch", "native"]),
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
       kind: z.literal("set-session-reasoning"),
       reasoning: reasoningModeSchema,
     }),
@@ -1047,6 +1052,23 @@ export const productMemoryEntrySchema = z.strictObject({
 
 export type ProductMemoryEntry = z.infer<typeof productMemoryEntrySchema>;
 
+export const productGoalSchema = z.strictObject({
+  id: identifier,
+  objective: z.string().trim().min(1).max(4_000),
+  mode: z.enum(["machdoch", "native"]),
+  status: z.enum(["active", "paused", "blocked", "budget-limited", "complete"]),
+  turns: z.number().int().nonnegative(),
+  tokensUsed: z.number().int().nonnegative(),
+  elapsedMs: z.number().int().nonnegative(),
+  tokenBudget: z.number().int().positive().optional(),
+  turnBudget: z.number().int().positive().optional(),
+  timeBudgetMs: z.number().int().positive().optional(),
+  reason: text,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+export type ProductGoal = z.infer<typeof productGoalSchema>;
+
 export const productSessionSchema = z.strictObject({
   id: identifier,
   title: text,
@@ -1059,6 +1081,7 @@ export const productSessionSchema = z.strictObject({
   parallelAgentMode: z
     .enum(["disabled", "read-only", "machdoch", "native"])
     .optional(),
+  goalMode: z.enum(["machdoch", "native"]).optional(),
   reasoning: z.string().max(240).optional(),
   effectiveReasoning: z.string().max(240).optional(),
   createdAt: timestamp,
@@ -1385,6 +1408,9 @@ export const productShellSchema = z.strictObject({
       availableParallelAgentModes: z
         .array(z.enum(["disabled", "read-only", "machdoch", "native"]))
         .optional(),
+      goalMode: z.enum(["machdoch", "native"]).optional(),
+      availableGoalModes: z.array(z.enum(["machdoch", "native"])).optional(),
+      goal: productGoalSchema.nullable().optional(),
       reasoning: reasoningModeSchema,
       defaultReasoning: reasoningModeSchema,
       reasoningOptions: z.array(reasoningModeSchema).min(1).max(10),

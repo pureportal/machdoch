@@ -1,7 +1,8 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+﻿import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { productSnapshotSchema } from "@machdoch/fleet-protocol";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadRuntimeConfig } from "../../core/config.js";
 import {
   FleetCliProductRuntime,
@@ -19,6 +20,79 @@ afterEach(async () => {
 });
 
 describe.sequential("Fleet CLI product runtime", () => {
+  it("persists native goal mode and resolves it when switching providers", async () => {
+    const root = await mkdtemp(join(tmpdir(), "machdoch-fleet-goal-"));
+    roots.push(root);
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", join(root, "config"));
+    const workspace = join(root, "workspace");
+    const runtime = await FleetCliProductRuntime.create(workspace);
+    const first = await runtime.handleRequest({ type: "getProductSnapshot" });
+    if (
+      first.type !== "productSnapshot" ||
+      !first.snapshot.shell?.activeSessionId
+    )
+      throw new Error("Session snapshot is missing.");
+    const sessionId = first.snapshot.shell.activeSessionId;
+    expect(
+      await runtime.handleRequest({
+        type: "executeProductCommand",
+        command: {
+          kind: "set-session-model",
+          sessionId,
+          provider: "claude-cli",
+          model: "claude-opus-4-6",
+        },
+      }),
+    ).toMatchObject({ type: "commandAccepted" });
+    expect(
+      await runtime.handleRequest({
+        type: "executeProductCommand",
+        command: { kind: "set-goal-mode", sessionId, mode: "native" },
+      }),
+    ).toMatchObject({ type: "commandAccepted" });
+    const restored = await FleetCliProductRuntime.create(workspace);
+    const snapshot = await restored.handleRequest({
+      type: "getProductSnapshot",
+    });
+    if (snapshot.type !== "productSnapshot")
+      throw new Error("Session snapshot is missing.");
+    expect(productSnapshotSchema.safeParse(snapshot.snapshot).success).toBe(
+      true,
+    );
+    expect(snapshot.snapshot.shell?.composer).toMatchObject({
+      goalMode: "native",
+      availableGoalModes: ["machdoch", "native"],
+      goal: null,
+    });
+    expect(
+      await restored.handleRequest({
+        type: "executeProductCommand",
+        command: {
+          kind: "set-session-model",
+          sessionId,
+          provider: "codex-cli",
+          model: "gpt-6-sol",
+        },
+      }),
+    ).toMatchObject({ type: "commandAccepted" });
+    const switched = await restored.handleRequest({
+      type: "getProductSnapshot",
+    });
+    if (switched.type !== "productSnapshot")
+      throw new Error("Session snapshot is missing.");
+    expect(switched.snapshot.shell?.composer).toMatchObject({
+      goalMode: "machdoch",
+      availableGoalModes: ["machdoch"],
+    });
+    expect(
+      await restored.handleRequest({
+        type: "executeProductCommand",
+        command: { kind: "set-goal-mode", sessionId, mode: "native" },
+      }),
+    ).toMatchObject({ type: "error", code: "invalidRequest" });
+    await runtime.shutdown();
+    await restored.shutdown();
+  });
   it("creates a pose chat and refreshes its scene preview after agent edits", async () => {
     const root = await mkdtemp(join(tmpdir(), "machdoch-fleet-pose-"));
     roots.push(root);
@@ -219,18 +293,20 @@ describe.sequential("Fleet CLI product runtime", () => {
     expect(response.snapshot.shell?.composer?.parallelAgentMode).toBe(
       "disabled",
     );
+    const modelSelection = await runtime.handleRequest({
+      type: "executeProductCommand",
+      command: {
+        kind: "set-session-model",
+        commandId: "command-native-model",
+        sessionId: activeSessionId,
+        provider: "codex-cli",
+        model: "gpt-6-sol",
+      },
+    });
     expect(
-      await runtime.handleRequest({
-        type: "executeProductCommand",
-        command: {
-          kind: "set-session-model",
-          commandId: "command-native-model",
-          sessionId: activeSessionId,
-          provider: "codex-cli",
-          model: "gpt-6-sol",
-        },
-      }),
-    ).toMatchObject({ type: "commandAccepted" });
+      modelSelection.type,
+      modelSelection.type === "error" ? modelSelection.message : undefined,
+    ).toBe("commandAccepted");
     expect(
       await runtime.handleRequest({
         type: "executeProductCommand",

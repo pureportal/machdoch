@@ -10,7 +10,12 @@ import {
   Square,
   WandSparkles,
 } from "lucide-react";
-import { SessionMemoryDialog } from "@machdoch/product-ui";
+import { GoalControl, SessionMemoryDialog } from "@machdoch/product-ui";
+import {
+  getAvailableGoalModes,
+  resolveGoalMode,
+  type GoalMode,
+} from "../../../../shared/goals.js";
 import {
   useCallback,
   useEffect,
@@ -139,6 +144,7 @@ export interface SessionComposerProps {
   onSessionModelSelection: (provider: RuntimeProvider, model: string) => void;
   onSessionModeSelection: (mode: RunMode | null) => void;
   onParallelAgentModeSelection?: (mode: ParallelAgentMode) => void;
+  onGoalModeSelection?: (mode: GoalMode) => void;
   onAdaptiveControllerOverrideChange?: (override: boolean | null) => void;
   onSessionReasoningSelection: (reasoning: ReasoningMode | null) => void;
   onSessionMemoryEnabledChange: (enabled: boolean) => void;
@@ -250,6 +256,7 @@ export const SessionComposer = ({
   onSessionModelSelection,
   onSessionModeSelection,
   onParallelAgentModeSelection = () => undefined,
+  onGoalModeSelection = () => undefined,
   onAdaptiveControllerOverrideChange = () => undefined,
   onSessionReasoningSelection,
   onSessionMemoryEnabledChange,
@@ -419,6 +426,19 @@ export const SessionComposer = ({
         )}
         onChange={onParallelAgentModeSelection}
       />
+
+      {!isQuickVoiceSession(activeSession) &&
+      activeSession.specialSession !== "pose" ? (
+        <GoalControl
+          mode={resolveGoalMode(activeSession.provider, activeSession.goalMode)}
+          modes={getAvailableGoalModes(activeSession.provider)}
+          goal={activeSession.goal}
+          running={isExecuting}
+          onModeChange={onGoalModeSelection}
+          onCommand={(command) => onSend(command)}
+          onPause={onCancel}
+        />
+      ) : null}
 
       <SessionPromptEnhancementPicker
         mode={promptEnhancementMode}

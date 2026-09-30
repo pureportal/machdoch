@@ -36,6 +36,31 @@ fn memory_entry() -> Shape {
     ])
 }
 
+fn goal_mode() -> Shape {
+    enumeration(&["machdoch", "native"])
+}
+
+fn session_goal() -> Shape {
+    object(vec![
+        required("id", identifier()),
+        required("objective", Shape::String(4_000, true)),
+        required("mode", goal_mode()),
+        required(
+            "status",
+            enumeration(&["active", "paused", "blocked", "budget-limited", "complete"]),
+        ),
+        required("turns", Shape::Integer),
+        required("tokensUsed", Shape::Integer),
+        required("elapsedMs", Shape::Integer),
+        optional("tokenBudget", Shape::PositiveInteger),
+        optional("turnBudget", Shape::PositiveInteger),
+        optional("timeBudgetMs", Shape::PositiveInteger),
+        required("reason", text()),
+        required("createdAt", Shape::Integer),
+        required("updatedAt", Shape::Integer),
+    ])
+}
+
 fn product_session() -> Shape {
     object(vec![
         required("id", identifier()),
@@ -47,6 +72,7 @@ fn product_session() -> Shape {
         optional("mode", string(240)),
         required("effectiveMode", string(240)),
         optional("parallelAgentMode", parallel_agent_mode()),
+        optional("goalMode", goal_mode()),
         optional("reasoning", string(240)),
         optional("effectiveReasoning", string(240)),
         required("createdAt", Shape::Integer),
@@ -207,10 +233,13 @@ fn composer() -> Shape {
         required("mode", enumeration(&["ask", "machdoch"])),
         required("defaultMode", enumeration(&["ask", "machdoch"])),
         optional("parallelAgentMode", parallel_agent_mode()),
+        optional("goalMode", goal_mode()),
         optional(
             "availableParallelAgentModes",
             array(parallel_agent_mode(), usize::MAX),
         ),
+        optional("availableGoalModes", array(goal_mode(), usize::MAX)),
+        optional("goal", Shape::Nullable(Box::new(session_goal()))),
         required("reasoning", reasoning_mode()),
         required("defaultReasoning", reasoning_mode()),
         required("reasoningOptions", bounded_array(reasoning_mode(), 1, 10)),

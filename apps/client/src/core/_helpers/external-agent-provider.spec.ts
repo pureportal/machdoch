@@ -342,6 +342,8 @@ const contextSections: TaskExecutionSection[] = [
 
 const createExternalInstructionPlan = (
   resolution: ReturnType<typeof createInstructionResolutionFixture>,
+  version = "fixture-cli 1.0.0",
+  additionalFeatures: string[] = [],
 ) =>
   createInstructionDeliveryPlan(resolution, {
     capability: createCliInstructionCapabilityFromProbe(resolution, {
@@ -351,10 +353,11 @@ const createExternalInstructionPlan = (
         | "copilot-cli",
       executable: process.execPath,
       available: true,
-      version: "fixture-cli 1.0.0",
+      version,
       features:
         resolution.providerId === "claude-cli"
           ? [
+              ...additionalFeatures,
               "--append-system-prompt-file",
               "--effort",
               "--mcp-config",
@@ -478,11 +481,13 @@ const readRunScopedSystemInstructions = async (
   );
 };
 
+const capabilityProbe = vi.mocked(spawnSync).getMockImplementation()!;
+
 beforeEach(() => {
   isolateEnvironment();
   spawnCalls.splice(0);
   vi.mocked(spawn).mockClear();
-  vi.mocked(spawnSync).mockClear();
+  vi.mocked(spawnSync).mockReset().mockImplementation(capabilityProbe);
 });
 
 afterEach(async () => {
@@ -499,6 +504,75 @@ afterEach(async () => {
 });
 
 describe("maybeExecuteExternalAgentProviderTask", () => {
+  it("launches native Claude goals without bare mode and preserves conversation context", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+    process.env.ANTHROPIC_API_KEY = "fixture-native-goal-key";
+    const probe = vi.mocked(spawnSync).getMockImplementation()!;
+    const help = probe(process.execPath, ["--help"]).stdout;
+    vi.mocked(spawnSync).mockImplementation(
+      (_executable, args = []) =>
+        ({
+          status: 0,
+          stdout: args.includes("--help")
+            ? `${String(help)}\n--bare`
+            : "Claude Code 2.1.269",
+          stderr: "",
+        }) as ReturnType<typeof spawnSync>,
+    );
+    const params = createParams(workspaceRoot, {
+      provider: "claude-cli",
+      model: "claude-opus-4-6",
+    });
+    params.nativeGoal = "All auth tests pass";
+    params.captureGoalEvidence = true;
+    params.instructionDeliveryPlan = createExternalInstructionPlan(
+      params.taskContext.instructionResolution!,
+      "Claude Code 2.1.269",
+      ["--bare"],
+    );
+    const pending = maybeExecuteExternalAgentProviderTask(params);
+    await Promise.race([
+      waitForCondition(() => expect(spawnCalls).toHaveLength(1)),
+      pending.then((result) => {
+        throw new Error(result?.reason ?? result?.summary);
+      }),
+    ]);
+    const call = spawnCalls[0]!;
+    expect(call.child.stdinText).toBe("/goal All auth tests pass");
+    expect(call.args).not.toContain("--bare");
+    expect(await readRunScopedSystemInstructions("claude-cli", call)).toContain(
+      params.task,
+    );
+    call.child.stdout.write(
+      `${JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "test-1", content: "All auth tests passed." }] } })}\n`,
+    );
+    writeStructuredAnswer(call, "All auth tests pass.");
+    call.child.emit("close", 0, null);
+    await expect(pending).resolves.toMatchObject({
+      status: "executed",
+      metadata: {
+        goalToolEvidence: expect.stringContaining("All auth tests passed."),
+      },
+    });
+  });
+
+  it("rejects native goals on Claude versions without goal support", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+    const params = createParams(workspaceRoot, {
+      provider: "claude-cli",
+      model: "claude-opus-4-6",
+    });
+    params.nativeGoal = "All auth tests pass";
+    await expect(
+      maybeExecuteExternalAgentProviderTask(params),
+    ).resolves.toMatchObject({
+      status: "blocked",
+      reason: expect.stringContaining("2.1.139"),
+    });
+    expect(spawnCalls).toHaveLength(0);
+  });
   it("continues a Ralph agent step when an enrolled MCP server is unreachable", async () => {
     const workspaceRoot = await createWorkspace();
     process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;

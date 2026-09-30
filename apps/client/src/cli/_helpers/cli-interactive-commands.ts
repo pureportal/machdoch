@@ -6,7 +6,16 @@ export const CHAT_COMMANDS = [
   ["status", "", "Show session settings"],
   ["model", "[provider model]", "Choose a model"],
   ["mode", "[ask|machdoch]", "Change mode"],
-  ["parallel", "[disabled|read-only|machdoch|native]", "Change parallel agent mode"],
+  [
+    "parallel",
+    "[disabled|read-only|machdoch|native]",
+    "Change parallel agent mode",
+  ],
+  [
+    "goal",
+    "[--tokens N] [--turns N] [--minutes N] <objective> | pause | resume | clear | mode <machdoch|native>",
+    "Work toward a goal",
+  ],
   ["reasoning", "[level]", "Change reasoning"],
   ["new", "[workspace]", "Start a conversation"],
   ["sessions", "[search]", "Resume a saved CLI conversation"],

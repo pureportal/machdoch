@@ -12,6 +12,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadUserMemorySettings, saveUserGlobalMemoryEnabled } from "./env.ts";
 import { executeTask } from "./execution.ts";
+import * as memoryConsolidation from "./memory-consolidation.ts";
+import * as reasoningConsolidation from "./reasoning-bank-consolidation.ts";
 import { createInstructionResolutionFixture } from "./__test__/instruction-test-helpers.ts";
 import { createInstructionDeliveryPlan } from "./instruction-system/index.ts";
 import type { AgentToolDefinition } from "./_helpers/agent-tools-shared.ts";
@@ -202,6 +204,107 @@ afterEach(async () => {
 });
 
 describe("executeTask", () => {
+  it("keeps goal controls local when post-task learning is configured", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_USER_CONFIG_DIR = join(workspaceRoot, ".user-config");
+    const sessionId = randomUUID();
+    const captureMemory = vi
+      .spyOn(memoryConsolidation, "consolidateTaskExecutionMemory")
+      .mockImplementation(async (_task, _config, result) => result);
+    const captureReasoning = vi
+      .spyOn(reasoningConsolidation, "consolidateTaskReasoning")
+      .mockImplementation(async (_task, _config, result) => result);
+    const modelAdapter: AgentModelAdapter = {
+      startTurn: vi.fn(async (): Promise<never> => {
+        throw new Error("Goal controls must not call a model.");
+      }),
+      continueTurn: vi.fn(async (): Promise<never> => {
+        throw new Error("Goal controls must not continue a model turn.");
+      }),
+    };
+    for (const command of [
+      "/goal",
+      "/goal mode machdoch",
+      "/goal pause",
+      "/goal clear",
+    ]) {
+      const result = await executeTask(
+        command,
+        createConfig(workspaceRoot, "machdoch", {
+          provider: "openai",
+          providerAvailability: configuredProviderAvailability,
+          internalTaskModel: {
+            provider: "openai",
+            model: "gpt-5.5",
+            reasoning: "default",
+          },
+        }),
+        emptyCustomizations(workspaceRoot),
+        {
+          modelAdapter,
+          conversationContext: { sessionId, history: [] },
+        },
+      );
+      expect(result.status).toBe("executed");
+      expect(result.metadata?.goalControlCommand).toBe(true);
+    }
+    expect(modelAdapter.startTurn).not.toHaveBeenCalled();
+    expect(modelAdapter.continueTurn).not.toHaveBeenCalled();
+    expect(captureMemory).not.toHaveBeenCalled();
+    expect(captureReasoning).not.toHaveBeenCalled();
+  });
+  it("executes goal work and evaluates it with only the result tool", async () => {
+    const workspaceRoot = await createWorkspace();
+    const config = createConfig(workspaceRoot, "machdoch", {
+      provider: "openai",
+    });
+    const seenTools: string[][] = [];
+    const adapter: AgentModelAdapter = {
+      startTurn: async (params) => {
+        seenTools.push(params.tools.map((tool) => tool.name));
+        const evaluating =
+          params.tools.length === 1 &&
+          params.tools[0]?.name === "submit_final_response";
+        return {
+          text: "",
+          toolCalls: [
+            createFinalResponseToolCall(
+              evaluating
+                ? {
+                    control: { kind: "goal-evaluation", decision: "complete" },
+                    verification: ["Command output verifies the objective."],
+                  }
+                : {},
+            ),
+          ],
+        };
+      },
+      continueTurn: async () => {
+        throw new Error("No tool continuation expected.");
+      },
+    };
+    const execution = await executeTask(
+      "/goal Verify the objective",
+      config,
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: adapter,
+        monitorModelAdapter: createAcceptingMonitorAdapter(),
+        conversationContext: {
+          sessionId: crypto.randomUUID(),
+          history: [],
+          adaptiveControllerOverride: false,
+        },
+      },
+    );
+    expect(execution.status).toBe("executed");
+    expect(execution.metadata?.goal).toMatchObject({
+      status: "complete",
+      turns: 1,
+    });
+    expect(seenTools[0]).toContain("read_file");
+    expect(seenTools[1]).toEqual(["submit_final_response"]);
+  });
   it("exposes managed parallel work only when the chat mode enables it", async () => {
     const workspaceRoot = await createWorkspace();
     const available: Record<string, boolean> = {};

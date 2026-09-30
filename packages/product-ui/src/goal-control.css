@@ -1,0 +1,61 @@
+.m-goal-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--app-border-strong);
+  border-radius: 999px;
+  color: var(--app-text-soft);
+  background: transparent;
+}
+.m-goal-trigger svg {
+  width: 1rem;
+  height: 1rem;
+}
+.m-goal-trigger[data-active="true"] {
+  color: var(--app-sky-400);
+  border-color: var(--app-sky-600);
+}
+.m-goal-control {
+  z-index: 100;
+  width: min(22rem, calc(100vw - 2rem));
+  max-height: min(36rem, calc(100vh - 2rem));
+  overflow: auto;
+  padding: 1rem;
+  border: 1px solid var(--app-border-strong);
+  border-radius: 0.75rem;
+  color: var(--app-text);
+  background: var(--app-surface);
+  font-size: 0.875rem;
+}
+.m-goal-control label,
+.m-goal-control form {
+  display: grid;
+  gap: 0.5rem;
+}
+.m-goal-control select,
+.m-goal-control textarea,
+.m-goal-control button {
+  border: 1px solid var(--app-border-strong);
+  border-radius: 0.375rem;
+  background: var(--app-surface-raised);
+  color: inherit;
+  padding: 0.5rem;
+}
+.m-goal-control textarea {
+  min-height: 6rem;
+  resize: vertical;
+}
+.m-goal-control p {
+  margin: 0.75rem 0;
+  overflow-wrap: anywhere;
+}
+.m-goal-control button:disabled {
+  opacity: 0.5;
+}
+.m-goal-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}

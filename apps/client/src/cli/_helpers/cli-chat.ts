@@ -5,6 +5,8 @@ import {
   mergeConversationMemoryEntries,
 } from "../../core/memory.js";
 import { handleChatSessionControl } from "./cli-chat-session-controls.js";
+import { isGoalCommand } from "../../shared/goals.js";
+import { parseGoalCommand } from "../../core/goals/goal-command.js";
 import { handleChatContextControl } from "./cli-chat-context-controls.js";
 import { createChatInput, type ChatInput } from "./cli-chat-input.js";
 import { createChatSession, saveChatSession } from "./cli-chat-sessions.js";
@@ -96,6 +98,7 @@ export const runInteractiveChat = async (
     task: string,
     taskArgs = state.args,
   ): Promise<void> => {
+    const goalCommand = parseGoalCommand(task);
     state.lastTask = {
       text: task,
       args: { ...taskArgs, mode: taskArgs.mode ?? state.config.mode },
@@ -110,11 +113,18 @@ export const runInteractiveChat = async (
           conversationContext: {
             ...state.session.context,
             parallelAgentMode: state.session.parallelAgentMode,
+            goalMode: state.session.context.goalMode ?? "machdoch",
             history: state.session.context.history.slice(-60),
           },
           showActionFeedback: true,
         },
       );
+      if (
+        execution.metadata?.goalMode === "machdoch" ||
+        execution.metadata?.goalMode === "native"
+      ) {
+        state.session.context.goalMode = execution.metadata.goalMode;
+      }
       state.session.context.history.push(
         { role: "user", content: task, createdAt: Date.now() },
         {
@@ -133,7 +143,12 @@ export const runInteractiveChat = async (
         updates,
         MAX_SESSION_MEMORY_ENTRIES,
       );
-      if (execution.status === "executed" || execution.status === "planned") {
+      if (
+        (execution.status === "executed" || execution.status === "planned") &&
+        (!goalCommand ||
+          goalCommand.kind === "set" ||
+          goalCommand.kind === "resume")
+      ) {
         delete state.args.contextPaths;
         delete state.args.imagePaths;
       }
@@ -144,6 +159,10 @@ export const runInteractiveChat = async (
     }
   };
   const handleCommand = async (task: string): Promise<boolean> => {
+    if (isGoalCommand(task)) {
+      await execute(task);
+      return true;
+    }
     const [name = "", ...values] = splitInteractiveArguments(task.slice(1));
     if (["exit", "quit"].includes(name)) {
       if (values.length) throw new CliUsageError(`Usage: /${name}`);
@@ -248,7 +267,9 @@ export const runInteractiveChat = async (
     ) {
       if (name === "export") unsaved = false;
       else if (
-        ["model", "mode", "parallel", "reasoning", "memory", "forget"].includes(name)
+        ["model", "mode", "parallel", "reasoning", "memory", "forget"].includes(
+          name,
+        )
       )
         await persist();
       return true;

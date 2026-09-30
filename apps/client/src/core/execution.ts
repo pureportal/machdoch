@@ -35,6 +35,7 @@ import { consolidateTaskExecutionMemory } from "./memory-consolidation.js";
 import { consolidateTaskReasoning } from "./reasoning-bank-consolidation.js";
 import { runWithTaskModelUsageRecording } from "./model-usage.js";
 import { resolveTaskContext } from "./task-context.js";
+import { executeWithSessionGoal } from "./goals/goal-execution.js";
 import { runWithWorkspaceAgentPresence } from "./_helpers/workspace-agent-presence.js";
 import {
   createInstructionDeliveryPlan,
@@ -385,7 +386,8 @@ const runTaskExecutionStateMachine = async (
                 instructionResolution,
                 {
                   workspaceRoot: config.workspaceRoot,
-                  parallelAgentMode: options.conversationContext?.parallelAgentMode,
+                  parallelAgentMode:
+                    options.conversationContext?.parallelAgentMode,
                 },
               );
           }
@@ -422,6 +424,10 @@ const runTaskExecutionStateMachine = async (
               : {}),
             ...(options.resultProtocol
               ? { resultProtocol: options.resultProtocol }
+              : {}),
+            ...(options.nativeGoal ? { nativeGoal: options.nativeGoal } : {}),
+            ...(options.captureGoalEvidence
+              ? { captureGoalEvidence: true }
               : {}),
             ...(instructionDeliveryPlan === undefined
               ? {}
@@ -687,6 +693,7 @@ const consolidateTaskLearnings = async (
   conversationContext: TaskExecutionOptions["conversationContext"],
   signal: AbortSignal,
 ): Promise<TaskExecutionResult> => {
+  if (result.metadata?.goalControlCommand === true) return result;
   const [memoryResult, reasoningResult] = await Promise.all([
     consolidateTaskExecutionMemory(task, config, result, conversationContext, {
       signal,
@@ -732,11 +739,17 @@ export const createTaskExecutionController = (
             ? await startTaskFileChangeCapture(config.workspaceRoot)
             : undefined;
         return await runWithTaskModelUsageRecording(async () => {
-          const result = await runTaskExecutionStateMachine(
+          const result = await executeWithSessionGoal(
             task,
             config,
-            customizations,
             createActivityAwareExecutionOptions(options, managedTimeout),
+            (turnTask, turnConfig, turnOptions) =>
+              runTaskExecutionStateMachine(
+                turnTask,
+                turnConfig,
+                customizations,
+                turnOptions,
+              ),
           );
           const fileChanges = await fileChangeCapture?.finish();
           const consolidatedResult = await consolidateTaskLearnings(
@@ -781,11 +794,17 @@ const executeTaskWithoutWorkspacePresence = async (
 
   try {
     return await runWithTaskModelUsageRecording(async () => {
-      const result = await runTaskExecutionStateMachine(
+      const result = await executeWithSessionGoal(
         task,
         config,
-        customizations,
         createActivityAwareExecutionOptions(options, managedTimeout),
+        (turnTask, turnConfig, turnOptions) =>
+          runTaskExecutionStateMachine(
+            turnTask,
+            turnConfig,
+            customizations,
+            turnOptions,
+          ),
       );
 
       return await consolidateTaskLearnings(

@@ -1,3 +1,8 @@
+import {
+  getAvailableGoalModes,
+  isSessionGoal,
+  resolveGoalMode,
+} from "../../shared/goals.js";
 import { FleetRalphRuntime } from "./cli-fleet-ralph.js";
 import { FleetMediaWorker } from "./cli-fleet-media.js";
 import {
@@ -734,6 +739,18 @@ export class FleetCliProductRuntime {
         });
       case "clear-session-mode":
         return await this.resetSessionMode(command, "mode");
+      case "set-goal-mode":
+        return await this.commitCommand(command, (state, _id, timestamp) => {
+          const session = this.getSession(state, command.sessionId);
+          if (!getAvailableGoalModes(session.provider).includes(command.mode))
+            throw new FleetProductError(
+              "invalidRequest",
+              "Native goals are unavailable for this provider.",
+            );
+          session.goalMode = command.mode;
+          session.updatedAt = timestamp;
+          return { record: { sessionId: session.id } };
+        });
       case "set-parallel-agent-mode":
         return await this.commitCommand(command, (state, _id, timestamp) => {
           const session = this.getSession(state, command.sessionId);
@@ -875,6 +892,7 @@ export class FleetCliProductRuntime {
         command.model,
         session.parallelAgentMode,
       );
+      session.goalMode = resolveGoalMode(provider, session.goalMode);
       session.updatedAt = timestamp;
       return { record: { sessionId: session.id } };
     });
@@ -944,6 +962,7 @@ export class FleetCliProductRuntime {
         if (!copy)
           throw new FleetProductError("internal", "Session copy failed.");
         copy.id = this.dependencies.createId();
+        delete copy.goal;
         if (session.specialKind === "pose") {
           const currentScene = await readPoseScene(session);
           if (currentScene) copy.poseScene = currentScene;
@@ -1055,6 +1074,7 @@ export class FleetCliProductRuntime {
         conversationContext: {
           sessionId: session.id,
           parallelAgentMode: session.parallelAgentMode,
+          goalMode: resolveGoalMode(session.provider, session.goalMode),
           ...(session.specialKind === "pose"
             ? { chatType: "pose" as const, poseScene: session.poseScene }
             : {}),
@@ -1203,6 +1223,12 @@ export class FleetCliProductRuntime {
     if (!task) return;
     const timestamp = this.dependencies.now();
     task.state = progress.state;
+    if (progress.goal !== undefined) {
+      const session = this.state.sessions.find(
+        (entry) => entry.id === this.activeTasks.get(taskId)?.sessionId,
+      );
+      if (session) session.goal = progress.goal;
+    }
     task.message = boundedText(progress.message);
     task.cancellable = progress.cancellable;
     task.updatedAt = timestamp;
@@ -1254,6 +1280,16 @@ export class FleetCliProductRuntime {
           taskId,
         },
       ].slice(-200);
+      if (
+        result.metadata &&
+        (result.metadata.goal === null || isSessionGoal(result.metadata.goal))
+      ) {
+        session.goal = isSessionGoal(result.metadata.goal)
+          ? result.metadata.goal
+          : null;
+        session.goalMode =
+          result.metadata.goalMode === "native" ? "native" : "machdoch";
+      }
       delete session.pendingTask;
       session.updatedAt = timestamp;
       const updates =
@@ -1518,6 +1554,14 @@ export class FleetCliProductRuntime {
           })),
           mode: activeSession.mode,
           defaultMode: config.mode,
+          goalMode: resolveGoalMode(
+            activeSession.provider,
+            activeSession.goalMode,
+          ),
+          availableGoalModes: [
+            ...getAvailableGoalModes(activeSession.provider),
+          ],
+          goal: activeSession.goal ?? null,
           parallelAgentMode: activeSession.parallelAgentMode,
           availableParallelAgentModes: [
             ...getAvailableParallelAgentModes(

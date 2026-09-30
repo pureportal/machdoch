@@ -118,6 +118,8 @@ export interface TaskFinalResponsePayload {
 }
 
 export interface ModelDrivenExecutionParams {
+  nativeGoal?: string;
+  captureGoalEvidence?: boolean;
   task: string;
   config: RuntimeConfig;
   taskContext: ResolvedTaskContext;

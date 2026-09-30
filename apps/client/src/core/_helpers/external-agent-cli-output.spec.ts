@@ -8,6 +8,60 @@ const eventLine = (value: Record<string, unknown>): string =>
   `${JSON.stringify(value)}\n`;
 
 describe("Codex CLI output decoder", () => {
+  it("captures bounded tool results only when requested", () => {
+    const decoder = new CodexCliOutputDecoder(true);
+    const ordinary = new CodexCliOutputDecoder();
+    const event = eventLine({
+      type: "item.completed",
+      item: {
+        id: "command",
+        type: "command_execution",
+        command: "pnpm test",
+        exit_code: 1,
+        aggregated_output: "Two tests failed.",
+      },
+    });
+    decoder.push(event);
+    ordinary.push(event);
+    expect(decoder.getToolEvidence()).toContain("Two tests failed.");
+    expect(decoder.getToolEvidence()).toContain('"exit_code":1');
+    expect(ordinary.getToolEvidence()).toBe("");
+    for (let index = 0; index < 5; index++)
+      decoder.push(
+        eventLine({
+          type: "item.completed",
+          item: {
+            id: String(index),
+            type: "command_execution",
+            aggregated_output: "x".repeat(20_000),
+          },
+        }),
+      );
+    expect(decoder.getToolEvidence().length).toBeLessThanOrEqual(32_000);
+  });
+  it("counts actual tools without treating final messages as progress", () => {
+    const decoder = new CodexCliOutputDecoder();
+    decoder.push(
+      eventLine({
+        type: "item.completed",
+        item: { id: "message", type: "agent_message", text: "Still working." },
+      }),
+    );
+    expect(decoder.getToolCallCount()).toBe(0);
+    decoder.push(
+      eventLine({
+        type: "item.completed",
+        item: { id: "command", type: "command_execution" },
+      }),
+    );
+    decoder.push(
+      eventLine({
+        type: "item.completed",
+        item: { id: "command", type: "command_execution" },
+      }),
+    );
+    expect(decoder.getToolCallCount()).toBe(1);
+  });
   it("uses the terminal turn event for completion and token usage", () => {
     const decoder = new CodexCliOutputDecoder();
     const output = [
@@ -73,6 +127,37 @@ describe("Codex CLI output decoder", () => {
 });
 
 describe("Claude CLI output decoder", () => {
+  it("preserves tool-result evidence separately from assistant assertions", () => {
+    const decoder = new ClaudeCliOutputDecoder(true);
+    decoder.push(
+      eventLine({
+        type: "user",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "test-1",
+              content: "Two tests failed.",
+              is_error: true,
+            },
+          ],
+        },
+      }),
+    );
+    decoder.push(
+      eventLine({
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "All tests passed." }],
+        },
+      }),
+    );
+    expect(decoder.getToolEvidence()).toContain("Two tests failed.");
+    expect(decoder.getToolEvidence()).not.toContain("All tests passed.");
+    expect(decoder.getFinalOutput()).toBe("All tests passed.");
+  });
   it("captures retries, aggregate usage, turn count, and terminal result", () => {
     const decoder = new ClaudeCliOutputDecoder();
     const output = [

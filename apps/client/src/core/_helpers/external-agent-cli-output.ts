@@ -17,6 +17,8 @@ export interface ExternalAgentCliOutputDecoder {
   getUsage(): AgentModelStreamUsage | undefined;
   getRetryCount(): number | undefined;
   getModelCallCount(): number;
+  getToolCallCount(): number;
+  getToolEvidence(): string;
   isModelCallCountReported(): boolean;
   hasTerminalResult(): boolean;
   getFailureMessage?(): string | undefined;
@@ -100,6 +102,26 @@ const createCodexUsage = (
 };
 
 abstract class JsonLineOutputDecoder {
+  private readonly toolCalls = new Set<string>();
+  private toolEvidence = "";
+
+  constructor(private readonly captureToolEvidence = false) {}
+
+  getToolEvidence(): string {
+    return this.toolEvidence;
+  }
+
+  private recordToolEvidence(event: unknown): void {
+    if (this.captureToolEvidence)
+      this.toolEvidence =
+        `${this.toolEvidence}\n${JSON.stringify(event).slice(-12_000)}`.slice(
+          -32_000,
+        );
+  }
+
+  getToolCallCount(): number {
+    return this.toolCalls.size;
+  }
   private pendingLine = "";
   private discardingOversizedLine = false;
   protected readonly diagnostics: string[] = [];
@@ -186,6 +208,40 @@ abstract class JsonLineOutputDecoder {
       return;
     }
 
+    if (
+      event.type === "item.completed" &&
+      isRecord(event.item) &&
+      [
+        "command_execution",
+        "file_change",
+        "mcp_tool_call",
+        "web_search",
+      ].includes(String(event.item.type))
+    ) {
+      this.toolCalls.add(String(event.item.id ?? this.toolCalls.size));
+      this.recordToolEvidence(event.item);
+    }
+    if (
+      event.type === "assistant" &&
+      isRecord(event.message) &&
+      Array.isArray(event.message.content)
+    ) {
+      for (const block of event.message.content) {
+        if (isRecord(block) && block.type === "tool_use")
+          this.toolCalls.add(String(block.id ?? this.toolCalls.size));
+      }
+    }
+
+    if (
+      event.type === "user" &&
+      isRecord(event.message) &&
+      Array.isArray(event.message.content)
+    ) {
+      for (const block of event.message.content) {
+        if (isRecord(block) && block.type === "tool_result")
+          this.recordToolEvidence(block);
+      }
+    }
     this.processEvent(event, update);
   }
 }

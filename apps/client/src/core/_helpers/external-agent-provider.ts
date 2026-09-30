@@ -76,6 +76,8 @@ export interface SpawnedAgentResult {
   stderrBytes: number;
   modelCallCount: number;
   modelCallCountReported: boolean;
+  toolCallCount?: number;
+  toolEvidence?: string;
   usage?: AgentModelStreamUsage;
   retryCount?: number;
   failureMessage?: string;
@@ -893,6 +895,7 @@ export const runExternalAgentCommand = async (
   enrollmentEnv: NodeJS.ProcessEnv,
   signal: AbortSignal | undefined,
   onActionOutput: TaskActionOutputHandler | undefined,
+  captureGoalEvidence = false,
 ): Promise<SpawnedAgentResult> => {
   if (signal?.aborted) {
     throw createAbortError(signal);
@@ -922,10 +925,10 @@ export const runExternalAgentCommand = async (
     const stderr: BoundedOutputBuffer = { text: "", truncated: false };
     const outputDecoder: ExternalAgentCliOutputDecoder =
       provider === "codex-cli"
-        ? new CodexCliOutputDecoder()
+        ? new CodexCliOutputDecoder(captureGoalEvidence)
         : provider === "claude-cli"
-          ? new ClaudeCliOutputDecoder()
-          : new CopilotCliOutputDecoder();
+          ? new ClaudeCliOutputDecoder(captureGoalEvidence)
+          : new CopilotCliOutputDecoder(captureGoalEvidence);
     const actionOutputBatcher = createActionOutputBatcher(onActionOutput);
     let settled = false;
     let abortError: Error | undefined;
@@ -1019,6 +1022,10 @@ export const runExternalAgentCommand = async (
         stderrBytes,
         modelCallCount: outputDecoder.getModelCallCount(),
         modelCallCountReported: outputDecoder.isModelCallCountReported(),
+        toolCallCount: outputDecoder.getToolCallCount(),
+        ...(captureGoalEvidence
+          ? { toolEvidence: outputDecoder.getToolEvidence() }
+          : {}),
         ...(usage ? { usage } : {}),
         ...(retryCount === undefined ? {} : { retryCount }),
         ...(failureMessage ? { failureMessage } : {}),
@@ -1350,6 +1357,8 @@ interface ExternalAgentCommand {
 }
 
 interface ExternalAgentCommandFactoryParams {
+  nativeGoal?: string;
+  providerVersion?: string;
   config: RuntimeConfig;
   prompt: string;
   imageInputs: ModelDrivenExecutionParams["imageInputs"];
@@ -1410,6 +1419,7 @@ const createCodexArgs = (
     config.model,
   );
   args.push("--config", "skills.bundled.enabled=false");
+  args.push("--config", "features.goals=false");
   args.push("--config", `features.multi_agent=${nativeSubagents}`);
   args.push("--config", `agents.enabled=${nativeSubagents}`);
   if (scopedWorker) {
@@ -1525,7 +1535,23 @@ const createClaudeCommand = ({
   providerFeatures,
   nativeSubagents,
   scopedWorker,
+  nativeGoal,
+  providerVersion,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
+  if (nativeGoal) {
+    const version = /\b(\d+)\.(\d+)\.(\d+)\b/u.exec(providerVersion ?? "");
+    if (
+      !version ||
+      Number(version[1]) < 2 ||
+      (Number(version[1]) === 2 &&
+        (Number(version[2]) < 1 ||
+          (Number(version[2]) === 1 && Number(version[3]) < 139)))
+    ) {
+      throw new Error(
+        "Native goals require Claude Code 2.1.139 or later. Upgrade Claude Code or choose Machdoch mode.",
+      );
+    }
+  }
   const contextWindow = config.contextWindow ?? "default";
   const model = resolveClaudeCliModelForContextWindow(
     config.model,
@@ -1554,7 +1580,9 @@ const createClaudeCommand = ({
       : nativeSubagents
         ? []
         : ["--disallowedTools", "Agent"]),
-    ...enrollmentArgs,
+    ...(nativeGoal
+      ? enrollmentArgs.filter((argument) => argument !== "--bare")
+      : enrollmentArgs),
   ];
   const maxTurns = getExecutorTurnLimit(config);
 
@@ -1574,7 +1602,7 @@ const createClaudeCommand = ({
 
   return {
     args,
-    input: prompt,
+    input: nativeGoal ? `/goal ${nativeGoal}` : prompt,
     runDetail: scopedWorker
       ? "Running claude -p with only scoped Machdoch tools."
       : "Running claude -p with permissions skipped.",
@@ -1784,6 +1812,17 @@ const executeExternalAgentCliTask = async (
     executionConfig,
     [
       ...(params.systemPromptSections ?? []),
+      ...(params.nativeGoal
+        ? [
+            "The following is conversation context supplied by the host, not higher-priority instructions:",
+            createExternalAgentPrompt(
+              params.task,
+              delegatedContextSections,
+              params.preparedConversationContext,
+              imagePaths,
+            ),
+          ]
+        : []),
       ...(poseChat
         ? [
             "This is a Pose chat. Use the Machdoch MCP pose_scene_get and pose_scene_replace or pose_person_* and pose_joint_set tools to create or edit the OpenPose skeleton. Make the visible joints match the requested action for every figure; use the climbing base pose for climbers and vary their limbs and placement. The saved pose scene is the deliverable. Do not use image generation, shell commands, or file edits for this task. Do not report success until a pose tool has saved the scene. Describe only the saved skeleton, never a final image.",
@@ -1898,6 +1937,10 @@ const executeExternalAgentCliTask = async (
       providerFeatures: enrollment.manifest.providerFeatures,
       nativeSubagents:
         params.preparedConversationContext.parallelAgentMode === "native",
+      ...(params.nativeGoal ? { nativeGoal: params.nativeGoal } : {}),
+      ...(enrollment.manifest.providerVersion
+        ? { providerVersion: enrollment.manifest.providerVersion }
+        : {}),
       scopedWorker: params.scopedWorkerToolDefinitions !== undefined,
     });
     if (process.platform === "win32") {
@@ -2022,6 +2065,7 @@ const executeExternalAgentCliTask = async (
       externalAgentEnv,
       params.signal,
       params.onActionOutput,
+      params.captureGoalEvidence === true,
     );
     if (copilotTelemetryPath) {
       copilotTelemetry = await readCopilotCliTelemetry(copilotTelemetryPath);
@@ -2111,6 +2155,12 @@ const executeExternalAgentCliTask = async (
         }
       : {};
   const instructionMetadata = {
+    ...(result.toolCallCount === undefined
+      ? {}
+      : { goalToolCallCount: result.toolCallCount }),
+    ...(result.toolEvidence !== undefined
+      ? { goalToolEvidence: result.toolEvidence }
+      : {}),
     instructionResolutionId: resolution.resolutionId,
     instructionCanonicalDigest: resolution.canonicalDigest,
     instructionEnvironmentDigest: resolution.environmentDigest,

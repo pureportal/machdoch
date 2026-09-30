@@ -1,4 +1,9 @@
 import {
+  getAvailableGoalModes,
+  resolveGoalMode,
+  type GoalMode,
+} from "../../../../shared/goals.js";
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -619,7 +624,11 @@ export const useFleetControl = (options: {
     sessionId: string,
     mode: RuntimeSnapshot["mode"] | null,
   ) => void;
-  onSetParallelAgentMode: (sessionId: string, mode: "disabled" | "read-only" | "machdoch" | "native") => void;
+  onSetGoalMode: (sessionId: string, mode: GoalMode) => void;
+  onSetParallelAgentMode: (
+    sessionId: string,
+    mode: "disabled" | "read-only" | "machdoch" | "native",
+  ) => void;
   onSetSessionReasoning: (
     sessionId: string,
     reasoning: RuntimeSnapshot["reasoning"] | null,
@@ -969,8 +978,21 @@ export const useFleetControl = (options: {
         modelCatalog,
         mode: options.activeRunMode,
         defaultMode: options.defaultMode,
+        goalMode: resolveGoalMode(
+          options.activeSession.provider,
+          options.activeSession.goalMode,
+        ),
+        availableGoalModes: [
+          ...getAvailableGoalModes(options.activeSession.provider),
+        ],
+        goal: options.activeSession.goal ?? null,
         parallelAgentMode: options.activeSession.parallelAgentMode,
-        availableParallelAgentModes: [...getAvailableParallelAgentModes(options.activeSession.provider, options.activeSession.model)],
+        availableParallelAgentModes: [
+          ...getAvailableParallelAgentModes(
+            options.activeSession.provider,
+            options.activeSession.model,
+          ),
+        ],
         reasoning: options.activeReasoning,
         defaultReasoning: options.defaultReasoning,
         reasoningOptions: [
@@ -1511,9 +1533,25 @@ export const useFleetControl = (options: {
           break;
         }
 
+        case "set-goal-mode": {
+          if (
+            command.sessionId &&
+            (command.mode === "machdoch" || command.mode === "native")
+          )
+            options.onSetGoalMode(command.sessionId, command.mode);
+          break;
+        }
         case "set-parallel-agent-mode": {
-          if (command.sessionId && ["disabled", "read-only", "machdoch", "native"].includes(String(command.mode))) {
-            options.onSetParallelAgentMode(command.sessionId, command.mode as "disabled" | "read-only" | "machdoch" | "native");
+          if (
+            command.sessionId &&
+            ["disabled", "read-only", "machdoch", "native"].includes(
+              String(command.mode),
+            )
+          ) {
+            options.onSetParallelAgentMode(
+              command.sessionId,
+              command.mode as "disabled" | "read-only" | "machdoch" | "native",
+            );
           }
           break;
         }

@@ -4,7 +4,10 @@ import { dirname, join } from "node:path";
 import { getUserConfigPath } from "../../core/env.js";
 import { withCooperativeFileLock } from "../../core/_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "../../core/_helpers/write-file-atomically.helper.js";
-import { isMediaPoseMap, type MediaPoseMap } from "@machdoch/media-studio/core/media/contracts.js";
+import {
+  isMediaPoseMap,
+  type MediaPoseMap,
+} from "@machdoch/media-studio/core/media/contracts.js";
 import type {
   ModelProvider,
   ReasoningMode,
@@ -15,6 +18,13 @@ import {
   RUN_MODES,
   isModelProvider,
 } from "../../core/runtime-contract.generated.js";
+
+import {
+  isSessionGoal,
+  resolveGoalMode,
+  type GoalMode,
+  type SessionGoal,
+} from "../../shared/goals.js";
 
 export const FLEET_CLI_STATE_SCHEMA_VERSION = 1;
 
@@ -42,6 +52,8 @@ export interface FleetCliSession {
   model: string;
   mode: RunMode;
   parallelAgentMode: "disabled" | "read-only" | "machdoch" | "native";
+  goalMode?: GoalMode;
+  goal?: SessionGoal | null;
   reasoning: ReasoningMode;
   createdAt: number;
   updatedAt: number;
@@ -189,17 +201,28 @@ const parseSession = (value: unknown): FleetCliSession => {
       "pendingTask",
       "useWorkspaceMemory",
       "parallelAgentMode",
+      "goalMode",
+      "goal",
     ]) ||
     !boundedString(value.id, 240) ||
     !boundedString(value.title, 12_000) ||
     (value.specialKind !== undefined && value.specialKind !== "pose") ||
-    (value.poseScene !== undefined && (value.specialKind !== "pose" || !isMediaPoseMap(value.poseScene))) ||
+    (value.poseScene !== undefined &&
+      (value.specialKind !== "pose" || !isMediaPoseMap(value.poseScene))) ||
     !boundedString(value.workspace, 12_000) ||
     !boundedString(value.provider, 240) ||
     !isModelProvider(value.provider) ||
     !boundedString(value.model, 240) ||
     !modes.has(value.mode) ||
-    (value.parallelAgentMode !== undefined && !["disabled", "read-only", "machdoch", "native"].includes(String(value.parallelAgentMode))) ||
+    (value.parallelAgentMode !== undefined &&
+      !["disabled", "read-only", "machdoch", "native"].includes(
+        String(value.parallelAgentMode),
+      )) ||
+    (value.goalMode !== undefined &&
+      !["machdoch", "native"].includes(String(value.goalMode))) ||
+    (value.goal !== undefined &&
+      value.goal !== null &&
+      !isSessionGoal(value.goal)) ||
     !reasoningModes.has(value.reasoning) ||
     !finiteTimestamp(value.createdAt) ||
     !finiteTimestamp(value.updatedAt) ||
@@ -223,12 +246,20 @@ const parseSession = (value: unknown): FleetCliSession => {
     id: value.id,
     title: value.title,
     ...(value.specialKind === "pose" ? { specialKind: "pose" as const } : {}),
-    ...(value.specialKind === "pose" && isMediaPoseMap(value.poseScene) ? { poseScene: value.poseScene } : {}),
+    ...(value.specialKind === "pose" && isMediaPoseMap(value.poseScene)
+      ? { poseScene: value.poseScene }
+      : {}),
     workspace: value.workspace,
     provider: value.provider,
     model: value.model,
     mode: value.mode as RunMode,
-    parallelAgentMode: (value.parallelAgentMode ?? "disabled") as FleetCliSession["parallelAgentMode"],
+    parallelAgentMode: (value.parallelAgentMode ??
+      "disabled") as FleetCliSession["parallelAgentMode"],
+    goalMode: resolveGoalMode(
+      value.provider,
+      value.goalMode === "native" ? "native" : "machdoch",
+    ),
+    ...(isSessionGoal(value.goal) ? { goal: value.goal } : {}),
     reasoning: value.reasoning as ReasoningMode,
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,

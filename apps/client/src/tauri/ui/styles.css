@@ -2,6 +2,7 @@
 @import "@xyflow/react/dist/style.css";
 @import "@machdoch/product-ui/theme.css";
 @import "@machdoch/product-ui/primitives.css";
+@import "@machdoch/product-ui/goal-control.css";
 @import "./responsive.css";
 @import "./components/ui/menu.css";
 @source "../ui";

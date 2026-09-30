@@ -66,6 +66,12 @@ export const parseConversationContext = (
   if (value.sessionId !== undefined && typeof value.sessionId !== "string")
     throw new CliUsageError("Invalid conversation session id.");
   if (
+    value.goalMode !== undefined &&
+    !["machdoch", "native"].includes(String(value.goalMode))
+  ) {
+    throw new CliUsageError("Invalid conversation goal mode.");
+  }
+  if (
     value.earlierWorkspace !== undefined &&
     value.earlierWorkspace !== null &&
     typeof value.earlierWorkspace !== "string"
