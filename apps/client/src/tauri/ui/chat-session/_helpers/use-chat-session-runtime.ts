@@ -8,7 +8,10 @@ import {
   type SetStateAction,
 } from "react";
 import { getProviderLabel, type RuntimeProvider } from "../../model-catalog";
-import { DEFAULT_USER_AGENT_LIMITS_SETTINGS } from "../../../../core/runtime-contract.generated.js";
+import {
+  DEFAULT_USER_AGENT_LIMITS_SETTINGS,
+  DEFAULT_USER_DESKTOP_SETTINGS,
+} from "../../../../core/runtime-contract.generated.js";
 import { isMcpConfigConflictError } from "../../mcp-config-error";
 import type { ConversationMemoryEntry } from "../../../../core/types.js";
 import { DEFAULT_USER_WORKSPACE_RUN_SETTINGS } from "../../../../core/runtime-contract.generated.js";
@@ -232,19 +235,7 @@ const getInitialProviderSetupProvider = (
 
 const createEmptyUserDesktopSettings = (): UserDesktopSettings => {
   return {
-    autostartEnabled: false,
-    autostartMinimized: false,
-    autostartToTray: false,
-    alwaysRunAsAdministrator: false,
-    aiContextMaxMessages: 60,
-    adaptiveControllerEnabled: true,
-    inactiveSessionArchiveDays: 7,
-    chatIdleTimeoutMinutes: 20,
-    archivedSessionRetentionDays: 7,
-    quickVoiceEnabled: true,
-    quickVoiceShortcut: "CommandOrControl+Alt+V",
-    quickVoiceSilenceSeconds: 1.8,
-    quickVoiceMaxMessages: 50,
+    ...DEFAULT_USER_DESKTOP_SETTINGS,
   };
 };
 

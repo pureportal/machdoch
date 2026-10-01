@@ -165,6 +165,7 @@ fn merge_typed_user_config(original: Value, typed: &UserConfigFile) -> Result<Va
         .ok_or_else(|| "Failed to serialize user config as an object.".to_string())?;
 
     replace_object_member(&mut target, source, "apiKeys");
+    replace_object_member(&mut target, source, "answerLanguage");
     replace_object_member(&mut target, source, "agentCliPaths");
     merge_known_object_members(
         &mut target,
@@ -411,6 +412,25 @@ mod tests {
         assert_eq!(merged["workspaceRun"]["futureTimingSetting"], "keep-me");
         assert_eq!(merged["providerEnrollment"]["enabled"], true);
         assert_eq!(merged["futureRoot"]["nested"], true);
+    }
+
+    #[test]
+    fn typed_update_persists_answer_language_and_explicit_unset() {
+        for language in [None, Some("German"), Some("")] {
+            let mut typed = UserConfigFile::default();
+            typed.answer_language = language.map(str::to_string);
+            let merged = merge_typed_user_config(serde_json::json!({}), &typed)
+                .expect("answer language should persist");
+            assert_eq!(merged.get("answerLanguage").is_some(), language.is_some());
+            assert_eq!(
+                merged.get("answerLanguage").and_then(Value::as_str),
+                language
+            );
+            let reloaded: UserConfigFile =
+                serde_json::from_value(merged).expect("answer language should reload");
+
+            assert_eq!(reloaded.answer_language.as_deref(), language);
+        }
     }
 
     #[test]

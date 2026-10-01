@@ -504,6 +504,48 @@ afterEach(async () => {
 });
 
 describe("maybeExecuteExternalAgentProviderTask", () => {
+  it.each([
+    ["codex-cli", "gpt-5.5", "MACHDOCH_CODEX_CLI_PATH"],
+    ["claude-cli", "claude-opus-4-6", "MACHDOCH_CLAUDE_CLI_PATH"],
+    ["copilot-cli", "gpt-5.4", "MACHDOCH_COPILOT_CLI_PATH"],
+  ] as const)(
+    "delivers a selected answer language and removes it when unset through %s",
+    async (provider, model, binaryEnvironmentKey) => {
+      const workspaceRoot = await createWorkspace();
+      process.env[binaryEnvironmentKey] = process.execPath;
+
+      for (const answerLanguage of ["German", ""]) {
+        const params = createParams(workspaceRoot, { provider, model });
+        params.config.answerLanguage = answerLanguage;
+        const previousCalls = spawnCalls.length;
+        const pending = maybeExecuteExternalAgentProviderTask(params);
+        await waitForCondition(() =>
+          expect(spawnCalls).toHaveLength(previousCalls + 1),
+        );
+        const call = spawnCalls.at(-1)!;
+        const instructions = await readRunScopedSystemInstructions(
+          provider,
+          call,
+        );
+
+        if (answerLanguage) {
+          expect(instructions).toContain(
+            'Write your final answer to the user in "German"',
+          );
+          expect(instructions).toContain("in the language the task requires");
+        } else {
+          expect(instructions).not.toContain(
+            "Write your final answer to the user in",
+          );
+        }
+
+        writeStructuredAnswer(call, "Done.");
+        call.child.emit("close", 0, null);
+        await expect(pending).resolves.toMatchObject({ status: "executed" });
+      }
+    },
+  );
+
   it("launches native Claude goals without bare mode and preserves conversation context", async () => {
     const workspaceRoot = await createWorkspace();
     process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
@@ -893,6 +935,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       );
       expect(systemInstructions).toContain(
         "exactly one Machdoch control record",
+      );
+      expect(systemInstructions).toContain(
+        'Write your final answer to the user in "English"',
       );
 
       writeStructuredAnswer(call, `Completed delegated work.\n${doneLine}`);

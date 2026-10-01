@@ -422,6 +422,8 @@ pub fn run() {
             runtime_snapshot::get_workspace_mcp_config_document,
             runtime_snapshot::get_runtime_snapshot,
             runtime_snapshot::save_user_desktop_settings,
+            runtime_snapshot::get_user_answer_language,
+            runtime_snapshot::save_user_answer_language,
             runtime_snapshot::save_user_agent_limits_settings,
             runtime_snapshot::save_user_workspace_run_settings,
             runtime_snapshot::save_user_global_memory_enabled,

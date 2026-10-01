@@ -29,6 +29,7 @@ pub const WEB_SEARCH_ENV_KEYS: [(&str, &str); 3] = [("perplexity", "PERPLEXITY_A
 pub const DEFAULT_MODEL_PROVIDER: &str = "openai";
 pub const DEFAULT_MODEL_BY_PROVIDER: [(&str, &str); 7] = [("openai", "gpt-5.6-sol"), ("anthropic", "claude-sonnet-5"), ("google", "gemini-3.7-flash"), ("langdock", "gpt-5.5"), ("codex-cli", "gpt-5.6-sol"), ("claude-cli", "sonnet"), ("copilot-cli", "auto")];
 pub const DEFAULT_USER_REVIEW_MODEL_MODE: &str = "base";
+pub const DEFAULT_ANSWER_LANGUAGE: &str = "English";
 pub const DEFAULT_USER_INTERNAL_TASK_MODEL_REASONING: &str = "default";
 
 pub const DEFAULT_USER_AGENT_LIMITS_INFINITE: bool = false;

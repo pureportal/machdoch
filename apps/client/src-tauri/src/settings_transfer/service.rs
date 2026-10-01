@@ -148,6 +148,7 @@ pub(crate) fn emit_import_reload_events<R: Runtime>(
     }
     if categories.contains(&SettingsCategoryId::AgentProviderPreferences) {
         kinds.extend([
+            "answer-language",
             "web-search",
             "voice",
             "speech-to-text",

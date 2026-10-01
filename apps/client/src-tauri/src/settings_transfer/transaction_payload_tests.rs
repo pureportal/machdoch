@@ -111,6 +111,55 @@ impl Fixture {
 }
 
 #[test]
+fn answer_language_transfer_preserves_shared_preference_and_explicit_unset() {
+    isolated(
+        "answer_language_transfer_preserves_shared_preference_and_explicit_unset",
+        || {
+            let fixture = Fixture::new();
+            let categories = BTreeSet::from([SettingsCategoryId::AgentProviderPreferences]);
+            for language in ["German", ""] {
+                fs::write(
+                    fixture.root.join("user-config.json"),
+                    serde_json::to_vec(&serde_json::json!({ "answerLanguage": language })).unwrap(),
+                )
+                .unwrap();
+                let snapshot = match snapshot_category(
+                    fixture.app.handle(),
+                    SettingsCategoryId::AgentProviderPreferences,
+                ) {
+                    SnapshotAvailability::Available(snapshot) => snapshot,
+                    SnapshotAvailability::Unavailable(_) => panic!("agent preferences unavailable"),
+                };
+                fs::write(fixture.root.join("user-config.json"), ORIGINAL).unwrap();
+                let backup =
+                    capture_backup(fixture.app.handle(), &fixture.root, &categories).unwrap();
+                let envelope = TransferEnvelope {
+                    categories: vec![snapshot],
+                    ..fixture.envelope.clone()
+                };
+                prepare_transaction(
+                    fixture.app.handle().clone(),
+                    envelope.clone(),
+                    &backup_fingerprint(&backup).unwrap(),
+                )
+                .unwrap_or_else(|_| panic!("language transfer preparation failed"))
+                .commit(|| panic!("unexpected rollback"))
+                .unwrap_or_else(|_| panic!("language transfer commit failed"));
+                verify_import(fixture.app.handle(), &envelope).unwrap();
+                let config: Value = serde_json::from_slice(
+                    &fs::read(fixture.root.join("user-config.json")).unwrap(),
+                )
+                .unwrap();
+                assert_eq!(config["answerLanguage"], language);
+                assert_eq!(config["unselected"], "preserved");
+                assert!(config.get("desktop").is_none());
+                fixture.assert_cleaned();
+            }
+        },
+    );
+}
+
+#[test]
 fn prepared_directory_contains_only_rollback_data() {
     isolated("prepared_directory_contains_only_rollback_data", || {
         let fixture = Fixture::new();

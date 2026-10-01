@@ -12,10 +12,11 @@ use super::{
 };
 use super::{normalize_optional_string, AudioProviderAvailability};
 use crate::runtime_contract_generated::{
-    AGENT_CLI_PROVIDERS, DEFAULT_MODEL_BY_PROVIDER, DEFAULT_MODEL_PROVIDER,
-    MAX_CONTEXT_WINDOW_TOKENS, MIN_CONTEXT_WINDOW_TOKENS, PROVIDER_ENV_KEYS, REASONING_MODES,
-    USER_AUDIO_AI_PROVIDERS, VALID_AUDIO_AI_PROVIDERS, VALID_MODEL_PROVIDERS,
-    VALID_SPEECH_TO_TEXT_PROVIDERS, VALID_WEB_SEARCH_PROVIDERS, WEB_SEARCH_ENV_KEYS,
+    AGENT_CLI_PROVIDERS, DEFAULT_ANSWER_LANGUAGE, DEFAULT_MODEL_BY_PROVIDER,
+    DEFAULT_MODEL_PROVIDER, MAX_CONTEXT_WINDOW_TOKENS, MIN_CONTEXT_WINDOW_TOKENS,
+    PROVIDER_ENV_KEYS, REASONING_MODES, USER_AUDIO_AI_PROVIDERS, VALID_AUDIO_AI_PROVIDERS,
+    VALID_MODEL_PROVIDERS, VALID_SPEECH_TO_TEXT_PROVIDERS, VALID_WEB_SEARCH_PROVIDERS,
+    WEB_SEARCH_ENV_KEYS,
 };
 
 fn normalize_context_window(value: &ContextWindow) -> Result<ContextWindow, String> {
@@ -437,6 +438,12 @@ pub(super) fn collect_runtime_snapshot(workspace_root: &str) -> Result<RuntimeSn
     let review_model = normalize_user_review_model_settings(&user_config.review_model);
 
     Ok(RuntimeSnapshot {
+        answer_language: user_config
+            .answer_language
+            .as_deref()
+            .unwrap_or(DEFAULT_ANSWER_LANGUAGE)
+            .trim()
+            .to_string(),
         workspace_root: resolved_workspace_root,
         workspace_config_path,
         default_mode,

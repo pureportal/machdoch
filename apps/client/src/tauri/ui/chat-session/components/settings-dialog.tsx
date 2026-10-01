@@ -45,6 +45,8 @@ import { AssetStorageSettingsPanel } from "./settings-dialog-panels/asset-storag
 import { AgentLimitsSettingsPanel } from "./settings-dialog-panels/agent-limits-settings-panel";
 import { AppearanceSettingsPanel } from "./settings-dialog-panels/appearance-settings-panel";
 import { DesktopSettingsPanel } from "./settings-dialog-panels/desktop-settings-panel";
+import { AnswerLanguageSettingsPanel } from "./settings-dialog-panels/answer-language-settings-panel";
+import { SessionDefaultsSettingsPanel } from "./settings-dialog-panels/session-defaults-settings-panel";
 import { MemorySettingsPanel } from "./settings-dialog-panels/memory-settings-panel";
 import { McpSettingsPanel } from "./settings-dialog-panels/mcp-settings-panel";
 import {
@@ -140,6 +142,10 @@ const renderSettingsPanel = ({
   voiceSetup,
 }: SettingsDialogProps): JSX.Element => {
   switch (settingsSection) {
+    case "answer-language":
+      return <AnswerLanguageSettingsPanel />;
+    case "session-defaults":
+      return <SessionDefaultsSettingsPanel setup={desktopSetup} />;
     case "asset-storage":
       return <AssetStorageSettingsPanel />;
     case "civitai":

@@ -14,7 +14,7 @@ use unicode_normalization::UnicodeNormalization as _;
 use zeroize::Zeroizing;
 
 use crate::runtime_contract_generated::{
-    DEFAULT_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
+    DEFAULT_ANSWER_LANGUAGE, DEFAULT_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
     DEFAULT_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
     DEFAULT_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
     DEFAULT_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
@@ -206,7 +206,7 @@ fn f64_clamped(value: Option<&Value>, fallback: f64, minimum: f64, maximum: f64)
         .unwrap_or_else(|| json!(fallback))
 }
 
-fn default_model_for_provider(provider: &str) -> &'static str {
+pub(crate) fn default_model_for_provider(provider: &str) -> &'static str {
     DEFAULT_MODEL_BY_PROVIDER
         .iter()
         .find_map(|(candidate, model)| (*candidate == provider).then_some(*model))
@@ -292,6 +292,7 @@ fn snapshot_agent_provider_preferences() -> Result<CategorySnapshot, String> {
     let internal_task = object_or_empty(root.get("internalTaskModel"));
 
     let value = json!({
+        "answerLanguage": root.get("answerLanguage").and_then(Value::as_str).unwrap_or(DEFAULT_ANSWER_LANGUAGE).trim(),
         "webSearchActiveProvider": enum_string_or(web_search.get("activeProvider"), &VALID_WEB_SEARCH_PROVIDERS, "none"),
         "voiceActiveProvider": enum_string_or(voice.get("activeProvider"), &VALID_AUDIO_AI_PROVIDERS, "none"),
         "speechToTextActiveProvider": enum_string_or(speech.get("activeProvider"), &VALID_SPEECH_TO_TEXT_PROVIDERS, "whisper"),
@@ -308,7 +309,7 @@ fn snapshot_agent_provider_preferences() -> Result<CategorySnapshot, String> {
     create_json_snapshot(
         SettingsCategoryId::AgentProviderPreferences,
         value,
-        7,
+        8,
         false,
     )
 }
@@ -1099,7 +1100,7 @@ fn snapshot_semantics(snapshot: &CategorySnapshot) -> Result<(u32, bool), String
                 .saturating_add(value["webSearchApiKeys"].as_object().map_or(0, Map::len));
             (count, count == 0)
         }
-        (SettingsCategoryId::AgentProviderPreferences, CategorySnapshotData::Json(_)) => (6, false),
+        (SettingsCategoryId::AgentProviderPreferences, CategorySnapshotData::Json(_)) => (8, false),
         (SettingsCategoryId::DesktopAppearance, CategorySnapshotData::Json(_)) => (6, false),
         (SettingsCategoryId::ChatVoicePreferences, CategorySnapshotData::Json(_)) => {
             (CHAT_VOICE_PREFERENCE_ITEM_COUNT as usize, false)
@@ -1185,6 +1186,7 @@ fn validate_agent_provider_value(value: &Value) -> Result<(), String> {
     require_exact_keys(
         root,
         &[
+            "answerLanguage",
             "webSearchActiveProvider",
             "voiceActiveProvider",
             "speechToTextActiveProvider",
@@ -1194,6 +1196,9 @@ fn validate_agent_provider_value(value: &Value) -> Result<(), String> {
             "providerEnrollment",
         ],
     )?;
+    if !root.get("answerLanguage").is_some_and(Value::is_string) {
+        return Err("Answer language is invalid.".to_string());
+    }
     for key in [
         "webSearchActiveProvider",
         "voiceActiveProvider",
@@ -2225,6 +2230,7 @@ mod tests {
     #[test]
     fn provider_and_mcp_schemas_reject_unknown_or_mistyped_fields() {
         let provider = json!({
+            "answerLanguage": "English",
             "webSearchActiveProvider": "none",
             "voiceActiveProvider": "none",
             "speechToTextActiveProvider": "none",
@@ -2256,6 +2262,27 @@ mod tests {
             }
         });
         assert!(validate_agent_provider_value(&provider).is_ok());
+        for language in ["German", ""] {
+            let mut value = provider.clone();
+            value["answerLanguage"] = json!(language);
+            let snapshot = create_json_snapshot(
+                SettingsCategoryId::AgentProviderPreferences,
+                value,
+                8,
+                false,
+            )
+            .expect("agent preferences should serialize");
+            validate_category_snapshot(&snapshot).expect("answer language should transfer");
+            assert_eq!(
+                category_data_json(&snapshot).unwrap()["answerLanguage"],
+                language
+            );
+            assert_eq!(snapshot.schema_version, 2);
+            assert_eq!(snapshot_semantics(&snapshot).unwrap(), (8, false));
+        }
+        let mut provider_with_invalid_language = provider.clone();
+        provider_with_invalid_language["answerLanguage"] = json!(false);
+        assert!(validate_agent_provider_value(&provider_with_invalid_language).is_err());
         let mut provider_with_whisper = provider.clone();
         provider_with_whisper["speechToTextActiveProvider"] = json!("whisper");
         assert!(validate_agent_provider_value(&provider_with_whisper).is_ok());

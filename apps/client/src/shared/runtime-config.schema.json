@@ -885,6 +885,10 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "answerLanguage": {
+          "type": "string",
+          "default": "English"
+        },
         "apiKeys": {
           "$ref": "#/$defs/UserProviderApiKeys"
         },
@@ -977,6 +981,10 @@
         "internalTaskModel"
       ],
       "properties": {
+        "answerLanguage": {
+          "type": "string",
+          "default": "English"
+        },
         "workspaceRoot": {
           "type": "string"
         },
@@ -1051,6 +1059,10 @@
         "reviewModel"
       ],
       "properties": {
+        "answerLanguage": {
+          "type": "string",
+          "default": "English"
+        },
         "workspaceRoot": {
           "type": "string"
         },

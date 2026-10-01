@@ -629,6 +629,15 @@ export const saveUserSpeechToTextInputDevice = async (
   });
 };
 
+export const saveUserAnswerLanguage = async (
+  language: string,
+): Promise<string> => {
+  return updateUserConfigFile((config) => ({
+    ...config,
+    answerLanguage: language.trim(),
+  }));
+};
+
 export const saveUserDesktopSettingsPatch = async (
   settings: Partial<UserDesktopSettings>,
 ): Promise<string> => {

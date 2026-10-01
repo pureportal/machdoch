@@ -148,6 +148,8 @@ pub(super) struct WorkspaceCompatibilityConfig {
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct UserConfigFile {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) answer_language: Option<String>,
     #[serde(default)]
     pub(super) api_keys: HashMap<String, String>,
     #[serde(default)]

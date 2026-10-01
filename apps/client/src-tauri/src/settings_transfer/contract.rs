@@ -124,7 +124,9 @@ impl SettingsCategoryId {
 
 pub(crate) const fn category_schema_version(id: SettingsCategoryId) -> u16 {
     match id {
-        SettingsCategoryId::ChatVoicePreferences | SettingsCategoryId::GlobalMemory => 2,
+        SettingsCategoryId::AgentProviderPreferences
+        | SettingsCategoryId::ChatVoicePreferences
+        | SettingsCategoryId::GlobalMemory => 2,
         _ => CATEGORY_SCHEMA_VERSION,
     }
 }

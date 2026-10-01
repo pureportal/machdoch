@@ -6,6 +6,7 @@ use crate::ui_control::UiControlAvailability;
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeSnapshot {
+    pub(super) answer_language: String,
     pub(super) workspace_root: String,
     pub(super) workspace_config_path: Option<String>,
     pub(super) default_mode: String,

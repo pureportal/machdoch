@@ -3351,6 +3351,22 @@ export const loadUserDesktopSettings =
     );
   };
 
+export const loadUserAnswerLanguage = async (): Promise<string> => {
+  return tauriCore.invoke<string>("get_user_answer_language");
+};
+
+export const saveUserAnswerLanguage = async (
+  language: string,
+): Promise<string> => {
+  const normalizedLanguage = language.trim();
+  const savedLanguage = await tauriCore.invoke<string>(
+    "save_user_answer_language",
+    { language: normalizedLanguage },
+  );
+  await emitUserSettingsChanged("answer-language");
+  return savedLanguage;
+};
+
 export const loadUserMemorySettings = async (): Promise<UserMemorySettings> => {
   return loadTauriValueOrFallback(
     "get_user_memory_settings",
@@ -6848,6 +6864,7 @@ export const subscribeToUserSettingsChanged = async (
 };
 
 export type UserSettingsChangeKind =
+  | "answer-language"
   | "provider-keys"
   | "web-search"
   | "voice"

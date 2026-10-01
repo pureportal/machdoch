@@ -154,6 +154,26 @@ pub async fn get_provider_model_catalog() -> Result<ProviderModelCatalogSnapshot
 }
 
 #[tauri::command]
+pub async fn get_user_answer_language() -> Result<String, String> {
+    let (config, _) = user_config::load_user_config_file()?;
+    Ok(config
+        .answer_language
+        .as_deref()
+        .unwrap_or(crate::runtime_contract_generated::DEFAULT_ANSWER_LANGUAGE)
+        .trim()
+        .to_string())
+}
+
+#[tauri::command]
+pub async fn save_user_answer_language(language: String) -> Result<String, String> {
+    let language = language.trim().to_string();
+    user_config::update_user_config_file(|config| {
+        config.answer_language = Some(language.clone());
+    })?;
+    Ok(language)
+}
+
+#[tauri::command]
 pub async fn get_user_desktop_settings(
     app: tauri::AppHandle,
 ) -> Result<UserDesktopSettings, String> {
