@@ -1,6 +1,6 @@
 "use client";
 
-import { KeyRound, Monitor, Settings2, Users } from "lucide-react";
+import { KeyRound, LayoutDashboard, Settings2, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -8,10 +8,10 @@ import { cn } from "@/lib/utils";
 const items: {
   href: string;
   label: string;
-  icon: typeof Monitor;
+  icon: typeof LayoutDashboard;
   settingsOnly?: boolean;
 }[] = [
-  { href: "/instances", label: "Instances", icon: Monitor },
+  { href: "/instances", label: "Overview", icon: LayoutDashboard },
   { href: "/enrollment", label: "Enrollment", icon: KeyRound },
   { href: "/settings", label: "Settings", icon: Settings2, settingsOnly: true },
   { href: "/users", label: "Users", icon: Users },
