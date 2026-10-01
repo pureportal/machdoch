@@ -682,7 +682,7 @@ const coerceServerList = (value: unknown): McpServerOverride[] => {
   });
 };
 
-const parseMcpConfigFile = (raw: string): McpConfigFile => {
+export const parseMcpConfigFile = (raw: string): McpConfigFile => {
   const parsed: unknown = JSON.parse(raw);
 
   if (!isRecord(parsed) || parsed.schemaVersion !== MCP_CONFIG_SCHEMA_VERSION) {

@@ -4,6 +4,11 @@ import type { ReadStream, WriteStream } from "node:tty";
 import { stripVTControlCharacters } from "node:util";
 import { InteractiveInputCancelledError } from "./cli-interactive-commands.js";
 import { createCliStyle } from "./cli-terminal.js";
+import {
+  clipTerminalText,
+  safeTerminalText,
+  terminalCellWidth,
+} from "./cli-terminal-text.js";
 
 export interface InteractiveMenuChoice {
   value: string;
@@ -29,6 +34,7 @@ export interface InteractivePrompter {
     },
   ): Promise<string | undefined>;
   status(message: string, kind?: "success" | "error"): void;
+  suspend<T>(action: () => Promise<T>): Promise<T>;
   close(message?: string): void;
 }
 
@@ -82,16 +88,19 @@ export const createTerminalPrompter = (
   const writeFrame = (text: string): void => {
     output.write(text);
     const width = output.columns || 80;
-    for (const character of stripVTControlCharacters(text)) {
+    for (const { segment: character } of new Intl.Segmenter(undefined, {
+      granularity: "grapheme",
+    }).segment(stripVTControlCharacters(text))) {
       if (character === "\n") {
         frameRows += 1;
         frameColumn = 0;
       } else {
-        if (frameColumn >= width) {
+        const cells = terminalCellWidth(character);
+        if (frameColumn + cells > width) {
           frameRows += 1;
           frameColumn = 0;
         }
-        frameColumn += 1;
+        frameColumn += cells;
       }
     }
   };
@@ -155,7 +164,7 @@ export const createTerminalPrompter = (
     );
     if (message) writeFrame(`${style[messageKind](visibleText(message))}\n`);
     writeFrame(`\n${style.label(visibleText(title))}\n`);
-    if (hint) writeFrame(`${style.muted(visibleText(hint))}\n`);
+    if (hint) writeFrame(`${style.muted(safeTerminalText(hint))}\n`);
   };
 
   emitKeypressEvents(input);
@@ -168,6 +177,23 @@ export const createTerminalPrompter = (
   output.write("\u001b[?2004h");
 
   return {
+    suspend: async (action) => {
+      clearFrame();
+      input.off("keypress", receiveKey);
+      input.setRawMode(initiallyRaw);
+      input.pause();
+      output.write("\u001b[?2004l\u001b[?25h");
+      try {
+        return await action();
+      } finally {
+        if (!closed) {
+          input.on("keypress", receiveKey);
+          input.setRawMode(true);
+          input.resume();
+          output.write("\u001b[?2004h");
+        }
+      }
+    },
     select: async (title, choices, selectOptions) => {
       if (!choices.length) return undefined;
       let index = Math.max(
@@ -197,13 +223,7 @@ export const createTerminalPrompter = (
               .slice(start, start + pageSize)
               .entries()) {
               const active = start + offset === index;
-              const label = visibleText(choice.label);
-              const clipped =
-                Array.from(label).length > width
-                  ? `${Array.from(label)
-                      .slice(0, width - 1)
-                      .join("")}…`
-                  : label;
+              const clipped = clipTerminalText(choice.label, width);
               writeFrame(
                 `${active ? style.command(`> ${clipped}`) : `  ${clipped}`}\n`,
               );
@@ -257,8 +277,9 @@ export const createTerminalPrompter = (
             writeFrame(
               `\n> ${inputOptions?.secret ? "*".repeat(shown.length) : visibleText(shown.join(""))}`,
             );
-            const afterCursor =
-              Math.min(shown.length, value.length - start) - (cursor - start);
+            const afterCursor = inputOptions?.secret
+              ? Math.min(shown.length, value.length - start) - (cursor - start)
+              : terminalCellWidth(shown.slice(cursor - start).join(""));
             if (afterCursor > 0) output.write(`\u001b[${afterCursor}D`);
           };
           render();

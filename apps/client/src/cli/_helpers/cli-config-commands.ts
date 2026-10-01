@@ -31,6 +31,7 @@ import {
   saveUserAgentLimitsSettings,
   saveUserApiKey,
   saveUserDesktopSettingsPatch,
+  saveUserAnswerLanguage,
   saveUserGlobalMemoryEnabled,
   saveUserReviewModelSettings,
   saveUserSpeechToTextActiveProvider,
@@ -45,6 +46,7 @@ import {
   AGENT_CLI_PROVIDER_ENV_KEY_BY_PROVIDER,
   AGENT_LIMIT_BOUNDS,
   DEFAULT_USER_DESKTOP_SETTINGS,
+  DEFAULT_ANSWER_LANGUAGE,
   DESKTOP_SETTING_BOUNDS,
   PROVIDER_ENV_KEY_BY_PROVIDER,
   REASONING_EXECUTION_MODES,
@@ -79,22 +81,42 @@ import { CliUsageError } from "./cli-error.js";
 import { writeStdoutLine } from "./cli-io.js";
 import { createUserConfigSummaryLines } from "./cli-output.js";
 import { createCliStyle, formatKeyValueRows } from "./cli-terminal.js";
+import {
+  ADDITIONAL_CONFIG_SETTINGS,
+  loadAdditionalConfigEntries,
+  writeAdditionalConfigSetting,
+} from "./cli-config-additional.js";
+import {
+  DESKTOP_CONFIG_DEFINITIONS,
+  loadDesktopConfigEntries,
+  writeDesktopConfigSetting,
+} from "./cli-desktop-config.js";
+import {
+  CONFIG_DOCUMENT_DEFINITIONS,
+  loadConfigDocumentEntries,
+  saveConfigDocument,
+} from "./cli-config-documents.js";
+import { configSettingLabel } from "./cli-config-labels.js";
 
 export type CliConfigScope = "user" | "workspace";
 
 export interface CliConfigSettingDefinition {
   setting: string;
+  label?: string;
   category: string;
   scope: CliConfigScope;
   description: string;
   acceptedValues: string;
   choices?: readonly string[];
   secret?: boolean;
+  multiline?: boolean;
+  document?: boolean;
 }
 
 export interface CliConfigEntry extends CliConfigSettingDefinition {
   value: string | number | boolean;
   source: string;
+  unavailable?: string;
 }
 
 interface ConfigSetResult {
@@ -234,6 +256,16 @@ const desktopAcceptedValues = (setting: DesktopConfigSetting): string => {
 };
 
 const createConfigSettingDefinitions = (): CliConfigSettingDefinition[] => [
+  ...ADDITIONAL_CONFIG_SETTINGS,
+  ...DESKTOP_CONFIG_DEFINITIONS,
+  ...CONFIG_DOCUMENT_DEFINITIONS,
+  {
+    setting: "answer-language",
+    category: "Agent",
+    scope: "user",
+    description: "Language of the final AI answer.",
+    acceptedValues: "language",
+  },
   {
     setting: "workspace.mode",
     category: "Workspace",
@@ -405,7 +437,11 @@ const createConfigSettingDefinitions = (): CliConfigSettingDefinition[] => [
   ...Object.entries(DESKTOP_CONFIG_SETTINGS).map(
     ([setting, definition]): CliConfigSettingDefinition => ({
       setting: `desktop.${setting}`,
-      category: "Desktop",
+      category: ["aiContextMaxMessages", "chatIdleTimeoutMinutes"].includes(
+        definition.key,
+      )
+        ? "Session defaults"
+        : "Desktop",
       scope: "user",
       description: definition.description,
       acceptedValues: desktopAcceptedValues(definition),
@@ -423,7 +459,11 @@ const createConfigSettingDefinitions = (): CliConfigSettingDefinition[] => [
   ),
 ];
 
-export const CLI_CONFIG_SETTING_DEFINITIONS = createConfigSettingDefinitions();
+export const CLI_CONFIG_SETTING_DEFINITIONS =
+  createConfigSettingDefinitions().map((definition) => ({
+    ...definition,
+    label: definition.label ?? configSettingLabel(definition.setting),
+  }));
 
 const fail = (message: string): never => {
   throw new CliUsageError(message);
@@ -485,12 +525,6 @@ const parseDesktopSettingValue = (
   patch: Partial<UserDesktopSettings>;
   value: string | number | boolean;
 } => {
-  if (setting === "autostart-enabled") {
-    return fail(
-      "desktop.autostart-enabled must be changed in the desktop app because it updates the operating system's sign-in registration.",
-    );
-  }
-
   if (!isDesktopConfigSetting(setting)) {
     return fail(
       `Unsupported desktop setting \`desktop.${setting}\`. Run \`machdoch config list\` to see configurable settings.`,
@@ -541,6 +575,58 @@ export const saveConfigSetting = async (
   const normalizedSetting = setting.trim().toLowerCase();
   const normalizedValue = value.trim();
   const parts = normalizedSetting.split(".");
+  if (
+    CONFIG_DOCUMENT_DEFINITIONS.some(
+      (definition) => definition.setting === normalizedSetting,
+    )
+  )
+    return {
+      setting: normalizedSetting,
+      scope: normalizedSetting.startsWith("workspace.") ? "workspace" : "user",
+      configPath: await saveConfigDocument(
+        workspaceRoot,
+        normalizedSetting,
+        value,
+      ),
+      status: "configured",
+    };
+
+  const additional = ADDITIONAL_CONFIG_SETTINGS.find(
+    (definition) => definition.setting === normalizedSetting,
+  );
+  if (additional)
+    return {
+      setting: normalizedSetting,
+      scope: additional.scope,
+      configPath: await writeAdditionalConfigSetting(
+        workspaceRoot,
+        additional,
+        value,
+      ),
+      status: "configured",
+      ...(!additional.secret ? { value } : {}),
+    };
+  const desktop = DESKTOP_CONFIG_DEFINITIONS.find(
+    (definition) => definition.setting === normalizedSetting,
+  );
+  if (desktop)
+    return {
+      setting: normalizedSetting,
+      scope: "user",
+      configPath: await writeDesktopConfigSetting(desktop, value),
+      status: "configured",
+      ...(!desktop.secret ? { value } : {}),
+    };
+
+  if (normalizedSetting === "answer-language") {
+    return {
+      setting: normalizedSetting,
+      scope: "user",
+      configPath: await saveUserAnswerLanguage(normalizedValue),
+      status: "configured",
+      value: normalizedValue,
+    };
+  }
 
   if (parts.length === 3 && parts[0] === "api" && parts[2] === "key") {
     const provider = parts[1] ?? "";
@@ -930,6 +1016,34 @@ export const clearConfigSetting = async (
 ): Promise<ConfigSetResult> => {
   const normalizedSetting = setting.trim().toLowerCase();
   if (
+    CONFIG_DOCUMENT_DEFINITIONS.some(
+      (definition) => definition.setting === normalizedSetting,
+    )
+  )
+    throw new CliUsageError(
+      "Edit this configuration to remove or reset individual connections.",
+    );
+  const additional = ADDITIONAL_CONFIG_SETTINGS.find(
+    (definition) => definition.setting === normalizedSetting,
+  );
+  if (additional)
+    return {
+      setting: normalizedSetting,
+      scope: additional.scope,
+      configPath: await writeAdditionalConfigSetting(workspaceRoot, additional),
+      status: "reset",
+    };
+  const desktop = DESKTOP_CONFIG_DEFINITIONS.find(
+    (definition) => definition.setting === normalizedSetting,
+  );
+  if (desktop)
+    return {
+      setting: normalizedSetting,
+      scope: "user",
+      configPath: await writeDesktopConfigSetting(desktop),
+      status: "reset",
+    };
+  if (
     !CLI_CONFIG_SETTING_DEFINITIONS.some(
       (definition) => definition.setting === normalizedSetting,
     )
@@ -945,6 +1059,15 @@ export const clearConfigSetting = async (
       configPath: await setFleetConnectionEnabled(false),
       status: "reset",
       value: false,
+    };
+  }
+  if (normalizedSetting === "answer-language") {
+    return {
+      setting: normalizedSetting,
+      scope: "user",
+      configPath: await saveUserAnswerLanguage(""),
+      status: "reset",
+      value: "",
     };
   }
   let scope: CliConfigScope;
@@ -1222,6 +1345,10 @@ const resolveConfigEntry = (
     source = snapshot.fleet.configured ? "saved" : "default";
   } else {
     switch (setting) {
+      case "answer-language":
+        value = snapshot.runtime.answerLanguage ?? DEFAULT_ANSWER_LANGUAGE;
+        source = configSource(snapshot.userConfig.answerLanguage);
+        break;
       case "workspace.mode":
         value = snapshot.runtime.mode;
         source = configSource(
@@ -1366,8 +1493,15 @@ export const loadCliConfigEntries = async (
   workspaceRoot: string,
 ): Promise<CliConfigEntry[]> => {
   const snapshot = await loadConfigSnapshot(workspaceRoot);
-  return CLI_CONFIG_SETTING_DEFINITIONS.map((definition) =>
-    resolveConfigEntry(definition, snapshot),
+  const additional = await loadAdditionalConfigEntries(workspaceRoot);
+  const desktop = await loadDesktopConfigEntries();
+  const documents = await loadConfigDocumentEntries(workspaceRoot);
+  return CLI_CONFIG_SETTING_DEFINITIONS.map(
+    (definition) =>
+      additional.find((entry) => entry.setting === definition.setting) ??
+      desktop.find((entry) => entry.setting === definition.setting) ??
+      documents.find((entry) => entry.setting === definition.setting) ??
+      resolveConfigEntry(definition, snapshot),
   );
 };
 
@@ -1595,7 +1729,13 @@ const printUnsetConfigSummary = async (args: ParsedCliArgs): Promise<void> => {
   }
 
   const style = createCliStyle();
-  writeStdoutLine(style.success("Configuration reset"));
+  writeStdoutLine(
+    style.success(
+      result.setting === "answer-language"
+        ? "Answer language cleared"
+        : "Configuration reset",
+    ),
+  );
   for (const line of formatKeyValueRows([
     ["Setting", result.setting],
     ["Scope", result.scope],
@@ -1603,9 +1743,11 @@ const printUnsetConfigSummary = async (args: ParsedCliArgs): Promise<void> => {
   ])) {
     writeStdoutLine(line);
   }
-  writeStdoutLine(
-    style.muted("The effective default or environment value now applies."),
-  );
+  if (result.setting !== "answer-language") {
+    writeStdoutLine(
+      style.muted("The effective default or environment value now applies."),
+    );
+  }
 };
 
 export const runConfigCommand = async (args: ParsedCliArgs): Promise<void> => {

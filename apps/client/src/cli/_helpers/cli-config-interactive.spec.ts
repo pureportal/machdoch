@@ -32,6 +32,7 @@ describe("runInteractiveConfig", () => {
       select: vi.fn(async () => selections.shift()),
       input: vi.fn(async () => undefined),
       status: vi.fn(),
+      suspend: async (action) => await action(),
       close: vi.fn(),
     };
     const definition = CLI_CONFIG_SETTING_DEFINITIONS.find(
@@ -50,7 +51,7 @@ describe("runInteractiveConfig", () => {
     });
     expect(saveSetting).toHaveBeenCalledTimes(2);
     expect(prompter.status).toHaveBeenCalledWith("Cannot save here.", "error");
-    expect(prompter.status).toHaveBeenCalledWith("workspace.mode updated.");
+    expect(prompter.status).toHaveBeenCalledWith("Mode updated.");
     expect(prompter.close).toHaveBeenCalledWith("Configuration complete.");
   });
 
@@ -67,6 +68,7 @@ describe("runInteractiveConfig", () => {
       select: vi.fn(async () => selections.shift()),
       input: vi.fn(async () => undefined),
       status: (message) => statuses.push(message),
+      suspend: async (action) => await action(),
       close: vi.fn(),
     };
     const definition = CLI_CONFIG_SETTING_DEFINITIONS.find(
@@ -97,7 +99,7 @@ describe("runInteractiveConfig", () => {
       "workspace.mode",
       "ask",
     );
-    expect(statuses).toEqual(["workspace.mode updated."]);
+    expect(statuses).toEqual(["Mode updated."]);
     expect(prompter.close).toHaveBeenCalledWith("Configuration complete.");
   });
 });
