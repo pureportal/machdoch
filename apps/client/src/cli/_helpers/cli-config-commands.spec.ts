@@ -65,11 +65,37 @@ afterEach(async () => {
 });
 
 describe("CLI configuration catalog", () => {
+  it("defaults answer language to English and clears its prompt instruction", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+    const setting = "answer-language";
+    const getLanguage = async () =>
+      (await loadCliConfigEntries(workspaceRoot)).find(
+        (entry) => entry.setting === setting,
+      );
+
+    expect(await getLanguage()).toMatchObject({
+      value: "English",
+      category: "Agent",
+      scope: "user",
+      source: "default",
+    });
+    await saveConfigSetting(workspaceRoot, setting, "German");
+    expect(await getLanguage()).toMatchObject({
+      value: "German",
+      source: "saved",
+    });
+    await clearConfigSetting(workspaceRoot, setting);
+    expect(await getLanguage()).toMatchObject({ value: "", source: "saved" });
+  });
+
   it("lists concrete, unique settings and exposes terminal-suitable UI settings", () => {
     const names = CLI_CONFIG_SETTING_DEFINITIONS.map((entry) => entry.setting);
 
     expect(new Set(names).size).toBe(names.length);
     expect(names).toContain("review-model");
+    expect(names).toContain("answer-language");
+    expect(names).not.toContain("desktop.answer-language");
     expect(names).toContain("workspace.context-window");
     expect(names).toContain("workspace.reasoning-mode");
     expect(names).toContain("workspace.github-customizations");
@@ -84,7 +110,7 @@ describe("CLI configuration catalog", () => {
         "workspace-run.sequential-readiness-timeout-ms",
       ]),
     );
-    expect(names).not.toContain("desktop.autostart-enabled");
+    expect(names).toContain("desktop.autostart-enabled");
   });
 
   it("uses the canonical Fleet connection document for fleet.enabled", async () => {
@@ -313,7 +339,7 @@ describe("CLI configuration catalog", () => {
     ).rejects.toThrow("between 1 and 1000");
     await expect(
       saveConfigSetting(workspaceRoot, "desktop.autostart-enabled", "on"),
-    ).rejects.toThrow("must be changed in the desktop app");
+    ).rejects.toThrow("Open the desktop app");
   });
 
   it("persists and reports the provider context-window setting", async () => {

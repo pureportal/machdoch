@@ -1,6 +1,7 @@
 mod agent_cli;
 mod atomic_file;
 mod child_process;
+mod cli_settings_bridge;
 mod cooperative_file_lock;
 mod desktop_shell;
 mod desktop_task;
@@ -166,6 +167,7 @@ pub fn run() {
             desktop_shell::handle_window_event(window, event);
         })
         .setup(move |app| {
+            cli_settings_bridge::initialize(app.handle()).map_err(std::io::Error::other)?;
             media::fleet::initialize(app.handle());
             settings_transfer::initialize(app.handle()).map_err(std::io::Error::other)?;
             desktop_task::cleanup_stale_task_context_files();
