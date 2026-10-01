@@ -264,6 +264,30 @@ pub async fn enroll_fleet_manager(
 }
 
 #[tauri::command]
+pub async fn reconnect_fleet_manager(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, FleetConnectionState>,
+) -> Result<FleetConnectionStatus, String> {
+    let (config, generation) = {
+        let mut inner = state
+            .inner
+            .lock()
+            .map_err(|_| "Fleet connection state is unavailable.".to_string())?;
+        let config = inner
+            .config
+            .clone()
+            .filter(|config| config.enabled)
+            .ok_or_else(|| "Fleet Manager is not connected.".to_string())?;
+        inner.generation = inner.generation.saturating_add(1);
+        inner.phase = FleetConnectionPhase::Connecting;
+        inner.last_error = None;
+        (config, inner.generation)
+    };
+    spawn_gateway(app_handle, state.inner.clone(), config, generation);
+    status(&state)
+}
+
+#[tauri::command]
 pub async fn reset_fleet_manager_connection(
     state: tauri::State<'_, FleetConnectionState>,
 ) -> Result<FleetConnectionStatus, String> {

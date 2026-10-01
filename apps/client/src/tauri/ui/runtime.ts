@@ -4516,6 +4516,22 @@ export const enrollFleetManager = async (
   return status;
 };
 
+export const reconnectFleetManager =
+  async (): Promise<FleetConnectionStatus> => {
+    if (!canInvokeTauriCommands()) {
+      throw new Error(
+        "Fleet Manager reconnect is only available in the desktop app.",
+      );
+    }
+    const status = normalizeFleetConnectionStatus(
+      await tauriCore.invoke<unknown>("reconnect_fleet_manager"),
+    );
+    if (!status) {
+      throw new Error("The Fleet Manager reconnect payload was invalid.");
+    }
+    return status;
+  };
+
 export const resetFleetManagerConnection =
   async (): Promise<FleetConnectionStatus> => {
     if (!canInvokeTauriCommands()) {
