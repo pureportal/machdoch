@@ -9,6 +9,7 @@ export const requiredDebianDependencies = [
   "libgbm1",
   "libgtk-3-0",
   "libpipewire-0.3-0",
+  "libvulkan1",
   "libwebkit2gtk-4.1-0",
 ];
 
@@ -20,6 +21,7 @@ export const requiredRpmDependencies = [
   "libgbm.so.1()(64bit)",
   "libgtk-3.so.0()(64bit)",
   "libpipewire-0.3.so.0()(64bit)",
+  "libvulkan.so.1()(64bit)",
   "libwebkit2gtk-4.1.so.0()(64bit)",
 ];
 

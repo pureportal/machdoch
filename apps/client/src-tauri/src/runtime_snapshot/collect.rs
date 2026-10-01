@@ -227,7 +227,7 @@ pub(super) fn get_speech_to_text_provider_availability(
 pub(super) fn resolve_speech_to_text_active_provider(configured_provider: Option<&str>) -> String {
     normalize_optional_string(configured_provider)
         .filter(|provider| VALID_SPEECH_TO_TEXT_PROVIDERS.contains(&provider.as_str()))
-        .unwrap_or_else(|| "none".to_string())
+        .unwrap_or_else(|| "whisper".to_string())
 }
 
 pub(super) fn resolve_audio_active_provider(configured_provider: Option<&str>) -> String {
@@ -495,6 +495,23 @@ mod speech_to_text_tests {
         resolve_speech_to_text_active_provider,
     };
     use std::collections::HashMap;
+
+    #[test]
+    fn speech_input_defaults_to_whisper_without_a_provider_selection() {
+        for provider in [None, Some(""), Some("  "), Some("invalid")] {
+            assert_eq!(resolve_speech_to_text_active_provider(provider), "whisper");
+        }
+    }
+
+    #[test]
+    fn speech_input_preserves_explicit_provider_selections() {
+        for provider in ["none", "openai", "google", "whisper"] {
+            assert_eq!(
+                resolve_speech_to_text_active_provider(Some(provider)),
+                provider
+            );
+        }
+    }
 
     #[test]
     fn bundled_whisper_is_available_only_for_speech_input() {

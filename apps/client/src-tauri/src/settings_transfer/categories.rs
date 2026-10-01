@@ -35,7 +35,7 @@ use crate::runtime_contract_generated::{
     MIN_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES, MIN_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
     REASONING_MODES, RUN_MODES, USER_API_PROVIDERS, USER_REVIEW_MODEL_MODES,
     USER_WEB_SEARCH_PROVIDERS, VALID_AUDIO_AI_PROVIDERS, VALID_MODEL_PROVIDERS,
-    VALID_WEB_SEARCH_PROVIDERS,
+    VALID_SPEECH_TO_TEXT_PROVIDERS, VALID_WEB_SEARCH_PROVIDERS,
 };
 use crate::{
     cooperative_file_lock::{acquire_cooperative_file_lock, CooperativeFileLock},
@@ -294,7 +294,7 @@ fn snapshot_agent_provider_preferences() -> Result<CategorySnapshot, String> {
     let value = json!({
         "webSearchActiveProvider": enum_string_or(web_search.get("activeProvider"), &VALID_WEB_SEARCH_PROVIDERS, "none"),
         "voiceActiveProvider": enum_string_or(voice.get("activeProvider"), &VALID_AUDIO_AI_PROVIDERS, "none"),
-        "speechToTextActiveProvider": enum_string_or(speech.get("activeProvider"), &VALID_AUDIO_AI_PROVIDERS, "none"),
+        "speechToTextActiveProvider": enum_string_or(speech.get("activeProvider"), &VALID_SPEECH_TO_TEXT_PROVIDERS, "whisper"),
         "agentLimits": {
             "infinite": bool_or(limits.get("infinite"), DEFAULT_USER_AGENT_LIMITS_INFINITE),
             "executorTurns": u64_clamped(limits.get("executorTurns"), u64::from(DEFAULT_MAX_EXECUTOR_TURNS), 1, u64::from(MAX_CONFIGURED_EXECUTOR_TURNS)),
@@ -1205,14 +1205,14 @@ fn validate_agent_provider_value(value: &Value) -> Result<(), String> {
         .get("webSearchActiveProvider")
         .and_then(Value::as_str)
         .is_some_and(|value| VALID_WEB_SEARCH_PROVIDERS.contains(&value))
-        || ["voiceActiveProvider", "speechToTextActiveProvider"]
-            .into_iter()
-            .any(|key| {
-                !root
-                    .get(key)
-                    .and_then(Value::as_str)
-                    .is_some_and(|value| VALID_AUDIO_AI_PROVIDERS.contains(&value))
-            })
+        || !root
+            .get("voiceActiveProvider")
+            .and_then(Value::as_str)
+            .is_some_and(|value| VALID_AUDIO_AI_PROVIDERS.contains(&value))
+        || !root
+            .get("speechToTextActiveProvider")
+            .and_then(Value::as_str)
+            .is_some_and(|value| VALID_SPEECH_TO_TEXT_PROVIDERS.contains(&value))
     {
         return Err("A provider preference is unsupported.".to_string());
     }
@@ -2256,6 +2256,11 @@ mod tests {
             }
         });
         assert!(validate_agent_provider_value(&provider).is_ok());
+        let mut provider_with_whisper = provider.clone();
+        provider_with_whisper["speechToTextActiveProvider"] = json!("whisper");
+        assert!(validate_agent_provider_value(&provider_with_whisper).is_ok());
+        provider_with_whisper["voiceActiveProvider"] = json!("whisper");
+        assert!(validate_agent_provider_value(&provider_with_whisper).is_err());
         let mut provider_with_invalid_reasoning = provider.clone();
         provider_with_invalid_reasoning["internalTaskModel"]["reasoning"] = json!("unsupported");
         assert!(validate_agent_provider_value(&provider_with_invalid_reasoning).is_err());

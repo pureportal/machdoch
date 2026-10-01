@@ -30,7 +30,7 @@
     "tauri": "node scripts/run-tauri.mjs",
     "tauri:build": "node scripts/run-tauri.mjs build",
     "tauri:dev": "node scripts/run-tauri.mjs dev",
-    "test": "vitest run",
+    "test": "node --test scripts/windows-native-toolchain.test.mjs scripts/windows-vulkan-toolchain.test.mjs && vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "build:fleet-media": "vite build --config vite.fleet-media.config.ts"

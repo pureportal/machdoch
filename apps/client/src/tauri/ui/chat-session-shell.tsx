@@ -944,15 +944,18 @@ export const ChatSession = (): JSX.Element => {
             <div className="absolute inset-0 z-50 overflow-hidden bg-slate-950/96 backdrop-blur-xl">
               <VoiceInputOverlay
                 title="Voice input"
+                starting={controller.voiceInputOverlay.starting}
                 recording={controller.voiceInputOverlay.recording}
                 transcribing={controller.voiceInputOverlay.transcribing}
                 level={controller.voiceInputOverlay.level}
                 statusText={controller.voiceInputOverlay.statusText}
                 statusTone={controller.voiceInputOverlay.statusTone}
                 primaryActionDisabled={
+                  controller.voiceInputOverlay.starting ||
                   controller.voiceInputOverlay.transcribing
                 }
                 onPrimaryAction={controller.voiceInputOverlay.onAction}
+                onCancel={controller.voiceInputOverlay.onCancel}
                 className="rounded-xl border border-slate-800/70 bg-slate-950/96"
                 headerClassName="px-8"
               />

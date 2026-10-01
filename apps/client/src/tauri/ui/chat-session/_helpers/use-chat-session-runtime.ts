@@ -385,7 +385,7 @@ export const useChatSessionRuntime = (
     useState<SettingsStatusMessage | null>(null);
   const [userSpeechToTextSettings, setUserSpeechToTextSettings] =
     useState<UserSpeechToTextSettings>({
-      activeProvider: "none",
+      activeProvider: "whisper",
       inputDeviceId: null,
       keyTerms: [],
       speechContext: "",

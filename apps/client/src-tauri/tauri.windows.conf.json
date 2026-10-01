@@ -1,0 +1,8 @@
+{
+  "bundle": {
+    "resources": {
+      "target/vulkan-runtime/vulkan-1.dll": "vulkan-1.dll",
+      "resources/whisper/LICENSE-vulkan-loader.txt": "whisper/LICENSE-vulkan-loader.txt"
+    }
+  }
+}

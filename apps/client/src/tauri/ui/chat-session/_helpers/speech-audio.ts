@@ -1,4 +1,5 @@
 import { getProviderLabel } from "../../model-catalog";
+import { awaitSpeechOperation } from "../../speech-operation";
 import type {
   UserSpeechToTextProvider,
   UserSpeechToTextSettings,
@@ -256,6 +257,7 @@ const mixDownToMono = (audioBuffer: AudioBuffer): Float32Array => {
 const convertBlobToWav = async (
   blob: Blob,
   targetSampleRate?: number,
+  signal?: AbortSignal,
 ): Promise<Blob> => {
   if (typeof AudioContext === "undefined") {
     throw new Error(
@@ -264,10 +266,20 @@ const convertBlobToWav = async (
   }
 
   const audioContext = new AudioContext();
+  const close = (): void => {
+    void audioContext.close().catch(() => undefined);
+  };
+  signal?.addEventListener("abort", close, { once: true });
 
   try {
+    signal?.throwIfAborted();
     const audioData = await blob.arrayBuffer();
-    const decodedAudio = await audioContext.decodeAudioData(audioData.slice(0));
+    signal?.throwIfAborted();
+    const decodedAudio = await awaitSpeechOperation(
+      audioContext.decodeAudioData(audioData),
+      signal,
+    );
+    assertDecodedSpeechDetected(decodedAudio);
     let wavAudio = decodedAudio;
     if (targetSampleRate && decodedAudio.sampleRate !== targetSampleRate) {
       if (typeof OfflineAudioContext === "undefined") {
@@ -282,43 +294,69 @@ const convertBlobToWav = async (
       source.buffer = decodedAudio;
       source.connect(offlineContext.destination);
       source.start();
-      wavAudio = await offlineContext.startRendering();
+      wavAudio = await awaitSpeechOperation(
+        offlineContext.startRendering(),
+        signal,
+      );
     }
+    signal?.throwIfAborted();
     const monoSamples = mixDownToMono(wavAudio);
     const wavBuffer = encodeWav(monoSamples, wavAudio.sampleRate);
 
     return new Blob([wavBuffer], { type: "audio/wav" });
   } finally {
-    void audioContext.close().catch(() => undefined);
+    signal?.removeEventListener("abort", close);
+    close();
   }
 };
 
 export const prepareAudioBlob = async (
   blob: Blob,
   provider: UserSpeechToTextProvider,
+  signal?: AbortSignal,
 ): Promise<Blob> => {
+  if (blob.size < MIN_RECORDED_AUDIO_BYTES) {
+    throw new Error(NO_SPEECH_DETECTED_MESSAGE);
+  }
   if (provider === "whisper") {
-    return convertBlobToWav(blob, 16_000);
+    return convertBlobToWav(blob, 16_000, signal);
   }
-  if (provider !== "google") {
-    return blob;
-  }
-
   const mimeType = normalizeAudioMimeType(blob.type);
-
-  if (GOOGLE_SUPPORTED_MIME_TYPES.has(mimeType)) {
-    return blob;
+  if (provider === "google" && !GOOGLE_SUPPORTED_MIME_TYPES.has(mimeType)) {
+    return convertBlobToWav(blob, undefined, signal);
   }
-
-  return convertBlobToWav(blob);
+  await assertRecordedSpeechDetected(blob, signal);
+  return blob;
 };
 
-const isNoSpeechDetectedError = (error: unknown): boolean => {
-  return error instanceof Error && error.message === NO_SPEECH_DETECTED_MESSAGE;
+const assertDecodedSpeechDetected = (decodedAudio: AudioBuffer): void => {
+  if (decodedAudio.duration < MIN_RECORDED_AUDIO_DURATION_SECONDS) {
+    throw new Error(NO_SPEECH_DETECTED_MESSAGE);
+  }
+  let peak = 0;
+  let sampleCount = 0;
+  let sumSquares = 0;
+  for (
+    let channelIndex = 0;
+    channelIndex < decodedAudio.numberOfChannels;
+    channelIndex += 1
+  ) {
+    const channelData = decodedAudio.getChannelData(channelIndex);
+    for (const sample of channelData) {
+      peak = Math.max(peak, Math.abs(sample));
+      sumSquares += sample * sample;
+      sampleCount += 1;
+    }
+  }
+  const rms = sampleCount > 0 ? Math.sqrt(sumSquares / sampleCount) : 0;
+  if (rms < MIN_RECORDED_SPEECH_RMS && peak < MIN_RECORDED_SPEECH_PEAK) {
+    throw new Error(NO_SPEECH_DETECTED_MESSAGE);
+  }
 };
 
 export const assertRecordedSpeechDetected = async (
   blob: Blob,
+  signal?: AbortSignal,
 ): Promise<void> => {
   if (blob.size < MIN_RECORDED_AUDIO_BYTES) {
     throw new Error(NO_SPEECH_DETECTED_MESSAGE);
@@ -329,52 +367,43 @@ export const assertRecordedSpeechDetected = async (
   }
 
   const audioContext = new AudioContext();
+  const close = (): void => {
+    void audioContext.close().catch(() => undefined);
+  };
+  signal?.addEventListener("abort", close, { once: true });
 
   try {
+    signal?.throwIfAborted();
     const audioData = await blob.arrayBuffer();
-    const decodedAudio = await audioContext.decodeAudioData(audioData.slice(0));
-
-    if (decodedAudio.duration < MIN_RECORDED_AUDIO_DURATION_SECONDS) {
-      throw new Error(NO_SPEECH_DETECTED_MESSAGE);
-    }
-
-    let peak = 0;
-    let sampleCount = 0;
-    let sumSquares = 0;
-
-    for (
-      let channelIndex = 0;
-      channelIndex < decodedAudio.numberOfChannels;
-      channelIndex += 1
-    ) {
-      const channelData = decodedAudio.getChannelData(channelIndex);
-
-      for (const sample of channelData) {
-        const absoluteSample = Math.abs(sample);
-
-        peak = Math.max(peak, absoluteSample);
-        sumSquares += sample * sample;
-        sampleCount += 1;
-      }
-    }
-
-    const rms = sampleCount > 0 ? Math.sqrt(sumSquares / sampleCount) : 0;
-
-    if (rms < MIN_RECORDED_SPEECH_RMS && peak < MIN_RECORDED_SPEECH_PEAK) {
-      throw new Error(NO_SPEECH_DETECTED_MESSAGE);
-    }
-  } catch (error) {
-    if (isNoSpeechDetectedError(error)) {
-      throw error;
-    }
+    signal?.throwIfAborted();
+    const decodedAudio = await awaitSpeechOperation(
+      audioContext.decodeAudioData(audioData),
+      signal,
+    );
+    assertDecodedSpeechDetected(decodedAudio);
   } finally {
-    void audioContext.close().catch(() => undefined);
+    signal?.removeEventListener("abort", close);
+    close();
   }
 };
 
-export const convertBlobToBase64 = async (blob: Blob): Promise<string> => {
+export const convertBlobToBase64 = async (
+  blob: Blob,
+  signal?: AbortSignal,
+): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
+    const abort = (): void => {
+      reader.abort();
+      reject(signal?.reason);
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    reader.onloadend = () => signal?.removeEventListener("abort", abort);
+    if (signal?.aborted) {
+      signal.removeEventListener("abort", abort);
+      reject(signal.reason);
+      return;
+    }
 
     reader.onerror = () => {
       reject(reader.error ?? new Error("Failed to read the recorded audio."));

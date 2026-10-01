@@ -1,5 +1,5 @@
 import { AudioWaveform, LoaderCircle, Mic, Square } from "lucide-react";
-import type { JSX, ReactNode } from "react";
+import { useEffect, type JSX, type ReactNode } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
@@ -9,6 +9,7 @@ export type VoiceInputOverlayStatusTone = "success" | "error" | "info" | null;
 export interface VoiceInputOverlayProps {
   title: string;
   recording: boolean;
+  starting?: boolean;
   transcribing: boolean;
   level: number;
   statusText: string | null;
@@ -18,6 +19,7 @@ export interface VoiceInputOverlayProps {
   showIdleStartAction?: boolean;
   primaryActionDisabled?: boolean;
   onPrimaryAction: () => void;
+  onCancel?: () => void;
   headerActions?: ReactNode;
   className?: string;
   headerClassName?: string;
@@ -49,6 +51,7 @@ const inferStatusTone = (
 export const VoiceInputOverlay = ({
   title,
   recording,
+  starting = false,
   transcribing,
   level,
   statusText,
@@ -58,16 +61,42 @@ export const VoiceInputOverlay = ({
   showIdleStartAction = false,
   primaryActionDisabled = false,
   onPrimaryAction,
+  onCancel,
   headerActions,
   className,
   headerClassName,
   bodyClassName,
 }: VoiceInputOverlayProps): JSX.Element => {
+  useEffect(() => {
+    if (!onCancel) {
+      return;
+    }
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        onCancel();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [onCancel]);
   const compactStatus =
     statusText ??
     (transcribing ? "Transcribing..." : recording ? "Listening..." : null);
   const compactStatusTone = statusTone ?? inferStatusTone(statusText);
   const primaryActionLabel = recording ? "Stop recording" : "Start recording";
+  const phase = starting
+    ? "Starting microphone"
+    : recording
+      ? "Listening"
+      : transcribing
+        ? statusText === "Processing speech..."
+          ? "Processing speech"
+          : "Transcribing"
+        : "Ready";
+  const showStatus =
+    compactStatus && compactStatus.replace(/\.\.\.$/u, "") !== phase;
 
   return (
     <div
@@ -129,7 +158,7 @@ export const VoiceInputOverlay = ({
               }}
             />
             <span className="relative z-10 flex h-16 w-16 items-center justify-center rounded-full bg-slate-950/90">
-              {transcribing ? (
+              {transcribing || starting ? (
                 <LoaderCircle className="h-6 w-6 animate-spin" />
               ) : recording ? (
                 <Square className="h-5 w-5 fill-current" />
@@ -141,11 +170,11 @@ export const VoiceInputOverlay = ({
         </ControlTooltip>
 
         <div className="grid gap-2">
-          <p className="text-base font-semibold text-white">
-            {transcribing ? "Transcribing" : recording ? "Listening" : "Ready"}
+          <p aria-live="polite" className="text-base font-semibold text-white">
+            {phase}
           </p>
 
-          {compactStatus ? (
+          {showStatus ? (
             <p
               aria-live="polite"
               className={cn(
@@ -180,6 +209,11 @@ export const VoiceInputOverlay = ({
           >
             <Mic className="h-4 w-4" />
             Start
+          </Button>
+        ) : null}
+        {onCancel ? (
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+            Cancel
           </Button>
         ) : null}
       </div>

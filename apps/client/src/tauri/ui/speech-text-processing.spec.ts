@@ -3,6 +3,9 @@ import { runInternalDesktopTask } from "./internal-task-model";
 import { processUserSpeechText } from "./speech-text-processing";
 import type { UserSpeechToTextProvider } from "./runtime";
 
+const cancelTask = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock("./runtime", () => ({ cancelDesktopTask: cancelTask }));
+
 vi.mock("./internal-task-model", () => ({
   runInternalDesktopTask: vi.fn(),
 }));
@@ -41,7 +44,8 @@ describe("speech text processing", () => {
         expect.stringContaining(
           "Organize distinct requested changes as a Markdown list",
         ),
-        { mode: "ask" },
+        { mode: "ask", taskId: expect.any(String) },
+        expect.any(AbortSignal),
       );
     },
   );
@@ -59,7 +63,8 @@ describe("speech text processing", () => {
       expect.stringContaining(
         "Translate non-English speech into natural English",
       ),
-      { mode: "ask" },
+      { mode: "ask", taskId: expect.any(String) },
+      expect.any(AbortSignal),
     );
   });
 
@@ -89,5 +94,56 @@ describe("speech text processing", () => {
         autoFormat: true,
       }),
     ).rejects.toThrow("Text processing did not return an edited transcript.");
+  });
+
+  it("cancels pending text processing and its desktop task", async () => {
+    runTask.mockImplementationOnce(() => new Promise(() => {}));
+    const controller = new AbortController();
+    const processing = processUserSpeechText({
+      provider: "whisper",
+      text: "open file",
+      autoTranslateToEnglish: false,
+      autoFormat: true,
+      signal: controller.signal,
+    });
+    const rejection = expect(processing).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    controller.abort();
+    await rejection;
+    expect(cancelTask).toHaveBeenCalledWith(runTask.mock.calls[0]?.[2]?.taskId);
+  });
+
+  it("does not start processing after cancellation", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      processUserSpeechText({
+        provider: "whisper",
+        text: "open file",
+        autoTranslateToEnglish: false,
+        autoFormat: true,
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(runTask).not.toHaveBeenCalled();
+  });
+
+  it("reports a stalled processing task instead of waiting forever", async () => {
+    vi.useFakeTimers();
+    try {
+      runTask.mockImplementationOnce(() => new Promise(() => {}));
+      const processing = processUserSpeechText({
+        provider: "whisper",
+        text: "open file",
+        autoTranslateToEnglish: false,
+        autoFormat: true,
+      });
+      const rejection = expect(processing).rejects.toThrow("timed out");
+      await vi.advanceTimersByTimeAsync(120_000);
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

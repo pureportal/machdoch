@@ -1,10 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { awaitSpeechOperation } from "../../speech-operation";
 import {
   transcribeUserSpeechAudio,
   type UserSpeechToTextProvider,
 } from "../../runtime";
 import {
-  assertRecordedSpeechDetected,
   convertBlobToBase64,
   normalizeAudioMimeType,
   prepareAudioBlob,
@@ -17,40 +17,83 @@ export interface SpeechTranscriptionOptions {
   keyTerms: string[];
   speechContext: string;
   autoTranslateToEnglish: boolean;
+  signal?: AbortSignal;
 }
 
 export interface SpeechTranscriptionController {
   transcribing: boolean;
   transcribeRecording: (options: SpeechTranscriptionOptions) => Promise<string>;
+  cancelTranscription: () => void;
 }
 
 export const useSpeechTranscription = (): SpeechTranscriptionController => {
   const [transcribing, setTranscribing] = useState(false);
-  const activeTranscriptionCountRef = useRef(0);
+  const activeTranscriptionRef = useRef<AbortController | null>(null);
+
+  const cancelTranscription = useCallback((): void => {
+    activeTranscriptionRef.current?.abort();
+    activeTranscriptionRef.current = null;
+    setTranscribing(false);
+  }, []);
+
+  useEffect(() => cancelTranscription, [cancelTranscription]);
 
   const transcribeRecording = useCallback(
     async (options: SpeechTranscriptionOptions): Promise<string> => {
-      activeTranscriptionCountRef.current += 1;
+      cancelTranscription();
+      const controller = new AbortController();
+      activeTranscriptionRef.current = controller;
+      const cancel = (): void => controller.abort(options.signal?.reason);
+      options.signal?.addEventListener("abort", cancel, { once: true });
+      if (options.signal?.aborted) {
+        cancel();
+      }
+      const { signal } = controller;
+      const preparationTimeout = window.setTimeout(() => {
+        controller.abort(
+          new Error("Audio preparation timed out. Try recording again."),
+        );
+      }, 30_000);
+      let transcriptionTimeout: number | undefined;
       setTranscribing(true);
 
       try {
-        await assertRecordedSpeechDetected(options.blob);
-
-        const preparedBlob = await prepareAudioBlob(
-          options.blob,
-          options.provider,
+        signal.throwIfAborted();
+        const preparedBlob = await awaitSpeechOperation(
+          prepareAudioBlob(options.blob, options.provider, signal),
+          signal,
         );
-        const transcription = await transcribeUserSpeechAudio({
-          provider: options.provider,
-          audioBase64: await convertBlobToBase64(preparedBlob),
-          mimeType: normalizeAudioMimeType(preparedBlob.type) || "audio/wav",
-          keyTerms: options.keyTerms,
-          speechContext: options.speechContext,
-          autoTranslateToEnglish: options.autoTranslateToEnglish,
-          ...(options.languageCode
-            ? { languageCode: options.languageCode }
-            : {}),
-        });
+        const audioBase64 = await awaitSpeechOperation(
+          convertBlobToBase64(preparedBlob, signal),
+          signal,
+        );
+        signal.throwIfAborted();
+        window.clearTimeout(preparationTimeout);
+        const transcriptionTimeoutMs =
+          options.provider === "whisper"
+            ? Math.min(900, 30 + preparedBlob.size / 16_000) * 1000 + 5_000
+            : 60_000;
+        transcriptionTimeout = window.setTimeout(() => {
+          controller.abort(
+            new Error("Speech transcription timed out. Try recording again."),
+          );
+        }, transcriptionTimeoutMs);
+        const transcription = await awaitSpeechOperation(
+          transcribeUserSpeechAudio({
+            provider: options.provider,
+            audioBase64,
+            mimeType: normalizeAudioMimeType(preparedBlob.type) || "audio/wav",
+            keyTerms: options.keyTerms,
+            speechContext: options.speechContext,
+            autoTranslateToEnglish: options.autoTranslateToEnglish,
+            signal,
+            ...(options.languageCode
+              ? { languageCode: options.languageCode }
+              : {}),
+          }),
+          signal,
+        );
+        signal.throwIfAborted();
         const transcriptText = transcription.text.trim();
 
         if (!transcriptText) {
@@ -59,23 +102,24 @@ export const useSpeechTranscription = (): SpeechTranscriptionController => {
 
         return transcriptText;
       } finally {
-        activeTranscriptionCountRef.current = Math.max(
-          0,
-          activeTranscriptionCountRef.current - 1,
-        );
-        if (activeTranscriptionCountRef.current === 0) {
+        window.clearTimeout(preparationTimeout);
+        window.clearTimeout(transcriptionTimeout);
+        options.signal?.removeEventListener("abort", cancel);
+        if (activeTranscriptionRef.current === controller) {
+          activeTranscriptionRef.current = null;
           setTranscribing(false);
         }
       }
     },
-    [],
+    [cancelTranscription],
   );
 
   return useMemo(
     () => ({
       transcribing,
       transcribeRecording,
+      cancelTranscription,
     }),
-    [transcribeRecording, transcribing],
+    [cancelTranscription, transcribeRecording, transcribing],
   );
 };

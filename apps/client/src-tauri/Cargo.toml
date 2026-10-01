@@ -77,6 +77,12 @@ portable-pty = "0.9.0"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+[target.'cfg(any(target_os = "windows", target_os = "linux"))'.dependencies]
+whisper-rs = { version = "=0.16.0", default-features = false, features = ["vulkan"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { version = "=0.16.0", default-features = false, features = ["metal"] }
+
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2"
 
@@ -114,3 +120,7 @@ opt-level = 3
 
 [profile.dev.package.sha2]
 opt-level = 3
+
+[profile.dev.package.whisper-rs-sys]
+opt-level = 3
+debug-assertions = false

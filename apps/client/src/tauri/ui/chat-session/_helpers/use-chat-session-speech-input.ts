@@ -31,12 +31,14 @@ export interface ChatSessionSpeechInputController {
   selectedProvider: SpeechToTextProvider;
   configuredProvider: UserSpeechToTextProvider | null;
   recording: boolean;
+  starting: boolean;
   transcribing: boolean;
   level: number;
   statusText: string | null;
   statusTone: SpeechInputStatusTone | null;
   availabilityDescription: string;
   toggleRecording: () => void;
+  cancelSpeechInput: () => void;
   dismissStatus: () => void;
 }
 
@@ -53,6 +55,8 @@ export const useChatSessionSpeechInput = (
     null,
   );
   const [finalizing, setFinalizing] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const operationAbortRef = useRef<AbortController | null>(null);
   const recordingSessionIdRef = useRef<string>(options.activeSessionId);
   const recordingProviderRef = useRef<UserSpeechToTextProvider | null>(null);
   const operationSequenceRef = useRef(0);
@@ -63,6 +67,24 @@ export const useChatSessionSpeechInput = (
     setStatusText(null);
     setStatusTone(null);
   }, []);
+
+  const cancelSpeechInput = useCallback((): void => {
+    operationSequenceRef.current += 1;
+    operationAbortRef.current?.abort();
+    operationAbortRef.current = null;
+    startInFlightRef.current = null;
+    finalizingRef.current = false;
+    recordingProviderRef.current = null;
+    recorder.cancelRecording();
+    transcription.cancelTranscription();
+    setStarting(false);
+    setFinalizing(false);
+    dismissStatus();
+  }, [
+    dismissStatus,
+    recorder.cancelRecording,
+    transcription.cancelTranscription,
+  ]);
 
   useEffect(() => {
     if (!statusText || statusTone !== "success") {
@@ -94,6 +116,7 @@ export const useChatSessionSpeechInput = (
     operationSequenceRef.current = operationSequence;
     finalizingRef.current = true;
     const recordingSessionId = recordingSessionIdRef.current;
+    const signal = operationAbortRef.current?.signal;
     setFinalizing(true);
     setStatusTone("info");
     setStatusText("Transcribing...");
@@ -111,6 +134,7 @@ export const useChatSessionSpeechInput = (
         keyTerms: options.settings.keyTerms,
         speechContext: options.settings.speechContext,
         autoTranslateToEnglish: options.settings.autoTranslateToEnglish,
+        signal,
       });
 
       if (operationSequenceRef.current !== operationSequence) {
@@ -130,6 +154,7 @@ export const useChatSessionSpeechInput = (
             text: transcriptText,
             autoTranslateToEnglish: options.settings.autoTranslateToEnglish,
             autoFormat: options.settings.autoFormat,
+            signal,
           });
         } catch (error) {
           processingError =
@@ -191,6 +216,10 @@ export const useChatSessionSpeechInput = (
     const operationSequence = operationSequenceRef.current + 1;
     operationSequenceRef.current = operationSequence;
     startInFlightRef.current = operationSequence;
+    operationAbortRef.current = new AbortController();
+    setStarting(true);
+    setStatusTone("info");
+    setStatusText("Starting microphone...");
     const recordingSessionId = options.activeSessionId;
 
     try {
@@ -217,6 +246,7 @@ export const useChatSessionSpeechInput = (
     } finally {
       if (startInFlightRef.current === operationSequence) {
         startInFlightRef.current = null;
+        setStarting(false);
       }
     }
   }, [
@@ -250,14 +280,8 @@ export const useChatSessionSpeechInput = (
   ]);
 
   useEffect(() => {
-    return () => {
-      operationSequenceRef.current += 1;
-      startInFlightRef.current = null;
-      finalizingRef.current = false;
-      recordingProviderRef.current = null;
-      recorder.cancelRecording();
-    };
-  }, [recorder.cancelRecording]);
+    return cancelSpeechInput;
+  }, [cancelSpeechInput]);
 
   return {
     browserSupported: recorder.browserSupported,
@@ -265,12 +289,14 @@ export const useChatSessionSpeechInput = (
     selectedProvider: options.settings.activeProvider,
     configuredProvider,
     recording: recorder.recording,
+    starting,
     transcribing: finalizing || transcription.transcribing,
     level: recorder.level,
     statusText,
     statusTone,
     availabilityDescription,
     toggleRecording,
+    cancelSpeechInput,
     dismissStatus,
   };
 };

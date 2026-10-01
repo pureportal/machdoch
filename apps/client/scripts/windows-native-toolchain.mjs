@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { delimiter, join } from "node:path";
 
-const findVisualStudio = (environment) => {
+const findVisualStudio = (environment, workingDirectory) => {
   const vswhere = join(
     environment["ProgramFiles(x86)"] ?? "C:/Program Files (x86)",
     "Microsoft Visual Studio",
@@ -12,7 +12,13 @@ const findVisualStudio = (environment) => {
   const result = spawnSync(
     vswhere,
     ["-all", "-products", "*", "-format", "json"],
-    { env: environment, encoding: "utf8", windowsHide: true, timeout: 10_000 },
+    {
+      env: environment,
+      cwd: workingDirectory,
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 10_000,
+    },
   );
   if (result.error || result.status !== 0) {
     throw new Error(
@@ -91,7 +97,9 @@ export const prepareWindowsNativeToolchain = (environment) => {
       "libclang was not found. Install LLVM and set LIBCLANG_PATH to its bin directory.",
     );
   }
-  const installationPath = findVisualStudio(environment);
+  const workingDirectory = realpathSync.native(process.cwd());
+  const installationPath = findVisualStudio(environment, workingDirectory);
+  const environmentMarker = "__MACHDOCH_NATIVE_ENVIRONMENT__";
   const setup = spawnSync(
     environment.ComSpec ??
       join(environment.SystemRoot ?? "C:/Windows", "System32", "cmd.exe"),
@@ -101,22 +109,49 @@ export const prepareWindowsNativeToolchain = (environment) => {
       "/c",
       '""' +
         join(installationPath, "VC", "Auxiliary", "Build", "vcvarsall.bat") +
-        '" x64 >nul && set"',
+        `" x64 && echo ${environmentMarker} && set"`,
     ],
     {
-      env: environment,
+      env: { ...environment, VSCMD_SKIP_SENDTELEMETRY: "1" },
+      cwd: installationPath,
       encoding: "utf8",
       windowsHide: true,
       windowsVerbatimArguments: true,
-      timeout: 30_000,
+      timeout: 120_000,
     },
   );
+  const setupLines = (setup.stdout ?? "").split(/\r?\n/u);
+  const environmentStart = setupLines.findIndex(
+    (line) => line.trim() === environmentMarker,
+  );
   if (setup.error || setup.status !== 0) {
+    const diagnosticLines =
+      environmentStart < 0 ? setupLines : setupLines.slice(0, environmentStart);
+    const details = [
+      setup.error?.code === "ETIMEDOUT"
+        ? "Compiler environment setup timed out after 120 seconds."
+        : setup.error?.message,
+      setup.stderr?.trim(),
+      diagnosticLines.join("\n").trim(),
+    ]
+      .filter(Boolean)
+      .join("\n");
     throw new Error(
-      "Visual Studio C++ Build Tools could not initialize the x64 compiler environment.",
+      [
+        "Visual Studio C++ Build Tools could not initialize the x64 compiler environment.",
+        details,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      { cause: setup.error },
     );
   }
-  for (const line of setup.stdout.split(/\r?\n/u)) {
+  if (environmentStart < 0) {
+    throw new Error(
+      "Visual Studio C++ Build Tools did not return the x64 compiler environment.",
+    );
+  }
+  for (const line of setupLines.slice(environmentStart + 1)) {
     const separator = line.indexOf("=");
     if (separator <= 0) {
       continue;
@@ -157,12 +192,14 @@ export const prepareWindowsNativeToolchain = (environment) => {
   for (const tool of ["cmake", "ninja"]) {
     const result = spawnSync(tool, ["--version"], {
       env: environment,
+      cwd: workingDirectory,
       windowsHide: true,
       timeout: 10_000,
     });
     if (result.error || result.status !== 0) {
       throw new Error(
-        "CMake is required together with Ninja to build the Windows desktop app.",
+        `${tool} could not run. Install "C++ CMake tools for Windows" in Visual Studio Installer or add ${tool} to PATH.`,
+        { cause: result.error },
       );
     }
   }

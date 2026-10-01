@@ -324,6 +324,7 @@ test("pins installer metadata, dependencies, and installation paths", async () =
   assert.deepEqual(configuration.bundle.linux.deb.depends, [
     "libgbm1",
     "libpipewire-0.3-0",
+    "libvulkan1",
   ]);
   assert.deepEqual(configuration.bundle.linux.deb.recommends, [
     "python3-nautilus",
@@ -334,6 +335,7 @@ test("pins installer metadata, dependencies, and installation paths", async () =
     "libgbm.so.1()(64bit)",
     "libgtk-3.so.0()(64bit)",
     "libpipewire-0.3.so.0()(64bit)",
+    "libvulkan.so.1()(64bit)",
     "libwebkit2gtk-4.1.so.0()(64bit)",
   ]);
   assert.deepEqual(configuration.bundle.linux.rpm.compression, {

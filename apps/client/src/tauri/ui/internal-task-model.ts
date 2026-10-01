@@ -194,8 +194,11 @@ export const runInternalDesktopTask = async (
   workspaceRoot: string | null | undefined,
   task: string,
   context: InternalDesktopTaskContext = {},
+  signal?: AbortSignal,
 ) => {
+  signal?.throwIfAborted();
   const selection = await requireInternalTaskModelSelection();
+  signal?.throwIfAborted();
 
   return runDesktopTask(workspaceRoot, task, {
     ...context,

@@ -2673,7 +2673,7 @@ const createSpeechToTextAvailabilitySnapshot = (
 
 const createDefaultUserSpeechToTextSettings = (): UserSpeechToTextSettings => {
   return {
-    activeProvider: "none",
+    activeProvider: "whisper",
     inputDeviceId: null,
     keyTerms: [],
     speechContext: "",
@@ -4290,6 +4290,7 @@ export const transcribeUserSpeechAudio = async (options: {
   keyTerms: string[];
   speechContext: string;
   autoTranslateToEnglish: boolean;
+  signal?: AbortSignal;
 }): Promise<TranscribedSpeechText> => {
   const normalizedAudioBase64 = options.audioBase64.trim();
   const normalizedMimeType = options.mimeType.trim();
@@ -4308,10 +4309,24 @@ export const transcribeUserSpeechAudio = async (options: {
     );
   }
 
+  const requestId = crypto.randomUUID();
+  const signal = options.signal;
+  signal?.throwIfAborted();
+  await tauriCore.invoke("begin_user_speech_transcription", { requestId });
+  const cancel = (): void => {
+    void tauriCore
+      .invoke("cancel_user_speech_transcription", { requestId })
+      .catch((error: unknown) => {
+        console.error("Could not cancel speech transcription", error);
+      });
+  };
+  signal?.addEventListener("abort", cancel, { once: true });
   try {
+    signal?.throwIfAborted();
     return await tauriCore.invoke<TranscribedSpeechText>(
       "transcribe_user_speech_audio",
       {
+        requestId,
         provider: options.provider,
         audioBase64: normalizedAudioBase64,
         mimeType: normalizedMimeType,
@@ -4325,6 +4340,9 @@ export const transcribeUserSpeechAudio = async (options: {
     );
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
+  } finally {
+    signal?.removeEventListener("abort", cancel);
+    cancel();
   }
 };
 
