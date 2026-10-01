@@ -32,6 +32,12 @@ import {
 } from "./cli-task-run.js";
 import { writeStdoutLine } from "./cli-io.js";
 import { createCliStyle } from "./cli-terminal.js";
+import { CHAT_SHORTCUTS } from "./cli-interactive-commands.js";
+import { loadPromptHistory, savePromptHistory } from "./cli-prompt-history.js";
+import { editPrompt } from "./cli-editor.js";
+import { loadUserConfigFile } from "../../core/env.js";
+import { DEFAULT_USER_DESKTOP_SETTINGS } from "../../core/runtime-contract.generated.js";
+import { showWorkspaceDiff } from "./cli-chat-diff.js";
 
 const MANAGEMENT_COMMANDS = new Set([
   "config",
@@ -42,6 +48,7 @@ const MANAGEMENT_COMMANDS = new Set([
   "fleet",
   "inspect",
   "tools",
+  "provider-sync",
 ]);
 
 export const runInteractiveChat = async (
@@ -71,7 +78,8 @@ export const runInteractiveChat = async (
     config,
     session: createChatSession(initialArgs.workspaceRoot, context),
   };
-  const input = options.input ?? createChatInput();
+  const input =
+    options.input ?? createChatInput({ history: await loadPromptHistory() });
   let unsaved = false;
 
   const persist = async (): Promise<void> => {
@@ -104,8 +112,11 @@ export const runInteractiveChat = async (
       args: { ...taskArgs, mode: taskArgs.mode ?? state.config.mode },
     };
     const previousExitCode = process.exitCode;
+    const { config: preferences } = await loadUserConfigFile();
+    const contextCap =
+      preferences.desktop?.aiContextMaxMessages ??
+      DEFAULT_USER_DESKTOP_SETTINGS.aiContextMaxMessages;
     input.setBusy(true);
-    write(style.muted("Working… Ctrl+C cancels."));
     try {
       const { execution } = await executeTask(
         { ...taskArgs, command: "run", task },
@@ -114,7 +125,7 @@ export const runInteractiveChat = async (
             ...state.session.context,
             parallelAgentMode: state.session.parallelAgentMode,
             goalMode: state.session.context.goalMode ?? "machdoch",
-            history: state.session.context.history.slice(-60),
+            history: state.session.context.history.slice(-contextCap),
           },
           showActionFeedback: true,
         },
@@ -179,6 +190,33 @@ export const runInteractiveChat = async (
           : chatCommand && !MANAGEMENT_COMMANDS.has(topic)
             ? `/${chatCommand[0]} ${chatCommand[1]}\n${chatCommand[2]}`
             : getHelpText(topic),
+      );
+      return true;
+    }
+    if (name === "shortcuts" || name === "clear" || name === "editor") {
+      if (values.length) throw new CliUsageError(`Usage: /${name}`);
+      if (name === "shortcuts") write(CHAT_SHORTCUTS);
+      else if (name === "clear") process.stdout.write("\u001b[2J\u001b[H");
+      else input.setDraft(await input.suspend(() => editPrompt()));
+      return true;
+    }
+    if (name === "verbose") {
+      if (
+        values.length > 1 ||
+        (values[0] && !["on", "off"].includes(values[0]))
+      )
+        throw new CliUsageError("Usage: /verbose [on|off]");
+      state.args.verbose = values[0] ? values[0] === "on" : !state.args.verbose;
+      write(`Detailed activity ${state.args.verbose ? "on" : "off"}.`);
+      return true;
+    }
+    if (name === "diff") {
+      if (values.length > 1 || (values[0] && values[0] !== "staged"))
+        throw new CliUsageError("Usage: /diff [staged]");
+      await showWorkspaceDiff(
+        state.args.workspaceRoot,
+        values[0] === "staged",
+        write,
       );
       return true;
     }
@@ -289,11 +327,7 @@ export const runInteractiveChat = async (
   try {
     write(style.heading("Machdoch"));
     showChatStatus(state, write);
-    write(
-      style.muted(
-        "/help commands · Tab completes · /paste multiline · Ctrl+D exits",
-      ),
-    );
+    write(style.muted("↑↓ history · Ctrl+J newline · /help · /shortcuts"));
     if (args.contextPaths?.length || args.imagePaths?.length)
       await handleChatContextControl("attachments", [], state, write);
     if (state.config.provider === "unconfigured")
@@ -313,10 +347,12 @@ export const runInteractiveChat = async (
         if (!task) continue;
         if (!line.pasted && task.startsWith("/") && !task.startsWith("//")) {
           if (!(await handleCommand(task))) break;
-        } else
-          await execute(
-            !line.pasted && task.startsWith("//") ? task.slice(1) : task,
-          );
+        } else {
+          const prompt =
+            !line.pasted && task.startsWith("//") ? task.slice(1) : task;
+          if (!options.input) await savePromptHistory(prompt);
+          await execute(prompt);
+        }
       } catch (error) {
         reportError(error);
       }

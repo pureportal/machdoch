@@ -33,6 +33,8 @@ import {
   writeStdoutLine,
 } from "./cli-io.js";
 import { createDiscoveryOptions } from "./cli-output.js";
+import { loadUserConfigFile } from "../../core/env.js";
+import { DEFAULT_USER_DESKTOP_SETTINGS } from "../../core/runtime-contract.generated.js";
 
 const fail = (message: string): never => {
   throw new CliUsageError(message);
@@ -288,6 +290,7 @@ export const printTaskPreview = async (
     args.workspaceRoot,
     createDiscoveryOptions(config.compatibility.discoverGithubCustomizations),
   );
+  const { config: preferences } = await loadUserConfigFile();
   const showActionFeedback =
     !args.json &&
     (options?.showActionFeedback === true || args.command === "run");
@@ -298,17 +301,22 @@ export const printTaskPreview = async (
           : (line = ""): void => {
               writeStderrLine(line);
             },
+        {
+          output: options?.showActionFeedback ? process.stdout : process.stderr,
+          verbose: args.verbose,
+        },
       )
     : undefined;
   const structuredActionOutputReporter =
     args.json && args.verbose
       ? createStructuredActionOutputReporter(task, config.mode, writeStderrLine)
       : undefined;
-  const onStateChange = args.verbose
-    ? createVerboseProgressReporter(writeStderrLine, {
-        structured: args.json,
-      })
-    : actionFeedbackReporter?.report;
+  const onStateChange =
+    args.json && args.verbose
+      ? createVerboseProgressReporter(writeStderrLine, {
+          structured: true,
+        })
+      : actionFeedbackReporter?.report;
   const controller = createTaskExecutionController(
     task,
     config,
@@ -328,7 +336,11 @@ export const printTaskPreview = async (
       ...(args.skipFileChangeDetection ? { captureFileChanges: false } : {}),
       ...(process.env.MACHDOCH_DESKTOP_MANAGES_TASK_TIMEOUT === "true"
         ? { idleTimeoutMs: null }
-        : {}),
+        : {
+            idleTimeoutMs:
+              (preferences.desktop?.chatIdleTimeoutMinutes ??
+                DEFAULT_USER_DESKTOP_SETTINGS.chatIdleTimeoutMinutes) * 60_000,
+          }),
     },
   );
   const detachCancellationHandlers = attachCancellationHandlers(controller, {

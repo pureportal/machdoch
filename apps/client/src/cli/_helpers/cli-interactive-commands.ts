@@ -3,7 +3,12 @@ import { CliUsageError } from "./cli-error.js";
 export const CHAT_COMMANDS = [
   ["help", "[command]", "Show help"],
   ["commands", "", "Choose a command"],
+  ["shortcuts", "", "Show keyboard shortcuts"],
+  ["clear", "", "Clear the terminal"],
+  ["editor", "", "Compose in your text editor"],
+  ["verbose", "[on|off]", "Show detailed activity"],
   ["status", "", "Show session settings"],
+  ["diff", "[staged]", "Review Git changes"],
   ["model", "[provider model]", "Choose a model"],
   ["mode", "[ask|machdoch]", "Change mode"],
   [
@@ -43,6 +48,7 @@ export const CHAT_COMMANDS = [
   ["scheduler", "[arguments]", "Manage scheduled work"],
   ["mcp", "[arguments]", "Manage MCP connections"],
   ["fleet", "[arguments]", "Manage Fleet"],
+  ["provider-sync", "[arguments]", "Manage provider integration"],
   ["inspect", "", "List prompts and skills"],
   ["tools", "", "List tools"],
   ["exit", "", "Exit chat"],
@@ -54,7 +60,35 @@ export const CHAT_HELP = CHAT_COMMANDS.map(
 ).join("\n");
 
 export const completeChatCommand = (line: string): [string[], string] => {
-  if (!line.startsWith("/") || /\s/u.test(line)) return [[], line];
+  if (!line.startsWith("/")) return [[], line];
+  const argumentChoices: Readonly<Record<string, readonly string[]>> = {
+    mode: ["ask", "machdoch"],
+    parallel: ["disabled", "read-only", "machdoch", "native"],
+    reasoning: [
+      "default",
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra",
+      "aeon",
+    ],
+    verbose: ["on", "off"],
+    memory: ["session", "workspace", "global"],
+    config: ["edit", "list", "show", "get", "set", "unset"],
+  };
+  const argument = /^\/(\S+)\s+(\S*)$/u.exec(line);
+  if (argument)
+    return [
+      (argumentChoices[argument[1]!] ?? [])
+        .filter((value) => value.startsWith(argument[2]!))
+        .map((value) => `/${argument[1]} ${value}`),
+      line,
+    ];
+  if (/\s/u.test(line)) return [[], line];
   return [
     CHAT_COMMANDS.map(([name]) => `/${name}`).filter((name) =>
       name.startsWith(line),
@@ -62,6 +96,26 @@ export const completeChatCommand = (line: string): [string[], string] => {
     line,
   ];
 };
+
+export const CHAT_SHORTCUTS = [
+  "Enter              Send prompt",
+  "Ctrl+J / Alt+Enter Insert newline",
+  "Shift+Enter        Insert newline (terminals with extended keys)",
+  "\\ + Enter          Continue on a new line",
+  "↑ / ↓              Move between lines, then recall prompt history",
+  "Ctrl+R             Search prompt history; Enter accepts, Esc restores draft",
+  "Tab                Complete commands and arguments",
+  "Ctrl+A / Ctrl+E    Start / end of line",
+  "Ctrl+← / Ctrl+→    Move by word (also Alt+B / Alt+F)",
+  "Ctrl+Home / End    Start / end of prompt",
+  "Ctrl+U / Ctrl+K    Delete to start / end of line",
+  "Ctrl+W / Ctrl+Y    Delete word / paste deleted text",
+  "Ctrl+_             Undo an input edit",
+  "Ctrl+L             Clear terminal and redraw prompt",
+  "Ctrl+C / Esc       Cancel task; Ctrl+C discards draft",
+  "Ctrl+D             Exit when prompt is empty",
+  "Ctrl+G / /editor   Compose with VISUAL or EDITOR",
+].join("\n");
 
 export const splitInteractiveArguments = (text: string): string[] => {
   const args: string[] = [];

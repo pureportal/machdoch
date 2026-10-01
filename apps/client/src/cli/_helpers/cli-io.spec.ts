@@ -259,14 +259,12 @@ describe("createActionFeedbackProgressReporter", () => {
     reporter.finish();
 
     expect(lines).toEqual([
-      "--- Actions Start ---",
-      "thinking: Executor iteration 1 started.",
-      'action: execute command "docker ps"',
-      "stdout: CONTAINER ID   IMAGE",
-      "thinking: run shell command finished: exit code 0, stdout 6 containers",
-      "stdout: abc123         postgres",
-      "--- Actions End ---",
-      "",
+      "· Resolve workspace context.",
+      "· Executor iteration 1 started.",
+      "› run shell command: docker ps",
+      "  CONTAINER ID   IMAGE",
+      "· run shell command finished: exit code 0, stdout 6 containers",
+      "  abc123         postgres",
     ]);
   });
 });
