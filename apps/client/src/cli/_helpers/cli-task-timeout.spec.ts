@@ -32,8 +32,8 @@ afterEach(() => vi.clearAllMocks());
 describe("desktop task timeout ownership", () => {
   it.each([
     ["true", null],
-    [undefined, undefined],
-    ["false", undefined],
+    [undefined, 1_200_000],
+    ["false", 1_200_000],
   ] as const)(
     "uses the host timer only when the bridge enables it (%s)",
     async (managed, expected) => {

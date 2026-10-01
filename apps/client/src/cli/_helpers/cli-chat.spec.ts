@@ -91,6 +91,7 @@ const runChat = async (
       return typeof line === "string" ? { text: line } : line;
     }),
     setBusy: vi.fn(),
+    setDraft: vi.fn(),
     suspend: async (action) => await action(),
     close: vi.fn(),
   };
