@@ -91,7 +91,7 @@ function createLandingSeoPlugin(landingUrl: URL | undefined): Plugin {
         response.end(robotsText);
       });
     },
-    buildStart() {
+    generateBundle() {
       this.emitFile({
         type: "asset",
         fileName: "robots.txt",
