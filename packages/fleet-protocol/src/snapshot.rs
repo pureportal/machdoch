@@ -1,4 +1,4 @@
-use serde::{de::Error, Deserialize, Deserializer};
+use serde::{de::Error, ser::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
 enum Shape {
@@ -209,19 +209,35 @@ where
     D: Deserializer<'de>,
 {
     let snapshot = Value::deserialize(deserializer)?;
-    let shape = object(vec![
+    if product_snapshot_shape().accepts(&snapshot) {
+        Ok(snapshot)
+    } else {
+        Err(D::Error::custom("Invalid product snapshot."))
+    }
+}
+
+pub(crate) fn serialize_product_snapshot<S>(
+    snapshot: &Value,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    if !product_snapshot_shape().accepts(snapshot) {
+        return Err(S::Error::custom("Invalid product snapshot."));
+    }
+    snapshot.serialize(serializer)
+}
+
+fn product_snapshot_shape() -> Shape {
+    object(vec![
         required("enabled", Shape::Bool),
         required("serverTime", Shape::Integer),
         required("eventId", Shape::Integer),
         required("sessions", array(session(), 128)),
         required("commands", array(command(), 100)),
         optional("shell", shell::shape()),
-    ]);
-    if shape.accepts(&snapshot) {
-        Ok(snapshot)
-    } else {
-        Err(D::Error::custom("Invalid product snapshot."))
-    }
+    ])
 }
 
 mod shell;

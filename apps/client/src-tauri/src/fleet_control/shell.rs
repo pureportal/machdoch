@@ -50,6 +50,10 @@ pub(super) struct FleetShellSession {
     pub(super) mode: Option<String>,
     pub(super) effective_mode: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) parallel_agent_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) goal_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) reasoning: Option<String>,
     pub(super) effective_reasoning: String,
     pub(super) created_at: u64,
@@ -176,6 +180,16 @@ pub(super) struct FleetShellComposer {
     pub(super) model_catalog: Vec<FleetShellModelProvider>,
     pub(super) mode: String,
     pub(super) default_mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) parallel_agent_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) available_parallel_agent_modes: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) goal_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) available_goal_modes: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) goal: Option<FleetShellGoal>,
     pub(super) reasoning: String,
     pub(super) default_reasoning: String,
     pub(super) reasoning_options: Vec<String>,
@@ -190,6 +204,11 @@ pub(super) struct FleetShellComposer {
     pub(super) send_disabled_reason: Option<String>,
     pub(super) is_executing: bool,
     pub(super) session_memory_enabled: bool,
+    pub(super) session_memory: Vec<FleetShellMemoryEntry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) workspace_memory_available: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) workspace_memory_enabled: Option<bool>,
     pub(super) global_memory_available: bool,
     pub(super) global_memory_enabled: bool,
     pub(super) ui_control_available: bool,
@@ -198,6 +217,44 @@ pub(super) struct FleetShellComposer {
     pub(super) attachments: Vec<FleetShellAttachment>,
     pub(super) chooser_providers: Vec<String>,
     pub(super) matched_context_pack_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct FleetShellMemoryEntry {
+    pub(super) id: String,
+    pub(super) content: String,
+    pub(super) created_at: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) source_session: Option<FleetShellMemorySource>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct FleetShellMemorySource {
+    pub(super) id: String,
+    pub(super) title: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct FleetShellGoal {
+    pub(super) id: String,
+    pub(super) objective: String,
+    pub(super) mode: String,
+    pub(super) status: String,
+    pub(super) turns: u64,
+    pub(super) tokens_used: u64,
+    pub(super) elapsed_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) token_budget: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) turn_budget: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) time_budget_ms: Option<u64>,
+    pub(super) reason: String,
+    pub(super) created_at: u64,
+    pub(super) updated_at: u64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

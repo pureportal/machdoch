@@ -4,8 +4,9 @@ use serde_json::Value;
 
 use super::{
     commands::truncate_chars, push_bounded, string_field, FleetControlInner, FleetControlShared,
-    FleetLogEntry, FleetTaskSession, FleetTimelineEntry, MAX_COMMAND_TEXT_CHARS, MAX_LOG_ENTRIES,
-    MAX_PROGRESS_LOG_BYTES, MAX_SESSIONS, MAX_TIMELINE_ENTRIES,
+    FleetLogEntry, FleetTaskSession, FleetTimelineEntry, MAX_COMMAND_TEXT_CHARS,
+    MAX_FLEET_TEXT_CHARS, MAX_LOG_ENTRIES, MAX_PROGRESS_LOG_BYTES, MAX_SESSIONS,
+    MAX_TIMELINE_ENTRIES,
 };
 
 pub(super) fn record_progress_update(
@@ -91,19 +92,19 @@ fn apply_progress_fields(session: &mut FleetTaskSession, progress: &Value, times
     session.updated_at = timestamp;
 
     if let Some(task) = string_field(progress, "task").filter(|value| !value.is_empty()) {
-        session.task = task;
+        session.task = truncate_chars(&task, MAX_FLEET_TEXT_CHARS);
     }
 
     if let Some(mode) = string_field(progress, "mode").filter(|value| !value.is_empty()) {
-        session.mode = mode;
+        session.mode = truncate_chars(&mode, 64);
     }
 
     if let Some(state) = string_field(progress, "state").filter(|value| !value.is_empty()) {
-        session.state = state;
+        session.state = truncate_chars(&state, 64);
     }
 
     if let Some(message) = string_field(progress, "message") {
-        session.message = message;
+        session.message = truncate_chars(&message, MAX_FLEET_TEXT_CHARS);
     }
 
     if let Some(cancellable) = progress.get("cancellable").and_then(Value::as_bool) {
@@ -139,15 +140,17 @@ fn record_action_output(
     let added_bytes = chunk.len();
     session.logs.push_back(FleetLogEntry {
         created_at: timestamp,
-        stream: action_output
-            .get("stream")
-            .and_then(Value::as_str)
-            .unwrap_or("stdout")
-            .to_string(),
+        stream: truncate_chars(
+            action_output
+                .get("stream")
+                .and_then(Value::as_str)
+                .unwrap_or("stdout"),
+            64,
+        ),
         tool_name: action_output
             .get("toolName")
             .and_then(Value::as_str)
-            .map(str::to_string),
+            .map(|value| truncate_chars(value, 240)),
         chunk,
     });
 
@@ -198,9 +201,9 @@ fn record_timeline_event(session: &mut FleetTaskSession, progress: &Value, times
         &mut session.timeline,
         FleetTimelineEntry {
             created_at: timestamp,
-            kind: kind.to_string(),
-            phase: phase.to_string(),
-            label: label.to_string(),
+            kind: truncate_chars(kind, 64),
+            phase: truncate_chars(phase, 64),
+            label: truncate_chars(label, MAX_FLEET_TEXT_CHARS),
             detail: timeline_event
                 .get("detail")
                 .and_then(Value::as_str)
@@ -208,11 +211,11 @@ fn record_timeline_event(session: &mut FleetTaskSession, progress: &Value, times
             tone: timeline_event
                 .get("tone")
                 .and_then(Value::as_str)
-                .map(str::to_string),
+                .map(|value| truncate_chars(value, 64)),
             tool_name: timeline_event
                 .get("toolName")
                 .and_then(Value::as_str)
-                .map(str::to_string),
+                .map(|value| truncate_chars(value, 240)),
         },
         MAX_TIMELINE_ENTRIES,
     );

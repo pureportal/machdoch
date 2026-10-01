@@ -69,7 +69,7 @@ pub(super) fn sanitize_shell_snapshot(
     snapshot.prompt_history = snapshot
         .prompt_history
         .into_iter()
-        .map(|prompt| sanitize_text(prompt, MAX_FLEET_TEXT_CHARS))
+        .map(|prompt| sanitize_text(prompt, MAX_COMMAND_TEXT_CHARS))
         .filter(|prompt| !prompt.is_empty())
         .take(MAX_FLEET_PROMPT_HISTORY)
         .collect();
@@ -238,7 +238,7 @@ fn sanitize_shell_composer(mut composer: FleetShellComposer) -> Option<FleetShel
         return None;
     }
 
-    composer.draft = sanitize_text(composer.draft, MAX_FLEET_TEXT_CHARS);
+    composer.draft = sanitize_text(composer.draft, MAX_COMMAND_TEXT_CHARS);
     composer.provider = sanitize_text(composer.provider, MAX_FLEET_SHORT_TEXT_CHARS);
     composer.provider_label = sanitize_text(composer.provider_label, MAX_FLEET_SHORT_TEXT_CHARS);
     composer.model = sanitize_text(composer.model, MAX_FLEET_SHORT_TEXT_CHARS);
@@ -284,6 +284,21 @@ fn sanitize_shell_composer(mut composer: FleetShellComposer) -> Option<FleetShel
         sanitize_optional_text(composer.send_disabled_reason, MAX_FLEET_TEXT_CHARS);
     composer.ui_control_description =
         sanitize_text(composer.ui_control_description, MAX_FLEET_TEXT_CHARS);
+    composer.session_memory = composer
+        .session_memory
+        .into_iter()
+        .take(24)
+        .filter_map(|mut entry| {
+            entry.id = sanitize_text(entry.id, MAX_FLEET_SHORT_TEXT_CHARS);
+            entry.content = sanitize_text(entry.content, MAX_FLEET_TEXT_CHARS);
+            entry.source_session = entry.source_session.and_then(|mut source| {
+                source.id = sanitize_text(source.id, MAX_FLEET_SHORT_TEXT_CHARS);
+                source.title = sanitize_text(source.title, MAX_FLEET_SHORT_TEXT_CHARS);
+                (!source.id.is_empty()).then_some(source)
+            });
+            (!entry.id.is_empty()).then_some(entry)
+        })
+        .collect();
     composer.attachments = composer
         .attachments
         .into_iter()
@@ -568,7 +583,7 @@ fn sanitize_shell_voice(mut voice: FleetShellVoice) -> FleetShellVoice {
 
 fn sanitize_shell_quick_task(mut quick_task: FleetShellQuickTask) -> FleetShellQuickTask {
     quick_task.status = sanitize_text(quick_task.status, MAX_FLEET_SHORT_TEXT_CHARS);
-    quick_task.draft = sanitize_text(quick_task.draft, MAX_FLEET_TEXT_CHARS);
+    quick_task.draft = sanitize_text(quick_task.draft, MAX_COMMAND_TEXT_CHARS);
     quick_task.provider = sanitize_text(quick_task.provider, MAX_FLEET_SHORT_TEXT_CHARS);
     quick_task.model = sanitize_text(quick_task.model, MAX_FLEET_SHORT_TEXT_CHARS);
     quick_task

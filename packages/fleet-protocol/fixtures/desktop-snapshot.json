@@ -1,0 +1,90 @@
+{
+  "type": "response",
+  "requestId": "request-1",
+  "response": {
+    "type": "productSnapshot",
+    "snapshot": {
+      "enabled": true,
+      "serverTime": 1,
+      "eventId": 1,
+      "sessions": [],
+      "commands": [],
+      "shell": {
+        "version": 5,
+        "capturedAt": 1,
+        "sessions": [],
+        "workspaces": [],
+        "visibleMessages": [],
+        "composer": {
+          "sessionId": "session-1",
+          "draft": "",
+          "provider": "codex",
+          "providerLabel": "Codex",
+          "model": "gpt-6",
+          "modelLabel": "GPT-6",
+          "modelCatalogLoading": false,
+          "modelCatalog": [],
+          "mode": "machdoch",
+          "defaultMode": "machdoch",
+          "parallelAgentMode": "native",
+          "availableParallelAgentModes": [
+            "disabled",
+            "read-only",
+            "machdoch",
+            "native"
+          ],
+          "goalMode": "native",
+          "availableGoalModes": ["machdoch", "native"],
+          "goal": {
+            "id": "goal-1",
+            "objective": "Complete the project checks.",
+            "mode": "native",
+            "status": "active",
+            "turns": 2,
+            "tokensUsed": 200,
+            "elapsedMs": 1000,
+            "tokenBudget": 10000,
+            "turnBudget": 10,
+            "timeBudgetMs": 60000,
+            "reason": "",
+            "createdAt": 1,
+            "updatedAt": 1
+          },
+          "reasoning": "default",
+          "defaultReasoning": "default",
+          "reasoningOptions": ["default"],
+          "promptEnhancementMode": "off",
+          "interviewEnabled": false,
+          "interviewAvailable": true,
+          "workspaceLabel": "Workspace",
+          "canSend": true,
+          "isExecuting": false,
+          "sessionMemoryEnabled": true,
+          "sessionMemory": [
+            {
+              "id": "memory-1",
+              "content": "Use the project conventions.",
+              "createdAt": 1,
+              "sourceSession": {
+                "id": "source-session",
+                "title": "Project conventions"
+              }
+            }
+          ],
+          "workspaceMemoryAvailable": true,
+          "workspaceMemoryEnabled": true,
+          "globalMemoryAvailable": true,
+          "globalMemoryEnabled": false,
+          "uiControlAvailable": false,
+          "uiControlEnabled": false,
+          "uiControlDescription": "",
+          "attachments": [],
+          "chooserProviders": ["codex"],
+          "matchedContextPackIds": []
+        },
+        "contextPacks": [],
+        "promptHistory": []
+      }
+    }
+  }
+}

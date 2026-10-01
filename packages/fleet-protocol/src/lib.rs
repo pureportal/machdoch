@@ -750,7 +750,10 @@ pub enum HostResponse {
     },
     PreviewTunnelReady,
     ProductSnapshot {
-        #[serde(deserialize_with = "snapshot::deserialize_product_snapshot")]
+        #[serde(
+            deserialize_with = "snapshot::deserialize_product_snapshot",
+            serialize_with = "snapshot::serialize_product_snapshot"
+        )]
         snapshot: Value,
     },
     CommandAccepted {
@@ -1205,12 +1208,12 @@ impl ProductCommand {
                 ("provider", self.provider.is_some()),
                 ("model", self.model.is_some()),
             ]),
-            ProductCommandKind::SetSessionMode | ProductCommandKind::SetParallelAgentMode | ProductCommandKind::SetGoalMode => {
-                required.extend([
-                    ("sessionId", self.session_id.is_some()),
-                    ("mode", self.mode.is_some()),
-                ])
-            }
+            ProductCommandKind::SetSessionMode
+            | ProductCommandKind::SetParallelAgentMode
+            | ProductCommandKind::SetGoalMode => required.extend([
+                ("sessionId", self.session_id.is_some()),
+                ("mode", self.mode.is_some()),
+            ]),
             ProductCommandKind::SetSessionReasoning => required.extend([
                 ("sessionId", self.session_id.is_some()),
                 ("reasoning", self.reasoning.is_some()),
@@ -1387,7 +1390,8 @@ impl ProductCommand {
                     && valid_parallel_agent_mode(self.mode.as_deref())
             }
             ProductCommandKind::SetGoalMode => {
-                valid_identifier(self.session_id.as_deref()) && matches!(self.mode.as_deref(), Some("machdoch" | "native"))
+                valid_identifier(self.session_id.as_deref())
+                    && matches!(self.mode.as_deref(), Some("machdoch" | "native"))
             }
             ProductCommandKind::SetSessionReasoning => {
                 valid_identifier(self.session_id.as_deref())

@@ -507,11 +507,14 @@ pub(super) fn command_payload_hash(event: &FleetControlCommandEvent) -> String {
 }
 
 pub(super) fn truncate_chars(value: &str, max_chars: usize) -> String {
-    if value.chars().count() <= max_chars {
-        return value.to_string();
+    let mut units = 0;
+    for (offset, character) in value.char_indices() {
+        units += character.len_utf16();
+        if units > max_chars {
+            return value[..offset].to_string();
+        }
     }
-
-    value.chars().take(max_chars).collect::<String>()
+    value.to_string()
 }
 
 fn require_value<T>(required: bool, value: &Option<T>, message: &str) -> Result<(), String> {
@@ -631,5 +634,12 @@ mod tests {
             truncate_chars("\u{00e5}\u{00df}\u{00e7}d\u{00e9}", 3),
             "\u{00e5}\u{00df}\u{00e7}"
         );
+    }
+
+    #[test]
+    fn truncate_chars_matches_javascript_string_limits() {
+        assert_eq!(truncate_chars("a😀b", 3), "a😀");
+        assert_eq!(truncate_chars("a😀b", 2), "a");
+        assert_eq!(truncate_chars("😀", 1), "");
     }
 }
