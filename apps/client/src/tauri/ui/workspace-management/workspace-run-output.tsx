@@ -127,7 +127,7 @@ export const WorkspaceRunOutput = ({
             value: visibleLogs
               .map(
                 ({ label, entry }) =>
-                  `${showsTaskLabels ? `[${label}] ` : ""}${entry.stream !== "stdout" ? `[${entry.stream}] ` : ""}${entry.line}`,
+                  `${showsTaskLabels ? `[${label}] ` : ""}${entry.line}`,
               )
               .join("\n"),
           },
@@ -158,28 +158,14 @@ export const WorkspaceRunOutput = ({
                 {showsTaskLabels ? (
                   <span className="shrink-0 text-slate-600">[{label}]</span>
                 ) : null}
-                {entry.stream !== "stdout" ? (
-                  <span
-                    className={cn(
-                      "shrink-0",
-                      entry.stream === "stderr"
-                        ? "text-red-400"
-                        : "text-slate-600",
-                    )}
-                  >
-                    [{entry.stream}]
-                  </span>
-                ) : null}
                 <span
                   data-configuration-id={configurationId}
                   data-stream={entry.stream}
                   className={cn(
                     "min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]",
-                    entry.stream === "stderr"
-                      ? "text-red-300"
-                      : entry.stream === "system"
-                        ? "text-slate-500"
-                        : "text-slate-300",
+                    entry.stream === "system"
+                      ? "text-slate-500"
+                      : "text-slate-300",
                   )}
                 >
                   {entry.line || " "}
