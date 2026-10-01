@@ -109,6 +109,7 @@ export interface ConversationFeedProps {
     line?: number,
     workspaceRoot?: string | null,
   ) => void;
+  onOpenLocalFile?: (path: string, line?: number) => void;
   onOpenAttachment?: (
     attachment: ChatSessionContextAttachment,
     workspaceRoot?: string | null,
@@ -223,6 +224,7 @@ interface ConversationMessageRowProps {
     line?: number,
     workspaceRoot?: string | null,
   ) => void;
+  onOpenLocalFile?: (path: string, line?: number) => void;
   onMessageElementChange: (
     messageId: string,
     element: HTMLDivElement | null,
@@ -260,6 +262,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
   onOpenAttachment,
   onOpenMessageContextMenu,
   onOpenWorkspaceFile,
+  onOpenLocalFile,
   onMessageElementChange,
   onRetryTask,
   onRetryMessage,
@@ -560,6 +563,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                     content={renderedContent}
                     workspaceRoot={workspaceRoot}
                     onOpenWorkspaceFile={openWorkspaceFile}
+                    onOpenLocalFile={onOpenLocalFile}
                     className={
                       message.role === "user"
                         ? "app-user-message-text"
@@ -589,6 +593,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                   content={originalPromptContent}
                   workspaceRoot={workspaceRoot}
                   onOpenWorkspaceFile={openWorkspaceFile}
+                  onOpenLocalFile={onOpenLocalFile}
                 />
               </div>
             ) : null}
@@ -697,6 +702,7 @@ export const ConversationFeed = ({
   onContinueTask,
   onSaveMessageAsContextPack,
   onOpenWorkspaceFile,
+  onOpenLocalFile,
   onOpenAttachment,
   voicePlayback,
 }: ConversationFeedProps): JSX.Element => {
@@ -722,10 +728,21 @@ export const ConversationFeed = ({
     string | null
   >(null);
   const messageElementsRef = useRef(new Map<string, HTMLDivElement>());
-  const openCallbacksRef = useRef({ onOpenWorkspaceFile, onOpenAttachment });
+  const openCallbacksRef = useRef({
+    onOpenWorkspaceFile,
+    onOpenLocalFile,
+    onOpenAttachment,
+  });
   useLayoutEffect(() => {
-    openCallbacksRef.current = { onOpenWorkspaceFile, onOpenAttachment };
-  }, [onOpenWorkspaceFile, onOpenAttachment]);
+    openCallbacksRef.current = {
+      onOpenWorkspaceFile,
+      onOpenLocalFile,
+      onOpenAttachment,
+    };
+  }, [onOpenWorkspaceFile, onOpenLocalFile, onOpenAttachment]);
+  const openLocalFile = useCallback((path: string, line?: number) => {
+    openCallbacksRef.current.onOpenLocalFile?.(path, line);
+  }, []);
   const openWorkspaceFile = useCallback(
     (
       relativePath: string,
@@ -1688,6 +1705,7 @@ export const ConversationFeed = ({
             onContinueTask={onContinueTask}
             onSaveMessageAsContextPack={onSaveMessageAsContextPack}
             onOpenWorkspaceFile={openWorkspaceFile}
+            onOpenLocalFile={onOpenLocalFile ? openLocalFile : undefined}
             onMessageElementChange={setMessageElement}
             onOpenAttachment={onOpenAttachment ? openAttachment : undefined}
             onSpeakMessage={voicePlayback.onSpeakMessage}
@@ -1747,6 +1765,7 @@ export const ConversationFeed = ({
                   content={promptEnhancementPreview.content}
                   workspaceRoot={workspaceRoot}
                   onOpenWorkspaceFile={onOpenWorkspaceFile}
+                  onOpenLocalFile={onOpenLocalFile}
                   className="app-user-message-text"
                 />
               </div>
@@ -1764,6 +1783,7 @@ export const ConversationFeed = ({
                     content={promptEnhancementPreviewOriginalContent}
                     workspaceRoot={workspaceRoot}
                     onOpenWorkspaceFile={onOpenWorkspaceFile}
+                    onOpenLocalFile={onOpenLocalFile}
                   />
                 </div>
               ) : null}

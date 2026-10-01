@@ -108,15 +108,16 @@ const FILE_EXTENSION_LANGUAGE_MAP = {
   zsh: "bash",
 } as const satisfies Record<string, FilePreviewLanguage>;
 
-const PLAIN_TEXT_EXTENSION_SET = new Set([
-  "csv",
-  "log",
-  "text",
-  "tsv",
-  "txt",
-]);
+const PLAIN_TEXT_EXTENSION_SET = new Set(["csv", "log", "text", "tsv", "txt"]);
 
-const IMAGE_EXTENSION_SET = new Set(["bmp", "gif", "jpeg", "jpg", "png", "webp"]);
+const IMAGE_EXTENSION_SET = new Set([
+  "bmp",
+  "gif",
+  "jpeg",
+  "jpg",
+  "png",
+  "webp",
+]);
 
 const LANGUAGE_LABELS = {
   bash: "Shell",
@@ -188,7 +189,9 @@ const hasOwnProperty = <T extends object>(
   key: PropertyKey,
 ): key is keyof T => Object.prototype.hasOwnProperty.call(value, key);
 
-const getMappedLanguage = <T extends Partial<Record<string, FilePreviewLanguage>>>(
+const getMappedLanguage = <
+  T extends Partial<Record<string, FilePreviewLanguage>>,
+>(
   map: T,
   key: string,
 ): FilePreviewLanguage | undefined =>
@@ -218,7 +221,7 @@ const getFileExtension = (fileName: string): string | null => {
 
 export const getFilePreviewRenderKind = (
   fileNameOrPath: string,
-): FilePreviewRenderKind => {
+): FilePreviewRenderKind | null => {
   const fileName = getFilePreviewFileName(fileNameOrPath);
   const extension = getFileExtension(fileName);
 
@@ -226,7 +229,15 @@ export const getFilePreviewRenderKind = (
     return "image";
   }
 
-  return extension === "pdf" ? "pdf" : "text";
+  if (extension === "pdf") {
+    return "pdf";
+  }
+
+  return !extension ||
+    PLAIN_TEXT_EXTENSION_SET.has(extension) ||
+    resolveFilePreviewSyntax(fileName).language !== null
+    ? "text"
+    : null;
 };
 
 export const resolveFilePreviewSyntax = (
@@ -247,7 +258,10 @@ export const resolveFilePreviewSyntax = (
     return { language: "makefile", label: LANGUAGE_LABELS.makefile };
   }
 
-  const exactLanguage = getMappedLanguage(FILE_NAME_LANGUAGE_MAP, lowerFileName);
+  const exactLanguage = getMappedLanguage(
+    FILE_NAME_LANGUAGE_MAP,
+    lowerFileName,
+  );
 
   if (exactLanguage) {
     return {

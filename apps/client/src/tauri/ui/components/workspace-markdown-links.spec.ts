@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  getLocalMarkdownLinkTarget,
   getWorkspaceMarkdownLinkTarget,
   isLocalMarkdownLinkHref,
   openWorkspaceMarkdownLinkTarget,
@@ -9,6 +10,53 @@ const WINDOWS_WORKSPACE =
   "C:\\Development\\alpartis.morgana\\app.alpartis.cloud";
 const WINDOWS_SOURCE_PATH =
   "C:/Development/alpartis.morgana/app.alpartis.cloud/src/common/helpers/get-branch-label.ts";
+
+describe("getLocalMarkdownLinkTarget", () => {
+  it.each([
+    [
+      "C:/Users/ehrha/AppData/Local/Temp/machdoch-goal-ui-review/final-composer-desktop.png",
+      "C:/Users/ehrha/AppData/Local/Temp/machdoch-goal-ui-review/final-composer-desktop.png",
+    ],
+    ["C:\\Temp\\My preview.png", "C:/Temp/My preview.png"],
+    ["/C:/Temp/My%20preview.png", "C:/Temp/My preview.png"],
+    ["file:///C:/Temp/My%20preview.png", "C:/Temp/My preview.png"],
+    ["file:///tmp/My%20preview.png", "/tmp/My preview.png"],
+    ["file://server/share/My%20preview.png", "//server/share/My preview.png"],
+    ["\\\\server\\share\\preview.png", "//server/share/preview.png"],
+    ["\\\\?\\C:\\Temp\\preview.png", "C:/Temp/preview.png"],
+  ])("resolves an absolute file target %s", (href, path) => {
+    expect(getLocalMarkdownLinkTarget(href)).toEqual({ path });
+  });
+
+  it("preserves source locations for absolute documents", () => {
+    expect(getLocalMarkdownLinkTarget("C:/Temp/report.md:12:3")).toEqual({
+      path: "C:/Temp/report.md",
+      line: 12,
+      column: 3,
+    });
+    expect(getLocalMarkdownLinkTarget("file:///tmp/report.md#L12")).toEqual({
+      path: "/tmp/report.md",
+      line: 12,
+    });
+  });
+
+  it.each([
+    undefined,
+    "",
+    "docs/guide.md",
+    "#section",
+    "https://example.com/preview.png",
+    "javascript:alert(1)",
+    "data:text/html,test",
+    "C:relative.png",
+    "C:/Temp/../preview.png",
+    "C:/Temp/%2e%2e/preview.png",
+    "file:///tmp/%2e%2e/preview.png",
+    "file:///tmp/preview%00.png",
+  ])("rejects non-absolute or unsafe file targets %s", (href) => {
+    expect(getLocalMarkdownLinkTarget(href)).toBeNull();
+  });
+});
 
 describe("getWorkspaceMarkdownLinkTarget", () => {
   it("resolves a Windows workspace path and preserves its trailing line", () => {
