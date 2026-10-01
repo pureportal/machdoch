@@ -11,6 +11,7 @@ import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import {
   enrollFleetManager,
   getFleetConnectionStatus,
+  reconnectFleetManager,
   resetFleetManagerConnection,
   type FleetConnectionStatus,
 } from "../../runtime";
@@ -78,6 +79,19 @@ export const FleetManagerPanel = (): JSX.Element => {
           ? enrollmentError.message
           : String(enrollmentError),
       );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const reconnect = async (): Promise<void> => {
+    setLoading(true);
+    setActionError(null);
+    try {
+      setStatus(await reconnectFleetManager());
+      requestFleetManagedSettingsSync();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
     } finally {
       setLoading(false);
     }
@@ -170,7 +184,18 @@ export const FleetManagerPanel = (): JSX.Element => {
                 </Button>
               ) : null}
             </div>
-            <div>
+            <div className="flex gap-2">
+              {status.phase === "error" ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={loading}
+                  onClick={() => void reconnect()}
+                  className="h-9 rounded-lg border-slate-700 bg-slate-950 px-3 text-xs text-slate-200"
+                >
+                  Reconnect
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"

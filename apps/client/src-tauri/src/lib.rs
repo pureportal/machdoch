@@ -379,6 +379,7 @@ pub fn run() {
             fleet::report_fleet_managed_settings_applied,
             fleet::report_fleet_managed_settings_failure,
             fleet::reset_fleet_manager_connection,
+            fleet::reconnect_fleet_manager,
             fleet::synchronize_fleet_managed_prompts,
             fleet_control::get_pending_fleet_control_commands,
             fleet_control::acknowledge_fleet_control_command,

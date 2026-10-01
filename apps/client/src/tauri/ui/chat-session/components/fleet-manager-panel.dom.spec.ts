@@ -18,6 +18,7 @@ const runtime = vi.hoisted(() => ({
   getFleetConnectionStatus: vi.fn(),
   enrollFleetManager: vi.fn(),
   resetFleetManagerConnection: vi.fn(),
+  reconnectFleetManager: vi.fn(),
 }));
 const requestManagedSettingsSync = vi.hoisted(() => vi.fn());
 
@@ -51,6 +52,54 @@ afterEach(() => {
 });
 
 describe("Fleet Manager dialog", () => {
+  it("reconnects a failed gateway without removing the enrollment", async () => {
+    const connection = {
+      enabled: true,
+      phase: "error",
+      managerUrl: "https://fleet.example.com",
+      displayName: "Studio workstation",
+      lastError:
+        "Fleet Manager rejected the connection: Invalid gateway message.",
+    };
+    runtime.getFleetConnectionStatus.mockResolvedValue(connection);
+    runtime.reconnectFleetManager.mockResolvedValue({
+      ...connection,
+      phase: "connecting",
+      lastError: undefined,
+    });
+    renderDialog(createElement(FleetManagerPanel), "fleet-manager");
+    fireEvent.click(await screen.findByRole("button", { name: "Reconnect" }));
+    await waitFor(() =>
+      expect(runtime.reconnectFleetManager).toHaveBeenCalledOnce(),
+    );
+    expect(await screen.findByText("connecting")).toBeTruthy();
+    expect(requestManagedSettingsSync).toHaveBeenCalledOnce();
+    expect(runtime.resetFleetManagerConnection).not.toHaveBeenCalled();
+    expect(screen.queryByText(connection.lastError)).toBeNull();
+  });
+
+  it("keeps a reconnect failure visible for another attempt", async () => {
+    runtime.getFleetConnectionStatus.mockResolvedValue({
+      enabled: true,
+      phase: "error",
+      displayName: "Studio workstation",
+    });
+    runtime.reconnectFleetManager.mockRejectedValue(
+      new Error("Fleet connection state is unavailable."),
+    );
+    renderDialog(createElement(FleetManagerPanel), "fleet-manager");
+    fireEvent.click(await screen.findByRole("button", { name: "Reconnect" }));
+    expect(
+      await screen.findByText("Fleet connection state is unavailable."),
+    ).toBeTruthy();
+    expect(requestManagedSettingsSync).not.toHaveBeenCalled();
+    expect(
+      screen
+        .getByRole("button", { name: "Reconnect" })
+        .hasAttribute("disabled"),
+    ).toBe(false);
+  });
+
   it("enrolls from the dedicated Fleet Manager dialog", async () => {
     runtime.getFleetConnectionStatus.mockResolvedValue({
       enabled: false,
