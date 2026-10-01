@@ -1,100 +1,74 @@
 "use client";
 
-import { ExternalLink, Monitor, Plus, RefreshCw, Trash2 } from "lucide-react";
-import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ConfirmButton } from "@/components/confirm-button";
-import { Badge } from "@/components/ui/badge";
+import { Monitor, RefreshCw, Search, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { EnrollDevice } from "@/components/enrollment/enroll-device";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { api } from "@machdoch/product-ui/fleet-api";
 import { formatRelativeTime, formatTime } from "@/lib/format";
-
-interface FleetInstance {
-  instanceId: string;
-  displayName: string;
-  productVersion: string;
-  protocolVersion: number;
-  enrolledAt: number;
-  lastSeenAt: number | null;
-  status: "online" | "offline" | "revoked";
-}
+import { cn } from "@/lib/utils";
+import { DeviceList } from "./device-list";
+import { DeviceDetails } from "./device-details";
+import {
+  selectDevices,
+  summarizeFleet,
+  type DeviceFilter,
+  type DeviceSort,
+} from "./fleet-overview";
+import { FleetSummary } from "./fleet-summary";
+import { useFleetInstances } from "./use-fleet-instances";
 
 export function InstancesView(): React.ReactElement {
-  const [instances, setInstances] = useState<FleetInstance[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const { instances, loading, error, updatedAt, load } = useFleetInstances();
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("active");
-  const request = useRef<AbortController | null>(null);
-  const load = useCallback(async () => {
-    request.current?.abort();
-    const controller = new AbortController();
-    request.current = controller;
-    setLoading(true);
-    try {
-      const payload = await api<{ instances: FleetInstance[] }>(
-        "/api/instances",
-        { signal: controller.signal },
-      );
-      if (controller.signal.aborted) return;
-      setInstances(payload.instances);
-      setError("");
-    } catch (reason) {
-      if (controller.signal.aborted) return;
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "Instances could not be loaded.",
-      );
-    } finally {
-      if (!controller.signal.aborted) {
-        setLoading(false);
-        request.current = null;
-      }
-    }
-  }, []);
-  useEffect(() => {
-    void load();
-    const interval = window.setInterval(() => {
-      if (!request.current && document.visibilityState === "visible")
-        void load();
-    }, 10_000);
-    return () => {
-      window.clearInterval(interval);
-      request.current?.abort();
-    };
-  }, [load]);
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filteredInstances = (instances ?? []).filter(
-    (instance) =>
-      (status === "active"
-        ? instance.status !== "revoked"
-        : instance.status === status) &&
-      `${instance.displayName} ${instance.instanceId}`
-        .toLocaleLowerCase()
-        .includes(normalizedQuery),
+  const [status, setStatus] = useState<DeviceFilter>("active");
+  const [sort, setSort] = useState<DeviceSort>("status");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedTrigger = useRef<HTMLButtonElement | null>(null);
+  const refreshButton = useRef<HTMLButtonElement | null>(null);
+  const selectedDevice = instances?.find(
+    (device) => device.instanceId === selectedId,
   );
+  const summary = summarizeFleet(instances ?? []);
+  const devices = selectDevices(instances ?? [], query, status, sort);
+  const resetFilters = (): void => {
+    setQuery("");
+    setStatus("active");
+  };
 
   return (
-    <section className="grid gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight">Instances</h1>
-        <Button asChild>
-          <Link href="/enrollment">
-            <Plus />
-            Enroll instance
-          </Link>
-        </Button>
-      </div>
+    <section className="grid gap-6 sm:gap-8">
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-3xl font-semibold tracking-tight">Overview</h1>
+        <div className="flex items-center gap-2">
+          <Button
+            ref={refreshButton}
+            variant="outline"
+            disabled={loading}
+            onClick={() => void load()}
+            aria-label="Refresh devices"
+          >
+            <RefreshCw className={cn(loading && "motion-safe:animate-spin")} />
+            <span className="hidden sm:inline">Refresh</span>
+          </Button>
+          <EnrollDevice onClose={() => void load()} />
+        </div>
+      </header>
       {error ? (
         <div
           role="alert"
-          className="flex flex-wrap items-center gap-3 text-sm text-destructive"
+          className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/25 bg-destructive/5 p-4 text-sm"
         >
-          <p className="min-w-0 flex-1">{error}</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-destructive">{error}</p>
+            {instances !== null ? (
+              <p className="mt-1 text-muted-foreground">
+                Showing the last known device status.
+              </p>
+            ) : null}
+          </div>
           <Button
             variant="outline"
             disabled={loading}
@@ -104,149 +78,140 @@ export function InstancesView(): React.ReactElement {
           </Button>
         </div>
       ) : null}
-      {instances && instances.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          <Input
-            aria-label="Search instances"
-            placeholder="Search instances"
-            className="min-w-40 flex-1"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          <Select
-            aria-label="Instance status"
-            className="w-auto"
-            value={status}
-            onChange={(event) => setStatus(event.target.value)}
-          >
-            <option value="active">Active</option>
-            <option value="online">Online</option>
-            <option value="offline">Offline</option>
-            <option value="revoked">Revoked</option>
-          </Select>
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="Refresh instances"
-            disabled={loading}
-            onClick={() => void load()}
-          >
-            <RefreshCw />
-          </Button>
-        </div>
-      ) : null}
-      {instances === null && loading ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Loading instances…
-        </p>
-      ) : null}
-      {!error && instances?.length === 0 ? (
-        <Card className="grid min-h-52 place-items-center p-8 text-center">
-          <div className="grid justify-items-center gap-4">
-            <span className="grid size-11 place-items-center rounded-xl bg-muted text-muted-foreground">
-              <Monitor />
-            </span>
-            <p className="text-sm text-muted-foreground">
-              No instances enrolled.
-            </p>
-            <Button asChild variant="outline">
-              <Link href="/enrollment">Enroll instance</Link>
-            </Button>
-          </div>
-        </Card>
-      ) : (
-        <div className="grid gap-3">
-          {filteredInstances.map((instance) => (
-            <Card
-              key={instance.instanceId}
-              className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center"
+      <FleetSummary
+        instances={instances}
+        selected={status}
+        onSelect={(filter) => {
+          setStatus(filter);
+          setQuery("");
+        }}
+        stale={Boolean(error)}
+      />
+      <Card className="overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-5 sm:px-6">
+          <h2 className="text-base font-semibold">Devices</h2>
+          {updatedAt !== null ? (
+            <p
+              className="text-xs text-muted-foreground"
+              title={formatTime(updatedAt)}
             >
-              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted text-muted-foreground">
-                <Monitor className="size-5" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="min-w-0 [overflow-wrap:anywhere] font-medium">
-                    {instance.displayName}
-                  </h2>
-                  <Badge variant={instance.status}>{instance.status}</Badge>
-                </div>
-                <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
-                  {instance.instanceId}
-                </p>
-                <p
-                  className="mt-1 text-xs text-muted-foreground"
-                  title={formatTime(instance.lastSeenAt)}
-                >
-                  v{instance.productVersion} · Last seen{" "}
-                  {formatRelativeTime(instance.lastSeenAt)}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {instance.status === "online" ? (
-                  <Button asChild variant="outline" size="sm">
-                    <a
-                      href={`/instances/${encodeURIComponent(instance.instanceId)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <ExternalLink />
-                      Open
-                    </a>
+              {error ? "Last updated" : "Updated"}{" "}
+              {Date.now() / 1000 - updatedAt < 60
+                ? "just now"
+                : formatRelativeTime(updatedAt)}
+            </p>
+          ) : null}
+        </div>
+        {instances !== null && instances.length > 0 ? (
+          <div className="grid gap-3 border-b bg-muted/25 p-4 sm:px-6">
+            <div className="flex flex-wrap gap-2">
+              <div className="relative basis-full flex-1 sm:min-w-44 sm:basis-auto">
+                <Search
+                  className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <Input
+                  type="search"
+                  aria-label="Search devices"
+                  placeholder="Search devices"
+                  className="pl-9 pr-9"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+                {query ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-0 top-0"
+                    aria-label="Clear search"
+                    onClick={() => setQuery("")}
+                  >
+                    <X />
                   </Button>
                 ) : null}
-                {instance.status !== "revoked" ? (
-                  <RevokeInstance instance={instance} onRevoked={load} />
-                ) : null}
               </div>
-            </Card>
-          ))}
-        </div>
-      )}
-      {!error &&
-      instances &&
-      instances.length > 0 &&
-      filteredInstances.length === 0 ? (
-        <p
-          role="status"
-          className="py-8 text-center text-sm text-muted-foreground"
-        >
-          {normalizedQuery
-            ? "No matching instances."
-            : `No ${status} instances.`}
-        </p>
+              <Select
+                aria-label="Device status"
+                className="w-auto flex-1 basis-36 sm:flex-none sm:basis-auto"
+                value={status}
+                onChange={(event) =>
+                  setStatus(event.target.value as DeviceFilter)
+                }
+              >
+                <option value="active">Active ({summary.active})</option>
+                <option value="online">Online ({summary.online})</option>
+                <option value="offline">Offline ({summary.offline})</option>
+                <option value="revoked">Revoked ({summary.revoked})</option>
+              </Select>
+              <Select
+                aria-label="Sort devices"
+                className="w-auto flex-1 basis-36 sm:flex-none sm:basis-auto"
+                value={sort}
+                onChange={(event) => setSort(event.target.value as DeviceSort)}
+              >
+                <option value="status">Offline first</option>
+                <option value="name">Name</option>
+                <option value="last-seen">Last seen</option>
+                <option value="enrolled">Newest enrolled</option>
+              </Select>
+            </div>
+          </div>
+        ) : null}
+        {instances === null ? (
+          <div
+            role="status"
+            className="grid min-h-60 place-items-center p-6 text-sm text-muted-foreground"
+          >
+            {loading ? "Loading devices…" : "Devices could not be loaded."}
+          </div>
+        ) : instances.length === 0 ? (
+          <div className="grid min-h-64 justify-items-center content-center gap-4 p-6 text-center">
+            <span className="grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary">
+              <Monitor aria-hidden="true" />
+            </span>
+            <p className="font-medium">No devices yet</p>
+            <EnrollDevice onClose={() => void load()} />
+          </div>
+        ) : devices.length === 0 ? (
+          <div
+            role="status"
+            className="grid min-h-52 justify-items-center content-center gap-4 p-6 text-center"
+          >
+            <p className="text-sm text-muted-foreground">
+              {query.trim() ? "No matching devices." : `No ${status} devices.`}
+            </p>
+            {query || status !== "active" ? (
+              <Button variant="outline" onClick={resetFilters}>
+                Clear filters
+              </Button>
+            ) : null}
+          </div>
+        ) : (
+          <DeviceList
+            devices={devices}
+            onSelect={(instanceId, trigger) => {
+              selectedTrigger.current = trigger;
+              setSelectedId(instanceId);
+            }}
+          />
+        )}
+      </Card>
+      {selectedDevice ? (
+        <DeviceDetails
+          device={selectedDevice}
+          onClose={() => setSelectedId(null)}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            if (selectedTrigger.current?.isConnected)
+              selectedTrigger.current.focus();
+            else refreshButton.current?.focus();
+          }}
+          onRevoked={async () => {
+            await load();
+            setSelectedId(null);
+          }}
+        />
       ) : null}
     </section>
-  );
-}
-
-function RevokeInstance({
-  instance,
-  onRevoked,
-}: {
-  instance: FleetInstance;
-  onRevoked: () => Promise<void>;
-}): React.ReactElement {
-  return (
-    <ConfirmButton
-      trigger={
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={`Revoke ${instance.displayName}`}
-        >
-          <Trash2 />
-        </Button>
-      }
-      title={`Revoke ${instance.displayName}?`}
-      description="The instance will lose Fleet Manager access."
-      actionLabel="Revoke instance"
-      onConfirm={async () => {
-        await api(`/api/instances/${encodeURIComponent(instance.instanceId)}`, {
-          method: "DELETE",
-        });
-        await onRevoked();
-      }}
-    />
   );
 }
