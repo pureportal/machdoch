@@ -1,5 +1,8 @@
 import { randomBytes } from "node:crypto";
-import { gatewayProtocolVersion } from "@machdoch/fleet-protocol";
+import {
+  gatewayProtocolVersion,
+  managedSettingsSchemaVersion,
+} from "@machdoch/fleet-protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AuthStore } from "./auth-store";
 import { AuthenticationRateLimiter } from "./authentication-rate-limiter";
@@ -25,6 +28,121 @@ afterEach(() => {
 });
 
 describe("Fleet Manager API", () => {
+  it("delivers no managed settings when Settings Manager is disabled and preserves assignments", async () => {
+    runtime = testRuntime();
+    setRuntimeForTests(runtime);
+    const instance = enrollTestInstance(runtime);
+    const cipher = runtime.settingsCipher!;
+    const profileId = runtime.settingsStore.createProfile(
+      "Engineering",
+      "",
+      emptySettingsDocument(),
+      nowSeconds(),
+      runtime.config.settingsManager.limits.maximumProfiles,
+    );
+    runtime.settingsStore.setAssignment(
+      instance.instanceId,
+      profileId,
+      nowSeconds(),
+    );
+    const path = `/api/client/settings/${instance.instanceId}`;
+    const requestSettings = (
+      secret?: string,
+      etag?: string,
+    ): Promise<Response> => {
+      const headers = new Headers();
+      if (secret) headers.set("Authorization", `Bearer ${secret}`);
+      if (etag) headers.set("If-None-Match", etag);
+      return handleApiRequest(
+        new Request(`https://fleet.example.test${path}`, { headers }),
+        { clientAddress: "127.0.0.1" },
+      );
+    };
+    const assigned = await requestSettings(instance.instanceSecret);
+    const assignedEtag = assigned.headers.get("ETag")!;
+    expect((await assigned.json()).profile.profileId).toBe(profileId);
+    runtime.settingsCipher = null;
+    runtime.config.settingsManager.enabled = false;
+    expect((await requestSettings()).status).toBe(401);
+    expect((await requestSettings(createSecret("mch_instance"))).status).toBe(
+      401,
+    );
+    const delivery = await requestSettings(
+      instance.instanceSecret,
+      assignedEtag,
+    );
+    expect(delivery.status).toBe(200);
+    expect(await delivery.json()).toEqual({
+      schemaVersion: managedSettingsSchemaVersion,
+      managerId: runtime.database.managerId(),
+      profile: null,
+    });
+    const disabledEtag = delivery.headers.get("ETag")!;
+    expect(disabledEtag).not.toBe(assignedEtag);
+    expect(
+      (await requestSettings(instance.instanceSecret, disabledEtag)).status,
+    ).toBe(304);
+    expect(
+      (
+        await clientSettingsStatusRequest(
+          instance.instanceId,
+          instance.instanceSecret,
+          {
+            status: "applied",
+            managerId: runtime.database.managerId(),
+            profileId: null,
+            revision: null,
+          },
+        )
+      ).status,
+    ).toBe(204);
+    expect(
+      (
+        await clientSettingsStatusRequest(
+          instance.instanceId,
+          createSecret("mch_instance"),
+          {
+            status: "applied",
+            managerId: runtime.database.managerId(),
+            profileId: null,
+            revision: null,
+          },
+        )
+      ).status,
+    ).toBe(401);
+    expect(
+      (
+        await clientSettingsStatusRequest(
+          instance.instanceId,
+          instance.instanceSecret,
+          {
+            status: "applied",
+            managerId: runtime.database.managerId(),
+            profileId,
+            revision: 1,
+          },
+        )
+      ).status,
+    ).toBe(409);
+    expect((await apiRequest("/api/settings/profiles", "GET")).status).toBe(
+      404,
+    );
+    expect(
+      runtime.settingsStore.getDeliveryIdentity(instance.instanceId),
+    ).toEqual({ profileId, revision: 1 });
+    runtime.settingsCipher = cipher;
+    runtime.config.settingsManager.enabled = true;
+    const restored = await requestSettings(
+      instance.instanceSecret,
+      disabledEtag,
+    );
+    expect(restored.status).toBe(200);
+    expect((await restored.json()).profile.profileId).toBe(profileId);
+    runtime.fleetStore.revokeInstance(instance.instanceId, nowSeconds());
+    runtime.settingsCipher = null;
+    expect((await requestSettings(instance.instanceSecret)).status).toBe(401);
+  });
+
   it("protects media operations with owner authentication, CSRF, and the media allowlist", async () => {
     runtime = testRuntime();
     setRuntimeForTests(runtime);
@@ -788,21 +906,23 @@ async function authenticateTestOwner(): Promise<{
 
 function enrollTestInstance(runtime: FleetRuntime) {
   const enrollmentKey = createSecret("mch_enroll");
+  const instanceSecret = createSecret("mch_instance");
   runtime.fleetStore.createEnrollmentGrant(
     enrollmentKey,
     nowSeconds(),
     runtime.config.enrollmentPolicy,
   );
-  return runtime.fleetStore.enrollInstance(
+  const instance = runtime.fleetStore.enrollInstance(
     {
       enrollmentKey,
-      instanceSecret: createSecret("mch_instance"),
+      instanceSecret,
       displayName: "Test",
       productVersion: "7.0.6",
       protocolVersion: gatewayProtocolVersion,
     },
     nowSeconds(),
   );
+  return { ...instance, instanceSecret };
 }
 
 async function apiRequest(

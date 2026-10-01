@@ -907,7 +907,9 @@ function deliverSettings(
 ): Response {
   authenticateSettingsInstance(runtime, request, instanceId);
   const managerId = runtime.database.managerId();
-  const identity = runtime.settingsStore.getDeliveryIdentity(instanceId);
+  const identity = runtime.settingsCipher
+    ? runtime.settingsStore.getDeliveryIdentity(instanceId)
+    : null;
   const candidateEtag = createFleetManagedSettingsEtag({
     managerId,
     profile: identity,
@@ -918,10 +920,9 @@ function deliverSettings(
       headers: { ETag: candidateEtag },
     });
   }
-  const delivery = runtime.settingsStore.getDelivery(
-    runtime.settingsCipher!,
-    instanceId,
-  );
+  const delivery = runtime.settingsCipher
+    ? runtime.settingsStore.getDelivery(runtime.settingsCipher, instanceId)
+    : null;
   const response: FleetManagedSettingsDelivery = {
     schemaVersion: managedSettingsSchemaVersion,
     managerId,
@@ -955,6 +956,15 @@ async function reportSettingsSync(
       409,
       "Settings assignment changed during synchronization.",
     );
+  }
+  if (!runtime.settingsCipher) {
+    if (input.profileId !== null || input.revision !== null) {
+      throw new HttpError(
+        409,
+        "Settings assignment changed during synchronization.",
+      );
+    }
+    return new Response(null, { status: 204 });
   }
   const now = nowSeconds();
   if (input.status === "failed") {
@@ -995,7 +1005,6 @@ function authenticateSettingsInstance(
   request: Request,
   instanceId: string,
 ): void {
-  requireSettings(runtime);
   const secret = bearerToken(request);
   if (
     !validateId(instanceId, "instance") ||
