@@ -8,7 +8,7 @@ use std::{
 };
 
 use super::*;
-use crate::atomic_file::{durability_faults, write_file_atomic};
+use crate::atomic_file::{rename_file_atomic, write_file_atomic};
 
 #[test]
 fn selects_graphics_bundle_from_hardware() {
@@ -36,6 +36,91 @@ fn failures_have_recovery_copy_separate_from_diagnostics() {
         assert_eq!(status.diagnostic.as_deref(), Some(diagnostic));
         assert!(!status.message.contains(diagnostic));
     }
+}
+
+#[test]
+fn setup_diagnostics_keep_both_ends_within_character_limit() {
+    for padding in ["x", "💥"] {
+        let diagnostic = format!("No space left{}final context", padding.repeat(9000));
+        let status = SetupStatus::failed(diagnostic);
+        assert!(status.message.contains("Free up disk space"));
+        let diagnostic = status.diagnostic.unwrap();
+        assert!(diagnostic.starts_with("No space left"));
+        assert!(diagnostic.ends_with("final context"));
+        assert!(diagnostic.contains(OUTPUT_OMITTED));
+        assert_eq!(diagnostic.chars().count(), MAX_DIAGNOSTIC_CHARS);
+    }
+    let diagnostic = "💥".repeat(MAX_DIAGNOSTIC_CHARS);
+    assert_eq!(
+        SetupStatus::failed(diagnostic.clone()).diagnostic,
+        Some(diagnostic)
+    );
+}
+
+#[test]
+fn diagnostic_retention_obeys_small_character_budgets() {
+    for limit in 0..=OUTPUT_OMITTED.chars().count() + 3 {
+        let diagnostic = retain_diagnostic_context(&"💥".repeat(100), limit);
+        assert_eq!(diagnostic.chars().count(), limit);
+    }
+}
+
+#[test]
+fn setup_process_keeps_long_stdout_and_stderr_in_final_diagnostic() {
+    let mut command = setup_output_command("failure");
+    let diagnostic = process::run(&mut command, Duration::from_secs(30)).unwrap_err();
+    assert!(diagnostic.starts_with("Setup process exited with"));
+    assert!(diagnostic.contains("stdout:\n"));
+    assert!(diagnostic.contains("stderr:\n"));
+    let status = SetupStatus::failed(diagnostic);
+    assert_eq!(status.phase, SetupPhase::Failed);
+    let diagnostic = status.diagnostic.unwrap();
+    for marker in ["early stdout", "late stdout", "early stderr", "late stderr"] {
+        assert!(diagnostic.contains(marker), "missing {marker}");
+    }
+    assert_eq!(diagnostic.chars().count(), MAX_DIAGNOSTIC_CHARS);
+}
+
+#[test]
+fn setup_process_returns_successful_stdout_without_diagnostics() {
+    let mut command = setup_output_command("success");
+    let output = process::run(&mut command, Duration::from_secs(30)).unwrap();
+    assert!(output.ends_with("C:/managed python/python.exe\n3.12.10\n"));
+    assert!(!output.contains("successful stderr"));
+    assert!(!output.contains(OUTPUT_OMITTED));
+}
+
+fn setup_output_command(mode: &str) -> Command {
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command
+        .args([
+            "--exact",
+            "media::runtime_setup::tests::setup_process_output_entrypoint",
+            "--nocapture",
+        ])
+        .env("MACHDOCH_SETUP_OUTPUT_TEST", mode);
+    command
+}
+
+#[test]
+fn setup_process_output_entrypoint() {
+    let Ok(mode) = std::env::var("MACHDOCH_SETUP_OUTPUT_TEST") else {
+        return;
+    };
+    if mode == "success" {
+        io::stdout()
+            .write_all(b"C:/managed python/python.exe\n3.12.10\n")
+            .unwrap();
+        io::stdout().flush().unwrap();
+        io::stderr().write_all(b"successful stderr\n").unwrap();
+        std::process::exit(0);
+    }
+    let padding = "x".repeat(128 * 1024);
+    write!(io::stdout(), "early stdout{padding}late stdout").unwrap();
+    io::stdout().flush().unwrap();
+    write!(io::stderr(), "early stderr{padding}late stderr").unwrap();
+    io::stderr().flush().unwrap();
+    std::process::exit(1);
 }
 
 #[test]
@@ -101,6 +186,7 @@ fn download_publication_replaces_complete_files() {
         &archive,
         &bytes,
         write_file_atomic,
+        rename_file_atomic,
     )
     .unwrap();
 
@@ -117,6 +203,39 @@ fn download_publication_replaces_complete_files() {
             0o700
         );
     }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn download_install_publishes_complete_executable_from_verified_cache() {
+    use sha2::{Digest, Sha256};
+
+    let root = test_root("download-verified-cache");
+    fs::create_dir_all(&root).unwrap();
+    let (mut archive, bytes) = test_installer_archive(b"cached executable contents");
+    archive.sha256 = format!("{:x}", Sha256::digest(&bytes));
+    let archive_path = root.join(&archive.archive);
+    fs::write(&archive_path, &bytes).unwrap();
+
+    let executable_path = download::install(&root, "unused", &archive, &|_| {
+        panic!("verified cache must not require a download")
+    })
+    .unwrap();
+
+    assert_eq!(fs::read(&archive_path).unwrap(), bytes);
+    assert_eq!(
+        fs::read(&executable_path).unwrap(),
+        b"cached executable contents"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            fs::metadata(&executable_path).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 2);
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -149,43 +268,135 @@ fn download_preparation_failures_preserve_existing_files() {
                     .to_string_lossy()
                     .starts_with(&failed_prefix)
                 {
+                    fs::write(path, &contents[..contents.len() / 2])?;
                     return Err(io::Error::other("injected preparation failure"));
                 }
+                assert_eq!(fs::read(&archive_path).unwrap(), b"old archive");
+                assert_eq!(fs::read(&executable_path).unwrap(), b"old executable");
                 write_file_atomic(path, contents, options)
             },
+            |_, _| panic!("preparation must finish before publication"),
         )
         .unwrap_err();
 
         assert!(error.contains("injected preparation failure"));
         assert_eq!(fs::read(&executable_path).unwrap(), b"old executable");
         assert_eq!(fs::read(&archive_path).unwrap(), b"old archive");
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 2);
         fs::remove_dir_all(root).unwrap();
     }
 }
 
 #[test]
-fn download_publication_failure_after_executable_rename_restores_both_files() {
-    let root = test_root("download-rename-failure");
+fn download_publication_errors_before_and_after_rename_restore_both_files() {
+    for existing in [true, false] {
+        for failed_move in [1, 2] {
+            for fail_after_move in [false, true] {
+                let root = test_root("download-rename-failure");
+                fs::create_dir_all(&root).unwrap();
+                let (archive, bytes) = test_installer_archive(b"new executable contents");
+                let archive_path = root.join(&archive.archive);
+                let executable_path = root.join(if cfg!(windows) { "uv.exe" } else { "uv" });
+                if existing {
+                    fs::write(&archive_path, b"old archive").unwrap();
+                    fs::write(&executable_path, b"old executable").unwrap();
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        fs::set_permissions(&executable_path, fs::Permissions::from_mode(0o750))
+                            .unwrap();
+                    }
+                }
+                let mut moves = 0;
+                let error = download::publish_download(
+                    Some(&archive_path),
+                    &executable_path,
+                    &archive,
+                    &bytes,
+                    write_file_atomic,
+                    |from, to| {
+                        moves += 1;
+                        if moves == failed_move {
+                            if fail_after_move {
+                                rename_file_atomic(from, to)?;
+                            }
+                            Err(io::Error::other("injected publication failure"))
+                        } else {
+                            rename_file_atomic(from, to)
+                        }
+                    },
+                )
+                .unwrap_err();
+
+                assert!(error.contains("injected publication failure"));
+                assert!(!error.contains("could not restore"), "{error}");
+                if existing {
+                    assert_eq!(fs::read(&archive_path).unwrap(), b"old archive");
+                    assert_eq!(fs::read(&executable_path).unwrap(), b"old executable");
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        assert_eq!(
+                            fs::metadata(&executable_path).unwrap().permissions().mode() & 0o777,
+                            0o750
+                        );
+                    }
+                } else {
+                    assert!(!archive_path.exists());
+                    assert!(!executable_path.exists());
+                }
+                assert_eq!(
+                    fs::read_dir(&root).unwrap().count(),
+                    if existing { 2 } else { 0 }
+                );
+                fs::remove_dir_all(root).unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn download_failed_restoration_retains_the_previous_executable() {
+    let root = test_root("download-restoration-failure");
     fs::create_dir_all(&root).unwrap();
     let (archive, bytes) = test_installer_archive(b"new executable contents");
     let archive_path = root.join(&archive.archive);
     let executable_path = root.join(if cfg!(windows) { "uv.exe" } else { "uv" });
     fs::write(&archive_path, b"old archive").unwrap();
     fs::write(&executable_path, b"old executable").unwrap();
-
-    let failure = durability_faults::Failure::at(&executable_path);
+    let mut moves = 0;
+    let mut recovery_path = None;
     let error = download::publish_download(
         Some(&archive_path),
         &executable_path,
         &archive,
         &bytes,
         write_file_atomic,
+        |from, to| {
+            moves += 1;
+            match moves {
+                2 => {
+                    rename_file_atomic(from, to)?;
+                    Err(io::Error::other("injected publication failure"))
+                }
+                3 => {
+                    recovery_path = Some(from.to_path_buf());
+                    Err(io::Error::other("injected restoration failure"))
+                }
+                _ => rename_file_atomic(from, to),
+            }
+        },
     )
     .unwrap_err();
-    drop(failure);
 
-    assert!(error.contains("injected directory sync failure"));
+    let recovery_path = recovery_path.unwrap();
+    assert!(error.contains("injected publication failure"));
+    assert!(error.contains("injected restoration failure"));
+    assert!(error.contains(recovery_path.to_str().unwrap()));
+    assert_eq!(fs::read(&recovery_path).unwrap(), b"old executable");
     assert_eq!(fs::read(&archive_path).unwrap(), b"old archive");
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 3);
+    rename_file_atomic(&recovery_path, &executable_path).unwrap();
     assert_eq!(fs::read(&executable_path).unwrap(), b"old executable");
     fs::remove_dir_all(root).unwrap();
 }
@@ -206,6 +417,7 @@ fn invalid_download_is_not_published() {
         &archive,
         b"not a zip archive",
         write_file_atomic,
+        rename_file_atomic,
     )
     .is_err());
 
@@ -267,35 +479,138 @@ fn preparation_and_staged_verification_failures_preserve_the_previous_environmen
 }
 
 #[test]
-fn promotion_failure_restores_the_previous_environment() {
-    let root = replacement_root("promotion-failure");
-    let mut moves = 0;
-    let result = installer::replace_environment(
+fn rename_errors_before_and_after_moves_preserve_the_previous_environment() {
+    for failed_move in [1, 2] {
+        for fail_after_move in [false, true] {
+            let root = replacement_root("rename-error");
+            let mut moves = 0;
+            let mut verified = Vec::new();
+            let error = installer::replace_environment(
+                &root,
+                |staging| {
+                    fs::create_dir(staging).unwrap();
+                    fs::write(staging.join("marker"), "replacement").unwrap();
+                    Ok(())
+                },
+                |environment| {
+                    verified.push(environment.to_path_buf());
+                    Ok(())
+                },
+                |from, to| {
+                    moves += 1;
+                    if moves == failed_move {
+                        if fail_after_move {
+                            fs::rename(from, to)?;
+                        }
+                        Err(io::Error::other("injected rename failure"))
+                    } else {
+                        fs::rename(from, to)
+                    }
+                },
+                installer::remove_environment_directory,
+            )
+            .unwrap_err();
+
+            assert!(error.contains("injected rename failure"));
+            assert!(!error.contains("recovery failed"), "{error}");
+            assert_eq!(verified, [root.join("environment.staging")]);
+            assert_eq!(
+                fs::read_to_string(root.join("environment/marker")).unwrap(),
+                "previous"
+            );
+            assert!(!root.join("environment.staging").exists());
+            assert!(!root.join("environment.backup").exists());
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+}
+
+#[test]
+fn fresh_promotion_errors_do_not_leave_an_unverified_environment() {
+    for fail_after_move in [false, true] {
+        let root = test_root("fresh-promotion-error");
+        fs::create_dir(&root).unwrap();
+        let mut moves = 0;
+        let error = installer::replace_environment(
+            &root,
+            |staging| {
+                fs::create_dir(staging).unwrap();
+                fs::write(staging.join("marker"), "replacement").unwrap();
+                Ok(())
+            },
+            |_| Ok(()),
+            |from, to| {
+                moves += 1;
+                if moves == 1 {
+                    if fail_after_move {
+                        fs::rename(from, to)?;
+                    }
+                    Err(io::Error::other("injected promotion failure"))
+                } else {
+                    fs::rename(from, to)
+                }
+            },
+            installer::remove_environment_directory,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("injected promotion failure"));
+        assert!(!error.contains("recovery failed"), "{error}");
+        assert!(!root.join("environment").exists());
+        assert!(!root.join("environment.staging").exists());
+        assert!(!root.join("environment.backup").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[test]
+fn failed_recovery_retains_the_backup_and_original_error_for_a_retry() {
+    let root = replacement_root("recovery-error");
+    let mut probes = 0;
+    let error = installer::replace_environment(
         &root,
         |staging| {
             fs::create_dir(staging).unwrap();
             fs::write(staging.join("marker"), "replacement").unwrap();
             Ok(())
         },
-        |_| Ok(()),
+        |_| {
+            probes += 1;
+            if probes == 1 {
+                Ok(())
+            } else {
+                Err("promoted runtime failed GPU verification".to_string())
+            }
+        },
         |from, to| {
-            moves += 1;
-            if moves == 2 {
-                Err(std::io::Error::other("injected promotion failure"))
+            if from.ends_with("environment.backup") {
+                Err(io::Error::other("injected restoration failure"))
             } else {
                 fs::rename(from, to)
             }
         },
         installer::remove_environment_directory,
+    )
+    .unwrap_err();
+
+    assert!(error.contains("promoted runtime failed GPU verification"));
+    assert!(error.contains("injected restoration failure"));
+    assert_eq!(
+        fs::read_to_string(root.join("environment.backup/marker")).unwrap(),
+        "previous"
     );
-    assert!(result.unwrap_err().contains("injected promotion failure"));
-    assert_eq!(moves, 3);
+    assert!(!root.join("environment").exists());
+    installer::restore_interrupted_environment(
+        &root,
+        |_| panic!("the missing environment cannot be verified"),
+        |from, to| fs::rename(from, to),
+        installer::remove_environment_directory,
+    )
+    .unwrap();
     assert_eq!(
         fs::read_to_string(root.join("environment/marker")).unwrap(),
         "previous"
     );
-    assert!(!root.join("environment.staging").exists());
-    assert!(!root.join("environment.backup").exists());
     fs::remove_dir_all(root).unwrap();
 }
 

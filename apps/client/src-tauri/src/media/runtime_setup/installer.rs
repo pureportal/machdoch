@@ -289,6 +289,7 @@ pub(super) fn replace_environment<T>(
         &mut rename,
         &mut remove,
     )?;
+    let had_environment = environment_directory_exists(&environment)?;
     remove(&staging)?;
     let prepared = prepare(&staging).and_then(|_| verify(&staging));
     if let Err(error) = prepared {
@@ -297,8 +298,7 @@ pub(super) fn replace_environment<T>(
         }
         return Err(error);
     }
-    let had_environment = environment_directory_exists(&environment)?;
-    {
+    let promoted = (|| {
         let _guard = RUNTIME_USE
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -306,17 +306,10 @@ pub(super) fn replace_environment<T>(
             rename(&environment, &backup)
                 .map_err(|error| format!("Could not preserve the previous environment: {error}"))?;
         }
-        if let Err(error) = rename(&staging, &environment) {
-            if had_environment {
-                rename(&backup, &environment).map_err(|restore| {
-                    format!("Could not promote the environment: {error}; could not restore the previous environment: {restore}")
-                })?;
-            }
-            remove(&staging)?;
-            return Err(format!("Could not promote the environment: {error}"));
-        }
-    }
-    match verify(&environment) {
+        rename(&staging, &environment)
+            .map_err(|error| format!("Could not promote the environment: {error}"))
+    })();
+    match promoted.and_then(|_| verify(&environment)) {
         Ok(runtime) => {
             if had_environment {
                 if let Err(error) = remove(&backup) {
@@ -329,15 +322,25 @@ pub(super) fn replace_environment<T>(
             let _guard = RUNTIME_USE
                 .write()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            rename(&environment, &staging).map_err(|move_error| {
-                format!("Promoted environment verification failed: {error}; could not move it aside: {move_error}")
-            })?;
-            if had_environment {
-                rename(&backup, &environment).map_err(|restore| {
-                    format!("Promoted environment verification failed: {error}; could not restore the previous environment: {restore}")
-                })?;
+            let recovery = (|| {
+                let has_backup = environment_directory_exists(&backup)?;
+                if has_backup || !had_environment {
+                    if environment_directory_exists(&environment)? {
+                        rename(&environment, &staging).map_err(|error| {
+                            format!("Could not move the failed environment aside: {error}")
+                        })?;
+                    }
+                    if has_backup {
+                        rename(&backup, &environment).map_err(|error| {
+                            format!("Could not restore the previous environment: {error}")
+                        })?;
+                    }
+                }
+                remove(&staging)
+            })();
+            if let Err(recovery) = recovery {
+                return Err(format!("{error}; recovery failed: {recovery}"));
             }
-            remove(&staging)?;
             Err(error)
         }
     }
@@ -405,6 +408,7 @@ pub(crate) fn install(
                 uv_command(&uv, &root)
                     .args([
                         "venv",
+                        "--relocatable",
                         "--managed-python",
                         "--no-python-downloads",
                         "--python",
@@ -437,7 +441,7 @@ pub(crate) fn install(
                     ],
                 )?;
             }
-            let requirements = root.join("requirements.txt");
+            let requirements = environment.join("requirements.txt");
             fs::write(
                 &requirements,
                 format!(

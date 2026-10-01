@@ -82,6 +82,7 @@ pub(super) fn install(
         archive,
         &bytes,
         write_file_atomic,
+        rename_file_atomic,
     )?;
     Ok(destination)
 }
@@ -92,6 +93,7 @@ pub(super) fn publish_download(
     archive: &InstallerArchive,
     bytes: &[u8],
     mut write: impl FnMut(&Path, &[u8], AtomicWriteOptions) -> io::Result<()>,
+    mut rename: impl FnMut(&Path, &Path) -> io::Result<()>,
 ) -> MediaResult<()> {
     let executable = extract_executable(bytes, archive)?;
     let archive_file = archive_path
@@ -109,11 +111,11 @@ pub(super) fn publish_download(
     let mut files: Vec<PreparedFile> = archive_file.into_iter().collect();
     files.push(executable_file);
     for index in 0..files.len() {
-        if let Err(error) = files[index].publish() {
+        if let Err(error) = rename(&files[index].staged.path, &files[index].destination) {
             let recovery = files[..=index]
-                .iter()
+                .iter_mut()
                 .rev()
-                .filter_map(|file| file.restore().err())
+                .filter_map(|file| file.restore(&mut rename).err())
                 .map(|error| error.to_string())
                 .collect::<Vec<_>>();
             if recovery.is_empty() {
@@ -130,7 +132,10 @@ pub(super) fn publish_download(
 
 static NEXT_STAGING_FILE: AtomicU64 = AtomicU64::new(0);
 
-struct StagingFile(PathBuf);
+struct StagingFile {
+    path: PathBuf,
+    remove_on_drop: bool,
+}
 
 impl StagingFile {
     fn new(destination: &Path) -> io::Result<Self> {
@@ -151,7 +156,12 @@ impl StagingFile {
                 .create_new(true)
                 .open(&path)
             {
-                Ok(_) => return Ok(Self(path)),
+                Ok(_) => {
+                    return Ok(Self {
+                        path,
+                        remove_on_drop: true,
+                    })
+                }
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
                 Err(error) => return Err(error),
             }
@@ -165,7 +175,9 @@ impl StagingFile {
 
 impl Drop for StagingFile {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.0);
+        if self.remove_on_drop {
+            let _ = fs::remove_file(&self.path);
+        }
     }
 }
 
@@ -183,17 +195,17 @@ impl PreparedFile {
         write: &mut impl FnMut(&Path, &[u8], AtomicWriteOptions) -> io::Result<()>,
     ) -> io::Result<Self> {
         let staged = StagingFile::new(destination)?;
-        write(&staged.0, bytes, options)
+        write(&staged.path, bytes, options)
             .map_err(|error| io::Error::new(error.kind(), format!("staging write: {error}")))?;
         let previous = match fs::metadata(destination) {
             Ok(_) => {
                 let previous = StagingFile::new(destination)?;
-                fs::copy(destination, &previous.0).map_err(|error| {
+                fs::copy(destination, &previous.path).map_err(|error| {
                     io::Error::new(error.kind(), format!("backup copy: {error}"))
                 })?;
                 fs::OpenOptions::new()
                     .write(true)
-                    .open(&previous.0)?
+                    .open(&previous.path)?
                     .sync_all()?;
                 Some(previous)
             }
@@ -207,13 +219,22 @@ impl PreparedFile {
         })
     }
 
-    fn publish(&self) -> io::Result<()> {
-        rename_file_atomic(&self.staged.0, &self.destination)
-    }
-
-    fn restore(&self) -> io::Result<()> {
-        match &self.previous {
-            Some(previous) => rename_file_atomic(&previous.0, &self.destination),
+    fn restore(
+        &mut self,
+        rename: &mut impl FnMut(&Path, &Path) -> io::Result<()>,
+    ) -> io::Result<()> {
+        match &mut self.previous {
+            Some(previous) => rename(&previous.path, &self.destination).map_err(|error| {
+                previous.remove_on_drop = false;
+                io::Error::new(
+                    error.kind(),
+                    format!(
+                        "Could not confirm restoration of {} from {}: {error}",
+                        self.destination.display(),
+                        previous.path.display()
+                    ),
+                )
+            }),
             None => match fs::remove_file(&self.destination) {
                 Ok(()) => Ok(()),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),

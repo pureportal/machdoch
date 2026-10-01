@@ -22,6 +22,25 @@ use super::{
 pub(crate) use installer::python_path;
 pub(crate) static RUNTIME_USE: RwLock<()> = RwLock::new(());
 
+const MAX_DIAGNOSTIC_CHARS: usize = 8000;
+const OUTPUT_OMITTED: &str = "\n... output omitted ...\n";
+
+fn retain_diagnostic_context(diagnostic: &str, limit: usize) -> String {
+    let count = diagnostic.chars().count();
+    if count <= limit {
+        return diagnostic.to_string();
+    }
+    let retained = limit.saturating_sub(OUTPUT_OMITTED.chars().count());
+    let start = retained.div_ceil(2);
+    let end = retained / 2;
+    diagnostic
+        .chars()
+        .take(start)
+        .chain(OUTPUT_OMITTED.chars().take(limit))
+        .chain(diagnostic.chars().skip(count - end))
+        .collect()
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Manifest {
@@ -117,7 +136,7 @@ impl SetupStatus {
         Self {
             phase: SetupPhase::Failed,
             message: message.to_string(),
-            diagnostic: Some(diagnostic.chars().take(8000).collect()),
+            diagnostic: Some(retain_diagnostic_context(&diagnostic, MAX_DIAGNOSTIC_CHARS)),
             download_percent: None,
         }
     }
