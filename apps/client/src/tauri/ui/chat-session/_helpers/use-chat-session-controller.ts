@@ -62,7 +62,6 @@ import {
   type ChatSessionMessage,
   type ChatSessionMessagePromptEnhancement,
   type ChatSessionMessageSettings,
-  type ChatSessionPathContextAttachment,
   type ChatSessionQueuedMessage,
   type ChatSessionQueuedPromptEnhancementRequest,
   type ChatSessionRecord,
@@ -103,13 +102,8 @@ import {
   loadWorkspaceMemoryEntries,
   openAttachedPath,
   openExternalUrl,
-  openWorkspacePath,
-  readAttachedFilePreview,
-  readWorkspaceFilePreview,
-  resolveAttachedFilePreviewSource,
   resolveAttachedImagePreviewSource,
   resolveDroppedPaths,
-  resolveWorkspaceFilePreviewSource,
   saveClipboardImageAttachment,
   mutateInstructions,
   syncChatCompletionIndicator,
@@ -126,7 +120,6 @@ import {
   createInitialThinkingTrace,
 } from "../../task-thinking.model";
 import { createWorkspaceRootKey } from "../../workspace-management/workspace-management-model";
-import type { FilePreviewMode } from "../components/file-preview-dialog";
 import type { SettingsStatusMessage } from "../components/settings-dialog-panels/types";
 import { clampAiContextMessageLimit } from "./ai-context-window";
 import { isChatCompletionIndicatorActive } from "./chat-completion-indicator";
@@ -153,11 +146,8 @@ import {
   isComposerClearGuardCurrent,
   type ComposerClearGuard,
 } from "./composer-submission";
-import {
-  getFilePreviewFileName,
-  getFilePreviewRenderKind,
-  resolveFilePreviewSyntax,
-} from "./file-preview-language";
+import type { FilePreviewTarget } from "./file-preview-runtime";
+import { useFilePreview } from "./use-file-preview";
 import { getRenderedMessageContent } from "./execution-message.tsx";
 import {
   createMessagePromptEnhancement,
@@ -589,36 +579,6 @@ interface AttachmentImagePreviewState {
   error: string | null;
 }
 
-type FilePreviewTarget =
-  | {
-      kind: "attachment";
-      attachment: ChatSessionPathContextAttachment;
-      workspaceRoot: string | null | undefined;
-    }
-  | {
-      kind: "workspace";
-      workspaceRoot: string | null | undefined;
-      relativePath: string;
-      line?: number;
-    };
-
-interface FilePreviewState {
-  id: string;
-  target: FilePreviewTarget;
-  title: string;
-  path: string;
-  mode: FilePreviewMode;
-  loading: boolean;
-  error: string | null;
-  source: string | null;
-  content: string | null;
-  language: ReturnType<typeof resolveFilePreviewSyntax>["language"];
-  languageLabel: string;
-  truncated: boolean;
-  lossy: boolean;
-  targetLine: number | null;
-}
-
 export interface UseChatSessionControllerOptions {
   enableBackgroundMaintenance?: boolean;
   enableTaskProgress?: boolean;
@@ -811,7 +771,12 @@ export const useChatSessionController = (
     useState<AttachmentImagePreviewState | null>(null);
   const attachmentImagePreviewObjectUrlRef = useRef<string | null>(null);
   const attachmentImagePreviewRequestRef = useRef(0);
-  const [filePreview, setFilePreview] = useState<FilePreviewState | null>(null);
+  const {
+    preview: filePreview,
+    showPreview,
+    closePreview: handleCloseFilePreview,
+    openExternally: handleOpenFilePreviewExternally,
+  } = useFilePreview();
   const [runningTaskMessageAction, setRunningTaskMessageAction] =
     useState<RunningTaskMessageAction>(DEFAULT_RUNNING_TASK_MESSAGE_ACTION);
   const [runningTaskMessageActionLoaded, setRunningTaskMessageActionLoaded] =
@@ -3257,15 +3222,6 @@ export const useChatSessionController = (
     });
   };
 
-  const openWorkspaceFileExternally = (
-    workspaceRoot: string | null | undefined,
-    relativePath: string,
-  ): void => {
-    void openWorkspacePath(workspaceRoot, relativePath).catch((error) => {
-      console.error("Failed to open workspace path", error);
-    });
-  };
-
   const openAttachedPathExternally = (
     path: string,
     workspaceRoot: string | null | undefined,
@@ -3275,146 +3231,13 @@ export const useChatSessionController = (
     });
   };
 
-  const createFilePreviewState = (
-    target: FilePreviewTarget,
-  ): FilePreviewState => {
-    const path =
-      target.kind === "attachment"
-        ? target.attachment.path
-        : target.relativePath;
-    const title =
-      target.kind === "attachment"
-        ? target.attachment.name
-        : getFilePreviewFileName(target.relativePath);
-    const syntax = resolveFilePreviewSyntax(title || path);
-
-    return {
-      id: `file-preview-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2, 8)}`,
-      target,
-      title: title || path,
-      path,
-      mode: getFilePreviewRenderKind(title || path),
-      loading: true,
-      error: null,
-      source: null,
-      content: null,
-      language: syntax.language,
-      languageLabel: syntax.label,
-      truncated: false,
-      lossy: false,
-      targetLine: target.kind === "workspace" ? (target.line ?? null) : null,
-    };
-  };
-
-  const loadFilePreviewSource = async (
-    target: FilePreviewTarget,
-  ): Promise<string> => {
-    if (target.kind === "attachment") {
-      return resolveAttachedFilePreviewSource(
-        target.attachment.path,
-        target.workspaceRoot,
-      );
-    }
-
-    return resolveWorkspaceFilePreviewSource(
-      target.workspaceRoot,
-      target.relativePath,
-    );
-  };
-
-  const loadFilePreviewContent = async (
-    target: FilePreviewTarget,
-  ): Promise<{
-    content: string;
-    truncated: boolean;
-    lossy: boolean;
-  }> => {
-    if (target.kind === "attachment") {
-      return readAttachedFilePreview(
-        target.attachment.path,
-        target.workspaceRoot,
-      );
-    }
-
-    return readWorkspaceFilePreview(target.workspaceRoot, target.relativePath);
-  };
-
   const showFilePreview = (target: FilePreviewTarget): void => {
-    const nextPreview = createFilePreviewState(target);
-
     setAttachmentImagePreview(null);
-    setFilePreview(nextPreview);
+    showPreview(target);
+  };
 
-    if (nextPreview.mode === "image" || nextPreview.mode === "pdf") {
-      void loadFilePreviewSource(target)
-        .then((source) => {
-          setFilePreview((current) =>
-            current?.id === nextPreview.id
-              ? {
-                  ...current,
-                  source,
-                  loading: false,
-                  error: null,
-                }
-              : current,
-          );
-        })
-        .catch((error) => {
-          const message =
-            error instanceof Error
-              ? error.message
-              : "Failed to resolve file preview.";
-
-          console.error("Failed to resolve file preview", error);
-          setFilePreview((current) =>
-            current?.id === nextPreview.id
-              ? {
-                  ...current,
-                  source: null,
-                  loading: false,
-                  error: message,
-                }
-              : current,
-          );
-        });
-      return;
-    }
-
-    void loadFilePreviewContent(target)
-      .then((result) => {
-        setFilePreview((current) =>
-          current?.id === nextPreview.id
-            ? {
-                ...current,
-                content: result.content,
-                truncated: result.truncated,
-                lossy: result.lossy,
-                loading: false,
-                error: null,
-              }
-            : current,
-        );
-      })
-      .catch((error) => {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Failed to read file preview.";
-
-        console.error("Failed to read file preview", error);
-        setFilePreview((current) =>
-          current?.id === nextPreview.id
-            ? {
-                ...current,
-                content: null,
-                loading: false,
-                error: message,
-              }
-            : current,
-        );
-      });
+  const handleOpenLocalFile = (path: string, line?: number): void => {
+    showFilePreview({ kind: "local", path, line });
   };
 
   const handleOpenWorkspaceFile = (
@@ -3448,7 +3271,7 @@ export const useChatSessionController = (
     workspaceRoot = state.activeSession.workspace,
   ): void => {
     if (isMediaAssetContextAttachment(attachment)) {
-      setFilePreview(null);
+      handleCloseFilePreview();
       if (attachment.kind !== "image") {
         return;
       }
@@ -3496,7 +3319,7 @@ export const useChatSessionController = (
       return;
     }
     if (attachment.kind === "image") {
-      setFilePreview(null);
+      handleCloseFilePreview();
       setAttachmentImagePreview({
         attachment,
         source: null,
@@ -3553,7 +3376,7 @@ export const useChatSessionController = (
     }
 
     if (isLinkContextAttachment(attachment)) {
-      setFilePreview(null);
+      handleCloseFilePreview();
       void openExternalUrl(attachment.path).catch((error) => {
         console.error("Failed to open attached link", error);
       });
@@ -3569,7 +3392,7 @@ export const useChatSessionController = (
       return;
     }
 
-    setFilePreview(null);
+    handleCloseFilePreview();
     openAttachedPathExternally(attachment.path, workspaceRoot);
   };
 
@@ -3580,29 +3403,6 @@ export const useChatSessionController = (
       attachmentImagePreviewObjectUrlRef.current = null;
     }
     setAttachmentImagePreview(null);
-  };
-
-  const handleCloseFilePreview = (): void => {
-    setFilePreview(null);
-  };
-
-  const handleOpenFilePreviewExternally = (): void => {
-    if (!filePreview) {
-      return;
-    }
-
-    if (filePreview.target.kind === "workspace") {
-      openWorkspaceFileExternally(
-        filePreview.target.workspaceRoot,
-        filePreview.target.relativePath,
-      );
-      return;
-    }
-
-    openAttachedPathExternally(
-      filePreview.target.attachment.path,
-      filePreview.target.workspaceRoot,
-    );
   };
 
   const getActiveDesktopTaskIdForSession = useCallback(
@@ -8665,6 +8465,7 @@ export const useChatSessionController = (
       workspaceRoot:
         quickTaskSession?.workspace ?? state.activeSession.workspace,
       onOpenWorkspaceFile: handleOpenQuickTaskWorkspaceFile,
+      onOpenLocalFile: handleOpenLocalFile,
       canClearHistory: Boolean(
         quickTaskSession &&
         (quickTaskSession.messages.length > 0 ||
@@ -8793,6 +8594,7 @@ export const useChatSessionController = (
       onContinueTask: taskSubmission.handleContinueTask,
       onSaveMessageAsContextPack: handleSaveMessageAsContextPack,
       onOpenWorkspaceFile: handleOpenWorkspaceFile,
+      onOpenLocalFile: handleOpenLocalFile,
       onOpenAttachment: handleOpenAttachment,
       voicePlayback: {
         supported: voice.supported,

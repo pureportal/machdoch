@@ -62,8 +62,96 @@ const value = "<tag> & text";
       expect(writeText).toHaveBeenCalledWith('const value = "<tag> & text";');
     });
     expect(
-      screen.getByRole("button", { name: "Copied code block" }),
+      await screen.findByRole("button", { name: "Copied code block" }),
     ).toBeTruthy();
+  });
+});
+
+describe("MarkdownContent file links", () => {
+  const previewPath =
+    "C:/Users/ehrha/AppData/Local/Temp/machdoch-goal-ui-review/final-composer-desktop.png";
+
+  it("opens the reported preview link outside the workspace only after clicking", () => {
+    const onOpenLocalFile = vi.fn();
+    const onOpenWorkspaceFile = vi.fn();
+    render(
+      createElement(MarkdownContent, {
+        content: `[View preview](${previewPath})`,
+        workspaceRoot: "C:\\Development\\machdoch",
+        onOpenWorkspaceFile,
+        onOpenLocalFile,
+      }),
+    );
+
+    expect(onOpenLocalFile).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "View preview" }));
+    expect(onOpenLocalFile).toHaveBeenCalledWith(previewPath, undefined);
+    expect(onOpenWorkspaceFile).not.toHaveBeenCalled();
+  });
+
+  it("keeps workspace files using the workspace preview action", () => {
+    const onOpenLocalFile = vi.fn();
+    const onOpenWorkspaceFile = vi.fn();
+    render(
+      createElement(MarkdownContent, {
+        content: "[Source](C:/Development/machdoch/src/main.ts:17)",
+        workspaceRoot: "C:\\Development\\machdoch",
+        onOpenWorkspaceFile,
+        onOpenLocalFile,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    expect(onOpenWorkspaceFile).toHaveBeenCalledWith("src/main.ts", 17);
+    expect(onOpenLocalFile).not.toHaveBeenCalled();
+  });
+
+  it("decodes spaces and source locations from local file URLs", () => {
+    const onOpenLocalFile = vi.fn();
+    render(
+      createElement(MarkdownContent, {
+        content: "[Report](file:///C:/Temp/My%20report.md#L12)",
+        onOpenLocalFile,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Report" }));
+    expect(onOpenLocalFile).toHaveBeenCalledWith("C:/Temp/My report.md", 12);
+  });
+
+  it("uses the latest local file action without remounting selected text", () => {
+    const firstOpen = vi.fn();
+    const latestOpen = vi.fn();
+    const props = { content: `Result: [View preview](${previewPath})` };
+    const { container, rerender } = render(
+      createElement(MarkdownContent, { ...props, onOpenLocalFile: firstOpen }),
+    );
+    const text = container.querySelector("p")?.firstChild;
+    rerender(
+      createElement(MarkdownContent, { ...props, onOpenLocalFile: latestOpen }),
+    );
+    expect(container.querySelector("p")?.firstChild).toBe(text);
+    fireEvent.click(screen.getByRole("button", { name: "View preview" }));
+    expect(firstOpen).not.toHaveBeenCalled();
+    expect(latestOpen).toHaveBeenCalledWith(previewPath, undefined);
+  });
+
+  it("keeps unsafe protocols and local image embeds blocked", () => {
+    const onOpenLocalFile = vi.fn();
+    const { container } = render(
+      createElement(MarkdownContent, {
+        content:
+          "[Unsafe](javascript:alert%281%29)\n\n![Hidden](file:///C:/Temp/image.png)\n\n[Site](https://example.com)\n\n[Section](#section)",
+        onOpenLocalFile,
+      }),
+    );
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(container.querySelector("img")).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "Site" }).getAttribute("href"),
+    ).toBe("https://example.com");
+    expect(
+      screen.getByRole("link", { name: "Section" }).getAttribute("target"),
+    ).toBeNull();
+    expect(onOpenLocalFile).not.toHaveBeenCalled();
   });
 });
 

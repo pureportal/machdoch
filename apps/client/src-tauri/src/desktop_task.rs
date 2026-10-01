@@ -20,6 +20,8 @@ mod commands;
 mod diagnostics;
 mod dropped_paths;
 mod file_changes;
+pub(crate) mod file_preview;
+pub(crate) mod local_file_links;
 pub(crate) mod media_flow_agent;
 mod paths;
 mod payload;
@@ -536,6 +538,13 @@ fn allow_file_preview_source(
     Ok(format_path_for_ui(preview_path))
 }
 
+fn is_binary_file_preview(bytes: &[u8]) -> bool {
+    bytes
+        .iter()
+        .take(BINARY_PREVIEW_SCAN_BYTES)
+        .any(|byte| *byte == 0)
+}
+
 fn read_file_preview_sync(path: PathBuf) -> Result<FilePreviewReadResult, String> {
     let preview_path = ensure_file_preview_path(path)?;
     let mut file = fs::File::open(&preview_path).map_err(|error| {
@@ -562,11 +571,7 @@ fn read_file_preview_sync(path: PathBuf) -> Result<FilePreviewReadResult, String
         bytes.truncate(MAX_FILE_PREVIEW_BYTES as usize);
     }
 
-    if bytes
-        .iter()
-        .take(BINARY_PREVIEW_SCAN_BYTES)
-        .any(|byte| *byte == 0)
-    {
+    if is_binary_file_preview(&bytes) {
         return Err(
             "This file does not look like text. Use the external opener instead.".to_string(),
         );

@@ -22,9 +22,11 @@ import {
 import remarkGfm from "remark-gfm";
 import {
   createWorkspacePathLinkRemarkPlugin,
+  getLocalMarkdownLinkTarget,
   getWorkspaceMarkdownLinkTarget,
   isLocalMarkdownLinkHref,
   openWorkspaceMarkdownLinkTarget,
+  type LocalMarkdownLinkOpenHandler,
   type WorkspaceMarkdownLinkOpenHandler,
 } from "./workspace-markdown-links";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
@@ -37,6 +39,7 @@ export interface MarkdownContentProps {
   className?: string;
   workspaceRoot?: string | null;
   onOpenWorkspaceFile?: WorkspaceMarkdownLinkOpenHandler;
+  onOpenLocalFile?: LocalMarkdownLinkOpenHandler;
   components?: Components;
 }
 
@@ -191,12 +194,14 @@ const createMarkdownUrlTransform =
   (
     workspaceRoot: string | null | undefined,
     onOpenWorkspaceFile: WorkspaceMarkdownLinkOpenHandler | undefined,
+    onOpenLocalFile: LocalMarkdownLinkOpenHandler | undefined,
   ): UrlTransform =>
   (url, key) => {
     if (
       key === "href" &&
-      (onOpenWorkspaceFile || workspaceRoot) &&
-      getWorkspaceMarkdownLinkTarget(url, workspaceRoot)
+      (((onOpenWorkspaceFile || workspaceRoot) &&
+        getWorkspaceMarkdownLinkTarget(url, workspaceRoot)) ||
+        (onOpenLocalFile && getLocalMarkdownLinkTarget(url)))
     ) {
       return url;
     }
@@ -207,6 +212,7 @@ const createMarkdownUrlTransform =
 const createMarkdownComponents = (
   workspaceRoot: string | null | undefined,
   onOpenWorkspaceFile: WorkspaceMarkdownLinkOpenHandler | undefined,
+  onOpenLocalFile: LocalMarkdownLinkOpenHandler | undefined,
 ): Components => ({
   p: ({ children, className, node: _node, ...props }): JSX.Element => {
     const structuredField = getStructuredFindingsField(children);
@@ -304,6 +310,25 @@ const createMarkdownComponents = (
       );
     }
 
+    const localTarget = getLocalMarkdownLinkTarget(href);
+
+    if (localTarget && onOpenLocalFile) {
+      return (
+        <button
+          type="button"
+          data-local-path={localTarget.path}
+          data-local-line={localTarget.line}
+          onClick={() => onOpenLocalFile(localTarget.path, localTarget.line)}
+          className={cn(
+            "app-markdown-link app-markdown-workspace-link",
+            className,
+          )}
+        >
+          {children}
+        </button>
+      );
+    }
+
     if (!href?.trim() || isLocalMarkdownLinkHref(href)) {
       const inertLink = (
         <span
@@ -341,6 +366,7 @@ export const MarkdownContent = memo(function MarkdownContent({
   className,
   workspaceRoot,
   onOpenWorkspaceFile,
+  onOpenLocalFile,
   components: componentOverrides,
 }: MarkdownContentProps): JSX.Element {
   const markdownInstanceId = useId().replace(/[^A-Za-z0-9_-]/gu, "");
@@ -352,6 +378,15 @@ export const MarkdownContent = memo(function MarkdownContent({
     (relativePath, line) => openWorkspaceFileRef.current?.(relativePath, line),
     [],
   );
+  const openLocalFileRef = useRef(onOpenLocalFile);
+  useLayoutEffect(() => {
+    openLocalFileRef.current = onOpenLocalFile;
+  }, [onOpenLocalFile]);
+  const openLocalFile = useCallback<LocalMarkdownLinkOpenHandler>(
+    (path, line) => openLocalFileRef.current?.(path, line),
+    [],
+  );
+  const localFileHandler = onOpenLocalFile ? openLocalFile : undefined;
   const autoLinkWorkspacePaths = Boolean(onOpenWorkspaceFile);
   const workspaceFileHandler = autoLinkWorkspacePaths
     ? openWorkspaceFile
@@ -366,8 +401,13 @@ export const MarkdownContent = memo(function MarkdownContent({
     [autoLinkWorkspacePaths, workspaceRoot],
   );
   const urlTransform = useMemo<UrlTransform>(
-    () => createMarkdownUrlTransform(workspaceRoot, workspaceFileHandler),
-    [workspaceFileHandler, workspaceRoot],
+    () =>
+      createMarkdownUrlTransform(
+        workspaceRoot,
+        workspaceFileHandler,
+        localFileHandler,
+      ),
+    [workspaceFileHandler, workspaceRoot, localFileHandler],
   );
   const remarkRehypeOptions = useMemo<
     NonNullable<ReactMarkdownOptions["remarkRehypeOptions"]>
@@ -377,10 +417,14 @@ export const MarkdownContent = memo(function MarkdownContent({
   );
   const components = useMemo<Components>(
     () => ({
-      ...createMarkdownComponents(workspaceRoot, workspaceFileHandler),
+      ...createMarkdownComponents(
+        workspaceRoot,
+        workspaceFileHandler,
+        localFileHandler,
+      ),
       ...componentOverrides,
     }),
-    [componentOverrides, workspaceFileHandler, workspaceRoot],
+    [componentOverrides, workspaceFileHandler, workspaceRoot, localFileHandler],
   );
 
   return (

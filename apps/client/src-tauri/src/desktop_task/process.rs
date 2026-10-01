@@ -366,11 +366,12 @@ pub(super) fn open_path_in_system_shell(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let mut command = Command::new("explorer");
+        let explorer_path = super::paths::format_path_for_ui(path);
 
         if path.is_file() {
-            command.arg(format!("/select,{}", path.display()));
+            command.arg(format!("/select,{explorer_path}"));
         } else {
-            command.arg(path);
+            command.arg(explorer_path);
         }
 
         return spawn_detached_command(
