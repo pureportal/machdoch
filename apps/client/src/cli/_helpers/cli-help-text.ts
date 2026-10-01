@@ -86,8 +86,12 @@ machdoch run. It requires an interactive terminal and does not support --json.
 Interactive commands:
 ${INTERACTIVE_CHAT_HELP}
 
-Tab completes commands; arrow keys recall input. Ctrl+C cancels a draft or
-running task. Ctrl+D exits. Use // to send task text beginning with /.
+Arrow keys move between lines and recall saved prompts. Ctrl+R searches history.
+Ctrl+J, Alt+Enter, or \\ followed by Enter inserts a newline. Shift+Enter works
+in terminals with extended keys. Pasted text stays editable until Enter sends.
+Tab completes commands and arguments; /editor opens VISUAL or EDITOR.
+Ctrl+C cancels a draft or running task. Ctrl+D exits an empty prompt.
+Use // to send task text beginning with /. /shortcuts lists keyboard controls.
 Conversations are saved locally; /sessions resumes them. /export writes context
 for --conversation-context-file. Attachments apply to the next successful task.`;
 
@@ -106,10 +110,11 @@ Commands:
   list  List every CLI-configurable setting, current value, and source
   get   Show one setting with its scope, source, and accepted values
   set   Persist one user- or workspace-scoped setting
-  unset Remove a saved value so its default or environment value applies
-  edit  Open the arrow-key interactive configuration editor
+  unset Reset a setting; for answer-language, remove the language preference
+  edit  Browse Workspace settings, Global settings, or Defaults; type to search
 
 Setting groups:
+  answer-language
   workspace.<mode|provider|model|reasoning|offline|github-customizations>
   api.<openai|anthropic|google|langdock|quiver|recraft>.key
   agent-cli.<codex-cli|claude-cli|copilot-cli>.path
@@ -122,8 +127,19 @@ Setting groups:
   voice.provider
   speech-to-text.<provider|input-device>
   desktop.<setting>
+  agent.adaptive
+  memory.workspace-default
+  internal-task.<provider|model|reasoning>
+  defaults.<provider|model|mode|reasoning|session-memory|workspace-memory|global-memory|ui-control>
+  appearance.<theme|density|accent>
+  spoken-reply.<enabled|rate>
+  mcp.global / workspace.mcp
+  provider-sync.<enabled|persistent|watch|autostart|native-mcp>
+  assets.folder / civitai.key
 
 Examples:
+  machdoch config set answer-language German
+  machdoch config unset answer-language
   machdoch config get workspace.model
   machdoch config set workspace.mode ask
   machdoch config set workspace.github-customizations on

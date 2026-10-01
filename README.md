@@ -88,6 +88,12 @@ machdoch --help
 
 Use `machdoch config edit` to set credentials in the terminal without putting them in shell history. `machdoch help <command>` shows options for commands such as `ralph`, `scheduler`, `mcp`, and `fleet`. The AppImage accepts the same arguments when invoked as `./machdoch-linux-amd64.AppImage`.
 
+The prompt supports saved history, multiline editing, safe block pasting, and an external editor. Settings are searchable across Workspace, Global, and Defaults, with encrypted settings transfer. See the [terminal guide](docs/cli.md) for shortcuts and commands.
+
+In chat, **↑/↓** recalls prompts, **Ctrl+R** searches history, and **Ctrl+J** or **Alt+Enter** adds a line. Pasted text stays editable until you send it. Use `/editor` for longer prompts and `/shortcuts` for the full keyboard reference. `/verbose on` shows detailed activity.
+
+The settings editor includes **Workspace settings**, **Global settings**, and **Defaults**, with search, model choices, and reset controls. Appearance, new-chat defaults, spoken replies, startup registration, Civitai credentials, and asset moves connect to the running desktop app. MCP connections and provider integration open in your text editor. Set `VISUAL` or `EDITOR` to choose it.
+
 ## Privacy and safe use
 
 Machdoch keeps its sessions, memory, settings, flows, and media library on your computer. A model provider may receive prompts, relevant file excerpts, attachments, and tool results. Websites, search services, MCP servers, and remote media providers receive data when you use them. Check each provider's privacy and pricing terms before sending sensitive material.
