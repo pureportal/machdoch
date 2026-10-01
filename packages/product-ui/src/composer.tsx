@@ -1,11 +1,10 @@
-import { GoalControl } from "./goal-control";
+import { GoalControl, GoalTrigger } from "./goal-control";
 import type { ProductSession, ProductShell } from "@machdoch/fleet-protocol";
 import {
   ArrowUp,
   Brain,
   BrainCircuit,
   ChevronsUp,
-  ChevronDown,
   CircleDashed,
   CircleOff,
   FolderHeart,
@@ -29,6 +28,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
   type KeyboardEvent,
@@ -41,7 +41,7 @@ import {
   WorkspaceMenu,
   type OptionMenuItem,
 } from "./composer-menus";
-import { SessionMemoryDialog } from "./memory-management";
+import { MemoryDialog } from "./memory-management";
 import type { ProductCommandHandler } from "./product-runtime";
 import {
   useComposerDraft,
@@ -170,6 +170,8 @@ export function Composer({
     discardFailedSubmission,
   } = useComposerDraft(composer, onCommand, drafts);
   const [sessionMemoryOpen, setSessionMemoryOpen] = useState(false);
+  const goalId = useId();
+  const [goalOpen, setGoalOpen] = useState(Boolean(composer.goal));
   const [optionsOpen, setOptionsOpen] = useState(false);
   const composing = useRef(false);
   const touchInput = useMediaQuery("(pointer: coarse)");
@@ -178,6 +180,10 @@ export function Composer({
   useEffect(() => {
     setSessionMemoryOpen(false);
   }, [composer.sessionId]);
+
+  useEffect(() => {
+    setGoalOpen(Boolean(composer.goal));
+  }, [composer.sessionId, composer.goal?.id]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -456,35 +462,14 @@ export function Composer({
             }
           />
           {session.specialKind !== "pose" ? (
-            <GoalControl
-              mode={composer.goalMode ?? "machdoch"}
-              modes={composer.availableGoalModes ?? ["machdoch"]}
-              goal={composer.goal}
-              running={composer.isExecuting}
+            <GoalTrigger
+              open={goalOpen}
+              active={
+                composer.isExecuting && composer.goal?.status === "active"
+              }
+              controls={goalId}
               disabled={pending}
-              onModeChange={(mode) =>
-                void onCommand({
-                  kind: "set-goal-mode",
-                  sessionId: session.id,
-                  mode,
-                })
-              }
-              onCommand={(prompt) =>
-                void onCommand({
-                  kind: "submit-message",
-                  sessionId: session.id,
-                  prompt,
-                  promptEnhancementMode: "off",
-                  interviewEnabled: false,
-                })
-              }
-              onPause={() => {
-                if (session.runningTaskId)
-                  void onCommand({
-                    kind: "cancel",
-                    taskId: session.runningTaskId,
-                  });
-              }}
+              onClick={() => setGoalOpen((open) => !open)}
             />
           ) : null}
           <OptionMenu
@@ -522,10 +507,8 @@ export function Composer({
           <Toggle
             label="Session memory"
             icon={<Brain />}
-            tone="emerald"
             pressed={composer.sessionMemoryEnabled}
             onManage={() => setSessionMemoryOpen(true)}
-            manageLabel="Manage session memory"
             onClick={() =>
               onCommand({
                 kind: "set-session-memory",
@@ -537,7 +520,6 @@ export function Composer({
           <Toggle
             label="Workspace memory"
             icon={<FolderHeart />}
-            tone="amber"
             pressed={composer.workspaceMemoryEnabled === true}
             disabled={composer.workspaceMemoryAvailable !== true}
             onClick={() =>
@@ -551,7 +533,6 @@ export function Composer({
           <Toggle
             label="Global memory"
             icon={<BrainCircuit />}
-            tone="sky"
             pressed={composer.globalMemoryEnabled}
             disabled={!composer.globalMemoryAvailable}
             onClick={() =>
@@ -565,7 +546,6 @@ export function Composer({
           <Toggle
             label="Interview"
             icon={<MessageSquare />}
-            tone="cyan"
             pressed={composer.interviewEnabled}
             disabled={!composer.interviewAvailable}
             onClick={() =>
@@ -580,7 +560,6 @@ export function Composer({
             label="UI control"
             title={composer.uiControlDescription}
             icon={<Monitor />}
-            tone="violet"
             pressed={composer.uiControlEnabled}
             disabled={!composer.uiControlAvailable}
             onClick={() =>
@@ -614,6 +593,44 @@ export function Composer({
                 </button>
               </span>
             ))}
+          </div>
+        ) : null}
+        {session.specialKind !== "pose" ? (
+          <div className="m-product-composer-goal">
+            <GoalControl
+              key={composer.sessionId}
+              id={goalId}
+              open={goalOpen}
+              mode={composer.goalMode ?? "machdoch"}
+              modes={composer.availableGoalModes ?? ["machdoch"]}
+              goal={composer.goal}
+              running={composer.isExecuting}
+              disabled={pending}
+              onClose={() => setGoalOpen(false)}
+              onModeChange={(mode) =>
+                void onCommand({
+                  kind: "set-goal-mode",
+                  sessionId: session.id,
+                  mode,
+                })
+              }
+              onCommand={(prompt) =>
+                void onCommand({
+                  kind: "submit-message",
+                  sessionId: session.id,
+                  prompt,
+                  promptEnhancementMode: "off",
+                  interviewEnabled: false,
+                })
+              }
+              onPause={() => {
+                if (session.runningTaskId)
+                  void onCommand({
+                    kind: "cancel",
+                    taskId: session.runningTaskId,
+                  });
+              }}
+            />
           </div>
         ) : null}
         <div className="m-product-composer-input-row app-composer-form">
@@ -674,7 +691,8 @@ export function Composer({
           {composer.sendDisabledReason}
         </p>
       ) : null}
-      <SessionMemoryDialog
+      <MemoryDialog
+        title="Session memory"
         open={sessionMemoryOpen}
         enabled={composer.sessionMemoryEnabled}
         entries={composer.sessionMemory.map((entry) => ({
@@ -711,29 +729,24 @@ function Toggle({
   icon,
   label,
   title,
-  tone,
   pressed,
   disabled = false,
   onManage,
-  manageLabel,
   onClick,
 }: {
   icon: React.ReactNode;
   label: string;
   title?: string;
-  tone: "emerald" | "sky" | "cyan" | "amber" | "violet";
   pressed: boolean;
   disabled?: boolean;
   onManage?: () => void;
-  manageLabel?: string;
   onClick: () => Promise<boolean>;
 }): React.ReactElement {
-  const button = (
+  return (
     <button
       type="button"
       className="m-product-toggle-button app-composer-toggle-button"
-      data-tone={tone}
-      data-active={pressed}
+      data-active={pressed && !disabled}
       aria-label={label}
       aria-pressed={pressed}
       aria-disabled={disabled || undefined}
@@ -741,29 +754,30 @@ function Toggle({
       onClick={() => {
         if (!disabled) void onClick();
       }}
+      onContextMenu={
+        onManage
+          ? (event) => {
+              event.preventDefault();
+              event.currentTarget.focus();
+              onManage();
+            }
+          : undefined
+      }
+      onKeyDown={
+        onManage
+          ? (event) => {
+              if (
+                event.key === "ContextMenu" ||
+                (event.shiftKey && event.key === "F10")
+              ) {
+                event.preventDefault();
+                onManage();
+              }
+            }
+          : undefined
+      }
     >
       {icon}
     </button>
-  );
-
-  if (!onManage) return button;
-
-  return (
-    <div
-      className="m-product-toggle-group"
-      role="group"
-      aria-label={`${label} controls`}
-    >
-      {button}
-      <button
-        type="button"
-        className="m-product-toggle-manage"
-        aria-label={manageLabel ?? `Manage ${label}`}
-        title={manageLabel ?? `Manage ${label}`}
-        onClick={onManage}
-      >
-        <ChevronDown aria-hidden="true" />
-      </button>
-    </div>
   );
 }

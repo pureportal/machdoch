@@ -1,5 +1,4 @@
 import {
-  ChevronDown,
   CornerDownRight,
   ListOrdered,
   Repeat2,
@@ -112,6 +111,7 @@ export interface AgentComposerProps {
   showCancelAlongsideSend?: boolean;
   textareaRef?: Ref<HTMLTextAreaElement>;
   toolbarControls?: ReactNode;
+  inputHeader?: ReactNode;
   toggles?: AgentComposerToggle[];
   actions?: AgentComposerAction[];
   runningTaskMessageAction?: RunningTaskMessageAction;
@@ -340,8 +340,9 @@ const renderToggle = (
   variant: AgentComposerVariant,
   iconButtonClassName: string,
 ): JSX.Element => {
-  const button = (
+  return (
     <ToolToggleButton
+      key={toggle.id}
       label={toggle.label}
       title={
         toggle.title ??
@@ -352,44 +353,19 @@ const renderToggle = (
       disabled={toggle.disabled}
       disabledMode={variant === "quick" ? "native" : "aria"}
       onPressedChange={toggle.onPressedChange}
-      baseClassName={variant === "quick" ? iconButtonClassName : undefined}
+      onManage={toggle.onManage}
+      baseClassName={
+        variant === "quick"
+          ? iconButtonClassName
+          : "h-8 w-8 rounded-full shadow-none"
+      }
       activeClassName={variant === "quick" ? toggle.activeClassName : undefined}
       className={
         variant === "session"
-          ? cn(
-              "app-composer-toggle-button app-composer-toolbar-control",
-              toggle.onManage && "rounded-r-none",
-            )
+          ? "app-composer-toggle-button app-composer-toolbar-control"
           : undefined
       }
     />
-  );
-
-  if (!toggle.onManage) {
-    return <Fragment key={toggle.id}>{button}</Fragment>;
-  }
-
-  return (
-    <div
-      key={toggle.id}
-      role="group"
-      aria-label={`${toggle.label} controls`}
-      className="flex items-center"
-    >
-      {button}
-      <Button
-        type="button"
-        variant="outline"
-        size="icon-sm"
-        aria-label={toggle.manageLabel ?? `Manage ${toggle.label}`}
-        tooltip={toggle.manageLabel ?? `Manage ${toggle.label}`}
-        data-active={toggle.pressed && !toggle.disabled}
-        onClick={toggle.onManage}
-        className="app-composer-toggle-manage-button app-composer-toolbar-control h-8 w-5 rounded-l-none rounded-r-full border-l-0 px-0 shadow-none"
-      >
-        <ChevronDown className="h-3 w-3" />
-      </Button>
-    </div>
   );
 };
 
@@ -470,6 +446,7 @@ export const AgentComposer = ({
   showCancelAlongsideSend = false,
   textareaRef,
   toolbarControls,
+  inputHeader,
   toggles = [],
   actions = [],
   runningTaskMessageAction,
@@ -1607,6 +1584,8 @@ export const AgentComposer = ({
           onRemove={onRemoveContextAttachment}
           onClearAll={onClearContextAttachments}
         />
+
+        {inputHeader}
 
         <SubmitShortcut asChild>
           <form

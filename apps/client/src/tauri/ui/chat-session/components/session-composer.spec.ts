@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
@@ -79,6 +85,8 @@ const createProps = (
   promptEnhancementWebSearchUnavailableReason: "",
   contextAttachments: [],
   memorySourceSessions: [],
+  workspaceMemoryEntries: [],
+  globalMemoryEntries: [],
   contextPacks: [],
   matchedContextPackIds: [],
   imageInputSupported: true,
@@ -399,9 +407,12 @@ describe("SessionComposer enhancement", () => {
       ),
     );
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Manage session memory" }),
-    );
+    const memoryButton = screen.getByRole("button", { name: "Session memory" });
+    expect(memoryButton.querySelector(".lucide-chevron-down")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Manage session memory" }),
+    ).toBeNull();
+    fireEvent.contextMenu(memoryButton);
 
     expect(screen.getByRole("dialog", { name: "Session memory" })).toBeTruthy();
     expect(screen.getByText("Package manager: pnpm")).toBeTruthy();
@@ -409,6 +420,120 @@ describe("SessionComposer enhancement", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Forget" }));
     expect(onForgetSessionMemory).toHaveBeenCalledWith("memory-1");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close session memory" }),
+    );
+    expect(document.activeElement).toBe(memoryButton);
+  });
+
+  it.each(["workspace", "global"] as const)(
+    "opens %s memory without changing its enabled state",
+    (scope) => {
+      const onEnabledChange = vi.fn();
+      const title =
+        scope === "workspace" ? "Workspace memory" : "Global memory";
+      const entry = {
+        id: `${scope}-1`,
+        scope,
+        content: `${scope} preference`,
+        key: "preference",
+        kind: "fact" as const,
+        searchTerms: [],
+        importance: 3,
+        confidence: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      };
+      render(
+        createElement(
+          SessionComposer,
+          createProps({
+            editingMessageId: null,
+            isWorkspaceMemoryAvailable: true,
+            isWorkspaceMemoryActive: false,
+            workspaceMemoryEntries: scope === "workspace" ? [entry] : [],
+            globalMemoryEntries: scope === "global" ? [entry] : [],
+            onUseWorkspaceMemoryChange: onEnabledChange,
+            onUseGlobalMemoryChange: onEnabledChange,
+          }),
+        ),
+      );
+
+      const button = screen.getByRole("button", { name: title });
+      expect(button.getAttribute("data-active")).toBe("false");
+      fireEvent.contextMenu(button);
+      const dialog = screen.getByRole("dialog", { name: title });
+      expect(within(dialog).getByText(`${scope} preference`)).toBeTruthy();
+      expect(
+        within(dialog).queryByRole("button", { name: "Forget" }),
+      ).toBeNull();
+      expect(onEnabledChange).not.toHaveBeenCalled();
+      fireEvent.click(within(dialog).getByRole("switch", { name: title }));
+      expect(onEnabledChange).toHaveBeenCalledWith(true);
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: `Close ${title.toLowerCase()}`,
+        }),
+      );
+      expect(document.activeElement).toBe(button);
+      fireEvent.click(button);
+      expect(onEnabledChange).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole("dialog")).toBeNull();
+    },
+  );
+
+  it("opens unavailable memory for viewing through the keyboard", () => {
+    const onUseGlobalMemoryChange = vi.fn();
+    render(
+      createElement(
+        SessionComposer,
+        createProps({
+          editingMessageId: null,
+          isGlobalMemoryAvailable: false,
+          isGlobalMemoryActive: true,
+          onUseGlobalMemoryChange,
+        }),
+      ),
+    );
+    const button = screen.getByRole("button", { name: "Global memory" });
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(button.getAttribute("data-active")).toBe("false");
+    fireEvent.click(button);
+    expect(onUseGlobalMemoryChange).not.toHaveBeenCalled();
+    button.focus();
+    fireEvent.keyDown(button, { key: "F10", shiftKey: true });
+    const dialog = screen.getByRole("dialog", { name: "Global memory" });
+    expect(within(dialog).getByText("No global memory saved.")).toBeTruthy();
+    expect(
+      within(dialog).getByRole<HTMLButtonElement>("switch", {
+        name: "Global memory",
+      }).disabled,
+    ).toBe(true);
+    fireEvent.click(
+      within(dialog).getByRole("switch", { name: "Global memory" }),
+    );
+    expect(onUseGlobalMemoryChange).not.toHaveBeenCalled();
+  });
+
+  it("closes memory when changing workspace", () => {
+    const props = createProps({ editingMessageId: null });
+    const { rerender } = render(createElement(SessionComposer, props));
+    fireEvent.contextMenu(
+      screen.getByRole("button", { name: "Workspace memory" }),
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Workspace memory" }),
+    ).toBeTruthy();
+    rerender(
+      createElement(SessionComposer, {
+        ...props,
+        activeSession: {
+          ...props.activeSession,
+          workspace: "C:/another-workspace",
+        },
+      }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("keeps the normal composer available outside edit enhancement", () => {

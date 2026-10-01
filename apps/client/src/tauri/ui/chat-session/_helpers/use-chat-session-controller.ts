@@ -8750,6 +8750,8 @@ export const useChatSessionController = (
       onForgetSessionMemory: (memoryId: string) =>
         forgetSessionMemory(activeComposerSession.id, memoryId),
       memorySourceSessions,
+      workspaceMemoryEntries: runtime.workspaceMemoryEntries,
+      globalMemoryEntries: runtime.userMemorySettings.entries,
       onUseWorkspaceMemoryChange: handleUseWorkspaceMemoryChange,
       onUseGlobalMemoryChange: handleUseGlobalMemoryChange,
       onUiControlEnabledChange: handleUiControlEnabledChange,

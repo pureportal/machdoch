@@ -17,6 +17,9 @@ describe("goal control", () => {
       const onModeChange = vi.fn();
       render(
         <GoalControl
+          id="goal-input"
+          open
+          onClose={vi.fn()}
           mode="machdoch"
           modes={["machdoch", "native"]}
           running={false}
@@ -25,7 +28,6 @@ describe("goal control", () => {
           onPause={vi.fn()}
         />,
       );
-      fireEvent.click(screen.getByRole("button", { name: "Goal" }));
       fireEvent.change(screen.getByRole("combobox", { name: "Goal mode" }), {
         target: { value: "native" },
       });
@@ -56,6 +58,9 @@ describe("goal control", () => {
       updatedAt: 1,
     };
     const props = {
+      id: "goal-input",
+      open: true,
+      onClose: vi.fn(),
       mode: "machdoch" as const,
       modes: ["machdoch" as const],
       goal,
@@ -64,12 +69,10 @@ describe("goal control", () => {
       onModeChange: vi.fn(),
     };
     const view = render(<GoalControl {...props} running />);
-    fireEvent.click(screen.getByRole("button", { name: "Goal" }));
     expect(screen.queryByRole("button", { name: "Start goal" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Pause goal" }));
     expect(onPause).toHaveBeenCalledOnce();
     view.rerender(<GoalControl {...props} running={false} />);
-    fireEvent.click(screen.getByRole("button", { name: "Goal" }));
     fireEvent.click(screen.getByRole("button", { name: "Resume goal" }));
     expect(onCommand).toHaveBeenCalledWith("/goal resume");
   });
@@ -88,6 +91,9 @@ describe("goal control", () => {
     };
     render(
       <GoalControl
+        id="goal-input"
+        open
+        onClose={vi.fn()}
         mode="machdoch"
         modes={["machdoch"]}
         goal={goal}
@@ -97,8 +103,77 @@ describe("goal control", () => {
         onPause={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Goal" }));
     expect(screen.queryByRole("button", { name: "Resume goal" })).toBeNull();
     expect(screen.getByRole("button", { name: "Clear goal" })).toBeDefined();
+  });
+
+  it("keeps a multiline draft when hidden and reopened", () => {
+    const props = {
+      id: "goal-input",
+      mode: "machdoch" as const,
+      modes: ["machdoch" as const],
+      running: false,
+      onClose: vi.fn(),
+      onModeChange: vi.fn(),
+      onCommand: vi.fn(),
+      onPause: vi.fn(),
+    };
+    const view = render(<GoalControl {...props} open />);
+    const input = screen.getByRole<HTMLTextAreaElement>("textbox", {
+      name: "Goal objective",
+    });
+    fireEvent.change(input, { target: { value: "Fix auth\nVerify sign-in" } });
+    view.rerender(<GoalControl {...props} open={false} />);
+    expect(
+      screen.queryByRole("textbox", { name: "Goal objective" }),
+    ).toBeNull();
+    view.rerender(<GoalControl {...props} open />);
+    expect(input.value).toBe("Fix auth\nVerify sign-in");
+    expect(document.activeElement).toBe(input);
+    fireEvent.click(screen.getByRole("button", { name: "Start goal" }));
+    expect(props.onCommand).toHaveBeenCalledWith(
+      "/goal -- Fix auth\nVerify sign-in",
+    );
+  });
+
+  it("starts an edited objective instead of resuming the saved goal", () => {
+    const onCommand = vi.fn();
+    render(
+      <GoalControl
+        id="goal-input"
+        open
+        mode="machdoch"
+        modes={["machdoch"]}
+        goal={{
+          id: "goal",
+          objective: "Fix auth",
+          mode: "machdoch",
+          status: "paused",
+          turns: 2,
+          tokensUsed: 120,
+          elapsedMs: 100,
+          reason: "",
+          createdAt: 1,
+          updatedAt: 1,
+        }}
+        running={false}
+        onClose={vi.fn()}
+        onModeChange={vi.fn()}
+        onCommand={onCommand}
+        onPause={vi.fn()}
+      />,
+    );
+    const input = screen.getByRole<HTMLTextAreaElement>("textbox", {
+      name: "Goal objective",
+    });
+    expect(input.value).toBe("Fix auth");
+    fireEvent.change(input, {
+      target: { value: "Fix auth and verify sign-out" },
+    });
+    expect(screen.queryByRole("button", { name: "Resume goal" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Start goal" }));
+    expect(onCommand).toHaveBeenCalledWith(
+      "/goal -- Fix auth and verify sign-out",
+    );
   });
 });

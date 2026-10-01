@@ -1507,80 +1507,38 @@
   height: 32px;
   flex: 0 0 32px;
   place-items: center;
-  border: 1px solid var(--app-slate-800);
+  border: 1px solid var(--app-border-strong);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--app-slate-950) 70%, transparent);
-  color: var(--app-slate-400);
+  background: transparent;
+  color: var(--app-text-soft);
   cursor: pointer;
-}
-
-.m-product-toggle-group {
-  display: inline-flex;
-  align-items: center;
-}
-
-.m-product-toggle-group .m-product-toggle-button {
-  border-radius: 999px 0 0 999px;
-}
-
-.m-product-toggle-manage {
-  display: grid;
-  width: 20px;
-  height: 32px;
-  place-items: center;
-  border: 1px solid var(--app-slate-800);
-  border-left: 0;
-  border-radius: 0 999px 999px 0;
-  background: color-mix(in srgb, var(--app-slate-950) 70%, transparent);
-  color: var(--app-slate-500);
-  cursor: pointer;
-}
-
-.m-product-toggle-manage:hover {
-  background: var(--app-slate-900);
-  color: var(--app-slate-100);
-}
-
-.m-product-toggle-manage svg {
-  width: 12px;
-  height: 12px;
 }
 
 .m-product-toggle-button:hover:not([aria-disabled="true"]) {
-  background: var(--app-slate-900);
-  color: var(--app-slate-100);
+  background: var(--app-hover);
+  color: var(--app-text);
 }
 
-.m-product-toggle-button[data-active="true"][data-tone="emerald"] {
-  border-color: color-mix(in srgb, var(--app-emerald-500) 30%, transparent);
-  background: color-mix(in srgb, var(--app-emerald-500) 10%, transparent);
-  color: var(--app-emerald-100);
+.m-product-toggle-button[data-active="true"] {
+  border-color: color-mix(in srgb, var(--app-sky-500) 45%, var(--app-border));
+  background: color-mix(in srgb, var(--app-sky-500) 13%, transparent);
+  color: var(--app-sky-200);
 }
 
-.m-product-toggle-button[data-active="true"][data-tone="sky"],
-.m-product-toggle-button[data-active="true"][data-tone="cyan"] {
-  border-color: color-mix(in srgb, var(--app-sky-500) 30%, transparent);
-  background: color-mix(in srgb, var(--app-sky-500) 10%, transparent);
+.m-product-toggle-button[data-active="true"]:hover:not([aria-disabled="true"]) {
+  background: color-mix(in srgb, var(--app-sky-500) 19%, transparent);
   color: var(--app-sky-100);
 }
 
-.m-product-toggle-button[data-active="true"][data-tone="amber"] {
-  border-color: color-mix(in srgb, var(--app-amber-500) 30%, transparent);
-  background: color-mix(in srgb, var(--app-amber-500) 10%, transparent);
-  color: var(--app-amber-200);
-}
-
-.m-product-toggle-button[data-active="true"][data-tone="violet"] {
-  border-color: color-mix(in srgb, var(--app-violet-500) 30%, transparent);
-  background: color-mix(in srgb, var(--app-violet-500) 10%, transparent);
-  color: var(--app-violet-100);
+:root[data-theme="light"] .m-product-toggle-button[data-active="true"] {
+  color: var(--app-sky-600);
 }
 
 .m-product-toggle-button[aria-disabled="true"] {
   cursor: not-allowed;
   border-style: dashed;
-  background: color-mix(in srgb, var(--app-slate-950) 40%, transparent);
-  color: var(--app-slate-600);
+  background: transparent;
+  color: var(--app-text-faint);
 }
 
 .m-product-toggle-button > svg {

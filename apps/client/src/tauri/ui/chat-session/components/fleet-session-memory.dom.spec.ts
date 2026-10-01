@@ -148,8 +148,8 @@ describe("Fleet session memory", () => {
       }),
     );
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Manage session memory" }),
+    fireEvent.contextMenu(
+      await screen.findByRole("button", { name: "Session memory" }),
     );
     const dialog = screen.getByRole("dialog", { name: "Session memory" });
     expect(within(dialog).getByText("Package manager: pnpm")).toBeTruthy();

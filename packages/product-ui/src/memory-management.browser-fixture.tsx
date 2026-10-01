@@ -1,7 +1,7 @@
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
-import { SessionMemoryDialog } from "./memory-management";
+import { MemoryDialog } from "./memory-management";
 import "./styles.css";
 
 declare global {
@@ -38,7 +38,8 @@ function Fixture() {
         </button>
       )}
       {options.mounted && (
-        <SessionMemoryDialog
+        <MemoryDialog
+          title="Session memory"
           open={open}
           enabled
           disabled={options.disabled}
