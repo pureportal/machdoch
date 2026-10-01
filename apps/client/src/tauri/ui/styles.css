@@ -1349,6 +1349,7 @@ body {
   border-style: dashed;
   background-color: transparent;
   color: var(--app-text-faint);
+  cursor: not-allowed;
 }
 
 .app-composer-toolbar svg.app-composer-default-indicator {
@@ -1423,11 +1424,6 @@ body {
   width: 2.25rem !important;
 }
 
-:root[data-density="compact"] .app-composer-toggle-manage-button {
-  width: 1.1rem !important;
-  height: 1.85rem !important;
-}
-
 :root[data-density="compact"]
   :is(
     .app-model-picker-button,
@@ -1437,8 +1433,7 @@ body {
     .app-prompt-enhancement-button,
     .app-mode-picker-button,
     .app-reasoning-picker-button,
-    .app-composer-toggle-button,
-    .app-composer-toggle-manage-button
+    .app-composer-toggle-button
   )
   svg {
   width: 0.8rem !important;

@@ -19,6 +19,7 @@ export interface ToolToggleButtonProps {
   disabled?: boolean;
   disabledMode?: ToolToggleDisabledMode;
   onPressedChange: (pressed: boolean) => void;
+  onManage?: () => void;
   buttonVariant?: ButtonProps["variant"];
   buttonSize?: ButtonProps["size"];
   tooltipSide?: TooltipContentProps["side"];
@@ -40,6 +41,7 @@ export const ToolToggleButton = ({
   disabled = false,
   disabledMode = "aria",
   onPressedChange,
+  onManage,
   buttonVariant = "outline",
   buttonSize = "icon",
   tooltipSide = "top",
@@ -75,6 +77,28 @@ export const ToolToggleButton = ({
           onPressedChange(!pressed);
         }
       }}
+      onContextMenu={
+        onManage
+          ? (event) => {
+              event.preventDefault();
+              event.currentTarget.focus();
+              onManage();
+            }
+          : undefined
+      }
+      onKeyDown={
+        onManage
+          ? (event) => {
+              if (
+                event.key === "ContextMenu" ||
+                (event.shiftKey && event.key === "F10")
+              ) {
+                event.preventDefault();
+                onManage();
+              }
+            }
+          : undefined
+      }
       className={cn(effectiveBaseClassName, stateClassName, className)}
     >
       {icon}

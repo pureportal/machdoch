@@ -10,7 +10,7 @@ import {
   Square,
   WandSparkles,
 } from "lucide-react";
-import { GoalControl, SessionMemoryDialog } from "@machdoch/product-ui";
+import { GoalControl, GoalTrigger, MemoryDialog } from "@machdoch/product-ui";
 import {
   getAvailableGoalModes,
   resolveGoalMode,
@@ -19,6 +19,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useState,
   type JSX,
@@ -28,7 +29,10 @@ import type {
   ReasoningMode,
   RunMode,
 } from "../../../../core/runtime-contract.generated.js";
-import type { ParallelAgentMode } from "../../../../core/types.js";
+import type {
+  ConversationMemoryEntry,
+  ParallelAgentMode,
+} from "../../../../core/types.js";
 import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import type { CommandDefinition } from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 import {
@@ -111,6 +115,8 @@ export interface SessionComposerProps {
   onStatusMessageDismiss?: () => void;
   contextAttachments: ChatSessionContextAttachment[];
   memorySourceSessions: readonly MemorySourceSession[];
+  workspaceMemoryEntries: readonly ConversationMemoryEntry[];
+  globalMemoryEntries: readonly ConversationMemoryEntry[];
   contextPacks: SmartContextPack[];
   matchedContextPackIds: string[];
   imageInputSupported: boolean;
@@ -241,6 +247,8 @@ export const SessionComposer = ({
   onStatusMessageDismiss,
   contextAttachments,
   memorySourceSessions,
+  workspaceMemoryEntries,
+  globalMemoryEntries,
   contextPacks,
   matchedContextPackIds,
   imageInputSupported,
@@ -297,13 +305,30 @@ export const SessionComposer = ({
   isExecuting,
   isPromptEnhancementActive = false,
 }: SessionComposerProps): JSX.Element => {
-  const [sessionMemoryOpen, setSessionMemoryOpen] = useState(false);
-  const openSessionMemory = useCallback(() => setSessionMemoryOpen(true), []);
-  const closeSessionMemory = useCallback(() => setSessionMemoryOpen(false), []);
+  const goalId = useId();
+  const [goalOpen, setGoalOpen] = useState(Boolean(activeSession.goal));
+  const showGoalControl =
+    !isQuickVoiceSession(activeSession) &&
+    activeSession.specialSession !== "pose";
 
   useEffect(() => {
-    setSessionMemoryOpen(false);
-  }, [activeSession.id]);
+    setGoalOpen(Boolean(activeSession.goal));
+  }, [activeSession.id, activeSession.goal?.id]);
+
+  const [memoryScope, setMemoryScope] = useState<
+    "session" | "workspace" | "global" | null
+  >(null);
+  const openSessionMemory = useCallback(() => setMemoryScope("session"), []);
+  const openWorkspaceMemory = useCallback(
+    () => setMemoryScope("workspace"),
+    [],
+  );
+  const openGlobalMemory = useCallback(() => setMemoryScope("global"), []);
+  const closeMemory = useCallback(() => setMemoryScope(null), []);
+
+  useEffect(() => {
+    setMemoryScope(null);
+  }, [activeSession.id, activeSession.workspace]);
 
   const showSessionMemoryButton = !isQuickVoiceSession(activeSession);
   const sessionMemoryEntries = useMemo(
@@ -427,16 +452,13 @@ export const SessionComposer = ({
         onChange={onParallelAgentModeSelection}
       />
 
-      {!isQuickVoiceSession(activeSession) &&
-      activeSession.specialSession !== "pose" ? (
-        <GoalControl
-          mode={resolveGoalMode(activeSession.provider, activeSession.goalMode)}
-          modes={getAvailableGoalModes(activeSession.provider)}
-          goal={activeSession.goal}
-          running={isExecuting}
-          onModeChange={onGoalModeSelection}
-          onCommand={(command) => onSend(command)}
-          onPause={onCancel}
+      {showGoalControl ? (
+        <GoalTrigger
+          open={goalOpen}
+          active={isExecuting && activeSession.goal?.status === "active"}
+          controls={goalId}
+          disabled={Boolean(editingMessageId)}
+          onClick={() => setGoalOpen((open) => !open)}
         />
       ) : null}
 
@@ -495,6 +517,8 @@ export const SessionComposer = ({
         pressed: isWorkspaceMemoryActive,
         disabled: !isWorkspaceMemoryAvailable,
         onPressedChange: onUseWorkspaceMemoryChange,
+        onManage: openWorkspaceMemory,
+        manageLabel: "View workspace memory",
       },
       {
         id: "global-memory",
@@ -504,6 +528,8 @@ export const SessionComposer = ({
         pressed: isGlobalMemoryActive,
         disabled: !isGlobalMemoryAvailable,
         onPressedChange: onUseGlobalMemoryChange,
+        onManage: openGlobalMemory,
+        manageLabel: "View global memory",
       },
       {
         id: "interview",
@@ -539,6 +565,8 @@ export const SessionComposer = ({
     isUiControlAvailable,
     onInterviewEnabledChange,
     openSessionMemory,
+    openWorkspaceMemory,
+    openGlobalMemory,
     onSessionMemoryEnabledChange,
     onUseWorkspaceMemoryChange,
     onUiControlEnabledChange,
@@ -693,6 +721,27 @@ export const SessionComposer = ({
         }
         showCancelAlongsideSend={Boolean(editingMessageId)}
         toolbarControls={toolbarControls}
+        inputHeader={
+          showGoalControl ? (
+            <GoalControl
+              key={activeSession.id}
+              id={goalId}
+              open={goalOpen}
+              mode={resolveGoalMode(
+                activeSession.provider,
+                activeSession.goalMode,
+              )}
+              modes={getAvailableGoalModes(activeSession.provider)}
+              goal={activeSession.goal}
+              running={isExecuting}
+              disabled={Boolean(editingMessageId)}
+              onClose={() => setGoalOpen(false)}
+              onModeChange={onGoalModeSelection}
+              onCommand={(command) => onSend(command)}
+              onPause={onCancel}
+            />
+          ) : null
+        }
         toggles={toggles}
         actions={actions}
         runningTaskMessageAction={runningTaskMessageAction}
@@ -729,15 +778,52 @@ export const SessionComposer = ({
         onSend={onSend}
         onCancel={onCancel}
       />
-      <SessionMemoryDialog
-        open={sessionMemoryOpen}
-        enabled={activeSession.sessionMemoryEnabled}
-        entries={sessionMemoryEntries}
-        emptyLabel="No session memory saved."
-        onEnabledChange={onSessionMemoryEnabledChange}
-        onForget={onForgetSessionMemory}
-        onClose={closeSessionMemory}
-      />
+      {memoryScope ? (
+        <MemoryDialog
+          title={
+            memoryScope === "session"
+              ? "Session memory"
+              : memoryScope === "workspace"
+                ? "Workspace memory"
+                : "Global memory"
+          }
+          open
+          enabled={
+            memoryScope === "session"
+              ? activeSession.sessionMemoryEnabled
+              : memoryScope === "workspace"
+                ? isWorkspaceMemoryActive
+                : isGlobalMemoryActive
+          }
+          entries={
+            memoryScope === "session"
+              ? sessionMemoryEntries
+              : createMemoryManagementEntries(
+                  memoryScope === "workspace"
+                    ? workspaceMemoryEntries
+                    : globalMemoryEntries,
+                  memorySourceSessions,
+                )
+          }
+          emptyLabel={`No ${memoryScope} memory saved.`}
+          disabled={
+            memoryScope === "workspace"
+              ? !isWorkspaceMemoryAvailable
+              : memoryScope === "global" && !isGlobalMemoryAvailable
+          }
+          onEnabledChange={
+            memoryScope === "session"
+              ? onSessionMemoryEnabledChange
+              : memoryScope === "workspace"
+                ? onUseWorkspaceMemoryChange
+                : onUseGlobalMemoryChange
+          }
+          {...(memoryScope === "session"
+            ? { onForget: onForgetSessionMemory }
+            : {})}
+          onClose={closeMemory}
+        />
+      ) : null}
     </div>
   );
 };

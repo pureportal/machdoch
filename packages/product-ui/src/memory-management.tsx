@@ -13,7 +13,7 @@ export interface MemoryManagementTableProps {
   entries: readonly MemoryManagementEntry[];
   emptyLabel?: string;
   disabled?: boolean;
-  onForget: (id: string) => Promise<unknown> | unknown;
+  onForget?: (id: string) => Promise<unknown> | unknown;
 }
 
 const memoryTimestampFormatter = new Intl.DateTimeFormat(undefined, {
@@ -46,9 +46,11 @@ export function MemoryManagementTable({
             <th>Memory</th>
             {showSource ? <th>Chat</th> : null}
             <th>Created</th>
-            <th>
-              <span className="m-visually-hidden">Actions</span>
-            </th>
+            {onForget ? (
+              <th>
+                <span className="m-visually-hidden">Actions</span>
+              </th>
+            ) : null}
           </tr>
         </thead>
         <tbody>
@@ -68,15 +70,17 @@ export function MemoryManagementTable({
                     {createdAt}
                   </time>
                 </td>
-                <td className="m-memory-action">
-                  <button
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => void onForget(entry.id)}
-                  >
-                    Forget
-                  </button>
-                </td>
+                {onForget ? (
+                  <td className="m-memory-action">
+                    <button
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => void onForget(entry.id)}
+                    >
+                      Forget
+                    </button>
+                  </td>
+                ) : null}
               </tr>
             );
           })}
@@ -86,14 +90,16 @@ export function MemoryManagementTable({
   );
 }
 
-export interface SessionMemoryDialogProps extends MemoryManagementTableProps {
+export interface MemoryDialogProps extends MemoryManagementTableProps {
+  title: string;
   open: boolean;
   enabled: boolean;
   onEnabledChange: (enabled: boolean) => Promise<unknown> | unknown;
   onClose: () => void;
 }
 
-export function SessionMemoryDialog({
+export function MemoryDialog({
+  title,
   open,
   enabled,
   entries,
@@ -102,7 +108,7 @@ export function SessionMemoryDialog({
   onEnabledChange,
   onForget,
   onClose,
-}: SessionMemoryDialogProps): React.ReactElement | null {
+}: MemoryDialogProps): React.ReactElement | null {
   const titleId = useId();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -167,14 +173,14 @@ export function SessionMemoryDialog({
     >
       <section className="m-memory-dialog">
         <header className="m-memory-dialog-header">
-          <h2 id={titleId}>Session memory</h2>
+          <h2 id={titleId}>{title}</h2>
           <div className="m-memory-dialog-actions">
             <span>Enabled</span>
             <button
               type="button"
               role="switch"
               aria-checked={enabled}
-              aria-label="Session memory"
+              aria-label={title}
               data-checked={enabled}
               disabled={disabled}
               className="m-memory-switch"
@@ -185,7 +191,7 @@ export function SessionMemoryDialog({
             <button
               ref={closeButtonRef}
               type="button"
-              aria-label="Close session memory"
+              aria-label={`Close ${title.toLowerCase()}`}
               className="m-memory-dialog-close"
               onClick={onClose}
             >
@@ -197,7 +203,7 @@ export function SessionMemoryDialog({
           entries={entries}
           {...(emptyLabel ? { emptyLabel } : {})}
           disabled={disabled}
-          onForget={onForget}
+          {...(onForget ? { onForget } : {})}
         />
       </section>
     </dialog>

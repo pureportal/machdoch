@@ -1,5 +1,5 @@
 export { RemoteProductApp } from "./remote-product-app";
-export { GoalControl } from "./goal-control";
+export { GoalControl, GoalTrigger } from "./goal-control";
 export { Ralph } from "./ralph";
 export {
   createDefaultRalphVariableValues,
@@ -26,10 +26,10 @@ export {
 export { PromptEnhancementIndicator } from "./prompt-enhancement";
 export {
   MemoryManagementTable,
-  SessionMemoryDialog,
+  MemoryDialog,
   type MemoryManagementEntry,
   type MemoryManagementTableProps,
-  type SessionMemoryDialogProps,
+  type MemoryDialogProps,
 } from "./memory-management";
 export {
   ComposerModelPicker,
