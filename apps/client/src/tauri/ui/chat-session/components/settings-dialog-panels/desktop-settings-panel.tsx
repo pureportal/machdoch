@@ -62,18 +62,6 @@ export const normalizeDesktopSettingsDraft = (
 
   return {
     ...settings,
-    aiContextMaxMessages: clampIntegerSetting(
-      settings.aiContextMaxMessages,
-      DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.min,
-      DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.max,
-      DEFAULT_USER_DESKTOP_SETTINGS.aiContextMaxMessages,
-    ),
-    chatIdleTimeoutMinutes: clampIntegerSetting(
-      settings.chatIdleTimeoutMinutes,
-      DESKTOP_SETTING_BOUNDS.chatIdleTimeoutMinutes.min,
-      DESKTOP_SETTING_BOUNDS.chatIdleTimeoutMinutes.max,
-      DEFAULT_USER_DESKTOP_SETTINGS.chatIdleTimeoutMinutes,
-    ),
     inactiveSessionArchiveDays: clampIntegerSetting(
       settings.inactiveSessionArchiveDays,
       DESKTOP_SETTING_BOUNDS.inactiveSessionArchiveDays.min,
@@ -113,9 +101,6 @@ export const hasDesktopSettingsDraftChanges = (
     left.autostartMinimized !== right.autostartMinimized ||
     left.autostartToTray !== right.autostartToTray ||
     left.alwaysRunAsAdministrator !== right.alwaysRunAsAdministrator ||
-    left.aiContextMaxMessages !== right.aiContextMaxMessages ||
-    left.adaptiveControllerEnabled !== right.adaptiveControllerEnabled ||
-    left.chatIdleTimeoutMinutes !== right.chatIdleTimeoutMinutes ||
     left.inactiveSessionArchiveDays !== right.inactiveSessionArchiveDays ||
     left.archivedSessionRetentionDays !== right.archivedSessionRetentionDays ||
     left.quickVoiceEnabled !== right.quickVoiceEnabled ||
@@ -380,23 +365,6 @@ export const DesktopSettingsPanel = ({
         </div>
       ) : null}
 
-      <SettingsCard title="Chat timeout">
-        <SettingPanel label="Default inactivity timeout (minutes)">
-          <SettingsNumberInput
-            aria-label="Default inactivity timeout (minutes)"
-            min={DESKTOP_SETTING_BOUNDS.chatIdleTimeoutMinutes.min}
-            max={DESKTOP_SETTING_BOUNDS.chatIdleTimeoutMinutes.max}
-            step="1"
-            value={draft.chatIdleTimeoutMinutes}
-            disabled={setup.saving}
-            onValueChange={(value) => {
-              setDraft({ ...draft, chatIdleTimeoutMinutes: value });
-            }}
-            className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
-          />
-        </SettingPanel>
-      </SettingsCard>
-
       <SettingsCard title="Startup">
         <div className="grid gap-0">
           <SettingPanel label="Launch on sign-in">
@@ -451,33 +419,6 @@ export const DesktopSettingsPanel = ({
 
       <SettingsCard title="Sessions">
         <div className="grid gap-0">
-          <SettingPanel label="Adaptive context & compute">
-            <SettingsToggle
-              label="Adaptive context & compute"
-              checked={draft.adaptiveControllerEnabled}
-              disabled={setup.saving}
-              onCheckedChange={(checked) =>
-                setDraft({ ...draft, adaptiveControllerEnabled: checked })
-              }
-            />
-          </SettingPanel>
-          <SettingPanel label="AI context cap">
-            <SettingsNumberInput
-              aria-label="AI context message limit"
-              min={DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.min}
-              max={DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.max}
-              step="1"
-              value={draft.aiContextMaxMessages}
-              onValueChange={(value) => {
-                setDraft({
-                  ...draft,
-                  aiContextMaxMessages: value,
-                });
-              }}
-              className="h-10 max-w-28 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
-            />
-          </SettingPanel>
-
           <SettingPanel
             label="Inactive archive"
             detail="Move open sessions to the archive after this many inactive days."

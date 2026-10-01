@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { extname, join } from "node:path";
 import { loadRuntimeEnvironment } from "../env.js";
+import { createAnswerLanguageInstruction } from "./answer-language.js";
 import { materializeCliEnrollment } from "../provider-enrollment/materializer.js";
 import { resolveMachdochCliLaunch } from "../provider-enrollment/machdoch-cli-launch.js";
 import type {
@@ -365,6 +366,7 @@ const createExternalAgentSystemInstructions = (
     `Workspace: ${config.workspaceRoot}`,
     `Machdoch mode: ${config.mode}`,
     `Reasoning mode: ${config.reasoning}`,
+    createAnswerLanguageInstruction(config.answerLanguage),
     ...(poseChat || scopedWorker
       ? []
       : createExternalAgentOperatingInstructions(delegationMode)),

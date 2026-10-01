@@ -1176,6 +1176,7 @@ fn apply_agent_provider(
     snapshot: &CategorySnapshot,
 ) -> Result<(), String> {
     let value = category_data_json(snapshot)?;
+    replace_member(root, value, "answerLanguage")?;
     ensure_object_member(root, "webSearch").insert(
         "activeProvider".to_string(),
         value["webSearchActiveProvider"].clone(),

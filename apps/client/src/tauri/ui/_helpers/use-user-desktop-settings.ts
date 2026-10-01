@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { DEFAULT_USER_DESKTOP_SETTINGS } from "../../../core/runtime-contract.generated.js";
 import {
   loadUserDesktopSettings,
   subscribeToDesktopSettingsChanged,
@@ -6,19 +7,7 @@ import {
 } from "../runtime";
 
 const FALLBACK_USER_DESKTOP_SETTINGS: UserDesktopSettings = {
-  autostartEnabled: false,
-  autostartMinimized: false,
-  autostartToTray: false,
-  alwaysRunAsAdministrator: false,
-  aiContextMaxMessages: 60,
-  adaptiveControllerEnabled: true,
-  inactiveSessionArchiveDays: 7,
-  chatIdleTimeoutMinutes: 20,
-  archivedSessionRetentionDays: 7,
-  quickVoiceEnabled: true,
-  quickVoiceShortcut: "CommandOrControl+Alt+V",
-  quickVoiceSilenceSeconds: 1.8,
-  quickVoiceMaxMessages: 50,
+  ...DEFAULT_USER_DESKTOP_SETTINGS,
 };
 
 export const useUserDesktopSettings = (): UserDesktopSettings => {

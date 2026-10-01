@@ -14,6 +14,7 @@ import {
   saveWorkspaceReasoningMode,
   saveWorkspaceRuntimeProvider,
 } from "./config.ts";
+import { saveUserAnswerLanguage } from "./env.js";
 
 const workspacesToClean: string[] = [];
 const originalEnvironment = new Map<string, string | undefined>();
@@ -86,6 +87,19 @@ afterEach(async () => {
 });
 
 describe("loadRuntimeConfig", () => {
+  it("persists the answer language and preserves an explicit unset value", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+
+    await saveUserAnswerLanguage(" German ");
+    expect((await loadRuntimeConfig(workspaceRoot)).answerLanguage).toBe(
+      "German",
+    );
+
+    await saveUserAnswerLanguage("");
+    expect((await loadRuntimeConfig(workspaceRoot)).answerLanguage).toBe("");
+  });
+
   it("falls back to defaults when no workspace config or environment values are present", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();
@@ -101,6 +115,7 @@ describe("loadRuntimeConfig", () => {
     expect(config.model).toBe("gpt-5.6-sol");
     expect(config.contextWindow).toBe("default");
     expect(config.reasoningMode).toBe("standard");
+    expect(config.answerLanguage).toBe("English");
     expect(config.offline).toBe(false);
     expect(config.agentLimits).toEqual({
       executorTurns: 64,

@@ -158,6 +158,7 @@ export const DEFAULT_USER_DESKTOP_SETTINGS = {
   "quickVoiceSilenceSeconds": 1.8,
   "quickVoiceMaxMessages": 50
 } as const satisfies UserDesktopSettings;
+export const DEFAULT_ANSWER_LANGUAGE = "English";
 export const DESKTOP_SETTING_BOUNDS = {
   "aiContextMaxMessages": {
     "min": 1,
@@ -334,6 +335,7 @@ export interface UserSpeechToTextSettings {
 }
 
 export interface RuntimeConfig {
+  answerLanguage?: string;
   workspaceRoot: string;
   workspaceConfigPath?: string;
   userConfigPath?: string;
@@ -446,6 +448,7 @@ export interface ProviderEnrollmentConfigFile {
 }
 
 export interface UserConfigFile {
+  answerLanguage?: string;
   apiKeys?: UserProviderApiKeys;
   agentCliPaths?: UserAgentCliPaths;
   webSearch?: UserWebSearchConfigFile;

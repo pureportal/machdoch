@@ -5,13 +5,14 @@ import { matchesSettingsSearch } from "./settings-search";
 describe("Settings search", () => {
   it.each([
     ["speech rate", "voice"],
+    ["answer language", "answer-language"],
     ["startup delay", "workspace-run"],
     ["health-check threshold", "workspace-run"],
     ["  ACCENT   color ", "appearance"],
     ["retention", "desktop"],
     ["quick chat shortcut", "desktop"],
-    ["default inactivity timeout", "desktop"],
-    ["chat timeout", "desktop"],
+    ["default inactivity timeout", "session-defaults"],
+    ["chat timeout", "session-defaults"],
     ["Recraft key", "providers"],
   ])("finds %s", (query, expected) => {
     const results = SETTINGS_SECTIONS.filter((section) =>

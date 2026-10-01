@@ -16,6 +16,7 @@ import {
   getUserConfigPath,
   hasConfiguredValue,
   loadUserAgentLimitsSettings,
+  loadUserConfigFile,
   loadUserInternalTaskModelSettings,
   loadUserReviewModelSettings,
   loadUserWebSearchSettings,
@@ -29,6 +30,7 @@ import { normalizeAgentLimitOverrides } from "./_helpers/agent-runtime-types.js"
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_MODEL_PROVIDER,
+  DEFAULT_ANSWER_LANGUAGE,
   PROVIDER_ENV_KEY_BY_PROVIDER,
   isReasoningExecutionMode,
   isReasoningMode as isRuntimeSchemaReasoningMode,
@@ -513,6 +515,7 @@ export const loadRuntimeConfig = async (
 ): Promise<RuntimeConfig> => {
   const env = await loadRuntimeEnvironment();
   const userWebSearchSettings = await loadUserWebSearchSettings();
+  const { config: userConfig } = await loadUserConfigFile();
   const userAgentLimitsSettings = await loadUserAgentLimitsSettings();
   const userReviewModelSettings = await loadUserReviewModelSettings();
   const userInternalTaskModelSettings =
@@ -643,6 +646,8 @@ export const loadRuntimeConfig = async (
 
   return {
     workspaceRoot,
+    answerLanguage:
+      userConfig.answerLanguage?.trim() ?? DEFAULT_ANSWER_LANGUAGE,
     ...(path ? { workspaceConfigPath: path } : {}),
     userConfigPath: getUserConfigPath(),
     mode,

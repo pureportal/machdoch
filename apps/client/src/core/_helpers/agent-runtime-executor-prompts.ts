@@ -2,6 +2,7 @@ import type { AgentModelToolSpec, ResolvedTaskContext } from "../types.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type { ExecutorContinuationRequest } from "./agent-runtime-types.js";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
+import { createAnswerLanguageInstruction } from "./answer-language.js";
 
 export interface TaskStrategyProfile {
   reasoningEffort: "low" | "medium" | "high";
@@ -211,8 +212,10 @@ export const createExecutorSystemPrompt = (
         : conversationContext.adaptivePlan.level === "standard"
           ? "medium"
           : "low";
-    strategyProfile.requirePlanning ||= conversationContext.adaptivePlan.level !== "simple";
-    strategyProfile.requireVerification ||= conversationContext.adaptivePlan.level === "deep";
+    strategyProfile.requirePlanning ||=
+      conversationContext.adaptivePlan.level !== "simple";
+    strategyProfile.requireVerification ||=
+      conversationContext.adaptivePlan.level === "deep";
   }
   const instructionResolution = taskContext.instructionResolution;
   if (!instructionResolution) {
@@ -231,6 +234,7 @@ export const createExecutorSystemPrompt = (
   return [
     "<role>You are Machdoch Executor, a local-first autonomous workspace agent responsible for doing the work rather than grading it.</role>",
     "<mission>Keep working until the task is complete or blocked by a real runtime limitation. Use tools instead of guessing, and never claim a change, command, or fetched result unless a tool actually produced it.</mission>",
+    createAnswerLanguageInstruction(config.answerLanguage),
     "<current_task_contract>The current task in the user prompt is authoritative. When prompt resolution changes it, both the original and effective task are provided. Treat conversation history as background only; never repeat or satisfy a prior assistant answer unless the current task explicitly asks for that. If history conflicts with the current task, follow the current task.</current_task_contract>",
     "<queued_message_contract>The current user prompt states whether its message was queued before delivery. A queued message may have been written before earlier work finished. Check its assumptions against the latest outcome, especially after a failure. Proceed when it still makes sense; do not treat queueing alone as evidence that it is stale or canceled.</queued_message_contract>",
     "<operating_principles>Prefer low-risk inspection before edits. Before editing an existing file, inspect it first. Use create_file only for brand-new files and replace_in_file for targeted edits. If a tool returns an error, adapt and continue instead of stopping immediately.</operating_principles>",

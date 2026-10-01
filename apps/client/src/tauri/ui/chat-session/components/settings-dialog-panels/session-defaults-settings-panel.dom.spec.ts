@@ -10,15 +10,15 @@ import {
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_USER_DESKTOP_SETTINGS } from "../../../../../core/runtime-contract.generated.js";
-import { DesktopSettingsPanel } from "./desktop-settings-panel";
+import { SessionDefaultsSettingsPanel } from "./session-defaults-settings-panel";
 
 afterEach(cleanup);
 
-describe("desktop chat timeout settings", () => {
+describe("agent session defaults", () => {
   it("saves the default inactivity limit with the session settings", async () => {
     const onSave = vi.fn();
     render(
-      createElement(DesktopSettingsPanel, {
+      createElement(SessionDefaultsSettingsPanel, {
         setup: {
           settings: { ...DEFAULT_USER_DESKTOP_SETTINGS },
           saving: false,
@@ -46,17 +46,23 @@ describe("desktop chat timeout settings", () => {
 describe("adaptive controller global setting", () => {
   it("saves the global toggle", async () => {
     const onSave = vi.fn();
-    render(createElement(DesktopSettingsPanel, {
-      setup: {
-        settings: { ...DEFAULT_USER_DESKTOP_SETTINGS },
-        saving: false,
-        message: null,
-        onSave,
-      },
-    }));
-    fireEvent.click(screen.getByRole("switch", { name: "Adaptive context & compute" }));
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith(
-      expect.objectContaining({ adaptiveControllerEnabled: false }),
-    ));
+    render(
+      createElement(SessionDefaultsSettingsPanel, {
+        setup: {
+          settings: { ...DEFAULT_USER_DESKTOP_SETTINGS },
+          saving: false,
+          message: null,
+          onSave,
+        },
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Adaptive context & compute" }),
+    );
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({ adaptiveControllerEnabled: false }),
+      ),
+    );
   });
 });

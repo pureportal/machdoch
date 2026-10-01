@@ -41,6 +41,8 @@ import {
 } from "./ai-context-window";
 
 export type SettingsSection =
+  | "answer-language"
+  | "session-defaults"
   | "asset-storage"
   | "civitai"
   | "providers"
@@ -87,6 +89,32 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
   description: string;
   keywords: readonly string[];
 }> = [
+  {
+    id: "answer-language",
+    label: "Answer language",
+    group: "Agent",
+    description: "",
+    keywords: ["language", "english", "reply", "response"],
+  },
+  {
+    id: "session-defaults",
+    label: "Session defaults",
+    group: "Agent",
+    description: "",
+    keywords: [
+      "adaptive",
+      "context",
+      "compute",
+      "ai",
+      "messages",
+      "cap",
+      "limit",
+      "chat timeout",
+      "default",
+      "inactivity",
+      "minutes",
+    ],
+  },
   {
     id: "providers",
     label: "Providers",
@@ -220,8 +248,6 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
       "retention",
       "deletion",
       "sessions",
-      "messages",
-      "context",
       "silence",
       "autostart",
       "tray",
@@ -229,10 +255,6 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
       "cache",
       "archive",
       "quick chat",
-      "chat timeout",
-      "default",
-      "inactivity",
-      "minutes",
     ],
   },
   {

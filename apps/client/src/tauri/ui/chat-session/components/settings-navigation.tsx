@@ -5,6 +5,8 @@ import {
   HardDrive,
   KeyRound,
   Monitor,
+  Languages,
+  MessageSquare,
   Network,
   Palette,
   Search,
@@ -40,6 +42,8 @@ export interface SettingsDialogSectionDefinition {
 }
 
 const SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
+  "answer-language": Languages,
+  "session-defaults": MessageSquare,
   providers: KeyRound,
   civitai: KeyRound,
   "asset-storage": HardDrive,

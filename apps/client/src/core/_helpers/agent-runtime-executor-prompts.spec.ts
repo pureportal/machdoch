@@ -99,6 +99,37 @@ afterEach(() => {
 });
 
 describe("createExecutorSystemPrompt", () => {
+  it.each([
+    [undefined, "English"],
+    ["German", "German"],
+    ["", undefined],
+  ])(
+    "applies answer language %s without restricting task content",
+    (answerLanguage, expectedLanguage) => {
+      const prompt = createExecutorSystemPrompt(
+        createRuntimeConfig(
+          answerLanguage === undefined ? {} : { answerLanguage },
+        ),
+        createTaskContext(),
+        [],
+        createConversationContext(),
+      );
+
+      if (expectedLanguage === undefined) {
+        expect(prompt).not.toContain("Write your final answer to the user in");
+        return;
+      }
+
+      expect(prompt).toContain(
+        `Write your final answer to the user in "${expectedLanguage}"`,
+      );
+      expect(prompt).toContain("in the language the task requires");
+      expect(prompt).toContain(
+        "even when that content appears in the final answer",
+      );
+    },
+  );
+
   it("rejects a missing frozen instruction resolution", () => {
     const taskContext = createTaskContext();
     Reflect.deleteProperty(taskContext, "instructionResolution");

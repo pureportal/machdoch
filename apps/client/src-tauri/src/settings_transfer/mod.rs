@@ -1,4 +1,4 @@
-mod categories;
+pub(crate) mod categories;
 mod contract;
 mod discovery;
 mod encrypted_file;

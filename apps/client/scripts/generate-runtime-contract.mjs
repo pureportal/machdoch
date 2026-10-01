@@ -136,6 +136,8 @@ const defaultInternalTaskModelSettings = getDefaultObject(
   "UserInternalTaskModelSettings",
 );
 const defaultDesktopSettings = getDefaultObject("UserDesktopSettings");
+const defaultAnswerLanguage =
+  defs.UserConfigFile.properties.answerLanguage.default;
 const desktopSettingBounds = getBoundsObject("UserDesktopSettings");
 const schemaVersion = metadata.schemaVersion;
 
@@ -238,6 +240,7 @@ export const WORKSPACE_RUN_SETTING_BOUNDS = ${json(workspaceRunSettingBounds)} a
 export const DEFAULT_USER_REVIEW_MODEL_SETTINGS = ${json(defaultReviewModelSettings)} as const satisfies UserReviewModelSettings;
 export const DEFAULT_USER_INTERNAL_TASK_MODEL_SETTINGS = ${json(defaultInternalTaskModelSettings)} as const satisfies UserInternalTaskModelSettings;
 export const DEFAULT_USER_DESKTOP_SETTINGS = ${json(defaultDesktopSettings)} as const satisfies UserDesktopSettings;
+export const DEFAULT_ANSWER_LANGUAGE = ${json(defaultAnswerLanguage)};
 export const DESKTOP_SETTING_BOUNDS = ${json(desktopSettingBounds)} as const;
 
 export const isRuntimeContractValue = <T extends readonly string[]>(
@@ -389,6 +392,7 @@ export interface UserSpeechToTextSettings {
 }
 
 export interface RuntimeConfig {
+  answerLanguage?: string;
   workspaceRoot: string;
   workspaceConfigPath?: string;
   userConfigPath?: string;
@@ -501,6 +505,7 @@ export interface ProviderEnrollmentConfigFile {
 }
 
 export interface UserConfigFile {
+  answerLanguage?: string;
   apiKeys?: UserProviderApiKeys;
   agentCliPaths?: UserAgentCliPaths;
   webSearch?: UserWebSearchConfigFile;
@@ -646,6 +651,7 @@ pub const WEB_SEARCH_ENV_KEYS: [(&str, &str); ${Object.keys(webSearchEnvKeys).le
 pub const DEFAULT_MODEL_PROVIDER: &str = ${JSON.stringify(defaultModelProvider)};
 pub const DEFAULT_MODEL_BY_PROVIDER: [(&str, &str); ${Object.keys(defaultModelByProvider).length}] = ${rustPairs(defaultModelByProvider)};
 pub const DEFAULT_USER_REVIEW_MODEL_MODE: &str = ${JSON.stringify(defaultReviewModelSettings.mode ?? "base")};
+pub const DEFAULT_ANSWER_LANGUAGE: &str = ${JSON.stringify(defaultAnswerLanguage)};
 pub const DEFAULT_USER_INTERNAL_TASK_MODEL_REASONING: &str = ${JSON.stringify(defaultInternalTaskModelSettings.reasoning ?? "default")};
 
 pub const DEFAULT_USER_AGENT_LIMITS_INFINITE: bool = ${defaultAgentLimits.infinite};
