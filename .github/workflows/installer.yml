@@ -47,6 +47,8 @@ jobs:
             rpm_asset: ""
     runs-on: ${{ matrix.runner }}
     container: ${{ matrix.container }}
+    env:
+      DESKTOP_TARGET_DIR: ${{ matrix.release_target == 'windows-x64' && '.cache/rust' || 'apps/client/src-tauri/target' }}
     steps:
       - name: Install Linux build dependencies
         if: startsWith(matrix.release_target, 'linux-')
@@ -64,6 +66,7 @@ jobs:
             curl \
             file \
             git \
+            glslc \
             libayatana-appindicator3-dev \
             libclang-dev \
             libgbm-dev \
@@ -72,6 +75,7 @@ jobs:
             libspa-0.2-dev \
             libwebkit2gtk-4.1-dev \
             libssl-dev \
+            libvulkan-dev \
             patchelf \
             pkg-config \
             python3 \
@@ -102,10 +106,16 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/client/src-tauri -> target
+          cache-directories: ${{ env.DESKTOP_TARGET_DIR }}
           shared-key: desktop-${{ matrix.release_target }}
           add-job-id-key: false
           cache-workspace-crates: true
           cache-on-failure: true
+
+      - name: Install Windows Vulkan SDK
+        if: matrix.release_target == 'windows-x64'
+        shell: pwsh
+        run: .github/scripts/install-windows-vulkan-sdk.ps1
 
       - name: Check Windows desktop toolchain
         if: matrix.release_target == 'windows-x64'
@@ -146,8 +156,8 @@ jobs:
       - name: List bundle outputs
         shell: bash
         run: |
-          ls -la apps/client/src-tauri/target/release/bundle || true
-          find apps/client/src-tauri/target/release/bundle -maxdepth 3 -type f || true
+          ls -la "$DESKTOP_TARGET_DIR/release/bundle" || true
+          find "$DESKTOP_TARGET_DIR/release/bundle" -maxdepth 3 -type f || true
 
       - name: Prepare canonical installer assets
         id: assets
@@ -155,7 +165,7 @@ jobs:
         run: >-
           node .github/scripts/release-assets.mjs prepare
           "${{ matrix.release_target }}"
-          apps/client/src-tauri/target/release/bundle
+          "$DESKTOP_TARGET_DIR/release/bundle"
           release-assets
           apps/client/src-tauri/tauri.conf.json
           "$GITHUB_OUTPUT"

@@ -28,6 +28,7 @@ import {
   RUNTIME_ENV_KEYS,
   USER_API_PROVIDERS as SCHEMA_USER_API_PROVIDERS,
   USER_WEB_SEARCH_PROVIDERS,
+  VALID_SPEECH_TO_TEXT_PROVIDERS,
   WEB_SEARCH_ENV_KEY_BY_PROVIDER,
   isConfiguredModelProvider,
   isReasoningMode,
@@ -589,9 +590,9 @@ export const saveUserVoiceActiveProvider = async (
 export const saveUserSpeechToTextActiveProvider = async (
   provider: SpeechToTextProvider,
 ): Promise<string> => {
-  if (!isVoiceAiProvider(provider)) {
+  if (!VALID_SPEECH_TO_TEXT_PROVIDERS.includes(provider)) {
     throw new Error(
-      "Expected speech-to-text.provider to be one of none, openai, or google.",
+      "Expected speech-to-text.provider to be one of none, openai, google, or whisper.",
     );
   }
 

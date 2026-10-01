@@ -1,10 +1,16 @@
 import { spawn } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { prepareWindowsNativeToolchain } from "./windows-native-toolchain.mjs";
+import { prepareWindowsVulkanToolchain } from "./windows-vulkan-toolchain.mjs";
+import { stageWindowsVulkanRuntime } from "./prepare-vulkan-runtime.mjs";
 
 try {
   const environment = prepareWindowsNativeToolchain({ ...process.env });
+  prepareWindowsVulkanToolchain(environment);
+  await stageWindowsVulkanRuntime();
   const child = spawn("cargo", process.argv.slice(2), {
     env: environment,
+    cwd: realpathSync.native(process.cwd()),
     stdio: "inherit",
     windowsHide: true,
   });

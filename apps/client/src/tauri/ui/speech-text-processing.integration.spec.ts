@@ -60,6 +60,7 @@ describe("speech text processing with the internal task model", () => {
         provider: "anthropic",
         model: "claude-sonnet-5",
         reasoning: "high",
+        taskId: expect.any(String),
       },
     );
   });

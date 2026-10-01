@@ -1,5 +1,6 @@
 import { runInternalDesktopTask } from "./internal-task-model";
-import type { UserSpeechToTextProvider } from "./runtime";
+import { cancelDesktopTask, type UserSpeechToTextProvider } from "./runtime";
+import { awaitSpeechOperation } from "./speech-operation";
 
 const EDITED_SPEECH_TEXT_PATTERN =
   /<machdoch_speech_text>\s*([\s\S]*?)\s*<\/machdoch_speech_text>/iu;
@@ -9,11 +10,13 @@ export interface SpeechTextProcessingOptions {
   text: string;
   autoTranslateToEnglish: boolean;
   autoFormat: boolean;
+  signal?: AbortSignal;
 }
 
 export const processUserSpeechText = async (
   options: SpeechTextProcessingOptions,
 ): Promise<string> => {
+  options.signal?.throwIfAborted();
   const transcript = options.text.trim();
   if (!transcript) {
     throw new Error("Expected a non-empty speech transcript.");
@@ -44,9 +47,42 @@ export const processUserSpeechText = async (
     "Return only the edited text between <machdoch_speech_text> and </machdoch_speech_text> tags.",
     `Transcript: ${JSON.stringify(transcript)}`,
   ];
-  const result = await runInternalDesktopTask(null, instructions.join("\n\n"), {
-    mode: "ask",
-  });
+  const controller = new AbortController();
+  const taskId = crypto.randomUUID();
+  const cancel = (): void => controller.abort(options.signal?.reason);
+  const cancelTask = (): void => {
+    void cancelDesktopTask(taskId).catch((error: unknown) => {
+      console.error("Could not cancel speech text processing", error);
+    });
+  };
+  options.signal?.addEventListener("abort", cancel, { once: true });
+  controller.signal.addEventListener("abort", cancelTask, { once: true });
+  const timeout = setTimeout(
+    () =>
+      controller.abort(
+        new Error("Speech text processing timed out. Try again."),
+      ),
+    120_000,
+  );
+  let result: Awaited<ReturnType<typeof runInternalDesktopTask>>;
+  try {
+    result = await awaitSpeechOperation(
+      runInternalDesktopTask(
+        null,
+        instructions.join("\n\n"),
+        {
+          mode: "ask",
+          taskId,
+        },
+        controller.signal,
+      ),
+      controller.signal,
+    );
+  } finally {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", cancel);
+    controller.signal.removeEventListener("abort", cancelTask);
+  }
   const execution = result.execution;
   if (execution.status !== "executed" && execution.status !== "planned") {
     throw new Error(execution.reason ?? execution.summary);

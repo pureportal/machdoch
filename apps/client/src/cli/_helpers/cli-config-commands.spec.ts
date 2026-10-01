@@ -126,6 +126,50 @@ describe("CLI configuration catalog", () => {
     expect(stored.enabled).toBe(false);
   });
 
+  it("defaults speech input to Whisper and preserves selections until reset", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+    const setting = "speech-to-text.provider";
+    const initialEntries = await loadCliConfigEntries(workspaceRoot);
+    expect(
+      initialEntries.find((entry) => entry.setting === setting),
+    ).toMatchObject({
+      value: "whisper",
+      source: "default",
+      choices: ["none", "openai", "google", "whisper"],
+    });
+    expect(
+      initialEntries.find((entry) => entry.setting === "voice.provider"),
+    ).toMatchObject({
+      value: "none",
+    });
+
+    for (const provider of ["none", "openai", "google", "whisper"]) {
+      await expect(
+        saveConfigSetting(workspaceRoot, setting, provider),
+      ).resolves.toMatchObject({
+        value: provider,
+      });
+      const entries = await loadCliConfigEntries(workspaceRoot);
+      expect(entries.find((entry) => entry.setting === setting)).toMatchObject({
+        value: provider,
+        source: "saved",
+      });
+    }
+
+    await expect(
+      saveConfigSetting(workspaceRoot, setting, "invalid"),
+    ).rejects.toThrow();
+    await clearConfigSetting(workspaceRoot, setting);
+    const resetEntries = await loadCliConfigEntries(workspaceRoot);
+    expect(
+      resetEntries.find((entry) => entry.setting === setting),
+    ).toMatchObject({
+      value: "whisper",
+      source: "default",
+    });
+  });
+
   it("persists, validates, and restores the default desktop chat timeout", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();

@@ -52,6 +52,7 @@ import {
   USER_API_PROVIDERS,
   USER_WEB_SEARCH_PROVIDERS,
   VALID_MODEL_PROVIDERS,
+  VALID_SPEECH_TO_TEXT_PROVIDERS,
   WEB_SEARCH_ENV_KEY_BY_PROVIDER,
   WORKSPACE_RUN_SETTING_BOUNDS,
   isAgentCliProvider,
@@ -391,8 +392,8 @@ const createConfigSettingDefinitions = (): CliConfigSettingDefinition[] => [
     category: "Voice",
     scope: "user",
     description: "Speech-to-text provider used by the desktop app.",
-    acceptedValues: VOICE_PROVIDER_CHOICES.join("|"),
-    choices: VOICE_PROVIDER_CHOICES,
+    acceptedValues: VALID_SPEECH_TO_TEXT_PROVIDERS.join("|"),
+    choices: VALID_SPEECH_TO_TEXT_PROVIDERS,
   },
   {
     setting: "speech-to-text.input-device",
@@ -621,9 +622,13 @@ export const saveConfigSetting = async (
   }
 
   if (normalizedSetting === "speech-to-text.provider") {
-    if (!isVoiceAiProvider(normalizedValue)) {
+    if (
+      !VALID_SPEECH_TO_TEXT_PROVIDERS.includes(
+        normalizedValue as SpeechToTextProvider,
+      )
+    ) {
       fail(
-        "Expected speech-to-text.provider to be one of none, openai, or google.",
+        "Expected speech-to-text.provider to be one of none, openai, google, or whisper.",
       );
     }
     return {
@@ -1342,7 +1347,7 @@ const resolveConfigEntry = (
         source = configSource(snapshot.userConfig.voice?.activeProvider);
         break;
       case "speech-to-text.provider":
-        value = snapshot.userConfig.speechToText?.activeProvider ?? "none";
+        value = snapshot.userConfig.speechToText?.activeProvider ?? "whisper";
         source = configSource(snapshot.userConfig.speechToText?.activeProvider);
         break;
       case "speech-to-text.input-device":

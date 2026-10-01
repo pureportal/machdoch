@@ -87,7 +87,8 @@ export const QuickVoiceShell = (): JSX.Element => {
     stopRecording,
     cancelRecording,
   } = useSpeechRecorder();
-  const { transcribing, transcribeRecording } = useSpeechTranscription();
+  const { transcribing, transcribeRecording, cancelTranscription } =
+    useSpeechTranscription();
   const [statusText, setStatusText] = useState<string | null>(null);
   const [finalizing, setFinalizing] = useState(false);
   const recordingStartedAtRef = useRef(0);
@@ -96,6 +97,7 @@ export const QuickVoiceShell = (): JSX.Element => {
   const detectedSpeechRef = useRef(false);
   const finalizingRef = useRef(false);
   const operationSequenceRef = useRef(0);
+  const operationAbortRef = useRef<AbortController | null>(null);
   const startInFlightRef = useRef<number | null>(null);
   const recordingActiveRef = useRef(false);
   const pendingStartRequestRef = useRef(false);
@@ -148,6 +150,8 @@ export const QuickVoiceShell = (): JSX.Element => {
   const cancelRecordingWithStatus = useCallback(
     (message: string): void => {
       operationSequenceRef.current += 1;
+      operationAbortRef.current?.abort();
+      cancelTranscription();
       startInFlightRef.current = null;
       finalizingRef.current = false;
       recordingActiveRef.current = false;
@@ -156,7 +160,7 @@ export const QuickVoiceShell = (): JSX.Element => {
       setFinalizing(false);
       setStatusText(message);
     },
-    [cancelRecording, resetVoiceActivity],
+    [cancelRecording, cancelTranscription, resetVoiceActivity],
   );
 
   const finalizeRecording = useCallback(async (): Promise<void> => {
@@ -189,12 +193,19 @@ export const QuickVoiceShell = (): JSX.Element => {
         keyTerms: speechToTextSettings.keyTerms,
         speechContext: speechToTextSettings.speechContext,
         autoTranslateToEnglish: speechToTextSettings.autoTranslateToEnglish,
+        signal: operationAbortRef.current?.signal,
       });
 
       if (operationSequenceRef.current !== operationSequence) {
         return;
       }
 
+      if (
+        speechToTextSettings.autoFormat ||
+        (speechToTextSettings.autoTranslateToEnglish && provider !== "whisper")
+      ) {
+        setStatusText("Processing speech...");
+      }
       const commandText =
         speechToTextSettings.autoTranslateToEnglish ||
         speechToTextSettings.autoFormat
@@ -204,6 +215,7 @@ export const QuickVoiceShell = (): JSX.Element => {
               autoTranslateToEnglish:
                 speechToTextSettings.autoTranslateToEnglish,
               autoFormat: speechToTextSettings.autoFormat,
+              signal: operationAbortRef.current?.signal,
             })
           : transcriptText;
       if (operationSequenceRef.current !== operationSequence) {
@@ -281,10 +293,12 @@ export const QuickVoiceShell = (): JSX.Element => {
     }
 
     cancelRecording();
+    clearHideTimeout();
     resetVoiceActivity();
     const operationSequence = operationSequenceRef.current + 1;
     operationSequenceRef.current = operationSequence;
     startInFlightRef.current = operationSequence;
+    operationAbortRef.current = new AbortController();
 
     try {
       const started = await startSpeechRecording({
@@ -313,6 +327,7 @@ export const QuickVoiceShell = (): JSX.Element => {
   }, [
     browserSupported,
     cancelRecording,
+    clearHideTimeout,
     configuredProvider,
     controller.quickVoiceSettingsLoaded,
     desktopSettings.quickVoiceEnabled,
@@ -376,6 +391,9 @@ export const QuickVoiceShell = (): JSX.Element => {
     recording,
   ]);
 
+  const startRecordingRef = useRef(startRecording);
+  startRecordingRef.current = startRecording;
+
   useEffect(() => {
     let disposed = false;
     let unsubscribe: (() => void) | undefined;
@@ -398,7 +416,7 @@ export const QuickVoiceShell = (): JSX.Element => {
           isVisible &&
           operationSequenceRef.current === requestSequence
         ) {
-          await startRecording();
+          await startRecordingRef.current();
         }
       })().catch((error) => {
         console.error("Failed to start Quick Voice recording", error);
@@ -433,11 +451,13 @@ export const QuickVoiceShell = (): JSX.Element => {
       disposed = true;
       unsubscribe?.();
     };
-  }, [startRecording, syncQuickVoiceWindowPosition]);
+  }, [syncQuickVoiceWindowPosition]);
 
   useEffect(() => {
     return () => {
       operationSequenceRef.current += 1;
+      operationAbortRef.current?.abort();
+      cancelTranscription();
       pendingStartRequestRef.current = false;
       startInFlightRef.current = null;
       finalizingRef.current = false;
@@ -446,10 +466,17 @@ export const QuickVoiceShell = (): JSX.Element => {
       clearHideTimeout();
       resetVoiceActivity();
     };
-  }, [cancelRecording, clearHideTimeout, resetVoiceActivity]);
+  }, [
+    cancelRecording,
+    cancelTranscription,
+    clearHideTimeout,
+    resetVoiceActivity,
+  ]);
 
   const hideQuickVoice = useCallback((): void => {
     operationSequenceRef.current += 1;
+    operationAbortRef.current?.abort();
+    cancelTranscription();
     pendingStartRequestRef.current = false;
     startInFlightRef.current = null;
     finalizingRef.current = false;
@@ -471,6 +498,7 @@ export const QuickVoiceShell = (): JSX.Element => {
       });
   }, [
     cancelRecording,
+    cancelTranscription,
     clearHideTimeout,
     controller.flushPersistence,
     resetVoiceActivity,
@@ -623,6 +651,7 @@ export const QuickVoiceShell = (): JSX.Element => {
 
             void startRecording();
           }}
+          onCancel={hideQuickVoice}
           className="rounded-3xl border border-slate-800"
           headerActions={
             <>

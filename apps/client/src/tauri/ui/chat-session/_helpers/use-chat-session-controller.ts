@@ -8451,13 +8451,18 @@ export const useChatSessionController = (
     clearQuickTaskHistory,
     fileDrop,
     voiceInputOverlay: {
-      visible: speechInput.recording || speechInput.transcribing,
+      visible:
+        speechInput.starting ||
+        speechInput.recording ||
+        speechInput.transcribing,
+      starting: speechInput.starting,
       recording: speechInput.recording,
       transcribing: speechInput.transcribing,
       level: speechInput.level,
       statusText: speechInput.statusText,
       statusTone: speechInput.statusTone,
       onAction: handleSpeechInputAction,
+      onCancel: speechInput.cancelSpeechInput,
     },
     quickTask: {
       session: quickTaskSession,

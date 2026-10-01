@@ -8,6 +8,7 @@ mod common;
 mod google;
 mod google_response;
 mod openai;
+mod requests;
 mod whisper;
 
 #[derive(Debug, Clone, Serialize)]
@@ -90,8 +91,26 @@ pub async fn synthesize_user_voice_audio(
 }
 
 #[tauri::command]
+pub fn begin_user_speech_transcription(
+    window: tauri::WebviewWindow,
+    request_id: String,
+) -> Result<(), String> {
+    requests::begin(window.label(), &request_id)
+}
+
+#[tauri::command]
+pub fn cancel_user_speech_transcription(
+    window: tauri::WebviewWindow,
+    request_id: String,
+) -> Result<(), String> {
+    requests::cancel(window.label(), &request_id)
+}
+
+#[tauri::command]
 pub async fn transcribe_user_speech_audio(
     app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    request_id: String,
     provider: String,
     audio_base64: String,
     mime_type: String,
@@ -100,6 +119,7 @@ pub async fn transcribe_user_speech_audio(
     speech_context: String,
     auto_translate_to_english: bool,
 ) -> Result<TranscribedSpeechText, String> {
+    let request = requests::SpeechRequest::acquire(window.label(), &request_id)?;
     let normalized_provider = provider.trim().to_lowercase();
     let transcription_provider =
         SpeechTranscriptionProvider::from_normalized(&normalized_provider)?;
@@ -127,44 +147,54 @@ pub async fn transcribe_user_speech_audio(
         transcription_provider.max_upload_bytes(),
     )?;
     let audio_bytes = decode_audio_base64(&audio_base64)?;
-    match transcription_provider {
-        SpeechTranscriptionProvider::OpenAi => {
-            let env = crate::runtime_snapshot::load_global_env()?;
-            let client = build_http_client()?;
-            openai::transcribe_openai(
-                &client,
-                &env,
-                audio_bytes,
-                &normalized_mime_type,
-                language_code.as_deref(),
-                &key_terms,
-                &speech_context,
-            )
-            .await
+    let transcription = async {
+        match transcription_provider {
+            SpeechTranscriptionProvider::OpenAi => {
+                let env = crate::runtime_snapshot::load_global_env()?;
+                let client = build_http_client()?;
+                openai::transcribe_openai(
+                    &client,
+                    &env,
+                    audio_bytes,
+                    &normalized_mime_type,
+                    language_code.as_deref(),
+                    &key_terms,
+                    &speech_context,
+                )
+                .await
+            }
+            SpeechTranscriptionProvider::Google => {
+                let env = crate::runtime_snapshot::load_global_env()?;
+                let client = build_http_client()?;
+                google::transcribe_google(
+                    &client,
+                    &env,
+                    audio_bytes,
+                    &normalized_mime_type,
+                    language_code.as_deref(),
+                    &key_terms,
+                )
+                .await
+            }
+            SpeechTranscriptionProvider::Whisper => {
+                whisper::transcribe_whisper(
+                    app,
+                    audio_bytes,
+                    &normalized_mime_type,
+                    language_code.as_deref(),
+                    &key_terms,
+                    auto_translate_to_english,
+                    request.cancellation.clone(),
+                )
+                .await
+            }
         }
-        SpeechTranscriptionProvider::Google => {
-            let env = crate::runtime_snapshot::load_global_env()?;
-            let client = build_http_client()?;
-            google::transcribe_google(
-                &client,
-                &env,
-                audio_bytes,
-                &normalized_mime_type,
-                language_code.as_deref(),
-                &key_terms,
-            )
-            .await
-        }
-        SpeechTranscriptionProvider::Whisper => {
-            whisper::transcribe_whisper(
-                app,
-                audio_bytes,
-                &normalized_mime_type,
-                &key_terms,
-                auto_translate_to_english,
-            )
-            .await
-        }
+    };
+    tokio::select! {
+        biased;
+        _ = request.cancellation.cancelled() => Err("Speech transcription was cancelled.".to_string()),
+        result = transcription => result,
+        _ = tokio::time::sleep(std::time::Duration::from_secs(900)) => Err("Speech transcription timed out. Try a shorter recording.".to_string()),
     }
 }
 
