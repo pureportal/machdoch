@@ -30,6 +30,7 @@ export interface RalphGenerationActivityEvent {
 export interface RalphGenerationActivityState {
   summary: string;
   activity: RalphGenerationActivityEvent[];
+  lastProgressTimestamp?: number;
   currentRound?: number;
   maxRounds?: number;
   currentActor?: string;
@@ -185,14 +186,15 @@ export const appendGenerationActivity = (
     .slice(-RALPH_GENERATION_ACTIVITY_LIMIT);
 };
 
-export const applyGenerationActivity = <
-  T extends RalphGenerationActivityState,
->(
+export const applyGenerationActivity = <T extends RalphGenerationActivityState>(
   job: T,
   event: RalphGenerationActivityEvent,
 ): T => {
+  if (event.timestamp <= (job.lastProgressTimestamp ?? -Infinity)) return job;
+
   return {
     ...job,
+    lastProgressTimestamp: event.timestamp,
     summary: event.label || job.summary,
     activity: appendGenerationActivity(job.activity, [event]),
     ...(event.round !== undefined ? { currentRound: event.round } : {}),
@@ -217,4 +219,21 @@ export const applyGenerationActivity = <
     ...(event.blockCount !== undefined ? { blockCount: event.blockCount } : {}),
     ...(event.edgeCount !== undefined ? { edgeCount: event.edgeCount } : {}),
   };
+};
+
+export const applyRetainedGenerationProgress = <
+  T extends RalphGenerationActivityState,
+>(
+  job: T,
+  events: readonly { progress: TaskExecutionProgress; timestamp: number }[],
+): T => {
+  return [...events]
+    .sort((left, right) => left.timestamp - right.timestamp)
+    .reduce((current, event) => {
+      const activity = createGenerationActivityFromProgress(
+        event.progress,
+        event.timestamp,
+      );
+      return activity ? applyGenerationActivity(current, activity) : current;
+    }, job);
 };

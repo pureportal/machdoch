@@ -32,6 +32,7 @@ interface ObservedFileLockOwner extends FileLockOwner {
 }
 
 export interface CooperativeFileLockOptions {
+  signal?: AbortSignal;
   timeoutMs?: number;
   staleLockAgeMs?: number;
   ownerDescription?: string;
@@ -483,6 +484,7 @@ export const withCooperativeFileLock = async <T>(
 
   try {
     while (true) {
+      options.signal?.throwIfAborted();
       try {
         await rename(candidatePath, lockPath);
         acquired = true;
@@ -514,6 +516,7 @@ export const withCooperativeFileLock = async <T>(
   }
 
   try {
+    options.signal?.throwIfAborted();
     return await operation();
   } finally {
     await releaseOwnedLock(lockPath, token);

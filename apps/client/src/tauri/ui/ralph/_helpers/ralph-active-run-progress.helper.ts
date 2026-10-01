@@ -39,6 +39,7 @@ export interface ActiveRalphRun {
   lastOutput?: string;
   lastMessage?: string;
   blockDetails: Record<string, ActiveRalphRunBlockDetail>;
+  lastProgressTimestamp?: number;
 }
 
 export interface ActiveRalphRunEvent {
@@ -366,6 +367,10 @@ export const applyActiveRunEventSnapshot = (
         ...run.blockDetails,
         [currentDetail.blockId]: {
           ...currentDetail,
+          ...(snapshot.eventType === "block-start" ||
+          snapshot.eventType === "retry"
+            ? { status: "running", output: undefined, summary: undefined }
+            : {}),
           ...(blockTitle ? { blockTitle } : {}),
           ...(snapshot.output ? { output: snapshot.output } : {}),
           ...(snapshot.attempt !== undefined
@@ -389,6 +394,9 @@ export const applyActiveRunEventSnapshot = (
 
   return {
     ...run,
+    ...(snapshot.eventType === "block-start" || snapshot.eventType === "retry"
+      ? { lastOutput: undefined }
+      : {}),
     ...(snapshot.activeBlockId
       ? { currentBlockId: snapshot.activeBlockId }
       : {}),
@@ -415,6 +423,10 @@ export const applyActiveRunBlockProgressSnapshot = (
 
   return {
     ...run,
+    ...(snapshot.event.kind === "model-stream" ||
+    snapshot.event.kind === "action-output"
+      ? { lastOutput: undefined }
+      : {}),
     currentBlockId: snapshot.blockId,
     ...(snapshot.blockTitle ? { currentBlockTitle: snapshot.blockTitle } : {}),
     lastMessage: snapshot.event.label,
@@ -422,12 +434,49 @@ export const applyActiveRunBlockProgressSnapshot = (
       ...run.blockDetails,
       [snapshot.blockId]: {
         ...currentDetail,
+        ...(snapshot.event.kind === "model-stream" ||
+        snapshot.event.kind === "action-output"
+          ? { status: "running", output: undefined, summary: undefined }
+          : {}),
         ...(snapshot.blockTitle ? { blockTitle: snapshot.blockTitle } : {}),
         progress: [...currentDetail.progress, snapshot.event].slice(
           -RALPH_BLOCK_PROGRESS_LIMIT,
         ),
       },
     },
+  };
+};
+
+export const applyActiveRunProgress = (
+  run: ActiveRalphRun,
+  progress: TaskExecutionProgress,
+  timestamp: number,
+): ActiveRalphRun => {
+  if (timestamp <= (run.lastProgressTimestamp ?? 0)) return run;
+  const snapshot = getRalphProgressSnapshot(progress);
+  const blockSnapshot = createRalphBlockProgressSnapshot(progress, timestamp);
+  if (!snapshot && !blockSnapshot) {
+    return {
+      ...run,
+      ...(progress.message ? { lastMessage: progress.message } : {}),
+      lastProgressTimestamp: timestamp,
+    };
+  }
+  const updated = snapshot
+    ? applyActiveRunEventSnapshot(run, snapshot, timestamp)
+    : run;
+  const withBlockProgress = blockSnapshot
+    ? applyActiveRunBlockProgressSnapshot(updated, blockSnapshot)
+    : updated;
+  return {
+    ...withBlockProgress,
+    ...(snapshot?.activeBlockId
+      ? { currentBlockId: snapshot.activeBlockId }
+      : {}),
+    ...(snapshot?.activeBlockTitle
+      ? { currentBlockTitle: snapshot.activeBlockTitle }
+      : {}),
+    lastProgressTimestamp: timestamp,
   };
 };
 

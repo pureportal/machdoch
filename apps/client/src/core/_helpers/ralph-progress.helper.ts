@@ -406,7 +406,15 @@ export const assessRalphProgress = (
       ? channel.initialIsProgress
       : previousFingerprint !== channel.fingerprint),
   );
-  const cycleEligible = !isRepeatableRalphFailureResult(result);
+  const completedWait =
+    block.type === "UTILITY" &&
+    block.utility.type === "WAIT" &&
+    result.output === "SUCCESS" &&
+    isRecord(result.data) &&
+    typeof result.data.waitedSeconds === "number" &&
+    result.data.waitedSeconds > 0;
+  const cycleEligible =
+    !completedWait && !isRepeatableRalphFailureResult(result);
   const signature = hash({
     blockId: block.id,
     output: result.output,
@@ -448,6 +456,9 @@ export const assessRalphProgress = (
     next.meaningfulTransitions += 1;
     next.lastProgressAt = now;
     next.lastProgressTransition = transition;
+  } else if (completedWait) {
+    next.consecutiveNoProgress = 0;
+    next.recent = [evidence];
   } else {
     next.consecutiveNoProgress += 1;
   }

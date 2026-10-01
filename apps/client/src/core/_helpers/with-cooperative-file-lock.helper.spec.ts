@@ -18,6 +18,47 @@ import {
 } from "./with-cooperative-file-lock.helper.ts";
 
 describe("withCooperativeFileLock", () => {
+  it("cancels a queued lock without entering its operation or leaving an owner candidate", async () => {
+    const directory = await mkdtemp(
+      join(tmpdir(), "machdoch-file-lock-cancel-"),
+    );
+    const destination = join(directory, "integration");
+    const controller = new AbortController();
+    let release!: () => void;
+    let entered!: () => void;
+    const enteredOperation = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const heldOperation = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const holder = withCooperativeFileLock(destination, async () => {
+      entered();
+      await heldOperation;
+    });
+    try {
+      await enteredOperation;
+      const operation = vi.fn(async () => undefined);
+      const queued = withCooperativeFileLock(destination, operation, {
+        signal: controller.signal,
+      });
+      const rejected = expect(queued).rejects.toThrow(
+        "Cancelled queued integration",
+      );
+      controller.abort(new Error("Cancelled queued integration"));
+      await rejected;
+      expect(operation).not.toHaveBeenCalled();
+      release();
+      await holder;
+      await withCooperativeFileLock(destination, async () => undefined);
+      expect(await readdir(directory)).toEqual([]);
+    } finally {
+      release();
+      await holder;
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("serializes operations targeting the same file", async () => {
     const directory = await mkdtemp(join(tmpdir(), "machdoch-file-lock-"));
     const destination = join(directory, "config.json");

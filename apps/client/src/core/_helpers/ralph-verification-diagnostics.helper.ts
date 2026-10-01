@@ -27,6 +27,16 @@ export const diagnoseRalphVerificationFailure = (
   output: string,
 ): RalphVerificationDiagnostic | undefined => {
   if (
+    /Error: EISDIR:[^\n]*lstat '[A-Za-z]:'/u.test(output) &&
+    /node:internal\/modules\/(?:cjs\/loader|run_main)/u.test(output)
+  ) {
+    return {
+      category: "invalid-verification-path",
+      message: "Node could not launch the verification script from its Windows path.",
+      retryCondition: "Use a drive or UNC path without the Windows device prefix.",
+    };
+  }
+  if (
     /Unable to find libclang|libclang (?:was not found|is missing)|libclang\.dll is missing/iu.test(
       output,
     )

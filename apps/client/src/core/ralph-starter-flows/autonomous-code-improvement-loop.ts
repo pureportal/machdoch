@@ -467,7 +467,6 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
             },
             candidates: {
               type: "array",
-              minItems: 1,
               maxItems: 5,
               items: {
                 type: "object",
@@ -500,11 +499,25 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
           },
         },
         prompt:
-          "Inspect scope {{result:select-scope}}, commands {{result:detect-selected-commands}}, completed history {{result:read-completed-improvements}}, and deferred portfolio history {{result:read-deferred-improvements}} without edits. Preserve still-relevant deferred work instead of silently replacing it. Produce a concise constitution and 3-5 materially different evidence-backed candidates. Score value and risk 0-100. Prefer correctness, reliability, performance, accessibility, test, runtime, complexity, and churn evidence. Identify only research that can change the ranking. Return only schema-valid JSON.",
+          "Inspect scope {{result:select-scope}}, commands {{result:detect-selected-commands}}, completed history {{result:read-completed-improvements}}, and deferred portfolio history {{result:read-deferred-improvements}} without edits. Preserve still-relevant deferred work instead of silently replacing it. Produce a concise constitution and up to 5 materially different evidence-backed candidates. Return an empty candidates array when no meaningful improvement remains under {{meaningfulThreshold:text=}}. Do not invent work to fill the portfolio. Score value and risk 0-100. Prefer correctness, reliability, performance, accessibility, test, runtime, complexity, and churn evidence. Identify only research that can change the ranking. Return only schema-valid JSON.",
       },
       6,
       0,
       modelSettings("high"),
+    ),
+    utilityBlock(
+      "has-improvement-candidates",
+      "Improvement Candidates",
+      {
+        type: "CONDITION",
+        condition: {
+          style: "json-path",
+          path: "resultsByBlock.propose-improvements.data.output.candidates",
+          operator: "non-empty-array",
+        },
+      },
+      6,
+      -1,
     ),
     utilityBlock(
       "research-decision",
@@ -1529,7 +1542,25 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       "discover-success",
       "propose-improvements",
       "SUCCESS",
+      "has-improvement-candidates",
+    ),
+    edge(
+      "candidates-found",
+      "has-improvement-candidates",
+      "MATCH",
       "research-decision",
+    ),
+    edge(
+      "candidates-empty",
+      "has-improvement-candidates",
+      "NO_MATCH",
+      "mark-stop-selected-scope",
+    ),
+    edge(
+      "candidates-invalid",
+      "has-improvement-candidates",
+      "ERROR",
+      "mark-invalid-selected-scope",
     ),
     edge(
       "discover-invalid",
@@ -2539,7 +2570,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
 
 export const autonomousCodeImprovementLoopStarterFlow = {
   id: "autonomous-code-improvement-loop",
-  version: 27,
+  version: 28,
   defaultAlias: "autonomous-code-improvement-loop",
   category: "Code Quality",
   tags: ["autonomous", "improvement", "portfolio", "validation"],

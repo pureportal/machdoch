@@ -131,6 +131,7 @@ import {
   listRalphFlows,
   listRalphRuns,
   loadActiveDesktopTasks,
+  loadRecentDesktopTaskResults,
   loadProviderModelCatalog,
   openRalphFlowInExplorer,
   resolveDroppedPaths,
@@ -315,10 +316,7 @@ import {
   saveRalphInspectorWidth,
 } from "./_helpers/ralph-inspector-width.helper";
 import {
-  applyActiveRunBlockProgressSnapshot,
-  applyActiveRunEventSnapshot,
-  createRalphBlockProgressSnapshot,
-  getRalphProgressSnapshot,
+  applyActiveRunProgress,
   getRunEventToneClassName,
   getSortedActiveBlockDetails,
   type ActiveRalphRun,
@@ -352,10 +350,12 @@ import { createRalphRunResultFromDetail } from "./_helpers/create-ralph-run-resu
 export { createRalphRunResultFromDetail } from "./_helpers/create-ralph-run-result-from-detail.helper";
 import {
   applyGenerationActivity,
+  applyRetainedGenerationProgress,
   createGenerationActivityFromProgress,
   createGenerationActivityFromResultEvent,
   type RalphGenerationActivityEvent,
 } from "./_helpers/ralph-generation-activity.helper";
+import { readRalphTaskCompletion } from "./_helpers/ralph-task-completion.helper";
 import {
   createStarterImportId,
   getStarterFlowById,
@@ -665,7 +665,13 @@ export const RalphFlowEditor = ({
   const [mediaFlowCatalogRefresh, setMediaFlowCatalogRefresh] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [activeRuns, setActiveRuns] = useState<ActiveRalphRun[]>([]);
-  const [isolatedRun, setIsolatedRun] = useState(false);
+  const activeRunsRef = useRef(activeRuns);
+  activeRunsRef.current = activeRuns;
+  const [isolatedRunOverride, setIsolatedRunOverride] = useState<
+    boolean | null
+  >(null);
+  const isolatedRun =
+    isolatedRunOverride ?? doesRalphFlowRequireWorkspaceWriterLease(draftFlow);
   const [generationJob, setGenerationJob] = useState<RalphGenerationJob | null>(
     null,
   );
@@ -2046,32 +2052,13 @@ export const RalphFlowEditor = ({
         });
       }
 
-      const snapshot = getRalphProgressSnapshot(event.progress);
-      const blockProgressSnapshot = createRalphBlockProgressSnapshot(
-        event.progress,
-        event.timestamp,
-      );
-
-      if (!snapshot && !blockProgressSnapshot) {
-        return;
-      }
-
       setActiveRuns((current) =>
         current.map((run) => {
           if (run.id !== event.taskId) {
             return run;
           }
 
-          const runWithEvent = snapshot
-            ? applyActiveRunEventSnapshot(run, snapshot, event.timestamp)
-            : run;
-
-          return blockProgressSnapshot
-            ? applyActiveRunBlockProgressSnapshot(
-                runWithEvent,
-                blockProgressSnapshot,
-              )
-            : runWithEvent;
+          return applyActiveRunProgress(run, event.progress, event.timestamp);
         }),
       );
     }).then((dispose) => {
@@ -2666,14 +2653,18 @@ export const RalphFlowEditor = ({
             : undefined) ??
           flowReference ??
           parsed?.flowId;
-        const requiresWorkspaceWriterLease = flowId
-          ? getRalphKnownFlowWorkspaceWriterLeaseRequirement(
-              flowId,
-              !dirty && draftFlow?.id === flowId && selectedScope === scope
-                ? draftFlow
-                : null,
-            )
-          : undefined;
+        const requiresWorkspaceWriterLease = task.arguments.includes(
+          "--isolated",
+        )
+          ? false
+          : flowId
+            ? getRalphKnownFlowWorkspaceWriterLeaseRequirement(
+                flowId,
+                !dirty && draftFlow?.id === flowId && selectedScope === scope
+                  ? draftFlow
+                  : null,
+              )
+            : undefined;
 
         return flowId
           ? {
@@ -2702,7 +2693,56 @@ export const RalphFlowEditor = ({
     const activeTaskById = new Map(
       activeRalphRunTasks.map((task) => [task.id, task] as const),
     );
+    const progressByTaskId = new Map(
+      activeRalphTasks.map(
+        (task) => [task.id, task.progressEvents ?? []] as const,
+      ),
+    );
     const now = Date.now();
+    const finishedRuns = activeRunsRef.current.filter(
+      (run) => !activeIds.has(run.id) && now - run.startedAt >= 5_000,
+    );
+    const generationFinished =
+      generationJob &&
+      (generationJob.status === "running" ||
+        generationJob.status === "stopping") &&
+      !activeRalphTasks.some((task) => task.id === generationJob.id) &&
+      now - generationJob.startedAt > ACTIVE_TASK_REGISTRATION_GRACE_MS;
+    const finishedTaskIds = [
+      ...finishedRuns.map((run) => run.id),
+      ...(generationFinished ? [generationJob.id] : []),
+    ];
+    const completedTasks =
+      finishedTaskIds.length > 0
+        ? await loadRecentDesktopTaskResults(finishedTaskIds)
+        : [];
+    if (requestId !== reconcileRequestRef.current) return;
+    if (!completedTasks)
+      throw new Error("The flow result could not be loaded. Try again.");
+    const completions = new Map(
+      completedTasks
+        .filter(
+          (task) =>
+            normalizeWorkspaceForTaskComparison(task.workspaceRoot) ===
+            workspaceKey,
+        )
+        .map((task) => [task.id, readRalphTaskCompletion(task)] as const),
+    );
+    for (const run of finishedRuns) {
+      if (
+        selectedIdRef.current !== run.flowId ||
+        selectedScopeRef.current !== run.scope
+      )
+        continue;
+      void refreshRunHistory(run.flowId, run.scope);
+      const completion = completions.get(run.id);
+      if (completion) {
+        setMessage(completion.summary);
+        if (completion.runId) {
+          void openRunDetail(completion.runId, run.scope, { selectTab: false });
+        }
+      }
+    }
 
     setActiveRuns((current) => {
       const currentById = new Map(current.map((run) => [run.id, run] as const));
@@ -2758,7 +2798,15 @@ export const RalphFlowEditor = ({
         });
       }
 
-      return next.sort((left, right) => right.startedAt - left.startedAt);
+      return next
+        .map((run) =>
+          (progressByTaskId.get(run.id) ?? []).reduce(
+            (updated, event) =>
+              applyActiveRunProgress(updated, event.progress, event.timestamp),
+            run,
+          ),
+        )
+        .sort((left, right) => right.startedAt - left.startedAt);
     });
 
     const activeGenerationTasks = activeRalphTasks.filter(
@@ -2784,11 +2832,14 @@ export const RalphFlowEditor = ({
         ? activeRalphTasks.find((task) => task.id === current.id)
         : undefined;
       if (current && matchingActiveTask && current.status === "blocked") {
-        return {
-          ...current,
-          status: "running",
-          summary: `AI flow generation \`${current.targetAlias}\` is running in the background.`,
-        };
+        return applyRetainedGenerationProgress(
+          {
+            ...current,
+            status: "running" as const,
+            summary: `AI flow generation \`${current.targetAlias}\` is running in the background.`,
+          },
+          matchingActiveTask.progressEvents ?? [],
+        );
       }
 
       if (current?.status === "running" || current?.status === "stopping") {
@@ -2802,33 +2853,42 @@ export const RalphFlowEditor = ({
 
           return {
             ...current,
-            status: current.status === "stopping" ? "failed" : "blocked",
+            status:
+              completions.get(current.id)?.generationStatus ??
+              (current.status === "stopping" ? "failed" : "blocked"),
             summary:
-              current.status === "stopping"
+              completions.get(current.id)?.summary ??
+              (current.status === "stopping"
                 ? "AI flow generation stopped."
-                : "AI flow generation finished in the background. Refresh flows to inspect the result.",
+                : "AI flow generation finished in the background. Refresh flows to inspect the result."),
           };
         }
 
-        return current;
+        return applyRetainedGenerationProgress(
+          current,
+          matchingActiveTask?.progressEvents ?? [],
+        );
       }
 
-      if (!current && newestGenerationTask) {
+      if (newestGenerationTask && current?.id !== newestGenerationTask.id) {
         const alias =
           getRalphTaskFlowReference(newestGenerationTask) ?? "ralph-flow";
 
-        return {
-          id: newestGenerationTask.id,
-          target: "flow",
-          mode: "do-it",
-          scope: getRalphTaskFlowScope(newestGenerationTask),
-          targetFlowId: null,
-          targetAlias: alias,
-          startedAt: newestGenerationTask.startedAt,
-          status: "running",
-          summary: `AI flow generation \`${alias}\` is running in the background.`,
-          activity: [],
-        };
+        return applyRetainedGenerationProgress(
+          {
+            id: newestGenerationTask.id,
+            target: "flow" as const,
+            mode: "do-it" as const,
+            scope: getRalphTaskFlowScope(newestGenerationTask),
+            targetFlowId: null,
+            targetAlias: alias,
+            startedAt: newestGenerationTask.startedAt,
+            status: "running" as const,
+            summary: `AI flow generation \`${alias}\` is running in the background.`,
+            activity: [],
+          },
+          newestGenerationTask.progressEvents ?? [],
+        );
       }
 
       return current;
@@ -13296,7 +13356,7 @@ export const RalphFlowEditor = ({
                                 type="checkbox"
                                 checked={isolatedRun}
                                 onChange={(event) =>
-                                  setIsolatedRun(event.target.checked)
+                                  setIsolatedRunOverride(event.target.checked)
                                 }
                               />
                               <span>

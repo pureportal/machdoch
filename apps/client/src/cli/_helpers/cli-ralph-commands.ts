@@ -640,6 +640,7 @@ export const summarizeRun = (
     autonomy: result.autonomy ?? null,
     durability: result.durability ?? null,
     runWorktree: result.runWorktree ?? null,
+    integration: result.integration ?? null,
     summary: result.summary,
     missingVariables: result.missingVariables,
     unknownVariables: result.unknownVariables,
@@ -754,6 +755,9 @@ const runRalphFlowForCli = async ({
       ...(json
         ? {
             onEvent: createRalphEventProgressReporter(flow, config.mode),
+            onStateChange: createVerboseProgressReporter(writeStderrLine, {
+              structured: true,
+            }),
           }
         : {}),
     });

@@ -1350,6 +1350,10 @@ export interface RalphRunDetailResult {
 export type RalphRunLogResult = RalphRunLogReadResult;
 
 export interface ActiveDesktopTaskSummary {
+  progressEvents?: Array<{
+    timestamp: number;
+    progress: TaskExecutionProgress;
+  }>;
   id: string;
   kind: string;
   workspaceRoot: string;

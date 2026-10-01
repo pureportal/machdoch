@@ -285,10 +285,10 @@ export const useRalphOverview = (
         disposed ||
         !visible() ||
         ![
-          "start",
+          "block-start",
           "end",
           "crash",
-          "input-requested",
+          "input-required",
           "input-submitted",
           "input-cancelled",
         ].includes(String(eventType))

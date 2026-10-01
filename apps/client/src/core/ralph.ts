@@ -58,6 +58,11 @@ import {
   prepareRalphRunWorktree,
   type RalphRunWorktree,
 } from "./_helpers/ralph-run-worktree.helper.js";
+import {
+  integrateRalphRunWorktree,
+  type RalphRunIntegration,
+} from "./_helpers/ralph-run-integration.helper.js";
+import { getRalphIntegrationChecks } from "./_helpers/ralph-integration-checks.helper.js";
 export {
   getRalphArtifactDirectory,
   getRalphFlowDirectory,
@@ -1379,6 +1384,7 @@ export interface RalphInstructionBoundary {
 }
 
 export interface RalphRunResult {
+  integration?: RalphRunIntegration;
   runId?: string;
   startedAt?: string;
   finishedAt?: string;
@@ -1535,6 +1541,7 @@ export interface RalphRunCheckpoint {
 }
 
 export interface RalphRunRecord {
+  integration?: RalphRunIntegration;
   schemaVersion: typeof RALPH_FLOW_SCHEMA_VERSION;
   id: string;
   createdAt: string;
@@ -5410,12 +5417,16 @@ const executeWaitUtilityBlock = async (
   options: RalphRunOptions,
 ): Promise<RalphBlockExecutionResult> => {
   const mode = utility.mode ?? "delay";
+  const waitStartedAt = performance.now();
 
   if (mode === "delay") {
-    await delay(utility.delaySeconds ?? 0, options.signal);
+    const delaySeconds = utility.delaySeconds ?? 0;
+    await delay(delaySeconds, options.signal);
     return createUtilityResult(block, "SUCCESS", `${block.title} waited.`, {
       mode,
-      delaySeconds: utility.delaySeconds ?? 0,
+      delaySeconds,
+      waitedSeconds:
+        delaySeconds > 0 ? (performance.now() - waitStartedAt) / 1000 : 0,
     });
   }
 
@@ -5434,6 +5445,8 @@ const executeWaitUtilityBlock = async (
       {
         mode,
         runAt: utility.runAt,
+        waitedSeconds:
+          delayMs > 0 ? (performance.now() - waitStartedAt) / 1000 : 0,
       },
     );
   }
@@ -5451,6 +5464,7 @@ const executeWaitUtilityBlock = async (
   }
 
   let attempt = 1;
+  let waited = false;
   while (true) {
     if (evaluateRalphUtilityCondition(condition, context)) {
       return createUtilityResult(
@@ -5460,16 +5474,22 @@ const executeWaitUtilityBlock = async (
         {
           mode,
           attempts: attempt,
+          waitedSeconds: waited
+            ? (performance.now() - waitStartedAt) / 1000
+            : 0,
         },
       );
     }
 
+    const intervalSeconds =
+      utility.intervalSeconds ?? DEFAULT_RALPH_UTILITY_POLL_INTERVAL_SECONDS;
     await delayWithBackoff(
-      utility.intervalSeconds ?? DEFAULT_RALPH_UTILITY_POLL_INTERVAL_SECONDS,
+      intervalSeconds,
       utility.backoffMultiplier,
       attempt,
       options.signal,
     );
+    waited ||= intervalSeconds > 0;
     attempt += 1;
   }
 };
@@ -5740,10 +5760,12 @@ const executeCommandUtilityBlock = async (
   utility: RalphUtilityConfig,
   config: RuntimeConfig,
   checkMode: boolean,
-  signal?: AbortSignal,
-  operationId?: string,
-  context?: RalphResultContext,
+  options: Pick<RalphRunOptions, "signal" | "logger" | "onStateChange"> & {
+    operationId?: string;
+    context?: RalphResultContext;
+  } = {},
 ): Promise<RalphBlockExecutionResult> => {
+  const { signal, operationId, context } = options;
   const command = utility.command?.trim() || utility.fallbackCommand?.trim();
 
   if (!command) {
@@ -5781,6 +5803,11 @@ const executeCommandUtilityBlock = async (
       )
     : undefined;
   let verificationLock: RalphFileMutationLock | undefined;
+  const progressEvents: RalphRunRecordBlockProgressEvent[] = [];
+  const finish = (
+    result: RalphBlockExecutionResult,
+  ): RalphBlockExecutionResult =>
+    withRalphBlockProgress(result, progressEvents);
 
   try {
     if (cargoTarget) {
@@ -5813,6 +5840,46 @@ const executeCommandUtilityBlock = async (
         maxBufferBytes:
           utility.maxOutputBytes ?? DEFAULT_RALPH_UTILITY_RESPONSE_LIMIT_BYTES,
         acceptedExitCodes,
+        onOutput: async (output) => {
+          const toolName = checkMode ? "RUN_CHECK" : "RUN_COMMAND";
+          const progress = withRalphProgressBlockMetadata(
+            {
+              task: block.title,
+              mode: config.mode,
+              state: "executing",
+              message: `${block.title} ${output.stream}`,
+              executedTools: [],
+              outputSections: [],
+              cancellable: Boolean(signal),
+              actionOutput: {
+                toolName,
+                ...output,
+                chunk: capLogText(output.chunk, MAX_RALPH_SIMPLE_LOG_CHARS),
+              },
+              timelineEvent: {
+                kind: "output",
+                phase: "streaming",
+                label: `${block.title} ${output.stream}`,
+                toolName,
+                stream: output.stream,
+              },
+            },
+            block,
+          );
+          appendRalphBlockProgressEvent(
+            progressEvents,
+            createRalphBlockProgressEvent(progress),
+          );
+          options?.logger?.trace({
+            kind: "action-output",
+            message: progress.message,
+            blockId: block.id,
+            blockTitle: block.title,
+            blockType: block.type,
+            details: progress.actionOutput,
+          });
+          await options?.onStateChange?.(progress);
+        },
         ...(signal ? { signal } : {}),
         ...(utility.env || operationId || cargoTarget
           ? {
@@ -5850,24 +5917,23 @@ const executeCommandUtilityBlock = async (
         data,
       );
       if (verificationResult) {
-        return verificationResult;
+        return finish(verificationResult);
       }
     }
 
     if (checkMode && result.exitCode !== 0) {
-      return createUtilityResult(
-        block,
-        "FAILED",
-        `${block.title} failed with exit code ${result.exitCode}.`,
-        data,
+      return finish(
+        createUtilityResult(
+          block,
+          "FAILED",
+          `${block.title} failed with exit code ${result.exitCode}.`,
+          data,
+        ),
       );
     }
 
-    return createUtilityResult(
-      block,
-      "SUCCESS",
-      `${block.title} completed.`,
-      data,
+    return finish(
+      createUtilityResult(block, "SUCCESS", `${block.title} completed.`, data),
     );
   } catch (error) {
     const details = getLocalCommandErrorDetails(error);
@@ -5895,11 +5961,11 @@ const executeCommandUtilityBlock = async (
         data,
       );
       if (verificationResult) {
-        return verificationResult;
+        return finish(verificationResult);
       }
-      return createUtilityResult(block, "INCONCLUSIVE", summary, data);
+      return finish(createUtilityResult(block, "INCONCLUSIVE", summary, data));
     }
-    return createUtilityResult(block, "ERROR", summary, data);
+    return finish(createUtilityResult(block, "ERROR", summary, data));
   } finally {
     await verificationLock?.release();
   }
@@ -10656,7 +10722,7 @@ const executeGitStatusUtilityBlock = async (
   block: RalphUtilityBlock,
   utility: RalphUtilityConfig,
   config: RuntimeConfig,
-  signal?: AbortSignal,
+  options: Pick<RalphRunOptions, "signal" | "logger" | "onStateChange">,
 ): Promise<RalphBlockExecutionResult> => {
   return executeCommandUtilityBlock(
     block,
@@ -10668,7 +10734,7 @@ const executeGitStatusUtilityBlock = async (
     },
     config,
     false,
-    signal,
+    options,
   );
 };
 
@@ -11434,7 +11500,9 @@ const executeDetectProjectCommandsUtilityBlock = async (
       }
     }
 
-    const nativeRunnerPath = join(rootPath, "..", "scripts", "run-cargo.mjs");
+    const nativeRunnerPath = normalizeLocalCommandCwd(
+      join(rootPath, "..", "scripts", "run-cargo.mjs"),
+    );
     const cargo = existsSync(nativeRunnerPath)
       ? `node ${quoteRalphCommandArgument(nativeRunnerPath)} `
       : "cargo ";
@@ -13222,24 +13290,21 @@ const executeUtilityBlock = async (
     case "CONDITION":
       return executeConditionUtilityBlock(block, utility, context);
     case "RUN_COMMAND":
-      return executeCommandUtilityBlock(
-        block,
-        utility,
-        blockConfig,
-        false,
-        options.signal,
-        context.currentOperationId,
-      );
-    case "RUN_CHECK":
-      return executeCommandUtilityBlock(
-        block,
-        utility,
-        blockConfig,
-        true,
-        options.signal,
-        context.currentOperationId,
+      return executeCommandUtilityBlock(block, utility, blockConfig, false, {
+        ...options,
         context,
-      );
+        ...(context.currentOperationId
+          ? { operationId: context.currentOperationId }
+          : {}),
+      });
+    case "RUN_CHECK":
+      return executeCommandUtilityBlock(block, utility, blockConfig, true, {
+        ...options,
+        context,
+        ...(context.currentOperationId
+          ? { operationId: context.currentOperationId }
+          : {}),
+      });
     case "UI_ANALYZE":
       return executeUiAnalyzeUtilityBlock(
         block,
@@ -13381,12 +13446,7 @@ const executeUtilityBlock = async (
         options.signal,
       );
     case "GIT_STATUS":
-      return executeGitStatusUtilityBlock(
-        block,
-        utility,
-        blockConfig,
-        options.signal,
-      );
+      return executeGitStatusUtilityBlock(block, utility, blockConfig, options);
     case "GIT_SNAPSHOT":
       return executeGitSnapshotUtilityBlock(
         block,
@@ -15351,6 +15411,168 @@ const runRalphFlowImpl = async (
           },
         }
       : value;
+  let integration: RalphRunIntegration | undefined;
+  const integrateCompletedWork = async (
+    blockResults: readonly RalphBlockExecutionResult[],
+    beforePublish: () => Promise<void>,
+  ): Promise<void> => {
+    const worktree = options.runWorktree;
+    if (!worktree || !logger?.paths) return;
+    logger.trace({
+      kind: "trace",
+      message: "Merging completed work into the source workspace.",
+      flowId: flow.id,
+    });
+    integration = await integrateRalphRunWorktree(
+      worktree,
+      logger.paths.directory,
+      {
+        ...(options.signal ? { signal: options.signal } : {}),
+        beforePublish,
+        verify: async (workspaceRoot) => {
+          const repositoryRoot = resolve(
+            workspaceRoot,
+            relative(worktree.sourceWorkspaceRoot, worktree.repositoryRoot),
+          );
+          for (const check of getRalphIntegrationChecks(flow, blockResults)) {
+            const utility = {
+              ...resolveUtilityConfig(
+                check.block.utility,
+                runtimeState.resultContext!,
+              ),
+              command: check.command
+                .replaceAll(worktree.worktreeRoot, repositoryRoot)
+                .replaceAll(
+                  worktree.worktreeRoot.replace(/\\/gu, "/"),
+                  repositoryRoot.replace(/\\/gu, "/"),
+                ),
+              cwd: resolve(
+                workspaceRoot,
+                relative(worktree.executionWorkspaceRoot, check.cwd),
+              ),
+              verificationRole: "supplemental" as const,
+            };
+            await assertRalphWorkspaceBoundary(workspaceRoot, utility.cwd);
+            const checked = await executeCommandUtilityBlock(
+              check.block,
+              utility,
+              { ...config, workspaceRoot },
+              true,
+              options,
+            );
+            logger.trace({
+              kind: "trace",
+              message: checked.summary,
+              flowId: flow.id,
+              details: checked,
+            });
+            const observation = isRecord(checked.data)
+              ? (checked.data.verification as
+                  | { observation?: RalphVerificationObservation }
+                  | undefined)
+              : undefined;
+            if (
+              checked.output !== "SUCCESS" ||
+              observation?.observation?.processOutcome.kind !== "passed"
+            ) {
+              throw new Error(
+                `${checked.summary}\n${JSON.stringify(checked.data ?? {})}`,
+              );
+            }
+          }
+        },
+        repair: async (workspaceRoot, reason) => {
+          const block: RalphPromptBlock = {
+            id: "ralph-integration-repair",
+            type: "PROMPT",
+            title: "Merge changes",
+            prompt: `Integrate this RALPH flow's completed changes with the latest source files. ${reason}\nPreserve both sets of intended behavior and existing local edits. Work only in this integration workspace. Resolve conflicts and repair regressions autonomously, run the relevant checks, and finish without asking a human. Do not start servers or change the source workspace directly.`,
+          };
+          const repairConfig = { ...config, workspaceRoot };
+          const repairCustomizations = {
+            ...customizations,
+            workspaceRoot,
+            prompts: customizations.prompts.map((prompt) => ({
+              ...prompt,
+              path: isResolvedPathInsideWorkspace(
+                prompt.path,
+                config.workspaceRoot,
+              )
+                ? resolve(
+                    workspaceRoot,
+                    relative(config.workspaceRoot, prompt.path),
+                  )
+                : prompt.path,
+            })),
+            skills: customizations.skills.map((skill) => ({
+              ...skill,
+              path: isResolvedPathInsideWorkspace(
+                skill.path,
+                config.workspaceRoot,
+              )
+                ? resolve(
+                    workspaceRoot,
+                    relative(config.workspaceRoot, skill.path),
+                  )
+                : skill.path,
+            })),
+          };
+          const instructionBoundaries = await Promise.all(
+            (options.instructionBoundaries ?? []).map(
+              async ({ identity, boundary }) => {
+                const resolution = await adaptFrozenInstructionSet(
+                  boundary.resolution,
+                  {
+                    workspaceRoot,
+                    providerId: identity.providerId,
+                    surface: boundary.resolution.surface,
+                    model: identity.model,
+                  },
+                );
+                return {
+                  identity,
+                  boundary: {
+                    resolution,
+                    plan: await createInstructionDeliveryPlanForRuntime(
+                      resolution,
+                      { workspaceRoot },
+                    ),
+                    receipts: [],
+                  },
+                };
+              },
+            ),
+          );
+          const repaired = await executePromptBlock(
+            flow,
+            block,
+            repairConfig,
+            repairCustomizations,
+            runtimeState.resultContext!,
+            {
+              ...options,
+              workspaceBoundary: workspaceRoot,
+              instructionBoundaries,
+            },
+          );
+          logger.trace({
+            kind: "trace",
+            message: repaired.summary,
+            flowId: flow.id,
+            details: repaired,
+          });
+          if (repaired.output !== "SUCCESS")
+            throw new Error(repaired.error ?? repaired.summary);
+        },
+      },
+    );
+    logger.trace({
+      kind: "trace",
+      message: "Source workspace integration finished.",
+      flowId: flow.id,
+      details: integration,
+    });
+  };
   const finishRunWithWorkspaceWriterLease = async (
     result: RalphRunResult,
   ): Promise<RalphRunResult> => {
@@ -15457,6 +15679,7 @@ const runRalphFlowImpl = async (
         : createLogTimestamp();
     let runResult: RalphRunResult = {
       ...result,
+      ...(integration ? { integration } : {}),
       ...(options.runWorktree ? { runWorktree: options.runWorktree } : {}),
       status: lifecycleStatus,
       runId,
@@ -15575,6 +15798,29 @@ const runRalphFlowImpl = async (
         );
       }
       runResult.durability = { ...durability };
+
+      if (runResult.status === "completed" && runtimeState.resultContext) {
+        try {
+          await integrateCompletedWork(runResult.blockResults, async () => {
+            await assertLockOwnership();
+            await assertWorkspaceWriterOwnership();
+          });
+          if (integration) runResult.integration = integration;
+        } catch (error) {
+          runResult.status = options.signal?.aborted ? "stopped" : "blocked";
+          runResult.outcome = deriveOutcome(
+            runResult.status,
+            runResult.blockResults,
+          );
+          runResult.outcome.reason = `Automatic integration failed: ${error instanceof Error ? error.message : String(error)}`;
+          runResult.outcome.retryable = !options.signal?.aborted;
+          const recovery = checkpointCandidates.find(
+            (candidate) => !terminalBlockIds.has(candidate.currentBlockId),
+          );
+          if (recovery) runResult.checkpoint = recovery;
+          synchronizeTerminalReporting();
+        }
+      }
 
       if (runtimeState.resultContext) {
         try {
@@ -16949,6 +17195,30 @@ const runRalphFlowImpl = async (
       }
     }
     updateResultContext(resultContext, result);
+    if (
+      result.output === "SUCCESS" &&
+      block.type === "UTILITY" &&
+      ((block.utility.type === "MARK_JSON_TASK" &&
+        block.utility.status === "completed") ||
+        (block.utility.type === "APPEND_JSONL" &&
+          block.utility.workOutcome === "DONE"))
+    ) {
+      try {
+        await integrateCompletedWork(blockResults, heartbeatRunOwnership);
+      } catch (error) {
+        return finishRun({
+          flow: flow.id,
+          status: options.signal?.aborted ? "stopped" : "blocked",
+          summary: `Automatic integration failed: ${error instanceof Error ? error.message : String(error)}`,
+          events,
+          blockResults,
+          missingVariables: [],
+          unknownVariables: [],
+          validation,
+          checkpoint: createCheckpoint(block.id),
+        });
+      }
+    }
     let progressAssessment =
       autonomyMetadata && block.type !== "END" && resultContext.progress
         ? assessRalphProgress(

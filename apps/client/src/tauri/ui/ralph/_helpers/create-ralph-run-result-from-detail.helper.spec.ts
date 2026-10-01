@@ -1,3 +1,4 @@
+import { describe, expect, it } from "vitest";
 import type { RalphRunRecord } from "../../../../core/ralph.js";
 import type { RalphRunDetailResult } from "../../runtime.js";
 import { createRalphRunResultFromDetail } from "./create-ralph-run-result-from-detail.helper.js";
@@ -55,12 +56,19 @@ describe("createRalphRunResultFromDetail", () => {
       status: "blocked",
       outcome,
       progress,
+      integration: {
+        status: "merged",
+        mergedAt: "2026-08-04T00:01:00.000Z",
+        changedPaths: ["source.ts"],
+      },
       runWorktree: {
         sourceWorkspaceRoot: "C:\\workspace",
         executionWorkspaceRoot: "C:\\ralph-worktree",
         repositoryRoot: "C:\\workspace",
         worktreeRoot: "C:\\ralph-worktree",
         branch: "ralph/run-1",
+        sourceBranch: "main",
+        baseCommit: "a".repeat(40),
       },
       blockResults: [
         {
@@ -82,6 +90,7 @@ describe("createRalphRunResultFromDetail", () => {
       outcome,
       progress,
       runWorktree: record.runWorktree,
+      integration: record.integration,
       blockResults: [{ failure: { kind: "persistence", retryable: false } }],
     });
   });

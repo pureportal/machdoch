@@ -105,7 +105,17 @@ export const validateFlowLocally = (
     });
   }
 
-  if (flow.settings?.maxTransitions === undefined && hasLocalFlowCycle(flow)) {
+  const autonomy = flow.settings?.autonomy;
+  const hasAutonomyProgressLimits =
+    typeof autonomy === "object" &&
+    autonomy.enabled !== false &&
+    (autonomy.maxStagnantTransitions ?? 0) > 0 &&
+    (autonomy.maxRepeatedCycle ?? 0) > 0;
+  if (
+    !hasAutonomyProgressLimits &&
+    flow.settings?.maxTransitions === undefined &&
+    hasLocalFlowCycle(flow)
+  ) {
     issues.push({
       level: "warning",
       message:
@@ -234,7 +244,11 @@ export const validateFlowLocally = (
         });
       }
 
-      if (!Number.isInteger(questionsPerTurn) || questionsPerTurn < 1 || questionsPerTurn > 10) {
+      if (
+        !Number.isInteger(questionsPerTurn) ||
+        questionsPerTurn < 1 ||
+        questionsPerTurn > 10
+      ) {
         issues.push({
           level: "error",
           message: `${block.title} questions per turn must be between 1 and 10.`,
@@ -342,7 +356,10 @@ export const validateFlowLocally = (
           });
         }
       }
-      if (block.runPolicy === "submit-and-continue" && outputEntries.length > 0) {
+      if (
+        block.runPolicy === "submit-and-continue" &&
+        outputEntries.length > 0
+      ) {
         issues.push({
           level: "error",
           message: `${block.title} cannot bind outputs while using submit-and-continue.`,
@@ -443,7 +460,9 @@ export const validateFlowLocally = (
       } else if (
         providerCatalog &&
         providerCatalog.models.length > 0 &&
-        !providerCatalog.models.some((model) => model.id === block.settings?.model)
+        !providerCatalog.models.some(
+          (model) => model.id === block.settings?.model,
+        )
       ) {
         issues.push({
           level: "warning",

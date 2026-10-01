@@ -23,6 +23,7 @@ export interface LocalCommandOptions {
   acceptedExitCodes?: number[];
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
+  onOutput?: NonNullable<Parameters<typeof runStreamingCommand>[2]["onOutput"]>;
 }
 
 export const normalizeProcessOutput = (value: string | Buffer): string => {

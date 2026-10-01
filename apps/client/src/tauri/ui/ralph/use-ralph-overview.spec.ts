@@ -249,52 +249,55 @@ describe("RALPH overview loading", () => {
     ).toBe(true);
   });
 
-  it("coalesces lifecycle events into a fresh query and suspends hidden-window polling", async () => {
-    runtime.loadActiveDesktopTasks.mockResolvedValue([
-      createOverviewTask("/one", "task"),
-    ]);
-    renderHook(() => useRalphOverview(["/one"], true));
-    await advance();
-    const notify = runtime.subscribeToDesktopTaskProgress.mock
-      .calls[0]?.[0] as (event: DesktopTaskProgressEvent) => void;
-    runtime.loadRalphSnapshot.mockClear();
-    for (let index = 0; index < 10; index++)
-      notify({
-        taskId: "task",
-        timestamp: 1,
-        progress: {
-          task: "RALPH",
-          mode: "machdoch",
-          state: "completed",
-          message: "Done",
-          executedTools: [],
-          outputSections: [],
-          cancellable: false,
-          timelineEvent: {
-            kind: "state",
-            phase: "completed",
-            label: "Done",
-            metadata: { ralphEventType: "end" },
+  it.each(["end", "block-start", "input-required"])(
+    "coalesces %s events into a fresh query and suspends hidden-window polling",
+    async (eventType) => {
+      runtime.loadActiveDesktopTasks.mockResolvedValue([
+        createOverviewTask("/one", "task"),
+      ]);
+      renderHook(() => useRalphOverview(["/one"], true));
+      await advance();
+      const notify = runtime.subscribeToDesktopTaskProgress.mock
+        .calls[0]?.[0] as (event: DesktopTaskProgressEvent) => void;
+      runtime.loadRalphSnapshot.mockClear();
+      for (let index = 0; index < 10; index++)
+        notify({
+          taskId: "task",
+          timestamp: 1,
+          progress: {
+            task: "RALPH",
+            mode: "machdoch",
+            state: "completed",
+            message: "Done",
+            executedTools: [],
+            outputSections: [],
+            cancellable: false,
+            timelineEvent: {
+              kind: "state",
+              phase: "completed",
+              label: "Done",
+              metadata: { ralphEventType: eventType },
+            },
           },
-        },
-      });
-    await advance(200);
-    expect(runtime.loadRalphSnapshot).toHaveBeenCalledExactlyOnceWith(
-      "/one",
-      "workspace",
-    );
-    const count = runtime.loadActiveDesktopTasks.mock.calls.length;
-    vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
-    document.dispatchEvent(new Event("visibilitychange"));
-    await advance(60_000);
-    expect(runtime.loadActiveDesktopTasks).toHaveBeenCalledTimes(count);
-    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    await act(async () =>
-      document.dispatchEvent(new Event("visibilitychange")),
-    );
-    await advance();
-    expect(runtime.loadActiveDesktopTasks.mock.calls.length).toBeGreaterThan(
-      count,
-    );
-  });
+        });
+      await advance(200);
+      expect(runtime.loadRalphSnapshot).toHaveBeenCalledExactlyOnceWith(
+        "/one",
+        "workspace",
+      );
+      const count = runtime.loadActiveDesktopTasks.mock.calls.length;
+      vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+      document.dispatchEvent(new Event("visibilitychange"));
+      await advance(60_000);
+      expect(runtime.loadActiveDesktopTasks).toHaveBeenCalledTimes(count);
+      vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+      await act(async () =>
+        document.dispatchEvent(new Event("visibilitychange")),
+      );
+      await advance();
+      expect(runtime.loadActiveDesktopTasks.mock.calls.length).toBeGreaterThan(
+        count,
+      );
+    },
+  );
 });
