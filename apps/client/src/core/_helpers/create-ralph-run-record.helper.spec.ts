@@ -1,3 +1,4 @@
+import { describe, expect, it } from "vitest";
 import type {
   RalphBlockExecutionResult,
   RalphRunRecord,
@@ -415,6 +416,8 @@ describe("createRalphRunSummaryFromRecord", () => {
           repositoryRoot: "/workspace",
           worktreeRoot: "/worktrees/run-1",
           branch: "ralph/run-1",
+          sourceBranch: "main",
+          baseCommit: "a".repeat(40),
         },
       }),
       "/runs/run-1/run.json",

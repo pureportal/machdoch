@@ -299,6 +299,7 @@ export const createRalphRunRecord = (
     ...(result.outcome ? { outcome: result.outcome } : {}),
     ...(result.progress ? { progress: result.progress } : {}),
     ...(result.runWorktree ? { runWorktree: result.runWorktree } : {}),
+    ...(result.integration ? { integration: result.integration } : {}),
     ...(result.durability ? { durability: { ...result.durability } } : {}),
     validation: {
       valid: result.validation.valid,

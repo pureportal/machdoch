@@ -38,6 +38,50 @@ const DEFAULT_DEPENDENCIES: RalphManagedServerDependencies = {
   },
 };
 
+const runWindowsTaskkill = async (
+  pid: number,
+  force: boolean,
+  dependencies: Pick<
+    RalphManagedServerDependencies,
+    "spawn" | "shutdownTimeoutMs"
+  >,
+): Promise<void> => {
+  await new Promise<void>((resolve, reject) => {
+    const killer = dependencies.spawn(
+      "taskkill",
+      ["/PID", String(pid), "/T", ...(force ? ["/F"] : [])],
+      { stdio: "ignore", windowsHide: true },
+    );
+    let settled = false;
+    const finish = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve();
+    };
+    const timer = setTimeout(() => {
+      const error = new Error(`Stopping managed process ${pid} timed out.`);
+      try {
+        killer.kill("SIGKILL");
+      } catch (cause) {
+        error.cause = cause;
+      }
+      finish(error);
+    }, dependencies.shutdownTimeoutMs ?? 2_000);
+    killer.once("error", finish);
+    killer.once("exit", (code) =>
+      finish(
+        code === 0
+          ? undefined
+          : new Error(
+              `Stopping managed process ${pid} failed with exit code ${code}.`,
+            ),
+      ),
+    );
+  });
+};
+
 export const startRalphManagedServer = async (
   options: {
     command: string;
@@ -77,6 +121,14 @@ export const startRalphManagedServer = async (
     });
   });
 
+  const handle: RalphManagedServerHandle = {
+    child,
+    ...(child.pid !== undefined ? { pid: child.pid } : {}),
+    exited,
+    hasExited: () => child.exitCode !== null || child.signalCode !== null,
+    ...(options.registryPath ? { registryPath: options.registryPath } : {}),
+  };
+
   await new Promise<void>((resolve, reject) => {
     let settled = false;
     const settle = (callback: () => void): void => {
@@ -100,28 +152,28 @@ export const startRalphManagedServer = async (
     child.once("error", handleError);
   });
 
-  if (options.registryPath && options.ownerId && child.pid !== undefined) {
-    await mkdir(dirname(options.registryPath), { recursive: true });
-    await writeJsonAtomically(options.registryPath, {
-      ownerId: options.ownerId,
-      pid: child.pid,
-      commandFingerprint: createRalphManagedServerCommandFingerprint(
-        options.command,
-        options.cwd,
-      ),
-      command: options.command,
-      cwd: options.cwd,
-      startedAt: new Date().toISOString(),
-    } satisfies RalphManagedServerOwnership);
+  try {
+    options.signal?.throwIfAborted();
+    if (options.registryPath && options.ownerId && child.pid !== undefined) {
+      await mkdir(dirname(options.registryPath), { recursive: true });
+      await writeJsonAtomically(options.registryPath, {
+        ownerId: options.ownerId,
+        pid: child.pid,
+        commandFingerprint: createRalphManagedServerCommandFingerprint(
+          options.command,
+          options.cwd,
+        ),
+        command: options.command,
+        cwd: options.cwd,
+        startedAt: new Date().toISOString(),
+      } satisfies RalphManagedServerOwnership);
+    }
+    options.signal?.throwIfAborted();
+    return handle;
+  } catch (error) {
+    await stopRalphManagedServer(handle, dependencies);
+    throw error;
   }
-
-  return {
-    child,
-    ...(child.pid !== undefined ? { pid: child.pid } : {}),
-    exited,
-    hasExited: () => child.exitCode !== null || child.signalCode !== null,
-    ...(options.registryPath ? { registryPath: options.registryPath } : {}),
-  };
 };
 
 export const createRalphManagedServerCommandFingerprint = (
@@ -168,31 +220,19 @@ export const stopRalphManagedServerOwnership = async (
   registryPath: string,
   dependencies: Pick<
     RalphManagedServerDependencies,
-    "platform" | "spawn" | "killProcessGroup"
+    "platform" | "spawn" | "killProcessGroup" | "shutdownTimeoutMs"
   > = DEFAULT_DEPENDENCIES,
 ): Promise<void> => {
-  try {
-    if (dependencies.platform === "win32") {
-      await new Promise<void>((resolve) => {
-        const killer = dependencies.spawn(
-          "taskkill",
-          ["/PID", String(ownership.pid), "/T", "/F"],
-          { stdio: "ignore", windowsHide: true },
-        );
-        const settle = (): void => resolve();
-        killer.once("error", settle);
-        killer.once("exit", settle);
-      });
-    } else {
-      try {
-        dependencies.killProcessGroup(ownership.pid, "SIGTERM");
-      } catch {
-        process.kill(ownership.pid, "SIGTERM");
-      }
+  if (dependencies.platform === "win32") {
+    await runWindowsTaskkill(ownership.pid, true, dependencies);
+  } else {
+    try {
+      dependencies.killProcessGroup(ownership.pid, "SIGTERM");
+    } catch {
+      process.kill(ownership.pid, "SIGTERM");
     }
-  } finally {
-    await rm(registryPath, { force: true });
   }
+  await rm(registryPath, { force: true });
 };
 
 export const stopRalphManagedServer = async (
@@ -237,34 +277,22 @@ export const stopRalphManagedServer = async (
   };
 
   if (dependencies.platform === "win32") {
-    const taskkill = async (force: boolean): Promise<void> =>
-      new Promise((resolve) => {
-        const killer = dependencies.spawn(
-          "taskkill",
-          ["/PID", String(pid), "/T", ...(force ? ["/F"] : [])],
-          { stdio: "ignore", windowsHide: true },
-        );
-        let settled = false;
-        const settle = (): void => {
-          if (settled) {
-            return;
-          }
-
-          settled = true;
-          resolve();
-        };
-
-        killer.once("error", () => {
-          handle.child.kill();
-          settle();
-        });
-        killer.once("exit", settle);
-      });
-
-    await taskkill(false);
+    try {
+      await runWindowsTaskkill(pid, false, dependencies);
+    } catch {
+      handle.child.kill();
+    }
     if (!(await waitForExit())) {
-      await taskkill(true);
-      await waitForExit();
+      let failure: unknown;
+      try {
+        await runWindowsTaskkill(pid, true, dependencies);
+      } catch (error) {
+        failure = error;
+        handle.child.kill("SIGKILL");
+      }
+      if (!(await waitForExit())) {
+        throw failure ?? new Error(`Managed process ${pid} did not stop.`);
+      }
     }
     if (handle.registryPath) {
       await rm(handle.registryPath, { force: true });

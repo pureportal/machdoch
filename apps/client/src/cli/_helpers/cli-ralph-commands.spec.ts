@@ -50,9 +50,15 @@ const createRunResult = (
 });
 
 describe("summarizeRun", () => {
-  it("preserves the run id so desktop input requests can resume", () => {
-    expect(summarizeRun(createRunResult())).toMatchObject({
+  it("preserves the run id and integration result in CLI output", () => {
+    const integration = {
+      status: "merged" as const,
+      mergedAt: "2026-06-26T00:00:00.000Z",
+      changedPaths: ["source.ts"],
+    };
+    expect(summarizeRun(createRunResult({ integration }))).toMatchObject({
       runId: "run-1",
+      integration,
       flow: "flow-1",
       status: "waiting-for-input",
       pendingInput: expect.objectContaining({

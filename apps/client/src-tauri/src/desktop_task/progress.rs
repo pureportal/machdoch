@@ -1,6 +1,6 @@
 use serde::Serialize;
 use serde_json::{json, Value};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 const DESKTOP_TASK_PROGRESS_EVENT: &str = "desktop-task-progress";
 const CLI_STRUCTURED_PROGRESS_PREFIX: &str = "machdoch-progress: ";
@@ -81,7 +81,12 @@ pub(super) fn emit_progress_event(
     let Some(task_id) = task_id else {
         return;
     };
-    let timestamp = create_progress_timestamp();
+    let timestamp = super::registry::record_active_ralph_progress(
+        &app_handle.state::<super::DesktopTaskCancelMap>(),
+        task_id,
+        &progress,
+        create_progress_timestamp(),
+    );
 
     crate::fleet_control::record_task_progress(app_handle, task_id, &progress, timestamp);
 

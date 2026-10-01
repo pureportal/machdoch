@@ -96,6 +96,58 @@ describe("RALPH progress detector", () => {
     expect(state.stalledReason).toContain("semantic cycle");
   });
 
+  it("allows delayed idle cycles without counting waiting as work progress", () => {
+    const wait: RalphFlowBlock = {
+      id: "wait",
+      type: "UTILITY",
+      title: "Wait",
+      utility: { type: "WAIT", delaySeconds: 60 },
+    };
+    let state = createRalphProgressState();
+    for (let transition = 1; transition <= 30; transition += 1) {
+      const waiting = transition % 3 === 0;
+      const assessment = assessRalphProgress(
+        state,
+        waiting ? wait : prompt,
+        waiting ? result(wait.id, { waitedSeconds: 60 }) : result(prompt.id),
+        transition,
+        { maxStagnantTransitions: 3, maxRepeatedCycle: 3 },
+      );
+      expect(assessment.stalled).toBe(false);
+      state = assessment.state;
+    }
+    expect(state.consecutiveNoProgress).toBe(0);
+    expect(state.meaningfulTransitions).toBe(0);
+    expect(state.lastProgressAt).toBeUndefined();
+  });
+
+  it.each([
+    { output: "SUCCESS", waitedSeconds: 0 },
+    { output: "ERROR", waitedSeconds: 60 },
+  ])(
+    "keeps stagnation detection for a wait with $output and $waitedSeconds seconds",
+    (data) => {
+      const wait: RalphFlowBlock = {
+        id: "wait",
+        type: "UTILITY",
+        title: "Wait",
+        utility: { type: "WAIT" },
+      };
+      const assessment = assessRalphProgress(
+        createRalphProgressState({ consecutiveNoProgress: 2 }),
+        wait,
+        {
+          ...result(wait.id, { waitedSeconds: data.waitedSeconds }),
+          output: data.output,
+        },
+        3,
+        { maxStagnantTransitions: 3, maxRepeatedCycle: 3 },
+      );
+      expect(assessment.stalled).toBe(true);
+      expect(assessment.state.meaningfulTransitions).toBe(0);
+    },
+  );
+
   it("leaves repeated execution failures to retry and recovery handling", () => {
     let state = createRalphProgressState();
     for (let transition = 1; transition <= 3; transition += 1) {

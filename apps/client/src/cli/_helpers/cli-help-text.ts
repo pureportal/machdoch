@@ -228,8 +228,8 @@ Usage:
 
 Use --scope user or --scope workspace to select flow storage. Use
 --max-transitions to bound a run and --json for automation. --isolated runs
-in a separate Git worktree from a clean committed workspace. Changes stay
-in that worktree, and resume uses the same worktree.`;
+in a separate Git worktree and automatically merges completed changes
+back into the source workspace.`;
 
 const MCP_HELP = `machdoch mcp - inspect and use MCP integrations
 

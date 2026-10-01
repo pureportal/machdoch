@@ -1,8 +1,22 @@
 import { createHash } from "node:crypto";
-import { execFile } from "node:child_process";
-import { readFile, realpath, stat } from "node:fs/promises";
+import {
+  cp,
+  lstat,
+  mkdir,
+  readFile,
+  realpath,
+  rm,
+  stat,
+} from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { assertRalphWorkspaceBoundary } from "./assert-ralph-workspace-boundary.helper.js";
 import { writeJsonAtomically } from "./write-file-atomically.helper.js";
+import {
+  commitRalphSnapshot,
+  RALPH_SOURCE_PATHS,
+  runRalphWorktreeGit,
+  snapshotRalphWorktree,
+} from "./ralph-worktree-git.helper.js";
 
 export interface RalphRunWorktree {
   sourceWorkspaceRoot: string;
@@ -10,23 +24,84 @@ export interface RalphRunWorktree {
   repositoryRoot: string;
   worktreeRoot: string;
   branch: string;
+  sourceBranch: string;
+  baseCommit: string;
 }
 
-const runGit = (cwd: string, args: string[]): Promise<string> =>
-  new Promise((resolvePromise, reject) => {
-    execFile(
-      "git",
-      ["--no-optional-locks", ...args],
-      { cwd, windowsHide: true, timeout: 30_000, maxBuffer: 1024 * 1024 },
-      (error, stdout, stderr) => {
-        if (error) {
-          reject(new Error(stderr.trim() || error.message));
-          return;
-        }
-        resolvePromise(stdout.trim());
+const runGit = async (
+  cwd: string,
+  args: string[],
+  trimOutput = true,
+): Promise<string> => {
+  const output = await runRalphWorktreeGit(cwd, args);
+  return trimOutput ? output.trim() : output;
+};
+
+const snapshotWorkspaceChanges = async (
+  repositoryRoot: string,
+  worktreeRoot: string,
+  head: string,
+): Promise<void> => {
+  const [changedPaths, untrackedPaths] = await Promise.all([
+    runGit(
+      repositoryRoot,
+      [
+        "diff",
+        "--name-only",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--no-renames",
+        "-z",
+        head,
+        "--",
+        ...RALPH_SOURCE_PATHS,
+      ],
+      false,
+    ),
+    runGit(
+      repositoryRoot,
+      [
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "-z",
+        "--",
+        ...RALPH_SOURCE_PATHS,
+      ],
+      false,
+    ),
+  ]);
+  const untrackedFiles = new Set(untrackedPaths.split("\0").filter(Boolean));
+  const snapshotPaths = new Set([
+    ...changedPaths.split("\0").filter(Boolean),
+    ...untrackedFiles,
+  ]);
+  for (const path of snapshotPaths) {
+    const source = resolve(repositoryRoot, path);
+    const target = resolve(worktreeRoot, path);
+    const metadata = await lstat(source).catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT" && !untrackedFiles.has(path)) return null;
+        throw error;
       },
     );
-  });
+    if (metadata?.isDirectory()) {
+      throw new Error(
+        `RALPH cannot snapshot directory changes at ${path}. Commit them before retrying.`,
+      );
+    }
+    await assertRalphWorkspaceBoundary(worktreeRoot, dirname(target));
+    await rm(target, { force: true });
+    if (!metadata) continue;
+    await mkdir(dirname(target), { recursive: true });
+    await cp(source, target, {
+      dereference: false,
+      verbatimSymlinks: true,
+      errorOnExist: true,
+      force: false,
+    });
+  }
+};
 
 const isInside = (root: string, candidate: string): boolean => {
   const path = relative(root, candidate);
@@ -124,7 +199,9 @@ export const prepareRalphRunWorktree = async (
       !Object.hasOwn(stored, "executionWorkspaceRoot") ||
       !Object.hasOwn(stored, "repositoryRoot") ||
       !Object.hasOwn(stored, "worktreeRoot") ||
-      !Object.hasOwn(stored, "branch")
+      !Object.hasOwn(stored, "branch") ||
+      typeof (stored as RalphRunWorktree).sourceBranch !== "string" ||
+      !/^[a-f0-9]{40,64}$/u.test((stored as RalphRunWorktree).baseCommit)
     ) {
       throw new Error("RALPH run worktree metadata is invalid.");
     }
@@ -142,25 +219,14 @@ export const prepareRalphRunWorktree = async (
     return existing;
   }
 
-  await runGit(repositoryRoot, ["rev-parse", "HEAD"]);
-  const changes = await runGit(repositoryRoot, [
-    "status",
-    "--porcelain",
-    "--untracked-files=all",
-  ]);
-  if (
-    changes
-      .split(/\r?\n/u)
-      .some((line) => line && !/^.. \.machdoch\//u.test(line))
-  ) {
-    throw new Error(
-      "Commit or stash workspace changes before starting an isolated RALPH run.",
-    );
-  }
+  const head = await runGit(repositoryRoot, ["rev-parse", "HEAD"]);
   if (
     await stat(worktreeRoot).then(
       () => true,
-      () => false,
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      },
     )
   ) {
     throw new Error(
@@ -173,7 +239,7 @@ export const prepareRalphRunWorktree = async (
     "-b",
     branch,
     worktreeRoot,
-    "HEAD",
+    head,
   ]);
   const worktree: RalphRunWorktree = {
     sourceWorkspaceRoot,
@@ -181,7 +247,43 @@ export const prepareRalphRunWorktree = async (
     repositoryRoot,
     worktreeRoot,
     branch,
+    sourceBranch: await runGit(repositoryRoot, ["branch", "--show-current"]),
+    baseCommit: "",
   };
-  await writeJsonAtomically(metadataPath, worktree);
+  try {
+    await snapshotWorkspaceChanges(repositoryRoot, worktreeRoot, head);
+    worktree.baseCommit = await commitRalphSnapshot(
+      worktreeRoot,
+      await snapshotRalphWorktree(worktreeRoot),
+      [head],
+    );
+    await runGit(repositoryRoot, [
+      "update-ref",
+      `refs/machdoch/${branch}/integration`,
+      worktree.baseCommit,
+    ]);
+    await writeJsonAtomically(metadataPath, worktree);
+  } catch (error) {
+    try {
+      await runGit(repositoryRoot, [
+        "worktree",
+        "remove",
+        "--force",
+        worktreeRoot,
+      ]);
+      await runGit(repositoryRoot, ["branch", "-D", branch]);
+      await runGit(repositoryRoot, [
+        "update-ref",
+        "-d",
+        `refs/machdoch/${branch}/integration`,
+      ]);
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        "RALPH could not prepare or remove its run worktree.",
+      );
+    }
+    throw error;
+  }
   return worktree;
 };

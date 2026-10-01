@@ -5,7 +5,9 @@ use std::{
 };
 
 use serde::Serialize;
+use serde_json::Value;
 
+use super::ralph_progress::{RalphTaskProgress, RalphTaskProgressEvent};
 use super::timeout::DesktopTaskTimeout;
 use super::{DesktopTaskRunError, DesktopTaskRunResponse};
 
@@ -37,6 +39,7 @@ impl Default for DesktopTaskCancelMap {
 }
 
 struct ActiveDesktopTask {
+    ralph_progress: RalphTaskProgress,
     timeout: Option<Arc<DesktopTaskTimeout>>,
     cancel_flag: Arc<AtomicBool>,
     kind: String,
@@ -69,6 +72,8 @@ pub(super) enum ActiveDesktopTaskClaim {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveDesktopTaskSummary {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    progress_events: Vec<RalphTaskProgressEvent>,
     id: String,
     kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -100,6 +105,33 @@ pub struct RecentDesktopTaskResult {
 }
 
 impl RecentDesktopTaskResult {
+    pub(super) fn ralph(
+        id: String,
+        workspace_root: String,
+        arguments: Vec<String>,
+        started_at: u64,
+        finished_at: u64,
+        result: &Result<Value, String>,
+    ) -> Self {
+        let result = result
+            .as_ref()
+            .map(|response| DesktopTaskRunResponse {
+                execution: response.clone(),
+                preview: None,
+            })
+            .map_err(|message| DesktopTaskRunError::runtime(message.clone()));
+        Self::desktop(
+            id,
+            "ralph".to_string(),
+            None,
+            workspace_root,
+            arguments,
+            started_at,
+            finished_at,
+            &result,
+        )
+    }
+
     pub(super) fn desktop(
         id: String,
         kind: String,
@@ -244,6 +276,25 @@ pub(crate) fn active_task_ids(state: &DesktopTaskCancelMap) -> Result<Vec<String
     Ok(task_ids)
 }
 
+pub(super) fn record_active_ralph_progress(
+    state: &DesktopTaskCancelMap,
+    task_id: &str,
+    progress: &Value,
+    timestamp: u64,
+) -> u64 {
+    let Ok(mut cancel_state) = state.0.lock() else {
+        return timestamp;
+    };
+    let Some(task) = cancel_state
+        .active
+        .get_mut(task_id)
+        .filter(|task| task.kind == "ralph")
+    else {
+        return timestamp;
+    };
+    task.ralph_progress.record(progress, timestamp)
+}
+
 pub(super) fn active_task_summaries(
     state: &DesktopTaskCancelMap,
 ) -> Result<Vec<ActiveDesktopTaskSummary>, String> {
@@ -255,6 +306,7 @@ pub(super) fn active_task_summaries(
         .active
         .iter()
         .map(|(id, task)| ActiveDesktopTaskSummary {
+            progress_events: task.ralph_progress.snapshot(),
             id: id.clone(),
             kind: task.kind.clone(),
             session_id: task.session_id.clone(),
@@ -389,6 +441,7 @@ pub(super) fn register_active_task(
             arguments: registration.arguments,
             started_at: registration.started_at,
             operation_key: registration.operation_key,
+            ralph_progress: RalphTaskProgress::default(),
         },
     );
 
@@ -473,7 +526,7 @@ mod tests {
         register_active_task, remember_completed_task_result, remember_pending_cancel,
         trim_claimed_task_ids, ActiveDesktopTask, ActiveDesktopTaskClaim,
         ActiveDesktopTaskRegistration, DesktopTaskCancelMap, DesktopTaskCancelState,
-        RecentDesktopTaskOutcome, RecentDesktopTaskResult, MAX_CLAIMED_TASK_IDS,
+        RalphTaskProgress, RecentDesktopTaskOutcome, RecentDesktopTaskResult, MAX_CLAIMED_TASK_IDS,
         MAX_PENDING_CANCEL_IDS, MAX_RECENT_COMPLETED_TASK_RESULTS,
         MAX_RECENT_COMPLETED_TASK_RESULT_BYTES,
     };
@@ -544,6 +597,7 @@ mod tests {
                 arguments: Vec::new(),
                 started_at: 1,
                 operation_key: None,
+                ralph_progress: RalphTaskProgress::default(),
             },
         );
 
@@ -645,6 +699,63 @@ mod tests {
     }
 
     #[test]
+    fn active_ralph_summaries_restore_progress_without_retaining_other_task_output() {
+        let state = DesktopTaskCancelMap::default();
+        for kind in ["ralph", "desktop"] {
+            register_active_task(
+                &state,
+                ActiveDesktopTaskRegistration {
+                    timeout: None,
+                    task_id: kind.to_string(),
+                    cancel_flag: Arc::new(AtomicBool::new(false)),
+                    kind: kind.to_string(),
+                    session_id: None,
+                    workspace_root: "workspace".to_string(),
+                    arguments: Vec::new(),
+                    started_at: 1,
+                    operation_key: None,
+                },
+            )
+            .expect("task registration should succeed");
+            let progress = json!({"message": "Implementing", "timelineEvent": {
+                "metadata": {"ralphBlockId": "implement"}
+            }});
+            assert_eq!(
+                super::record_active_ralph_progress(&state, kind, &progress, 10),
+                10
+            );
+        }
+        assert_eq!(
+            super::record_active_ralph_progress(
+                &state,
+                "ralph",
+                &json!({"message": "Verifying"}),
+                10
+            ),
+            11
+        );
+
+        let summaries = serde_json::to_value(active_task_summaries(&state).expect("summary read"))
+            .expect("summary serialization");
+        let summaries = summaries.as_array().expect("summary array");
+        let ralph = summaries
+            .iter()
+            .find(|task| task["id"] == "ralph")
+            .expect("RALPH task");
+        let events = ralph["progressEvents"]
+            .as_array()
+            .expect("retained progress");
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["progress"]["message"], "Implementing");
+        assert_eq!(events[1]["timestamp"], 11);
+        let desktop = summaries
+            .iter()
+            .find(|task| task["id"] == "desktop")
+            .expect("desktop task");
+        assert!(desktop.get("progressEvents").is_none());
+    }
+
+    #[test]
     fn recent_completed_task_results_are_bounded_and_queryable() {
         let state = DesktopTaskCancelMap::default();
 
@@ -713,6 +824,47 @@ mod tests {
             .expect("completed result should exist")
             .expect_err("result should remain a failure");
         assert!(matches!(replayed, DesktopTaskRunError::Runtime { .. }));
+    }
+
+    #[test]
+    fn ralph_completion_preserves_terminal_payload_and_startup_errors() {
+        let state = DesktopTaskCancelMap::default();
+        for (id, result) in [
+            (
+                "finished-flow",
+                Ok(json!({"run": {"runId": "run-1", "summary": "Done"}})),
+            ),
+            (
+                "failed-flow",
+                Err("The Ralph CLI could not start.".to_string()),
+            ),
+        ] {
+            remember_completed_task_result(
+                &state,
+                RecentDesktopTaskResult::ralph(
+                    id.to_string(),
+                    "workspace".to_string(),
+                    vec!["run".to_string(), "flow-1".to_string()],
+                    1,
+                    2,
+                    &result,
+                ),
+            );
+        }
+        let completed = recent_completed_task_results(
+            &state,
+            &["finished-flow".to_string(), "failed-flow".to_string()],
+        )
+        .unwrap();
+        assert_eq!(completed[0].kind, "ralph");
+        assert_eq!(completed[0].arguments, vec!["run", "flow-1"]);
+        let RecentDesktopTaskOutcome::Succeeded { response } = &completed[0].outcome else {
+            panic!("expected the completed flow response");
+        };
+        assert_eq!(response.execution["run"]["runId"], "run-1");
+        assert!(
+            matches!(&completed[1].outcome, RecentDesktopTaskOutcome::Failed { failure: DesktopTaskRunError::Runtime { message } } if message == "The Ralph CLI could not start.")
+        );
     }
 
     #[test]

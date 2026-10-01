@@ -60,6 +60,7 @@ export const createRalphRunResultFromDetail = (
     ...(record.outcome ? { outcome: record.outcome } : {}),
     ...(record.progress ? { progress: record.progress } : {}),
     ...(record.runWorktree ? { runWorktree: record.runWorktree } : {}),
+    ...(record.integration ? { integration: record.integration } : {}),
     ...(record.durability ? { durability: record.durability } : {}),
   };
 };

@@ -37,6 +37,7 @@ lerna-debug.log*
 *.seed
 
 # Rust / Tauri build artifacts
+apps/client/target/
 apps/client/src-tauri/target/
 apps/client/src-tauri/target-*/
 apps/fleet-manager/data/

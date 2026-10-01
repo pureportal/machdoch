@@ -7310,7 +7310,7 @@ describe("runRalphFlow", () => {
     }
   }, 180_000);
 
-  it("runs autonomous flows concurrently in separate worktrees", async () => {
+  it("runs autonomous flows concurrently in separate worktrees with uncommitted source changes", async () => {
     const root = await mkdtemp(join(tmpdir(), "ralph-concurrent-worktrees-"));
     const workspace = join(root, "workspace");
     const flow = createFlow({
@@ -7359,7 +7359,11 @@ describe("runRalphFlow", () => {
         spawnSync("git", ["commit", "-qm", "initial"], { cwd: workspace })
           .status,
       ).toBe(0);
+      await writeFile(join(workspace, "source.txt"), "uncommitted\n");
       vi.mocked(executeTask).mockImplementation(async (_task, blockConfig) => {
+        expect(
+          await readFile(join(blockConfig.workspaceRoot, "source.txt"), "utf8"),
+        ).toBe("uncommitted\n");
         executionRoots.push(blockConfig.workspaceRoot);
         if (executionRoots.length === 2) releaseExecution();
         await execution;
@@ -7392,7 +7396,7 @@ describe("runRalphFlow", () => {
       expect(executionRoots).toHaveLength(2);
       expect(executionRoots[0]).not.toBe(executionRoots[1]);
       expect(await readFile(join(workspace, "source.txt"), "utf8")).toBe(
-        "original\n",
+        "uncommitted\n",
       );
       expect(executionRoots).toContain(
         first.runWorktree?.executionWorkspaceRoot,

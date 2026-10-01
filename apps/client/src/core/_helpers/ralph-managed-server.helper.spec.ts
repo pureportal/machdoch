@@ -1,9 +1,9 @@
 import { EventEmitter } from "node:events";
 import type { ChildProcess, spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createRalphManagedServerCommandFingerprint,
   startRalphManagedServer,
@@ -25,6 +25,100 @@ const createChild = (pid = 42): ChildProcess => {
 };
 
 describe("Ralph managed server lifecycle", () => {
+  it("stops a process when cancellation arrives during startup", async () => {
+    const controller = new AbortController();
+    const child = createChild(75);
+    const spawnMock = vi.fn(() => {
+      queueMicrotask(() => {
+        controller.abort(new Error("Run cancelled during startup"));
+        child.emit("spawn");
+      });
+      return child;
+    }) as unknown as typeof spawn;
+    const killProcessGroup = vi.fn(() => child.emit("exit", 0, null));
+
+    await expect(
+      startRalphManagedServer(
+        {
+          command: "serve",
+          cwd: "/workspace",
+          signal: controller.signal,
+        },
+        { platform: "linux", spawn: spawnMock, killProcessGroup },
+      ),
+    ).rejects.toThrow("Run cancelled during startup");
+    expect(killProcessGroup).toHaveBeenCalledWith(75, "SIGTERM");
+  });
+
+  it("settles Windows shutdown even when taskkill never emits an event", async () => {
+    vi.useFakeTimers();
+    try {
+      const child = createChild(76);
+      const killers: ChildProcess[] = [];
+      const spawnMock = vi.fn(() => {
+        const killer = createChild(77);
+        killers.push(killer);
+        return killer;
+      }) as unknown as typeof spawn;
+      const request = stopRalphManagedServer(
+        {
+          child,
+          pid: 76,
+          exited: new Promise(() => {}),
+          hasExited: () => false,
+        },
+        {
+          platform: "win32",
+          spawn: spawnMock,
+          killProcessGroup: vi.fn(),
+          shutdownTimeoutMs: 10,
+        },
+      );
+      const assertion = expect(request).rejects.toThrow("timed out");
+      await vi.runAllTimersAsync();
+      await assertion;
+      expect(killers).toHaveLength(2);
+      expect(
+        killers.every(
+          (killer) => vi.mocked(killer.kill).mock.calls.length === 1,
+        ),
+      ).toBe(true);
+      expect(child.kill).toHaveBeenCalledWith("SIGKILL");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps ownership evidence when an adopted Windows process cannot be stopped", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ralph-owner-failure-"));
+    try {
+      const registryPath = join(directory, "server.json");
+      await writeFile(registryPath, "ownership");
+      const killer = createChild(78);
+      const spawnMock = vi.fn(() => {
+        queueMicrotask(() => killer.emit("exit", 1, null));
+        return killer;
+      }) as unknown as typeof spawn;
+      await expect(
+        stopRalphManagedServerOwnership(
+          {
+            ownerId: "run-1",
+            pid: 76,
+            commandFingerprint: "fingerprint",
+            command: "serve",
+            cwd: directory,
+            startedAt: new Date().toISOString(),
+          },
+          registryPath,
+          { platform: "win32", spawn: spawnMock, killProcessGroup: vi.fn() },
+        ),
+      ).rejects.toThrow("exit code 1");
+      await expect(readFile(registryPath, "utf8")).resolves.toBe("ownership");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("fingerprints command and working directory as separate fields", () => {
     expect(createRalphManagedServerCommandFingerprint("c", "a\0b")).not.toBe(
       createRalphManagedServerCommandFingerprint("b\0c", "a"),

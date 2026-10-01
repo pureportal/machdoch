@@ -98,7 +98,7 @@ describe("RALPH run worktrees", () => {
     ).rejects.toThrow(/metadata does not match this run/u);
   }, 60_000);
 
-  it("refuses to omit uncommitted source changes", async () => {
+  it("snapshots staged, unstaged, untracked, binary and deleted files without changing the source or index", async () => {
     const { repository } = await createRepository();
     const runDirectory = join(
       repository,
@@ -108,10 +108,125 @@ describe("RALPH run worktrees", () => {
       "dirty",
     );
     await mkdir(runDirectory, { recursive: true });
-    await writeFile(join(repository, "source.txt"), "changed\n");
+    await writeFile(join(repository, "deleted.txt"), "delete me\n");
+    await writeFile(join(repository, "binary.bin"), Buffer.from([0, 1, 2]));
+    execFileSync("git", ["add", "deleted.txt", "binary.bin"], {
+      cwd: repository,
+    });
+    execFileSync("git", ["commit", "-qm", "fixtures"], { cwd: repository });
+    await writeFile(join(repository, "source.txt"), "staged\n");
+    execFileSync("git", ["add", "source.txt"], { cwd: repository });
+    await writeFile(join(repository, "source.txt"), "unstaged\n");
+    await writeFile(join(repository, "binary.bin"), Buffer.from([0, 3, 255]));
+    await rm(join(repository, "deleted.txt"));
+    await mkdir(join(repository, "new files"));
+    await writeFile(
+      join(repository, "new files", " new file.txt"),
+      "untracked\n",
+    );
+    const stagedBefore = execFileSync("git", ["diff", "--cached", "--binary"], {
+      cwd: repository,
+    });
+    const headBefore = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: repository,
+    });
 
+    const worktree = await prepareRalphRunWorktree(repository, runDirectory);
+
+    expect(
+      await readFile(
+        join(worktree.executionWorkspaceRoot, "source.txt"),
+        "utf8",
+      ),
+    ).toBe("unstaged\n");
+    expect(
+      await readFile(join(worktree.executionWorkspaceRoot, "binary.bin")),
+    ).toEqual(Buffer.from([0, 3, 255]));
+    expect(
+      await readFile(
+        join(worktree.executionWorkspaceRoot, "new files", " new file.txt"),
+        "utf8",
+      ),
+    ).toBe("untracked\n");
     await expect(
-      prepareRalphRunWorktree(repository, runDirectory),
-    ).rejects.toThrow(/Commit or stash workspace changes/u);
+      readFile(join(worktree.executionWorkspaceRoot, "deleted.txt")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      readFile(
+        join(
+          worktree.executionWorkspaceRoot,
+          ".machdoch",
+          "ralph",
+          "runs",
+          "dirty",
+          "workspace-isolation.json",
+        ),
+      ),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect(
+      execFileSync("git", ["diff", "--cached", "--binary"], {
+        cwd: repository,
+      }),
+    ).toEqual(stagedBefore);
+    expect(
+      execFileSync("git", ["rev-parse", "HEAD"], { cwd: repository }),
+    ).toEqual(headBefore);
+    expect(await readFile(join(repository, "source.txt"), "utf8")).toBe(
+      "unstaged\n",
+    );
+    await writeFile(join(repository, "source.txt"), "later source edit\n");
+    expect(await prepareRalphRunWorktree(repository, runDirectory)).toEqual(
+      worktree,
+    );
+    expect(
+      await readFile(
+        join(worktree.executionWorkspaceRoot, "source.txt"),
+        "utf8",
+      ),
+    ).toBe("unstaged\n");
+  }, 60_000);
+
+  it("preserves a workspace nested in the repository", async () => {
+    const { repository } = await createRepository();
+    const workspace = join(repository, "project");
+    await mkdir(workspace);
+    await writeFile(join(workspace, "file.txt"), "project\n");
+    const runDirectory = join(
+      workspace,
+      ".machdoch",
+      "ralph",
+      "runs",
+      "nested",
+    );
+    await mkdir(runDirectory, { recursive: true });
+
+    const worktree = await prepareRalphRunWorktree(workspace, runDirectory);
+
+    expect(worktree.executionWorkspaceRoot).toBe(
+      join(worktree.worktreeRoot, "project"),
+    );
+    expect(
+      await readFile(join(worktree.executionWorkspaceRoot, "file.txt"), "utf8"),
+    ).toBe("project\n");
+    expect(await prepareRalphRunWorktree(workspace, runDirectory)).toEqual(
+      worktree,
+    );
+  }, 60_000);
+
+  it("reports a missing Git repository without starting a shared run", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ralph-without-git-"));
+    temporaryRoots.push(root);
+    const runDirectory = join(
+      root,
+      ".machdoch",
+      "ralph",
+      "runs",
+      "missing-git",
+    );
+    await mkdir(runDirectory, { recursive: true });
+
+    await expect(prepareRalphRunWorktree(root, runDirectory)).rejects.toThrow(
+      /not a git repository/iu,
+    );
   }, 60_000);
 });

@@ -28,6 +28,7 @@ mod process;
 mod progress;
 mod ralph;
 mod ralph_media_bridge;
+mod ralph_progress;
 mod registry;
 mod timeout;
 
@@ -742,6 +743,9 @@ pub async fn run_ralph_command(
     let window_label = window.label().to_string();
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let task_id = normalize_task_id(request.task_id.as_deref());
+    let task_workspace_root = request.workspace_root.clone();
+    let task_arguments = request.arguments.clone();
+    let task_started_at = create_progress_timestamp();
     request.task_id = task_id.clone();
 
     if let Some(id) = &task_id {
@@ -755,7 +759,7 @@ pub async fn run_ralph_command(
                 session_id: None,
                 workspace_root: request.workspace_root.clone(),
                 arguments: request.arguments.clone(),
-                started_at: create_progress_timestamp(),
+                started_at: task_started_at,
                 operation_key: None,
             },
         )?;
@@ -773,26 +777,37 @@ pub async fn run_ralph_command(
         }
     }
 
-    let sleep_inhibition = match app_handle
+    let sleep_inhibition = app_handle
         .state::<crate::sleep_inhibition::SystemSleepInhibitor>()
-        .acquire()
-    {
-        Ok(guard) => guard,
-        Err(error) => {
-            finish_active_task(&state, task_id.as_deref());
-            return Err(error);
-        }
+        .acquire();
+    let result = match sleep_inhibition {
+        Ok(guard) => tauri::async_runtime::spawn_blocking(move || {
+            let _sleep_inhibition = guard;
+            execute_ralph_command(app_handle, window_label, request, cancel_flag)
+        })
+        .await
+        .map_err(|error| format!("The Ralph command bridge stopped unexpectedly. {error}"))
+        .and_then(|result| result),
+        Err(error) => Err(error),
     };
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let _sleep_inhibition = sleep_inhibition;
-        execute_ralph_command(app_handle, window_label, request, cancel_flag)
-    })
-    .await
-    .map_err(|error| format!("The Ralph command bridge stopped unexpectedly. {error}"));
+
+    if let Some(id) = &task_id {
+        remember_completed_task_result(
+            &state,
+            RecentDesktopTaskResult::ralph(
+                id.clone(),
+                task_workspace_root,
+                task_arguments,
+                task_started_at,
+                create_progress_timestamp(),
+                &result,
+            ),
+        );
+    }
 
     finish_active_task(&state, task_id.as_deref());
 
-    result?
+    result
 }
 
 #[tauri::command]

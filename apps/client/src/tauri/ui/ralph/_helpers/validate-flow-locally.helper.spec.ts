@@ -1,9 +1,11 @@
+import { describe, expect, it } from "vitest";
 import type {
   RalphFlow,
   RalphFlowBlock,
   RalphFlowSummary,
 } from "../../../../core/ralph.js";
 import type { ProviderModelCatalogSnapshot } from "../../model-catalog";
+import { STARTER_RALPH_FLOWS } from "../../../../core/ralph-starter-flows.js";
 import { createFlowAlias } from "./create-flow-alias.helper";
 import {
   getBlockOutputs,
@@ -301,6 +303,36 @@ describe("Ralph flow editor local validation helpers", () => {
     expect(
       issueMessages({ ...cyclicFlow, settings: { maxTransitions: 0 } }),
     ).toContain("Flow settings.maxTransitions must be an integer >= 1.");
+    expect(
+      issueMessages({
+        ...cyclicFlow,
+        settings: {
+          autonomy: { maxStagnantTransitions: 48, maxRepeatedCycle: 3 },
+        },
+      }),
+    ).not.toContain(
+      "Flow contains a cycle but does not define settings.maxTransitions; runs can continue until manually stopped.",
+    );
+    expect(
+      issueMessages({
+        ...cyclicFlow,
+        settings: {
+          autonomy: {
+            enabled: false,
+            maxStagnantTransitions: 48,
+            maxRepeatedCycle: 3,
+          },
+        },
+      }),
+    ).toContain(
+      "Flow contains a cycle but does not define settings.maxTransitions; runs can continue until manually stopped.",
+    );
+  });
+
+  it("accepts continuous starter templates without validation warnings", () => {
+    for (const { flow } of STARTER_RALPH_FLOWS) {
+      expect(issueMessages(flow), flow.name).toEqual([]);
+    }
   });
 
   it("warns about unavailable block providers and models when catalog data is present", () => {

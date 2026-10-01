@@ -1,7 +1,4 @@
-import {
-  RALPH_FLOW_SCHEMA_VERSION,
-  type RalphFlow,
-} from "../ralph.ts";
+import { RALPH_FLOW_SCHEMA_VERSION, type RalphFlow } from "../ralph.ts";
 import { validateGeneratedRalphFlowStructure } from "./validate-generated-ralph-flow-structure.helper.ts";
 
 const createFlow = (overrides: Partial<RalphFlow> = {}): RalphFlow => ({
@@ -29,11 +26,16 @@ describe("validateGeneratedRalphFlowStructure", () => {
     });
   });
 
-  it("requires maxTransitions when the generated graph contains a cycle", () => {
+  it("requires a transition cap or autonomous continuation when the graph cycles", () => {
     const result = validateGeneratedRalphFlowStructure(
       createFlow({
         edges: [
-          { id: "start-to-task", from: "start", fromOutput: "SUCCESS", to: "task" },
+          {
+            id: "start-to-task",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "task",
+          },
           { id: "task-loop", from: "task", fromOutput: "SUCCESS", to: "task" },
         ],
       }),
@@ -42,7 +44,7 @@ describe("validateGeneratedRalphFlowStructure", () => {
     expect(result).toEqual({
       decision: "RETRY",
       issues: [
-        "The generated graph has a cycle but no settings.maxTransitions cap.",
+        "The generated graph has a cycle but no settings.maxTransitions cap or autonomous continuation policy.",
       ],
       warnings: [],
     });
@@ -53,12 +55,38 @@ describe("validateGeneratedRalphFlowStructure", () => {
       createFlow({
         settings: { maxTransitions: 12 },
         edges: [
-          { id: "start-to-task", from: "start", fromOutput: "SUCCESS", to: "task" },
+          {
+            id: "start-to-task",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "task",
+          },
           { id: "task-loop", from: "task", fromOutput: "SUCCESS", to: "task" },
         ],
       }),
     );
 
+    expect(result.decision).toBe("DONE");
+    expect(result.issues).toEqual([]);
+  });
+
+  it("allows continuous cycles with a configured restart and stagnation controls", () => {
+    const result = validateGeneratedRalphFlowStructure(
+      createFlow({
+        settings: {
+          autonomy: { enabled: true, restartToBlockId: "task" },
+        },
+        edges: [
+          {
+            id: "start-to-task",
+            from: "start",
+            fromOutput: "SUCCESS",
+            to: "task",
+          },
+          { id: "task-loop", from: "task", fromOutput: "SUCCESS", to: "task" },
+        ],
+      }),
+    );
     expect(result.decision).toBe("DONE");
     expect(result.issues).toEqual([]);
   });
@@ -69,7 +97,12 @@ describe("validateGeneratedRalphFlowStructure", () => {
         blocks: [
           { id: "start", type: "START", title: "Start" },
           { id: "main-task", type: "PROMPT", title: "Task", prompt: "Do it." },
-          { id: "review-result", type: "VALIDATOR", title: "Review", prompt: "Check it." },
+          {
+            id: "review-result",
+            type: "VALIDATOR",
+            title: "Review",
+            prompt: "Check it.",
+          },
         ],
       }),
     );
@@ -79,3 +112,4 @@ describe("validateGeneratedRalphFlowStructure", () => {
     );
   });
 });
+import { describe, expect, it } from "vitest";
