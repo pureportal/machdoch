@@ -1,3 +1,4 @@
+import { MediaAssetSlideshow } from "./media-asset-slideshow";
 import { MediaModelInstallDialog } from "./media-model-install-dialog";
 import { useMediaViewPreference } from "../use-media-view-preference";
 import { CivitaiBrowserDialog } from "./civitai-browser-dialog";
@@ -272,6 +273,7 @@ export const MediaAssetsView = ({
     "assetCategories",
     [],
   );
+  const [slideshowOpen, setSlideshowOpen] = useState(false);
   const [installModel, setInstallModel] = useState<MediaModelDescriptor | null>(
     null,
   );
@@ -671,6 +673,18 @@ export const MediaAssetsView = ({
             </>
           ) : null}
         </select>
+        {visibleMedia.some(
+          (asset) => asset.kind === "image" || asset.kind === "vector",
+        ) ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setSlideshowOpen(true)}
+          >
+            <Play className="h-4 w-4" />
+            Slideshow
+          </Button>
+        ) : null}
         <Button
           type="button"
           onClick={() => {
@@ -1442,6 +1456,14 @@ export const MediaAssetsView = ({
                 .map((value) => value.toLowerCase()),
             )
           }
+        />
+      ) : null}
+      {slideshowOpen ? (
+        <MediaAssetSlideshow
+          assets={visibleMedia.filter(
+            (asset) => asset.kind === "image" || asset.kind === "vector",
+          )}
+          onClose={() => setSlideshowOpen(false)}
         />
       ) : null}
       {installModel ? (
