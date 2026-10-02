@@ -16,6 +16,7 @@ vi.mock("../model-capabilities.js", async (importOriginal) => {
 import {
   adaptFrozenInstructionSet,
   assertInstructionInvocationBudget,
+  assertNativeSubagentInstructionDelivery,
   createInstructionDeliveryPlan,
   createInstructionProfile,
   resolveInstructionSet,
@@ -235,4 +236,7 @@ it("does not claim subagent instruction inheritance for the OpenAI multi-agent b
   expect(
     plan.dimensions.find((dimension) => dimension.name === "subagents"),
   ).toMatchObject({ status: "compatible" });
+  expect(() => assertNativeSubagentInstructionDelivery(plan)).toThrow(
+    /cannot confirm delivery.*Choose Machdoch parallel agents/u,
+  );
 });

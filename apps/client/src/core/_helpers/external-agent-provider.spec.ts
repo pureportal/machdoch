@@ -31,6 +31,7 @@ import {
   maybeExecuteExternalAgentProviderTask,
 } from "./external-agent-provider.ts";
 import { createExternalAgentResultProtocolInstructions } from "./external-agent-result-protocol.ts";
+import { maybeExecuteModelDrivenTask } from "../agent-runtime.ts";
 
 interface MockChildProcess extends EventEmitter {
   pid: number;
@@ -145,6 +146,7 @@ vi.mock("node:child_process", async (importOriginal) => ({
           "--config",
           "--json",
           "--append-system-prompt-file",
+          "--append-subagent-system-prompt-file",
           "--mcp-config",
           "--setting-sources",
           "--strict-mcp-config",
@@ -344,6 +346,7 @@ const createExternalInstructionPlan = (
   resolution: ReturnType<typeof createInstructionResolutionFixture>,
   version = "fixture-cli 1.0.0",
   additionalFeatures: string[] = [],
+  subagentInstructionFile = true,
 ) =>
   createInstructionDeliveryPlan(resolution, {
     capability: createCliInstructionCapabilityFromProbe(resolution, {
@@ -359,6 +362,9 @@ const createExternalInstructionPlan = (
           ? [
               ...additionalFeatures,
               "--append-system-prompt-file",
+              ...(subagentInstructionFile
+                ? ["--append-subagent-system-prompt-file"]
+                : []),
               "--effort",
               "--mcp-config",
               "--output-format",
@@ -976,47 +982,118 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     },
   );
 
+  it("delivers the parent instruction file to every native Claude subagent", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+    const params = createParams(workspaceRoot, {
+      provider: "claude-cli",
+      model: "claude-opus-4-6",
+    });
+    params.preparedConversationContext = {
+      ...preparedConversationContext,
+      parallelAgentMode: "native",
+    };
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    expect(call.args).not.toContain("--disallowedTools");
+    const parentInstructionPath =
+      call.args[call.args.indexOf("--append-system-prompt-file") + 1];
+    expect(call.args).toContain("--append-subagent-system-prompt-file");
+    expect(
+      call.args[call.args.indexOf("--append-subagent-system-prompt-file") + 1],
+    ).toBe(parentInstructionPath);
+    writeStructuredAnswer(call, "Completed native work.");
+    call.child.emit("close", 0, null);
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+  });
+
   it.each([
-    ["codex-cli", "gpt-6-sol", "MACHDOCH_CODEX_CLI_PATH"],
-    ["claude-cli", "claude-opus-4-6", "MACHDOCH_CLAUDE_CLI_PATH"],
-    ["copilot-cli", "gpt-5.4", "MACHDOCH_COPILOT_CLI_PATH"],
+    ["codex-cli", "MACHDOCH_CODEX_CLI_PATH"],
+    ["copilot-cli", "MACHDOCH_COPILOT_CLI_PATH"],
   ] as const)(
-    "enables native subagents for %s",
-    async (provider, model, binaryEnvironmentKey) => {
+    "blocks unverified native subagent instruction delivery for %s",
+    async (provider, binaryEnvironmentKey) => {
       const workspaceRoot = await createWorkspace();
       process.env[binaryEnvironmentKey] = process.execPath;
-      const params = createParams(workspaceRoot, { provider, model });
+      const params = createParams(workspaceRoot, { provider });
       params.preparedConversationContext = {
         ...preparedConversationContext,
         parallelAgentMode: "native",
       };
 
-      const resultPromise = maybeExecuteExternalAgentProviderTask(params);
-      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
-      const call = spawnCalls[0]!;
-      const codexHome = (call.options.env as NodeJS.ProcessEnv).CODEX_HOME;
-      if (provider === "codex-cli") {
-        expect(call.args).toContain("features.multi_agent=true");
-        expect(call.args).toContain("agents.enabled=true");
-        expect(call.args).not.toContain("--ephemeral");
-        expect(codexHome).toContain("machdoch-instruction-run-");
-      } else if (provider === "claude-cli") {
-        expect(call.args).not.toContain("--disallowedTools");
-      } else {
-        expect(
-          call.args.some((arg) => arg.startsWith("--excluded-tools=")),
-        ).toBe(false);
-      }
-      writeStructuredAnswer(call, "Completed native work.");
-      call.child.emit("close", 0, null);
-      await expect(resultPromise).resolves.toMatchObject({
-        status: "executed",
-      });
-      if (provider === "codex-cli") {
-        await expect(access(codexHome!)).rejects.toBeDefined();
-      }
+      const result = await maybeExecuteExternalAgentProviderTask(params);
+
+      expect(result?.status).toBe("blocked");
+      expect(result?.summary).toContain("cannot confirm delivery");
+      expect(spawnCalls).toHaveLength(0);
     },
   );
+
+  it("blocks native Claude subagents without instruction file support", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+    const originalProbe = vi.mocked(spawnSync).getMockImplementation()!;
+    vi.mocked(spawnSync).mockImplementation((...args) => {
+      const result = originalProbe(...args);
+      return {
+        ...result,
+        stdout: String(result.stdout).replace(
+          "--append-subagent-system-prompt-file\n",
+          "",
+        ),
+      };
+    });
+    const params = createParams(workspaceRoot, {
+      provider: "claude-cli",
+      model: "claude-opus-4-6",
+    });
+    params.preparedConversationContext = {
+      ...preparedConversationContext,
+      parallelAgentMode: "native",
+    };
+    params.instructionDeliveryPlan = createExternalInstructionPlan(
+      params.taskContext.instructionResolution!,
+      "fixture-cli 1.0.0",
+      [],
+      false,
+    );
+
+    const result = await maybeExecuteExternalAgentProviderTask(params);
+
+    expect(result?.status).toBe("blocked");
+    expect(result?.summary).toContain("cannot confirm delivery");
+    expect(spawnCalls).toHaveLength(0);
+  });
+
+  it("forwards a runtime-created instruction plan to CLI execution", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    const params = createParams(workspaceRoot, { provider: "codex-cli" });
+    delete params.instructionDeliveryPlan;
+    params.instructionDeliveryReceipts = [];
+
+    const resultPromise = maybeExecuteModelDrivenTask(params);
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    const nativeInstructions = await readRunScopedSystemInstructions(
+      "codex-cli",
+      call,
+    );
+    expect(nativeInstructions).toContain(
+      params.taskContext.instructionResolution!.renderedEnvelope,
+    );
+    writeStructuredAnswer(call, "Completed direct runtime execution.");
+    call.child.emit("close", 0, null);
+
+    const result = await resultPromise;
+    expect(result?.status).toBe("executed");
+    expect(params.instructionDeliveryReceipts).toHaveLength(1);
+    expect(result?.metadata?.instructionDeliveryPlanId).toBe(
+      params.instructionDeliveryReceipts[0]?.planId,
+    );
+  });
 
   it("keeps native Codex agents disabled in Full Mode", async () => {
     const workspaceRoot = await createWorkspace();

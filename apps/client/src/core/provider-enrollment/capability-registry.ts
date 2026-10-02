@@ -160,6 +160,7 @@ const detectFeatures = (provider: AgentCliProvider, help: string): string[] => {
       : provider === "claude-cli"
         ? [
             "--append-system-prompt-file",
+            "--append-subagent-system-prompt-file",
             "--effort",
             "--mcp-config",
             "--output-format",
@@ -272,19 +273,26 @@ export const probeProviderCli = async (
       );
     } else if (helpResult.exitCode !== 0) {
       warnings.push(
-        "Provider help probe returned a non-zero exit code; required run-scoped instruction flags must still be observed before launch.",
+        "Provider help probe returned a non-zero exit code; required run-scoped instruction flags could not be confirmed.",
       );
     }
 
+    const version =
+      versionResult.exitCode === 0
+        ? versionResult.output
+            .split(/\r?\n/u)
+            .find((line) => /\b\d+\.\d+\.\d+\b/u.test(line))
+            ?.trim()
+        : undefined;
     return {
       provider,
       executable,
-      available:
-        versionResult.exitCode !== null || helpResult.exitCode !== null,
-      ...(versionResult.output
-        ? { version: versionResult.output.split(/\r?\n/u)[0] }
-        : {}),
-      features: detectFeatures(provider, helpResult.output),
+      available: versionResult.exitCode === 0 || helpResult.exitCode === 0,
+      ...(version ? { version } : {}),
+      features:
+        helpResult.exitCode === 0
+          ? detectFeatures(provider, helpResult.output)
+          : [],
       warnings,
     };
   })();

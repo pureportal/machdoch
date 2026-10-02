@@ -60,6 +60,7 @@ import {
   adaptFrozenInstructionSet,
   assertInstructionInvocationBudget,
   assertInstructionDeliveryReceiptCertain,
+  assertNativeSubagentInstructionDelivery,
   canonicalDigest,
   compareCanonicalStrings,
   createInstructionDeliveryReceipt,
@@ -2468,6 +2469,9 @@ export const maybeExecuteModelDrivenTask = async (
       params.conversationContext?.parallelAgentMode,
     );
     preparedConversationContext.parallelAgentMode = parallelMode;
+    if (parallelMode === "native" && instructionPlan) {
+      assertNativeSubagentInstructionDelivery(instructionPlan);
+    }
 
     const parallelTool =
       (parallelMode === "read-only" || parallelMode === "machdoch") &&
@@ -2516,6 +2520,10 @@ export const maybeExecuteModelDrivenTask = async (
         ...params,
         config: executionConfig,
         preparedConversationContext,
+        ...(instructionPlan
+          ? { instructionDeliveryPlan: instructionPlan }
+          : {}),
+        instructionDeliveryReceipts: instructionReceipts,
         ...(params.resultProtocol?.kind === "goal-evaluation"
           ? { scopedWorkerToolDefinitions: [] }
           : {}),

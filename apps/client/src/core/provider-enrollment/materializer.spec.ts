@@ -40,6 +40,7 @@ const probeProviderCliMock = vi.hoisted(() =>
       provider === "claude-cli"
         ? [
             "--append-system-prompt-file",
+            "--append-subagent-system-prompt-file",
             "--mcp-config",
             "--setting-sources",
             "--strict-mcp-config",
@@ -146,6 +147,7 @@ const createProbe = (provider: AgentCliProvider, features?: string[]) => ({
     (provider === "claude-cli"
       ? [
           "--append-system-prompt-file",
+          "--append-subagent-system-prompt-file",
           "--mcp-config",
           "--setting-sources",
           "--strict-mcp-config",
@@ -1018,6 +1020,19 @@ describe("CLI provider enrollment materializer", () => {
         `long-${provider}-instruction-start`,
       );
       expect(nativeInstructions).toContain(`long-${provider}-instruction-end`);
+      if (provider === "claude-cli") {
+        expect(
+          enrollment.args[
+            enrollment.args.indexOf("--append-subagent-system-prompt-file") + 1
+          ],
+        ).toBe(instructionPath);
+        expect(enrollment.args).toContain(
+          "--append-subagent-system-prompt-file",
+        );
+        expect(
+          createProbedPlan(resolution).capability.lifecycle.subagents,
+        ).toBe("reattached");
+      }
       expect(
         nativeInstructions.match(
           new RegExp(`long-${provider}-instruction-start`, "gu"),

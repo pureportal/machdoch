@@ -186,7 +186,7 @@ const CLI_CAPABILITIES: Record<
     evidence: [
       "Machdoch uses the CLI's supported system-prompt file argument.",
       "The run isolates provider settings and disables native CLAUDE.md discovery; bare mode is used only when compatible explicit authentication is available.",
-      "Machdoch does not copy the envelope into Claude's inline subagent argument.",
+      "When the CLI advertises --append-subagent-system-prompt-file, Machdoch reuses the run-scoped instruction file for nested subagents without copying its content onto argv.",
     ],
   },
   "copilot-cli": {
@@ -501,6 +501,19 @@ export const createInstructionDeliveryPlan = (
     capability,
     createdAt,
   }) as InstructionDeliveryPlan;
+};
+
+export const assertNativeSubagentInstructionDelivery = (
+  plan: InstructionDeliveryPlan,
+): void => {
+  const support = plan.capability.lifecycle.subagents;
+  if (support === "reattached" || support === "session") {
+    return;
+  }
+  throw new InstructionSystemError(
+    "INSTRUCTION_SUBAGENT_DELIVERY_UNSUPPORTED",
+    `Native subagents for ${plan.providerId} cannot confirm delivery of the Machdoch instructions to every agent. Choose Machdoch parallel agents.`,
+  );
 };
 
 export const assertInstructionInvocationBudget = (
