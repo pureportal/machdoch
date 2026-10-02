@@ -30,7 +30,15 @@ export const executeWithSessionGoal = async (
   ) {
     return execute(task, config, options);
   }
-  const command = parseGoalCommand(task);
+  const explicitCommand = parseGoalCommand(task);
+  let command = explicitCommand;
+  const requestedObjective = options.conversationContext?.goalObjective;
+  if (requestedObjective !== undefined) {
+    const { goalObjective, ...conversationContext } =
+      options.conversationContext!;
+    command ??= parseGoalCommand(`/goal -- ${goalObjective}`);
+    options = { ...options, conversationContext };
+  }
   const sessionId = options.conversationContext?.sessionId;
   if (!command && !sessionId) return execute(task, config, options);
   const path = getGoalPath(config.workspaceRoot, sessionId ?? "command-line");
@@ -151,7 +159,17 @@ export const executeWithSessionGoal = async (
     `${path}.run`,
     async () => {
       record = await readGoalRecord(path);
-      if (command?.kind === "set") {
+      const matchingGoal =
+        !explicitCommand &&
+        requestedObjective !== undefined &&
+        command?.kind === "set" &&
+        record.goal?.objective === command.objective &&
+        record.goal.mode === (selectedMode ?? record.mode);
+      if (matchingGoal && record.goal?.status === "complete")
+        return execute(task, config, options);
+      const runCommand = matchingGoal ? { kind: "resume" as const } : command;
+      if (runCommand?.kind === "set") {
+        const command = runCommand;
         if (options.conversationContext?.chatType === "pose")
           throw new Error("Goals require an agent chat.");
         const mode = options.conversationContext?.goalMode ?? record.mode;
@@ -211,7 +229,7 @@ export const executeWithSessionGoal = async (
           };
         });
       }
-      if (command?.kind === "resume") {
+      if (runCommand?.kind === "resume") {
         record = await updateGoalRecord(path, (current) => {
           if (!current.goal)
             throw new Error("No goal set. Use /goal <objective>.");
@@ -245,7 +263,7 @@ export const executeWithSessionGoal = async (
         execute,
         path,
         record,
-        !command,
+        !explicitCommand,
       );
     },
     {

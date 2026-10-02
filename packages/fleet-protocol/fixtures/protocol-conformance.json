@@ -2,6 +2,45 @@
   "version": 1,
   "cases": [
     {
+      "id": "command/submit-message/goal-objective",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Fix auth",
+        "goalObjective": "  All auth tests pass\nVerify sign-out  ",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false
+      }
+    },
+    {
+      "id": "command/submit-message/empty-goal-objective",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Fix auth",
+        "goalObjective": "   ",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false
+      }
+    },
+    {
+      "id": "command/submit-message/null-goal-objective",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Fix auth",
+        "goalObjective": null,
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false
+      }
+    },
+    {
       "id": "command/set-goal-mode/managed",
       "target": "command",
       "accepted": true,
@@ -1643,9 +1682,7 @@
       "payload": {
         "kind": "tag-session",
         "sessionId": "session-1",
-        "tags": [
-          "review"
-        ]
+        "tags": ["review"]
       }
     },
     {
@@ -1654,9 +1691,7 @@
       "accepted": false,
       "payload": {
         "kind": "tag-session",
-        "tags": [
-          "review"
-        ]
+        "tags": ["review"]
       }
     },
     {
@@ -1675,9 +1710,7 @@
       "payload": {
         "kind": "tag-session",
         "sessionId": "session-1",
-        "tags": [
-          "review"
-        ],
+        "tags": ["review"],
         "unexpected": true
       }
     },
@@ -3694,9 +3727,7 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": [
-                  "review"
-                ]
+                "tags": ["review"]
               }
             ],
             "contextPacks": [
@@ -3715,12 +3746,8 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": [
-                  "review"
-                ],
-                "pathPatterns": [
-                  "src/**"
-                ],
+                "triggerPhrases": ["review"],
+                "pathPatterns": ["src/**"],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -3785,9 +3812,7 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": [
-                  "review"
-                ]
+                "tags": ["review"]
               }
             ],
             "contextPacks": [
@@ -3806,12 +3831,8 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": [
-                  "review"
-                ],
-                "pathPatterns": [
-                  "src/**"
-                ],
+                "triggerPhrases": ["review"],
+                "pathPatterns": ["src/**"],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -3866,9 +3887,7 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": [
-                  "review"
-                ]
+                "tags": ["review"]
               }
             ],
             "contextPacks": [
@@ -3887,12 +3906,8 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": [
-                  "review"
-                ],
-                "pathPatterns": [
-                  "src/**"
-                ],
+                "triggerPhrases": ["review"],
+                "pathPatterns": ["src/**"],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -3957,9 +3972,7 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": [
-                  "review"
-                ]
+                "tags": ["review"]
               }
             ],
             "contextPacks": [
@@ -3978,12 +3991,8 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": [
-                  "review"
-                ],
-                "pathPatterns": [
-                  "src/**"
-                ],
+                "triggerPhrases": ["review"],
+                "pathPatterns": ["src/**"],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4039,9 +4048,7 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": [
-                  "review"
-                ]
+                "tags": ["review"]
               }
             ],
             "contextPacks": [
@@ -4060,12 +4067,8 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": [
-                  "review"
-                ],
-                "pathPatterns": [
-                  "src/**"
-                ],
+                "triggerPhrases": ["review"],
+                "pathPatterns": ["src/**"],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4121,9 +4124,7 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": [
-                  "review"
-                ]
+                "tags": ["review"]
               }
             ],
             "contextPacks": [
@@ -4142,12 +4143,8 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": [
-                  "review"
-                ],
-                "pathPatterns": [
-                  "src/**"
-                ],
+                "triggerPhrases": ["review"],
+                "pathPatterns": ["src/**"],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4203,9 +4200,7 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": [
-                  "review"
-                ]
+                "tags": ["review"]
               }
             ],
             "contextPacks": [
@@ -4224,12 +4219,8 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": [
-                  "review"
-                ],
-                "pathPatterns": [
-                  "src/**"
-                ],
+                "triggerPhrases": ["review"],
+                "pathPatterns": ["src/**"],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4285,9 +4276,7 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": [
-                  "review"
-                ]
+                "tags": ["review"]
               }
             ],
             "contextPacks": [
@@ -4306,12 +4295,8 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": [
-                  "review"
-                ],
-                "pathPatterns": [
-                  "src/**"
-                ],
+                "triggerPhrases": ["review"],
+                "pathPatterns": ["src/**"],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4367,9 +4352,7 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": [
-                  "review"
-                ]
+                "tags": ["review"]
               }
             ],
             "contextPacks": [
@@ -4388,12 +4371,8 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": [
-                  "review"
-                ],
-                "pathPatterns": [
-                  "src/**"
-                ],
+                "triggerPhrases": ["review"],
+                "pathPatterns": ["src/**"],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4449,9 +4428,7 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": [
-                  "review"
-                ]
+                "tags": ["review"]
               }
             ],
             "contextPacks": [
@@ -4470,12 +4447,8 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": [
-                  "review"
-                ],
-                "pathPatterns": [
-                  "src/**"
-                ],
+                "triggerPhrases": ["review"],
+                "pathPatterns": ["src/**"],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4531,9 +4504,7 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": [
-                  "review"
-                ]
+                "tags": ["review"]
               }
             ],
             "contextPacks": [
@@ -4552,12 +4523,8 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": [
-                  "review"
-                ],
-                "pathPatterns": [
-                  "src/**"
-                ],
+                "triggerPhrases": ["review"],
+                "pathPatterns": ["src/**"],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4613,9 +4580,7 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": [
-                  "review"
-                ]
+                "tags": ["review"]
               }
             ],
             "contextPacks": [
@@ -4634,12 +4599,8 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": [
-                  "review"
-                ],
-                "pathPatterns": [
-                  "src/**"
-                ],
+                "triggerPhrases": ["review"],
+                "pathPatterns": ["src/**"],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4695,9 +4656,7 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": [
-                  "review"
-                ]
+                "tags": ["review"]
               }
             ],
             "contextPacks": [
@@ -4716,12 +4675,8 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": [
-                  "review"
-                ],
-                "pathPatterns": [
-                  "src/**"
-                ],
+                "triggerPhrases": ["review"],
+                "pathPatterns": ["src/**"],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4778,9 +4733,7 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": [
-                  "review"
-                ]
+                "tags": ["review"]
               },
               {
                 "id": "123e4567-e89b-42d3-a456-426614174000",
@@ -4788,9 +4741,7 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": [
-                  "review"
-                ]
+                "tags": ["review"]
               }
             ],
             "contextPacks": [
@@ -4809,12 +4760,8 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": [
-                  "review"
-                ],
-                "pathPatterns": [
-                  "src/**"
-                ],
+                "triggerPhrases": ["review"],
+                "pathPatterns": ["src/**"],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4870,9 +4817,7 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": [
-                  "review"
-                ]
+                "tags": ["review"]
               }
             ],
             "contextPacks": [
@@ -4891,12 +4836,8 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": [
-                  "review"
-                ],
-                "pathPatterns": [
-                  "src/**"
-                ],
+                "triggerPhrases": ["review"],
+                "pathPatterns": ["src/**"],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -6126,9 +6067,7 @@
             "shell": {
               "version": 5,
               "capturedAt": 0,
-              "sessions": [
-                {}
-              ],
+              "sessions": [{}],
               "workspaces": [],
               "visibleMessages": [],
               "contextPacks": [],
@@ -6158,9 +6097,7 @@
               "capturedAt": 0,
               "sessions": [],
               "workspaces": [],
-              "visibleMessages": [
-                {}
-              ],
+              "visibleMessages": [{}],
               "contextPacks": [],
               "promptHistory": []
             }
@@ -6189,9 +6126,7 @@
               "sessions": [],
               "workspaces": [],
               "visibleMessages": [],
-              "contextPacks": [
-                {}
-              ],
+              "contextPacks": [{}],
               "promptHistory": []
             }
           }

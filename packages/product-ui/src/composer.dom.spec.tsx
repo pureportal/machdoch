@@ -157,6 +157,84 @@ afterEach(() => {
 });
 
 describe("composer submission guards", () => {
+  it.each(["button", "keyboard"])(
+    "submits the task and goal together by %s",
+    async (method) => {
+      const onCommand = vi.fn<ProductCommandHandler>().mockResolvedValue(true);
+      harness(onCommand, "Fix the login handler");
+      fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+      fireEvent.change(
+        screen.getByRole("textbox", { name: "Goal objective" }),
+        {
+          target: { value: "  All auth tests pass\nVerify sign-out  " },
+        },
+      );
+      if (method === "button") await send();
+      else {
+        fireEvent.keyDown(input(), { key: "Enter" });
+        await flush();
+      }
+      expect(onCommand).toHaveBeenCalledWith({
+        kind: "submit-message",
+        sessionId: "A",
+        prompt: "Fix the login handler",
+        promptEnhancementMode: "off",
+        interviewEnabled: false,
+        goalObjective: "All auth tests pass\nVerify sign-out",
+      });
+      expect(input().value).toBe("");
+    },
+  );
+
+  it("keeps a goal draft on failure so the task can be retried", async () => {
+    const onCommand = vi
+      .fn<ProductCommandHandler>()
+      .mockImplementation(async (command) => command.kind !== "submit-message");
+    harness(onCommand, "Fix auth");
+    fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Goal objective" }), {
+      target: { value: "All auth tests pass" },
+    });
+    await send();
+    expect(input().value).toBe("Fix auth");
+    expect(
+      screen.getByRole<HTMLTextAreaElement>("textbox", {
+        name: "Goal objective",
+      }).value,
+    ).toBe("All auth tests pass");
+    await send();
+    expect(
+      onCommand.mock.calls.filter(
+        ([command]) => command.kind === "submit-message",
+      ),
+    ).toHaveLength(2);
+  });
+
+  it.each(["hidden", "other-session", "explicit-command"])(
+    "omits the goal for %s submissions",
+    async (scenario) => {
+      const onCommand = vi.fn<ProductCommandHandler>().mockResolvedValue(true);
+      const view = harness(onCommand, "Fix auth");
+      fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+      fireEvent.change(
+        screen.getByRole("textbox", { name: "Goal objective" }),
+        {
+          target: { value: "All auth tests pass" },
+        },
+      );
+      if (scenario === "hidden")
+        fireEvent.click(screen.getByRole("button", { name: "Hide goal" }));
+      if (scenario === "other-session") view.show("B", "Fix auth");
+      if (scenario === "explicit-command") type("/goal clear");
+      await send();
+      const submissions = onCommand.mock.calls
+        .map(([command]) => command)
+        .filter((command) => command.kind === "submit-message");
+      expect(submissions).toHaveLength(1);
+      expect(submissions[0]).not.toHaveProperty("goalObjective");
+    },
+  );
+
   it("sends a parallel agent mode change for the active session", async () => {
     const onCommand = vi.fn<ProductCommandHandler>().mockResolvedValue(true);
     harness(onCommand);

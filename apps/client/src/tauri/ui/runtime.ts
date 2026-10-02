@@ -708,6 +708,7 @@ export interface FleetControlCommandEvent {
   taskId?: string;
   sessionId?: string;
   prompt?: string;
+  goalObjective?: string;
   title?: string;
   tags?: string[];
   provider?: string;
@@ -1834,6 +1835,10 @@ const isFleetControlCommandEvent = (
     (value.taskId === undefined || typeof value.taskId === "string") &&
     (value.sessionId === undefined || typeof value.sessionId === "string") &&
     (value.prompt === undefined || typeof value.prompt === "string") &&
+    (value.goalObjective === undefined ||
+      (typeof value.goalObjective === "string" &&
+        value.goalObjective.trim().length > 0 &&
+        value.goalObjective.trim().length <= 4_000)) &&
     (value.title === undefined || typeof value.title === "string") &&
     (value.tags === undefined ||
       (Array.isArray(value.tags) &&

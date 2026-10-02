@@ -1,5 +1,6 @@
 export { RemoteProductApp } from "./remote-product-app";
 export { GoalControl, GoalTrigger } from "./goal-control";
+export { useGoalDraft } from "./use-goal-draft";
 export { Ralph } from "./ralph";
 export {
   createDefaultRalphVariableValues,

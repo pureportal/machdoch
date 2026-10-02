@@ -803,6 +803,7 @@ export const productCommandSchema = z
       ...sessionCommandShape,
       kind: z.literal("submit-message"),
       prompt: commandText,
+      goalObjective: z.string().trim().min(1).max(4_000).optional(),
       promptEnhancementMode: promptEnhancementModeSchema,
       interviewEnabled: z.boolean(),
     }),

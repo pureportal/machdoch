@@ -9,6 +9,7 @@ export const createSessionMessageSettings = (
   session: ChatSessionRecord,
   promptEnhancementMode: PromptEnhancementMode = "off",
   interviewEnabled = false,
+  goalObjective?: string,
 ): ChatSessionMessageSettings => ({
   workspace: session.workspace,
   provider: session.provider,
@@ -16,6 +17,7 @@ export const createSessionMessageSettings = (
   ...(session.mode ? { mode: session.mode } : {}),
   parallelAgentMode: session.parallelAgentMode ?? "disabled",
   goalMode: session.goalMode ?? "machdoch",
+  ...(goalObjective ? { goalObjective } : {}),
   adaptiveControllerOverride: session.adaptiveControllerOverride ?? null,
   ...(session.reasoning ? { reasoning: session.reasoning } : {}),
   sessionMemoryEnabled: session.sessionMemoryEnabled,

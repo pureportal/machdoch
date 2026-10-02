@@ -182,6 +182,7 @@ export interface ChatSessionMessageSettings {
   mode?: RunMode;
   parallelAgentMode: ParallelAgentMode;
   goalMode?: GoalMode;
+  goalObjective?: string;
   adaptiveControllerOverride?: boolean | null;
   reasoning?: ReasoningMode;
   sessionMemoryEnabled: boolean;
@@ -363,6 +364,7 @@ export interface ChatSessionQueuedMessage {
   id: string;
   sessionId: string;
   task: string;
+  goalObjective?: string;
   visibleMessageContent?: string;
   promptHistoryContent?: string;
   iteration?: ChatSessionRequestIteration;
@@ -2586,6 +2588,11 @@ const normalizeMessageSettings = (
       value.provider,
       value.goalMode === "native" ? "native" : "machdoch",
     ),
+    ...(typeof value.goalObjective === "string" &&
+    value.goalObjective.trim().length > 0 &&
+    value.goalObjective.trim().length <= 4_000
+      ? { goalObjective: value.goalObjective.trim() }
+      : {}),
     adaptiveControllerOverride:
       typeof value.adaptiveControllerOverride === "boolean"
         ? value.adaptiveControllerOverride
@@ -3027,6 +3034,11 @@ const normalizeQueuedSessionMessages = (
       id,
       sessionId,
       task,
+      ...(typeof entry.goalObjective === "string" &&
+      entry.goalObjective.trim().length > 0 &&
+      entry.goalObjective.trim().length <= 4_000
+        ? { goalObjective: entry.goalObjective.trim() }
+        : {}),
       ...(visibleMessageContent ? { visibleMessageContent } : {}),
       ...(promptHistoryContent ? { promptHistoryContent } : {}),
       ...(iteration ? { iteration } : {}),

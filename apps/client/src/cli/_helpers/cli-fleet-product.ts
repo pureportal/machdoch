@@ -1050,6 +1050,7 @@ export class FleetCliProductRuntime {
     session: FleetCliSession,
     prompt: string,
     taskId: string,
+    goalObjective?: string,
   ): Promise<TaskExecutionController> {
     await this.assertWorkspace(session.workspace);
     const config = await this.loadSessionRuntimeConfig(session);
@@ -1075,6 +1076,7 @@ export class FleetCliProductRuntime {
           sessionId: session.id,
           parallelAgentMode: session.parallelAgentMode,
           goalMode: resolveGoalMode(session.provider, session.goalMode),
+          ...(goalObjective ? { goalObjective } : {}),
           ...(session.specialKind === "pose"
             ? { chatType: "pose" as const, poseScene: session.poseScene }
             : {}),
@@ -1152,7 +1154,12 @@ export class FleetCliProductRuntime {
           "Another agent task is already running in this project. Wait for it to finish or use a separate project.",
         );
       const taskId = this.dependencies.createId();
-      const controller = await this.prepareTask(currentSession, prompt, taskId);
+      const controller = await this.prepareTask(
+        currentSession,
+        prompt,
+        taskId,
+        command.kind === "submit-message" ? command.goalObjective : undefined,
+      );
       const session = this.getSession(state, sessionId);
       session.messages = [
         ...session.messages,

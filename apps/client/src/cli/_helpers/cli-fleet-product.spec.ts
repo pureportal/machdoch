@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { productSnapshotSchema } from "@machdoch/fleet-protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadRuntimeConfig } from "../../core/config.js";
+import { createTaskExecutionController } from "../../core/execution.js";
 import {
   FleetCliProductRuntime,
   pruneCompletedFleetTaskSessions,
@@ -20,6 +21,71 @@ afterEach(async () => {
 });
 
 describe.sequential("Fleet CLI product runtime", () => {
+  it("submits a task and goal together through the Fleet CLI service", async () => {
+    const root = await mkdtemp(join(tmpdir(), "machdoch-fleet-goal-submit-"));
+    roots.push(root);
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", join(root, "config"));
+    const createController = vi.fn<typeof createTaskExecutionController>(
+      (task, config) => ({
+        signal: new AbortController().signal,
+        cancel: vi.fn(),
+        execute: async () => ({
+          task,
+          mode: config.mode,
+          status: "executed",
+          summary: "Done",
+          executedTools: [],
+          outputSections: [],
+        }),
+      }),
+    );
+    const runtime = await FleetCliProductRuntime.create(
+      join(root, "workspace"),
+      {
+        loadRuntimeConfig: async (...arguments_) => ({
+          ...(await loadRuntimeConfig(...arguments_)),
+          provider: "openai",
+          model: "gpt-5.4",
+          offline: false,
+          providerAvailability: [{ provider: "openai", configured: true }],
+        }),
+        createTaskExecutionController: createController,
+      },
+    );
+    const initial = await runtime.handleRequest({ type: "getProductSnapshot" });
+    if (
+      initial.type !== "productSnapshot" ||
+      !initial.snapshot.shell?.activeSessionId
+    )
+      throw new Error("Session snapshot is missing.");
+    const sessionId = initial.snapshot.shell.activeSessionId;
+    expect(
+      await runtime.handleRequest({
+        type: "executeProductCommand",
+        command: {
+          kind: "submit-message",
+          sessionId,
+          prompt: "Fix auth",
+          goalObjective: "All auth tests pass",
+          promptEnhancementMode: "off",
+          interviewEnabled: false,
+        },
+      }),
+    ).toMatchObject({ type: "commandAccepted" });
+    expect(createController).toHaveBeenCalledWith(
+      "Fix auth",
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        conversationContext: expect.objectContaining({
+          sessionId,
+          goalObjective: "All auth tests pass",
+        }),
+      }),
+    );
+    await runtime.shutdown();
+  });
+
   it("persists native goal mode and resolves it when switching providers", async () => {
     const root = await mkdtemp(join(tmpdir(), "machdoch-fleet-goal-"));
     roots.push(root);
