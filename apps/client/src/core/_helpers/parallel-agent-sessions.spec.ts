@@ -15,6 +15,7 @@ import {
   createParallelAgentSessionTool,
   type ParallelWorkerPlan,
 } from "./parallel-agent-sessions.js";
+import { TASK_EXECUTION_IDLE_TIMEOUT_MS } from "./task-execution-timeouts.js";
 
 const workspaces: string[] = [];
 
@@ -732,13 +733,96 @@ describe("parallel agent sessions", () => {
     });
     const pending = execute(tool, [worker("first"), worker("second")]);
     await startedPromise;
-    await vi.advanceTimersByTimeAsync(180_000);
+    await vi.advanceTimersByTimeAsync(TASK_EXECUTION_IDLE_TIMEOUT_MS);
     const result = await pending;
     expect(result.toolResult.isError).toBe(true);
     expect(JSON.parse(result.toolResult.output)).toMatchObject([
-      { id: "first", status: "failed", answer: "Worker first timed out." },
-      { id: "second", status: "failed", answer: "Worker second timed out." },
+      {
+        id: "first",
+        status: "failed",
+        answer: expect.stringContaining("without meaningful progress"),
+      },
+      {
+        id: "second",
+        status: "failed",
+        answer: expect.stringContaining("without meaningful progress"),
+      },
     ]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("allows a model call to finish after the former three minute deadline", async () => {
+    const options = await createOptions();
+    vi.useFakeTimers();
+    const signals: AbortSignal[] = [];
+    const tool = createParallelAgentSessionTool({
+      ...options,
+      createWorkerAdapter: async () => ({
+        startTurn: async ({ signal }) => {
+          signals.push(signal!);
+          await new Promise((resolve) => setTimeout(resolve, 5 * 60_000));
+          return { text: "Completed investigation", toolCalls: [] };
+        },
+        continueTurn: async () => ({ text: "unexpected", toolCalls: [] }),
+      }),
+    });
+    const pending = execute(tool, [worker("first"), worker("second")]);
+    await vi.waitFor(() => expect(signals).toHaveLength(2));
+
+    await vi.advanceTimersByTimeAsync(180_000);
+    expect(signals.every((signal) => !signal.aborted)).toBe(true);
+    await vi.advanceTimersByTimeAsync(2 * 60_000);
+
+    const result = await pending;
+    expect(result.toolResult.isError, result.toolResult.output).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("keeps streamed workers active without extending a silent sibling's timeout", async () => {
+    const options = await createOptions();
+    vi.useFakeTimers();
+    const onStreamActivity = vi.fn();
+    const signals: AbortSignal[] = [];
+    const tool = createParallelAgentSessionTool({
+      ...options,
+      onStreamActivity,
+      createWorkerAdapter: async () => ({
+        startTurn: async ({ userPrompt, signal, onStreamEvent }) => {
+          signals.push(signal!);
+          if (userPrompt.includes("Inspect second"))
+            return await new Promise<never>(() => undefined);
+          for (let step = 0; step < 3; step += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 10 * 60_000));
+            onStreamEvent?.({
+              type: "reasoning-delta",
+              delta: "Investigating",
+            });
+          }
+          return { text: "Completed investigation", toolCalls: [] };
+        },
+        continueTurn: async () => ({ text: "unexpected", toolCalls: [] }),
+      }),
+    });
+    const pending = execute(tool, [worker("first"), worker("second")]);
+    await vi.waitFor(() => expect(signals).toHaveLength(2));
+    onStreamActivity.mockClear();
+
+    await vi.advanceTimersByTimeAsync(TASK_EXECUTION_IDLE_TIMEOUT_MS);
+    expect(signals[0]!.aborted).toBe(false);
+    expect(signals[1]!.aborted).toBe(true);
+    expect(onStreamActivity).toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+    const result = await pending;
+    expect(JSON.parse(result.toolResult.output)).toMatchObject([
+      { id: "first", status: "completed" },
+      {
+        id: "second",
+        status: "failed",
+        answer: expect.stringContaining("without meaningful progress"),
+      },
+    ]);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("stops a stalled sibling when a worker crosses its file boundary", async () => {

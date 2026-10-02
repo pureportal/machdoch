@@ -12,6 +12,10 @@ import { executeToolCall } from "./agent-tools.js";
 import { createProviderAdapter } from "./provider-adapters.js";
 import { isAgentCliProvider } from "./agent-cli-providers.js";
 import { maybeExecuteExternalAgentProviderTask } from "./external-agent-provider.js";
+import {
+  createManagedTaskExecutionTimeout,
+  resolveTaskExecutionTimeouts,
+} from "./task-execution-timeouts.js";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
 import type { InstructionDeliveryPlan } from "../instruction-system/index.js";
 import { observeAgentModelCall } from "../model-usage.js";
@@ -30,7 +34,6 @@ const MAX_WORKERS = 3;
 const MAX_WORKER_TURNS = 8;
 const MAX_WORKER_TOOL_CALLS = 24;
 const MAX_WORKER_TEXT = 12_000;
-const MAX_WORKER_DURATION_MS = 180_000;
 const READ_TOOLS = new Set([
   "list_directory",
   "read_file",
@@ -103,6 +106,7 @@ export interface ParallelAgentSessionOptions {
   signal?: AbortSignal;
   createWorkerAdapter?: () => Promise<AgentModelAdapter>;
   onProgress?: (event: TaskExecutionTimelineEvent) => void | Promise<void>;
+  onStreamActivity?: () => void;
 }
 
 export interface ParallelAgentSessionTool {
@@ -114,7 +118,9 @@ const reportWorkerProgress = (
   options: ParallelAgentSessionOptions,
   event: TaskExecutionTimelineEvent,
 ): void => {
-  if (!options.onProgress || options.signal?.aborted) return;
+  if (options.signal?.aborted) return;
+  options.onStreamActivity?.();
+  if (!options.onProgress) return;
   try {
     void Promise.resolve(options.onProgress(event)).catch((error: unknown) => {
       console.warn("Could not report parallel agent progress:", error);
@@ -386,9 +392,29 @@ const runCliWorker = async (
   const trackedTools = tools.map((tool) => ({
     ...tool,
     execute: async (...args: Parameters<typeof tool.execute>) => {
+      if (signal.aborted)
+        throw signal.reason ?? new Error("Parallel work was cancelled.");
       toolCalls += 1;
+      const call = {
+        id: randomUUID(),
+        name: tool.spec.name,
+        arguments: args[0],
+      };
+      reportWorkerProgress(options, workerToolEvent(worker, call, "started"));
       try {
+        if (signal.aborted)
+          throw signal.reason ?? new Error("Parallel work was cancelled.");
         const result = await tool.execute(...args);
+        if (signal.aborted)
+          throw signal.reason ?? new Error("Parallel work was cancelled.");
+        reportWorkerProgress(
+          options,
+          workerToolEvent(
+            worker,
+            call,
+            result.toolResult.isError ? "failed" : "completed",
+          ),
+        );
         if (result.toolResult.isError) {
           failedTool ??= `${tool.spec.name}: ${result.toolResult.output.slice(0, 300)}`;
         } else if (WRITE_TOOLS.has(tool.spec.name)) {
@@ -396,6 +422,7 @@ const runCliWorker = async (
         }
         return result;
       } catch (error) {
+        reportWorkerProgress(options, workerToolEvent(worker, call, "failed"));
         failedTool ??= `${tool.spec.name}: ${error instanceof Error ? error.message : String(error)}`;
         if (error instanceof WorkerBoundaryError) onBoundaryViolation(error);
         throw error;
@@ -441,11 +468,20 @@ const runCliWorker = async (
       instructionDeliveryPlan: options.instructionDeliveryPlan,
       scopedWorkerToolDefinitions: trackedTools,
       onScopedWorkerToolResult: (name, result) => {
+        options.onStreamActivity?.();
         if (result.toolResult.isError)
           failedTool ??= `${name}: ${result.toolResult.output.slice(0, 300)}`;
       },
+      ...(options.onStreamActivity
+        ? { onStreamActivity: options.onStreamActivity }
+        : {}),
+      onActionOutput: ({ chunk }) => {
+        if (chunk.trim()) options.onStreamActivity?.();
+      },
       signal,
     });
+    if (signal.aborted)
+      throw signal.reason ?? new Error("Parallel work was cancelled.");
     if (!result || result.status !== "executed") {
       throw new Error(
         result?.summary ?? `Worker ${worker.id} could not start.`,
@@ -488,6 +524,8 @@ const runWorker = async (
   answer: string;
   toolCalls: number;
 }> => {
+  if (signal.aborted)
+    throw signal.reason ?? new Error("Parallel work was cancelled.");
   const tools = createWorkerTools(options, worker, scopedReads);
   if (
     isAgentCliProvider(options.config.provider) &&
@@ -564,6 +602,7 @@ const runWorker = async (
             userPrompt,
             tools: specs,
             signal,
+            onStreamEvent: () => options.onStreamActivity?.(),
             ...(onRequestAttempt ? { onRequestAttempt } : {}),
           }),
       ),
@@ -667,6 +706,7 @@ const runWorker = async (
             adapter.continueTurn({
               toolResults: results,
               signal,
+              onStreamEvent: () => options.onStreamActivity?.(),
               ...(onRequestAttempt ? { onRequestAttempt } : {}),
             }),
         ),
@@ -790,15 +830,21 @@ export const createParallelAgentSessionTool = (
                 once: true,
               });
               if (controller.signal.aborted) onGroupAbort();
-              const deadline = setTimeout(
-                () =>
-                  workerController.abort(
-                    new Error(`Worker ${worker.id} timed out.`),
-                  ),
-                MAX_WORKER_DURATION_MS,
+              const timeout = createManagedTaskExecutionTimeout(
+                workerController.signal,
+                resolveTaskExecutionTimeouts({}),
               );
+              const markActivity = () => {
+                if (timeout.signal.aborted) return;
+                timeout.markActivity();
+                options.onStreamActivity?.();
+              };
+              const workerOptions: ParallelAgentSessionOptions = {
+                ...options,
+                onStreamActivity: markActivity,
+              };
               try {
-                reportWorkerProgress(options, {
+                reportWorkerProgress(workerOptions, {
                   kind: "agent",
                   phase: "started",
                   label: `Agent ${worker.id}`,
@@ -807,8 +853,8 @@ export const createParallelAgentSessionTool = (
                 });
                 const result = await runWorker(
                   worker,
-                  options,
-                  workerController.signal,
+                  workerOptions,
+                  timeout.signal,
                   scopedReads,
                   (error) => controller.abort(error),
                 );
@@ -832,9 +878,9 @@ export const createParallelAgentSessionTool = (
                 });
                 throw error;
               } finally {
-                clearTimeout(deadline);
                 controller.signal.removeEventListener("abort", onGroupAbort);
                 workerController.abort();
+                timeout.cleanup();
               }
             }),
           );

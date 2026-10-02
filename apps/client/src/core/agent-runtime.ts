@@ -2496,10 +2496,12 @@ export const maybeExecuteModelDrivenTask = async (
             preparedConversationContext,
             ...(adaptivePlan ? { maxWorkers: adaptivePlan.maxWorkers } : {}),
             ...(params.signal ? { signal: params.signal } : {}),
+            ...(params.onStreamActivity
+              ? { onStreamActivity: params.onStreamActivity }
+              : {}),
             ...(params.onStateChange || params.onStreamActivity
               ? {
                   onProgress: (timelineEvent: ProgressTimelineEvent) => {
-                    params.onStreamActivity?.();
                     return params.onStateChange?.({
                       task: params.task,
                       mode: executionConfig.mode,
