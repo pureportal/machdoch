@@ -1,4 +1,5 @@
 import { useMediaViewPreference } from "../use-media-view-preference";
+import { openMediaModelProfile } from "../../../../core/media/open-model-profiles.js";
 import { MediaAssetBrowser } from "./media-asset-browser";
 import { MediaBasicImageOutputOptions } from "./media-basic-image-output-options";
 import { MediaBasicSamplingOptions } from "./media-basic-sampling-options";
@@ -406,6 +407,8 @@ export const MediaGenerateView = ({
     settings.poseImageAssetId !== null;
   const promptReady =
     isSvgVectorization ||
+    (target === "video" &&
+      openMediaModelProfile(selectedModel?.architecture)?.prompt === false) ||
     settings.prompt.trim().length > 0 ||
     (target === "image" &&
       mediaModelSupportsPromptlessConditioning(
@@ -423,6 +426,7 @@ export const MediaGenerateView = ({
   const seamlessSupported =
     selectedModel?.capabilities.includes("start-end-to-video") === true;
   const minimaxH3 = selectedModel?.architecture === "minimax-h3-ref2va";
+  const videoProfile = openMediaModelProfile(selectedModel?.architecture);
   const videoFpsError =
     target === "video" && minimaxH3 && videoSettings.fps !== 24
       ? "MiniMax H3 requires 24 fps."
@@ -430,7 +434,9 @@ export const MediaGenerateView = ({
   const videoLoopError =
     target === "video" &&
     selectedModel !== null &&
-    ((minimaxH3 && (videoSettings.loopMode !== "none" || videoSettings.transparentBackground)) ||
+    ((minimaxH3 &&
+      (videoSettings.loopMode !== "none" ||
+        videoSettings.transparentBackground)) ||
       (videoSettings.loopMode === "seamless" && !seamlessSupported))
       ? minimaxH3
         ? "MiniMax H3 requires opaque, non-looping video."
@@ -587,7 +593,8 @@ export const MediaGenerateView = ({
           selectedVideoPreset ?? MEDIA_VIDEO_QUALITY_PRESETS[0]!,
           model?.architecture,
         ),
-        ...(model?.architecture === "minimax-h3-ref2va"
+        ...(model?.architecture === "minimax-h3-ref2va" ||
+        openMediaModelProfile(model?.architecture)?.video
           ? { loopMode: "none" as const, transparentBackground: false }
           : {}),
         modelId: modelId as MediaVideoRecipeSettings["modelId"],
@@ -1290,30 +1297,35 @@ export const MediaGenerateView = ({
                                   ))}
                                 </select>
                               </label>
-                              {!minimaxH3 ? <label className="space-y-1 text-xs text-slate-400">
-                                <span>Loop</span>
-                                <select
-                                  value={videoSettings.loopMode}
-                                  onChange={(event) =>
-                                    onVideoSettingsChange({
-                                      ...videoSettings,
-                                      loopMode: event.target
-                                        .value as MediaVideoRecipeSettings["loopMode"],
-                                    })
-                                  }
-                                  className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-slate-200"
-                                >
-                                  <option value="none">None</option>
-                                  <option value="crossfade">Crossfade</option>
-                                  <option
-                                    value="seamless"
-                                    disabled={!seamlessSupported}
+                              {!minimaxH3 && !videoProfile?.audio ? (
+                                <label className="space-y-1 text-xs text-slate-400">
+                                  <span>Loop</span>
+                                  <select
+                                    value={videoSettings.loopMode}
+                                    onChange={(event) =>
+                                      onVideoSettingsChange({
+                                        ...videoSettings,
+                                        loopMode: event.target
+                                          .value as MediaVideoRecipeSettings["loopMode"],
+                                      })
+                                    }
+                                    className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-slate-200"
                                   >
-                                    Seamless
-                                  </option>
-                                  <option value="ping-pong">Ping-pong</option>
-                                </select>
-                              </label> : null}
+                                    <option value="none">None</option>
+                                    <option value="crossfade">Crossfade</option>
+                                    <option
+                                      value="seamless"
+                                      disabled={
+                                        !seamlessSupported ||
+                                        Boolean(videoProfile?.video)
+                                      }
+                                    >
+                                      Seamless
+                                    </option>
+                                    <option value="ping-pong">Ping-pong</option>
+                                  </select>
+                                </label>
+                              ) : null}
                               <label className="space-y-1 text-xs text-slate-400">
                                 <span>Quality</span>
                                 <select
@@ -1349,20 +1361,24 @@ export const MediaGenerateView = ({
                                   ))}
                                 </select>
                               </label>
-                              {!minimaxH3 ? <label className="flex items-center gap-2 self-end pb-2 text-xs text-slate-300">
-                                <input
-                                  type="checkbox"
-                                  checked={videoSettings.transparentBackground}
-                                  onChange={(event) =>
-                                    onVideoSettingsChange({
-                                      ...videoSettings,
-                                      transparentBackground:
-                                        event.target.checked,
-                                    })
-                                  }
-                                />
-                                Transparent background
-                              </label> : null}
+                              {!minimaxH3 && !videoProfile?.video ? (
+                                <label className="flex items-center gap-2 self-end pb-2 text-xs text-slate-300">
+                                  <input
+                                    type="checkbox"
+                                    checked={
+                                      videoSettings.transparentBackground
+                                    }
+                                    onChange={(event) =>
+                                      onVideoSettingsChange({
+                                        ...videoSettings,
+                                        transparentBackground:
+                                          event.target.checked,
+                                      })
+                                    }
+                                  />
+                                  Transparent background
+                                </label>
+                              ) : null}
                             </>
                           ) : target === "svg" ? (
                             <>

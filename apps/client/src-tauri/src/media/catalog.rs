@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{borrow::Cow, collections::HashSet};
 
 use rusqlite::{params, Connection};
 
@@ -8,10 +8,13 @@ use super::{
     MediaModelManagement, MediaProviderCatalogEntry, MediaResult,
 };
 
-pub(crate) const CATALOG_REVISION: &str = "builtin-2026-09-17-image-2.5-codex";
+pub(crate) const CATALOG_REVISION: &str = "builtin-2026-10-02-open-media";
 const CATALOG_CHECKED_AT: &str = "2026-07-15T00:00:00.000Z";
 const WEEK_SECONDS: u64 = 7 * 24 * 60 * 60;
 const MONTH_SECONDS: u64 = 30 * 24 * 60 * 60;
+
+#[path = "catalog_open.rs"]
+mod open;
 
 struct BuiltinProvider {
     id: &'static str,
@@ -31,7 +34,7 @@ struct BuiltinModel {
     family: &'static str,
     target: &'static str,
     lifecycle: &'static str,
-    capabilities: &'static [&'static str],
+    capabilities: Cow<'static, [&'static str]>,
     bundled: bool,
     package_type: &'static str,
     architecture: Option<&'static str>,
@@ -185,7 +188,7 @@ const MODELS: &[BuiltinModel] = &[
         family: "OpenAI GPT Image",
         target: "remote",
         lifecycle: "active",
-        capabilities: IMAGE_GENERATION_CAPABILITIES,
+        capabilities: Cow::Borrowed(IMAGE_GENERATION_CAPABILITIES),
         bundled: false,
         package_type: "remote-endpoint",
         architecture: None,
@@ -213,7 +216,7 @@ const MODELS: &[BuiltinModel] = &[
         family: "Codex image generation",
         target: "remote",
         lifecycle: "active",
-        capabilities: &["text-to-image"],
+        capabilities: Cow::Borrowed(&["text-to-image"]),
         bundled: false,
         package_type: "agent-cli",
         architecture: None,
@@ -240,7 +243,7 @@ const MODELS: &[BuiltinModel] = &[
         family: "Quiver Arrow",
         target: "remote",
         lifecycle: "preview",
-        capabilities: GUIDED_SVG_GENERATION_CAPABILITIES,
+        capabilities: Cow::Borrowed(GUIDED_SVG_GENERATION_CAPABILITIES),
         bundled: false,
         package_type: "remote-endpoint",
         architecture: None,
@@ -267,7 +270,7 @@ const MODELS: &[BuiltinModel] = &[
         family: "Quiver Arrow",
         target: "remote",
         lifecycle: "preview",
-        capabilities: GUIDED_SVG_GENERATION_CAPABILITIES,
+        capabilities: Cow::Borrowed(GUIDED_SVG_GENERATION_CAPABILITIES),
         bundled: false,
         package_type: "remote-endpoint",
         architecture: None,
@@ -294,7 +297,7 @@ const MODELS: &[BuiltinModel] = &[
         family: "Recraft V4.1 Vector",
         target: "remote",
         lifecycle: "active",
-        capabilities: SVG_VECTORIZATION_CAPABILITIES,
+        capabilities: Cow::Borrowed(SVG_VECTORIZATION_CAPABILITIES),
         bundled: false,
         package_type: "remote-endpoint",
         architecture: None,
@@ -321,7 +324,7 @@ const MODELS: &[BuiltinModel] = &[
         family: "Recraft V4.1 Vector",
         target: "remote",
         lifecycle: "active",
-        capabilities: SVG_VECTORIZATION_CAPABILITIES,
+        capabilities: Cow::Borrowed(SVG_VECTORIZATION_CAPABILITIES),
         bundled: false,
         package_type: "remote-endpoint",
         architecture: None,
@@ -348,7 +351,7 @@ const MODELS: &[BuiltinModel] = &[
         family: "IntroSVG",
         target: "local",
         lifecycle: "preview",
-        capabilities: GUIDED_SVG_GENERATION_CAPABILITIES,
+        capabilities: Cow::Borrowed(GUIDED_SVG_GENERATION_CAPABILITIES),
         bundled: false,
         package_type: "transformers",
         architecture: Some("intro-svg"),
@@ -375,7 +378,7 @@ const MODELS: &[BuiltinModel] = &[
         family: "InternSVG",
         target: "local",
         lifecycle: "preview",
-        capabilities: GUIDED_SVG_GENERATION_CAPABILITIES,
+        capabilities: Cow::Borrowed(GUIDED_SVG_GENERATION_CAPABILITIES),
         bundled: false,
         package_type: "remote-endpoint",
         architecture: None,
@@ -402,7 +405,7 @@ const MODELS: &[BuiltinModel] = &[
         family: "VFIG",
         target: "local",
         lifecycle: "preview",
-        capabilities: GUIDED_SVG_GENERATION_CAPABILITIES,
+        capabilities: Cow::Borrowed(GUIDED_SVG_GENERATION_CAPABILITIES),
         bundled: false,
         package_type: "remote-endpoint",
         architecture: None,
@@ -429,7 +432,7 @@ const MODELS: &[BuiltinModel] = &[
         family: "FLUX.2 klein",
         target: "local",
         lifecycle: "active",
-        capabilities: FLUX_2_IMAGE_GENERATION_CAPABILITIES,
+        capabilities: Cow::Borrowed(FLUX_2_IMAGE_GENERATION_CAPABILITIES),
         bundled: false,
         package_type: "diffusers",
         architecture: Some("flux-2"),
@@ -456,7 +459,7 @@ const MODELS: &[BuiltinModel] = &[
         family: "Wan2.2",
         target: "local",
         lifecycle: "active",
-        capabilities: &["text-to-video", "image-to-video", "start-end-to-video", "transparent-output", "alpha-video", "video-composite"],
+        capabilities: Cow::Borrowed(&["text-to-video", "image-to-video", "start-end-to-video", "transparent-output", "alpha-video", "video-composite"]),
         bundled: false,
         package_type: "diffusers",
         architecture: Some("wan-2.2-ti2v"),
@@ -483,7 +486,7 @@ const MODELS: &[BuiltinModel] = &[
         family: "Machdoch border matte",
         target: "local",
         lifecycle: "active",
-        capabilities: &["background-remove", "transparent-output"],
+        capabilities: Cow::Borrowed(&["background-remove", "transparent-output"]),
         bundled: true,
         package_type: "native-utility",
         architecture: None,
@@ -510,7 +513,7 @@ const MODELS: &[BuiltinModel] = &[
         family: "BiRefNet",
         target: "local",
         lifecycle: "active",
-        capabilities: &["background-remove", "transparent-output"],
+        capabilities: Cow::Borrowed(&["background-remove", "transparent-output"]),
         bundled: false,
         package_type: "onnx",
         architecture: None,
@@ -537,7 +540,7 @@ const MODELS: &[BuiltinModel] = &[
         family: "Machdoch media utility",
         target: "local",
         lifecycle: "active",
-        capabilities: &["image-quality-analysis"],
+        capabilities: Cow::Borrowed(&["image-quality-analysis"]),
         bundled: true,
         package_type: "native-utility",
         architecture: None,
@@ -600,13 +603,13 @@ pub(crate) fn synchronize(connection: &mut Connection) -> MediaResult<()> {
             )
             .map_err(|error| format!("failed to synchronize media provider: {error}"))?;
     }
-    for model in MODELS {
+    for model in MODELS.iter().chain(open::models()) {
         let checked_at = if matches!(model.provider_id, "openai" | "codex-cli") {
             "2026-09-17T00:00:00.000Z"
         } else {
             CATALOG_CHECKED_AT
         };
-        let capabilities_json = serde_json::to_string(model.capabilities)
+        let capabilities_json = serde_json::to_string(&model.capabilities)
             .map_err(|error| format!("failed to encode model capabilities: {error}"))?;
         let addon_capabilities_json = serde_json::to_string(&model_addon::capabilities_for_model(
             model.provider_id,
@@ -730,7 +733,11 @@ pub(crate) fn synchronize(connection: &mut Connection) -> MediaResult<()> {
             )
             .map_err(|error| format!("failed to reconcile imported media model: {error}"))?;
     }
-    let known_model_ids = MODELS.iter().map(|model| model.id).collect::<HashSet<_>>();
+    let known_model_ids = MODELS
+        .iter()
+        .chain(open::models())
+        .map(|model| model.id)
+        .collect::<HashSet<_>>();
     let stored_model_ids = {
         let mut statement = transaction
             .prepare("SELECT id FROM media_models")
@@ -1000,7 +1007,10 @@ pub(crate) fn snapshot(
                         acquisition: "external-runtime".to_string(),
                         verification: "none".to_string(),
                     }
-                } else if user_imported {
+                } else if user_imported
+                    || (super::open_models::by_id(&id).is_some()
+                        && !super::model_install::has_manifest(&id))
+                {
                     MediaModelManagement {
                         acquisition: "file-import".to_string(),
                         verification: "model-probe".to_string(),

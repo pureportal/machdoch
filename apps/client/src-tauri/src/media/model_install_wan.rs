@@ -13,8 +13,8 @@ pub(super) const WAN_MANIFEST: BuiltinModelManifest = BuiltinModelManifest {
     license_source_url: "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers/resolve/b8fff7315c768468a5333511427288870b2e9635/README.md",
     license_requires_acceptance: false,
     package_description: "Wan 2.2 TI2V-5B Diffusers package",
-    excluded_paths: &["repository documentation and examples"],
-    files: &[
+    excluded_paths: std::borrow::Cow::Borrowed(&["repository documentation and examples"]),
+    files: std::borrow::Cow::Borrowed(&[
         ManifestFile {
             path: "README.md",
             byte_size: 17633,
@@ -120,5 +120,5 @@ pub(super) const WAN_MANIFEST: BuiltinModelManifest = BuiltinModelManifest {
             byte_size: 2818777808,
             sha256: "62cd18f19438e35b32ac63020e2852f566e9b02f46b6cdbd87972a356e3c6f4b",
         },
-    ],
+    ]),
 };

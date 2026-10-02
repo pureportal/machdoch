@@ -194,6 +194,7 @@ export const createLocalFluxInstallPlan = ({
     availableBytes,
     hasSufficientSpace,
     alreadyInstalled,
+    activeJob: null,
     license: {
       name: "Apache License 2.0",
       spdxId: "Apache-2.0",
@@ -264,6 +265,7 @@ export const createLocalBiRefNetInstallPlan = ({
     availableBytes,
     hasSufficientSpace,
     alreadyInstalled,
+    activeJob: null,
     license: {
       name: "MIT License",
       spdxId: "MIT",

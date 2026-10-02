@@ -132,10 +132,23 @@ describe("MediaAssetsView discovery", () => {
     const pose = {
       ...asset,
       id: "asset:pose",
-      tags: [{ value: "openpose", label: "OpenPose", source: "technical" as const, confidence: 1, createdAt: asset.createdAt }],
+      tags: [
+        {
+          value: "openpose",
+          label: "OpenPose",
+          source: "technical" as const,
+          confidence: 1,
+          createdAt: asset.createdAt,
+        },
+      ],
     };
     const onUseAsPose = vi.fn();
-    render(createElement(MediaAssetsView, createProps({ assets: [asset, pose], onUseAsPose })));
+    render(
+      createElement(
+        MediaAssetsView,
+        createProps({ assets: [asset, pose], onUseAsPose }),
+      ),
+    );
     fireEvent.click(screen.getByRole("button", { name: "OpenPose" }));
     expect(screen.getAllByRole("button", { name: /^View / })).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Use as pose" }));
@@ -750,4 +763,16 @@ describe("asset copy actions", () => {
     expect(writeText).toHaveBeenLastCalledWith(asset.id);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+});
+
+it("shows uninstalled models and download actions in Models", () => {
+  const catalog = createMediaModelCatalogSnapshot({
+    isOpenAiConfigured: false,
+  });
+  render(createElement(MediaAssetsView, createProps({ catalog })));
+  fireEvent.click(screen.getByRole("button", { name: "Models" }));
+  expect(screen.getByText("Z-Image-Turbo")).toBeTruthy();
+  expect(
+    screen.getAllByRole("button", { name: "Download model" }).length,
+  ).toBeGreaterThan(10);
 });

@@ -880,6 +880,57 @@ fn diffusers_artifact(
         .get("_class_name")
         .and_then(Value::as_str)
         .unwrap_or("");
+    let reviewed_wan_ti2v = class_name == "WanPipeline"
+        && !model_index
+            .get("transformer_2")
+            .is_some_and(Value::is_array)
+        && read_json(
+            &directory.join("transformer/config.json"),
+            "Wan transformer config",
+        )
+        .is_ok_and(|config| {
+            config["num_layers"].as_u64() == Some(30)
+                && config["num_attention_heads"].as_u64() == Some(24)
+        });
+    if !reviewed_wan_ti2v
+        && super::open_models::profiles()
+            .iter()
+            .any(|profile| profile.pipeline == class_name)
+    {
+        let inspection = super::model_package_import::inspect(directory);
+        let architecture = inspection
+            .as_ref()
+            .ok()
+            .and_then(|inspection| inspection.detected_architecture.clone());
+        let capabilities = architecture
+            .as_deref()
+            .and_then(super::open_models::by_architecture)
+            .map(|profile| profile.capabilities.clone())
+            .unwrap_or_default();
+        return Ok(MediaDiscoveredModelArtifact {
+            path: directory.display().to_string(),
+            relative_path: relative_display(models_root, directory),
+            display_name: directory
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or(class_name)
+                .replace(['_', '-'], " "),
+            kind: "diffusers-model".to_string(),
+            status: if inspection.is_ok() {
+                "importable"
+            } else {
+                "incomplete"
+            }
+            .to_string(),
+            architecture,
+            byte_size: inventory.byte_size,
+            file_count: inventory.file_count,
+            capabilities,
+            diagnostic: inspection
+                .map(|_| "Import this model folder to use it in Studio.".to_string())
+                .unwrap_or_else(|error| error),
+        });
+    }
     if class_name == "WanPipeline" {
         return wan_artifact(models_root, directory, &model_index, inventory);
     }
@@ -1848,20 +1899,21 @@ mod tests {
     }
 
     #[test]
-    fn a_different_wan_pipeline_variant_is_visible_but_not_executable() {
+    fn an_incomplete_wan_variant_is_visible_without_guessing_its_architecture() {
         let root = test_workspace();
         write_wan_package(&root, "wan-14b-or-future", 40);
 
         let result = discover(root.to_string_lossy().as_ref())
-            .expect("incompatible package should not abort discovery");
+            .expect("incomplete package should not abort discovery");
         let artifact = result
             .entries
             .iter()
             .find(|entry| entry.relative_path == "wan-14b-or-future")
-            .expect("incompatible Wan package should remain visible");
-        assert_eq!(artifact.status, "incompatible");
-        assert_eq!(artifact.architecture.as_deref(), Some("wan"));
-        assert!(artifact.diagnostic.contains("does not match"));
+            .expect("incomplete Wan package should remain visible");
+        assert_eq!(artifact.status, "incomplete");
+        assert_eq!(artifact.architecture, None);
+        assert!(artifact.capabilities.is_empty());
+        assert!(artifact.diagnostic.contains("safetensors"));
 
         fs::remove_dir_all(root).expect("test workspace should be removed");
     }

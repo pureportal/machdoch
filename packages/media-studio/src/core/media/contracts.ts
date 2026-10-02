@@ -1,5 +1,16 @@
-export { MEDIA_POSE_BONES, isMediaPoseMap, mediaPoseJoints, renderMediaPoseSvg } from "./pose-map.js";
-export type { MediaPoseJoint, MediaPoseKind, MediaPoseMap, MediaPosePerson, MediaSavedPoseScene } from "./pose-map.js";
+export {
+  MEDIA_POSE_BONES,
+  isMediaPoseMap,
+  mediaPoseJoints,
+  renderMediaPoseSvg,
+} from "./pose-map.js";
+export type {
+  MediaPoseJoint,
+  MediaPoseKind,
+  MediaPoseMap,
+  MediaPosePerson,
+  MediaSavedPoseScene,
+} from "./pose-map.js";
 
 export type MediaAssetKind =
   | "prompt"
@@ -924,6 +935,7 @@ export interface MediaModelInstallPlan {
   availableBytes: number | null;
   hasSufficientSpace: boolean | null;
   alreadyInstalled: boolean;
+  activeJob: MediaModelInstallJob | null;
   license: MediaModelLicense;
   warnings: string[];
 }
@@ -1095,6 +1107,7 @@ export type MediaVideoModelId =
   | "local:ltx-video-0.9.8-13b-distilled-fp8"
   | "local:ltx-video-0.9.8-2b-distilled-fp8"
   | "local:wan2.2-ti2v-5b"
+  | `local:${string}`
   | `local:user:${string}`;
 
 export interface MediaVideoRecipeSettings {
@@ -1403,7 +1416,12 @@ export interface MediaRunPlanSnapshot {
   steps: MediaExecutionStep[];
 }
 
-export type MediaStudioSection = "generate" | "flow" | "train" | "library" | "runs";
+export type MediaStudioSection =
+  | "generate"
+  | "flow"
+  | "train"
+  | "library"
+  | "runs";
 
 export type MediaRunStatus =
   | "draft"
@@ -1857,10 +1875,10 @@ export interface MediaLocalWanVideoGenerationOperation {
   numInferenceSteps: number;
   transparentBackground: boolean;
   memoryProfile: "auto" | "memory-saver" | "balanced" | "maximum-speed";
-  firstFrameAssetId: string;
-  firstFrameDigest: string;
-  lastFrameAssetId: string;
-  lastFrameDigest: string;
+  firstFrameAssetId: string | null;
+  firstFrameDigest: string | null;
+  lastFrameAssetId: string | null;
+  lastFrameDigest: string | null;
   sameEndpointConditioning: boolean;
   output:
     | {
@@ -1942,7 +1960,11 @@ export interface MediaLocalVideoGenerationOperation extends Omit<
     | "local:minimax-h3-ref2va"
     | "local:ltx-video-0.9.8-13b-distilled-fp8"
     | "local:ltx-video-0.9.8-2b-distilled-fp8";
-  architecture: "framepack-i2v" | "hunyuan-video-1.5-i2v" | "minimax-h3-ref2va" | "ltx-video";
+  architecture:
+    | "framepack-i2v"
+    | "hunyuan-video-1.5-i2v"
+    | "minimax-h3-ref2va"
+    | "ltx-video";
   conv3dBackend: "aten-native-hip" | "cudnn" | "cpu-native" | "mps-native";
   conditioningMode:
     | "framepack-inverted-anti-drifting-first-last"
@@ -2560,8 +2582,8 @@ export interface GenerateMediaVideoRequest {
   modelLabel: string;
   diagnosticCount: number;
   workspaceRoot: string;
-  firstFrameAssetId: string;
-  lastFrameAssetId: string;
+  firstFrameAssetId: string | null;
+  lastFrameAssetId: string | null;
   aspectRatio: "1:1" | "16:9" | "9:16" | "21:9";
   resolution: "preview-512" | "quality-640" | "quality-768" | "quality-2k";
   outputFormat: "webm";

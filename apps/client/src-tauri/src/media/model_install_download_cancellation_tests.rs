@@ -81,7 +81,7 @@ impl TransportFixture {
     fn manifest(&self) -> BuiltinModelManifest {
         BuiltinModelManifest {
             download_root: self.download_root,
-            files: &[DOWNLOAD_FILE],
+            files: std::borrow::Cow::Borrowed(&[DOWNLOAD_FILE]),
             ..FLUX_MANIFEST
         }
     }

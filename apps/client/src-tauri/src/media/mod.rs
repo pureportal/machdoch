@@ -29,8 +29,10 @@ mod model_discovery;
 mod model_import;
 mod model_install;
 pub(crate) mod model_memory;
+mod model_package_import;
 mod model_resource_edit;
 mod model_worker;
+mod open_models;
 mod pose_map;
 mod provider_codex;
 mod provider_images;
@@ -631,6 +633,7 @@ pub(crate) struct MediaModelInstallPlan {
     available_bytes: Option<u64>,
     has_sufficient_space: Option<bool>,
     already_installed: bool,
+    active_job: Option<MediaModelInstallJob>,
     license: MediaModelLicense,
     warnings: Vec<String>,
 }
@@ -1437,8 +1440,8 @@ pub(crate) struct GenerateMediaVideoRequest {
     model_label: String,
     diagnostic_count: u32,
     workspace_root: String,
-    first_frame_asset_id: String,
-    last_frame_asset_id: String,
+    first_frame_asset_id: Option<String>,
+    last_frame_asset_id: Option<String>,
     aspect_ratio: String,
     resolution: String,
     output_format: String,
@@ -2300,14 +2303,55 @@ impl GenerateMediaVideoRequest {
         self.flow_revision_id = required_text("flowRevisionId", &self.flow_revision_id, 128)?;
         self.flow_name = required_text("flowName", &self.flow_name, 256)?;
         self.plan_id = required_text("planId", &self.plan_id, 128)?;
-        self.prompt = required_text("prompt", &self.prompt, 8_000)?;
+        self.prompt = self.prompt.trim().to_string();
+        if self.prompt.chars().count() > 8_000 {
+            return Err("prompt exceeds 8000 characters".to_string());
+        }
         self.model_id = required_text("modelId", &self.model_id, 128)?;
         self.model_label = required_text("modelLabel", &self.model_label, 256)?;
         self.workspace_root = required_text("workspaceRoot", &self.workspace_root, 4_096)?;
-        self.first_frame_asset_id =
-            required_text("firstFrameAssetId", &self.first_frame_asset_id, 256)?;
-        self.last_frame_asset_id =
-            required_text("lastFrameAssetId", &self.last_frame_asset_id, 256)?;
+        self.first_frame_asset_id = self
+            .first_frame_asset_id
+            .as_deref()
+            .map(|value| required_text("firstFrameAssetId", value, 256))
+            .transpose()?;
+        self.last_frame_asset_id = self
+            .last_frame_asset_id
+            .as_deref()
+            .map(|value| required_text("lastFrameAssetId", value, 256))
+            .transpose()?;
+        let open_profile =
+            open_models::by_id(&self.model_id).filter(|profile| profile.video.is_some());
+        if self.prompt.is_empty()
+            && open_profile.is_none_or(|profile| profile.prompt)
+            && !self
+                .model_id
+                .starts_with(model_import::USER_MODEL_ID_PREFIX)
+        {
+            return Err("Describe the video to generate".to_string());
+        }
+        let imported = self
+            .model_id
+            .starts_with(model_import::USER_MODEL_ID_PREFIX);
+        if open_profile.is_none()
+            && !imported
+            && (self.first_frame_asset_id.is_none() || self.last_frame_asset_id.is_none())
+        {
+            return Err("Choose both video frame inputs".to_string());
+        }
+        if self.last_frame_asset_id.is_some() && self.first_frame_asset_id.is_none() {
+            return Err("Choose an opening image before a closing image".to_string());
+        }
+        if let Some(profile) = open_profile {
+            if let Some(error) = open_models::video_settings_error(
+                profile,
+                self.num_frames,
+                self.num_inference_steps,
+                self.guidance_scale,
+            ) {
+                return Err(error);
+            }
+        }
         let ltx_video = matches!(
             self.model_id.as_str(),
             "local:ltx-video-0.9.8-13b-distilled-fp8" | "local:ltx-video-0.9.8-2b-distilled-fp8"
@@ -2315,7 +2359,8 @@ impl GenerateMediaVideoRequest {
         let framepack_video = self.model_id == "local:framepack-i2v-hy-13b";
         let hunyuan_video = self.model_id == "local:hunyuan-video-1.5-i2v-step-distilled";
         let minimax_h3 = self.model_id == "local:minimax-h3-ref2va";
-        if !framepack_video
+        if open_profile.is_none()
+            && !framepack_video
             && !hunyuan_video
             && !minimax_h3
             && !ltx_video
@@ -2402,7 +2447,9 @@ impl GenerateMediaVideoRequest {
                 "MiniMax H3 numFrames must be 124 through 362 in the 17n+5 form".to_string(),
             );
         }
-        if !ltx_video
+        if open_profile.is_none()
+            && !imported
+            && !ltx_video
             && !minimax_h3
             && (!(17..=maximum_frames).contains(&self.num_frames)
                 || !(self.num_frames - 1).is_multiple_of(4))
@@ -2418,14 +2465,20 @@ impl GenerateMediaVideoRequest {
                 }
             ));
         }
+        if !(1..=100).contains(&self.num_inference_steps) || !(1..=362).contains(&self.num_frames) {
+            return Err("Video sampling settings are out of range".to_string());
+        }
         let maximum_steps = if ltx_video { 10 } else { 50 };
-        if !(4..=maximum_steps).contains(&self.num_inference_steps) {
+        if open_profile.is_none()
+            && !imported
+            && !(4..=maximum_steps).contains(&self.num_inference_steps)
+        {
             return Err(format!(
                 "numInferenceSteps must be between 4 and {}",
                 if ltx_video { 10 } else { 50 }
             ));
         }
-        if !self.guidance_scale.is_finite() || !(1.0..=10.0).contains(&self.guidance_scale) {
+        if !self.guidance_scale.is_finite() || !(0.0..=20.0).contains(&self.guidance_scale) {
             return Err("guidanceScale must be between 1 and 10".to_string());
         }
         if self.seed > 9_007_199_254_740_991 {

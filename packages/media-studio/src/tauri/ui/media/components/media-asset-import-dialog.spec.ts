@@ -106,7 +106,9 @@ beforeEach(() => {
 
 describe("MediaAssetImportDialog", () => {
   it("accepts an existing file path on the connected client", async () => {
-    const remote = vi.spyOn(mediaPlatform, "isRemoteMedia").mockReturnValue(true);
+    const remote = vi
+      .spyOn(mediaPlatform, "isRemoteMedia")
+      .mockReturnValue(true);
     try {
       const props = createProps();
       render(createElement(MediaAssetImportDialog, props));
@@ -260,4 +262,20 @@ describe("MediaAssetImportDialog", () => {
     expect(onImportModel).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledOnce();
   });
+});
+
+it("inspects a complete model folder selected through the directory picker", async () => {
+  const props = createProps();
+  runtimeMocks.openDialog.mockResolvedValue("C:\\models\\z-image-turbo");
+  render(createElement(MediaAssetImportDialog, props));
+  fireEvent.click(screen.getByRole("button", { name: "Model folder" }));
+  await waitFor(() =>
+    expect(props.onInspectModel).toHaveBeenCalledWith(
+      "C:\\models\\z-image-turbo",
+    ),
+  );
+  expect(runtimeMocks.openDialog).toHaveBeenCalledWith(
+    expect.objectContaining({ directory: true, multiple: false }),
+  );
+  expect(screen.getByRole("button", { name: "Import model" })).toBeTruthy();
 });

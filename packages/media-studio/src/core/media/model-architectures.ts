@@ -1,4 +1,5 @@
 import type { MediaLocalModelArchitecture } from "./contracts.js";
+import { OPEN_MEDIA_MODEL_PROFILES } from "./open-model-profiles.js";
 
 export const MEDIA_MODEL_ARCHITECTURES: ReadonlyArray<{
   value: MediaLocalModelArchitecture;
@@ -18,4 +19,8 @@ export const MEDIA_MODEL_ARCHITECTURES: ReadonlyArray<{
   { value: "framepack-i2v", label: "FramePack" },
   { value: "hunyuan-video-1.5-i2v", label: "HunyuanVideo 1.5" },
   { value: "minimax-h3-ref2va", label: "MiniMax H3" },
+  ...OPEN_MEDIA_MODEL_PROFILES.map((profile) => ({
+    value: profile.architecture,
+    label: profile.displayName,
+  })),
 ];

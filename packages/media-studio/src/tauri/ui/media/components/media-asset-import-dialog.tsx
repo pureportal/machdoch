@@ -141,6 +141,7 @@ export const MediaAssetImportDialog = ({
   onClose,
 }: MediaAssetImportDialogProps): JSX.Element => {
   const [path, setPath] = useState("");
+  const [modelFolder, setModelFolder] = useState(false);
   const [hostPath, setHostPath] = useState("");
   const [importType, setImportType] = useState<MediaAssetImportType | null>(
     null,
@@ -166,7 +167,9 @@ export const MediaAssetImportDialog = ({
   );
   const importIsAddon = importType === "lora" || importType === "embedding";
   const importIsGenerationAsset = importType === "model" || importIsAddon;
-  const compatibleImportTypes = listCompatibleMediaAssetImportTypes(path);
+  const compatibleImportTypes: readonly MediaAssetImportType[] = modelFolder
+    ? ["model"]
+    : listCompatibleMediaAssetImportTypes(path);
   const requestedAddonKind =
     importType === "lora"
       ? "lora"
@@ -241,13 +244,16 @@ export const MediaAssetImportDialog = ({
   };
 
   const selectPath = useCallback(
-    (selectedPath: string): void => {
+    (selectedPath: string, folder = false): void => {
       resetFields();
+      setModelFolder(folder);
       setPath(selectedPath);
       const prefill = parseMediaAssetImportFilename(selectedPath);
       setDisplayName(prefill.displayName);
       setArchitecture(prefill.architecture);
-      const inferredType = inferMediaAssetImportType(selectedPath);
+      const inferredType = folder
+        ? "model"
+        : inferMediaAssetImportType(selectedPath);
       setImportType(inferredType);
       if (inferredType === "model") onInspectModel(selectedPath);
       if (inferredType === "lora" || inferredType === "embedding") {
@@ -278,11 +284,28 @@ export const MediaAssetImportDialog = ({
     }
   };
 
+  const chooseModelFolder = async (): Promise<void> => {
+    setFileError(null);
+    try {
+      const selected = await openDialog({
+        title: "Import model folder",
+        multiple: false,
+        directory: true,
+      });
+      if (typeof selected === "string") selectPath(selected, true);
+    } catch {
+      setFileError("The folder picker could not be opened. Try again.");
+    }
+  };
+
   const initialPathHandled = useRef(false);
   useEffect(() => {
     if (initialPath && !initialPathHandled.current) {
       initialPathHandled.current = true;
-      selectPath(initialPath);
+      selectPath(
+        initialPath,
+        listCompatibleMediaAssetImportTypes(initialPath).length === 0,
+      );
     }
   }, [initialPath, selectPath]);
 
@@ -567,6 +590,14 @@ export const MediaAssetImportDialog = ({
                 </div>
               ) : null}
             </button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={loading}
+              onClick={() => void chooseModelFolder()}
+            >
+              Model folder
+            </Button>
 
             {isRemoteMedia() ? (
               <form
@@ -676,15 +707,14 @@ export const MediaAssetImportDialog = ({
                         className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
                       >
                         <option value="">Select base model</option>
-                        {MEDIA_MODEL_ARCHITECTURES.filter(
-                          (item) =>
-                            importIsAddon
-                              ? item.value !== "qwen-image-2.1"
-                              : ![
-                                  "ltx-video",
-                                  "framepack-i2v",
-                                  "hunyuan-video-1.5-i2v",
-                                ].includes(item.value),
+                        {MEDIA_MODEL_ARCHITECTURES.filter((item) =>
+                          importIsAddon
+                            ? item.value !== "qwen-image-2.1"
+                            : ![
+                                "ltx-video",
+                                "framepack-i2v",
+                                "hunyuan-video-1.5-i2v",
+                              ].includes(item.value),
                         ).map((item) => (
                           <option key={item.value} value={item.value}>
                             {item.label}
@@ -699,7 +729,8 @@ export const MediaAssetImportDialog = ({
                         rel="noopener noreferrer"
                         className="text-xs text-sky-300 underline sm:col-span-2"
                       >
-                        Qwen Research License · Commercial use requires a separate license
+                        Qwen Research License · Commercial use requires a
+                        separate license
                       </a>
                     ) : (
                       <>
@@ -707,7 +738,9 @@ export const MediaAssetImportDialog = ({
                           <span>License</span>
                           <input
                             value={licenseName}
-                            onChange={(event) => setLicenseName(event.target.value)}
+                            onChange={(event) =>
+                              setLicenseName(event.target.value)
+                            }
                             className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
                           />
                         </label>
@@ -727,7 +760,9 @@ export const MediaAssetImportDialog = ({
                           >
                             <option value="">Not set</option>
                             <option value="allowed">Allowed</option>
-                            <option value="review-required">Review required</option>
+                            <option value="review-required">
+                              Review required
+                            </option>
                           </select>
                         </label>
                       </>

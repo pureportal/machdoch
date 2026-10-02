@@ -8,6 +8,7 @@ import {
   resolveMediaVideoDimensions,
   resolveMediaVideoFrameContract,
 } from "../../../../core/media/video-quality.js";
+import { openMediaModelProfile } from "../../../../core/media/open-model-profiles.js";
 
 const control =
   "h-9 w-full min-w-0 rounded-lg border border-slate-700 bg-slate-950 px-2 text-slate-200 disabled:opacity-50";
@@ -23,6 +24,7 @@ export const MediaBasicVideoOptions = ({
   onVideoChange: (settings: MediaVideoRecipeSettings) => void;
 }): JSX.Element => {
   const architecture = model?.architecture;
+  const profile = openMediaModelProfile(architecture);
   const frameContract = resolveMediaVideoFrameContract(architecture);
   const videoDimensions = resolveMediaVideoDimensions(
     videoSettings.aspectRatio,
@@ -33,7 +35,10 @@ export const MediaBasicVideoOptions = ({
     videoSettings.width != null || videoSettings.height != null;
   const fixedVideo =
     architecture === "ltx-video" || architecture === "hunyuan-video-1.5-i2v";
-  const fixedGuidance = fixedVideo || architecture === "minimax-h3-ref2va";
+  const fixedGuidance =
+    fixedVideo ||
+    architecture === "minimax-h3-ref2va" ||
+    profile?.fixedGuidance === true;
   return (
     <>
       <label className={field}>
@@ -71,7 +76,12 @@ export const MediaBasicVideoOptions = ({
           )}
           {architecture === "minimax-h3-ref2va" ? (
             <option value="quality-2k">
-              {resolveMediaVideoDimensions(videoSettings.aspectRatio, "quality-2k", architecture).join(" × ")} local 2K
+              {resolveMediaVideoDimensions(
+                videoSettings.aspectRatio,
+                "quality-2k",
+                architecture,
+              ).join(" × ")}{" "}
+              local 2K
             </option>
           ) : null}
           <option value="custom">Custom</option>
@@ -173,8 +183,9 @@ export const MediaBasicVideoOptions = ({
           <input
             className={control}
             type="number"
-            min={4}
-            max={architecture === "framepack-i2v" ? 50 : 40}
+            min={profile ? 1 : 4}
+            max={profile ? 100 : architecture === "framepack-i2v" ? 50 : 40}
+            disabled={profile?.fixedSteps}
             step={1}
             value={videoSettings.numInferenceSteps}
             onChange={(event) =>
@@ -192,8 +203,8 @@ export const MediaBasicVideoOptions = ({
           <input
             className={control}
             type="number"
-            min={1}
-            max={10}
+            min={profile ? 0 : 1}
+            max={profile ? 20 : 10}
             step={0.1}
             value={videoSettings.guidanceScale}
             onChange={(event) =>

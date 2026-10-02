@@ -26,6 +26,9 @@ const MAX_FLOW_BUNDLE_BYTES: u64 = 2 * 1024 * 1024;
 const FLOW_BUNDLE_KIND: &str = "machdoch.media-flow";
 const FLOW_BUNDLE_SCHEMA_URI: &str = "https://machdoch.app/schemas/media-flow-bundle/v1";
 
+#[path = "flow_open_video.rs"]
+mod open_video;
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct MediaFlowNode {
@@ -3212,6 +3215,27 @@ impl MediaFlowDocument {
         }
         self.validate_image_reference_topology()?;
         for node in &self.nodes {
+            if node.r#type == "task.generate-video" {
+                if let Some(profile) = node
+                    .config
+                    .get("modelId")
+                    .and_then(Value::as_str)
+                    .and_then(super::open_models::by_id)
+                {
+                    let has_image = incoming_ports.contains_key(&(node.id.as_str(), "first-frame"));
+                    let capability = if has_image {
+                        "image-to-video"
+                    } else {
+                        "text-to-video"
+                    };
+                    if !profile.capabilities.iter().any(|value| value == capability) {
+                        return Err(format!(
+                            "Choose valid image inputs for {}",
+                            profile.display_name
+                        ));
+                    }
+                }
+            }
             if node.r#type == "task.generate-video"
                 && incoming_ports.contains_key(&(node.id.as_str(), "last-frame"))
                 && !incoming_ports.contains_key(&(node.id.as_str(), "first-frame"))
@@ -3231,6 +3255,17 @@ impl MediaFlowDocument {
                 ));
             }
             for port_id in required_input_ports(&node.r#type, is_svg_vectorization) {
+                if node.r#type == "task.generate-video"
+                    && *port_id == "prompt"
+                    && node
+                        .config
+                        .get("modelId")
+                        .and_then(Value::as_str)
+                        .and_then(super::open_models::by_id)
+                        .is_some_and(|profile| !profile.prompt)
+                {
+                    continue;
+                }
                 if !incoming_ports.contains_key(&(node.id.as_str(), *port_id)) {
                     return Err(format!(
                         "flow node {} requires input port {port_id}",
@@ -4299,6 +4334,13 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
             config_enum(node, "providerPolicy", &["local"])?;
             config_enum(node, "modelPolicy", &["balanced", "fast", "quality"])?;
             let model_id = config_string(node, "modelId", 256, false)?;
+            let open_profile =
+                super::open_models::by_id(model_id).filter(|profile| profile.video.is_some());
+            if open_profile.is_some()
+                || model_id.starts_with(super::model_import::USER_MODEL_ID_PREFIX)
+            {
+                return open_video::validate(node, open_profile);
+            }
             let ltx_video = matches!(
                 model_id,
                 "local:ltx-video-0.9.8-13b-distilled-fp8"
@@ -6176,6 +6218,87 @@ mod tests {
             .validate()
             .unwrap_err()
             .contains("incompatible port types"));
+    }
+
+    #[test]
+    fn saves_native_video_profiles_with_their_sampling_and_input_contracts() {
+        let paths = test_paths("native-video-profiles");
+        database::initialize(&paths).unwrap();
+        for profile in super::super::open_models::profiles()
+            .iter()
+            .filter(|profile| profile.video.is_some())
+        {
+            let mut flow = video_flow();
+            flow.id = format!("flow:{}", profile.architecture);
+            let needs_image = !profile
+                .capabilities
+                .iter()
+                .any(|capability| capability == "text-to-video");
+            flow.nodes.retain(|node| {
+                node.id != "last"
+                    && (node.id != "first" || needs_image)
+                    && (node.id != "prompt" || profile.prompt)
+            });
+            flow.edges.retain(|edge| {
+                edge.from_node_id != "last"
+                    && (edge.from_node_id != "first" || needs_image)
+                    && (edge.from_node_id != "prompt" || profile.prompt)
+            });
+            let config = &mut flow
+                .nodes
+                .iter_mut()
+                .find(|node| node.id == "generate")
+                .unwrap()
+                .config;
+            config.insert("modelId".into(), json!(profile.id));
+            config.insert(
+                "numFrames".into(),
+                json!(profile.video.as_ref().unwrap().minimum),
+            );
+            config.insert("numInferenceSteps".into(), json!(profile.steps));
+            config.insert("guidanceScale".into(), json!(profile.guidance));
+            config.insert("generateAudio".into(), json!(profile.audio));
+            config.insert("experimentalLowMemory".into(), json!(false));
+            if !profile.prompt {
+                config.insert("negativePrompt".into(), json!(""));
+            }
+            flow.validate()
+                .unwrap_or_else(|error| panic!("{}: {error}", profile.architecture));
+            let mut saved = request(&profile.architecture, None, "A bird flies");
+            saved.flow = flow.clone();
+            saved.layout.flow_id = flow.id.clone();
+            saved.layout.nodes = flow
+                .nodes
+                .iter()
+                .enumerate()
+                .map(|(index, node)| MediaFlowNodeLayout {
+                    node_id: node.id.clone(),
+                    x: index as f64 * 250.0,
+                    y: 0.0,
+                })
+                .collect();
+            save(&paths, &saved).unwrap();
+            assert_eq!(
+                serde_json::to_value(&get(&paths, &flow.id).unwrap().revisions[0].flow.nodes)
+                    .unwrap(),
+                serde_json::to_value(&flow.nodes).unwrap()
+            );
+            flow.nodes
+                .iter_mut()
+                .find(|node| node.id == "generate")
+                .unwrap()
+                .config
+                .insert(
+                    "numFrames".into(),
+                    json!(profile.video.as_ref().unwrap().minimum + 1),
+                );
+            assert!(
+                flow.validate().is_err(),
+                "{} accepted an invalid frame count",
+                profile.architecture
+            );
+        }
+        fs::remove_dir_all(paths.database.parent().unwrap()).unwrap();
     }
 
     #[test]

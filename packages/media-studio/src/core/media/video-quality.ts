@@ -2,12 +2,10 @@ import type {
   MediaAssetRecord,
   MediaLocalModelArchitecture,
 } from "./contracts.js";
+import { openMediaModelProfile } from "./open-model-profiles.js";
 
 export type MediaVideoAspectRatio = "1:1" | "16:9" | "9:16" | "21:9";
-type NativeMediaVideoResolution =
-  | "preview-512"
-  | "quality-640"
-  | "quality-768";
+type NativeMediaVideoResolution = "preview-512" | "quality-640" | "quality-768";
 export type MediaVideoResolution = NativeMediaVideoResolution | "quality-2k";
 export type MediaVideoLoopMode =
   | "none"
@@ -172,7 +170,10 @@ const HUNYUAN_VIDEO_15_DIMENSIONS: Readonly<
 };
 
 const MINIMAX_H3_DIMENSIONS: Readonly<
-  Record<NativeMediaVideoResolution, Record<MediaVideoAspectRatio, readonly [number, number]>>
+  Record<
+    NativeMediaVideoResolution,
+    Record<MediaVideoAspectRatio, readonly [number, number]>
+  >
 > = {
   "preview-512": {
     "1:1": [512, 512],
@@ -207,34 +208,43 @@ export const resolveMediaVideoDimensions = (
   aspectRatio: MediaVideoAspectRatio,
   resolution: MediaVideoResolution,
   architecture?: MediaLocalModelArchitecture | null,
-): readonly [number, number] =>
-  resolution === "quality-2k"
-    ? MINIMAX_H3_2K_DIMENSIONS[aspectRatio]
-    : architecture === "minimax-h3-ref2va"
-    ? MINIMAX_H3_DIMENSIONS[resolution][aspectRatio]
-    : architecture === "hunyuan-video-1.5-i2v"
-    ? HUNYUAN_VIDEO_15_DIMENSIONS[resolution][aspectRatio]
-    : architecture === "ltx-video" && resolution === "quality-768"
-      ? LTX_VIDEO_768_DIMENSIONS[aspectRatio]
-      : VIDEO_DIMENSIONS[resolution][aspectRatio];
+): readonly [number, number] => {
+  const dimensions =
+    resolution === "quality-2k"
+      ? MINIMAX_H3_2K_DIMENSIONS[aspectRatio]
+      : architecture === "minimax-h3-ref2va"
+        ? MINIMAX_H3_DIMENSIONS[resolution][aspectRatio]
+        : architecture === "hunyuan-video-1.5-i2v"
+          ? HUNYUAN_VIDEO_15_DIMENSIONS[resolution][aspectRatio]
+          : architecture === "ltx-video" && resolution === "quality-768"
+            ? LTX_VIDEO_768_DIMENSIONS[aspectRatio]
+            : VIDEO_DIMENSIONS[resolution][aspectRatio];
+  if (!openMediaModelProfile(architecture)) return dimensions;
+  const multiple = openMediaModelProfile(architecture)?.spatialMultiple ?? 16;
+  return [
+    Math.ceil(dimensions[0] / multiple) * multiple,
+    Math.ceil(dimensions[1] / multiple) * multiple,
+  ];
+};
 
 export const resolveMediaVideoFrameContract = (
   architecture?: MediaLocalModelArchitecture | null,
 ): MediaVideoFrameContract =>
-  architecture === "minimax-h3-ref2va"
+  openMediaModelProfile(architecture)?.video ??
+  (architecture === "minimax-h3-ref2va"
     ? { minimum: 124, maximum: 362, stride: 17 }
     : architecture === "ltx-video"
-    ? { minimum: 9, maximum: 257, stride: 8 }
-    : {
-        minimum: 17,
-        maximum:
-          architecture === "framepack-i2v"
-            ? 129
-            : architecture === "hunyuan-video-1.5-i2v"
-              ? 121
-              : 33,
-        stride: 4,
-      };
+      ? { minimum: 9, maximum: 257, stride: 8 }
+      : {
+          minimum: 17,
+          maximum:
+            architecture === "framepack-i2v"
+              ? 129
+              : architecture === "hunyuan-video-1.5-i2v"
+                ? 121
+                : 33,
+          stride: 4,
+        });
 
 export const isMediaVideoFrameCountValid = (
   numFrames: unknown,
@@ -261,6 +271,22 @@ export const resolveMediaVideoExecutionSettings = (
   config: Record<string, unknown>,
   architecture?: MediaLocalModelArchitecture | null,
 ): MediaVideoExecutionSettings => {
+  const profile = openMediaModelProfile(architecture);
+  if (profile?.video) {
+    return {
+      numInferenceSteps: profile.fixedSteps
+        ? profile.steps
+        : typeof config.numInferenceSteps === "number"
+          ? config.numInferenceSteps
+          : profile.steps,
+      guidanceScale: profile.fixedGuidance
+        ? profile.guidance
+        : typeof config.guidanceScale === "number"
+          ? config.guidanceScale
+          : profile.guidance,
+      modelManaged: profile.fixedSteps && profile.fixedGuidance,
+    };
+  }
   if (architecture === "minimax-h3-ref2va") {
     return {
       numInferenceSteps:
@@ -308,6 +334,24 @@ export const resolveMediaVideoQualityPresetSettings = (
   preset: MediaVideoQualityPreset,
   architecture?: MediaLocalModelArchitecture | null,
 ): MediaVideoQualityPreset["settings"] => {
+  const profile = openMediaModelProfile(architecture);
+  if (profile?.video) {
+    const contract = profile.video;
+    const frames = Math.max(
+      contract.minimum,
+      Math.min(contract.maximum, preset.settings.numFrames),
+    );
+    return {
+      ...preset.settings,
+      numInferenceSteps: profile.steps,
+      guidanceScale: profile.guidance,
+      numFrames:
+        contract.minimum +
+        Math.floor((frames - contract.minimum) / contract.stride) *
+          contract.stride,
+      fps: contract.fps,
+    };
+  }
   const execution = resolveMediaVideoExecutionSettings(
     preset.settings,
     architecture,
@@ -315,13 +359,9 @@ export const resolveMediaVideoQualityPresetSettings = (
   return {
     ...preset.settings,
     numInferenceSteps:
-      architecture === "minimax-h3-ref2va"
-        ? 8
-        : execution.numInferenceSteps,
+      architecture === "minimax-h3-ref2va" ? 8 : execution.numInferenceSteps,
     numFrames:
-      architecture === "minimax-h3-ref2va"
-        ? 124
-        : preset.settings.numFrames,
+      architecture === "minimax-h3-ref2va" ? 124 : preset.settings.numFrames,
     fps: architecture === "minimax-h3-ref2va" ? 24 : preset.settings.fps,
     guidanceScale:
       architecture === "framepack-i2v" ? 9 : execution.guidanceScale,

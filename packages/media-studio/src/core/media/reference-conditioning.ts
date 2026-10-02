@@ -2,6 +2,7 @@ import type {
   MediaImageReferenceRole,
   MediaModelDescriptor,
 } from "./contracts.js";
+import { openMediaModelProfile } from "./open-model-profiles.js";
 
 export interface MediaReferenceConditioningCapabilities {
   roles: readonly Exclude<MediaImageReferenceRole, "base" | "pose">[];
@@ -21,6 +22,15 @@ export const getMediaReferenceConditioningCapabilities = (
   model: MediaModelDescriptor | null,
 ): MediaReferenceConditioningCapabilities => {
   if (!model) return NONE;
+  const profile = openMediaModelProfile(model.architecture);
+  if (profile && profile.capabilities.includes("image-to-image")) {
+    return {
+      roles: ["subject", "style", "composition", "palette", "detail"],
+      maximumReferenceImages: profile.maxReferences ?? 1,
+      adjustableInfluence: false,
+      promptless: false,
+    };
+  }
   if (model.providerId !== "local-diffusers") {
     return model.capabilities.includes("image-to-image")
       ? {

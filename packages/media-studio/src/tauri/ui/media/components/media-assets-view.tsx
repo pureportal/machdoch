@@ -1,3 +1,4 @@
+import { MediaModelInstallDialog } from "./media-model-install-dialog";
 import { useMediaViewPreference } from "../use-media-view-preference";
 import { CivitaiBrowserDialog } from "./civitai-browser-dialog";
 import { MediaModelEditDialog } from "./media-model-edit-dialog";
@@ -271,6 +272,9 @@ export const MediaAssetsView = ({
     "assetCategories",
     [],
   );
+  const [installModel, setInstallModel] = useState<MediaModelDescriptor | null>(
+    null,
+  );
   const [importOpen, setImportOpen] = useState(false);
   const [civitaiOpen, setCivitaiOpen] = useState(false);
   const [civitaiSource, setCivitaiSource] = useState("");
@@ -327,7 +331,14 @@ export const MediaAssetsView = ({
     catalog.models.find((model) => model.id === selectedModelId) ?? null;
   const selectedAsset =
     assets.find((asset) => asset.id === selectedAssetId) ?? null;
-  const libraryModels = listMediaLibraryModels(catalog.models);
+  const libraryModels =
+    filter === "model"
+      ? catalog.models.filter(
+          (model) =>
+            model.lifecycle !== "removed" &&
+            (model.target === "local" || model.configured),
+        )
+      : listMediaLibraryModels(catalog.models);
   const selectedResourceModel =
     libraryModels.find((model) => model.id === selectedResourceId) ?? null;
   const selectedResourceAddon =
@@ -427,24 +438,27 @@ export const MediaAssetsView = ({
           ? asset.kind === "vector"
           : filter === "openpose"
             ? isMediaOpenPoseAsset(asset)
-          : asset.kind === filter),
+            : asset.kind === filter),
   );
-  const mediaGroups = filter === "openpose" ? [{ id: "openpose", label: "", assets: visibleMedia }] : [
-    {
-      id: "generated",
-      label: "Generations",
-      assets: visibleMedia.filter(
-        (asset) => mediaAssetOrigin(asset) === "generated",
-      ),
-    },
-    {
-      id: "added",
-      label: "Uploads and imports",
-      assets: visibleMedia.filter(
-        (asset) => mediaAssetOrigin(asset) === "added",
-      ),
-    },
-  ];
+  const mediaGroups =
+    filter === "openpose"
+      ? [{ id: "openpose", label: "", assets: visibleMedia }]
+      : [
+          {
+            id: "generated",
+            label: "Generations",
+            assets: visibleMedia.filter(
+              (asset) => mediaAssetOrigin(asset) === "generated",
+            ),
+          },
+          {
+            id: "added",
+            label: "Uploads and imports",
+            assets: visibleMedia.filter(
+              (asset) => mediaAssetOrigin(asset) === "added",
+            ),
+          },
+        ];
   const filteredTypeResources =
     filter === "model"
       ? libraryModels
@@ -455,8 +469,10 @@ export const MediaAssetsView = ({
           )
         : filter === "all"
           ? [...libraryModels, ...catalog.addons, ...assets]
-          : assets.filter(
-              (asset) => filter === "openpose" ? isMediaOpenPoseAsset(asset) : asset.kind === (filter === "svg" ? "vector" : filter),
+          : assets.filter((asset) =>
+              filter === "openpose"
+                ? isMediaOpenPoseAsset(asset)
+                : asset.kind === (filter === "svg" ? "vector" : filter),
             );
   const availableTags = listMediaResourceTags(filteredTypeResources, metadata);
   const architectures = [
@@ -477,7 +493,9 @@ export const MediaAssetsView = ({
           (asset) =>
             asset.kind !== "report" &&
             (filter === "all" ||
-              (filter === "openpose" ? isMediaOpenPoseAsset(asset) : asset.kind === (filter === "svg" ? "vector" : filter))),
+              (filter === "openpose"
+                ? isMediaOpenPoseAsset(asset)
+                : asset.kind === (filter === "svg" ? "vector" : filter))),
         )
         .map((asset) => asset.mimeType),
     ),
@@ -863,7 +881,32 @@ export const MediaAssetsView = ({
                             model.family}
                         </p>
                       </div>
-                      {ready ? (
+                      {!model.installed &&
+                      model.management.acquisition === "managed-install" ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={!importSupported}
+                          onClick={() => setInstallModel(model)}
+                        >
+                          Download model
+                        </Button>
+                      ) : !model.installed &&
+                        model.management.acquisition === "file-import" ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={!importSupported}
+                          onClick={() => {
+                            setImportPath(undefined);
+                            setImportOpen(true);
+                          }}
+                        >
+                          Import model
+                        </Button>
+                      ) : ready ? (
                         <Button
                           type="button"
                           variant="outline"
@@ -998,9 +1041,11 @@ export const MediaAssetsView = ({
               .filter((group) => group.assets.length > 0)
               .map((group) => (
                 <Fragment key={group.id}>
-                  {group.label ? <h2 className="col-span-full text-sm font-medium text-slate-300">
-                    {group.label}
-                  </h2> : null}
+                  {group.label ? (
+                    <h2 className="col-span-full text-sm font-medium text-slate-300">
+                      {group.label}
+                    </h2>
+                  ) : null}
                   {group.assets.map((asset) => (
                     <ContextActionMenu
                       key={asset.id}
@@ -1018,7 +1063,14 @@ export const MediaAssetsView = ({
                         },
                         ...(asset.kind === "image"
                           ? [
-                              ...(isMediaOpenPoseAsset(asset) ? [{ label: "Use as pose", onSelect: () => onUseAsPose(asset) }] : []),
+                              ...(isMediaOpenPoseAsset(asset)
+                                ? [
+                                    {
+                                      label: "Use as pose",
+                                      onSelect: () => onUseAsPose(asset),
+                                    },
+                                  ]
+                                : []),
                               {
                                 label: "Edit image",
                                 onSelect: () => onEditImage(asset),
@@ -1120,7 +1172,13 @@ export const MediaAssetsView = ({
                           ) : null}
                           <div className="flex gap-2">
                             {isMediaOpenPoseAsset(asset) ? (
-                              <Button type="button" variant="outline" size="sm" onClick={() => onUseAsPose(asset)} className="flex-1">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => onUseAsPose(asset)}
+                                className="flex-1"
+                              >
                                 Use as pose
                               </Button>
                             ) : asset.kind === "image" ? (
@@ -1384,6 +1442,14 @@ export const MediaAssetsView = ({
                 .map((value) => value.toLowerCase()),
             )
           }
+        />
+      ) : null}
+      {installModel ? (
+        <MediaModelInstallDialog
+          key={installModel.id}
+          model={installModel}
+          onClose={() => setInstallModel(null)}
+          onInstalled={onRefreshModels}
         />
       ) : null}
       {importOpen ? (

@@ -67,28 +67,36 @@ pub(super) struct ParsedSafetensorsHeader {
 
 pub(super) struct ArchitectureProfile {
     pub(super) family: &'static str,
-    pub(super) min_vram_gb: f64,
+    pub(super) min_vram_gb: Option<f64>,
     pub(super) speed_score: u32,
     pub(super) quality_score: u32,
 }
 
 pub(super) fn architecture_profile(architecture: &str) -> Option<ArchitectureProfile> {
+    if let Some(profile) = super::open_models::by_architecture(architecture) {
+        return Some(ArchitectureProfile {
+            family: &profile.family,
+            min_vram_gb: None,
+            speed_score: 0,
+            quality_score: 0,
+        });
+    }
     match architecture {
         "wan-2.2-ti2v" => Some(ArchitectureProfile {
             family: "Wan2.2 TI2V 5B",
-            min_vram_gb: 24.0,
+            min_vram_gb: Some(24.0),
             speed_score: 45,
             quality_score: 88,
         }),
         "stable-diffusion-1" => Some(ArchitectureProfile {
             family: "Stable Diffusion 1.x",
-            min_vram_gb: 4.0,
+            min_vram_gb: Some(4.0),
             speed_score: 84,
             quality_score: 72,
         }),
         "stable-diffusion-2" => Some(ArchitectureProfile {
             family: "Stable Diffusion 2.x",
-            min_vram_gb: 5.0,
+            min_vram_gb: Some(5.0),
             speed_score: 80,
             quality_score: 75,
         }),
@@ -98,37 +106,37 @@ pub(super) fn architecture_profile(architecture: &str) -> Option<ArchitecturePro
             } else {
                 "Stable Diffusion XL"
             },
-            min_vram_gb: 8.0,
+            min_vram_gb: Some(8.0),
             speed_score: 70,
             quality_score: 84,
         }),
         "stable-diffusion-3" => Some(ArchitectureProfile {
             family: "Stable Diffusion 3",
-            min_vram_gb: 10.0,
+            min_vram_gb: Some(10.0),
             speed_score: 64,
             quality_score: 87,
         }),
         "flux-1" => Some(ArchitectureProfile {
             family: "FLUX.1",
-            min_vram_gb: 12.0,
+            min_vram_gb: Some(12.0),
             speed_score: 55,
             quality_score: 91,
         }),
         "flux-2" => Some(ArchitectureProfile {
             family: "FLUX.2",
-            min_vram_gb: 13.0,
+            min_vram_gb: Some(13.0),
             speed_score: 58,
             quality_score: 92,
         }),
         "krea-2" => Some(ArchitectureProfile {
             family: "KREA 2",
-            min_vram_gb: 16.0,
+            min_vram_gb: Some(16.0),
             speed_score: 40,
             quality_score: 94,
         }),
         "qwen-image-2.1" => Some(ArchitectureProfile {
             family: "Qwen-Image 2.1",
-            min_vram_gb: 16.0,
+            min_vram_gb: Some(16.0),
             speed_score: 42,
             quality_score: 94,
         }),
@@ -137,6 +145,9 @@ pub(super) fn architecture_profile(architecture: &str) -> Option<ArchitecturePro
 }
 
 pub(crate) fn capabilities_for_architecture(architecture: &str) -> &'static [&'static str] {
+    if super::open_models::by_architecture(architecture).is_some() {
+        return super::open_models::capabilities(architecture);
+    }
     match architecture {
         "wan-2.2-ti2v" => &[
             "text-to-video",
@@ -541,6 +552,9 @@ fn inspection_review_token(header: &ParsedSafetensorsHeader) -> String {
 }
 
 pub(crate) fn inspect(source_path: &str) -> MediaResult<MediaLocalModelImportInspection> {
+    if Path::new(source_path).is_dir() {
+        return super::model_package_import::inspect(Path::new(source_path));
+    }
     let header = parse_header(source_path)?;
     inspect_header(&header)
 }
@@ -830,13 +844,14 @@ fn stored_installation_exists(paths: &MediaRuntimePaths, model_id: &str) -> Medi
         .map_err(|error| format!("failed to inspect imported model state: {error}"))
 }
 
-fn persist_import(
+pub(super) fn persist_import(
     paths: &MediaRuntimePaths,
     request: &ImportMediaLocalModelRequest,
     inspection: &MediaLocalModelImportInspection,
     digest: &str,
     relative_path: &str,
     imported_at: &str,
+    package_type: &str,
 ) -> MediaResult<()> {
     let profile = architecture_profile(&request.architecture)
         .ok_or_else(|| "architecture is not a supported local model family".to_string())?;
@@ -870,7 +885,11 @@ fn persist_import(
     .map_err(|error| format!("failed to encode imported model add-on capabilities: {error}"))?;
     let catalog_revision = format!("{IMPORT_CATALOG_REVISION}:{digest}");
     let expected_download_gb = inspection.byte_size as f64 / 1_024_f64.powi(3);
-    let limitation = "Imported single-file checkpoint. Architecture is user-confirmed and runtime compatibility is validated when loaded. FLUX transformer-only files may require compatible base-model encoders, tokenizer, scheduler, and VAE components.";
+    let limitation = if package_type == "diffusers" {
+        "Imported local Diffusers package."
+    } else {
+        "Imported single-file checkpoint."
+    };
     let mut connection = database::open(paths)?;
     catalog::synchronize(&mut connection)?;
     let transaction = connection
@@ -885,7 +904,7 @@ fn persist_import(
                license_commercial_use, license_requires_acceptance, recommended, speed_score,
                quality_score, min_vram_gb, expected_download_gb, cost_hint, privacy_summary, limitation, updated_at
              ) VALUES (?1, 'local-diffusers', ?2, ?3, 'local', 'active', ?4, ?5, ?6, ?7, ?8,
-               ?9, ?10, 0, 'safetensors', ?11, NULL, ?12, ?13, ?14, 0, ?15, ?16, ?17, ?18,
+               ?9, ?10, 0, ?20, ?11, NULL, ?12, ?13, ?14, 0, ?15, ?16, ?17, ?18,
                'No provider charge; uses local GPU time and power.',
                'Prompt, checkpoint weights, and generated pixels remain on this device.', ?19, ?4)
              ON CONFLICT(id) DO UPDATE SET
@@ -893,7 +912,7 @@ fn persist_import(
                lifecycle_checked_at = excluded.lifecycle_checked_at,
                lifecycle_source_url = excluded.lifecycle_source_url,
                catalog_revision = excluded.catalog_revision, capabilities_json = excluded.capabilities_json,
-               architecture = excluded.architecture,
+               architecture = excluded.architecture, package_type = excluded.package_type,
                addon_capabilities_json = excluded.addon_capabilities_json,
                license_name = excluded.license_name, license_source_url = excluded.license_source_url,
                license_commercial_use = excluded.license_commercial_use,
@@ -921,6 +940,7 @@ fn persist_import(
                 profile.min_vram_gb,
                 expected_download_gb,
                 limitation,
+                package_type,
             ],
         )
         .map_err(|error| format!("failed to register imported model metadata: {error}"))?;
@@ -965,6 +985,9 @@ pub(crate) fn import_reviewed(
     paths: &MediaRuntimePaths,
     request: &ImportMediaLocalModelRequest,
 ) -> MediaResult<MediaLocalModelImportResult> {
+    if Path::new(&request.source_path).is_dir() {
+        return super::model_package_import::import_reviewed(paths, request);
+    }
     if !SUPPORTED_ARCHITECTURES.contains(&request.architecture.as_str()) {
         return Err("architecture is not a supported local model family".to_string());
     }
@@ -1125,6 +1148,7 @@ pub(crate) fn import_reviewed(
         &digest,
         &relative_path,
         &imported_at,
+        "safetensors",
     )?;
     let profile = architecture_profile(&request.architecture)
         .ok_or_else(|| "architecture is not a supported local model family".to_string())?;

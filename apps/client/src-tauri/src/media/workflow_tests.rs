@@ -1,5 +1,35 @@
 use super::*;
 
+#[test]
+fn native_video_inputs_preserve_absent_frames_and_resolve_connected_images() {
+    let mut flow: MediaFlowDocument = serde_json::from_value(json!({
+        "schemaVersion": 1, "id": "flow:video", "name": "Video", "description": "",
+        "createdAt": "2026-10-02T00:00:00Z", "updatedAt": "2026-10-02T00:00:00Z",
+        "nodes": [], "edges": []
+    }))
+    .unwrap();
+    let node: MediaFlowNode = serde_json::from_value(json!({"id": "video", "type": "task.generate-video", "version": 1, "label": "Video", "layer": "task", "config": {}})).unwrap();
+    let mut values = Values::new();
+    assert_eq!(
+        video_frame_inputs(&flow, &values, &node, true).unwrap(),
+        (None, None)
+    );
+    flow.edges.push(serde_json::from_value(json!({"id": "first", "fromNodeId": "image", "fromPortId": "image", "toNodeId": "video", "toPortId": "first-frame"})).unwrap());
+    assert!(video_frame_inputs(&flow, &values, &node, true).is_err());
+    values.insert(
+        ("image".into(), "image".into()),
+        WorkflowValue::Image("asset:source".into()),
+    );
+    assert_eq!(
+        video_frame_inputs(&flow, &values, &node, true).unwrap(),
+        (Some("asset:source".into()), None)
+    );
+    assert_eq!(
+        video_frame_inputs(&flow, &values, &node, false).unwrap(),
+        (Some("asset:source".into()), Some("asset:source".into()))
+    );
+}
+
 fn gate() -> MediaFlowNode {
     serde_json::from_value(json!({"id":"gate","type":"control.quality-gate","version":1,"label":"Quality gate","layer":"control","config":{"profile":"technical-image-baseline","minWidth":512,"minHeight":512,"maxClipping":0.2,"onUnknown":"fail","onFailure":"repeat"}})).unwrap()
 }

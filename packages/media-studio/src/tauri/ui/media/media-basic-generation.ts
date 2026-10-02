@@ -54,11 +54,15 @@ export const createBasicMediaVideoFlow = ({
   createdAt,
   imageSettings,
   videoSettings,
+  nativeTextToVideo = false,
+  generateAudio,
 }: {
   id: string;
   createdAt: string;
   imageSettings: ImageRecipeSettings;
   videoSettings: MediaVideoRecipeSettings;
+  nativeTextToVideo?: boolean;
+  generateAudio?: boolean;
 }): MediaFlow => {
   const sourceAssetId = imageSettings.referenceImages[0]?.assetId;
   const flow = createImageToVideoFlow({
@@ -68,7 +72,21 @@ export const createBasicMediaVideoFlow = ({
     prompt: imageSettings.prompt.trim(),
     settings: videoSettings,
   });
+  if (generateAudio !== undefined)
+    flow.nodes.find(
+      (node) => node.type === "task.generate-video",
+    )!.config.generateAudio = generateAudio;
   if (sourceAssetId) return flow;
+  if (nativeTextToVideo) {
+    return {
+      ...flow,
+      nodes: flow.nodes.filter((node) => node.type !== "source.image"),
+      edges: flow.edges.filter(
+        (edge) =>
+          edge.toPortId !== "first-frame" && edge.toPortId !== "last-frame",
+      ),
+    };
+  }
   const firstFrameFlow = createImageRecipeFlow({
     id,
     createdAt,

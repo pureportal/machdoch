@@ -44,6 +44,29 @@ impl Drop for Fixture {
 #[path = "model_install_download_cancellation_tests.rs"]
 mod downloads;
 
+#[test]
+fn installation_review_reattaches_the_active_job_until_it_finishes() {
+    let fixture = Fixture::new();
+    let manifest = builtin_manifest("local:z-image-turbo").unwrap();
+    fixture.job_with_manifest("active-download", "downloading", manifest);
+    let reviewed = plan(&fixture.paths, manifest.model_id).unwrap();
+    assert_eq!(reviewed.active_job.unwrap().id, "active-download");
+    request_cancellation(&fixture.paths, "active-download").unwrap();
+    assert_eq!(
+        plan(&fixture.paths, manifest.model_id)
+            .unwrap()
+            .active_job
+            .unwrap()
+            .status,
+        "canceling"
+    );
+    mark_canceled(&fixture.paths, "active-download").unwrap();
+    assert!(plan(&fixture.paths, manifest.model_id)
+        .unwrap()
+        .active_job
+        .is_none());
+}
+
 #[tokio::test]
 async fn cancellation_before_execution_settles_within_one_second() {
     let fixture = Fixture::new();
