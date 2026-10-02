@@ -5,6 +5,8 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
+import { PageHeader } from "@/components/page-header";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { CreateProfile } from "./create-profile";
 import { ProfileEditor } from "./profile-editor";
@@ -13,15 +15,18 @@ import { useSettingsProfiles } from "./use-settings-profiles";
 export function SettingsManager(): React.ReactElement {
   const state = useSettingsProfiles();
   const [pending, setPending] = useState(false);
+  const [query, setQuery] = useState("");
+  const profiles = state.profiles.filter((profile) =>
+    profile.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
+  );
   return (
     <section className="grid min-w-0 gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+      <PageHeader title="Settings">
         <CreateProfile
           disabled={!state.catalog || state.loading || pending}
           onCreated={state.acceptProfile}
         />
-      </div>
+      </PageHeader>
       {state.error ? (
         <div className="flex flex-wrap items-center gap-3">
           <p role="alert" className="break-words text-sm text-destructive">
@@ -32,10 +37,10 @@ export function SettingsManager(): React.ReactElement {
           </Button>
         </div>
       ) : null}
-      <div className="grid min-w-0 gap-4 lg:min-h-[620px] lg:grid-cols-[230px_minmax(0,1fr)]">
+      <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[200px_minmax(0,1fr)]">
         {state.profiles.length ? (
           <Select
-            className="lg:hidden"
+            className="xl:hidden"
             aria-label="Profile"
             value={state.selectedId ?? ""}
             disabled={pending}
@@ -50,12 +55,27 @@ export function SettingsManager(): React.ReactElement {
         ) : null}
         <Card
           className={cn(
-            "h-fit min-w-0 p-2",
-            state.profiles.length && "hidden lg:block",
+            "h-fit min-w-0 p-2 xl:sticky xl:top-6",
+            state.profiles.length && "hidden xl:block",
           )}
         >
-          <div className="grid gap-1" aria-label="Profiles">
-            {state.profiles.map((item) => (
+          <div className="grid gap-3 px-2 pb-3 pt-2">
+            <h2 className="text-sm font-semibold">Profiles</h2>
+            {state.profiles.length > 5 ? (
+              <Input
+                type="search"
+                aria-label="Search profiles"
+                placeholder="Search profiles"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            ) : null}
+          </div>
+          <div
+            className="grid max-h-[70dvh] gap-1 overflow-y-auto overscroll-contain"
+            aria-label="Profiles"
+          >
+            {profiles.map((item) => (
               <button
                 key={item.profileId}
                 type="button"
@@ -74,9 +94,6 @@ export function SettingsManager(): React.ReactElement {
                 <span className="block truncate text-sm font-medium">
                   {item.name}
                 </span>
-                <span className="mt-0.5 block text-xs text-muted-foreground">
-                  Revision {item.revision}
-                </span>
               </button>
             ))}
             {!state.loading && !state.error && !state.profiles.length ? (
@@ -84,6 +101,11 @@ export function SettingsManager(): React.ReactElement {
                 <Settings2 className="size-5" />
                 No profiles.
               </div>
+            ) : null}
+            {state.profiles.length > 0 && profiles.length === 0 ? (
+              <p className="p-3 text-sm text-muted-foreground" role="status">
+                No matching profiles.
+              </p>
             ) : null}
           </div>
         </Card>

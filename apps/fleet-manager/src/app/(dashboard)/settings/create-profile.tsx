@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
-import { SettingsFormDialog } from "./settings-form-dialog";
+import { FormDialog } from "@/components/form-dialog";
 import type { SettingsProfile } from "./types";
 
 export function CreateProfile({
@@ -24,7 +24,7 @@ export function CreateProfile({
         <Plus />
         New profile
       </Button>
-      <SettingsFormDialog
+      <FormDialog
         open={open}
         onOpenChange={setOpen}
         title="New profile"
@@ -49,7 +49,7 @@ export function CreateProfile({
         <Field label="Description" htmlFor="profile-description">
           <Textarea id="profile-description" name="description" />
         </Field>
-      </SettingsFormDialog>
+      </FormDialog>
     </>
   );
 }

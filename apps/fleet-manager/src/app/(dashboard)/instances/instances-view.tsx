@@ -3,6 +3,8 @@
 import { Monitor, RefreshCw, Search, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { EnrollDevice } from "@/components/enrollment/enroll-device";
+import { PageHeader } from "@/components/page-header";
+import { ShowMore } from "@/components/show-more";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -40,22 +42,19 @@ export function InstancesView(): React.ReactElement {
 
   return (
     <section className="grid gap-6 sm:gap-8">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-3xl font-semibold tracking-tight">Overview</h1>
-        <div className="flex items-center gap-2">
-          <Button
-            ref={refreshButton}
-            variant="outline"
-            disabled={loading}
-            onClick={() => void load()}
-            aria-label="Refresh devices"
-          >
-            <RefreshCw className={cn(loading && "motion-safe:animate-spin")} />
-            <span className="hidden sm:inline">Refresh</span>
-          </Button>
-          <EnrollDevice onClose={() => void load()} />
-        </div>
-      </header>
+      <PageHeader title="Overview">
+        <Button
+          ref={refreshButton}
+          variant="outline"
+          disabled={loading}
+          onClick={() => void load()}
+          aria-label="Refresh devices"
+        >
+          <RefreshCw className={cn(loading && "motion-safe:animate-spin")} />
+          <span className="hidden sm:inline">Refresh</span>
+        </Button>
+        <EnrollDevice onClose={() => void load()} />
+      </PageHeader>
       {error ? (
         <div
           role="alert"
@@ -89,7 +88,12 @@ export function InstancesView(): React.ReactElement {
       />
       <Card className="overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-5 sm:px-6">
-          <h2 className="text-base font-semibold">Devices</h2>
+          <h2 className="text-base font-semibold">
+            Devices{" "}
+            <span className="ml-1 text-sm font-normal tabular-nums text-muted-foreground">
+              {instances !== null ? devices.length : ""}
+            </span>
+          </h2>
           {updatedAt !== null ? (
             <p
               className="text-xs text-muted-foreground"
@@ -103,11 +107,11 @@ export function InstancesView(): React.ReactElement {
           ) : null}
         </div>
         {instances !== null && instances.length > 0 ? (
-          <div className="grid gap-3 border-b bg-muted/25 p-4 sm:px-6">
+          <div className="grid gap-2 border-b p-4 sm:px-6">
             <div className="flex flex-wrap gap-2">
               <div className="relative basis-full flex-1 sm:min-w-44 sm:basis-auto">
                 <Search
-                  className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground"
+                  className="pointer-events-none absolute left-3.5 top-3.5 size-4 text-muted-foreground"
                   aria-hidden="true"
                 />
                 <Input
@@ -143,18 +147,23 @@ export function InstancesView(): React.ReactElement {
                 <option value="offline">Offline ({summary.offline})</option>
                 <option value="revoked">Revoked ({summary.revoked})</option>
               </Select>
-              <Select
-                aria-label="Sort devices"
-                className="w-auto flex-1 basis-36 sm:flex-none sm:basis-auto"
-                value={sort}
-                onChange={(event) => setSort(event.target.value as DeviceSort)}
-              >
-                <option value="status">Offline first</option>
-                <option value="name">Name</option>
-                <option value="last-seen">Last seen</option>
-                <option value="enrolled">Newest enrolled</option>
-              </Select>
             </div>
+            <ShowMore>
+              <label className="grid max-w-xs gap-2 text-sm font-medium">
+                Sort devices
+                <Select
+                  value={sort}
+                  onChange={(event) =>
+                    setSort(event.target.value as DeviceSort)
+                  }
+                >
+                  <option value="status">Offline first</option>
+                  <option value="name">Name</option>
+                  <option value="last-seen">Last seen</option>
+                  <option value="enrolled">Newest enrolled</option>
+                </Select>
+              </label>
+            </ShowMore>
           </div>
         ) : null}
         {instances === null ? (

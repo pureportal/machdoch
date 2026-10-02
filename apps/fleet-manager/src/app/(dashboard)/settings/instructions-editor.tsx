@@ -4,8 +4,9 @@ import { FileText, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Field } from "@/components/field";
+import { ShowMore } from "@/components/show-more";
 import { Button } from "@/components/ui/button";
-import { SettingsFormDialog } from "./settings-form-dialog";
+import { FormDialog } from "@/components/form-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type {
@@ -39,7 +40,7 @@ export function InstructionsEditor({
           {profile.document.instructions.map((instruction) => (
             <div
               key={instruction.id}
-              className="flex items-center gap-3 rounded-lg border border-border p-3"
+              className="flex min-w-0 items-center gap-2 rounded-xl border border-border p-3 sm:gap-3"
             >
               <FileText className="size-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
@@ -123,7 +124,7 @@ function InstructionDialog({
 }): React.ReactElement {
   const instruction = editing === "new" ? null : editing;
   return (
-    <SettingsFormDialog
+    <FormDialog
       open={editing !== null}
       onOpenChange={onOpenChange}
       title={instruction ? "Edit instruction" : "New instruction"}
@@ -151,35 +152,37 @@ function InstructionDialog({
         <Textarea
           id="instruction-body"
           name="body"
-          className="min-h-64 font-mono text-xs"
+          className="min-h-40 font-mono sm:min-h-56"
           defaultValue={instruction?.body ?? ""}
           required
         />
       </Field>
-      <Field
-        label="Tags"
-        htmlFor="instruction-tags"
-        hint="Separate tags with commas."
-      >
-        <Input
-          id="instruction-tags"
-          name="tags"
-          defaultValue={instruction?.tags.join(", ") ?? ""}
-        />
-      </Field>
-      <div className="flex flex-wrap gap-5">
-        <Checkbox
-          name="enabled"
-          label="Enabled"
-          defaultChecked={instruction?.enabled ?? true}
-        />
-        <Checkbox
-          name="global"
-          label="Global"
-          defaultChecked={instruction?.global ?? false}
-        />
-      </div>
-    </SettingsFormDialog>
+      <ShowMore>
+        <Field
+          label="Tags"
+          htmlFor="instruction-tags"
+          hint="Separate tags with commas."
+        >
+          <Input
+            id="instruction-tags"
+            name="tags"
+            defaultValue={instruction?.tags.join(", ") ?? ""}
+          />
+        </Field>
+        <div className="flex flex-wrap gap-5">
+          <Checkbox
+            name="enabled"
+            label="Enabled"
+            defaultChecked={instruction?.enabled ?? true}
+          />
+          <Checkbox
+            name="global"
+            label="Global"
+            defaultChecked={instruction?.global ?? false}
+          />
+        </div>
+      </ShowMore>
+    </FormDialog>
   );
 }
 

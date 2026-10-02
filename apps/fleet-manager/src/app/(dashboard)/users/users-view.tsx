@@ -7,16 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmButton } from "@/components/confirm-button";
-import { Field } from "@/components/field";
-import { Input } from "@/components/ui/input";
-import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
+import { api } from "@machdoch/product-ui/fleet-api";
 import { formatTime } from "@/lib/format";
 
-interface OwnerAccount {
-  username: string;
-  createdAt: number;
-  updatedAt: number;
-}
+import { OwnerAccountCard, type OwnerAccount } from "./owner-account";
+import { PageHeader } from "@/components/page-header";
 
 interface OwnerSession {
   sessionId: string;
@@ -29,13 +24,10 @@ interface OwnerSession {
 }
 
 export function UsersView(): React.ReactElement {
-  const router = useRouter();
   const [account, setAccount] = useState<OwnerAccount | null>(null);
   const [sessions, setSessions] = useState<OwnerSession[]>([]);
-  const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState(false);
   const loadController = useRef<AbortController | null>(null);
   const load = useCallback(async () => {
     loadController.current?.abort();
@@ -71,8 +63,8 @@ export function UsersView(): React.ReactElement {
     return () => loadController.current?.abort();
   }, [load]);
   return (
-    <section className="grid max-w-4xl gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
+    <section className="grid gap-6">
+      <PageHeader title="Users" />
       {loadError ? (
         <div
           role="alert"
@@ -81,7 +73,7 @@ export function UsersView(): React.ReactElement {
           <p className="min-w-0 flex-1 [overflow-wrap:anywhere]">{loadError}</p>
           <Button
             variant="outline"
-            disabled={loading || pending}
+            disabled={loading}
             onClick={() => void load()}
           >
             Retry
@@ -93,109 +85,18 @@ export function UsersView(): React.ReactElement {
           Loading account…
         </p>
       ) : null}
-      {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
       {account ? (
         <>
-          <Card>
-            <CardHeader>
-              <CardTitle>Owner</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form
-                className="grid max-w-lg gap-5"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (pending || loading) return;
-                  setPending(true);
-                  setError("");
-                  const form = new FormData(event.currentTarget);
-                  void api<{ ok: true }>("/api/auth/account", {
-                    method: "PUT",
-                    body: jsonBody({
-                      username: form.get("username"),
-                      currentPassword: form.get("currentPassword"),
-                      newPassword: form.get("newPassword"),
-                    }),
-                  })
-                    .then(() => {
-                      router.replace("/login");
-                      router.refresh();
-                    })
-                    .catch((reason: unknown) =>
-                      setError(
-                        reason instanceof Error
-                          ? reason.message
-                          : "Account update failed.",
-                      ),
-                    )
-                    .finally(() => setPending(false));
-                }}
-              >
-                <Field label="Username" htmlFor="owner-username">
-                  <Input
-                    key={account.username}
-                    id="owner-username"
-                    name="username"
-                    defaultValue={account.username}
-                    maxLength={64}
-                    required
-                    autoComplete="username"
-                    disabled={pending || loading}
-                  />
-                </Field>
-                <Field label="Current password" htmlFor="current-password">
-                  <Input
-                    id="current-password"
-                    name="currentPassword"
-                    type="password"
-                    autoComplete="current-password"
-                    maxLength={1024}
-                    required
-                    disabled={pending || loading}
-                  />
-                </Field>
-                <Field
-                  label="New password"
-                  htmlFor="new-password"
-                  hint="Use at least 12 characters."
-                >
-                  <Input
-                    id="new-password"
-                    name="newPassword"
-                    type="password"
-                    autoComplete="new-password"
-                    minLength={12}
-                    maxLength={1024}
-                    required
-                    disabled={pending || loading}
-                  />
-                </Field>
-                <p className="text-xs text-muted-foreground">
-                  Updating the owner signs out all browsers.
-                </p>
-                <Button
-                  type="submit"
-                  className="w-fit"
-                  disabled={pending || loading}
-                >
-                  {pending ? "Saving…" : "Update owner"}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
+          <OwnerAccountCard account={account} loading={loading} />
           <Card>
             <CardHeader>
               <CardTitle>Browser sessions</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-2">
+            <CardContent className="grid divide-y">
               {sessions.map((session) => (
                 <div
                   key={session.sessionId}
-                  className="flex min-w-0 items-center gap-3 rounded-lg border border-border px-4 py-3"
+                  className="flex min-w-0 items-center gap-3 py-4"
                 >
                   <Laptop className="size-4 shrink-0 text-muted-foreground" />
                   <div className="min-w-0 flex-1">

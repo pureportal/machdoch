@@ -5,6 +5,7 @@ import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { ShowMore } from "@/components/show-more";
 import type { ManagedSettingsDocument, SettingsProfile } from "./types";
 import { settingsError } from "./use-settings-profiles";
 
@@ -84,7 +85,7 @@ export function ProfileGeneral({
           .finally(() => setPending(false));
       }}
     >
-      <fieldset disabled={pending} className="grid min-w-0 gap-8">
+      <fieldset disabled={pending} className="grid min-w-0 gap-6">
         <div className="grid gap-5">
           <h3 className="font-medium">Profile</h3>
           <div className="grid gap-5 md:grid-cols-2">
@@ -107,7 +108,7 @@ export function ProfileGeneral({
         </div>
         <div className="grid gap-5">
           <h3 className="font-medium">Defaults</h3>
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-5 md:grid-cols-2">
             <Field label="Provider" htmlFor="provider">
               <Select
                 id="provider"
@@ -143,6 +144,10 @@ export function ProfileGeneral({
               value={defaults.reasoning}
               options={reasoningOptions}
             />
+          </div>
+        </div>
+        <ShowMore>
+          <div className="grid gap-5 md:grid-cols-2">
             <SelectField
               label="Web search"
               name="webSearchProvider"
@@ -168,35 +173,37 @@ export function ProfileGeneral({
               options={["sky", "emerald", "violet", "amber"]}
             />
           </div>
-        </div>
-        <div className="grid gap-5">
-          <h3 className="font-medium">Agent limits</h3>
-          <div className="grid gap-5 md:grid-cols-3">
-            <SelectField
-              label="Infinite mode"
-              name="infinite"
-              value={limits.infinite === null ? null : String(limits.infinite)}
-              options={["true", "false"]}
-              labels={{ true: "Enabled", false: "Disabled" }}
-            />
-            <NumberField
-              label="Executor turns"
-              name="executorTurns"
-              value={limits.executorTurns}
-            />
-            <NumberField
-              label="Autopilot iterations"
-              name="autopilotExecutorIterations"
-              value={limits.autopilotExecutorIterations}
-            />
+          <div className="grid gap-5">
+            <h3 className="font-medium">Agent limits</h3>
+            <div className="grid gap-5 md:grid-cols-3">
+              <SelectField
+                label="Infinite mode"
+                name="infinite"
+                value={
+                  limits.infinite === null ? null : String(limits.infinite)
+                }
+                options={["true", "false"]}
+                labels={{ true: "Enabled", false: "Disabled" }}
+              />
+              <NumberField
+                label="Executor turns"
+                name="executorTurns"
+                value={limits.executorTurns}
+              />
+              <NumberField
+                label="Autopilot iterations"
+                name="autopilotExecutorIterations"
+                value={limits.autopilotExecutorIterations}
+              />
+            </div>
           </div>
-        </div>
+        </ShowMore>
         {error ? (
           <p role="alert" className="break-words text-sm text-destructive">
             {error}
           </p>
         ) : null}
-        <Button type="submit" className="w-fit" disabled={pending}>
+        <Button type="submit" className="w-full sm:w-fit" disabled={pending}>
           {pending ? "Saving…" : "Save profile"}
         </Button>
       </fieldset>

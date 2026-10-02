@@ -2,6 +2,7 @@ import { ExternalLink, Monitor, MoreHorizontal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatRelativeTime, formatTime } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type { FleetInstance } from "./fleet-overview";
 
 export function DeviceList({
@@ -30,7 +31,12 @@ export function DeviceList({
             className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-4 transition-colors hover:bg-muted/20 sm:px-6 xl:grid-cols-[minmax(0,1fr)_100px_100px_150px_124px] xl:items-center xl:gap-4"
           >
             <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-3 xl:col-auto xl:row-auto">
-              <span className="grid size-10 shrink-0 place-items-center rounded-xl border bg-muted/50 text-muted-foreground">
+              <span
+                className={cn(
+                  "grid size-11 shrink-0 place-items-center rounded-2xl bg-muted text-muted-foreground",
+                  device.status === "online" && "bg-primary/10 text-primary",
+                )}
+              >
                 <Monitor className="size-5" aria-hidden="true" />
               </span>
               <div className="min-w-0">
@@ -39,20 +45,17 @@ export function DeviceList({
                   onClick={(event) =>
                     onSelect(device.instanceId, event.currentTarget)
                   }
-                  className="block max-w-full cursor-pointer truncate rounded text-left text-sm font-semibold outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring"
+                  className="block max-w-full cursor-pointer rounded text-left text-sm font-semibold leading-relaxed outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring [overflow-wrap:anywhere]"
                 >
                   {device.displayName}
                 </button>
-                <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
-                  {device.instanceId}
-                </p>
               </div>
             </div>
             <div className="col-span-2 row-start-2 flex items-center gap-3 xl:contents">
               <div>
                 <Badge variant={device.status}>{device.status}</Badge>
               </div>
-              <span className="min-w-0 truncate text-xs text-muted-foreground xl:text-sm">
+              <span className="hidden min-w-0 truncate text-xs text-muted-foreground sm:inline xl:text-sm">
                 v{device.productVersion}
               </span>
               <span
@@ -70,8 +73,6 @@ export function DeviceList({
                 <Button asChild variant="outline" size="sm">
                   <a
                     href={`/instances/${encodeURIComponent(device.instanceId)}`}
-                    target="_blank"
-                    rel="noreferrer"
                     aria-label={`Open ${device.displayName}`}
                   >
                     <ExternalLink aria-hidden="true" />

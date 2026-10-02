@@ -4,8 +4,9 @@ import { Boxes, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Field } from "@/components/field";
+import { ShowMore } from "@/components/show-more";
 import { Button } from "@/components/ui/button";
-import { SettingsFormDialog } from "./settings-form-dialog";
+import { FormDialog } from "@/components/form-dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -62,7 +63,7 @@ export function ContextPacksEditor({
           {profile.document.contextPacks.map((pack) => (
             <div
               key={pack.id}
-              className="flex items-center gap-3 rounded-lg border border-border p-3"
+              className="flex min-w-0 items-center gap-2 rounded-xl border border-border p-3 sm:gap-3"
             >
               <Boxes className="size-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
@@ -145,7 +146,7 @@ function ContextPackDialog({
   const pack = editing === "new" ? null : editing;
   const [provider, setProvider] = useState(pack?.provider ?? "");
   return (
-    <SettingsFormDialog
+    <FormDialog
       open={editing !== null}
       onOpenChange={onOpenChange}
       title={pack ? "Edit context pack" : "New context pack"}
@@ -186,7 +187,7 @@ function ContextPackDialog({
           <Textarea
             id="pack-instructions"
             name="instructions"
-            className="min-h-36"
+            className="min-h-24 sm:min-h-36"
             defaultValue={pack?.instructions ?? ""}
           />
         </Field>
@@ -194,7 +195,7 @@ function ContextPackDialog({
           <Textarea
             id="pack-prompt"
             name="prompt"
-            className="min-h-36"
+            className="min-h-24 sm:min-h-36"
             defaultValue={pack?.prompt ?? ""}
           />
         </Field>
@@ -224,71 +225,75 @@ function ContextPackDialog({
             required={Boolean(provider)}
           />
         </Field>
-        <OptionField
-          label="Mode"
-          name="mode"
-          value={pack?.mode ?? null}
-          options={["ask", "machdoch"]}
-        />
-        <OptionField
-          label="Reasoning"
-          name="reasoning"
-          value={pack?.reasoning ?? null}
-          options={reasoning}
-        />
       </div>
-      <div className="grid gap-5 md:grid-cols-3">
-        <Field
-          label="Variables"
-          htmlFor="pack-variables"
-          hint="One per line: NAME or NAME=default."
-        >
-          <Textarea
-            id="pack-variables"
-            name="variables"
-            defaultValue={formatVariables(pack?.variables ?? [])}
+      <ShowMore>
+        <div className="grid gap-5 md:grid-cols-2">
+          <OptionField
+            label="Mode"
+            name="mode"
+            value={pack?.mode ?? null}
+            options={["ask", "machdoch"]}
           />
-        </Field>
-        <ListField
-          label="Trigger phrases"
-          name="triggerPhrases"
-          value={pack?.triggerPhrases ?? []}
-        />
-        <ListField
-          label="Path patterns"
-          name="pathPatterns"
-          value={pack?.pathPatterns ?? []}
-        />
-      </div>
-      <div className="grid gap-5 md:grid-cols-3">
-        <OptionField
-          label="Prompt enhancement"
-          name="promptEnhancementMode"
-          value={pack?.promptEnhancementMode ?? null}
-          options={["off", "simple", "web-search"]}
-        />
-        <BooleanOptionField
-          label="Interview"
-          name="interviewEnabled"
-          value={pack?.interviewEnabled ?? null}
-        />
-        <BooleanOptionField
-          label="Session memory"
-          name="sessionMemoryEnabled"
-          value={pack?.sessionMemoryEnabled ?? null}
-        />
-        <BooleanOptionField
-          label="Global memory"
-          name="useGlobalMemory"
-          value={pack?.useGlobalMemory ?? null}
-        />
-        <BooleanOptionField
-          label="UI control"
-          name="uiControlEnabled"
-          value={pack?.uiControlEnabled ?? null}
-        />
-      </div>
-    </SettingsFormDialog>
+          <OptionField
+            label="Reasoning"
+            name="reasoning"
+            value={pack?.reasoning ?? null}
+            options={reasoning}
+          />
+        </div>
+        <div className="grid gap-5 md:grid-cols-3">
+          <Field
+            label="Variables"
+            htmlFor="pack-variables"
+            hint="One per line: NAME or NAME=default."
+          >
+            <Textarea
+              id="pack-variables"
+              name="variables"
+              defaultValue={formatVariables(pack?.variables ?? [])}
+            />
+          </Field>
+          <ListField
+            label="Trigger phrases"
+            name="triggerPhrases"
+            value={pack?.triggerPhrases ?? []}
+          />
+          <ListField
+            label="Path patterns"
+            name="pathPatterns"
+            value={pack?.pathPatterns ?? []}
+          />
+        </div>
+        <div className="grid gap-5 md:grid-cols-3">
+          <OptionField
+            label="Prompt enhancement"
+            name="promptEnhancementMode"
+            value={pack?.promptEnhancementMode ?? null}
+            options={["off", "simple", "web-search"]}
+          />
+          <BooleanOptionField
+            label="Interview"
+            name="interviewEnabled"
+            value={pack?.interviewEnabled ?? null}
+          />
+          <BooleanOptionField
+            label="Session memory"
+            name="sessionMemoryEnabled"
+            value={pack?.sessionMemoryEnabled ?? null}
+          />
+          <BooleanOptionField
+            label="Global memory"
+            name="useGlobalMemory"
+            value={pack?.useGlobalMemory ?? null}
+          />
+          <BooleanOptionField
+            label="UI control"
+            name="uiControlEnabled"
+            value={pack?.uiControlEnabled ?? null}
+          />
+        </div>
+      </ShowMore>
+    </FormDialog>
   );
 }
 
