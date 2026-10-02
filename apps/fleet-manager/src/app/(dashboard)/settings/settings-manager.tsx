@@ -1,7 +1,7 @@
 "use client";
 
 import { Settings2 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useReducer, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
@@ -10,10 +10,22 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { CreateProfile } from "./create-profile";
 import { ProfileEditor } from "./profile-editor";
+import { profileDraftsReducer } from "./profile-drafts";
+import type { SettingsProfile } from "./types";
 import { useSettingsProfiles } from "./use-settings-profiles";
 
 export function SettingsManager(): React.ReactElement {
-  const state = useSettingsProfiles();
+  const [drafts, dispatchDraft] = useReducer(profileDraftsReducer, {});
+  const onLoaded = useCallback((profile: SettingsProfile) => {
+    dispatchDraft({ type: "loaded", profile });
+  }, []);
+  const onDeleted = useCallback((profileId: string) => {
+    dispatchDraft({ type: "deleted", profileId });
+  }, []);
+  const state = useSettingsProfiles({ onLoaded, onDeleted });
+  const generalDraft = state.profile
+    ? drafts[state.profile.profileId]
+    : undefined;
   const [pending, setPending] = useState(false);
   const [query, setQuery] = useState("");
   const profiles = state.profiles.filter((profile) =>
@@ -114,10 +126,20 @@ export function SettingsManager(): React.ReactElement {
             Loading settings…
           </p>
         ) : null}
-        {state.profile && state.catalog ? (
+        {state.profile && state.catalog && generalDraft ? (
           <ProfileEditor
             key={state.profile.profileId}
             profile={state.profile}
+            generalDraft={generalDraft}
+            onGeneralChange={(draft, values) =>
+              dispatchDraft({ type: "changed", draft, values })
+            }
+            onGeneralSaved={(profile) =>
+              dispatchDraft({ type: "saved", profile })
+            }
+            onReloaded={(profile) =>
+              dispatchDraft({ type: "reloaded", profile })
+            }
             catalog={state.catalog}
             profiles={state.profiles}
             onProfile={state.acceptProfile}
