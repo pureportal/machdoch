@@ -98,7 +98,7 @@ export const executeGoalRun = async (
                 ? accountGoal(current.goal)
                 : current.goal,
           })).then((latest) => {
-            lastAccountingAt = Date.now();
+            if (latest.goal) lastAccountingAt = latest.goal.updatedAt;
             return latest;
           })
         : readGoalRecord(path)
