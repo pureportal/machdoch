@@ -776,3 +776,27 @@ it("shows uninstalled models and download actions in Models", () => {
     screen.getAllByRole("button", { name: "Download model" }).length,
   ).toBeGreaterThan(10);
 });
+
+it("opens the filtered slideshow from the library toolbar and supports keyboard navigation", () => {
+  const first = {
+    ...asset,
+    id: "image:first",
+    operation: { kind: "local-import" as const, sourceFileName: "First.png" },
+  };
+  const second = {
+    ...asset,
+    id: "image:second",
+    operation: { kind: "local-import" as const, sourceFileName: "Second.png" },
+  };
+  render(
+    createElement(MediaAssetsView, createProps({ assets: [first, second] })),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Slideshow" }));
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByText("1 / 2")).toBeTruthy();
+  fireEvent.keyDown(dialog, { key: "ArrowRight" });
+  expect(within(dialog).getByText("2 / 2")).toBeTruthy();
+  expect(
+    within(dialog).getByRole("button", { name: "Play slideshow" }),
+  ).toBeTruthy();
+});
