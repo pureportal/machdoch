@@ -1,6 +1,7 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { describe, expect, it } from "vitest";
 import {
   assessRalphScopeRegistryAvailability,
   beginRalphScopeRegistryCycle,
@@ -50,6 +51,233 @@ const createEvidence = (): RalphScopeEvidenceDocument => {
 };
 
 describe("Ralph scope registry helpers", () => {
+  it("excludes Python caches at every depth and when scanned explicitly", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-python-caches-"));
+    const cachePaths = [
+      "__pycache__",
+      "apps/client/src-tauri/python/__pycache__",
+      "apps/client/src-tauri/python/model/__pycache__",
+    ];
+    const sourcePaths = [
+      "apps/client/src-tauri/python/model",
+      "apps/client/src-tauri/python/__pycache__-tools",
+      "apps/client/src-tauri/python/pycache",
+    ];
+
+    try {
+      for (const path of sourcePaths) {
+        const directory = join(workspace, path);
+        await mkdir(directory, { recursive: true });
+        await writeFile(join(directory, "__init__.py"), "", "utf8");
+      }
+      for (const path of cachePaths) {
+        const directory = join(workspace, path);
+        await mkdir(join(directory, "tests"), { recursive: true });
+        await writeFile(join(directory, "test_model.cpython-313.pyc"), "");
+        await writeFile(join(directory, "test_trainer.cpython-313.pyc"), "");
+        await writeFile(join(directory, "tests", "test_model.py"), "", "utf8");
+      }
+
+      for (const excludePaths of [undefined, []]) {
+        const evidence = await discoverRalphScopeEvidence(workspace, {
+          ...(excludePaths === undefined ? {} : { excludePaths }),
+          maxDepth: 9,
+        });
+        expect(evidence.excludePaths).toContain("__pycache__");
+        expect(evidence.scopes.flatMap((scope) => scope.paths)).toEqual(
+          expect.arrayContaining(sourcePaths),
+        );
+        expect(
+          evidence.scopes.some((scope) =>
+            scope.paths.some((path) => path.split("/").includes("__pycache__")),
+          ),
+        ).toBe(false);
+      }
+
+      for (const rootPath of cachePaths) {
+        const evidence = await discoverRalphScopeEvidence(workspace, {
+          rootPath,
+          excludePaths: [],
+          maxDepth: 2,
+        });
+        expect(evidence.scopes).toEqual([]);
+      }
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("requires source files for Python test-directory evidence", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-python-tests-"));
+    const filesByDirectory = {
+      bytecode: ["test_model.cpython-313.pyc", "test_trainer.pyc"],
+      mixed: ["test_model.py", "test_trainer.pyc"],
+      acceptance: ["test_model.py", "test_trainer.py", "test_model.pyc"],
+      model: ["__init__.py", "model.py", "trainer.py", "test_model.pyc"],
+    };
+
+    try {
+      for (const [path, files] of Object.entries(filesByDirectory)) {
+        const directory = join(workspace, path);
+        await mkdir(directory, { recursive: true });
+        for (const file of files) {
+          await writeFile(join(directory, file), "", "utf8");
+        }
+      }
+
+      const evidence = await discoverRalphScopeEvidence(workspace);
+      expect(evidence.scopes.map((scope) => scope.id)).not.toContain(
+        "bytecode",
+      );
+      expect(evidence.scopes.map((scope) => scope.id)).not.toContain("mixed");
+      expect(
+        evidence.scopes.find((scope) => scope.id === "acceptance"),
+      ).toMatchObject({
+        kind: "test",
+        tags: expect.arrayContaining(["test-covered"]),
+        evidence: expect.arrayContaining([
+          "semantic:source-files=0",
+          "semantic:test-files=2",
+        ]),
+      });
+      expect(
+        evidence.scopes.find((scope) => scope.id === "model"),
+      ).toMatchObject({
+        kind: "module",
+        tags: expect.arrayContaining(["source-bearing", "missing-local-tests"]),
+        evidence: expect.arrayContaining([
+          "semantic:source-files=3",
+          "semantic:test-files=0",
+        ]),
+      });
+      expect(
+        evidence.scopes
+          .flatMap((scope) => scope.evidence)
+          .some((path) => path.endsWith(".pyc")),
+      ).toBe(false);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("retires persisted Python cache scopes without losing their history", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-persisted-caches-"));
+    const sourcePath = "apps/client/src-tauri/python/model";
+    const cachePaths = [
+      "__pycache__",
+      "apps/client/src-tauri/python/__pycache__",
+      "apps\\client\\src-tauri\\python\\__pycache__\\tests",
+    ];
+    const now = "2026-06-25T10:00:00.000Z";
+    const options = {
+      flowAlias: "test-flow",
+      strategy: "priority" as const,
+      now,
+    };
+    const registered = updateRalphScopeRegistryFromEvidence(
+      parseRalphScopeRegistry(undefined, options),
+      createEvidence(),
+      options,
+    ).registry;
+    const sourceScope = {
+      ...registered.scopes[0]!,
+      paths: [sourcePath],
+      globs: [`${sourcePath}/**/*`],
+    };
+    const cacheScopes = cachePaths.map((path, index) => ({
+      ...sourceScope,
+      id: `python-cache-${index}`,
+      kind: "test" as const,
+      paths: [path],
+      globs: [`${path}/**/*`],
+      priority: 100,
+      selectedCount: 3,
+      lastSelectedAt: now,
+    }));
+    const staleRegistry = {
+      ...registered,
+      scopes: [sourceScope, ...cacheScopes],
+      selection: {
+        ...registered.selection,
+        currentScopeId: cacheScopes[0]!.id,
+        completedScopeIds: [cacheScopes[1]!.id],
+      },
+      history: [
+        {
+          at: now,
+          type: "scope-selected" as const,
+          scopeId: cacheScopes[0]!.id,
+        },
+      ],
+    };
+
+    try {
+      const registryPath = join(workspace, "scope-registry.json");
+      await writeFile(registryPath, JSON.stringify(staleRegistry), "utf8");
+      const persisted = parseRalphScopeRegistry(
+        JSON.parse(await readFile(registryPath, "utf8")),
+        options,
+      );
+      expect(persisted.selection.currentScopeId).toBeNull();
+      expect(persisted.selection.completedScopeIds).toEqual([]);
+
+      for (const registry of [persisted, staleRegistry]) {
+        for (const forceNew of [false, true]) {
+          const selection = selectRalphScopeFromRegistry(registry, {
+            now,
+            forceNew,
+          });
+          expect(selection.scope?.id).toBe(sourceScope.id);
+          expect(selection.reusedCurrentScope).toBe(false);
+          expect(selection.registry.selection.currentScopeId).toBe(
+            sourceScope.id,
+          );
+          expect(selection.scopeCluster?.scopeIds).toEqual([sourceScope.id]);
+          expect(selection.scopeCluster?.paths).toEqual([sourcePath]);
+          expect(selection.scopeCluster?.globs).toEqual([`${sourcePath}/**/*`]);
+        }
+        expect(
+          assessRalphScopeRegistryAvailability(registry, { now }),
+        ).toMatchObject({
+          activeScopeCount: 1,
+          selectableScopeCount: 1,
+        });
+      }
+
+      const cacheOnly = { ...staleRegistry, scopes: cacheScopes };
+      const emptySelection = selectRalphScopeFromRegistry(cacheOnly, { now });
+      expect(emptySelection.scope).toBeUndefined();
+      expect(emptySelection.registry.selection.currentScopeId).toBeNull();
+      expect(
+        assessRalphScopeRegistryAvailability(cacheOnly, { now }),
+      ).toMatchObject({
+        status: "exhausted",
+        activeScopeCount: 0,
+      });
+
+      const refreshed = updateRalphScopeRegistryFromEvidence(
+        staleRegistry,
+        { ...createEvidence(), scopes: [sourceScope, ...cacheScopes] },
+        options,
+      );
+      expect(refreshed.removed).toEqual(cacheScopes.map((scope) => scope.id));
+      expect(refreshed.registry.selection.currentScopeId).toBeNull();
+      expect(refreshed.registry.selection.completedScopeIds).toEqual([]);
+      for (const cacheScope of cacheScopes) {
+        expect(
+          refreshed.registry.scopes.find((scope) => scope.id === cacheScope.id),
+        ).toMatchObject({
+          status: "removed",
+          selectedCount: 3,
+          lastSelectedAt: now,
+        });
+      }
+      expect(refreshed.registry.history[0]).toEqual(staleRegistry.history[0]);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("discovers repository scope evidence while honoring generated/external excludes", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-evidence-"));
 
