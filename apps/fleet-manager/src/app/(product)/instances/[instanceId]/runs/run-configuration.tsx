@@ -3,7 +3,9 @@
 import { useRef, useState } from "react";
 import type { RunSnapshot } from "@machdoch/fleet-protocol";
 import { ConfirmButton } from "@/components/confirm-button";
+import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 export function RunConfiguration({
   snapshot,
@@ -48,7 +50,7 @@ export function RunConfiguration({
   };
 
   return (
-    <section className="min-w-0 rounded-xl border bg-card p-4 sm:p-5">
+    <section className="min-w-0 rounded-2xl border bg-card p-5 sm:p-6">
       <h2 className="font-medium">Run configuration</h2>
       {editor === null ? (
         <Button
@@ -71,6 +73,7 @@ export function RunConfiguration({
               document = JSON.parse(editor);
             } catch {
               setValidationError("Enter valid JSON.");
+              editorRef.current?.focus();
               return;
             }
             void onSave(document, revision).then((saved) => {
@@ -78,18 +81,18 @@ export function RunConfiguration({
             });
           }}
         >
-          <label className="grid gap-2 text-sm">
-            run.json
-            <textarea
+          <Field label="run.json" htmlFor="run-config-editor">
+            <Textarea
+              id="run-config-editor"
               ref={editorRef}
-              className="min-h-80 w-full min-w-0 rounded-md border bg-background px-3 py-2 font-mono text-sm"
+              className="min-h-64 font-mono sm:min-h-80"
               spellCheck={false}
               autoFocus
               readOnly={pending}
               value={editor}
               onChange={(event) => setEditor(event.target.value)}
             />
-          </label>
+          </Field>
           <p className="text-sm text-muted-foreground">
             Stored environment values are redacted and preserved when unchanged.
           </p>

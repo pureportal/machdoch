@@ -2,14 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import {
-  ArrowLeft,
-  ExternalLink,
-  Play,
-  RefreshCw,
-  RotateCw,
-  Square,
-} from "lucide-react";
+import { ArrowLeft, RefreshCw } from "lucide-react";
 import {
   productSnapshotSchema,
   runDocumentSchema,
@@ -20,6 +13,9 @@ import {
 import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
 import { Button } from "@/components/ui/button";
 import { RunConfiguration } from "./run-configuration";
+import { ServiceCard } from "./service-card";
+import { AddServiceForm, type ServiceInput } from "./add-service-form";
+import { ShowMore } from "@/components/show-more";
 
 type Preview = {
   id: string;
@@ -35,8 +31,8 @@ type StatusResponse = {
   previews: Preview[];
 };
 const inputClass =
-  "min-h-11 w-full min-w-0 rounded-md border bg-background px-3 py-2 text-base";
-const cardClass = "min-w-0 rounded-xl border bg-card p-4 sm:p-5";
+  "min-h-11 w-full min-w-0 rounded-xl border border-input bg-card px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring";
+const cardClass = "min-w-0 rounded-2xl border bg-card p-5 sm:p-6";
 const bytes = (value: number): string =>
   `${(value / 1024 ** 3).toFixed(1)} GiB`;
 
@@ -61,10 +57,6 @@ export function RunsView({
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [name, setName] = useState("");
-  const [command, setCommand] = useState("");
-  const [directory, setDirectory] = useState(".");
-  const [port, setPort] = useState("");
   const [backend, setBackend] = useState("");
   const [prefix, setPrefix] = useState("/api");
   const [stripPrefix, setStripPrefix] = useState(false);
@@ -239,8 +231,13 @@ export function RunsView({
       expectedRevision: revision,
     });
   };
-  const add = async (): Promise<void> => {
-    if (!data) return;
+  const add = async ({
+    name,
+    command,
+    directory,
+    port,
+  }: ServiceInput): Promise<boolean> => {
+    if (!data) return false;
     const document = structuredClone(data.snapshot.document);
     document.configurations.push({
       id: `service-${crypto.randomUUID().slice(0, 8)}`,
@@ -270,12 +267,10 @@ export function RunsView({
       },
     });
     if (await save(document, data.snapshot.revision)) {
-      setName("");
-      setCommand("");
-      setPort("");
-      setDirectory(".");
-      setNotice("Service saved. Start it when ready.");
+      setNotice("Service saved.");
+      return true;
     }
+    return false;
   };
   const openPreview = async (
     configurationId: string,
@@ -347,7 +342,7 @@ export function RunsView({
   };
 
   return (
-    <main className="h-dvh overflow-y-auto p-3 sm:p-6">
+    <main className="fleet-services min-h-dvh p-4 sm:p-8">
       <div className="mx-auto grid w-full min-w-0 max-w-6xl gap-5 pb-12">
         <header className="flex min-w-0 flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
@@ -357,7 +352,9 @@ export function RunsView({
             >
               <ArrowLeft size={16} /> Back to instance
             </Link>
-            <h1 className="text-2xl font-semibold">Services & previews</h1>
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+              Services & previews
+            </h1>
             <p className="break-all text-sm text-muted-foreground">
               {instanceName}
             </p>
@@ -412,189 +409,61 @@ export function RunsView({
         ) : null}
         {data ? (
           <>
-            <div
-              className="grid grid-cols-2 gap-3 md:grid-cols-4"
-              aria-label="Host status"
-            >
-              {[
-                [
-                  "Host CPU",
-                  data.snapshot.host.cpuPercent === null
-                    ? "Sampling…"
-                    : `${data.snapshot.host.cpuPercent.toFixed(0)}%`,
-                ],
-                [
-                  "Host memory",
-                  `${bytes(data.snapshot.host.totalMemory - data.snapshot.host.freeMemory)} / ${bytes(data.snapshot.host.totalMemory)}`,
-                ],
-                [
-                  "Fleet service memory",
-                  bytes(data.snapshot.host.serviceMemory),
-                ],
-                [
-                  "Host uptime",
-                  `${Math.floor(data.snapshot.host.uptimeSeconds / 3600)}h · ${data.snapshot.host.platform}`,
-                ],
-              ].map(([label, value]) => (
-                <div key={label} className={cardClass}>
-                  <p className="text-xs text-muted-foreground">{label}</p>
-                  <p className="mt-1 break-words font-medium">{value}</p>
-                </div>
-              ))}
-            </div>
+            <ShowMore>
+              <div
+                className="grid grid-cols-2 gap-3 md:grid-cols-4"
+                aria-label="Host status"
+              >
+                {[
+                  [
+                    "Host CPU",
+                    data.snapshot.host.cpuPercent === null
+                      ? "Sampling…"
+                      : `${data.snapshot.host.cpuPercent.toFixed(0)}%`,
+                  ],
+                  [
+                    "Host memory",
+                    `${bytes(data.snapshot.host.totalMemory - data.snapshot.host.freeMemory)} / ${bytes(data.snapshot.host.totalMemory)}`,
+                  ],
+                  [
+                    "Fleet service memory",
+                    bytes(data.snapshot.host.serviceMemory),
+                  ],
+                  [
+                    "Host uptime",
+                    `${Math.floor(data.snapshot.host.uptimeSeconds / 3600)}h · ${data.snapshot.host.platform}`,
+                  ],
+                ].map(([label, value]) => (
+                  <div key={label} className={cardClass}>
+                    <p className="text-xs text-muted-foreground">{label}</p>
+                    <p className="mt-1 break-words font-medium">{value}</p>
+                  </div>
+                ))}
+              </div>
+            </ShowMore>
             <section className="grid gap-3" aria-label="Project services">
               {data.snapshot.document.configurations.length === 0 ? (
                 <div className={cardClass}>
-                  <h2 className="font-medium">Run your project here</h2>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Add a development server, backend, landing page, or worker
-                    below. Your agent can also write .machdoch/run.json. Nothing
-                    starts automatically.
-                  </p>
+                  <h2 className="font-medium">No services yet</h2>
                 </div>
               ) : null}
-              {data.snapshot.document.configurations.map((config) => {
-                const status = data.snapshot.statuses.find(
-                  (s) => s.id === config.id,
-                )!;
-                const running = [
-                  "running",
-                  "unhealthy",
-                  "starting",
-                  "restarting",
-                  "stopping",
-                ].includes(status.state);
-                return (
-                  <article key={config.id} className={cardClass}>
-                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <h2 className="break-words font-semibold">
-                          {config.name}
-                        </h2>
-                        <p className="mt-1 text-sm capitalize">
-                          {status.state === "stopped" && status.exitCode === 0
-                            ? "Completed"
-                            : status.state}
-                          {status.health ? ` · ${status.health}` : ""}
-                        </p>
-                        <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
-                          {config.kind === "task"
-                            ? config.command
-                            : `${config.startOrder} group · ${config.children.length} services`}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          className="min-h-11"
-                          variant="outline"
-                          disabled={commandsBlocked || running}
-                          onClick={() =>
-                            void execute({
-                              action: "start",
-                              commandId: crypto.randomUUID(),
-                              configurationId: config.id,
-                            })
-                          }
-                        >
-                          <Play /> Start
-                        </Button>
-                        <Button
-                          className="min-h-11"
-                          variant="outline"
-                          disabled={commandsBlocked || !running}
-                          onClick={() =>
-                            void execute({
-                              action: "stop",
-                              commandId: crypto.randomUUID(),
-                              configurationId: config.id,
-                            })
-                          }
-                        >
-                          <Square /> Stop
-                        </Button>
-                        <Button
-                          className="min-h-11"
-                          variant="outline"
-                          disabled={
-                            commandsBlocked || status.state === "stopping"
-                          }
-                          onClick={() =>
-                            void execute({
-                              action: "restart",
-                              commandId: crypto.randomUUID(),
-                              configurationId: config.id,
-                            })
-                          }
-                        >
-                          <RotateCw /> Restart
-                        </Button>
-                      </div>
-                    </div>
-                    <p className="mt-3 text-xs text-muted-foreground">
-                      {status.pid ? `PID ${status.pid} · ` : ""}
-                      {status.restartCount} automatic restarts
-                      {status.startedAt
-                        ? ` · Started ${new Date(status.startedAt).toLocaleTimeString()}`
-                        : ""}
-                      {status.exitCode !== null
-                        ? ` · Exit ${status.exitCode}`
-                        : ""}
-                    </p>
-                    {config.kind === "task" && config.ports.length ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {config.ports.map((p) => (
-                          <Button
-                            key={p}
-                            className="min-h-11"
-                            title={
-                              !data.previewsEnabled
-                                ? "Previews are not configured."
-                                : undefined
-                            }
-                            disabled={
-                              commandsBlocked ||
-                              !status.pid ||
-                              !data.previewsEnabled ||
-                              !["running", "unhealthy"].includes(status.state)
-                            }
-                            onClick={() => void openPreview(config.id, p)}
-                          >
-                            <ExternalLink /> Preview :{p}
-                          </Button>
-                        ))}
-                      </div>
-                    ) : null}
-                    {config.kind === "task" ? (
-                      <details
-                        className="mt-3"
-                        onToggle={(event) => {
-                          if (event.currentTarget.open)
-                            openLogs.current.add(config.id);
-                          else openLogs.current.delete(config.id);
-                        }}
-                      >
-                        <summary className="flex min-h-11 cursor-pointer items-center text-sm">
-                          Logs
-                        </summary>
-                        <pre
-                          tabIndex={0}
-                          aria-label={`${config.name} logs`}
-                          className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs"
-                        >
-                          {status.logs.length
-                            ? status.logs
-                                .map(
-                                  (line) =>
-                                    `${new Date(line.at).toLocaleTimeString()} ${line.stream}  ${line.line}`,
-                                )
-                                .join("\n")
-                            : "No output yet."}
-                        </pre>
-                      </details>
-                    ) : null}
-                  </article>
-                );
-              })}
+              {data.snapshot.document.configurations.map((configuration) => (
+                <ServiceCard
+                  key={configuration.id}
+                  configuration={configuration}
+                  status={data.snapshot.statuses.find(
+                    (status) => status.id === configuration.id,
+                  )!}
+                  blocked={commandsBlocked}
+                  previewsEnabled={data.previewsEnabled}
+                  onExecute={execute}
+                  onPreview={openPreview}
+                  onLogsChange={(open) => {
+                    if (open) openLogs.current.add(configuration.id);
+                    else openLogs.current.delete(configuration.id);
+                  }}
+                />
+              ))}
             </section>
             {endpoints.length > 1 ? (
               <details className={cardClass}>
@@ -680,85 +549,13 @@ export function RunsView({
                 </div>
               </section>
             ) : null}
-            <details className={cardClass}>
-              <summary className="min-h-11 cursor-pointer font-medium">
-                Add service
-              </summary>
-              <form
-                className="mt-3 grid gap-3"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void add();
-                }}
-              >
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="grid gap-1 text-sm">
-                    Name
-                    <input
-                      required
-                      disabled={pending}
-                      maxLength={120}
-                      className={inputClass}
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="Frontend"
-                    />
-                  </label>
-                  <label className="grid gap-1 text-sm">
-                    Working directory
-                    <input
-                      required
-                      disabled={pending}
-                      className={inputClass}
-                      value={directory}
-                      onChange={(e) => setDirectory(e.target.value)}
-                      placeholder="."
-                    />
-                  </label>
-                </div>
-                <label className="grid gap-1 text-sm">
-                  Command
-                  <input
-                    required
-                    disabled={pending}
-                    maxLength={8000}
-                    className={inputClass}
-                    value={command}
-                    onChange={(e) => setCommand(e.target.value)}
-                    placeholder="pnpm run dev --host 127.0.0.1"
-                  />
-                </label>
-                <label className="grid gap-1 text-sm">
-                  HTTP port (optional for workers and one-off commands)
-                  <input
-                    type="number"
-                    disabled={pending}
-                    min={1024}
-                    max={65535}
-                    className={inputClass}
-                    value={port}
-                    onChange={(e) => setPort(e.target.value)}
-                    placeholder="3000"
-                  />
-                </label>
-                <p className="text-xs text-muted-foreground">
-                  Bind servers to loopback. Install project dependencies before
-                  starting. Commands run as the Fleet service account.
-                </p>
-                <Button
-                  className="min-h-11 justify-self-start"
-                  disabled={editingBlocked}
-                  type="submit"
-                >
-                  Save service
-                </Button>
-                {servicesRunning && !pending ? (
-                  <p className="text-sm">
-                    Stop project services to change their configuration.
-                  </p>
-                ) : null}
-              </form>
-            </details>
+            <AddServiceForm
+              key={`add-service-${workspace}`}
+              pending={pending}
+              blocked={editingBlocked}
+              servicesRunning={servicesRunning}
+              onAdd={add}
+            />
             <RunConfiguration
               key={workspace}
               snapshot={data.snapshot}
