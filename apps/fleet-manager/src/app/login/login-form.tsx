@@ -6,6 +6,7 @@ import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/password-input";
 import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
 
 export function LoginForm(): React.ReactElement {
@@ -13,11 +14,11 @@ export function LoginForm(): React.ReactElement {
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Sign in</CardTitle>
+    <Card className="rounded-3xl shadow-xl shadow-primary/5">
+      <CardHeader className="px-6 pt-7 sm:px-8 sm:pt-8">
+        <CardTitle className="text-2xl tracking-tight">Sign in</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-6 pb-7 sm:px-8 sm:pb-8">
         <form
           className="grid gap-5"
           onSubmit={(event) => {
@@ -55,10 +56,9 @@ export function LoginForm(): React.ReactElement {
             />
           </Field>
           <Field label="Password" htmlFor="password">
-            <Input
+            <PasswordInput
               id="password"
               name="password"
-              type="password"
               autoComplete="current-password"
               maxLength={1024}
               required

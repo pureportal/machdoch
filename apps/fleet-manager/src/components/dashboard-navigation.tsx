@@ -26,7 +26,7 @@ export function DashboardNavigation({
   return (
     <nav
       aria-label="Fleet Manager"
-      className="grid auto-cols-fr grid-flow-col gap-1 px-3 py-2 lg:grid-flow-row lg:grid-cols-1 lg:px-2"
+      className="fleet-navigation grid auto-cols-fr grid-flow-col gap-1 px-3 py-2 lg:grid-flow-row lg:grid-cols-1 lg:gap-2 lg:px-4"
     >
       {items
         .filter((item) => !item.settingsOnly || settingsEnabled)
@@ -40,11 +40,11 @@ export function DashboardNavigation({
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "flex min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:h-9 sm:flex-row sm:gap-2 sm:px-3 sm:py-0 sm:text-sm lg:justify-start",
-                active && "bg-primary/10 text-primary",
+                "fleet-nav-item flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl px-1 py-2 text-[11px] font-medium transition-colors lg:min-h-12 lg:flex-row lg:justify-start lg:gap-3 lg:px-4 lg:text-sm",
+                active && "fleet-nav-active",
               )}
             >
-              <Icon className="size-4" />
+              <Icon className="size-[18px]" aria-hidden="true" />
               {item.label}
             </Link>
           );

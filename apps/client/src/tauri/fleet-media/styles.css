@@ -4,6 +4,74 @@ body,
   height: 100%;
 }
 
+:root {
+  --app-slate-950: #102323;
+  --app-slate-900: #183333;
+  --app-slate-800: #2c4443;
+  --app-slate-700: #49635e;
+  --app-slate-600: #66867a;
+  --app-slate-500: #a1b9ae;
+  --app-slate-400: #a9c1b8;
+  --app-slate-100: #edf6f1;
+  --app-sky-300: #b5ebcf;
+  --app-sky-400: #8fd7b7;
+  --app-sky-500: #0f7b68;
+  --app-sky-600: #0d705d;
+  --app-violet-200: #ded0f5;
+  --app-violet-300: #d6c5f7;
+  --app-bg: var(--app-slate-950);
+  --app-surface: #142b2b;
+  --app-surface-raised: #1c3634;
+  --app-border: #29423e;
+  --app-border-strong: #49635e;
+  --app-hover: #24443c;
+  --app-text: var(--app-slate-100);
+  --app-text-muted: var(--app-slate-400);
+}
+
+.m-media-navigation {
+  background: #142b2b;
+}
+
+.m-media-navigation button[data-active="true"] {
+  border-color: transparent;
+  background: #b5ebcf;
+  color: #183e34;
+  box-shadow: none;
+}
+
+.m-media-studio-layout
+  :is(input:not([type="checkbox"]):not([type="range"]), select, textarea) {
+  border-radius: 12px;
+}
+
+@media (max-width: 760px) {
+  .m-media-navigation nav {
+    height: 64px;
+  }
+
+  .m-media-navigation button {
+    height: 52px;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .m-media-navigation button svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .m-media-navigation button span {
+    font-size: 10px;
+  }
+
+  .m-media-studio-layout
+    :is(input:not([type="checkbox"]):not([type="range"]), select, textarea) {
+    min-height: 44px;
+    font-size: 16px;
+  }
+}
+
 #root {
   display: flex;
   flex-direction: column;

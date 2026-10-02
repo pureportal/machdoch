@@ -1,4 +1,5 @@
-import { RadioTower } from "lucide-react";
+import Link from "next/link";
+import { FleetBrand } from "@/components/fleet-brand";
 import { DashboardNavigation } from "@/components/dashboard-navigation";
 import { LogoutButton } from "@/components/logout-button";
 import { requirePageSession } from "@/server/page-auth";
@@ -14,29 +15,39 @@ export default async function DashboardLayout({
   const session = await requirePageSession();
   const settingsEnabled = getRuntime().settingsCipher !== null;
   return (
-    <div className="fleet-dashboard min-h-dvh lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
-      <aside className="border-b border-border bg-card/80 backdrop-blur lg:sticky lg:top-0 lg:h-dvh lg:border-b-0 lg:border-r">
-        <div className="flex h-16 items-center justify-between px-5 lg:justify-start">
-          <div className="flex items-center gap-2.5 font-semibold tracking-tight">
-            <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">
-              <RadioTower className="size-4" />
-            </span>
-            Fleet Manager
-          </div>
+    <div className="fleet-dashboard min-h-dvh lg:grid lg:grid-cols-[232px_minmax(0,1fr)]">
+      <a href="#fleet-content" className="fleet-skip-link">
+        Skip to content
+      </a>
+      <aside className="fleet-sidebar flex flex-col lg:sticky lg:top-0 lg:h-dvh">
+        <div className="flex h-20 items-center justify-between px-5 lg:h-28 lg:justify-start lg:px-6">
+          <Link
+            href="/instances"
+            aria-label="Fleet Manager overview"
+            className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <FleetBrand />
+          </Link>
           <div className="lg:hidden">
             <LogoutButton />
           </div>
         </div>
         <DashboardNavigation settingsEnabled={settingsEnabled} />
-        <div className="absolute bottom-0 hidden w-[239px] items-center justify-between border-t border-border px-5 py-4 lg:flex">
-          <span className="truncate text-sm text-muted-foreground">
+        <div className="mt-auto hidden items-center gap-3 border-t border-white/10 px-5 py-5 lg:flex">
+          <span
+            className="grid size-9 shrink-0 place-items-center rounded-full bg-white/10 text-sm font-semibold"
+            aria-hidden="true"
+          >
+            {session.username.slice(0, 1).toUpperCase()}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-sm">
             {session.username}
           </span>
           <LogoutButton />
         </div>
       </aside>
-      <main className="min-w-0">
-        <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-10 lg:py-10">
+      <main id="fleet-content" tabIndex={-1} className="min-w-0 outline-none">
+        <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-7 sm:py-8 lg:px-10 lg:py-10 xl:px-12">
           {children}
         </div>
       </main>
