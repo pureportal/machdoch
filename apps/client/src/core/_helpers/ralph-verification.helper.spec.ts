@@ -18,6 +18,22 @@ const observation = (
   });
 
 describe("RALPH structured verification", () => {
+  it.each([
+    "Could NOT find Vulkan (missing: Vulkan_LIBRARY Vulkan_INCLUDE_DIR)",
+    "VULKAN_SDK is not set",
+    "Please set VULKAN_SDK to the Vulkan SDK installation directory",
+    "Please install Vulkan SDK and ensure that VULKAN_SDK env variable is set",
+    "No test files found, exiting with code 1",
+  ])("classifies unavailable baseline verification: %s", (diagnostic) => {
+    const baseline = observation(101, diagnostic);
+    expect(baseline.diagnostic).toBeDefined();
+    expect(
+      compareRalphVerificationObservations(
+        baseline,
+        observation(101, diagnostic),
+      ).disposition,
+    ).toBe("ENVIRONMENT_UNAVAILABLE");
+  });
   it("rejects a successful test process that executed no tests", () => {
     const candidate = observation(0, "Ran 0 tests in 0.000s\nOK");
     expect(candidate.processOutcome.kind).toBe("execution-error");

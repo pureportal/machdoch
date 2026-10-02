@@ -32,8 +32,22 @@ export const diagnoseRalphVerificationFailure = (
   ) {
     return {
       category: "invalid-verification-path",
-      message: "Node could not launch the verification script from its Windows path.",
-      retryCondition: "Use a drive or UNC path without the Windows device prefix.",
+      message:
+        "Node could not launch the verification script from its Windows path.",
+      retryCondition:
+        "Use a drive or UNC path without the Windows device prefix.",
+    };
+  }
+  if (
+    /Could NOT find Vulkan|install (?:the )?Vulkan SDK|Vulkan (?:SDK|headers|library|libraries)[^\n]*(?:missing|not found|unavailable|required)|VULKAN_SDK[^\n]*(?:not set|not found|missing)|(?:set|define|configure)[^\n]*VULKAN_SDK/iu.test(
+      output,
+    )
+  ) {
+    return {
+      category: "missing-vulkan",
+      message: "Native verification requires a usable Vulkan SDK.",
+      retryCondition:
+        "Install the Vulkan SDK and set VULKAN_SDK to its directory.",
     };
   }
   if (
@@ -96,7 +110,7 @@ export const diagnoseRalphVerificationFailure = (
     };
   }
   if (
-    /not recognized as (?:the name|an internal)|command not found|No tests? (?:were )?found|no tests ran/iu.test(
+    /not recognized as (?:the name|an internal)|command not found|No (?:test files|tests?) (?:were )?found|no tests ran/iu.test(
       output,
     )
   ) {
