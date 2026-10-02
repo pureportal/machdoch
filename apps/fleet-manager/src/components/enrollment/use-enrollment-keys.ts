@@ -2,18 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@machdoch/product-ui/fleet-api";
+import {
+  createEnrollmentInventory,
+  type AvailableGrant,
+} from "./enrollment-inventory";
 
 interface EnrollmentGrant {
   grantId: string;
   enrollmentKey: string;
   managerUrl: string;
   managerId: string;
-  expiresAt: number;
-}
-
-interface AvailableGrant {
-  grantId: string;
-  createdAt: number;
   expiresAt: number;
 }
 
@@ -25,57 +23,53 @@ export function useEnrollmentKeys() {
   const [revoking, setRevoking] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
-  const controllerRef = useRef<AbortController | null>(null);
-  const inventoryRequest = useRef(0);
-  const mutating = useRef(false);
+  const inventoryRef = useRef<ReturnType<
+    typeof createEnrollmentInventory
+  > | null>(null);
 
-  const reload = useCallback(async (): Promise<void> => {
-    const signal = controllerRef.current?.signal;
-    if (!signal || signal.aborted || mutating.current) return;
-    const requestId = ++inventoryRequest.current;
-    setLoading(true);
-    try {
-      const result = await api<{ grants: AvailableGrant[] }>(
-        "/api/enrollment-keys",
-        { signal },
-      );
-      if (signal.aborted || requestId !== inventoryRequest.current) return;
-      setGrants(result.grants);
-      setLoadError("");
-      setGrant((current) =>
-        current &&
-        result.grants.some((item) => item.grantId === current.grantId)
-          ? current
-          : null,
-      );
-    } catch (reason) {
-      if (!signal.aborted && requestId === inventoryRequest.current)
-        setLoadError(
-          reason instanceof Error
-            ? reason.message
-            : "Keys could not be loaded.",
-        );
-    } finally {
-      if (!signal.aborted && requestId === inventoryRequest.current)
-        setLoading(false);
-    }
-  }, []);
+  const reload = useCallback(
+    (): Promise<void> => inventoryRef.current?.refresh() ?? Promise.resolve(),
+    [],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
-    controllerRef.current = controller;
-    void reload();
+    const inventory = createEnrollmentInventory({
+      signal: controller.signal,
+      read: async (signal) => {
+        const result = await api<{ grants: AvailableGrant[] }>(
+          "/api/enrollment-keys",
+          { signal },
+        );
+        return result.grants;
+      },
+      onInventory: (grants) => {
+        setGrants(grants);
+        setGrant((current) =>
+          current && grants.some((item) => item.grantId === current.grantId)
+            ? current
+            : null,
+        );
+      },
+      onError: setLoadError,
+      onLoading: setLoading,
+    });
+    inventoryRef.current = inventory;
+    setPending(false);
+    setRevoking(null);
+    void inventory.refresh();
     const refresh = (): void => {
-      if (document.visibilityState === "visible") void reload();
+      if (document.visibilityState === "visible") void inventory.refresh();
     };
     const interval = window.setInterval(refresh, 10_000);
     document.addEventListener("visibilitychange", refresh);
     return () => {
       controller.abort();
+      if (inventoryRef.current === inventory) inventoryRef.current = null;
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [reload]);
+  }, []);
 
   useEffect(() => {
     if (!grant) return;
@@ -90,10 +84,9 @@ export function useEnrollmentKeys() {
   }, [grant, reload]);
 
   const create = async (): Promise<void> => {
-    const signal = controllerRef.current?.signal;
-    if (!signal || signal.aborted || mutating.current) return;
-    mutating.current = true;
-    inventoryRequest.current += 1;
+    const inventory = inventoryRef.current;
+    if (!inventory?.beginMutation()) return;
+    const { signal } = inventory;
     setPending(true);
     setError("");
     try {
@@ -108,19 +101,17 @@ export function useEnrollmentKeys() {
           reason instanceof Error ? reason.message : "Key creation failed.",
         );
     } finally {
-      mutating.current = false;
       if (!signal.aborted) {
         setPending(false);
-        void reload();
+        inventory.finishMutation();
       }
     }
   };
 
   const revoke = async (grantId: string): Promise<void> => {
-    const signal = controllerRef.current?.signal;
-    if (!signal || signal.aborted || mutating.current) return;
-    mutating.current = true;
-    inventoryRequest.current += 1;
+    const inventory = inventoryRef.current;
+    if (!inventory?.beginMutation()) return;
+    const { signal } = inventory;
     setRevoking(grantId);
     setError("");
     try {
@@ -139,10 +130,9 @@ export function useEnrollmentKeys() {
           reason instanceof Error ? reason.message : "Key revocation failed.",
         );
     } finally {
-      mutating.current = false;
       if (!signal.aborted) {
         setRevoking(null);
-        void reload();
+        inventory.finishMutation();
       }
     }
   };
