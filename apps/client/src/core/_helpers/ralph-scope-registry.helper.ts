@@ -158,12 +158,12 @@ export interface RalphScopeRegistryCycleResult {
   cycleStarted: boolean;
 }
 
-const TRANSIENT_SCOPE_PATH = ".tmp";
+const REQUIRED_SCOPE_EXCLUDE_PATHS = [".tmp", "__pycache__"] as const;
 
 const DEFAULT_SCOPE_SCAN_EXCLUDE_PATHS = [
   ".git",
   ".machdoch",
-  TRANSIENT_SCOPE_PATH,
+  ...REQUIRED_SCOPE_EXCLUDE_PATHS,
   "node_modules",
   "dist",
   "build",
@@ -311,6 +311,10 @@ const isSourceFileName = (fileName: string): boolean => {
 };
 
 const isTestFileName = (fileName: string): boolean => {
+  if (!isSourceFileName(fileName)) {
+    return false;
+  }
+
   const normalized = fileName.toLowerCase();
 
   return (
@@ -667,8 +671,12 @@ const isExcludedScopePath = (
   });
 };
 
-const isTransientScope = (scope: { paths: readonly string[] }): boolean =>
-  scope.paths.some((path) => isExcludedScopePath(path, [TRANSIENT_SCOPE_PATH]));
+const isExcludedRegistryScope = (scope: {
+  paths: readonly string[];
+}): boolean =>
+  scope.paths.some((path) =>
+    isExcludedScopePath(path, REQUIRED_SCOPE_EXCLUDE_PATHS),
+  );
 
 const addScopeEvidence = (
   scopes: Map<string, RalphScopeEvidenceScope>,
@@ -719,7 +727,7 @@ export const discoverRalphScopeEvidence = async (
   const rootPath = normalizeRegistryPath(options.rootPath ?? ".");
   const scanRoot = resolve(workspaceRoot, rootPath);
   const excludePaths = normalizePathList([
-    TRANSIENT_SCOPE_PATH,
+    ...REQUIRED_SCOPE_EXCLUDE_PATHS,
     ...(options.excludePaths ?? parseRalphScopeExcludePaths(undefined)),
   ]);
   const maxDepth = Math.max(0, Math.trunc(options.maxDepth ?? 4));
@@ -994,7 +1002,9 @@ export const parseRalphScopeRegistry = (
   );
   const activeIds = new Set(
     scopes
-      .filter((scope) => scope.status === "active")
+      .filter(
+        (scope) => scope.status === "active" && !isExcludedRegistryScope(scope),
+      )
       .map((scope) => scope.id),
   );
   const currentScopeId =
@@ -1154,7 +1164,7 @@ export const updateRalphScopeRegistryFromEvidence = (
     },
   };
   const discoveredScopes = evidence.scopes.filter(
-    (scope) => !isTransientScope(scope),
+    (scope) => !isExcludedRegistryScope(scope),
   );
   const evidenceById = new Map(
     discoveredScopes.map((scope) => [scope.id, scope]),
@@ -1276,7 +1286,7 @@ const getActiveScopes = (
   registry: RalphScopeRegistry,
 ): RalphScopeRegistryScope[] => {
   return registry.scopes.filter(
-    (scope) => scope.status === "active" && !isTransientScope(scope),
+    (scope) => scope.status === "active" && !isExcludedRegistryScope(scope),
   );
 };
 
