@@ -14,6 +14,8 @@ const AGENT_RUNTIME_COMMANDS = new Set<CommandName>([
   "fleet",
 ]);
 
+const AGENT_RUNTIME_SHUTDOWN_GRACE_MS = 5_000;
+
 const closeAgentRuntimeResources = async (
   command: CommandName,
 ): Promise<void> => {
@@ -25,7 +27,25 @@ const closeAgentRuntimeResources = async (
       import("../core/mcp/client.js"),
     ],
   );
-  await Promise.all([closeAllBrowserSessions(), mcpClientManager.closeAll()]);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const closed = await Promise.race([
+      Promise.all([
+        closeAllBrowserSessions(),
+        mcpClientManager.closeAll(),
+      ]).then(() => true),
+      new Promise<false>((resolve) => {
+        timeout = setTimeout(
+          () => resolve(false),
+          AGENT_RUNTIME_SHUTDOWN_GRACE_MS,
+        );
+      }),
+    ]);
+    if (!closed)
+      writeStderrLine("Agent resource shutdown timed out after 5 seconds.");
+  } finally {
+    clearTimeout(timeout);
+  }
 };
 
 const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
@@ -178,7 +198,7 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
   }
 };
 
-export const runCli = async (argv: string[]): Promise<void> => {
+export const runCli = async (argv: string[]): Promise<CommandName> => {
   let args = parseCliArgs(argv);
   if (args.task === "-") {
     args = { ...args, task: await readTaskFromStdin() };
@@ -193,7 +213,7 @@ export const runCli = async (argv: string[]): Promise<void> => {
         }),
       ),
     );
-    return;
+    return args.command;
   }
 
   try {
@@ -201,4 +221,5 @@ export const runCli = async (argv: string[]): Promise<void> => {
   } finally {
     await closeAgentRuntimeResources(args.command);
   }
+  return args.command;
 };

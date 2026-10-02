@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   closeAll: vi.fn(),
@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   runInteractiveChat: vi.fn(),
   loadRalphSnapshot: vi.fn(),
   writeStdoutLine: vi.fn(),
+  writeStderrLine: vi.fn(),
 }));
 
 vi.mock("../core/ralph-snapshot.js", () => ({
@@ -18,6 +19,7 @@ vi.mock("../core/ralph-snapshot.js", () => ({
 vi.mock("./_helpers/cli-io.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./_helpers/cli-io.js")>()),
   writeStdoutLine: mocks.writeStdoutLine,
+  writeStderrLine: mocks.writeStderrLine,
 }));
 
 vi.mock("../core/mcp/client.js", () => ({
@@ -58,14 +60,51 @@ describe("runCli agent resource lifecycle", () => {
     mocks.runInteractiveChat.mockReset().mockResolvedValue(undefined);
     mocks.loadRalphSnapshot.mockReset();
     mocks.writeStdoutLine.mockReset();
+    mocks.writeStderrLine.mockReset();
   });
 
+  afterEach(() => vi.useRealTimers());
+
   it("closes agent resources after a one-shot task", async () => {
-    await runCli(["--quick", "--task", "inspect the workspace"]);
+    await expect(
+      runCli(["--quick", "--task", "inspect the workspace"]),
+    ).resolves.toBe("run");
 
     expect(mocks.printTaskPreview).toHaveBeenCalledOnce();
     expect(mocks.closeAll).toHaveBeenCalledOnce();
     expect(mocks.closeAllBrowserSessions).toHaveBeenCalledOnce();
+  });
+
+  it("finishes a one-shot task when resource shutdown never resolves", async () => {
+    vi.useFakeTimers();
+    mocks.closeAll.mockImplementationOnce(() => new Promise(() => {}));
+    const running = runCli(["--quick", "--task", "inspect the workspace"]);
+    await vi.waitFor(() => expect(mocks.closeAll).toHaveBeenCalledOnce());
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(running).resolves.toBe("run");
+    expect(mocks.closeAllBrowserSessions).toHaveBeenCalledOnce();
+    expect(mocks.writeStderrLine).toHaveBeenCalledWith(
+      "Agent resource shutdown timed out after 5 seconds.",
+    );
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("preserves a task failure when resource shutdown never resolves", async () => {
+    vi.useFakeTimers();
+    const error = new Error("task failed");
+    mocks.printTaskPreview.mockRejectedValueOnce(error);
+    mocks.closeAllBrowserSessions.mockImplementationOnce(
+      () => new Promise(() => {}),
+    );
+    const rejection = expect(
+      runCli(["--quick", "--task", "inspect the workspace"]),
+    ).rejects.toBe(error);
+    await vi.waitFor(() =>
+      expect(mocks.closeAllBrowserSessions).toHaveBeenCalledOnce(),
+    );
+    await vi.advanceTimersByTimeAsync(5_000);
+    await rejection;
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("reads Ralph status without provider synchronization or agent cleanup", async () => {

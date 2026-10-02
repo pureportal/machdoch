@@ -21,11 +21,24 @@ const handleStreamError = (error: unknown): void => {
 process.stdout.on("error", handleStreamError);
 process.stderr.on("error", handleStreamError);
 
+const exitAfterOutputFlush = async (): Promise<never> => {
+  await Promise.all(
+    [process.stdout, process.stderr].map(
+      (stream) =>
+        new Promise<void>((resolve, reject) => {
+          stream.write("", (error) => (error ? reject(error) : resolve()));
+        }),
+    ),
+  );
+  process.exit();
+};
+
 runCli(process.argv.slice(2))
-  .then(() => {
+  .then(async (command) => {
+    if (command === "run") await exitAfterOutputFlush();
     if (process.stdin.isTTY) process.stdin.unref();
   })
-  .catch((error: unknown) => {
+  .catch(async (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     const usageError = error instanceof CliUsageError;
     const exitCode =
@@ -48,4 +61,5 @@ runCli(process.argv.slice(2))
     }
 
     process.exitCode = exitCode;
+    await exitAfterOutputFlush();
   });

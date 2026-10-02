@@ -14,6 +14,8 @@ import type {
   ConversationMemoryRuntime,
 } from "../_helpers/agent-tools-shared.js";
 
+const TOOL_SHUTDOWN_GRACE_MS = 5_000;
+
 export interface LocalToolRuntimeOptions {
   config: RuntimeConfig;
   memory: ConversationMemoryRuntime;
@@ -58,10 +60,16 @@ export const createLocalToolRuntime = (options: LocalToolRuntimeOptions) => {
           options.uiControl,
           tools,
           { id: randomUUID(), name, arguments: args },
-          options.onActionOutput,
+          options.onActionOutput
+            ? (output) => {
+                if (!combinedSignal.aborted)
+                  return options.onActionOutput?.(output);
+              }
+            : undefined,
           options.runId,
           combinedSignal,
         );
+        combinedSignal.throwIfAborted();
         if (!result) throw new Error(`Tool ${name} did not return a result.`);
         options.onToolResult?.(name, result);
         const definition = tools.get(name);
@@ -76,7 +84,22 @@ export const createLocalToolRuntime = (options: LocalToolRuntimeOptions) => {
       return execution;
     },
     async waitForIdle(): Promise<void> {
-      await Promise.allSettled([...active]);
+      if (active.size === 0) return;
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const drained = await Promise.race([
+          Promise.allSettled([...active]).then(() => true),
+          new Promise<false>((resolve) => {
+            timeout = setTimeout(() => resolve(false), TOOL_SHUTDOWN_GRACE_MS);
+          }),
+        ]);
+        if (!drained)
+          console.error(
+            `Machdoch MCP shutdown timed out waiting for ${active.size} tool call(s).`,
+          );
+      } finally {
+        clearTimeout(timeout);
+      }
     },
   };
 };
