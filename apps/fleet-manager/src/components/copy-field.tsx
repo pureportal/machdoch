@@ -32,18 +32,19 @@ export function CopyField({
       <label htmlFor={id} className="text-sm font-medium">
         {label}
       </label>
-      <div className="flex gap-2">
+      <div className="flex min-w-0 items-center overflow-hidden rounded-xl border border-input bg-card focus-within:ring-3 focus-within:ring-ring/15">
         <Input
           id={id}
           value={value}
           readOnly
-          className={monospace ? "font-mono text-xs" : undefined}
+          className={`border-0 bg-transparent shadow-none focus-visible:ring-0 ${monospace ? "font-mono" : ""}`}
           onFocus={(event) => event.currentTarget.select()}
         />
         <Button
-          variant="outline"
+          variant="ghost"
           size="icon"
           aria-label={`Copy ${label.toLowerCase()}`}
+          className="mr-0.5 rounded-lg text-muted-foreground"
           onClick={() => {
             setError("");
             void Promise.resolve()

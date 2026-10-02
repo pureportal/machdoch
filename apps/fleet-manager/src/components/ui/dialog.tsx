@@ -19,10 +19,10 @@ export function DialogContent({
 }): React.ReactElement {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm" />
+      <DialogPrimitive.Overlay className="fleet-overlay fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm" />
       <DialogPrimitive.Content
         className={cn(
-          "fleet-dialog fixed left-1/2 top-1/2 z-50 grid min-w-0 max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-5 overflow-y-auto overscroll-contain rounded-xl border border-border bg-background p-4 sm:p-6 shadow-2xl outline-none",
+          "fleet-dialog fixed left-1/2 top-1/2 z-50 grid min-w-0 max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-6 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-card p-5 shadow-2xl outline-none sm:p-7",
           className,
         )}
         {...props}
@@ -30,7 +30,7 @@ export function DialogContent({
         {children}
         <DialogPrimitive.Close
           disabled={closeDisabled}
-          className="absolute right-2 top-2 grid size-11 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+          className="absolute right-2 top-2 grid size-11 cursor-pointer place-items-center rounded-xl text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
         >
           <X className="size-4" />
           <span className="sr-only">Close</span>
@@ -69,8 +69,17 @@ export function DialogDescription({
   );
 }
 
-export function DialogFooter(
-  props: React.ComponentProps<"div">,
-): React.ReactElement {
-  return <div className="flex flex-wrap justify-end gap-2" {...props} />;
+export function DialogFooter({
+  className,
+  ...props
+}: React.ComponentProps<"div">): React.ReactElement {
+  return (
+    <div
+      className={cn(
+        "fleet-dialog-footer flex flex-wrap justify-end gap-2 border-t pt-5",
+        className,
+      )}
+      {...props}
+    />
+  );
 }
