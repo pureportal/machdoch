@@ -1109,6 +1109,15 @@ fn cancellation_requested(paths: &MediaRuntimePaths, job_id: &str) -> MediaResul
         .map_err(|error| format!("failed to inspect model cancellation state: {error}"))
 }
 
+async fn wait_for_cancellation(paths: &MediaRuntimePaths, job_id: &str) -> MediaResult<()> {
+    loop {
+        if cancellation_requested(paths, job_id)? {
+            return Err(CANCELED_SENTINEL.to_string());
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 fn set_job_stage(
     paths: &MediaRuntimePaths,
     job_id: &str,
@@ -1323,6 +1332,8 @@ async fn download_file(
     }
 
     if offset < file.byte_size {
+        let cancellation = wait_for_cancellation(paths, job_id);
+        tokio::pin!(cancellation);
         let url = if manifest.model_id == BIREFNET_MODEL_ID && file.path == "LICENSE" {
             BIREFNET_LICENSE_URL.to_string()
         } else if manifest.model_id == BIREFNET_MODEL_ID {
@@ -1337,19 +1348,23 @@ async fn download_file(
         if offset > 0 {
             request = request.header(header::RANGE, format!("bytes={offset}-"));
         }
-        let mut response = request
-            .send()
-            .await
-            .map_err(|error| format!("failed to download {}: {error}", file.path))?;
+        let mut response = tokio::select! {
+            biased;
+            result = &mut cancellation => return result,
+            response = request.send() => response
+                .map_err(|error| format!("failed to download {}: {error}", file.path))?,
+        };
 
         if offset > 0 && response.status() != StatusCode::PARTIAL_CONTENT {
             drop(response);
+            response = tokio::select! {
+                biased;
+                result = &mut cancellation => return result,
+                response = client.get(&url).send() => response
+                    .map_err(|error| format!("failed to restart {} download: {error}", file.path))?,
+            };
             offset = 0;
             hasher = Sha256::new();
-            response =
-                client.get(&url).send().await.map_err(|error| {
-                    format!("failed to restart {} download: {error}", file.path)
-                })?;
         } else if offset > 0 {
             let expected_prefix = format!("bytes {offset}-");
             let range_matches = response
@@ -1379,12 +1394,23 @@ async fn download_file(
             .truncate(offset == 0)
             .open(&partial)
             .map_err(|error| format!("failed to open model staging file: {error}"))?;
+        update_file_progress(paths, job_id, file, offset)?;
         let mut last_persisted = offset;
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|error| format!("failed while downloading {}: {error}", file.path))?
-        {
+        loop {
+            let chunk = tokio::select! {
+                biased;
+                result = &mut cancellation => {
+                    output.sync_all()
+                        .map_err(|error| format!("failed to flush {}: {error}", file.path))?;
+                    update_file_progress(paths, job_id, file, offset)?;
+                    return result;
+                },
+                chunk = response.chunk() => chunk
+                    .map_err(|error| format!("failed while downloading {}: {error}", file.path))?,
+            };
+            let Some(chunk) = chunk else {
+                break;
+            };
             output
                 .write_all(&chunk)
                 .map_err(|error| format!("failed to write {}: {error}", file.path))?;
@@ -1399,9 +1425,6 @@ async fn download_file(
             if offset.saturating_sub(last_persisted) >= PROGRESS_WRITE_BYTES {
                 update_file_progress(paths, job_id, file, offset)?;
                 last_persisted = offset;
-                if cancellation_requested(paths, job_id)? {
-                    return Err(CANCELED_SENTINEL.to_string());
-                }
             }
         }
         output
@@ -1538,10 +1561,17 @@ fn mark_failed(
         .map_err(|db_error| format!("failed to commit model installation failure: {db_error}"))
 }
 
-fn activate(paths: &MediaRuntimePaths, job_id: &str, stage_root: &Path) -> MediaResult<()> {
+fn activate(
+    paths: &MediaRuntimePaths,
+    job_id: &str,
+    stage_root: &Path,
+    manifest: &BuiltinModelManifest,
+) -> MediaResult<()> {
     let job = get_job(paths, job_id)?;
-    let manifest = builtin_manifest(&job.model_id)?;
-    if job.revision != manifest.revision || job.manifest_digest != manifest_digest(manifest) {
+    if job.model_id != manifest.model_id
+        || job.revision != manifest.revision
+        || job.manifest_digest != manifest_digest(manifest)
+    {
         return Err(
             "the queued model manifest no longer matches the reviewed built-in manifest"
                 .to_string(),
@@ -1655,7 +1685,7 @@ async fn execute_inner(paths: &MediaRuntimePaths, job_id: &str) -> MediaResult<(
         // records activation. Do not recreate staging and download the entire
         // package again: activate() re-hashes the reviewed revision before it
         // commits the interrupted job.
-        return activate(paths, job_id, &stage_root);
+        return activate(paths, job_id, &stage_root, manifest);
     }
     fs::create_dir_all(&stage_root)
         .map_err(|error| format!("failed to create model staging root: {error}"))?;
@@ -1674,11 +1704,15 @@ async fn execute_inner(paths: &MediaRuntimePaths, job_id: &str) -> MediaResult<(
         set_job_stage(paths, job_id, "downloading", Some(file.path))?;
         download_file(&client, paths, job_id, &stage_root, manifest, *file).await?;
     }
-    activate(paths, job_id, &stage_root)
+    activate(paths, job_id, &stage_root, manifest)
 }
 
-pub(crate) async fn execute(paths: &MediaRuntimePaths, job_id: &str) -> MediaResult<()> {
-    match execute_inner(paths, job_id).await {
+fn settle_execution(
+    paths: &MediaRuntimePaths,
+    job_id: &str,
+    result: MediaResult<()>,
+) -> MediaResult<()> {
+    match result {
         Ok(()) => Ok(()),
         Err(error) if error == CANCELED_SENTINEL => {
             mark_canceled(paths, job_id)?;
@@ -1690,6 +1724,10 @@ pub(crate) async fn execute(paths: &MediaRuntimePaths, job_id: &str) -> MediaRes
             Err(error)
         }
     }
+}
+
+pub(crate) async fn execute(paths: &MediaRuntimePaths, job_id: &str) -> MediaResult<()> {
+    settle_execution(paths, job_id, execute_inner(paths, job_id).await)
 }
 
 #[cfg(test)]
