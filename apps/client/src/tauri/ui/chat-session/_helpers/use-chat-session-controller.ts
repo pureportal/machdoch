@@ -747,6 +747,7 @@ export const useChatSessionController = (
       prompt: string;
       promptEnhancementMode: PromptEnhancementMode;
       interviewEnabled: boolean;
+      goalObjective?: string;
     }) => boolean
   >(() => false);
   const inactiveDesktopTaskObservationsRef = useRef<
@@ -5468,6 +5469,7 @@ export const useChatSessionController = (
       input?: {
         sessionId: string;
         task: string;
+        goalObjective?: string;
         visibleMessageContent?: string;
         promptHistoryContent?: string;
         promptEnhancement?: ChatSessionMessagePromptEnhancement;
@@ -5513,6 +5515,7 @@ export const useChatSessionController = (
         id: crypto.randomUUID(),
         sessionId,
         task,
+        ...(input?.goalObjective ? { goalObjective: input.goalObjective } : {}),
         ...(input?.visibleMessageContent?.trim()
           ? { visibleMessageContent: input.visibleMessageContent.trim() }
           : {}),
@@ -5869,6 +5872,7 @@ export const useChatSessionController = (
                       latestSession,
                       promptEnhancementRequest.mode,
                       false,
+                      queuedMessageAtDispatch.goalObjective,
                     ),
                     promptEnhancementMode: promptEnhancementRequest.mode,
                     iterationMode: DEFAULT_REQUEST_ITERATION_MODE,
@@ -6026,15 +6030,12 @@ export const useChatSessionController = (
               ...(dispatchPrompt.promptEnhancement
                 ? { promptEnhancement: dispatchPrompt.promptEnhancement }
                 : {}),
-              ...(promptEnhancementRequest
-                ? {
-                    messageSettings: createSessionMessageSettings(
-                      latestSession,
-                      promptEnhancementRequest.mode,
-                      false,
-                    ),
-                  }
-                : {}),
+              messageSettings: createSessionMessageSettings(
+                latestSession,
+                promptEnhancementRequest?.mode ?? "off",
+                false,
+                queuedMessageToSubmit.goalObjective,
+              ),
               ...(promptEnhancementTaskIdForStartedTask
                 ? {
                     onTaskStarted: (taskId: string) =>
@@ -8028,6 +8029,9 @@ export const useChatSessionController = (
               const queuedMessage = queueActiveSessionMessage("front", {
                 sessionId: submission.sessionSnapshot.id,
                 task,
+                ...(submission.messageSettings.goalObjective
+                  ? { goalObjective: submission.messageSettings.goalObjective }
+                  : {}),
                 visibleMessageContent: task,
                 promptHistoryContent,
                 ...(promptEnhancement ? { promptEnhancement } : {}),
@@ -8047,6 +8051,9 @@ export const useChatSessionController = (
               queueActiveSessionMessage("back", {
                 sessionId: submission.sessionSnapshot.id,
                 task,
+                ...(submission.messageSettings.goalObjective
+                  ? { goalObjective: submission.messageSettings.goalObjective }
+                  : {}),
                 visibleMessageContent: task,
                 promptHistoryContent,
                 ...(promptEnhancement ? { promptEnhancement } : {}),
@@ -8214,6 +8221,7 @@ export const useChatSessionController = (
       prompt: string;
       promptEnhancementMode: PromptEnhancementMode;
       interviewEnabled: boolean;
+      goalObjective?: string;
     }): boolean => {
       const prompt = input.prompt.trim();
       const session = state.getSessionById(input.sessionId);
@@ -8238,6 +8246,7 @@ export const useChatSessionController = (
             session,
             input.promptEnhancementMode,
             input.interviewEnabled,
+            isGoalCommand(prompt) ? undefined : input.goalObjective,
           ),
           promptEnhancementMode: input.promptEnhancementMode,
           iterationMode: DEFAULT_REQUEST_ITERATION_MODE,
@@ -8307,6 +8316,7 @@ export const useChatSessionController = (
     draft = activeComposerSession.draft,
     iterationCount = 1,
     iterationMode: RequestIterationMode = DEFAULT_REQUEST_ITERATION_MODE,
+    goalObjective?: string,
   ): void => {
     const task = draft.trim();
     const goalCommand = isGoalCommand(task);
@@ -8375,6 +8385,7 @@ export const useChatSessionController = (
         sessionSnapshot,
         selectedPromptEnhancementMode,
         currentEdit?.interviewEnabled ?? chatInterviewEnabled,
+        !currentEdit && !goalCommand ? goalObjective : undefined,
       ),
       promptEnhancementMode: selectedPromptEnhancementMode,
       iterationCount: currentEdit ? 1 : iterationCount,

@@ -158,6 +158,7 @@ export interface TaskConversationContext {
   adaptiveControllerOverride?: boolean | null;
   parallelAgentMode?: ParallelAgentMode;
   goalMode?: GoalMode;
+  goalObjective?: string;
   wasQueued?: boolean;
   chatType?: "pose";
   poseScene?: import("@machdoch/media-studio/core/media/contracts.js").MediaPoseMap;

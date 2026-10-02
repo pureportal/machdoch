@@ -87,7 +87,7 @@ export function useComposerDraft(
     });
   }
 
-  function submitDraft(): Promise<void> {
+  function submitDraft(goalObjective?: string): Promise<void> {
     const entry = getDraft();
     const submittedText = entry.text;
     const prompt = submittedText.trim();
@@ -112,6 +112,9 @@ export function useComposerDraft(
           prompt,
           promptEnhancementMode: composer.promptEnhancementMode,
           interviewEnabled: composer.interviewEnabled,
+          ...(goalObjective && !/^\/goal(?:\s|$)/u.test(prompt)
+            ? { goalObjective }
+            : {}),
         });
         if (entry.revision !== submittedRevision) {
           if (!succeeded) {

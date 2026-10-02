@@ -135,6 +135,99 @@ describe("goal commands", () => {
 });
 
 describe("goal lifecycle", () => {
+  it.each([
+    "All auth tests pass",
+    "clear",
+    "mode native",
+    "--tokens 10 Fix auth",
+  ])(
+    "starts the submitted task under the literal goal %s",
+    async (objective) => {
+      options.conversationContext!.goalObjective = objective;
+      const onStateChange = vi.fn();
+      options.onStateChange = onStateChange;
+      const execute = vi.fn<GoalTurnExecutor>(
+        async (task, _config, turnOptions) => {
+          expect(turnOptions.conversationContext).not.toHaveProperty(
+            "goalObjective",
+          );
+          if (turnOptions.resultProtocol) return evaluation("complete");
+          expect(task).toContain("Fix the login handler");
+          expect(task).toContain(JSON.stringify(objective));
+          return result();
+        },
+      );
+      await run("Fix the login handler", execute);
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect((await read()).goal).toMatchObject({
+        objective,
+        status: "complete",
+        turns: 1,
+      });
+      expect(onStateChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          goal: expect.objectContaining({ objective, status: "active" }),
+        }),
+      );
+    },
+  );
+
+  it("resumes the submitted objective with its existing identity and consumed budget", async () => {
+    await run(
+      "/goal --turns 5 All auth tests pass",
+      vi.fn<GoalTurnExecutor>(async (_task, _config, turnOptions) =>
+        turnOptions.resultProtocol ? evaluation("blocked") : result(),
+      ),
+    );
+    const before = (await read()).goal!;
+    options.conversationContext!.goalObjective = before.objective;
+    await run("Fix the remaining failure");
+    expect((await read()).goal).toMatchObject({
+      id: before.id,
+      objective: before.objective,
+      turnBudget: 5,
+      turns: before.turns + 1,
+      status: "complete",
+    });
+  });
+
+  it("does not reset an exhausted budget when the same objective is submitted again", async () => {
+    await run(
+      "/goal --turns 1 All auth tests pass",
+      vi.fn<GoalTurnExecutor>(async (_task, _config, turnOptions) =>
+        turnOptions.resultProtocol ? evaluation("continue") : result(),
+      ),
+    );
+    const before = (await read()).goal!;
+    options.conversationContext!.goalObjective = before.objective;
+    await expect(run("Try again")).rejects.toThrow(
+      "This goal reached its limit.",
+    );
+    expect((await read()).goal).toEqual(before);
+  });
+
+  it("does not restart a completed goal from a repeated submission", async () => {
+    await run("/goal All auth tests pass");
+    const before = (await read()).goal!;
+    options.conversationContext!.goalObjective = before.objective;
+    const execute = vi.fn<GoalTurnExecutor>(async () => result());
+    await run("Review the fix", execute);
+    expect(execute).toHaveBeenCalledExactlyOnceWith(
+      "Review the fix",
+      config,
+      expect.anything(),
+    );
+    expect((await read()).goal).toEqual(before);
+  });
+
+  it("honors an explicit goal command instead of the drafted objective", async () => {
+    options.conversationContext!.goalObjective = "All auth tests pass";
+    const execute = vi.fn<GoalTurnExecutor>(async () => result());
+    await run("/goal clear", execute);
+    expect(execute).not.toHaveBeenCalled();
+    expect((await read()).goal).toBeNull();
+  });
+
   it("retains old chat messages across goal turns while bounding the prompt history", async () => {
     options.conversationContext!.history = [
       {
@@ -663,24 +756,32 @@ describe("native goals", () => {
     await expect(run("/goal Fix auth")).rejects.toThrow("unavailable");
     await expect(run("/goal mode native")).rejects.toThrow("unavailable");
   });
-  it("delegates to Claude once and validates its result independently", async () => {
-    config.provider = "claude-cli";
-    options.conversationContext!.goalMode = "native";
-    const execute = vi.fn(
-      async (
-        _task: string,
-        _config: RuntimeConfig,
-        turnOptions: TaskExecutionOptions,
-      ) => (turnOptions.resultProtocol ? evaluation("complete") : result()),
-    );
-    await run("/goal Fix auth", execute);
-    expect(execute.mock.calls[0]![2].nativeGoal).toBe("Fix auth");
-    expect(execute.mock.calls[1]![2].nativeGoal).toBeUndefined();
-    expect((await read()).goal).toMatchObject({
-      mode: "native",
-      status: "complete",
-    });
-  });
+  it.each(["command", "submission"])(
+    "delegates a native goal from a %s to Claude and validates its result independently",
+    async (source) => {
+      config.provider = "claude-cli";
+      options.conversationContext!.goalMode = "native";
+      const execute = vi.fn(
+        async (
+          _task: string,
+          _config: RuntimeConfig,
+          turnOptions: TaskExecutionOptions,
+        ) => (turnOptions.resultProtocol ? evaluation("complete") : result()),
+      );
+      if (source === "submission")
+        options.conversationContext!.goalObjective = "Fix auth";
+      await run(
+        source === "submission" ? "Fix the login handler" : "/goal Fix auth",
+        execute,
+      );
+      expect(execute.mock.calls[0]![2].nativeGoal).toBe("Fix auth");
+      expect(execute.mock.calls[1]![2].nativeGoal).toBeUndefined();
+      expect((await read()).goal).toMatchObject({
+        mode: "native",
+        status: "complete",
+      });
+    },
+  );
   it("requires Machdoch mode for token and turn limits", async () => {
     config.provider = "claude-cli";
     options.conversationContext!.goalMode = "native";

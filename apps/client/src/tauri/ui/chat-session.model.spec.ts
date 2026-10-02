@@ -41,6 +41,54 @@ import {
 const SESSION_DAY_MS = 24 * 60 * 60 * 1_000;
 
 describe("session goal state", () => {
+  it("preserves a submitted goal in saved message settings and queued tasks", () => {
+    const session = createSession();
+    const objective = "All auth tests pass\nVerify sign-out";
+    const settings = createSessionMessageSettings(
+      session,
+      "off",
+      false,
+      objective,
+    );
+    session.messages = [
+      { id: "message", role: "user", content: "Fix auth", settings },
+    ];
+    const restored = normalizeShellState({
+      ...createInitialShellState(),
+      sessions: [session],
+      activeSessionId: session.id,
+      queuedSessionMessages: [
+        {
+          id: "queued",
+          sessionId: session.id,
+          task: "Fix auth",
+          goalObjective: objective,
+          contentUpdatedAt: 1,
+          attachmentsUpdatedAt: 1,
+          attachmentTombstones: {},
+          blockerUpdatedAt: 1,
+          orderRank: 0,
+          orderUpdatedAt: 1,
+          status: "queued",
+          statusUpdatedAt: 1,
+          contextAttachments: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+    expect(restored.sessions[0]?.messages[0]?.settings?.goalObjective).toBe(
+      objective,
+    );
+    expect(restored.queuedSessionMessages[0]?.goalObjective).toBe(objective);
+    expect(
+      getSessionMessageSettingsForReplay(
+        restored.sessions[0]!.messages[0]!,
+        session,
+      ).goalObjective,
+    ).toBe(objective);
+  });
+
   it("restores the mode and goal while preserving the mode in message settings", () => {
     const goal = {
       id: "goal-1",

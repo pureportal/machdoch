@@ -1,7 +1,10 @@
 use machdoch_fleet_protocol::{ProductCommand, ProductCommandKind};
 
 use super::{
-    commands::{create_command_record, normalize_command, truncate_chars},
+    commands::{
+        command_payload_hash, command_payloads_match, create_command_record, normalize_command,
+        truncate_chars,
+    },
     MAX_COMMAND_TEXT_CHARS,
 };
 
@@ -20,6 +23,7 @@ fn command_request(kind: ProductCommandKind) -> ProductCommand {
         task_id: None,
         session_id: None,
         prompt: None,
+        goal_objective: None,
         title: None,
         tags: None,
         provider: None,
@@ -218,6 +222,31 @@ fn submitted_message_prompts_are_trimmed_and_truncated() {
         MAX_COMMAND_TEXT_CHARS
     );
     assert_eq!(event.enabled, Some(false));
+}
+
+#[test]
+fn submitted_goals_are_preserved_in_events_and_command_identity() {
+    let mut event = normalize_command(ProductCommand {
+        session_id: Some("session-1".to_string()),
+        prompt: Some("Fix auth".to_string()),
+        goal_objective: Some("  All auth tests pass\nVerify sign-out  ".to_string()),
+        prompt_enhancement_mode: Some("off".to_string()),
+        interview_enabled: Some(false),
+        ..command_request(ProductCommandKind::SubmitMessage)
+    })
+    .expect("valid goal should normalize");
+
+    assert_eq!(
+        event.goal_objective.as_deref(),
+        Some("All auth tests pass\nVerify sign-out")
+    );
+    let original = event.clone();
+    event.goal_objective = Some("Verify password reset".to_string());
+    assert!(!command_payloads_match(&original, &event));
+    assert_ne!(
+        command_payload_hash(&original),
+        command_payload_hash(&event)
+    );
 }
 
 #[test]

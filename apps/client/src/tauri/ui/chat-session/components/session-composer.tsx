@@ -10,9 +10,15 @@ import {
   Square,
   WandSparkles,
 } from "lucide-react";
-import { GoalControl, GoalTrigger, MemoryDialog } from "@machdoch/product-ui";
+import {
+  GoalControl,
+  GoalTrigger,
+  MemoryDialog,
+  useGoalDraft,
+} from "@machdoch/product-ui";
 import {
   getAvailableGoalModes,
+  isGoalCommand,
   resolveGoalMode,
   type GoalMode,
 } from "../../../../shared/goals.js";
@@ -205,6 +211,7 @@ export interface SessionComposerProps {
     draft: string,
     iterationCount?: number,
     iterationMode?: RequestIterationMode,
+    goalObjective?: string,
   ) => void;
   onCancel: () => void;
   isExecuting: boolean;
@@ -310,6 +317,12 @@ export const SessionComposer = ({
   const showGoalControl =
     !isQuickVoiceSession(activeSession) &&
     activeSession.specialSession !== "pose";
+  const goalDraft = useGoalDraft(
+    activeSession.id,
+    activeSession.goal,
+    showGoalControl && goalOpen && !editingMessageId,
+    isExecuting,
+  );
 
   useEffect(() => {
     setGoalOpen(Boolean(activeSession.goal));
@@ -733,6 +746,8 @@ export const SessionComposer = ({
               )}
               modes={getAvailableGoalModes(activeSession.provider)}
               goal={activeSession.goal}
+              objective={goalDraft.objective}
+              onObjectiveChange={goalDraft.setObjective}
               running={isExecuting}
               disabled={Boolean(editingMessageId)}
               onClose={() => setGoalOpen(false)}
@@ -746,7 +761,11 @@ export const SessionComposer = ({
         actions={actions}
         runningTaskMessageAction={runningTaskMessageAction}
         queuedMessages={editingMessageId ? [] : queuedMessages}
-        iterationsEnabled={!editingMessageId && !interviewEnabled}
+        iterationsEnabled={
+          !editingMessageId &&
+          !interviewEnabled &&
+          !goalDraft.submissionObjective
+        }
         onModelSelection={onSessionModelSelection}
         onSelectContextFiles={onSelectContextFiles}
         onSelectContextFolders={onSelectContextFolders}
@@ -775,7 +794,18 @@ export const SessionComposer = ({
         onQueuedMessageClearContextAttachments={
           onQueuedMessageClearContextAttachments
         }
-        onSend={onSend}
+        onSend={(draft, iterationCount, iterationMode) => {
+          if (goalDraft.submissionObjective && !isGoalCommand(draft)) {
+            onSend(
+              draft,
+              iterationCount,
+              iterationMode,
+              goalDraft.submissionObjective,
+            );
+          } else {
+            onSend(draft, iterationCount, iterationMode);
+          }
+        }}
         onCancel={onCancel}
       />
       {memoryScope ? (

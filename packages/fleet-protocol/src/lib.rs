@@ -810,6 +810,8 @@ pub struct ProductCommand {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal_objective: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
@@ -954,6 +956,8 @@ struct RawProductCommand {
     #[serde(default)]
     prompt: Option<String>,
     #[serde(default)]
+    goal_objective: Option<String>,
+    #[serde(default)]
     title: Option<String>,
     #[serde(default)]
     tags: Option<Vec<String>>,
@@ -1024,6 +1028,9 @@ impl<'de> Deserialize<'de> for ProductCommand {
         if payload.get("poseScene").is_some_and(Value::is_null) {
             return Err(D::Error::custom("poseScene must be an object."));
         }
+        if payload.get("goalObjective").is_some_and(Value::is_null) {
+            return Err(D::Error::custom("goalObjective must be a string."));
+        }
         let raw = RawProductCommand::deserialize(payload).map_err(D::Error::custom)?;
         let mut command = Self {
             kind: raw.kind,
@@ -1039,6 +1046,7 @@ impl<'de> Deserialize<'de> for ProductCommand {
             task_id: raw.task_id,
             session_id: raw.session_id,
             prompt: raw.prompt,
+            goal_objective: raw.goal_objective,
             title: raw.title,
             tags: raw.tags,
             provider: raw.provider,
@@ -1104,6 +1112,7 @@ impl ProductCommand {
             &mut self.command_id,
             &mut self.task_id,
             &mut self.session_id,
+            &mut self.goal_objective,
             &mut self.title,
             &mut self.provider,
             &mut self.model,
@@ -1343,6 +1352,10 @@ impl ProductCommand {
             ProductCommandKind::SubmitMessage => {
                 valid_identifier(self.session_id.as_deref())
                     && valid_command_text(self.prompt.as_deref())
+                    && self
+                        .goal_objective
+                        .as_deref()
+                        .is_none_or(|objective| valid_trimmed_text(Some(objective), 4_000))
                     && valid_prompt_enhancement_mode(self.prompt_enhancement_mode.as_deref())
             }
             ProductCommandKind::CreateSession => {
@@ -1723,6 +1736,7 @@ impl ProductCommandKind {
                 "commandId",
                 "sessionId",
                 "prompt",
+                "goalObjective",
                 "promptEnhancementMode",
                 "interviewEnabled",
             ],
@@ -2007,6 +2021,7 @@ mod tests {
             task_id: Some("task-1".to_string()),
             session_id: None,
             prompt: None,
+            goal_objective: None,
             title: None,
             tags: None,
             provider: None,

@@ -149,6 +149,135 @@ const createProps = (
   ...overrides,
 });
 
+describe("SessionComposer goal", () => {
+  it.each(["button", "keyboard"])(
+    "starts the drafted goal when sending by %s",
+    (method) => {
+      const onSend = vi.fn();
+      const props = createProps({
+        editingMessageId: null,
+        canSendMessage: true,
+        sendDisabledReason: null,
+        isExecuting: false,
+        onSend,
+      });
+      const view = render(createElement(SessionComposer, props));
+      fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+      fireEvent.change(
+        screen.getByRole("textbox", { name: "Goal objective" }),
+        {
+          target: { value: "All tests pass" },
+        },
+      );
+      if (method === "button") {
+        fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+      } else {
+        fireEvent.keyDown(
+          screen.getByRole("textbox", { name: "Task composer" }),
+          {
+            key: "Enter",
+          },
+        );
+      }
+      expect(onSend).toHaveBeenCalledExactlyOnceWith(
+        EDIT_DRAFT,
+        1,
+        "continue",
+        "All tests pass",
+      );
+
+      const goal = {
+        id: "goal",
+        objective: "All tests pass",
+        mode: "machdoch" as const,
+        status: "active" as const,
+        turns: 1,
+        tokensUsed: 0,
+        elapsedMs: 0,
+        reason: "",
+        createdAt: 1,
+        updatedAt: 1,
+      };
+      view.rerender(
+        createElement(SessionComposer, {
+          ...props,
+          isExecuting: true,
+          activeSession: { ...props.activeSession, goal },
+        }),
+      );
+      expect(screen.getByRole("status").textContent).toBe("Active");
+      expect(screen.getByRole("button", { name: "Pause goal" })).toBeDefined();
+      expect(
+        screen
+          .getByRole("button", { name: "Goal" })
+          .getAttribute("data-active"),
+      ).toBe("true");
+    },
+  );
+
+  it.each(["empty", "hidden", "other-session", "editing"])(
+    "does not activate a goal from an %s draft",
+    (scenario) => {
+      const onSend = vi.fn();
+      const props = createProps({
+        editingMessageId: null,
+        canSendMessage: true,
+        sendDisabledReason: null,
+        isExecuting: false,
+        onSend,
+      });
+      const view = render(createElement(SessionComposer, props));
+      fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+      if (scenario !== "empty") {
+        fireEvent.change(
+          screen.getByRole("textbox", { name: "Goal objective" }),
+          {
+            target: { value: "All tests pass" },
+          },
+        );
+      }
+      if (scenario === "hidden")
+        fireEvent.click(screen.getByRole("button", { name: "Hide goal" }));
+      if (scenario === "other-session")
+        view.rerender(
+          createElement(SessionComposer, {
+            ...props,
+            activeSession: { ...props.activeSession, id: "other-session" },
+          }),
+        );
+      if (scenario === "editing")
+        view.rerender(
+          createElement(SessionComposer, {
+            ...props,
+            editingMessageId: "edit",
+          }),
+        );
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: scenario === "editing" ? "Save and submit" : "Send message",
+        }),
+      );
+      expect(onSend).toHaveBeenCalledExactlyOnceWith(EDIT_DRAFT, 1, "continue");
+    },
+  );
+
+  it("still starts a goal directly without sending the task draft", () => {
+    const onSend = vi.fn();
+    render(
+      createElement(
+        SessionComposer,
+        createProps({ editingMessageId: null, isExecuting: false, onSend }),
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Goal objective" }), {
+      target: { value: "All tests pass" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start goal" }));
+    expect(onSend).toHaveBeenCalledExactlyOnceWith("/goal -- All tests pass");
+  });
+});
+
 describe("SessionComposer enhancement", () => {
   it("shows enabled speech processing and toggles each option from the microphone menu", async () => {
     const onProcessingChange = vi.fn(async () => {});

@@ -642,6 +642,7 @@ export const useFleetControl = (options: {
     prompt: string;
     promptEnhancementMode: "off" | "simple" | "web-search";
     interviewEnabled: boolean;
+    goalObjective?: string;
   }) => boolean;
   onSetSessionMemory: (sessionId: string, enabled: boolean) => void;
   onForgetSessionMemory: (sessionId: string, memoryId: string) => void;
@@ -1397,6 +1398,9 @@ export const useFleetControl = (options: {
                 | "simple"
                 | "web-search",
               interviewEnabled: command.enabled === true,
+              ...(command.goalObjective
+                ? { goalObjective: command.goalObjective }
+                : {}),
             })
           ) {
             throw new Error("The Fleet message could not be submitted.");

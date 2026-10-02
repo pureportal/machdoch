@@ -226,6 +226,7 @@ export interface SessionOperationConflictSubmission {
   sessionId: string;
   activeTaskId: string;
   task: string;
+  goalObjective?: string;
   contextAttachments: ChatSessionContextAttachment[];
   visibleMessageContent: string;
   promptHistoryContent: string;
@@ -563,6 +564,9 @@ export const useSessionTaskSubmission = (options: {
         ),
         parallelAgentMode: messageSettings.parallelAgentMode,
         goalMode: messageSettings.goalMode ?? "machdoch",
+        ...(messageSettings.goalObjective
+          ? { goalObjective: messageSettings.goalObjective }
+          : {}),
         adaptiveControllerOverride:
           messageSettings.adaptiveControllerOverride ?? null,
         wasQueued:
@@ -927,6 +931,9 @@ export const useSessionTaskSubmission = (options: {
           );
           const queued = currentOptions.onSessionOperationConflict?.({
             sessionId,
+            ...(messageSettings.goalObjective
+              ? { goalObjective: messageSettings.goalObjective }
+              : {}),
             activeTaskId: activeSessionTaskId,
             contextAttachments: contextAttachments.map((attachment) => ({
               ...attachment,

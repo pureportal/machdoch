@@ -1,6 +1,6 @@
 import type { ProductGoal } from "@machdoch/fleet-protocol";
 import { Target, X } from "lucide-react";
-import { useEffect, useId, useRef, useState, type ReactElement } from "react";
+import { useEffect, useId, useRef, type ReactElement } from "react";
 
 export function GoalTrigger({
   open,
@@ -23,7 +23,7 @@ export function GoalTrigger({
       aria-label="Goal"
       aria-expanded={open}
       aria-controls={controls}
-      data-active={active || open}
+      data-active={active}
       disabled={disabled}
       onClick={onClick}
     >
@@ -38,10 +38,12 @@ export function GoalControl({
   mode,
   modes,
   goal,
+  objective,
   running,
   disabled = false,
   onClose,
   onModeChange,
+  onObjectiveChange,
   onCommand,
   onPause,
 }: {
@@ -50,16 +52,18 @@ export function GoalControl({
   mode: "machdoch" | "native";
   modes: readonly ("machdoch" | "native")[];
   goal?: ProductGoal | null | undefined;
+  objective: string;
   running: boolean;
   disabled?: boolean;
   onClose: () => void;
   onModeChange: (mode: "machdoch" | "native") => void;
+  onObjectiveChange: (objective: string) => void;
   onCommand: (command: string) => void;
   onPause: () => void;
 }): ReactElement {
   const objectiveId = useId();
+  const disabledReasonId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [objective, setObjective] = useState(goal?.objective ?? "");
   const active = running && goal?.status === "active";
   const changed = objective.trim() !== (goal?.objective ?? "");
   const canResume =
@@ -67,26 +71,25 @@ export function GoalControl({
     !changed &&
     goal.status !== "complete" &&
     goal.status !== "budget-limited";
-  const status = goal
-    ? active
-      ? "Active"
-      : goal.status === "active"
-        ? "Paused"
-        : {
-            paused: "Paused",
-            blocked: "Blocked",
-            "budget-limited": "Limit reached",
-            complete: "Complete",
-          }[goal.status]
-    : null;
+  const status = active
+    ? "Active"
+    : goal && !changed
+      ? {
+          active: "Paused",
+          paused: "Paused",
+          blocked: "Blocked",
+          "budget-limited": "Limit reached",
+          complete: "Complete",
+        }[goal.status]
+      : objective.trim()
+        ? "Not started"
+        : null;
+  const disabledReason =
+    running && !active ? "Finish or stop the current task first." : null;
   const close = (): void => {
     onClose();
     document.getElementById(`${id}-trigger`)?.focus();
   };
-
-  useEffect(() => {
-    setObjective(goal?.objective ?? "");
-  }, [goal?.id, goal?.objective]);
 
   useEffect(() => {
     if (open) textareaRef.current?.focus();
@@ -131,8 +134,10 @@ export function GoalControl({
             <Target aria-hidden="true" />
             Goal
           </label>
-          {status && !changed ? (
-            <span className="m-goal-status">{status}</span>
+          {status ? (
+            <span className="m-goal-status" role="status">
+              {status}
+            </span>
           ) : null}
           {modes.length > 1 ? (
             <select
@@ -169,7 +174,7 @@ export function GoalControl({
           required
           readOnly={running}
           disabled={disabled}
-          onChange={(event) => setObjective(event.target.value)}
+          onChange={(event) => onObjectiveChange(event.target.value)}
         />
         {goal?.reason && !changed ? (
           <p className="m-goal-reason">{goal.reason}</p>
@@ -200,12 +205,18 @@ export function GoalControl({
                 aria-keyshortcuts="Control+Enter Meta+Enter"
                 className="m-goal-submit"
                 disabled={disabled || running || !objective.trim()}
+                aria-describedby={disabledReason ? disabledReasonId : undefined}
               >
                 {canResume ? "Resume goal" : "Start goal"}
               </button>
             )}
           </div>
         </div>
+        {disabledReason ? (
+          <p id={disabledReasonId} className="m-goal-reason">
+            {disabledReason}
+          </p>
+        ) : null}
       </div>
     </form>
   );

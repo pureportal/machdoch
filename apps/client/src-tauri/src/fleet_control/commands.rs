@@ -24,6 +24,8 @@ pub struct FleetControlCommandEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) prompt: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) goal_objective: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) tags: Option<Vec<String>>,
@@ -98,6 +100,7 @@ struct NormalizedCommandFields {
     task_id: Option<String>,
     session_id: Option<String>,
     prompt: Option<String>,
+    goal_objective: Option<String>,
     title: Option<String>,
     tags: Option<Vec<String>>,
     provider: Option<String>,
@@ -150,6 +153,7 @@ pub(super) fn normalize_command(
         task_id: fields.task_id,
         session_id: fields.session_id,
         prompt: fields.prompt,
+        goal_objective: fields.goal_objective,
         title: fields.title,
         tags: fields.tags,
         provider: fields.provider,
@@ -200,6 +204,15 @@ fn normalize_command_fields(
     )?;
 
     let prompt = optional_truncated_text(request.prompt.as_deref(), MAX_COMMAND_TEXT_CHARS);
+    let goal_objective = optional_trimmed_string(request.goal_objective.as_deref());
+    if request.goal_objective.is_some()
+        && (kind != "submit-message"
+            || goal_objective
+                .as_ref()
+                .is_none_or(|objective| objective.encode_utf16().count() > 4_000))
+    {
+        return Err("Enter a goal between 1 and 4,000 characters.".to_string());
+    }
     if matches!(kind, "submit-message" | "generate-media") && prompt.is_none() {
         return Err(if kind == "generate-media" {
             "Media generation requires a prompt.".to_string()
@@ -389,6 +402,7 @@ fn normalize_command_fields(
         task_id,
         session_id,
         prompt,
+        goal_objective,
         title,
         tags,
         provider,
@@ -442,6 +456,7 @@ pub(super) fn command_payloads_match(
         && left.task_id == right.task_id
         && left.session_id == right.session_id
         && left.prompt == right.prompt
+        && left.goal_objective == right.goal_objective
         && left.title == right.title
         && left.tags == right.tags
         && left.provider == right.provider
@@ -475,6 +490,7 @@ pub(super) fn command_payload_hash(event: &FleetControlCommandEvent) -> String {
         "taskId": event.task_id,
         "sessionId": event.session_id,
         "prompt": event.prompt,
+        "goalObjective": event.goal_objective,
         "title": event.title,
         "tags": event.tags,
         "provider": event.provider,

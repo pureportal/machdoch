@@ -1,4 +1,5 @@
 import { GoalControl, GoalTrigger } from "./goal-control";
+import { useGoalDraft } from "./use-goal-draft";
 import type { ProductSession, ProductShell } from "@machdoch/fleet-protocol";
 import {
   ArrowUp,
@@ -172,6 +173,12 @@ export function Composer({
   const [sessionMemoryOpen, setSessionMemoryOpen] = useState(false);
   const goalId = useId();
   const [goalOpen, setGoalOpen] = useState(Boolean(composer.goal));
+  const goalDraft = useGoalDraft(
+    composer.sessionId,
+    composer.goal,
+    goalOpen && session.specialKind !== "pose",
+    composer.isExecuting,
+  );
   const [optionsOpen, setOptionsOpen] = useState(false);
   const composing = useRef(false);
   const touchInput = useMediaQuery("(pointer: coarse)");
@@ -207,7 +214,7 @@ export function Composer({
     : "disabled";
 
   const submit = (): void => {
-    if (canSubmit) void submitDraft();
+    if (canSubmit) void submitDraft(goalDraft.submissionObjective);
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -604,6 +611,8 @@ export function Composer({
               mode={composer.goalMode ?? "machdoch"}
               modes={composer.availableGoalModes ?? ["machdoch"]}
               goal={composer.goal}
+              objective={goalDraft.objective}
+              onObjectiveChange={goalDraft.setObjective}
               running={composer.isExecuting}
               disabled={pending}
               onClose={() => setGoalOpen(false)}

@@ -95,6 +95,7 @@ mod tests {
                 task_id: None,
                 session_id: None,
                 prompt: None,
+                goal_objective: None,
                 title: None,
                 tags: None,
                 provider: None,
