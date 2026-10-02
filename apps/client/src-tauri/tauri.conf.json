@@ -22,9 +22,7 @@
         "enable": true,
         "scope": []
       },
-      "capabilities": [
-        "default"
-      ]
+      "capabilities": ["default"]
     },
     "windows": [
       {
@@ -59,6 +57,9 @@
       "resources/whisper/LICENSE-whisper.cpp.txt": "whisper/LICENSE-whisper.cpp.txt",
       "resources/whisper/LICENSE-whisper-model.txt": "whisper/LICENSE-whisper-model.txt",
       "python/media_diffusers_worker.py": "python/media_diffusers_worker.py",
+      "python/media_open_models.py": "python/media_open_models.py",
+      "python/media_open_video.py": "python/media_open_video.py",
+      "python/open_media_models.json": "python/open_media_models.json",
       "python/media_minimax_h3.py": "python/media_minimax_h3.py",
       "python/fizgig": "python/fizgig",
       "python/LICENSE-fizgig.txt": "python/LICENSE-fizgig.txt",
@@ -84,13 +85,7 @@
       "python/media_runtime_manifest.json": "python/media_runtime_manifest.json",
       "../scripts/build_source_anchored_loop.py": "python/build_source_anchored_loop.py"
     },
-    "targets": [
-      "msi",
-      "nsis",
-      "deb",
-      "rpm",
-      "appimage"
-    ],
+    "targets": ["msi", "nsis", "deb", "rpm", "appimage"],
     "windows": {
       "wix": {
         "upgradeCode": "47638e6f-1542-5d67-bc57-e5ae45db5fd8",
@@ -110,14 +105,8 @@
     },
     "linux": {
       "deb": {
-        "depends": [
-          "libgbm1",
-          "libpipewire-0.3-0",
-          "libvulkan1"
-        ],
-        "recommends": [
-          "python3-nautilus"
-        ],
+        "depends": ["libgbm1", "libpipewire-0.3-0", "libvulkan1"],
+        "recommends": ["python3-nautilus"],
         "files": {
           "/usr/share/kio/servicemenus/machdoch-folder-context.desktop": "linux/machdoch-folder-context.desktop",
           "/usr/share/kio/servicemenus/machdoch-files-context.desktop": "linux/machdoch-files-context.desktop",
@@ -137,9 +126,7 @@
           "libvulkan.so.1()(64bit)",
           "libwebkit2gtk-4.1.so.0()(64bit)"
         ],
-        "recommends": [
-          "nautilus-python"
-        ],
+        "recommends": ["nautilus-python"],
         "files": {
           "/usr/share/kio/servicemenus/machdoch-folder-context.desktop": "linux/machdoch-folder-context.desktop",
           "/usr/share/kio/servicemenus/machdoch-files-context.desktop": "linux/machdoch-files-context.desktop",

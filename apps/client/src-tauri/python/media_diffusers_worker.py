@@ -27,8 +27,9 @@ PROCESS_STARTED_AT = time.monotonic()
 
 import numpy as np
 from PIL import Image, ImageOps
+import media_open_models
 
-WORKER_VERSION = "media-diffusers-worker/1.73.0"
+WORKER_VERSION = "media-diffusers-worker/1.74.0"
 # Disk group files contain only checkpoint/adapter tensors. Keep their
 # compatibility identity independent from response/provenance releases until
 # that serialization contract itself changes.
@@ -84,7 +85,7 @@ SUPPORTED_ARCHITECTURES = (
     "ltx-video",
     "wan-2.2-ti2v",
     "intro-svg",
-)
+) + tuple(media_open_models.PROFILES)
 NATIVE_MASKED_EDIT_ARCHITECTURES = frozenset(
     {
         "flux-2",
@@ -106,6 +107,11 @@ NATIVE_REFERENCE_ROLES = {
     "krea-2": frozenset({"subject", "style", "composition", "palette", "detail"}),
     "qwen-image-2.1": frozenset({"subject", "style", "composition", "palette", "detail"}),
 }
+NATIVE_REFERENCE_ROLES.update({
+    architecture: frozenset({"subject", "style", "composition", "palette", "detail"})
+    for architecture, profile in media_open_models.PROFILES.items()
+    if "image-to-image" in profile["capabilities"]
+})
 RUNTIME_MANIFEST = json.loads(Path(__file__).with_name("media_runtime_manifest.json").read_text(encoding="utf-8"))
 ACCEPTED_PACKAGE_VERSIONS = {
     name.lower(): (version,)
@@ -123,6 +129,7 @@ BASE_CAPABILITIES = (
     "textual-inversion",
     "multi-lora",
     "local-image-edit",
+    "text-to-video",
     "masked-region-inpainting",
     "openpose-controlnet",
     "image-to-video",
@@ -1002,6 +1009,11 @@ def _load_pipeline(
         "local_files_only": True,
         "use_safetensors": True,
     }
+    if architecture in media_open_models.PROFILES:
+        try:
+            return media_open_models.load_pipeline(diffusers, model, dtype)
+        except ValueError as error:
+            raise WorkerError(str(error)) from error
     if architecture == "qwen-image-2.1" and package_kind == "single-file":
         physical_memory = _physical_memory_bytes()
         if physical_memory is not None and physical_memory < 48 * 1024**3:
@@ -1091,7 +1103,11 @@ def probe_model(request: dict[str, Any]) -> dict[str, Any]:
     pipeline_class_name = None
     component_names = None
     probe_diagnostic = None
-    if architecture == "intro-svg":
+    if architecture in media_open_models.PROFILES:
+        pipeline = _load_pipeline(diffusers, torch, model)
+        required_methods = []
+        capabilities = media_open_models.PROFILES[architecture]["capabilities"][:]
+    elif architecture == "intro-svg":
         pipeline, _ = _svg_model_module().load_model(model, torch)
         component_names = ["model", "processor"]
         required_methods = []
@@ -2035,6 +2051,8 @@ def _dimensions(
 
 
 def _steps(architecture: str, policy: str) -> int:
+    if architecture in media_open_models.PROFILES:
+        return media_open_models.PROFILES[architecture]["steps"]
     if architecture == "flux-2":
         # FLUX.2 Klein is step-distilled for exactly four production steps.
         # Extra steps do not turn it into the 50-step Base checkpoint and can
@@ -2073,6 +2091,8 @@ def _image_sampling(request: dict[str, Any], architecture: str, policy: str) -> 
         fixed = {"flux-2": 1.0, "krea-2": 0.0}.get(architecture)
         if fixed is not None and guidance != fixed:
             raise WorkerError(f"{architecture} requires guidance {fixed}")
+    if architecture in media_open_models.PROFILES:
+        media_open_models.validate_sampling(architecture, steps, guidance)
     return width, height, steps, guidance
 
 
@@ -3041,7 +3061,9 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
             "generator": generator,
             "num_images_per_prompt": 1,
         }
-        if requested_guidance is not None and architecture == "qwen-image-2.1":
+        if architecture in media_open_models.PROFILES:
+            arguments.update(media_open_models.image_arguments(architecture, request.get("sampling", {}), conditioned_images, negative_prompt))
+        elif requested_guidance is not None and architecture == "qwen-image-2.1":
             if requested_guidance < 1:
                 raise WorkerError("Qwen-Image 2.1 guidance must be at least 1")
             if requested_guidance > 1 and not negative_prompt.strip():
@@ -3101,7 +3123,7 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
                 arguments["image"] = (
                     flux_images[0] if len(flux_images) == 1 else flux_images
                 )
-        elif primary_reference_image is not None and architecture not in ("krea-2", "qwen-image-2.1"):
+        elif primary_reference_image is not None and architecture not in ("krea-2", "qwen-image-2.1") and architecture not in media_open_models.PROFILES:
             arguments["image"] = _fit_conditioning_image(
                 primary_reference_image, width, height
             )
@@ -6404,6 +6426,10 @@ def _video_dimensions(
     resolved = dimensions.get(aspect_ratio)
     if resolved is None:
         raise WorkerError("Video aspectRatio must be 1:1, 16:9, 9:16, or 21:9")
+    profile = media_open_models.PROFILES.get(architecture)
+    if profile is not None:
+        multiple = profile.get("spatialMultiple", 16)
+        return tuple((value + multiple - 1) // multiple * multiple for value in resolved)
     return resolved
 
 
@@ -8964,6 +8990,10 @@ def _generate_minimax_h3_video(request: dict[str, Any]) -> dict[str, Any]:
 
 
 def generate_video(request: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(request.get("model"), dict) and request["model"].get("architecture") in media_open_models.PROFILES:
+        import media_open_video
+
+        return media_open_video.generate(request, sys.modules[__name__])
     if isinstance(request.get("model"), dict) and request["model"].get("architecture") == "minimax-h3-ref2va":
         return _generate_minimax_h3_video(request)
     _progress("Starting video runtime", 0.02)

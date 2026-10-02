@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::HashSet,
     fs::{self, File, OpenOptions},
     io::{Read, Write},
@@ -53,8 +54,8 @@ struct BuiltinModelManifest {
     license_source_url: &'static str,
     license_requires_acceptance: bool,
     package_description: &'static str,
-    files: &'static [ManifestFile],
-    excluded_paths: &'static [&'static str],
+    files: Cow<'static, [ManifestFile]>,
+    excluded_paths: Cow<'static, [&'static str]>,
 }
 
 const FLUX_FILES: &[ManifestFile] = &[
@@ -192,8 +193,8 @@ const FLUX_MANIFEST: BuiltinModelManifest = BuiltinModelManifest {
     license_source_url: "https://www.apache.org/licenses/LICENSE-2.0",
     license_requires_acceptance: true,
     package_description: "pinned Diffusers allowlist",
-    files: FLUX_FILES,
-    excluded_paths: FLUX_EXCLUDED_PATHS,
+    files: Cow::Borrowed(FLUX_FILES),
+    excluded_paths: Cow::Borrowed(FLUX_EXCLUDED_PATHS),
 };
 
 const BIREFNET_MANIFEST: BuiltinModelManifest = BuiltinModelManifest {
@@ -209,10 +210,12 @@ const BIREFNET_MANIFEST: BuiltinModelManifest = BuiltinModelManifest {
     license_source_url: "https://github.com/ZhengPeng7/BiRefNet/blob/a0cf9925880620000aa2d1948d61bf659ddfdfaa/LICENSE",
     license_requires_acceptance: true,
     package_description: "official BiRefNet matting ONNX release and license",
-    files: BIREFNET_FILES,
-    excluded_paths: BIREFNET_EXCLUDED_PATHS,
+    files: Cow::Borrowed(BIREFNET_FILES),
+    excluded_paths: Cow::Borrowed(BIREFNET_EXCLUDED_PATHS),
 };
 
+#[path = "model_install_open.rs"]
+mod open;
 #[path = "model_install_svg.rs"]
 mod svg;
 #[path = "model_install_wan.rs"]
@@ -226,11 +229,33 @@ const BUILTIN_MANIFESTS: &[&BuiltinModelManifest] = &[
 ];
 
 fn builtin_manifest(model_id: &str) -> MediaResult<&'static BuiltinModelManifest> {
+    builtin_manifests()
+        .find(|manifest| manifest.model_id == model_id)
+        .ok_or_else(|| "this model does not have a managed installation manifest".to_string())
+}
+
+fn builtin_manifests() -> impl Iterator<Item = &'static BuiltinModelManifest> {
     BUILTIN_MANIFESTS
         .iter()
         .copied()
+        .chain(open::manifests().iter())
+}
+
+pub(super) fn has_manifest(model_id: &str) -> bool {
+    builtin_manifests().any(|manifest| manifest.model_id == model_id)
+}
+
+pub(super) fn download_size_gb(model_id: &str) -> Option<f64> {
+    builtin_manifests()
         .find(|manifest| manifest.model_id == model_id)
-        .ok_or_else(|| "this model does not have a managed installation manifest".to_string())
+        .map(|manifest| {
+            manifest
+                .files
+                .iter()
+                .map(|file| file.byte_size as f64)
+                .sum::<f64>()
+                / 1_024_f64.powi(3)
+        })
 }
 
 fn total_bytes(manifest: &BuiltinModelManifest) -> u64 {
@@ -243,7 +268,7 @@ fn manifest_digest(manifest: &BuiltinModelManifest) -> String {
     hasher.update(manifest.model_id.as_bytes());
     hasher.update(b"\0");
     hasher.update(manifest.revision.as_bytes());
-    for file in manifest.files {
+    for file in manifest.files.iter() {
         hasher.update(b"\0");
         hasher.update(file.path.as_bytes());
         hasher.update(b"\0");
@@ -321,8 +346,7 @@ fn managed_package_slug(
         return Err("the installed model path is not a managed revision directory".to_string());
     }
     let package_slug = &components[1];
-    let is_builtin = BUILTIN_MANIFESTS
-        .iter()
+    let is_builtin = builtin_manifests()
         .any(|manifest| model_id == manifest.model_id && package_slug == manifest.slug);
     let is_user_import = model_id
         .strip_prefix(model_import::USER_MODEL_ID_PREFIX)
@@ -508,6 +532,16 @@ pub(crate) fn plan(
                 .to_string(),
         );
     }
+    let active_job = database::open(paths)?
+        .query_row(
+            "SELECT id FROM media_model_install_jobs WHERE model_id = ?1 AND status IN ('queued','downloading','verifying','activating','canceling') ORDER BY created_at DESC LIMIT 1",
+            params![manifest.model_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| format!("failed to inspect active model installations: {error}"))?
+        .map(|id| get_job(paths, &id))
+        .transpose()?;
     Ok(MediaModelInstallPlan {
         schema_version: 1,
         model_id: manifest.model_id.to_string(),
@@ -540,11 +574,15 @@ pub(crate) fn plan(
         available_bytes,
         has_sufficient_space,
         already_installed: installation_exists(paths, manifest)?,
+        active_job,
         license: MediaModelLicense {
             name: manifest.license_name.to_string(),
             spdx_id: manifest.license_spdx_id.map(str::to_string),
             source_url: manifest.license_source_url.to_string(),
-            commercial_use: "allowed".to_string(),
+            commercial_use: super::open_models::by_id(manifest.model_id)
+                .map(|profile| profile.license.commercial_use.as_str())
+                .unwrap_or("allowed")
+                .to_string(),
             requires_acceptance: manifest.license_requires_acceptance,
         },
         warnings,
@@ -589,16 +627,11 @@ pub(crate) fn start(
 
     let mut connection = database::open(paths)?;
     catalog::synchronize(&mut connection)?;
-    let active_job = connection
-        .query_row(
-            "SELECT id FROM media_model_install_jobs WHERE model_id = ?1 AND status IN ('queued','downloading','verifying','activating','canceling') ORDER BY created_at DESC LIMIT 1",
-            params![manifest.model_id],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(|error| format!("failed to inspect active model installations: {error}"))?;
-    if let Some(active_job) = active_job {
-        return Err(format!("model installation {active_job} is already active"));
+    if let Some(active_job) = plan.active_job {
+        return Err(format!(
+            "model installation {} is already active",
+            active_job.id
+        ));
     }
 
     let job_id = new_job_id()?;
@@ -618,7 +651,7 @@ pub(crate) fn start(
             params![job_id, manifest.model_id, manifest.revision, plan.manifest_digest, manifest.license_digest, manifest.files.len() as i64, plan.total_bytes as i64, created_at],
         )
         .map_err(|error| format!("failed to queue model installation: {error}"))?;
-    for file in manifest.files {
+    for file in manifest.files.iter() {
         transaction
             .execute(
                 "INSERT INTO media_model_install_files(job_id, path, sha256, byte_size, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -1276,7 +1309,7 @@ fn validate_package(
     {
         return Err("model package inventory differs from the reviewed allowlist".to_string());
     }
-    for file in manifest.files {
+    for file in manifest.files.iter() {
         let path = safe_relative_path(root, file.path)?;
         let metadata = fs::symlink_metadata(&path)
             .map_err(|error| format!("failed to inspect verified file {}: {error}", file.path))?;
@@ -1690,7 +1723,7 @@ async fn execute_inner(paths: &MediaRuntimePaths, job_id: &str) -> MediaResult<(
     fs::create_dir_all(&stage_root)
         .map_err(|error| format!("failed to create model staging root: {error}"))?;
 
-    for file in manifest.files {
+    for file in manifest.files.iter() {
         let file_status = database::open(paths)?
             .query_row(
                 "SELECT status FROM media_model_install_files WHERE job_id = ?1 AND path = ?2",

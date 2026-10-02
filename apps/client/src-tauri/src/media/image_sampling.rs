@@ -38,6 +38,28 @@ mod tests {
 impl ImageSampling {
     pub(crate) fn validate_architecture(&self, architecture: &str) -> MediaResult<()> {
         self.validate()?;
+        if let Some(profile) = super::open_models::by_architecture(architecture) {
+            if profile.fixed_steps
+                && self
+                    .num_inference_steps
+                    .is_some_and(|steps| steps != profile.steps)
+            {
+                return Err(format!(
+                    "{} requires {} sampling steps",
+                    profile.display_name, profile.steps
+                ));
+            }
+            if profile.fixed_guidance
+                && self
+                    .guidance_scale
+                    .is_some_and(|scale| scale != profile.guidance)
+            {
+                return Err(format!(
+                    "{} requires guidance {}",
+                    profile.display_name, profile.guidance
+                ));
+            }
+        }
         if architecture == "flux-2" && self.num_inference_steps.is_some_and(|steps| steps != 4) {
             return Err("FLUX.2 Klein requires 4 sampling steps.".to_string());
         }

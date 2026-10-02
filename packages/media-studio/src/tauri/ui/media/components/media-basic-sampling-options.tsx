@@ -12,6 +12,7 @@ import {
   mediaImageSamplingError,
 } from "../../../../core/media/image-sampling.js";
 import { mediaVideoDimensionsError } from "../../../../core/media/video-quality.js";
+import { openMediaModelProfile } from "../../../../core/media/open-model-profiles.js";
 
 const control =
   "h-10 w-full min-w-0 rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-slate-200 transition-colors hover:border-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 disabled:cursor-not-allowed disabled:opacity-50";
@@ -34,6 +35,7 @@ export const MediaBasicSamplingOptions = ({
 }): JSX.Element | null => {
   const local = model?.target === "local";
   const architecture = model?.architecture;
+  const profile = openMediaModelProfile(architecture);
   const sampling = settings.sampling ?? {};
   const updateSampling = (patch: Partial<typeof sampling>): void =>
     onChange({ ...settings, sampling: { ...sampling, ...patch } });
@@ -172,7 +174,7 @@ export const MediaBasicSamplingOptions = ({
                 min={1}
                 max={100}
                 step={1}
-                disabled={architecture === "flux-2"}
+                disabled={architecture === "flux-2" || profile?.fixedSteps}
                 value={sampling.numInferenceSteps ?? ""}
                 placeholder={String(
                   defaultMediaImageSteps(architecture, settings.modelPolicy),
@@ -189,6 +191,7 @@ export const MediaBasicSamplingOptions = ({
             </label>
             {architecture !== "flux-2" &&
             architecture !== "krea-2" &&
+            !profile?.fixedGuidance &&
             architecture !== "qwen-image-2.1" ? (
               <label className={field}>
                 <span>Guidance</span>

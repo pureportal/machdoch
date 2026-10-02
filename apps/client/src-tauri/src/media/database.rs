@@ -2438,7 +2438,7 @@ pub(crate) fn complete_local_video_generation(
         "firstFrameDigest": video.first_frame_digest,
         "lastFrameAssetId": request.last_frame_asset_id,
         "lastFrameDigest": video.last_frame_digest,
-        "sameEndpointConditioning": video.first_frame_digest == video.last_frame_digest,
+        "sameEndpointConditioning": video.first_frame_digest.is_some() && video.first_frame_digest == video.last_frame_digest,
         "output": video.output,
     })
     .to_string();
@@ -2460,18 +2460,19 @@ pub(crate) fn complete_local_video_generation(
             ],
         )
         .map_err(|error| format!("failed to register local video asset: {error}"))?;
-    transaction
-        .execute(
-            "INSERT INTO asset_inputs(asset_id, input_asset_id, role) VALUES (?1, ?2, 'first-frame')",
-            params![asset_id, request.first_frame_asset_id],
-        )
-        .map_err(|error| format!("failed to register video first-frame lineage: {error}"))?;
-    transaction
-        .execute(
-            "INSERT INTO asset_inputs(asset_id, input_asset_id, role) VALUES (?1, ?2, 'last-frame')",
-            params![asset_id, request.last_frame_asset_id],
-        )
-        .map_err(|error| format!("failed to register video last-frame lineage: {error}"))?;
+    for (input, role) in [
+        (&request.first_frame_asset_id, "first-frame"),
+        (&request.last_frame_asset_id, "last-frame"),
+    ] {
+        if let Some(input) = input {
+            transaction
+                .execute(
+                    "INSERT INTO asset_inputs(asset_id, input_asset_id, role) VALUES (?1, ?2, ?3)",
+                    params![asset_id, input, role],
+                )
+                .map_err(|error| format!("failed to register video lineage: {error}"))?;
+        }
+    }
     let architecture_tag = match video.architecture.as_str() {
         "minimax-h3-ref2va" => ("minimax-h3-ref2va", "MiniMax H3 Ref2VA"),
         "hunyuan-video-1.5-i2v" => (
@@ -2480,7 +2481,8 @@ pub(crate) fn complete_local_video_generation(
         ),
         "framepack-i2v" => ("framepack-i2v-hy", "FramePack I2V HY"),
         "ltx-video" => ("ltx-video-0-9-8", "LTX-Video 0.9.8"),
-        _ => ("wan2-2-ti2v", "Wan2.2 TI2V"),
+        "wan-2.2-ti2v" => ("wan2-2-ti2v", "Wan2.2 TI2V"),
+        architecture => (architecture, request.model_label.as_str()),
     };
     let mut technical_tags = vec![architecture_tag];
     if video.transparent_background {
@@ -2572,7 +2574,7 @@ pub(crate) fn complete_local_video_generation(
             "firstFrameDigest": video.first_frame_digest,
             "lastFrameAssetId": request.last_frame_asset_id,
             "lastFrameDigest": video.last_frame_digest,
-            "sameEndpointConditioning": video.first_frame_digest == video.last_frame_digest,
+            "sameEndpointConditioning": video.first_frame_digest.is_some() && video.first_frame_digest == video.last_frame_digest,
             "sourceTransparentVideoAssetId": asset_id,
             "sourceTransparentVideoDigest": video.digest,
             "output": composite_output,
@@ -6849,8 +6851,8 @@ mod tests {
             model_label: "Wan2.2 TI2V 5B".to_string(),
             diagnostic_count: 0,
             workspace_root: paths.database.parent().unwrap().display().to_string(),
-            first_frame_asset_id: "asset:run:wan-source:0".to_string(),
-            last_frame_asset_id: "asset:run:wan-source:0".to_string(),
+            first_frame_asset_id: Some("asset:run:wan-source:0".to_string()),
+            last_frame_asset_id: Some("asset:run:wan-source:0".to_string()),
             aspect_ratio: "16:9".to_string(),
             resolution: "preview-512".to_string(),
             output_format: "webm".to_string(),
@@ -6920,9 +6922,11 @@ mod tests {
             relative_path,
             byte_size,
             first_frame_digest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-                .to_string(),
+                .to_string()
+                .into(),
             last_frame_digest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-                .to_string(),
+                .to_string()
+                .into(),
             worker_version: "test-worker/1".to_string(),
             packages: std::collections::HashMap::new(),
             device: "test".to_string(),
@@ -8049,7 +8053,17 @@ mod tests {
         assert_eq!(initial.schema_version, 1);
         assert_eq!(initial.catalog_revision, catalog::CATALOG_REVISION);
         assert_eq!(initial.providers.len(), 8);
-        assert_eq!(initial.models.len(), 14);
+        assert_eq!(initial.models.len(), 44);
+        for profile in super::super::open_models::profiles() {
+            let model = initial
+                .models
+                .iter()
+                .find(|model| model.id == profile.id)
+                .unwrap();
+            assert_eq!(model.capabilities, profile.capabilities);
+            assert!(!model.installed);
+            assert_eq!(model.runtime_readiness, "not-applicable");
+        }
         for id in ["local:wan2.2-ti2v-5b", "local-svg:IntroSVG-Qwen2.5-VL-7B"] {
             let model = initial.models.iter().find(|model| model.id == id).unwrap();
             assert_eq!(model.management.acquisition, "managed-install");

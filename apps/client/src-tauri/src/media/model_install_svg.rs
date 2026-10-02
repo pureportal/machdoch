@@ -13,8 +13,8 @@ pub(super) const SVG_MANIFEST: BuiltinModelManifest = BuiltinModelManifest {
     license_source_url: "https://huggingface.co/gitcat404/IntroSVG-Qwen2.5-VL-7B/resolve/5da60d628d226361fb0a8210dc021782e5ee484a/README.md",
     license_requires_acceptance: false,
     package_description: "IntroSVG Transformers package",
-    excluded_paths: &["repository documentation and examples"],
-    files: &[
+    excluded_paths: std::borrow::Cow::Borrowed(&["repository documentation and examples"]),
+    files: std::borrow::Cow::Borrowed(&[
         ManifestFile {
             path: "README.md",
             byte_size: 8967,
@@ -95,5 +95,5 @@ pub(super) const SVG_MANIFEST: BuiltinModelManifest = BuiltinModelManifest {
             byte_size: 2776833,
             sha256: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
         },
-    ],
+    ]),
 };

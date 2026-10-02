@@ -2,6 +2,7 @@ import type {
   MediaLocalModelArchitecture,
   MediaModelPolicy,
 } from "./contracts.js";
+import { openMediaModelProfile } from "./open-model-profiles.js";
 
 export interface MediaImageSamplingSettings {
   width?: number | null;
@@ -60,10 +61,11 @@ export const defaultMediaImageSteps = (
   architecture: MediaLocalModelArchitecture | null | undefined,
   policy: MediaModelPolicy,
 ): number =>
-  architecture === "flux-2"
+  openMediaModelProfile(architecture)?.steps ??
+  (architecture === "flux-2"
     ? 4
     : architecture === "krea-2"
       ? { fast: 8, balanced: 10, quality: 12 }[policy]
       : architecture === "qwen-image-2.1"
         ? { fast: 20, balanced: 30, quality: 40 }[policy]
-      : { fast: 16, balanced: 24, quality: 32 }[policy];
+        : { fast: 16, balanced: 24, quality: 32 }[policy]);

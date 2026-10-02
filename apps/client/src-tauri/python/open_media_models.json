@@ -1,0 +1,730 @@
+[
+  {
+    "id": "local:z-image-turbo",
+    "architecture": "z-image-turbo",
+    "displayName": "Z-Image-Turbo",
+    "family": "Z-Image",
+    "repository": "Tongyi-MAI/Z-Image-Turbo",
+    "pipeline": "ZImagePipeline",
+    "capabilities": ["text-to-image"],
+    "revision": "f332072aa78be7aecdf3ee76d5c247082da564a6",
+    "steps": 9,
+    "guidance": 0,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": true,
+    "fixedGuidance": true,
+    "license": {
+      "name": "Apache License 2.0",
+      "spdxId": "Apache-2.0",
+      "commercialUse": "allowed"
+    }
+  },
+  {
+    "id": "local:z-image",
+    "architecture": "z-image",
+    "displayName": "Z-Image Base",
+    "family": "Z-Image",
+    "repository": "Tongyi-MAI/Z-Image",
+    "pipeline": "ZImagePipeline",
+    "capabilities": ["text-to-image"],
+    "revision": "04cc4abb7c5069926f75c9bfde9ef43d49423021",
+    "steps": 50,
+    "guidance": 4,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "Apache License 2.0",
+      "spdxId": "Apache-2.0",
+      "commercialUse": "allowed"
+    }
+  },
+  {
+    "id": "local:qwen-image",
+    "architecture": "qwen-image",
+    "displayName": "Qwen-Image",
+    "family": "Qwen-Image",
+    "repository": "Qwen/Qwen-Image",
+    "pipeline": "QwenImagePipeline",
+    "capabilities": ["text-to-image"],
+    "revision": "75e0b4be04f60ec59a75f475837eced720f823b6",
+    "steps": 50,
+    "guidance": 4,
+    "guidanceParameter": "true_cfg_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "Apache License 2.0",
+      "spdxId": "Apache-2.0",
+      "commercialUse": "allowed"
+    }
+  },
+  {
+    "id": "local:qwen-image-2512",
+    "architecture": "qwen-image-2512",
+    "displayName": "Qwen-Image-2512",
+    "family": "Qwen-Image",
+    "repository": "Qwen/Qwen-Image-2512",
+    "pipeline": "QwenImagePipeline",
+    "capabilities": ["text-to-image"],
+    "revision": "25468b98e3276ca6700de15c6628e51b7de54a26",
+    "steps": 50,
+    "guidance": 4,
+    "guidanceParameter": "true_cfg_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "Apache License 2.0",
+      "spdxId": "Apache-2.0",
+      "commercialUse": "allowed"
+    }
+  },
+  {
+    "id": "local:qwen-image-edit-2511",
+    "architecture": "qwen-image-edit-2511",
+    "displayName": "Qwen-Image-Edit-2511",
+    "family": "Qwen-Image",
+    "repository": "Qwen/Qwen-Image-Edit-2511",
+    "pipeline": "QwenImageEditPlusPipeline",
+    "capabilities": ["image-to-image", "multi-reference-edit"],
+    "revision": "6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9",
+    "steps": 40,
+    "guidance": 4,
+    "guidanceParameter": "true_cfg_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "Apache License 2.0",
+      "spdxId": "Apache-2.0",
+      "commercialUse": "allowed"
+    },
+    "maxReferences": 3
+  },
+  {
+    "id": "local:sana",
+    "architecture": "sana",
+    "displayName": "SANA 1.6B",
+    "family": "SANA",
+    "repository": "Efficient-Large-Model/Sana_1600M_1024px_diffusers",
+    "pipeline": "SanaPipeline",
+    "capabilities": ["text-to-image"],
+    "revision": "ac0da2ff55fbe434795be0dce883042e4d49e2fc",
+    "steps": 20,
+    "guidance": 4.5,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "Apache License 2.0",
+      "spdxId": "Apache-2.0",
+      "commercialUse": "allowed"
+    }
+  },
+  {
+    "id": "local:sana-sprint",
+    "architecture": "sana-sprint",
+    "displayName": "SANA-Sprint 1.6B",
+    "family": "SANA",
+    "repository": "Efficient-Large-Model/Sana_Sprint_1.6B_1024px_diffusers",
+    "pipeline": "SanaSprintPipeline",
+    "capabilities": ["text-to-image"],
+    "revision": "19683c58b7ea290e55cedd8950ae1d86ada7ef96",
+    "steps": 1,
+    "guidance": 4.5,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": true,
+    "fixedGuidance": false,
+    "license": {
+      "name": "Apache License 2.0",
+      "spdxId": "Apache-2.0",
+      "commercialUse": "allowed"
+    }
+  },
+  {
+    "id": "local:glm-image",
+    "architecture": "glm-image",
+    "displayName": "GLM-Image",
+    "family": "GLM-Image",
+    "repository": "zai-org/GLM-Image",
+    "pipeline": "GlmImagePipeline",
+    "capabilities": ["text-to-image", "image-to-image", "multi-reference-edit"],
+    "revision": "2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4",
+    "steps": 50,
+    "guidance": 1.5,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "MIT License",
+      "spdxId": "MIT",
+      "commercialUse": "allowed"
+    },
+    "maxReferences": 3,
+    "spatialMultiple": 32
+  },
+  {
+    "id": "local:hidream-i1-full",
+    "architecture": "hidream-i1-full",
+    "displayName": "HiDream-I1 Full",
+    "family": "HiDream",
+    "repository": "HiDream-ai/HiDream-I1-Full",
+    "pipeline": "HiDreamImagePipeline",
+    "capabilities": ["text-to-image"],
+    "revision": "8ccbbfb270ccdae26d6bb0081df67dc81e4033bf",
+    "steps": 50,
+    "guidance": 5,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "MIT License",
+      "spdxId": "MIT",
+      "commercialUse": "allowed"
+    }
+  },
+  {
+    "id": "local:ideogram-4",
+    "architecture": "ideogram-4",
+    "displayName": "Ideogram 4 NF4",
+    "family": "Ideogram",
+    "repository": "ideogram-ai/ideogram-4-nf4",
+    "pipeline": "Ideogram4Pipeline",
+    "capabilities": ["text-to-image"],
+    "revision": "f664347839e0a87bc495f5c9483cc0014b8e344e",
+    "steps": 48,
+    "guidance": 7,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "Ideogram 4 NF4 model license",
+      "spdxId": null,
+      "commercialUse": "review-required"
+    }
+  },
+  {
+    "id": "local:flux-1-schnell",
+    "architecture": "flux-1-schnell",
+    "displayName": "FLUX.1 schnell",
+    "family": "FLUX",
+    "repository": "black-forest-labs/FLUX.1-schnell",
+    "pipeline": "FluxPipeline",
+    "capabilities": ["text-to-image"],
+    "revision": "741f7c3ce8b383c54771c7003378a50191e9efe9",
+    "steps": 4,
+    "guidance": 0,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": true,
+    "fixedGuidance": true,
+    "license": {
+      "name": "Apache License 2.0",
+      "spdxId": "Apache-2.0",
+      "commercialUse": "allowed"
+    },
+    "maxReferences": 3
+  },
+  {
+    "id": "local:flux-1-dev",
+    "architecture": "flux-1-dev",
+    "displayName": "FLUX.1 dev",
+    "family": "FLUX",
+    "repository": "black-forest-labs/FLUX.1-dev",
+    "pipeline": "FluxPipeline",
+    "capabilities": ["text-to-image"],
+    "revision": "3de623fc3c33e44ffbe2bad470d0f45bccf2eb21",
+    "steps": 28,
+    "guidance": 3.5,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "FLUX.1 dev model license",
+      "spdxId": null,
+      "commercialUse": "review-required"
+    },
+    "maxReferences": 3
+  },
+  {
+    "id": "local:flux-2-klein-base-4b",
+    "architecture": "flux-2-klein-base-4b",
+    "displayName": "FLUX.2 klein Base 4B",
+    "family": "FLUX",
+    "repository": "black-forest-labs/FLUX.2-klein-base-4B",
+    "pipeline": "Flux2KleinPipeline",
+    "capabilities": ["text-to-image", "image-to-image", "multi-reference-edit"],
+    "revision": "a3b4f4849157f664bdbc776fd7453c2783562f4d",
+    "steps": 50,
+    "guidance": 4,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "Apache License 2.0",
+      "spdxId": "Apache-2.0",
+      "commercialUse": "allowed"
+    },
+    "maxReferences": 3
+  },
+  {
+    "id": "local:flux-2-klein-9b",
+    "architecture": "flux-2-klein-9b",
+    "displayName": "FLUX.2 klein 9B",
+    "family": "FLUX",
+    "repository": "black-forest-labs/FLUX.2-klein-9B",
+    "pipeline": "Flux2KleinPipeline",
+    "capabilities": ["text-to-image", "image-to-image", "multi-reference-edit"],
+    "revision": "92196c8e11f7b6cf2b7493e037d8c5345c559216",
+    "steps": 4,
+    "guidance": 1,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": true,
+    "fixedGuidance": true,
+    "license": {
+      "name": "FLUX.2 klein 9B model license",
+      "spdxId": null,
+      "commercialUse": "review-required"
+    },
+    "maxReferences": 3
+  },
+  {
+    "id": "local:flux-2-klein-base-9b",
+    "architecture": "flux-2-klein-base-9b",
+    "displayName": "FLUX.2 klein Base 9B",
+    "family": "FLUX",
+    "repository": "black-forest-labs/FLUX.2-klein-base-9B",
+    "pipeline": "Flux2KleinPipeline",
+    "capabilities": ["text-to-image", "image-to-image", "multi-reference-edit"],
+    "revision": "32773329fbe7e81a90ef971740e8ba4b0364ecf3",
+    "steps": 50,
+    "guidance": 4,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "FLUX.2 klein Base 9B model license",
+      "spdxId": null,
+      "commercialUse": "review-required"
+    },
+    "maxReferences": 3
+  },
+  {
+    "id": "local:flux-2-dev",
+    "architecture": "flux-2-dev",
+    "displayName": "FLUX.2 dev",
+    "family": "FLUX",
+    "repository": "black-forest-labs/FLUX.2-dev",
+    "pipeline": "Flux2Pipeline",
+    "capabilities": ["text-to-image", "image-to-image", "multi-reference-edit"],
+    "revision": "26afe3a78bb242c0a8bb181dcc8937bb16e5c66c",
+    "steps": 50,
+    "guidance": 4,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "FLUX.2 dev model license",
+      "spdxId": null,
+      "commercialUse": "review-required"
+    },
+    "maxReferences": 3
+  },
+  {
+    "id": "local:krea-2-raw",
+    "architecture": "krea-2-raw",
+    "displayName": "Krea 2 Raw",
+    "family": "Krea 2",
+    "repository": "krea/Krea-2-Raw",
+    "pipeline": "Krea2Pipeline",
+    "capabilities": ["text-to-image"],
+    "revision": "6b0ece7fffb640c5e3bcbe0a7f10f66b8e60a603",
+    "steps": 28,
+    "guidance": 4.5,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "Krea 2 Raw model license",
+      "spdxId": null,
+      "commercialUse": "review-required"
+    }
+  },
+  {
+    "id": "local:ltx-2.5",
+    "architecture": "ltx-2.5",
+    "displayName": "LTX-2.5 Distilled",
+    "family": "LTX-2.5",
+    "repository": "Lightricks/LTX-2.5-Diffusers",
+    "pipeline": "LTX2Pipeline",
+    "capabilities": ["text-to-video", "image-to-video"],
+    "revision": "426936f8b22dc28e4def61e515478b0b7e4a53cc",
+    "steps": 8,
+    "guidance": 1,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": true,
+    "fixedGuidance": true,
+    "license": {
+      "name": "LTX-2.x Community License",
+      "spdxId": null,
+      "commercialUse": "review-required"
+    },
+    "video": {
+      "minimum": 9,
+      "maximum": 257,
+      "stride": 8,
+      "fps": 24
+    },
+    "audio": true,
+    "imagePipeline": "LTX2ImageToVideoPipeline",
+    "spatialMultiple": 32
+  },
+  {
+    "id": "local:ltx-2.3",
+    "architecture": "ltx-2.3",
+    "displayName": "LTX-2.3",
+    "family": "LTX-2.3",
+    "repository": "Lightricks/LTX-2.3",
+    "pipeline": "LTX2Pipeline",
+    "capabilities": ["text-to-video", "image-to-video"],
+    "revision": "5948be4ced3a4493d1f836df64378ff136ddb770",
+    "steps": 40,
+    "guidance": 3,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "LTX-2.3 model license",
+      "spdxId": null,
+      "commercialUse": "review-required"
+    },
+    "video": {
+      "minimum": 9,
+      "maximum": 257,
+      "stride": 8,
+      "fps": 24
+    },
+    "audio": true,
+    "imagePipeline": "LTX2ImageToVideoPipeline",
+    "spatialMultiple": 32
+  },
+  {
+    "id": "local:wan-2.2-t2v-a14b",
+    "architecture": "wan-2.2-t2v-a14b",
+    "displayName": "Wan 2.2 T2V A14B",
+    "family": "Wan",
+    "repository": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+    "pipeline": "WanPipeline",
+    "capabilities": ["text-to-video"],
+    "revision": "5be7df9619b54f4e2667b2755bc6a756675b5cd7",
+    "steps": 40,
+    "guidance": 4,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "Apache License 2.0",
+      "spdxId": "Apache-2.0",
+      "commercialUse": "allowed"
+    },
+    "video": {
+      "minimum": 5,
+      "maximum": 121,
+      "stride": 4,
+      "fps": 16
+    },
+    "audio": false,
+    "imagePipeline": null,
+    "spatialMultiple": 16
+  },
+  {
+    "id": "local:wan-2.2-i2v-a14b",
+    "architecture": "wan-2.2-i2v-a14b",
+    "displayName": "Wan 2.2 I2V A14B",
+    "family": "Wan",
+    "repository": "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+    "pipeline": "WanImageToVideoPipeline",
+    "capabilities": ["image-to-video", "start-end-to-video"],
+    "revision": "596658fd9ca6b7b71d5057529bbf319ecbc61d74",
+    "steps": 40,
+    "guidance": 3.5,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "Apache License 2.0",
+      "spdxId": "Apache-2.0",
+      "commercialUse": "allowed"
+    },
+    "video": {
+      "minimum": 5,
+      "maximum": 121,
+      "stride": 4,
+      "fps": 16
+    },
+    "audio": false,
+    "imagePipeline": null,
+    "spatialMultiple": 16
+  },
+  {
+    "id": "local:wan-2.1-t2v-1.3b",
+    "architecture": "wan-2.1-t2v-1.3b",
+    "displayName": "Wan 2.1 T2V 1.3B",
+    "family": "Wan",
+    "repository": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+    "pipeline": "WanPipeline",
+    "capabilities": ["text-to-video"],
+    "revision": "0fad780a534b6463e45facd96134c9f345acfa5b",
+    "steps": 50,
+    "guidance": 5,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "Apache License 2.0",
+      "spdxId": "Apache-2.0",
+      "commercialUse": "allowed"
+    },
+    "video": {
+      "minimum": 5,
+      "maximum": 121,
+      "stride": 4,
+      "fps": 16
+    },
+    "audio": false,
+    "imagePipeline": null,
+    "spatialMultiple": 16
+  },
+  {
+    "id": "local:hunyuan-video-1.5-t2v",
+    "architecture": "hunyuan-video-1.5-t2v",
+    "displayName": "HunyuanVideo 1.5 T2V",
+    "family": "HunyuanVideo",
+    "repository": "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v",
+    "pipeline": "HunyuanVideo15Pipeline",
+    "capabilities": ["text-to-video"],
+    "revision": "286be7ce72277246578a3e3cc2487e95ddae5bcf",
+    "steps": 50,
+    "guidance": 6,
+    "guidanceParameter": "guider",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "HunyuanVideo 1.5 T2V model license",
+      "spdxId": null,
+      "commercialUse": "review-required"
+    },
+    "video": {
+      "minimum": 5,
+      "maximum": 121,
+      "stride": 4,
+      "fps": 16
+    },
+    "audio": false,
+    "imagePipeline": null,
+    "spatialMultiple": 8
+  },
+  {
+    "id": "local:cogvideox-2b",
+    "architecture": "cogvideox-2b",
+    "displayName": "CogVideoX 2B",
+    "family": "CogVideoX",
+    "repository": "zai-org/CogVideoX-2b",
+    "pipeline": "CogVideoXPipeline",
+    "capabilities": ["text-to-video"],
+    "revision": "1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+    "steps": 50,
+    "guidance": 6,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "Apache License 2.0",
+      "spdxId": "Apache-2.0",
+      "commercialUse": "allowed"
+    },
+    "video": {
+      "minimum": 9,
+      "maximum": 49,
+      "stride": 8,
+      "fps": 16
+    },
+    "audio": false,
+    "imagePipeline": null,
+    "spatialMultiple": 8
+  },
+  {
+    "id": "local:cogvideox-1.5-5b",
+    "architecture": "cogvideox-1.5-5b",
+    "displayName": "CogVideoX 1.5 5B",
+    "family": "CogVideoX",
+    "repository": "zai-org/CogVideoX1.5-5B",
+    "pipeline": "CogVideoXPipeline",
+    "capabilities": ["text-to-video"],
+    "revision": "fdc5267c90b5c06492985b966e43aae984e189e0",
+    "steps": 50,
+    "guidance": 6,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "CogVideoX 1.5 5B model license",
+      "spdxId": null,
+      "commercialUse": "review-required"
+    },
+    "video": {
+      "minimum": 9,
+      "maximum": 81,
+      "stride": 8,
+      "fps": 16
+    },
+    "audio": false,
+    "imagePipeline": null,
+    "spatialMultiple": 8
+  },
+  {
+    "id": "local:cogvideox-1.5-5b-i2v",
+    "architecture": "cogvideox-1.5-5b-i2v",
+    "displayName": "CogVideoX 1.5 5B I2V",
+    "family": "CogVideoX",
+    "repository": "zai-org/CogVideoX1.5-5B-I2V",
+    "pipeline": "CogVideoXImageToVideoPipeline",
+    "capabilities": ["image-to-video"],
+    "revision": "46c90528707aebbe69066390b4fe7e7d24c9c2a4",
+    "steps": 50,
+    "guidance": 6,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "CogVideoX 1.5 5B I2V model license",
+      "spdxId": null,
+      "commercialUse": "review-required"
+    },
+    "video": {
+      "minimum": 9,
+      "maximum": 81,
+      "stride": 8,
+      "fps": 16
+    },
+    "audio": false,
+    "imagePipeline": null,
+    "spatialMultiple": 8
+  },
+  {
+    "id": "local:mochi-1",
+    "architecture": "mochi-1",
+    "displayName": "Mochi 1",
+    "family": "Mochi",
+    "repository": "genmo/mochi-1-preview",
+    "pipeline": "MochiPipeline",
+    "capabilities": ["text-to-video"],
+    "revision": "14be5fcea23095ed330cb214647916a451e38b6e",
+    "steps": 64,
+    "guidance": 4.5,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "Apache License 2.0",
+      "spdxId": "Apache-2.0",
+      "commercialUse": "allowed"
+    },
+    "video": {
+      "minimum": 7,
+      "maximum": 163,
+      "stride": 6,
+      "fps": 16
+    },
+    "audio": false,
+    "imagePipeline": null,
+    "spatialMultiple": 8
+  },
+  {
+    "id": "local:helios",
+    "architecture": "helios",
+    "displayName": "Helios Base",
+    "family": "Helios",
+    "repository": "BestWishYsh/Helios-Base",
+    "pipeline": "HeliosPipeline",
+    "capabilities": ["text-to-video", "image-to-video"],
+    "revision": "5c50b6bc90eae9bd815d2a50b0c9877e3fd2cf88",
+    "steps": 50,
+    "guidance": 5,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "Apache License 2.0",
+      "spdxId": "Apache-2.0",
+      "commercialUse": "allowed"
+    },
+    "video": {
+      "minimum": 33,
+      "maximum": 129,
+      "stride": 32,
+      "fps": 16
+    },
+    "audio": false,
+    "imagePipeline": null,
+    "spatialMultiple": 16
+  },
+  {
+    "id": "local:stable-video-diffusion",
+    "architecture": "stable-video-diffusion",
+    "displayName": "Stable Video Diffusion XT",
+    "family": "Stable",
+    "repository": "stabilityai/stable-video-diffusion-img2vid-xt",
+    "pipeline": "StableVideoDiffusionPipeline",
+    "capabilities": ["image-to-video"],
+    "revision": "9e43909513c6714f1bc78bcb44d96e733cd242aa",
+    "steps": 25,
+    "guidance": 3,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "Stable Video Diffusion XT model license",
+      "spdxId": null,
+      "commercialUse": "review-required"
+    },
+    "video": {
+      "minimum": 25,
+      "maximum": 25,
+      "stride": 1,
+      "fps": 7
+    },
+    "audio": false,
+    "imagePipeline": null,
+    "spatialMultiple": 8,
+    "negativePrompt": false,
+    "prompt": false
+  },
+  {
+    "id": "local:sulphur-2-dev",
+    "architecture": "sulphur-2-dev",
+    "displayName": "Sulphur 2 Dev",
+    "family": "Sulphur 2",
+    "repository": "SulphurAI/Sulphur-2-base",
+    "pipeline": "LTX2Pipeline",
+    "capabilities": ["text-to-video", "image-to-video"],
+    "revision": "65587bbb38c700622f9434a16e732c8b280c115e",
+    "steps": 40,
+    "guidance": 3,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "LTX-2.3 model license",
+      "spdxId": null,
+      "commercialUse": "review-required"
+    },
+    "video": {
+      "minimum": 9,
+      "maximum": 257,
+      "stride": 8,
+      "fps": 24
+    },
+    "audio": true,
+    "imagePipeline": "LTX2ImageToVideoPipeline",
+    "spatialMultiple": 32
+  }
+]

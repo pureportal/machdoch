@@ -29,8 +29,7 @@ const LOCAL_IMAGE_GENERATION_CAPABILITIES = [
   "masked-image-edit",
 ] as const satisfies readonly MediaCapability[];
 
-export const BUILTIN_MEDIA_CATALOG_REVISION =
-  "builtin-2026-09-17-image-2.5-codex";
+export const BUILTIN_MEDIA_CATALOG_REVISION = "builtin-2026-10-02-open-media";
 export const BUILTIN_MEDIA_CATALOG_CHECKED_AT = "2026-07-14T00:00:00.000Z";
 
 const createProviders = (

@@ -1,3 +1,4 @@
+import { openMediaModelProfile } from "../../../core/media/open-model-profiles.js";
 import type {
   ImageRecipeSettings,
   MediaGenerationTarget,
@@ -37,6 +38,20 @@ export const reconcileBasicImageModelSettings = (
     }
   } else {
     const sampling = { ...settings.sampling };
+    const profile = openMediaModelProfile(model.architecture);
+    if (
+      profile?.fixedSteps &&
+      sampling.numInferenceSteps != null &&
+      sampling.numInferenceSteps !== profile.steps
+    ) {
+      sampling.numInferenceSteps = null;
+      changes.push("Sampling steps reset to model defaults.");
+    }
+    if (profile?.fixedGuidance && sampling.guidanceScale != null) {
+      sampling.guidanceScale = null;
+      changes.push("Guidance reset to model defaults.");
+    }
+
     if (
       model.architecture === "flux-2" &&
       sampling.numInferenceSteps != null &&
@@ -109,7 +124,12 @@ export const basicImageModelError = (
   if (settings.editMask && !model.capabilities.includes("masked-image-edit"))
     return "Remove the mask to use this model.";
   if (settings.poseImageAssetId && !model.capabilities.includes("pose-control"))
-    return ["stable-diffusion-1", "stable-diffusion-2", "stable-diffusion-xl", "pony"].includes(model.architecture ?? "")
+    return [
+      "stable-diffusion-1",
+      "stable-diffusion-2",
+      "stable-diffusion-xl",
+      "pony",
+    ].includes(model.architecture ?? "")
       ? "Install the matching OpenPose ControlNet for this model."
       : "Choose a local Stable Diffusion model with OpenPose ControlNet.";
   if (
@@ -156,7 +176,10 @@ export const basicImageUsesEditStrength = (
   model: MediaModelDescriptor,
 ): boolean =>
   Boolean(settings.editMask) ||
-  (model.architecture !== "flux-2" &&
+  (openMediaModelProfile(model.architecture)?.capabilities.includes(
+    "image-to-image",
+  ) !== true &&
+    model.architecture !== "flux-2" &&
     model.architecture !== "qwen-image-2.1" &&
     Boolean(settings.baseImageAssetId)) ||
   ((model.architecture === "stable-diffusion-2" ||

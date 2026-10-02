@@ -214,8 +214,8 @@ struct WorkerVideoGenerationRequest<'a> {
     schema_version: u32,
     model: WorkerModel<'a>,
     prompt: &'a str,
-    first_frame_path: &'a Path,
-    last_frame_path: &'a Path,
+    first_frame_path: Option<&'a Path>,
+    last_frame_path: Option<&'a Path>,
     aspect_ratio: &'a str,
     resolution: &'a str,
     num_frames: u32,
@@ -528,8 +528,8 @@ pub(crate) struct LocalGeneratedVideo {
     pub(crate) digest: String,
     pub(crate) relative_path: String,
     pub(crate) byte_size: u64,
-    pub(crate) first_frame_digest: String,
-    pub(crate) last_frame_digest: String,
+    pub(crate) first_frame_digest: Option<String>,
+    pub(crate) last_frame_digest: Option<String>,
     pub(crate) worker_version: String,
     pub(crate) packages: HashMap<String, Option<String>>,
     pub(crate) device: String,
@@ -1419,7 +1419,13 @@ fn model_probe_matches_runtime(
         && response.pipeline_class.len() <= 256
         && !response.components.is_empty()
         && response.components.len() <= 64
-        && (if model.architecture == "intro-svg" {
+        && (if let Some(profile) = super::open_models::by_architecture(&model.architecture) {
+            response.pipeline_class == profile.pipeline
+                && profile
+                    .capabilities
+                    .iter()
+                    .all(|capability| response.capabilities.contains(capability))
+        } else if model.architecture == "intro-svg" {
             response.capabilities.contains(&"text-to-svg".to_string())
                 && response.capabilities.contains(&"image-to-svg".to_string())
         } else if model.architecture == "qwen-image-2.1" {
@@ -1822,18 +1828,24 @@ pub(crate) fn runnable_local_model_ids(
     };
     for (model_id, architecture) in runnable_models(paths, runtime)? {
         let architecture = architecture.as_str();
-        let supports_reference = matches!(
-            architecture,
-            "stable-diffusion-1"
-                | "stable-diffusion-2"
-                | "stable-diffusion-xl"
-                | "pony"
-                | "flux-1"
-                | "flux-2"
-                | "krea-2"
-                | "qwen-image-2.1"
-                | "intro-svg"
-        );
+        let supports_reference =
+            super::open_models::by_architecture(architecture).is_some_and(|profile| {
+                profile
+                    .capabilities
+                    .iter()
+                    .any(|capability| capability == "image-to-image")
+            }) || matches!(
+                architecture,
+                "stable-diffusion-1"
+                    | "stable-diffusion-2"
+                    | "stable-diffusion-xl"
+                    | "pony"
+                    | "flux-1"
+                    | "flux-2"
+                    | "krea-2"
+                    | "qwen-image-2.1"
+                    | "intro-svg"
+            );
         let supports_inpainting = matches!(
             architecture,
             "stable-diffusion-1"
@@ -2590,6 +2602,9 @@ fn stage_conditioning_image(
 }
 
 fn expected_image_inference_steps(architecture: &str, model_policy: &str) -> MediaResult<u32> {
+    if let Some(profile) = super::open_models::by_architecture(architecture) {
+        return Ok(profile.steps);
+    }
     match (architecture, model_policy) {
         ("flux-2", "fast" | "balanced" | "quality") => Ok(4),
         ("krea-2", "fast") => Ok(8),
@@ -2619,7 +2634,17 @@ pub(crate) fn generate(
         || request.base_image_asset_id.is_some()
         || request.pose_image_asset_id.is_some()
         || request.control_net.is_some();
+    let open_profile = super::open_models::by_architecture(&model.architecture);
     let supported_roles: &[&str] = match model.architecture.as_str() {
+        _ if open_profile.is_some_and(|profile| {
+            profile
+                .capabilities
+                .iter()
+                .any(|capability| capability == "image-to-image")
+        }) =>
+        {
+            &["subject", "style", "composition", "palette", "detail"]
+        }
         "flux-2" | "krea-2" | "qwen-image-2.1" => {
             &["subject", "style", "composition", "palette", "detail"]
         }
@@ -2639,6 +2664,10 @@ pub(crate) fn generate(
         ));
     }
     let maximum_references = match model.architecture.as_str() {
+        _ if open_profile.is_some() => open_profile
+            .unwrap()
+            .max_references
+            .saturating_sub(usize::from(request.base_image_asset_id.is_some())),
         "flux-2" => 7,
         "qwen-image-2.1" => 7,
         "stable-diffusion-1" | "stable-diffusion-xl" | "pony" | "krea-2" => 3,
@@ -4008,7 +4037,7 @@ pub(crate) fn generate_video(
     let script = worker_script(app)?;
     let (runtime, python) = ready_runtime(app, &script)?;
     let managed_model = if request.model_id.starts_with(model_import::USER_MODEL_ID_PREFIX)
-        || (request.model_id == "local:wan2.2-ti2v-5b"
+        || ((request.model_id == "local:wan2.2-ti2v-5b" || super::open_models::by_id(&request.model_id).is_some())
             && database::open(paths)?.query_row(
                 "SELECT EXISTS(SELECT 1 FROM media_model_installations WHERE model_id = ?1 AND status = 'installed')",
                 [&request.model_id], |row| row.get::<_, bool>(0),
@@ -4018,10 +4047,11 @@ pub(crate) fn generate_video(
     } else {
         None
     };
-    if managed_model
-        .as_ref()
-        .is_some_and(|model| model.architecture != "wan-2.2-ti2v")
-    {
+    if managed_model.as_ref().is_some_and(|model| {
+        model.architecture != "wan-2.2-ti2v"
+            && !super::open_models::by_architecture(&model.architecture)
+                .is_some_and(|profile| profile.video.is_some())
+    }) {
         return Err("The selected checkpoint is not a supported video model".to_string());
     }
     if let Some(model) = &managed_model {
@@ -4075,10 +4105,15 @@ pub(crate) fn generate_video(
     let config_path = managed_model
         .as_ref()
         .and_then(|model| model.config_path.as_deref());
+    let open_profile = super::open_models::by_architecture(architecture);
+    if request.prompt.trim().is_empty() && open_profile.is_none_or(|profile| profile.prompt) {
+        return Err("Describe the video to generate".to_string());
+    }
     if !runtime.ready
         || !runtime.architectures.contains(&architecture.to_string())
         || !runtime.capabilities.contains(&"image-to-video".to_string())
-        || (!matches!(architecture, "hunyuan-video-1.5-i2v" | "minimax-h3-ref2va")
+        || (open_profile.is_none()
+            && !matches!(architecture, "hunyuan-video-1.5-i2v" | "minimax-h3-ref2va")
             && !runtime
                 .capabilities
                 .contains(&"start-end-to-video".to_string()))
@@ -4139,20 +4174,55 @@ pub(crate) fn generate_video(
         .map_err(|error| format!("failed to prepare video input staging: {error}"))?;
     fs::create_dir(&output_directory)
         .map_err(|error| format!("failed to prepare video output staging: {error}"))?;
-    let (first_source, first_frame_path) = stage_wan_frame(
-        paths,
-        &input_directory,
-        &request.first_frame_asset_id,
-        "first",
-    )?;
-    let (last_source, last_frame_path) = stage_wan_frame(
-        paths,
-        &input_directory,
-        &request.last_frame_asset_id,
-        "last",
-    )?;
+    let first_source = request
+        .first_frame_asset_id
+        .as_deref()
+        .map(|asset_id| stage_wan_frame(paths, &input_directory, asset_id, "first"))
+        .transpose()?;
+    let last_source = request
+        .last_frame_asset_id
+        .as_deref()
+        .map(|asset_id| stage_wan_frame(paths, &input_directory, asset_id, "last"))
+        .transpose()?;
+    let first_frame_digest = first_source.as_ref().map(|(asset, _)| asset.digest.clone());
+    let last_frame_digest = last_source.as_ref().map(|(asset, _)| asset.digest.clone());
+    if let Some(profile) = open_profile {
+        if let Some(error) = super::open_models::video_settings_error(
+            profile,
+            request.num_frames,
+            request.num_inference_steps,
+            request.guidance_scale,
+        ) {
+            return Err(error);
+        }
+        let capability = if first_source.is_some() {
+            "image-to-video"
+        } else {
+            "text-to-video"
+        };
+        if !profile.capabilities.iter().any(|value| value == capability) {
+            return Err("The selected video model does not support these inputs".to_string());
+        }
+        if last_source.is_some()
+            && first_frame_digest != last_frame_digest
+            && !profile
+                .capabilities
+                .iter()
+                .any(|value| value == "start-end-to-video")
+        {
+            return Err("This video model accepts one opening image".to_string());
+        }
+        if request.transparent_background
+            || request.loop_mode == "seamless"
+            || (profile.audio && request.loop_mode != "none")
+        {
+            return Err("Choose opaque shot output for this video model".to_string());
+        }
+    } else if first_source.is_none() || last_source.is_none() {
+        return Err("Choose both video frame inputs".to_string());
+    }
     if matches!(architecture, "hunyuan-video-1.5-i2v" | "minimax-h3-ref2va")
-        && first_source.digest != last_source.digest
+        && first_frame_digest != last_frame_digest
     {
         return Err(
             "The selected model uses one image reference. Choose the same image for both frame inputs."
@@ -4194,8 +4264,8 @@ pub(crate) fn generate_video(
             digest: &model_digest,
         },
         prompt: &request.prompt,
-        first_frame_path: &first_frame_path,
-        last_frame_path: &last_frame_path,
+        first_frame_path: first_source.as_ref().map(|(_, path)| path.as_path()),
+        last_frame_path: last_source.as_ref().map(|(_, path)| path.as_path()),
         aspect_ratio: &request.aspect_ratio,
         resolution: &request.resolution,
         num_frames: request.num_frames,
@@ -4233,7 +4303,7 @@ pub(crate) fn generate_video(
         &response.negative_prompt,
         &addons,
     )?;
-    let expected_dimensions = match (
+    let expected_dimensions: (u32, u32) = match (
         architecture,
         request.resolution.as_str(),
         request.aspect_ratio.as_str(),
@@ -4284,6 +4354,15 @@ pub(crate) fn generate_video(
         (_, "quality-768", "21:9") => (768, 336),
         _ => unreachable!("validated video resolution and aspect ratio"),
     };
+    let expected_dimensions = if let Some(profile) = open_profile {
+        let multiple = profile.spatial_multiple;
+        (
+            expected_dimensions.0.div_ceil(multiple) * multiple,
+            expected_dimensions.1.div_ceil(multiple) * multiple,
+        )
+    } else {
+        expected_dimensions
+    };
     let expected_dimensions = request
         .width
         .zip(request.height)
@@ -4319,13 +4398,23 @@ pub(crate) fn generate_video(
     } else {
         "limited"
     };
-    let expected_conditioning_mode = expected_video_conditioning_mode(
-        architecture,
-        &request.model_id,
-        &request.resolution,
-        &request.loop_mode,
-        first_source.digest == last_source.digest,
-    );
+    let expected_conditioning_mode = if open_profile.is_some() {
+        if first_source.is_none() {
+            "native-text-to-video"
+        } else if last_source.is_some() && first_frame_digest != last_frame_digest {
+            "native-first-last-frame"
+        } else {
+            "native-first-frame"
+        }
+    } else {
+        expected_video_conditioning_mode(
+            architecture,
+            &request.model_id,
+            &request.resolution,
+            &request.loop_mode,
+            first_frame_digest == last_frame_digest,
+        )
+    };
     let expects_loop_seam = request.loop_mode != "none";
     if response.conditioning_mode != expected_conditioning_mode {
         return Err(format!(
@@ -4433,7 +4522,11 @@ pub(crate) fn generate_video(
             "aten-native-hip" | "cudnn" | "cpu-native" | "mps-native"
         )
         || response.negative_prompt_applied
-            != (architecture == "wan-2.2-ti2v" && response.guidance_scale > 1.0)
+            != if open_profile.is_some() {
+                !request.negative_prompt.is_empty() && response.guidance_scale > 1.0
+            } else {
+                architecture == "wan-2.2-ti2v" && response.guidance_scale > 1.0
+            }
         || !response.output.duration_seconds.is_finite()
         || (response.output.duration_seconds
             - f64::from(expected_frame_count) / f64::from(request.fps))
@@ -4499,7 +4592,7 @@ pub(crate) fn generate_video(
                     .to_string(),
             );
         }
-    } else if first_source.digest == last_source.digest {
+    } else if first_frame_digest == last_frame_digest {
         if response.endpoint_restoration.is_some()
             || (request.loop_mode == "seamless") != response.loop_endpoint_restoration.is_some()
         {
@@ -4670,8 +4763,8 @@ pub(crate) fn generate_video(
         digest,
         relative_path: relative_path.to_string_lossy().into_owned(),
         byte_size: bytes.len() as u64,
-        first_frame_digest: first_source.digest,
-        last_frame_digest: last_source.digest,
+        first_frame_digest,
+        last_frame_digest,
         worker_version: response.worker_version,
         packages: response.packages,
         device: response.device,
@@ -4935,6 +5028,48 @@ time.sleep(60)
     }
 
     #[test]
+    fn open_models_can_verify_without_lora_support_and_require_their_declared_pipeline() {
+        let runtime = ready_runtime();
+        let profile = super::super::open_models::by_architecture("z-image-turbo").unwrap();
+        let model = InstalledModel {
+            id: profile.id.clone(),
+            architecture: profile.architecture.clone(),
+            package_kind: "diffusers-directory".to_string(),
+            path: PathBuf::new(),
+            config_path: None,
+            revision: "revision".to_string(),
+            digest: "digest".to_string(),
+        };
+        let mut response = WorkerModelProbeResponse {
+            schema_version: WORKER_SCHEMA_VERSION,
+            worker_version: runtime.worker_version.clone().unwrap(),
+            packages: runtime.packages.clone(),
+            ready: true,
+            architecture: model.architecture.clone(),
+            pipeline_class: profile.pipeline.clone(),
+            components: vec!["transformer".to_string()],
+            capabilities: profile.capabilities.clone(),
+            device: runtime.device.clone().unwrap(),
+            device_label: runtime.device_label.clone().unwrap(),
+            device_memory_bytes: runtime.device_memory_bytes,
+            diagnostic: "ready".to_string(),
+        };
+        assert!(model_probe_matches_runtime(&model, &runtime, &response));
+        response.pipeline_class = "StableDiffusionPipeline".to_string();
+        assert!(!model_probe_matches_runtime(&model, &runtime, &response));
+        for policy in ["fast", "balanced", "quality"] {
+            assert_eq!(
+                expected_image_inference_steps("z-image-turbo", policy).unwrap(),
+                9
+            );
+            assert_eq!(
+                expected_image_inference_steps("flux-2-klein-base-4b", policy).unwrap(),
+                50
+            );
+        }
+    }
+
+    #[test]
     fn openpose_controlnet_must_match_the_model_family() {
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -5150,8 +5285,8 @@ time.sleep(60)
                 digest: "digest",
             },
             prompt: "deliberate character action",
-            first_frame_path: Path::new("C:/inputs/first.png"),
-            last_frame_path: Path::new("C:/inputs/last.png"),
+            first_frame_path: Some(Path::new("C:/inputs/first.png")),
+            last_frame_path: Some(Path::new("C:/inputs/last.png")),
             aspect_ratio: "21:9",
             resolution: "quality-768",
             num_frames: 33,

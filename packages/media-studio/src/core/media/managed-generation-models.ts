@@ -1,10 +1,11 @@
 import type { MediaModelDescriptor } from "./contracts.js";
 import { getMediaModelAddonCapabilities } from "./model-addons.js";
+import { createOpenMediaModels } from "./open-model-profiles.js";
 
 export const createManagedGenerationModels = (
   catalogRevision: string,
-): MediaModelDescriptor[] =>
-  (
+): MediaModelDescriptor[] => [
+  ...(
     [
       {
         id: "local:wan2.2-ti2v-5b",
@@ -93,4 +94,6 @@ export const createManagedGenerationModels = (
       privacySummary: "Prompts and references remain on this device.",
       userImported: false,
     }),
-  );
+  ),
+  ...createOpenMediaModels(catalogRevision),
+];

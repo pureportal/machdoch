@@ -77,6 +77,26 @@ fn image_input(
     }
 }
 
+fn video_frame_inputs(
+    flow: &MediaFlowDocument,
+    values: &Values,
+    node: &MediaFlowNode,
+    native_profile: bool,
+) -> MediaResult<(Option<String>, Option<String>)> {
+    let first = match optional_input(flow, values, node, "first-frame")? {
+        Some(WorkflowValue::Image(id)) => Some(id.clone()),
+        None => None,
+        _ => return Err("Connect an opening image".to_string()),
+    };
+    let last = match optional_input(flow, values, node, "last-frame")? {
+        Some(WorkflowValue::Image(id)) => Some(id.clone()),
+        None if native_profile => None,
+        None => first.clone(),
+        _ => return Err("Connect a closing image".to_string()),
+    };
+    Ok((first, last))
+}
+
 fn config_text<'a>(node: &'a MediaFlowNode, key: &str) -> &'a str {
     node.config.get(key).and_then(Value::as_str).unwrap_or("")
 }
@@ -175,10 +195,26 @@ fn execute_started(
                 | "task.generate-image"
                 | "task.edit-image"
                 | "task.generate-video" => {
-                    let WorkflowValue::Text(mut prompt) =
-                        input(flow, &values, node, "prompt")?.clone()
-                    else {
-                        return Err("Connect a prompt".into());
+                    let video_profile = if node.r#type == "task.generate-video" {
+                        let architecture = database::open(paths)?
+                            .query_row(
+                                "SELECT architecture FROM media_models WHERE id = ?1",
+                                [&request.model_bindings[&node.id]],
+                                |row| row.get::<_, Option<String>>(0),
+                            )
+                            .map_err(|error| format!("Could not resolve video model: {error}"))?;
+                        architecture
+                            .as_deref()
+                            .and_then(open_models::by_architecture)
+                    } else {
+                        None
+                    };
+                    let mut prompt = match optional_input(flow, &values, node, "prompt")? {
+                        Some(WorkflowValue::Text(prompt)) => prompt.clone(),
+                        None if video_profile.is_some_and(|profile| !profile.prompt) => {
+                            String::new()
+                        }
+                        _ => return Err("Connect a prompt".into()),
                     };
                     if !feedback.is_empty()
                         && loop_node.is_some_and(|repeat| {
@@ -224,14 +260,8 @@ fn execute_started(
                         output_port = "prompt";
                         Some(WorkflowValue::Text(text))
                     } else if node.r#type == "task.generate-video" {
-                        let first = image_input(flow, &values, node, "first-frame")?;
-                        let last = if flow.edges.iter().any(|edge| {
-                            edge.to_node_id == node.id && edge.to_port_id == "last-frame"
-                        }) {
-                            image_input(flow, &values, node, "last-frame")?
-                        } else {
-                            first.clone()
-                        };
+                        let (first, last) =
+                            video_frame_inputs(flow, &values, node, video_profile.is_some())?;
                         let mut config = Value::Object(node.config.clone());
                         let object = config.as_object_mut().ok_or("Invalid video settings")?;
                         for key in ["providerPolicy", "modelPolicy", "generateAudio"] {
@@ -260,7 +290,7 @@ fn execute_started(
                             iteration,
                             &asset,
                             "video",
-                            &[first, last],
+                            &[first, last].into_iter().flatten().collect::<Vec<_>>(),
                             json!({"prompt":prompt,"seed":seed,"modelId":generation.model_id,"modelRevision":video.model_revision,"numFrames":video.output.frame_count,"fps":generation.fps,"performance":video.performance}),
                         )?;
                         output_port = "video";

@@ -57,3 +57,44 @@ it("selects random or fixed seeds for Basic image generation", () => {
     expect.objectContaining({ seed: null }),
   );
 });
+
+it("locks Turbo steps and hides fixed guidance while allowing base sampling", () => {
+  const catalog = createMediaModelCatalogSnapshot({
+    isOpenAiConfigured: false,
+  });
+  const props = {
+    target: "image" as const,
+    settings: DEFAULT_MEDIA_STUDIO_STATE.recipe,
+    videoSettings: DEFAULT_MEDIA_STUDIO_STATE.videoRecipe,
+    model: catalog.models.find(
+      (model) => model.architecture === "z-image-turbo",
+    )!,
+    onChange: vi.fn(),
+    onVideoChange: vi.fn(),
+  };
+  const view = render(createElement(MediaBasicSamplingOptions, props));
+  expect(
+    (
+      screen.getByRole("spinbutton", {
+        name: "Sampling steps",
+      }) as HTMLInputElement
+    ).disabled,
+  ).toBe(true);
+  expect(screen.queryByRole("spinbutton", { name: "Guidance" })).toBeNull();
+  view.rerender(
+    createElement(MediaBasicSamplingOptions, {
+      ...props,
+      model: catalog.models.find(
+        (model) => model.architecture === "flux-2-klein-base-4b",
+      )!,
+    }),
+  );
+  expect(
+    (
+      screen.getByRole("spinbutton", {
+        name: "Sampling steps",
+      }) as HTMLInputElement
+    ).disabled,
+  ).toBe(false);
+  expect(screen.getByRole("spinbutton", { name: "Guidance" })).toBeTruthy();
+});

@@ -1,7 +1,12 @@
+import {
+  OPEN_MEDIA_MODEL_PROFILES,
+  openMediaModelProfile,
+} from "../../../core/media/open-model-profiles.js";
 import { useMediaStudioAutosave } from "./use-media-studio-autosave";
 import { assessRemoteEditExecution } from "./media-remote-edit-assessment";
 import { useMediaGenerationTiming } from "./use-media-generation-timing";
 import {
+  reconcileBasicImageModelSettings,
   basicImageReferenceLimit,
   basicPosePresetSelectionStillCurrent,
 } from "./media-basic-image-options";
@@ -89,6 +94,8 @@ import {
   inferMediaVideoAspectRatio,
   isMediaAssetKnownTransparent,
   resolveMediaVideoExecutionSettings,
+  MEDIA_VIDEO_QUALITY_PRESETS,
+  resolveMediaVideoQualityPresetSettings,
   type MediaVideoAspectRatio,
   type MediaVideoLoopMode,
 } from "../../../core/media/video-quality.js";
@@ -217,6 +224,9 @@ const MediaFlowView = lazy(async () => ({
 }));
 
 const EXECUTABLE_LOCAL_VIDEO_MODEL_IDS: ReadonlySet<string> = new Set([
+  ...OPEN_MEDIA_MODEL_PROFILES.filter((profile) => profile.video).map(
+    (profile) => profile.id,
+  ),
   "local:framepack-i2v-hy-13b",
   "local:hunyuan-video-1.5-i2v-step-distilled",
   "local:minimax-h3-ref2va",
@@ -1495,9 +1505,14 @@ export const MediaStudio = ({
         typeof lastFrameNode?.config.assetId === "string"
           ? lastFrameNode.config.assetId.trim()
           : "";
+      const nativeText =
+        !firstFrameEdge &&
+        !lastFrameEdge &&
+        videoBinding.model.capabilities.includes("text-to-video");
       const generatedFrame =
-        firstFrameNode?.type !== "source.image" ||
-        lastFrameNode?.type !== "source.image";
+        !nativeText &&
+        (firstFrameNode?.type !== "source.image" ||
+          (lastFrameNode !== null && lastFrameNode?.type !== "source.image"));
       let imageModel:
         | (typeof candidatePlan.runtimeBindings)[number]["model"]
         | null = null;
@@ -1555,7 +1570,7 @@ export const MediaStudio = ({
           );
         }
         imageModel = imageBinding.model;
-      } else {
+      } else if (!nativeText) {
         if (
           !firstFrameAssetId ||
           !runtimeAssets.some(
@@ -1567,10 +1582,12 @@ export const MediaStudio = ({
           );
         }
         if (
-          !lastFrameAssetId ||
-          !runtimeAssets.some(
-            (asset) => asset.id === lastFrameAssetId && asset.kind === "image",
-          )
+          lastFrameEdge &&
+          (!lastFrameAssetId ||
+            !runtimeAssets.some(
+              (asset) =>
+                asset.id === lastFrameAssetId && asset.kind === "image",
+            ))
         ) {
           return unavailable(
             "Connect an available Library image to the last-frame port. Reuse the first frame for a closed loop.",
@@ -1837,7 +1854,9 @@ export const MediaStudio = ({
         activeSection: "generate",
         target,
         recipe: {
-          ...current.recipe,
+          ...(target === "image"
+            ? reconcileBasicImageModelSettings(current.recipe, model).settings
+            : current.recipe),
           modelId: target === "video" ? current.recipe.modelId : model.id,
           modelAddons:
             target === "video"
@@ -1862,6 +1881,19 @@ export const MediaStudio = ({
           target === "video"
             ? {
                 ...current.videoRecipe,
+                ...resolveMediaVideoQualityPresetSettings(
+                  MEDIA_VIDEO_QUALITY_PRESETS[1]!,
+                  model.architecture,
+                ),
+                ...(openMediaModelProfile(model.architecture)?.video ||
+                model.architecture === "minimax-h3-ref2va"
+                  ? { loopMode: "none" as const, transparentBackground: false }
+                  : {}),
+                modelAddons: reconcileMediaModelAddonSelections(
+                  model,
+                  activeModelCatalog.addons,
+                  current.videoRecipe.modelAddons,
+                ),
                 modelId: isExecutableLocalVideoModelId(model.id)
                   ? model.id
                   : current.videoRecipe.modelId,
@@ -1989,13 +2021,23 @@ export const MediaStudio = ({
     [applySemanticFlow, changeFlowLayout, state.videoRecipe],
   );
   const createCurrentVideoFlow = useCallback((): MediaFlow => {
+    const architecture = activeModelCatalog.models.find(
+      (model) => model.id === state.videoRecipe.modelId,
+    )?.architecture;
     return createBasicMediaVideoFlow({
       id: `media-basic-video-${createFlowSaveId()}`,
       createdAt: new Date().toISOString(),
       imageSettings: state.recipe,
       videoSettings: state.videoRecipe,
+      nativeTextToVideo:
+        openMediaModelProfile(architecture)?.capabilities.includes(
+          "text-to-video",
+        ),
+      generateAudio:
+        architecture === "minimax-h3-ref2va" ||
+        openMediaModelProfile(architecture)?.audio === true,
     });
-  }, [state.recipe, state.videoRecipe]);
+  }, [state.recipe, state.videoRecipe, activeModelCatalog.models]);
   const basicVideoDraft = useMemo(() => {
     if (state.target !== "video") return null;
     const flow = createCurrentVideoFlow();
@@ -3195,8 +3237,8 @@ export const MediaStudio = ({
                 submittedExecution.videoModel.architecture,
               );
               const runVideo = (
-                firstFrameAssetId: string,
-                lastFrameAssetId: string,
+                firstFrameAssetId: string | null,
+                lastFrameAssetId: string | null,
               ) => {
                 activeNativeRunId = queueRunId;
                 const request = {
@@ -3331,16 +3373,18 @@ export const MediaStudio = ({
                 return runVideo(endpoint.id, endpoint.id);
               }
               if (
-                !submittedExecution.firstFrameAssetId ||
-                !submittedExecution.lastFrameAssetId
+                !submittedExecution.firstFrameAssetId &&
+                !submittedExecution.videoModel.capabilities.includes(
+                  "text-to-video",
+                )
               ) {
                 throw new Error(
                   "The video endpoint assets are no longer available.",
                 );
               }
               return runVideo(
-                submittedExecution.firstFrameAssetId,
-                submittedExecution.lastFrameAssetId,
+                submittedExecution.firstFrameAssetId || null,
+                submittedExecution.lastFrameAssetId || null,
               );
             },
             cancel: () => cancelMediaRun(activeNativeRunId),

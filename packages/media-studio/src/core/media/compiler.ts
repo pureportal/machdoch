@@ -1,4 +1,8 @@
-import { mediaVideoDimensionsError } from "./video-quality.js";
+import {
+  mediaVideoDimensionsError,
+  isMediaVideoFrameCountValid,
+} from "./video-quality.js";
+import { openMediaModelProfile } from "./open-model-profiles.js";
 import {
   mediaImageSamplingError,
   readMediaImageSampling,
@@ -91,7 +95,7 @@ interface CreateImageToVideoFlowInput {
   sourceAssetId?: string;
   lastFrameAssetId?: string;
   prompt?: string;
-  settings?: MediaVideoRecipeSettings;
+  settings?: Partial<MediaVideoRecipeSettings>;
 }
 
 interface CreateGeneratedLoopVideoFlowInput {
@@ -587,6 +591,7 @@ export const createImageToVideoFlow = ({
       : lastFrameAssetId && lastFrameAssetId !== sourceAssetId
         ? "local:framepack-i2v-hy-13b"
         : "local:hunyuan-video-1.5-i2v-step-distilled");
+  const profile = openMediaModelProfile(videoModelId.replace(/^local:/u, ""));
   const prompt = createNode(
     "video-prompt",
     "source.prompt",
@@ -608,14 +613,28 @@ export const createImageToVideoFlow = ({
       resolution: settings?.resolution ?? "quality-640",
       width: settings?.width ?? null,
       height: settings?.height ?? null,
-      generateAudio: videoModelId === "local:minimax-h3-ref2va",
+      generateAudio:
+        videoModelId === "local:minimax-h3-ref2va" ||
+        openMediaModelProfile(videoModelId.replace(/^local:/u, ""))?.audio ===
+          true,
       transparentBackground,
       loopMode,
-      fps: settings?.fps ?? (videoModelId === "local:minimax-h3-ref2va" ? 24 : 16),
-      numFrames: settings?.numFrames ?? (videoModelId === "local:minimax-h3-ref2va" ? 124 : 33),
-      numInferenceSteps: settings?.numInferenceSteps ?? (videoModelId === "local:minimax-h3-ref2va" ? 8 : 30),
+      fps:
+        settings?.fps ??
+        profile?.video?.fps ??
+        (videoModelId === "local:minimax-h3-ref2va" ? 24 : 16),
+      numFrames:
+        settings?.numFrames ??
+        profile?.video?.minimum ??
+        (videoModelId === "local:minimax-h3-ref2va" ? 124 : 33),
+      numInferenceSteps:
+        settings?.numInferenceSteps ??
+        profile?.steps ??
+        (videoModelId === "local:minimax-h3-ref2va" ? 8 : 30),
       guidanceScale:
-        settings?.guidanceScale ?? (loopMode === "seamless" ? 5 : 9),
+        settings?.guidanceScale ??
+        profile?.guidance ??
+        (loopMode === "seamless" ? 5 : 9),
       seed: settings?.seed ?? null,
       negativePrompt: "",
       matteQuality: settings?.matteQuality ?? "production",
@@ -798,7 +817,10 @@ export const createGeneratedLoopVideoFlow = ({
       resolution: settings?.resolution ?? "quality-640",
       width: settings?.width ?? null,
       height: settings?.height ?? null,
-      generateAudio: settings?.modelId === "local:minimax-h3-ref2va",
+      generateAudio:
+        settings?.modelId === "local:minimax-h3-ref2va" ||
+        openMediaModelProfile(settings?.modelId?.replace(/^local:/u, ""))
+          ?.audio === true,
       transparentBackground: settings?.transparentBackground ?? true,
       loopMode: settings?.loopMode ?? "seamless",
       fps: settings?.fps ?? 16,
@@ -1798,11 +1820,7 @@ const readTaskSeed = (
     return undefined;
   }
   if (seed == null) return null;
-  if (
-    typeof seed !== "number" ||
-    !Number.isSafeInteger(seed) ||
-    seed < 0
-  ) {
+  if (typeof seed !== "number" || !Number.isSafeInteger(seed) || seed < 0) {
     return undefined;
   }
   return seed;
@@ -3262,6 +3280,10 @@ export const compileMediaFlow = ({
 
   if (
     videoTaskNode &&
+    openMediaModelProfile(
+      models.find((model) => model.id === videoTaskNode.config.modelId)
+        ?.architecture,
+    )?.prompt !== false &&
     (typeof promptNode?.config.prompt !== "string" ||
       promptNode.config.prompt.trim().length === 0)
   ) {
@@ -3511,7 +3533,11 @@ export const compileMediaFlow = ({
         const candidates = models.filter(
           (candidate) =>
             isMediaModelReady(candidate) &&
-            candidate.capabilities.includes("image-to-video") &&
+            candidate.capabilities.includes(
+              videoFrameSources.length === 0
+                ? "text-to-video"
+                : "image-to-video",
+            ) &&
             (!videoRequiresTerminalConditioning ||
               candidate.capabilities.includes("start-end-to-video")) &&
             matchesProviderPolicy(
@@ -3655,7 +3681,16 @@ export const compileMediaFlow = ({
     const lastFrames = videoFrameSources.filter(
       (source) => source.portId === "last-frame",
     );
-    if (firstFrames.length !== 1 || lastFrames.length !== 1) {
+    if (
+      firstFrames.length > 1 ||
+      lastFrames.length > 1 ||
+      (firstFrames.length === 0 &&
+        (lastFrames.length > 0 ||
+          !videoModel?.capabilities.includes("text-to-video"))) ||
+      (firstFrames.length === 1 &&
+        lastFrames.length === 0 &&
+        !openMediaModelProfile(videoModel?.architecture)?.video)
+    ) {
       diagnostics.push({
         code: "SOURCE_ASSET_REQUIRED",
         severity: "error",
@@ -3688,10 +3723,8 @@ export const compileMediaFlow = ({
       }
     }
     const config = videoTaskNode.config;
-    const ltxVideo = videoModel?.architecture === "ltx-video";
-    const framepackVideo = videoModel?.architecture === "framepack-i2v";
-    const hunyuanVideo15 = videoModel?.architecture === "hunyuan-video-1.5-i2v";
     const minimaxH3 = videoModel?.architecture === "minimax-h3-ref2va";
+    const openProfile = openMediaModelProfile(videoModel?.architecture);
     const sameEndpointSource =
       firstFrames[0] !== undefined &&
       lastFrames[0] !== undefined &&
@@ -3702,10 +3735,19 @@ export const compileMediaFlow = ({
       (node) => node.type === "operation.video-composite",
     );
     for (const invalid of [
-      config.generateAudio !== minimaxH3
+      config.generateAudio !== (minimaxH3 || openProfile?.audio === true)
         ? "Audio setting does not match the selected video model."
         : null,
-      minimaxH3 && (config.transparentBackground || config.loopMode !== "none" || hasVideoComposite)
+      openProfile?.video &&
+      (config.transparentBackground ||
+        config.loopMode === "seamless" ||
+        (openProfile.audio && config.loopMode !== "none"))
+        ? "Choose opaque shot output for this model."
+        : null,
+      minimaxH3 &&
+      (config.transparentBackground ||
+        config.loopMode !== "none" ||
+        hasVideoComposite)
         ? "MiniMax H3 requires opaque, non-looping video."
         : null,
       minimaxH3 && !sameEndpointSource
@@ -3722,17 +3764,8 @@ export const compileMediaFlow = ({
       config.loopMode === "seamless" && !sameEndpointSource
         ? "Seamless assembly requires the same source on both endpoint ports."
         : null,
-      typeof config.numFrames !== "number" ||
-      !Number.isInteger(config.numFrames) ||
-      config.numFrames < (minimaxH3 ? 124 : ltxVideo ? 9 : 17) ||
-      config.numFrames >
-        (minimaxH3 ? 362 : ltxVideo ? 257 : framepackVideo ? 129 : hunyuanVideo15 ? 121 : 33) ||
-      (config.numFrames - (minimaxH3 ? 5 : 1)) % (minimaxH3 ? 17 : ltxVideo ? 8 : 4) !== 0
-        ? minimaxH3
-          ? "MiniMax H3 source frames must be 124–362 in the required 17n+5 form."
-          : ltxVideo
-          ? "LTX-Video source frames must be 9–257 in the required 8k+1 form."
-          : `${framepackVideo ? "FramePack" : hunyuanVideo15 ? "HunyuanVideo 1.5" : "WAN"} source frames must be 17–${framepackVideo ? 129 : hunyuanVideo15 ? 121 : 33} in the required 4k+1 form.`
+      !isMediaVideoFrameCountValid(config.numFrames, videoModel?.architecture)
+        ? "Choose a frame count supported by this model."
         : null,
       typeof config.fps !== "number" ||
       !Number.isInteger(config.fps) ||
@@ -3740,9 +3773,7 @@ export const compileMediaFlow = ({
       config.fps > 60
         ? "Playback rate must be an integer from 1 through 60 fps."
         : null,
-      minimaxH3 && config.fps !== 24
-        ? "MiniMax H3 requires 24 fps."
-        : null,
+      minimaxH3 && config.fps !== 24 ? "MiniMax H3 requires 24 fps." : null,
       mediaVideoDimensionsError(config),
       !["preview-512", "quality-640", "quality-768", "quality-2k"].includes(
         String(config.resolution),
@@ -3752,19 +3783,20 @@ export const compileMediaFlow = ({
       config.resolution === "quality-2k" && !minimaxH3
         ? "Local 2K output requires MiniMax H3."
         : null,
-      config.resolution === "quality-2k" && (config.width != null || config.height != null)
+      config.resolution === "quality-2k" &&
+      (config.width != null || config.height != null)
         ? "Local 2K output uses fixed dimensions."
         : null,
       typeof config.numInferenceSteps !== "number" ||
       !Number.isInteger(config.numInferenceSteps) ||
-      config.numInferenceSteps < 4 ||
-      config.numInferenceSteps > 50
+      config.numInferenceSteps < (openProfile ? 1 : 4) ||
+      config.numInferenceSteps > (openProfile ? 100 : 50)
         ? "Inference steps must be an integer from 4 through 50."
         : null,
       typeof config.guidanceScale !== "number" ||
       !Number.isFinite(config.guidanceScale) ||
-      config.guidanceScale < 1 ||
-      config.guidanceScale > 10
+      config.guidanceScale < (openProfile ? 0 : 1) ||
+      config.guidanceScale > (openProfile ? 20 : 10)
         ? "Video motion guidance must be from 1 through 10."
         : null,
       config.seed != null &&
@@ -4013,7 +4045,9 @@ export const compileMediaFlow = ({
             requiredCapabilities: [
               videoRequiresTerminalConditioning
                 ? ("start-end-to-video" as const)
-                : ("image-to-video" as const),
+                : videoFrameSources.length === 0
+                  ? ("text-to-video" as const)
+                  : ("image-to-video" as const),
             ],
             model: videoModel,
           },
