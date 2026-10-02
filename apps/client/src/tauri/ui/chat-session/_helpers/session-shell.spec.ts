@@ -281,7 +281,7 @@ describe("session shell helpers", () => {
     },
   );
 
-  it("limits conversation context to the configured latest messages", () => {
+  it("preserves all chat messages and applies the configured limit only to the prompt", () => {
     const session = createSession({
       messages: [
         {
@@ -321,6 +321,16 @@ describe("session shell helpers", () => {
     expect(context.history).toEqual([
       {
         role: "user",
+        content: "First request",
+        createdAt: 1,
+      },
+      {
+        role: "assistant",
+        content: "First reply",
+        createdAt: 2,
+      },
+      {
+        role: "user",
         content: "Second request",
         createdAt: 3,
       },
@@ -330,6 +340,7 @@ describe("session shell helpers", () => {
         createdAt: 4,
       },
     ]);
+    expect(context.promptHistoryMessageLimit).toBe(2);
   });
 
   it("omits generated task action prompts from conversation context", () => {

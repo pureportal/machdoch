@@ -802,7 +802,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.child.listenerCount("error")).toBe(0);
   });
 
-  it("returns MCP memory updates from the delegated agent and closes its endpoint", async () => {
+  it("reads original chat text, returns MCP memory updates, and closes the delegated endpoint", async () => {
     const workspaceRoot = await createWorkspace();
     process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
     const params = createParams(workspaceRoot);
@@ -811,11 +811,24 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       memory: {
         ...params.preparedConversationContext.memory,
         sessionEntries: [],
+        chatHistory: [
+          {
+            role: "assistant",
+            content: "Original recommendations: 1. Read. 2. Search. 3. Retain.",
+          },
+        ],
       },
     };
     const resultPromise = maybeExecuteExternalAgentProviderTask(params);
     await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0]!;
+    const instructions = await readRunScopedSystemInstructions(
+      "codex-cli",
+      call,
+    );
+    expect(instructions).toContain(
+      "`search_chat_history` and `read_chat_history`",
+    );
     const childEnv = call.options.env as NodeJS.ProcessEnv;
     const configuration = await readFile(
       join(childEnv.CODEX_HOME!, "config.toml"),
@@ -834,6 +847,16 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
           requestInit: { headers: { Authorization: `Bearer ${token}` } },
         }) as unknown as Transport,
       );
+      const history = await client.callTool({
+        name: "read_chat_history",
+        arguments: { startIndex: 0 },
+      });
+      expect(history.content).toEqual([
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringContaining("3. Retain."),
+        }),
+      ]);
       const remembered = await client.callTool({
         name: "remember_session_memory",
         arguments: {

@@ -60,15 +60,21 @@ const isConversationHistoryEntry = (
   return entry !== undefined;
 };
 
-export const createAiContextHistory = (
+export const createConversationHistory = (
   messages: ChatSessionMessage[],
-  maxMessages: unknown,
 ): ConversationHistoryEntry[] => {
   return createVisibleConversationMessages(messages)
     .map(createConversationHistoryEntry)
-    .filter(isConversationHistoryEntry)
-    .slice(-clampAiContextMessageLimit(maxMessages));
+    .filter(isConversationHistoryEntry);
 };
+
+export const createAiContextHistory = (
+  messages: ChatSessionMessage[],
+  maxMessages: unknown,
+): ConversationHistoryEntry[] =>
+  createConversationHistory(messages).slice(
+    -clampAiContextMessageLimit(maxMessages),
+  );
 
 export const getAiContextCutoffMessageId = (
   visibleMessages: ChatSessionMessage[],

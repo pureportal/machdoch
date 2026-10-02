@@ -99,6 +99,22 @@ afterEach(() => {
 });
 
 describe("createExecutorSystemPrompt", () => {
+  it("guides recovery of omitted history only when chat tools are available", () => {
+    const build = (tools: AgentModelToolSpec[]) =>
+      createExecutorSystemPrompt(
+        createRuntimeConfig(),
+        createTaskContext(),
+        tools,
+        createConversationContext(),
+      );
+    expect(
+      build([
+        createTool("read_chat_history"),
+        createTool("search_chat_history"),
+      ]),
+    ).toContain("<chat_history_contract>");
+    expect(build([])).not.toContain("<chat_history_contract>");
+  });
   it.each([
     [undefined, "English"],
     ["German", "German"],

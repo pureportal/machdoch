@@ -4,6 +4,7 @@ import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import type {
   AgentModelToolResult,
   AgentModelToolSpec,
+  ConversationHistoryEntry,
   ConversationMemoryEntry,
   TaskActionOutput,
   TaskExecutionMemoryUpdate,
@@ -36,6 +37,7 @@ export interface WorkspaceTarget {
 
 export interface ConversationMemoryRuntime {
   sourceSessionId?: string;
+  chatHistory?: readonly ConversationHistoryEntry[];
   poseScene?:
     | import("@machdoch/media-studio/core/media/contracts.js").MediaPoseMap
     | undefined;

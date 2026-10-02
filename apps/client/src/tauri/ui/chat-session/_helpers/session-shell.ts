@@ -36,7 +36,8 @@ import {
   type WebSearchProvider,
 } from "../../runtime";
 import {
-  createAiContextHistory,
+  clampAiContextMessageLimit,
+  createConversationHistory,
   DEFAULT_AI_CONTEXT_MESSAGE_LIMIT,
 } from "./ai-context-window";
 
@@ -573,7 +574,7 @@ export const createConversationContextFromSession = (
   maxHistoryMessages: unknown = DEFAULT_AI_CONTEXT_MESSAGE_LIMIT,
   workspaceMemoryEnabled = true,
 ): TaskConversationContext => {
-  const history = createAiContextHistory(session.messages, maxHistoryMessages);
+  const history = createConversationHistory(session.messages);
   let earlierWorkspace: string | null | undefined;
 
   for (let index = session.messages.length - 1; index >= 0; index -= 1) {
@@ -612,6 +613,7 @@ export const createConversationContextFromSession = (
       : { selection: "not-set" },
     ...(earlierWorkspace !== undefined ? { earlierWorkspace } : {}),
     history,
+    promptHistoryMessageLimit: clampAiContextMessageLimit(maxHistoryMessages),
     sessionMemoryEnabled: session.sessionMemoryEnabled,
     sessionMemory: session.sessionMemory,
     workspaceMemoryEnabled:

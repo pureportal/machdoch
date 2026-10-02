@@ -190,7 +190,11 @@ export const executeGoalRun = async (
           captureGoalEvidence: true,
           conversationContext: {
             ...options.conversationContext,
-            history: history.slice(-40),
+            history: [...history],
+            promptHistoryMessageLimit: Math.min(
+              options.conversationContext?.promptHistoryMessageLimit ?? 40,
+              40,
+            ),
             adaptiveControllerOverride: false,
           },
           systemPromptSections: [
@@ -203,7 +207,6 @@ export const executeGoalRun = async (
           { role: "user", content: directive },
           { role: "assistant", content: resultText(lastResult) },
         );
-        history.splice(0, Math.max(0, history.length - 40));
         await checkpoint("active", "");
         if (!goal || goal.id !== goalId || goal.status !== "active") break;
         checkRunLimit();

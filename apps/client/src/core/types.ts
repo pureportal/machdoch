@@ -167,6 +167,7 @@ export interface TaskConversationContext {
   };
   earlierWorkspace?: string | null;
   history: ConversationHistoryEntry[];
+  promptHistoryMessageLimit?: number;
   sessionMemoryEnabled?: boolean;
   sessionMemory?: ConversationMemoryEntry[];
   workspaceMemoryEnabled?: boolean;

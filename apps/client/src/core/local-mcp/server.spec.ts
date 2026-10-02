@@ -15,6 +15,7 @@ import type { ConversationMemoryRuntime } from "../_helpers/agent-tools-shared.j
 import { loadWorkspaceMemory } from "../workspace-memory.js";
 import { createLocalToolRuntime } from "./runtime.js";
 import { createLocalMcpServer } from "./server.js";
+import { createOpenAITools } from "../_helpers/provider-adapters/openai-adapter.js";
 
 let root: string;
 const cleanup: Array<() => Promise<void>> = [];
@@ -88,11 +89,138 @@ const connect = async (
 };
 
 describe("Machdoch MCP capability parity", () => {
+  it.each(["ask", "machdoch"] as const)(
+    "reads and searches the current chat through both surfaces in %s mode",
+    async (mode) => {
+      const original = `Recommendations:\n${"Details. ".repeat(600)}\n1. Read history.\n2. Search history.\n3. Preserve full answers.`;
+      const state: ConversationMemoryRuntime = {
+        ...memory(),
+        sessionEnabled: false,
+        sourceSessionId: randomUUID(),
+        chatHistory: [
+          { role: "assistant", content: original, createdAt: 123 },
+          { role: "user", content: "Apply recommendations 1, 2 and 3." },
+        ],
+      };
+      const { client, apiTools, apiCall, mcpCall } = await connect(mode, state);
+      const historySpecs = apiTools
+        .filter((tool) =>
+          ["read_chat_history", "search_chat_history"].includes(tool.spec.name),
+        )
+        .map((tool) => tool.spec);
+      expect(createOpenAITools(historySpecs)).toEqual(
+        historySpecs.map((spec) => ({
+          type: "function",
+          name: spec.name,
+          description: spec.description,
+          parameters: spec.inputSchema,
+          strict: false,
+        })),
+      );
+      const tools = (await client.listTools()).tools;
+      expect(
+        tools.find((tool) => tool.name === "read_chat_history")?.annotations
+          ?.readOnlyHint,
+      ).toBe(true);
+      for (const call of [apiCall, mcpCall]) {
+        const search = JSON.parse(
+          (
+            await call("search_chat_history", {
+              query: "preserve full answers",
+            })
+          ).output,
+        );
+        expect(search.matches[0]?.index).toBe(0);
+        const read = await call("read_chat_history", {
+          startIndex: 0,
+          limit: 1,
+        });
+        expect(read.isError, read.output).not.toBe(true);
+        expect(JSON.parse(read.output).messages[0]).toMatchObject({
+          index: 0,
+          content: original,
+          createdAt: 123,
+        });
+        for (const args of [
+          { startIndex: -1 },
+          { startIndex: 3 },
+          { limit: 51 },
+          { limit: 0 },
+          { offset: 1 },
+          { startIndex: 0, offset: original.length + 1 },
+          { sessionId: "another-chat" },
+          { workspaceRoot: root },
+        ]) {
+          expect(
+            (await call("read_chat_history", args)).isError,
+            JSON.stringify(args),
+          ).toBe(true);
+        }
+        for (const args of [
+          {},
+          { query: " " },
+          { query: 12 },
+          { query: "text", startIndex: 3 },
+        ]) {
+          expect((await call("search_chat_history", args)).isError).toBe(true);
+        }
+      }
+      expect((await apiCall("read_chat_history")).output).toBe(
+        (await mcpCall("read_chat_history")).output,
+      );
+    },
+  );
+
+  it("omits chat tools without a current chat and handles an empty chat", async () => {
+    const standalone = await connect();
+    expect(
+      (await standalone.client.listTools()).tools.some(
+        (tool) => tool.name === "read_chat_history",
+      ),
+    ).toBe(false);
+    const empty = await connect("ask", { ...memory(), chatHistory: [] });
+    expect(
+      JSON.parse((await empty.mcpCall("read_chat_history")).output),
+    ).toMatchObject({ totalMessages: 0, messages: [], nextIndex: null });
+  });
+
+  it("keeps chat snapshots isolated between runtimes", async () => {
+    const first = await connect("ask", {
+      ...memory(),
+      chatHistory: [{ role: "user", content: "First chat only" }],
+    });
+    const second = await connect("ask", {
+      ...memory(),
+      chatHistory: [{ role: "user", content: "Second chat only" }],
+    });
+    expect((await first.mcpCall("read_chat_history")).output).not.toContain(
+      "Second chat only",
+    );
+    expect((await second.apiCall("read_chat_history")).output).not.toContain(
+      "First chat only",
+    );
+  });
+
   it("exposes pose editing through MCP and native function calls in a pose chat", async () => {
-    const state: ConversationMemoryRuntime = { ...memory(), sourceSessionId: randomUUID(), poseScene: undefined };
+    const state: ConversationMemoryRuntime = {
+      ...memory(),
+      sourceSessionId: randomUUID(),
+      poseScene: undefined,
+      chatHistory: [{ role: "user", content: "Create a standing person." }],
+    };
     const { client, apiCall, mcpCall } = await connect("machdoch", state);
-    expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(["pose_scene_get", "pose_scene_replace", "pose_joint_set"]));
-    const created = await mcpCall("pose_person_add", { person: { pose: "standing", x: 0.5, y: 0.92, scale: 0.8, mirror: false } });
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining([
+        "pose_scene_get",
+        "pose_scene_replace",
+        "pose_joint_set",
+        "read_chat_history",
+        "search_chat_history",
+      ]),
+    );
+    const created = await mcpCall("pose_person_add", {
+      person: { pose: "standing", x: 0.5, y: 0.92, scale: 0.8, mirror: false },
+    });
     expect(created.isError, created.output).not.toBe(true);
     const current = JSON.parse((await apiCall("pose_scene_get")).output);
     expect(current.map.people).toHaveLength(1);

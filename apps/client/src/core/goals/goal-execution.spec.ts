@@ -11,6 +11,7 @@ import {
   runWithTaskModelUsageRecording,
 } from "../model-usage.js";
 import { executeWithSessionGoal } from "./goal-execution.js";
+import type { GoalTurnExecutor } from "./run-goal.js";
 import { parseGoalCommand } from "./goal-command.js";
 import { getGoalPath, readGoalRecord, updateGoalRecord } from "./goal-store.js";
 
@@ -134,6 +135,42 @@ describe("goal commands", () => {
 });
 
 describe("goal lifecycle", () => {
+  it("retains old chat messages across goal turns while bounding the prompt history", async () => {
+    options.conversationContext!.history = [
+      {
+        role: "assistant",
+        content: "Original recommendations: read and search the chat.",
+      },
+      ...Array.from({ length: 50 }, (_, index) => ({
+        role: "user" as const,
+        content: `Later message ${index}`,
+      })),
+    ];
+    options.conversationContext!.promptHistoryMessageLimit = 2;
+    let workTurns = 0;
+    let evaluations = 0;
+    const execute = vi.fn<GoalTurnExecutor>(
+      async (_task, _config, turnOptions) => {
+        if (turnOptions.resultProtocol)
+          return evaluation(++evaluations === 2 ? "complete" : "continue");
+        expect(turnOptions.conversationContext!.history[0]?.content).toContain(
+          "Original recommendations",
+        );
+        expect(turnOptions.conversationContext!.history).toHaveLength(
+          51 + workTurns * 2,
+        );
+        expect(turnOptions.conversationContext!.promptHistoryMessageLimit).toBe(
+          2,
+        );
+        workTurns += 1;
+        return result();
+      },
+    );
+    await run("/goal --turns 2 Apply the original recommendations", execute);
+    expect(workTurns).toBe(2);
+    expect((await read()).goal?.status).toBe("complete");
+  });
+
   it("gives the evaluator observed tool failures even when the worker claims success", async () => {
     const execute = vi.fn(
       async (

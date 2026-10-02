@@ -15,6 +15,7 @@ import {
   prepareConversationPromptContext,
   serializeWorkspaceRunContext,
 } from "./conversation-prompt-context.js";
+import { readChatHistory, searchChatHistory } from "./chat-history.js";
 
 const providerAdapters = vi.hoisted(() => ({
   createProviderAdapter: vi.fn(),
@@ -274,6 +275,122 @@ describe("conversation summary model", () => {
 });
 
 describe("adaptive conversation context", () => {
+  it.each([
+    {
+      level: "simple",
+      task: "Continue with recommendations 1, 2 and 3",
+      detailsCharacters: 2_500,
+    },
+    {
+      level: "standard",
+      task: "Implement recommendations 1, 2 and 3",
+      detailsCharacters: 5_000,
+    },
+    {
+      level: "deep",
+      task: "Implement recommendations 1, 2 and 3 across the entire repository",
+      detailsCharacters: 12_000,
+    },
+    {
+      level: "default",
+      task: "Implement recommendations 1, 2 and 3",
+      detailsCharacters: 5_000,
+    },
+  ])(
+    "retains a long answer after a failed attempt with $level context",
+    async ({ level, task, detailsCharacters }) => {
+      const answer = [
+        "Recommendations:",
+        "Details. ".repeat(Math.ceil(detailsCharacters / 9)),
+        "1. Preserve the original answer.",
+        "2. Keep all three recommendations.",
+        "3. Verify the retry context.",
+      ].join("\n");
+      const conversation = {
+        history: [
+          { role: "assistant" as const, content: answer },
+          { role: "user" as const, content: task },
+          {
+            role: "assistant" as const,
+            content:
+              "The previous execution failed: provider returned HTTP 503.",
+          },
+        ],
+        wasQueued: level === "deep",
+        workspace: { selection: "not-set" as const },
+        sessionMemoryEnabled: false,
+        globalMemoryEnabled: false,
+      };
+      const plan =
+        level === "default"
+          ? undefined
+          : planAdaptiveExecution(task, runtimeConfig, conversation);
+      if (plan) expect(plan.level).toBe(level);
+      const context = await prepareConversationPromptContext(
+        task,
+        runtimeConfig,
+        conversation,
+        undefined,
+        plan,
+      );
+      const recent = context.sections.find(
+        (section) => section.title === "Recent conversation",
+      );
+      expect(recent?.lines).toContain(`assistant: ${answer}`);
+      expect(context.promptBlock).toContain(answer);
+      expect(context.promptBlock).toContain("provider returned HTTP 503");
+      expect(providerAdapters.createProviderAdapter).not.toHaveBeenCalled();
+    },
+  );
+
+  it("retains omitted original answers for chat tools beyond both message and character limits", async () => {
+    const original = `  Recommendations:\n${"Details. ".repeat(1_000)}\n1. Preserve history.\n2. Read it through MCP.\n3. Search older messages.\n`;
+    const history = [
+      { role: "assistant" as const, content: original, createdAt: 1 },
+      ...Array.from({ length: 250 }, (_, index) => ({
+        role: "user" as const,
+        content: `Unrelated message ${index}`,
+      })),
+    ];
+    const context = await prepareConversationPromptContext(
+      "Apply recommendations 1, 2 and 3",
+      runtimeConfig,
+      {
+        history,
+        promptHistoryMessageLimit: 2,
+        sessionMemoryEnabled: false,
+        globalMemoryEnabled: false,
+      },
+    );
+    expect(context.promptBlock).not.toContain("Preserve history.");
+    expect(context.memory.chatHistory).toHaveLength(251);
+    const match = searchChatHistory(context.memory.chatHistory!, {
+      query: "Recommendations:",
+    });
+    expect(match.matches[0]?.index).toBe(0);
+    expect(
+      readChatHistory(context.memory.chatHistory!, { startIndex: 0, limit: 1 })
+        .messages[0]?.content,
+    ).toBe(original);
+    history[0]!.content = "Changed after the task started";
+    expect(context.memory.chatHistory![0]?.content).toBe(original);
+  });
+
+  it("distinguishes an empty current chat from a task with no chat context", async () => {
+    const empty = await prepareConversationPromptContext(
+      "Inspect",
+      runtimeConfig,
+      { history: [] },
+    );
+    const absent = await prepareConversationPromptContext(
+      "Inspect",
+      runtimeConfig,
+      undefined,
+    );
+    expect(empty.memory.chatHistory).toEqual([]);
+    expect(absent.memory.chatHistory).toBeUndefined();
+  });
+
   it("keeps relevant earlier messages available alongside a bounded recent window", async () => {
     const history = [
       {

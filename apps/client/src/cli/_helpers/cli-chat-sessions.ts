@@ -66,6 +66,16 @@ export const parseConversationContext = (
   if (value.sessionId !== undefined && typeof value.sessionId !== "string")
     throw new CliUsageError("Invalid conversation session id.");
   if (
+    value.promptHistoryMessageLimit !== undefined &&
+    (typeof value.promptHistoryMessageLimit !== "number" ||
+      !Number.isInteger(value.promptHistoryMessageLimit) ||
+      value.promptHistoryMessageLimit < 1 ||
+      value.promptHistoryMessageLimit > 200)
+  )
+    throw new CliUsageError(
+      "Invalid conversation context: promptHistoryMessageLimit must be an integer from 1 to 200.",
+    );
+  if (
     value.goalMode !== undefined &&
     !["machdoch", "native"].includes(String(value.goalMode))
   ) {

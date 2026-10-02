@@ -27,7 +27,7 @@ export interface AdaptiveExecutionPlan {
 const PROFILES = {
   simple: {
     historyMessages: 4,
-    historyCharacters: 2_400,
+    historyCharacters: 4_800,
     memoryEntries: 4,
     memoryCharacters: 900,
     experienceLessons: 1,
@@ -40,7 +40,7 @@ const PROFILES = {
   },
   standard: {
     historyMessages: 8,
-    historyCharacters: 5_000,
+    historyCharacters: 10_000,
     memoryEntries: 8,
     memoryCharacters: 1_800,
     experienceLessons: 3,
@@ -53,7 +53,7 @@ const PROFILES = {
   },
   deep: {
     historyMessages: 16,
-    historyCharacters: 12_000,
+    historyCharacters: 24_000,
     memoryEntries: 14,
     memoryCharacters: 3_600,
     experienceLessons: 5,
@@ -111,7 +111,12 @@ export const planAdaptiveExecution = (
     ((task.match(/(?:\n\s*[-*\d]+[.)]?\s+|\n\n)/gu) ?? []).length >= 3
       ? 1
       : 0) +
-    ((context?.history.length ?? 0) > 12 ? 1 : 0) +
+    (Math.min(
+      context?.history.length ?? 0,
+      context?.promptHistoryMessageLimit ?? 200,
+    ) > 12
+      ? 1
+      : 0) +
     (context?.wasQueued ? 1 : 0) -
     (SIMPLE_WORK.test(task) && !COMPLEX_WORK.test(task) ? 2 : 0);
   const level: AdaptiveControllerLevel =
@@ -133,9 +138,35 @@ export const planAdaptiveExecution = (
     profile.memoryCharacters +
     profile.experienceCharacters +
     profile.workspaceRunCharacters;
-  const contextScale = contextWindowTokens
-    ? Math.min(1, (contextWindowTokens * 4 * 0.18) / totalContextCharacters)
-    : 1;
+  const availableContextCharacters = contextWindowTokens
+    ? Math.min(totalContextCharacters, contextWindowTokens * 4 * 0.18)
+    : totalContextCharacters;
+  const contextScale = availableContextCharacters / totalContextCharacters;
+  const historyCharacters = Math.max(
+    600,
+    Math.floor(profile.historyCharacters * contextScale),
+  );
+  const memoryCharacters = Math.max(
+    300,
+    Math.floor(profile.memoryCharacters * contextScale),
+  );
+  const experienceCharacters = Math.max(
+    200,
+    Math.floor(profile.experienceCharacters * contextScale),
+  );
+  const workspaceRunCharacters = Math.max(
+    1_000,
+    Math.floor(profile.workspaceRunCharacters * contextScale),
+  );
+  const allocatedContextCharacters =
+    historyCharacters +
+    memoryCharacters +
+    experienceCharacters +
+    workspaceRunCharacters;
+  const allocationScale = Math.min(
+    1,
+    availableContextCharacters / allocatedContextCharacters,
+  );
   const supportedReasoning =
     config.provider === "unconfigured"
       ? ["default"]
@@ -151,23 +182,13 @@ export const planAdaptiveExecution = (
   return {
     level,
     historyMessages: profile.historyMessages,
-    historyCharacters: Math.max(
-      600,
-      Math.floor(profile.historyCharacters * contextScale),
-    ),
+    historyCharacters: Math.floor(historyCharacters * allocationScale),
     memoryEntries: profile.memoryEntries,
-    memoryCharacters: Math.max(
-      300,
-      Math.floor(profile.memoryCharacters * contextScale),
-    ),
+    memoryCharacters: Math.floor(memoryCharacters * allocationScale),
     experienceLessons: profile.experienceLessons,
-    experienceCharacters: Math.max(
-      200,
-      Math.floor(profile.experienceCharacters * contextScale),
-    ),
-    workspaceRunCharacters: Math.max(
-      1_000,
-      Math.floor(profile.workspaceRunCharacters * contextScale),
+    experienceCharacters: Math.floor(experienceCharacters * allocationScale),
+    workspaceRunCharacters: Math.floor(
+      workspaceRunCharacters * allocationScale,
     ),
     reasoning,
     executorTurns:

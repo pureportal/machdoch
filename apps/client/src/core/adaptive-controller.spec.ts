@@ -32,6 +32,22 @@ const config: RuntimeConfig = {
 };
 
 describe("adaptive context and compute", () => {
+  it("uses the prompt history limit when estimating conversation complexity", () => {
+    const task = "Fix this bug";
+    const history = Array.from({ length: 250 }, () => ({
+      role: "user" as const,
+      content: "Earlier message",
+    }));
+    expect(
+      planAdaptiveExecution(task, config, {
+        history,
+        promptHistoryMessageLimit: 2,
+      }),
+    ).toEqual(
+      planAdaptiveExecution(task, config, { history: history.slice(-2) }),
+    );
+  });
+
   it("resolves session, workspace, then global settings", () => {
     expect(resolveAdaptiveControllerEnabled(true)).toBe(true);
     expect(resolveAdaptiveControllerEnabled(false, true)).toBe(true);
@@ -72,24 +88,31 @@ describe("adaptive context and compute", () => {
     ).toBe("default");
   });
 
-  it("keeps context allocations within a small model window", () => {
-    const task =
-      "Implement and verify a full repository architecture change across multiple packages.";
-    const normal = planAdaptiveExecution(task, config);
-    const constrained = planAdaptiveExecution(task, {
-      ...config,
-      contextWindow: 4_000,
-    });
-    expect(constrained.historyCharacters).toBeLessThan(
-      normal.historyCharacters,
-    );
-    expect(
-      constrained.historyCharacters +
-        constrained.memoryCharacters +
-        constrained.experienceCharacters +
-        constrained.workspaceRunCharacters,
-    ).toBeLessThanOrEqual(4_000 * 4 * 0.18);
-  });
+  it.each([1_000, 4_000])(
+    "keeps context allocations within a %i-token model window",
+    (contextWindow) => {
+      for (const task of [
+        "What is this function?",
+        "Fix this bug",
+        "Implement a full featured architecture across the repository. Investigate the existing codebase, integrate the changes, fix all affected paths, and verify the behavior with tests and performance checks.",
+      ]) {
+        const normal = planAdaptiveExecution(task, config);
+        const constrained = planAdaptiveExecution(task, {
+          ...config,
+          contextWindow,
+        });
+        expect(constrained.historyCharacters).toBeLessThan(
+          normal.historyCharacters,
+        );
+        expect(
+          constrained.historyCharacters +
+            constrained.memoryCharacters +
+            constrained.experienceCharacters +
+            constrained.workspaceRunCharacters,
+        ).toBeLessThanOrEqual(contextWindow * 4 * 0.18);
+      }
+    },
+  );
 
   it("applies saved global, workspace, and chat settings to a request", async () => {
     const root = await mkdtemp(join(tmpdir(), "machdoch-adaptive-controller-"));

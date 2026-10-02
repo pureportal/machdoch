@@ -202,6 +202,12 @@ describe("Machdoch source CLI MCP", () => {
         sessionEntries: [],
         globalEnabled: false,
         globalEntries: [],
+        chatHistory: [
+          {
+            role: "assistant" as const,
+            content: "Original recommendations: 1. Read. 2. Search. 3. Retain.",
+          },
+        ],
       };
       const host = await startLocalMcpHost({
         config: { ...runtimeConfig, workspaceRoot, mode: "machdoch" },
@@ -236,6 +242,34 @@ describe("Machdoch source CLI MCP", () => {
         arguments: {},
       });
       expect(result.content).toEqual([{ type: "text", text: "[]" }]);
+      expect(
+        catalog.find((tool) => tool.name === "read_chat_history")?.annotations
+          ?.readOnlyHint,
+      ).toBe(true);
+      const history = await client.callTool({
+        name: "read_chat_history",
+        arguments: { startIndex: 0 },
+      });
+      expect(history.content).toEqual([
+        {
+          type: "text",
+          text: JSON.stringify({
+            totalMessages: 1,
+            startIndex: 0,
+            messages: [
+              {
+                index: 0,
+                role: "assistant",
+                content: memory.chatHistory[0]!.content,
+                offset: 0,
+                contentLength: memory.chatHistory[0]!.content.length,
+              },
+            ],
+            nextIndex: null,
+            nextOffset: 0,
+          }),
+        },
+      ]);
       expect(
         (
           await client.callTool({

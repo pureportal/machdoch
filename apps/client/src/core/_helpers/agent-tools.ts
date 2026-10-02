@@ -13,6 +13,7 @@ import {
   type ConversationMemoryRuntime,
 } from "./agent-tools-shared.js";
 import { createBrowserToolDefinitions } from "./browser-tool-definitions.js";
+import { createChatHistoryToolDefinitions } from "./chat-history-tool-definitions.js";
 import { createFilesystemToolDefinitions } from "./filesystem-tool-definitions.js";
 import { createGitToolDefinitions } from "./git-tool-definitions.js";
 import { createMemoryToolDefinitions } from "./memory-tool-definitions.js";
@@ -89,10 +90,12 @@ export const createToolDefinitions = (
   memory: ConversationMemoryRuntime,
   uiControl?: UiControlRuntimeInfo,
 ): AgentToolDefinition[] => {
+  const historyDefinitions = createChatHistoryToolDefinitions(memory);
   if (memory.sourceSessionId && Object.hasOwn(memory, "poseScene")) {
-    return createPoseSceneToolDefinitions(memory);
+    return [...historyDefinitions, ...createPoseSceneToolDefinitions(memory)];
   }
   const definitions = [
+    ...historyDefinitions,
     ...createFilesystemToolDefinitions(),
     ...createGitToolDefinitions(),
     ...createPackageToolDefinitions(),
