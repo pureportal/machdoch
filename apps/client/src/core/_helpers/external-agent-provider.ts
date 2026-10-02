@@ -43,6 +43,7 @@ import { normalizeLocalCommandCwd } from "./process-execution.js";
 import { createTextSection, limitText } from "./runtime-text.js";
 import {
   assertInstructionDeliveryReceiptCertain,
+  assertNativeSubagentInstructionDelivery,
   createInstructionDeliveryReceipt,
 } from "../instruction-system/delivery.js";
 import { canonicalDigest } from "../instruction-system/normalization.js";
@@ -1866,6 +1867,9 @@ const executeExternalAgentCliTask = async (
   }
   let enrollment: MaterializedCliEnrollment;
   try {
+    if (params.preparedConversationContext.parallelAgentMode === "native") {
+      assertNativeSubagentInstructionDelivery(instructionPlan);
+    }
     enrollment = await materializeCliEnrollment({
       provider,
       executable: binary.executable,

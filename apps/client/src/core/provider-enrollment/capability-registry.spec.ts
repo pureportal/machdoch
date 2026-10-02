@@ -316,6 +316,90 @@ describe("provider capability registry", () => {
     ]);
   });
 
+  it.each([null, 1])(
+    "does not accept instruction flags from unsuccessful help probes (%s)",
+    async (status) => {
+      probeCommandMock
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: "claude-cli 2.1.283",
+          stderr: "",
+        })
+        .mockReturnValue({
+          status,
+          stdout:
+            "--append-system-prompt-file --mcp-config --setting-sources --strict-mcp-config",
+          stderr: "Help probe failed.",
+        });
+
+      const result = await probeProviderCli(
+        "claude-cli",
+        `failed-help-${status}.exe`,
+        { force: true },
+      );
+
+      expect(result.available).toBe(true);
+      expect(result.features).toEqual([]);
+      expect(probeCommandMock).toHaveBeenCalledTimes(3);
+    },
+  );
+
+  it("does not report a provider available when all probes fail", async () => {
+    probeCommandMock.mockReturnValue({
+      status: 1,
+      stdout: "claude-cli 2.1.283 --append-system-prompt-file",
+      stderr: "Executable failed.",
+    });
+
+    const result = await probeProviderCli("claude-cli", "failed-provider.exe", {
+      force: true,
+    });
+
+    expect(result.available).toBe(false);
+    expect(result.version).toBeUndefined();
+    expect(result.features).toEqual([]);
+  });
+
+  it("selects the version line after startup diagnostics", async () => {
+    probeCommandMock
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: "WARNING: PATH aliases unavailable.\ncodex-cli 0.159.1",
+        stderr: "",
+      })
+      .mockReturnValue({ status: 0, stdout: "--config --json", stderr: "" });
+
+    const result = await probeProviderCli("codex-cli", "warning-version.exe", {
+      force: true,
+    });
+
+    expect(result.version).toBe("codex-cli 0.159.1");
+  });
+
+  it("discovers Claude subagent instruction file support", async () => {
+    probeCommandMock
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: "2.1.283 (Claude Code)",
+        stderr: "",
+      })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout:
+          "--append-system-prompt-file --append-subagent-system-prompt-file",
+        stderr: "",
+      });
+
+    const result = await probeProviderCli("claude-cli", "subagent-file.exe", {
+      force: true,
+    });
+
+    expect(result.features).toEqual([
+      "--append-system-prompt-file",
+      "--append-subagent-system-prompt-file",
+    ]);
+  });
+
   it("discovers Claude structured terminal-result controls", async () => {
     probeCommandMock
       .mockReturnValueOnce({

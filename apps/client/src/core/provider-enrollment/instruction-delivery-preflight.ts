@@ -161,6 +161,12 @@ export const createCliInstructionCapabilityFromProbe = (
   return {
     ...base,
     nativeDiscovery: "suppressed",
+    lifecycle: {
+      ...base.lifecycle,
+      subagents: features.has("--append-subagent-system-prompt-file")
+        ? "reattached"
+        : "unknown",
+    },
     evidence: [
       ...base.evidence,
       useBareMode
@@ -169,7 +175,9 @@ export const createCliInstructionCapabilityFromProbe = (
           ? "The executable advertises --bare, but bare mode skips OAuth and keychain authentication. Without an explicit ANTHROPIC_API_KEY, the adapter instead isolates CLAUDE_CONFIG_DIR, loads no user/project/local setting sources, and disables all CLAUDE.md and auto-memory loading."
           : "The adapter isolates CLAUDE_CONFIG_DIR, loads no user/project/local setting sources, and disables all CLAUDE.md and auto-memory loading.",
       "The adapter requires --strict-mcp-config and uses it with the run-scoped MCP projection so no other MCP configuration is loaded.",
-      "Nested-subagent delivery remains unknown because Claude's subagent system-prompt option accepts only inline command text; Machdoch does not duplicate large instructions onto argv.",
+      features.has("--append-subagent-system-prompt-file")
+        ? "The adapter attaches the same run-scoped system-prompt file to every nested subagent through --append-subagent-system-prompt-file."
+        : "The executable does not advertise --append-subagent-system-prompt-file; native subagent execution is blocked because instruction inheritance cannot be confirmed.",
     ],
   };
 };

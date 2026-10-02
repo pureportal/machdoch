@@ -677,6 +677,9 @@ const renderClaudeEnrollment = async (
     "",
     "--append-system-prompt-file",
     instructionPath,
+    ...(features.has("--append-subagent-system-prompt-file")
+      ? ["--append-subagent-system-prompt-file", instructionPath]
+      : []),
     "--mcp-config",
     mcpPath,
     "--strict-mcp-config",
