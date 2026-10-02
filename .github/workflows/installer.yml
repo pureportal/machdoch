@@ -126,6 +126,15 @@ jobs:
         shell: bash
         run: pnpm install --frozen-lockfile
 
+      - name: Install Linux Vulkan headers
+        if: startsWith(matrix.release_target, 'linux-')
+        shell: bash
+        run: bash .github/scripts/install-linux-vulkan-headers.sh
+
+      - name: Clean cached desktop bundles
+        shell: bash
+        run: node .github/scripts/clean-desktop-bundles.mjs
+
       - name: Stage ONNX Runtime
         if: startsWith(matrix.release_target, 'linux-')
         shell: bash
