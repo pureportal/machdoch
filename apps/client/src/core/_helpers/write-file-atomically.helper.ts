@@ -19,6 +19,7 @@ const isTransientAtomicReplaceError = (error: unknown): boolean => {
 const replaceFileAtomically = async (
   temporaryPath: string,
   path: string,
+  beforeCommit?: () => void | Promise<void>,
 ): Promise<void> => {
   let lastError: unknown;
 
@@ -26,6 +27,7 @@ const replaceFileAtomically = async (
     if (delayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
+    await beforeCommit?.();
     try {
       await rename(temporaryPath, path);
       return;
@@ -129,8 +131,7 @@ export const writeFileAtomically = async (
     } finally {
       await handle.close();
     }
-    await options.beforeCommit?.();
-    await replaceFileAtomically(temporaryPath, path);
+    await replaceFileAtomically(temporaryPath, path, options.beforeCommit);
 
     // Persist the directory entry where the platform supports directory fsync.
     // Windows rejects opening directories; the file itself is still flushed.

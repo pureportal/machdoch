@@ -138,7 +138,9 @@ import {
   type RalphScopeOutcome,
   type RalphScopeSelectionStrategy,
 } from "./_helpers/ralph-scope-registry.helper.js";
+import { readRalphScopeRegistryForDiscovery } from "./_helpers/ralph-scope-registry-recovery.helper.js";
 import { resolveRalphRetryDecision } from "./_helpers/resolve-ralph-retry-decision.helper.js";
+import { retryRalphPersistenceOperation } from "./_helpers/retry-ralph-persistence.helper.js";
 import { resolveRalphContinuation } from "./_helpers/ralph-continuation.helper.js";
 import { getRalphTaskVerification } from "./_helpers/ralph-task-verification.helper.js";
 import { findRalphExecutionCause } from "./_helpers/ralph-execution-cause.helper.js";
@@ -8780,19 +8782,31 @@ const getScopeEvidenceInput = (
   return undefined;
 };
 
+const resolveScopeRegistryMarkdownUtilityPath = (
+  utility: RalphUtilityConfig,
+  registryPath: string,
+  workspaceRoot: string,
+): Promise<string> =>
+  resolveWorkspaceContainedMutationPath(
+    utility.outputPath?.trim() ||
+      createRalphScopeRegistryMarkdownPath(registryPath),
+    workspaceRoot,
+  );
+
 const maybeWriteScopeRegistryMarkdown = async (
   utility: RalphUtilityConfig,
   registryPath: string,
   registry: Awaited<ReturnType<typeof readRalphScopeRegistryFile>>,
   workspaceRoot: string,
+  beforeCommit?: () => Promise<void>,
 ): Promise<string | undefined> => {
   if (!utility.includeMarkdown && !utility.outputPath?.trim()) {
     return undefined;
   }
 
-  const markdownPath = await resolveWorkspaceContainedMutationPath(
-    utility.outputPath?.trim() ||
-      createRalphScopeRegistryMarkdownPath(registryPath),
+  const markdownPath = await resolveScopeRegistryMarkdownUtilityPath(
+    utility,
+    registryPath,
     workspaceRoot,
   );
 
@@ -8801,6 +8815,7 @@ const maybeWriteScopeRegistryMarkdown = async (
     markdownPath,
     formatRalphScopeRegistryMarkdown(registry),
     "utf8",
+    beforeCommit ? { beforeCommit } : {},
   );
 
   return markdownPath;
@@ -8897,22 +8912,34 @@ const executeUpdateScopeRegistryUtilityBlock = async (
       registryPath,
       context.runId,
     );
-    const existingRegistry = await readRalphScopeRegistryFile(registryPath, {
-      flowAlias,
-      strategy,
-    });
+    const { registry: existingRegistry, recovery } =
+      await readRalphScopeRegistryForDiscovery(registryPath, {
+        flowAlias,
+        strategy,
+        markdownPath: await resolveScopeRegistryMarkdownUtilityPath(
+          utility,
+          registryPath,
+          config.workspaceRoot,
+        ),
+        assertOwnership: mutationLock.assertOwnership,
+      });
     const update = updateRalphScopeRegistryFromEvidence(
       existingRegistry,
       evidence,
       { flowAlias, strategy },
     );
 
-    await writeRalphScopeRegistryFile(registryPath, update.registry);
+    await writeRalphScopeRegistryFile(
+      registryPath,
+      update.registry,
+      mutationLock.assertOwnership,
+    );
     const markdownPath = await maybeWriteScopeRegistryMarkdown(
       utility,
       registryPath,
       update.registry,
       config.workspaceRoot,
+      mutationLock.assertOwnership,
     );
 
     return createUtilityResult(
@@ -8922,6 +8949,7 @@ const executeUpdateScopeRegistryUtilityBlock = async (
       {
         registryPath,
         ...(markdownPath ? { markdownPath } : {}),
+        ...(recovery ? { recovery } : {}),
         added: update.added,
         updated: update.updated,
         removed: update.removed,
@@ -8953,18 +8981,32 @@ const executeBeginScopeCycleUtilityBlock = async (
       registryPath,
       context.runId,
     );
-    const registry = await readRalphScopeRegistryFile(registryPath, {
-      flowAlias,
-      strategy,
-    });
+    const { registry, recovery } = await readRalphScopeRegistryForDiscovery(
+      registryPath,
+      {
+        flowAlias,
+        strategy,
+        markdownPath: await resolveScopeRegistryMarkdownUtilityPath(
+          utility,
+          registryPath,
+          config.workspaceRoot,
+        ),
+        assertOwnership: mutationLock.assertOwnership,
+      },
+    );
     const cycle = beginRalphScopeRegistryCycle(registry);
 
-    await writeRalphScopeRegistryFile(registryPath, cycle.registry);
+    await writeRalphScopeRegistryFile(
+      registryPath,
+      cycle.registry,
+      mutationLock.assertOwnership,
+    );
     const markdownPath = await maybeWriteScopeRegistryMarkdown(
       utility,
       registryPath,
       cycle.registry,
       config.workspaceRoot,
+      mutationLock.assertOwnership,
     );
 
     return createUtilityResult(
@@ -8977,6 +9019,7 @@ const executeBeginScopeCycleUtilityBlock = async (
         registryPath,
         ...(markdownPath ? { markdownPath } : {}),
         cycleStarted: cycle.cycleStarted,
+        ...(recovery ? { recovery } : {}),
         cycle: cycle.registry.selection.cycle,
         registry: cycle.registry,
       },
@@ -15107,7 +15150,9 @@ const runRalphFlowImpl = async (
     latestCheckpoint?: RalphRunCheckpoint;
     latestNonTerminalCheckpoint?: RalphRunCheckpoint;
   } = {};
+  let boundaryRecoveryRequired = checkpoint?.durability?.status === "degraded";
   const markDurabilityDegraded = (error: unknown): void => {
+    boundaryRecoveryRequired = false;
     durability.status = "degraded";
     durability.error = error instanceof Error ? error.message : String(error);
   };
@@ -15180,7 +15225,10 @@ const runRalphFlowImpl = async (
 
     let raw: string;
     try {
-      raw = await readFile(recordPath, "utf8");
+      raw = await retryRalphPersistenceOperation(
+        () => readFile(recordPath, "utf8"),
+        { retryWindowMs: 5_000 },
+      );
     } catch (error) {
       if (isFileNotFoundError(error)) {
         return undefined;
@@ -15944,9 +15992,11 @@ const runRalphFlowImpl = async (
           runtimeState.resultContext?.variables ?? resolvedVariables.values,
           logger.paths,
         );
-        await writeJsonAtomically(logger.paths.recordPath, record, {
-          beforeCommit: assertLockOwnership,
-        });
+        await retryRalphPersistenceOperation(() =>
+          writeJsonAtomically(logger.paths!.recordPath, record, {
+            beforeCommit: assertLockOwnership,
+          }),
+        );
         await assertLockOwnership();
       }
     };
@@ -16471,99 +16521,148 @@ const runRalphFlowImpl = async (
   const persistRunBoundary = async (
     blockId: string,
     summary: string,
-    beforeCheckpoint?: () => Promise<void>,
     forceProjection = false,
   ): Promise<void> => {
-    const refreshTaskLeases = async (): Promise<void> => {
-      try {
-        await refreshRalphJsonTaskLeases(
-          flow,
-          resultContext,
-          config.workspaceRoot,
-        );
-      } catch (error) {
-        markDurabilityDegraded(error);
-        logger?.trace({
-          kind: "trace",
-          message: "Failed to refresh Ralph JSON task leases.",
-          flowId: flow.id,
-          blockId,
-          details: durability.error,
-        });
-      }
-    };
-    if (!logger?.paths) {
-      await refreshTaskLeases();
-      await beforeCheckpoint?.();
-      runLease = createRalphRunLease(leaseOwnerId, runLease, leaseDurationMs);
-      runtimeState.latestCheckpoint = createCheckpoint(blockId);
-      if (blockMap.get(blockId)?.type !== "END") {
-        runtimeState.latestNonTerminalCheckpoint =
-          runtimeState.latestCheckpoint;
-      }
+    if (boundaryRecoveryRequired && durability.required && !logger?.paths) {
+      markDurabilityDegraded(
+        new Error(
+          "Restoring Ralph durability requires its file-backed run store.",
+        ),
+      );
       return;
     }
-
+    let refreshRunStore = false;
     try {
-      await withDurableRunOwnership(async (current, assertLockOwnership) => {
-        await refreshTaskLeases();
-        await assertLockOwnership();
-        await beforeCheckpoint?.();
-        await assertLockOwnership();
-        runLease = createRalphRunLease(leaseOwnerId, runLease, leaseDurationMs);
-        const checkpoint = createCheckpoint(blockId);
-        await assertLockOwnership();
-        await runStore?.persistCheckpoint(checkpoint, summary);
-        await assertLockOwnership();
-        if (
-          forceProjection ||
-          !current ||
-          Date.now() - lastRunProjectionAt >= RALPH_RUN_PROJECTION_INTERVAL_MS
-        ) {
-          const partialResult: RalphRunResult = {
-            runId,
-            startedAt,
-            flow: flow.id,
-            status: "running",
-            summary,
-            events: checkpoint.events,
-            blockResults: checkpoint.blockResults,
-            missingVariables: [],
-            unknownVariables: [],
-            validation,
-            checkpoint,
-            ...(autonomyMetadata
-              ? { autonomy: cloneRalphRunAutonomyMetadata(autonomyMetadata) }
-              : {}),
-            durability: { ...durability },
-          };
-          const record = createRalphRunRecord(
-            RALPH_FLOW_SCHEMA_VERSION,
-            logger.runId,
-            startedAt,
-            flow,
-            partialResult,
-            resultContext.variables,
-            logger.paths!,
-          );
-          await writeJsonAtomically(logger.paths!.recordPath, record, {
-            beforeCommit: assertLockOwnership,
-          });
-          lastRunProjectionAt = Date.now();
-          await assertLockOwnership();
-        }
-        runtimeState.latestCheckpoint = checkpoint;
-        if (blockMap.get(blockId)?.type !== "END") {
-          runtimeState.latestNonTerminalCheckpoint = checkpoint;
-        }
-      });
+      await retryRalphPersistenceOperation(
+        () =>
+          withDurableRunOwnership(async (current, assertLockOwnership) => {
+            const assertBoundaryOwnership = async (): Promise<void> => {
+              await assertLockOwnership();
+              await assertWorkspaceWriterOwnership();
+              if (runStore && ownedLeaseGeneration !== undefined) {
+                await runStore.heartbeat(
+                  {
+                    runId,
+                    flowId: flow.id,
+                    ownerId: leaseOwnerId,
+                    generation: ownedLeaseGeneration,
+                  },
+                  0,
+                );
+              }
+            };
+            await assertBoundaryOwnership();
+            if (refreshRunStore) {
+              await runStore?.initialize();
+              refreshRunStore = false;
+            }
+            await refreshRalphJsonTaskLeases(
+              flow,
+              resultContext,
+              config.workspaceRoot,
+            );
+            if (boundaryRecoveryRequired) await logger?.flush();
+            runLease = createRalphRunLease(
+              leaseOwnerId,
+              runLease,
+              leaseDurationMs,
+            );
+            const checkpoint = createCheckpoint(blockId);
+            if (boundaryRecoveryRequired) {
+              checkpoint.durability = { ...durability, status: "healthy" };
+              delete checkpoint.durability.error;
+            }
+            await assertBoundaryOwnership();
+            await runStore?.persistCheckpoint(
+              checkpoint,
+              summary,
+              assertBoundaryOwnership,
+            );
+            runtimeState.latestCheckpoint = checkpoint;
+            if (blockMap.get(blockId)?.type !== "END") {
+              runtimeState.latestNonTerminalCheckpoint = checkpoint;
+            }
+            await assertBoundaryOwnership();
+            if (
+              logger?.paths &&
+              (forceProjection ||
+                boundaryRecoveryRequired ||
+                !current ||
+                Date.now() - lastRunProjectionAt >=
+                  RALPH_RUN_PROJECTION_INTERVAL_MS)
+            ) {
+              const partialResult: RalphRunResult = {
+                runId,
+                startedAt,
+                flow: flow.id,
+                status: "running",
+                summary,
+                events: checkpoint.events,
+                blockResults: checkpoint.blockResults,
+                missingVariables: [],
+                unknownVariables: [],
+                validation,
+                checkpoint,
+                ...(autonomyMetadata
+                  ? {
+                      autonomy: cloneRalphRunAutonomyMetadata(autonomyMetadata),
+                    }
+                  : {}),
+                durability: { ...checkpoint.durability! },
+              };
+              const record = createRalphRunRecord(
+                RALPH_FLOW_SCHEMA_VERSION,
+                logger.runId,
+                startedAt,
+                flow,
+                partialResult,
+                resultContext.variables,
+                logger.paths,
+              );
+              await writeJsonAtomically(logger.paths.recordPath, record, {
+                beforeCommit: assertBoundaryOwnership,
+              });
+              lastRunProjectionAt = Date.now();
+              await assertBoundaryOwnership();
+            }
+          }),
+        {
+          ...(options.signal ? { signal: options.signal } : {}),
+          onRetry: (error) => {
+            refreshRunStore = true;
+            logger?.trace({
+              kind: "trace",
+              message:
+                "Retrying Ralph checkpoint persistence before continuing.",
+              flowId: flow.id,
+              blockId,
+              details: error instanceof Error ? error.message : String(error),
+            });
+          },
+        },
+      );
+      if (boundaryRecoveryRequired && !ownershipLost) {
+        durability.status = "healthy";
+        delete durability.error;
+        boundaryRecoveryRequired = false;
+      }
       durability.lastPersistedAt = createLogTimestamp();
     } catch (error) {
-      if (error instanceof RalphRunOwnershipLostError) {
+      if (
+        error instanceof RalphRunOwnershipLostError ||
+        error instanceof RalphRunStoreOwnershipError
+      ) {
         markOwnershipLost(error);
+      } else if (options.signal?.aborted) {
+        runtimeState.latestCheckpoint = createCheckpoint(blockId);
+        if (blockMap.get(blockId)?.type !== "END") {
+          runtimeState.latestNonTerminalCheckpoint =
+            runtimeState.latestCheckpoint;
+        }
+        return;
       } else {
         markDurabilityDegraded(error);
-        logger.trace({
+        logger?.trace({
           kind: "trace",
           message: "Failed to persist Ralph block-boundary checkpoint.",
           flowId: flow.id,
@@ -16574,22 +16673,34 @@ const runRalphFlowImpl = async (
     }
   };
   const heartbeatRunOwnership = async (): Promise<void> => {
-    await refreshRalphJsonTaskLeases(flow, resultContext, config.workspaceRoot);
-    if (runStore && ownedLeaseGeneration !== undefined) {
-      await withDurableRunOwnership(async (_current, assertLockOwnership) => {
-        await assertLockOwnership();
-        await runStore.heartbeat(
-          {
-            runId,
-            flowId: flow.id,
-            ownerId: leaseOwnerId,
-            generation: ownedLeaseGeneration!,
-          },
-          Math.min(55_000, Math.max(250, Math.floor(leaseDurationMs / 2))),
+    await retryRalphPersistenceOperation(
+      async () => {
+        await assertWorkspaceWriterOwnership();
+        await refreshRalphJsonTaskLeases(
+          flow,
+          resultContext,
+          config.workspaceRoot,
         );
-        await assertLockOwnership();
-      });
-    }
+        if (runStore && ownedLeaseGeneration !== undefined) {
+          await withDurableRunOwnership(
+            async (_current, assertLockOwnership) => {
+              await assertLockOwnership();
+              await runStore.heartbeat(
+                {
+                  runId,
+                  flowId: flow.id,
+                  ownerId: leaseOwnerId,
+                  generation: ownedLeaseGeneration!,
+                },
+                0,
+              );
+              await assertLockOwnership();
+            },
+          );
+        }
+      },
+      options.signal ? { signal: options.signal } : {},
+    );
     runLease = createRalphRunLease(leaseOwnerId, runLease, leaseDurationMs);
     durability.lastPersistedAt = createLogTimestamp();
   };
@@ -16712,6 +16823,14 @@ const runRalphFlowImpl = async (
   }
 
   syncTotalTransitions();
+
+  if (boundaryRecoveryRequired && !runStoreInitializationError) {
+    await persistRunBoundary(
+      currentBlockId,
+      "Restored durable Ralph execution boundary.",
+      true,
+    );
+  }
 
   while (currentBlockId) {
     if (autonomyMetadata) {
@@ -16943,10 +17062,12 @@ const runRalphFlowImpl = async (
         await persistRunBoundary(
           block.id,
           `Persisted operation intent ${operationId} for \`${block.id}\`.`,
-          undefined,
           true,
         );
-        if (durability.status === "degraded" && durability.required) {
+        if (
+          options.signal?.aborted ||
+          (durability.status === "degraded" && durability.required)
+        ) {
           continue;
         }
       }
@@ -17004,6 +17125,7 @@ const runRalphFlowImpl = async (
             await heartbeatRunOwnership();
           })
           .catch((error: unknown) => {
+            if (options.signal?.aborted) return;
             if (
               error instanceof RalphRunOwnershipLostError ||
               error instanceof RalphRunStoreOwnershipError
@@ -17314,7 +17436,6 @@ const runRalphFlowImpl = async (
       await persistRunBoundary(
         block.id,
         `Persisted completion of operation ${operationId} for \`${block.id}\`.`,
-        undefined,
         true,
       );
     }
