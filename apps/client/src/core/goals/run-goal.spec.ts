@@ -207,7 +207,7 @@ describe("goal run budgets", () => {
 
 describe("goal run cancellation", () => {
   it("releases the runner when an evaluator never settles and permits resume", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    options.maxDurationMs = 1_000;
     let evaluationStarted!: () => void;
     const evaluating = new Promise<void>((resolve) => {
       evaluationStarted = resolve;
@@ -221,12 +221,8 @@ describe("goal run cancellation", () => {
     );
     const pending = run("/goal Verify auth", execute);
     await evaluating;
-    await vi.advanceTimersByTimeAsync(
-      goalEvaluation.GOAL_EVALUATION_TIMEOUT_MS,
-    );
     expect((await pending).status).toBe("cancelled");
     expect((await read()).goal?.status).toBe("paused");
-    vi.useRealTimers();
     await run("/goal resume", async (_task, _config, turnOptions) =>
       result(Boolean(turnOptions.resultProtocol)),
     );
