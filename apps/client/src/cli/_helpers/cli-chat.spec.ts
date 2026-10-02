@@ -25,6 +25,7 @@ import {
 import {
   rememberUserGlobalMemory,
   loadUserMemorySettings,
+  saveUserDesktopSettingsPatch,
 } from "../../core/env.js";
 import { printMemorySummary } from "./cli-summary-commands.js";
 
@@ -106,6 +107,34 @@ const runChat = async (
 };
 
 describe("interactive chat workflows", () => {
+  it("passes full history while limiting only the prompt window", async () => {
+    await saveUserDesktopSettingsPatch({ aiContextMaxMessages: 1 });
+    const snapshots: unknown[] = [];
+    const executeTask = vi.fn<typeof printTaskPreview>(
+      async (args, options) => {
+        snapshots.push(structuredClone(options?.conversationContext));
+        return result(args.task!);
+      },
+    );
+    await runChat(["First request", "Second request", "/exit"], executeTask);
+    expect(snapshots[1]).toMatchObject({
+      promptHistoryMessageLimit: 1,
+      history: [
+        { role: "user", content: "First request" },
+        { role: "assistant", content: "Done: First request" },
+      ],
+    });
+  });
+
+  it.each([0, 201, 1.5, "2", null])(
+    "rejects an invalid prompt history limit %s",
+    (promptHistoryMessageLimit) => {
+      expect(() =>
+        parseConversationContext({ history: [], promptHistoryMessageLimit }),
+      ).toThrow("promptHistoryMessageLimit");
+    },
+  );
+
   it("preserves natural-language quotes in goal objectives and attachments through goal controls", async () => {
     const path = join(workspace, "README.md");
     await writeFile(path, "Auth test instructions.");

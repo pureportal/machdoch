@@ -38,7 +38,7 @@ import {
 
 const MAX_CONVERSATION_HISTORY_MESSAGES = 200;
 const MAX_RECENT_HISTORY_MESSAGES = 8;
-const MAX_RECENT_HISTORY_CHARS = 3_600;
+const MAX_RECENT_HISTORY_CHARS = 7_200;
 const MAX_CONVERSATION_SUMMARY_INPUT_CHARS = 10_000;
 const MAX_CONVERSATION_SUMMARY_SECTION_LINES = 12;
 const MAX_WORKSPACE_RUN_CONTEXT_CHARS = 12_000;
@@ -248,32 +248,29 @@ const normalizeConversationHistory = (
     return [];
   }
 
-  return history
-    .flatMap((entry) => {
-      if (!entry || typeof entry !== "object") {
-        return [];
-      }
+  return history.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return [];
+    }
 
-      const role: ConversationHistoryEntry["role"] =
-        entry.role === "assistant" ? "assistant" : "user";
-      const content =
-        typeof entry.content === "string" ? entry.content.trim() : "";
+    const role: ConversationHistoryEntry["role"] =
+      entry.role === "assistant" ? "assistant" : "user";
+    const content = typeof entry.content === "string" ? entry.content : "";
 
-      if (content.length === 0) {
-        return [];
-      }
+    if (content.trim().length === 0) {
+      return [];
+    }
 
-      return [
-        {
-          role,
-          content,
-          ...(typeof entry.createdAt === "number"
-            ? { createdAt: entry.createdAt }
-            : {}),
-        },
-      ];
-    })
-    .slice(-MAX_CONVERSATION_HISTORY_MESSAGES);
+    return [
+      {
+        role,
+        content,
+        ...(typeof entry.createdAt === "number"
+          ? { createdAt: entry.createdAt }
+          : {}),
+      },
+    ];
+  });
 };
 
 const formatConversationHistoryEntry = (
@@ -461,8 +458,15 @@ export const prepareConversationPromptContext = async (
   signal?: AbortSignal,
   adaptivePlan?: AdaptiveExecutionPlan,
 ): Promise<PreparedConversationPromptContext> => {
-  const normalizedHistory = normalizeConversationHistory(
+  const chatHistory = normalizeConversationHistory(
     conversationContext?.history,
+  );
+  const normalizedHistory = chatHistory.slice(
+    -Math.min(
+      conversationContext?.promptHistoryMessageLimit ??
+        MAX_CONVERSATION_HISTORY_MESSAGES,
+      MAX_CONVERSATION_HISTORY_MESSAGES,
+    ),
   );
   const sessionEnabled = conversationContext?.sessionMemoryEnabled !== false;
   const sessionEntries = sessionEnabled
@@ -805,6 +809,7 @@ export const prepareConversationPromptContext = async (
         : []),
     ],
     memory: {
+      ...(conversationContext ? { chatHistory } : {}),
       ...(conversationContext?.sessionId
         ? { sourceSessionId: conversationContext.sessionId }
         : {}),
