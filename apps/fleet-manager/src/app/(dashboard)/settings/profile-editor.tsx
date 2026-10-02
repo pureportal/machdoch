@@ -13,6 +13,14 @@ import { ContextPacksEditor } from "./context-packs-editor";
 import { HistoryEditor } from "./history-editor";
 import { InstructionsEditor } from "./instructions-editor";
 import { ProfileGeneral } from "./profile-general";
+import {
+  prepareGeneralProfileSave,
+  receiveProfileResponse,
+} from "./profile-drafts";
+import type {
+  ProfileGeneralDraft,
+  ProfileGeneralValues,
+} from "./profile-drafts";
 import { PromptsEditor } from "./prompts-editor";
 import { SecretsEditor } from "./secrets-editor";
 import type {
@@ -36,6 +44,10 @@ const tabs = [
 
 export function ProfileEditor({
   profile,
+  generalDraft,
+  onGeneralChange,
+  onGeneralSaved,
+  onReloaded,
   catalog,
   profiles,
   onProfile,
@@ -43,6 +55,13 @@ export function ProfileEditor({
   onDelete,
 }: {
   profile: SettingsProfile;
+  generalDraft: ProfileGeneralDraft;
+  onGeneralChange: (
+    draft: ProfileGeneralDraft,
+    values: ProfileGeneralValues,
+  ) => void;
+  onGeneralSaved: (profile: SettingsProfile) => void;
+  onReloaded: (profile: SettingsProfile) => void;
   catalog: SettingsCatalog;
   profiles: SettingsProfileSummary[];
   onProfile: (profile: SettingsProfile) => void;
@@ -56,7 +75,13 @@ export function ProfileEditor({
   const submitting = useRef(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const path = `/api/settings/profiles/${encodeURIComponent(profile.profileId)}`;
-  const update: UpdateProfile = async (url, init) => {
+  const needsReload =
+    conflict || generalDraft.baseRevision !== profile.revision;
+  const update = async (
+    url: string,
+    init: RequestInit,
+    onAccepted?: (profile: SettingsProfile) => void,
+  ): Promise<void> => {
     if (submitting.current)
       throw new Error("Wait for the current save to finish.");
     if (conflict) throw new Error("Reload the profile before saving again.");
@@ -64,8 +89,11 @@ export function ProfileEditor({
     setPending(true);
     onPendingChange(true);
     try {
-      const payload = await api<{ profile: SettingsProfile }>(url, init);
-      onProfile(payload.profile);
+      await receiveProfileResponse(
+        api<{ profile: SettingsProfile }>(url, init),
+        onProfile,
+        onAccepted,
+      );
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 409)
         setConflict(true);
@@ -76,17 +104,13 @@ export function ProfileEditor({
       onPendingChange(false);
     }
   };
-  const save = (
-    document: ManagedSettingsDocument,
-    changeSummary: string,
-    details?: { name?: string; description?: string },
-  ) =>
+  const save = (document: ManagedSettingsDocument, changeSummary: string) =>
     update(path, {
       method: "PUT",
       body: jsonBody({
         expectedRevision: profile.revision,
-        name: details?.name ?? profile.name,
-        description: details?.description ?? profile.description,
+        name: profile.name,
+        description: profile.description,
         document,
         changeSummary,
       }),
@@ -126,14 +150,18 @@ export function ProfileEditor({
           }}
         />
       </div>
-      {conflict ? (
+      {needsReload ? (
         <div className="flex flex-wrap items-center gap-3 border-b border-border p-4">
           <p role="alert" className="text-sm">
             This profile changed. Reload it before saving.
           </p>
           <ConfirmButton
             destructive={false}
-            trigger={<Button variant="outline">Reload profile</Button>}
+            trigger={
+              <Button variant="outline" disabled={pending}>
+                Reload profile
+              </Button>
+            }
             title="Reload profile?"
             description="Unsaved changes in this profile will be discarded."
             actionLabel="Reload profile"
@@ -142,10 +170,24 @@ export function ProfileEditor({
               heading.current?.focus();
             }}
             onConfirm={async () => {
-              const payload = await api<{ profile: SettingsProfile }>(path);
-              onProfile(payload.profile);
-              setConflict(false);
-              setReloadCount((value) => value + 1);
+              if (submitting.current)
+                throw new Error("Wait for the current save to finish.");
+              submitting.current = true;
+              setPending(true);
+              onPendingChange(true);
+              try {
+                await receiveProfileResponse(
+                  api<{ profile: SettingsProfile }>(path),
+                  onProfile,
+                  onReloaded,
+                );
+                setConflict(false);
+                setReloadCount((value) => value + 1);
+              } finally {
+                submitting.current = false;
+                setPending(false);
+                onPendingChange(false);
+              }
             }}
           />
         </div>
@@ -189,9 +231,21 @@ export function ProfileEditor({
         <div className="p-4 sm:p-6">
           <Tabs.Content value="general">
             <ProfileGeneral
-              key={profile.revision}
-              profile={profile}
-              onSave={save}
+              draft={generalDraft}
+              disabled={pending || needsReload}
+              onChange={(values) => onGeneralChange(generalDraft, values)}
+              onSave={() =>
+                update(
+                  path,
+                  {
+                    method: "PUT",
+                    body: jsonBody(
+                      prepareGeneralProfileSave(profile, generalDraft),
+                    ),
+                  },
+                  onGeneralSaved,
+                )
+              }
             />
           </Tabs.Content>
           <Tabs.Content value="instructions">

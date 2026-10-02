@@ -6,7 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ShowMore } from "@/components/show-more";
-import type { ManagedSettingsDocument, SettingsProfile } from "./types";
+import type {
+  ProfileGeneralDraft,
+  ProfileGeneralValues,
+} from "./profile-drafts";
 import { settingsError } from "./use-settings-profiles";
 
 const providerOptions = [
@@ -32,55 +35,35 @@ const reasoningOptions = [
 ];
 
 export function ProfileGeneral({
-  profile,
+  draft,
+  disabled,
+  onChange,
   onSave,
 }: {
-  profile: SettingsProfile;
-  onSave: (
-    document: ManagedSettingsDocument,
-    summary: string,
-    details: { name: string; description: string },
-  ) => Promise<void>;
+  draft: ProfileGeneralDraft;
+  disabled: boolean;
+  onChange: (values: ProfileGeneralValues) => void;
+  onSave: () => Promise<void>;
 }): React.ReactElement {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  const defaults = profile.document.defaults;
-  const [provider, setProvider] = useState(defaults.provider ?? "");
-  const limits = profile.document.agentLimits;
+  const { values } = draft;
+  const { defaults, agentLimits: limits } = values;
+  const changeDefault = (
+    name: keyof ProfileGeneralValues["defaults"],
+    value: string,
+  ) => {
+    onChange({ ...values, defaults: { ...defaults, [name]: value } });
+  };
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        if (pending) return;
-        const form = new FormData(event.currentTarget);
-        const document = structuredClone(profile.document);
-        document.defaults = {
-          provider: optional(form, "provider"),
-          model: optional(form, "model"),
-          mode: optional(form, "mode"),
-          reasoning: optional(form, "reasoning"),
-          webSearchProvider: optional(form, "webSearchProvider"),
-          theme: optional(form, "theme"),
-          density: optional(form, "density"),
-          accent: optional(form, "accent"),
-        };
-        document.agentLimits = {
-          infinite:
-            form.get("infinite") === ""
-              ? null
-              : form.get("infinite") === "true",
-          executorTurns: optionalNumber(form, "executorTurns"),
-          autopilotExecutorIterations: optionalNumber(
-            form,
-            "autopilotExecutorIterations",
-          ),
-        };
+        if (pending || disabled) return;
         setPending(true);
         setError("");
-        void onSave(document, "Updated profile", {
-          name: String(form.get("name")),
-          description: String(form.get("description")),
-        })
+        void Promise.resolve()
+          .then(onSave)
           .catch((reason: unknown) => setError(settingsError(reason)))
           .finally(() => setPending(false));
       }}
@@ -93,7 +76,10 @@ export function ProfileGeneral({
               <Input
                 id="settings-profile-name"
                 name="name"
-                defaultValue={profile.name}
+                value={values.name}
+                onChange={(event) =>
+                  onChange({ ...values, name: event.target.value })
+                }
                 required
               />
             </Field>
@@ -101,7 +87,10 @@ export function ProfileGeneral({
               <Input
                 id="settings-profile-description"
                 name="description"
-                defaultValue={profile.description}
+                value={values.description}
+                onChange={(event) =>
+                  onChange({ ...values, description: event.target.value })
+                }
               />
             </Field>
           </div>
@@ -113,8 +102,10 @@ export function ProfileGeneral({
               <Select
                 id="provider"
                 name="provider"
-                value={provider}
-                onChange={(event) => setProvider(event.target.value)}
+                value={defaults.provider}
+                onChange={(event) =>
+                  changeDefault("provider", event.target.value)
+                }
               >
                 <option value="">Not set</option>
                 {providerOptions.map((option) => (
@@ -128,20 +119,23 @@ export function ProfileGeneral({
               <Input
                 id="model"
                 name="model"
-                defaultValue={defaults.model ?? ""}
-                disabled={!provider}
+                value={defaults.model}
+                onChange={(event) => changeDefault("model", event.target.value)}
+                disabled={!defaults.provider}
               />
             </Field>
             <SelectField
               label="Mode"
               name="mode"
               value={defaults.mode}
+              onChange={(value) => changeDefault("mode", value)}
               options={["ask", "machdoch"]}
             />
             <SelectField
               label="Reasoning"
               name="reasoning"
               value={defaults.reasoning}
+              onChange={(value) => changeDefault("reasoning", value)}
               options={reasoningOptions}
             />
           </div>
@@ -152,24 +146,28 @@ export function ProfileGeneral({
               label="Web search"
               name="webSearchProvider"
               value={defaults.webSearchProvider}
+              onChange={(value) => changeDefault("webSearchProvider", value)}
               options={["none", "perplexity", "tavily", "serper"]}
             />
             <SelectField
               label="Theme"
               name="theme"
               value={defaults.theme}
+              onChange={(value) => changeDefault("theme", value)}
               options={["dark", "light"]}
             />
             <SelectField
               label="Density"
               name="density"
               value={defaults.density}
+              onChange={(value) => changeDefault("density", value)}
               options={["comfortable", "compact"]}
             />
             <SelectField
               label="Accent"
               name="accent"
               value={defaults.accent}
+              onChange={(value) => changeDefault("accent", value)}
               options={["sky", "emerald", "violet", "amber"]}
             />
           </div>
@@ -179,8 +177,16 @@ export function ProfileGeneral({
               <SelectField
                 label="Infinite mode"
                 name="infinite"
-                value={
-                  limits.infinite === null ? null : String(limits.infinite)
+                value={limits.infinite}
+                onChange={(value) =>
+                  onChange({
+                    ...values,
+                    agentLimits: {
+                      ...limits,
+                      infinite:
+                        value as ProfileGeneralValues["agentLimits"]["infinite"],
+                    },
+                  })
                 }
                 options={["true", "false"]}
                 labels={{ true: "Enabled", false: "Disabled" }}
@@ -189,11 +195,26 @@ export function ProfileGeneral({
                 label="Executor turns"
                 name="executorTurns"
                 value={limits.executorTurns}
+                onChange={(value) =>
+                  onChange({
+                    ...values,
+                    agentLimits: { ...limits, executorTurns: value },
+                  })
+                }
               />
               <NumberField
                 label="Autopilot iterations"
                 name="autopilotExecutorIterations"
                 value={limits.autopilotExecutorIterations}
+                onChange={(value) =>
+                  onChange({
+                    ...values,
+                    agentLimits: {
+                      ...limits,
+                      autopilotExecutorIterations: value,
+                    },
+                  })
+                }
               />
             </div>
           </div>
@@ -203,7 +224,11 @@ export function ProfileGeneral({
             {error}
           </p>
         ) : null}
-        <Button type="submit" className="w-full sm:w-fit" disabled={pending}>
+        <Button
+          type="submit"
+          className="w-full sm:w-fit"
+          disabled={pending || disabled}
+        >
           {pending ? "Saving…" : "Save profile"}
         </Button>
       </fieldset>
@@ -215,18 +240,25 @@ function SelectField({
   label,
   name,
   value,
+  onChange,
   options,
   labels = {},
 }: {
   label: string;
   name: string;
-  value: string | null;
+  value: string;
+  onChange: (value: string) => void;
   options: string[];
   labels?: Record<string, string>;
 }): React.ReactElement {
   return (
     <Field label={label} htmlFor={name}>
-      <Select id={name} name={name} defaultValue={value ?? ""}>
+      <Select
+        id={name}
+        name={name}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
         <option value="">Not set</option>
         {options.map((option) => (
           <option key={option} value={option}>
@@ -242,10 +274,12 @@ function NumberField({
   label,
   name,
   value,
+  onChange,
 }: {
   label: string;
   name: string;
-  value: number | null;
+  value: string;
+  onChange: (value: string) => void;
 }): React.ReactElement {
   return (
     <Field label={label} htmlFor={name}>
@@ -255,17 +289,9 @@ function NumberField({
         type="number"
         min={1}
         max={100000}
-        defaultValue={value ?? ""}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
       />
     </Field>
   );
-}
-
-function optional(form: FormData, name: string): string | null {
-  return String(form.get(name) ?? "").trim() || null;
-}
-
-function optionalNumber(form: FormData, name: string): number | null {
-  const value = String(form.get(name) ?? "").trim();
-  return value ? Number(value) : null;
 }

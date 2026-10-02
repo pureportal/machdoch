@@ -2,13 +2,20 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@machdoch/product-ui/fleet-api";
+import { receiveProfileResponse } from "./profile-drafts";
 import type {
   SettingsCatalog,
   SettingsProfile,
   SettingsProfileSummary,
 } from "./types";
 
-export function useSettingsProfiles() {
+export function useSettingsProfiles({
+  onLoaded,
+  onDeleted,
+}: {
+  onLoaded: (profile: SettingsProfile) => void;
+  onDeleted: (profileId: string) => void;
+}) {
   const [catalog, setCatalog] = useState<SettingsCatalog | null>(null);
   const [profiles, setProfiles] = useState<SettingsProfileSummary[]>([]);
   const [profile, setProfile] = useState<SettingsProfile | null>(null);
@@ -17,23 +24,33 @@ export function useSettingsProfiles() {
   const [error, setError] = useState("");
   const requestId = useRef(0);
 
-  const selectProfile = useCallback(async (profileId: string) => {
-    const request = ++requestId.current;
-    setSelectedId(profileId);
-    setProfile(null);
-    setLoading(true);
-    setError("");
-    try {
-      const payload = await api<{ profile: SettingsProfile }>(
-        `/api/settings/profiles/${encodeURIComponent(profileId)}`,
-      );
-      if (request === requestId.current) setProfile(payload.profile);
-    } catch (reason) {
-      if (request === requestId.current) setError(settingsError(reason));
-    } finally {
-      if (request === requestId.current) setLoading(false);
-    }
-  }, []);
+  const selectProfile = useCallback(
+    async (profileId: string) => {
+      const request = ++requestId.current;
+      setSelectedId(profileId);
+      setProfile(null);
+      setLoading(true);
+      setError("");
+      try {
+        await receiveProfileResponse(
+          api<{ profile: SettingsProfile }>(
+            `/api/settings/profiles/${encodeURIComponent(profileId)}`,
+          ),
+          (next) => {
+            if (request === requestId.current) {
+              onLoaded(next);
+              setProfile(next);
+            }
+          },
+        );
+      } catch (reason) {
+        if (request === requestId.current) setError(settingsError(reason));
+      } finally {
+        if (request === requestId.current) setLoading(false);
+      }
+    },
+    [onLoaded],
+  );
 
   const load = useCallback(async () => {
     const request = ++requestId.current;
@@ -64,6 +81,7 @@ export function useSettingsProfiles() {
   }, [load]);
 
   const acceptProfile = (next: SettingsProfile): void => {
+    onLoaded(next);
     requestId.current++;
     setSelectedId(next.profileId);
     setProfile(next);
@@ -100,6 +118,7 @@ export function useSettingsProfiles() {
       `/api/settings/profiles/${encodeURIComponent(profile.profileId)}`,
       { method: "DELETE" },
     );
+    onDeleted(profile.profileId);
     const remaining = profiles.filter(
       (item) => item.profileId !== profile.profileId,
     );
