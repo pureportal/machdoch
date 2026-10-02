@@ -4,6 +4,7 @@ import { ExternalLink, Trash2 } from "lucide-react";
 import { api } from "@machdoch/product-ui/fleet-api";
 import { ConfirmButton } from "@/components/confirm-button";
 import { CopyField } from "@/components/copy-field";
+import { ShowMore } from "@/components/show-more";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,7 +42,6 @@ export function DeviceDetails({
           <DialogTitle>{device.displayName}</DialogTitle>
           <Badge variant={device.status}>{device.status}</Badge>
         </div>
-        <CopyField label="Device ID" value={device.instanceId} monospace />
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-3 text-sm">
           <dt className="text-muted-foreground">Version</dt>
           <dd>v{device.productVersion}</dd>
@@ -54,6 +54,9 @@ export function DeviceDetails({
               : formatTime(device.lastSeenAt)}
           </dd>
         </dl>
+        <ShowMore>
+          <CopyField label="Device ID" value={device.instanceId} monospace />
+        </ShowMore>
         <DialogFooter>
           {device.status !== "revoked" ? (
             <ConfirmButton
@@ -77,11 +80,7 @@ export function DeviceDetails({
           ) : null}
           {device.status === "online" ? (
             <Button asChild>
-              <a
-                href={`/instances/${encodeURIComponent(device.instanceId)}`}
-                target="_blank"
-                rel="noreferrer"
-              >
+              <a href={`/instances/${encodeURIComponent(device.instanceId)}`}>
                 <ExternalLink />
                 Open device
               </a>

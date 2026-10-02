@@ -6,6 +6,7 @@ import { useRef, useState } from "react";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Select } from "@/components/ui/select";
 import { api, ApiError, jsonBody } from "@machdoch/product-ui/fleet-api";
 import { AssignmentsEditor } from "./assignments-editor";
 import { ContextPacksEditor } from "./context-packs-editor";
@@ -51,6 +52,7 @@ export function ProfileEditor({
   const [pending, setPending] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [reloadCount, setReloadCount] = useState(0);
+  const [section, setSection] = useState("general");
   const submitting = useRef(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const path = `/api/settings/profiles/${encodeURIComponent(profile.profileId)}`;
@@ -148,17 +150,31 @@ export function ProfileEditor({
           />
         </div>
       ) : null}
-      <Tabs.Root key={reloadCount} defaultValue="general">
+      <Tabs.Root key={reloadCount} value={section} onValueChange={setSection}>
+        <div className="border-b p-4 sm:hidden">
+          <Select
+            aria-label="Profile section"
+            value={section}
+            disabled={pending}
+            onChange={(event) => setSection(event.target.value)}
+          >
+            {tabs.map(([id, label]) => (
+              <option key={id} value={id}>
+                {label}
+              </option>
+            ))}
+          </Select>
+        </div>
         <Tabs.List
           aria-label="Profile settings"
-          className="flex overflow-x-auto border-b border-border px-3"
+          className="hidden overflow-x-auto border-b border-border px-3 sm:flex"
         >
           {tabs.map(([id, label]) => (
             <Tabs.Trigger
               key={id}
               value={id}
               disabled={pending}
-              className="shrink-0 border-b-2 border-transparent px-3 py-3 text-sm text-muted-foreground outline-offset-[-3px] data-[state=active]:border-primary data-[state=active]:text-foreground disabled:opacity-50"
+              className="min-h-12 shrink-0 cursor-pointer border-b-2 border-transparent px-3 py-3 text-sm font-medium text-muted-foreground outline-offset-[-3px] hover:text-foreground data-[state=active]:border-primary data-[state=active]:text-primary disabled:opacity-50"
               onFocus={(event) =>
                 event.currentTarget.scrollIntoView({
                   block: "nearest",

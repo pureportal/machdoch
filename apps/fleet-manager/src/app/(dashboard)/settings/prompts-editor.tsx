@@ -5,7 +5,7 @@ import { useState } from "react";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
-import { SettingsFormDialog } from "./settings-form-dialog";
+import { FormDialog } from "@/components/form-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type {
@@ -37,10 +37,10 @@ export function PromptsEditor({
           {profile.document.prompts.map((prompt) => (
             <div
               key={prompt.id}
-              className="flex items-center gap-3 rounded-lg border border-border p-3"
+              className="flex min-w-0 items-center gap-2 rounded-xl border border-border p-3 sm:gap-3"
             >
               <FileCode2 className="size-4 shrink-0 text-muted-foreground" />
-              <p className="min-w-0 flex-1 truncate font-mono text-sm">
+              <p className="min-w-0 flex-1 break-words font-mono text-sm [overflow-wrap:anywhere]">
                 {prompt.relativePath}
               </p>
               <Button
@@ -115,7 +115,7 @@ function PromptDialog({
 }): React.ReactElement {
   const prompt = editing === "new" ? null : editing;
   return (
-    <SettingsFormDialog
+    <FormDialog
       open={editing !== null}
       onOpenChange={onOpenChange}
       title={prompt ? "Edit prompt" : "New prompt"}
@@ -141,11 +141,11 @@ function PromptDialog({
         <Textarea
           id="prompt-content"
           name="content"
-          className="min-h-72 font-mono text-xs"
+          className="min-h-40 font-mono sm:min-h-64"
           defaultValue={prompt?.content ?? ""}
           required
         />
       </Field>
-    </SettingsFormDialog>
+    </FormDialog>
   );
 }

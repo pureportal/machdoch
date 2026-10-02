@@ -21,7 +21,7 @@ export function FleetSummary({
   const cards = [
     {
       filter: "active",
-      label: "Active devices",
+      label: "Active",
       count: summary.active,
       icon: Monitor,
       color: "text-primary",
@@ -50,7 +50,7 @@ export function FleetSummary({
   return (
     <div
       role="group"
-      className="grid grid-cols-3 gap-2 sm:gap-4"
+      className="grid grid-cols-3 overflow-hidden rounded-2xl border bg-card p-1.5 sm:p-2"
       aria-label={stale ? "Last known fleet status" : "Fleet status"}
     >
       {cards.map(({ filter, label, count, icon: Icon, color, background }) => (
@@ -61,10 +61,8 @@ export function FleetSummary({
           onClick={() => onSelect(filter)}
           disabled={instances === null}
           className={cn(
-            "relative min-w-0 cursor-pointer rounded-xl border bg-card p-3 text-left shadow-sm transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default sm:p-5",
-            selected === filter
-              ? "border-primary/60 ring-1 ring-primary/15"
-              : "border-border",
+            "relative min-w-0 cursor-pointer rounded-xl p-3 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default sm:p-5",
+            selected === filter ? "bg-secondary/70" : "bg-card",
           )}
         >
           <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">

@@ -9,9 +9,8 @@ import {
   DialogFooter,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { settingsError } from "./use-settings-profiles";
 
-export function SettingsFormDialog({
+export function FormDialog({
   open,
   onOpenChange,
   title,
@@ -75,7 +74,13 @@ export function SettingsFormDialog({
             void Promise.resolve()
               .then(() => onSubmit(form))
               .then(() => onOpenChange(false))
-              .catch((reason: unknown) => setError(settingsError(reason)))
+              .catch((reason: unknown) =>
+                setError(
+                  reason instanceof Error
+                    ? reason.message
+                    : "Changes could not be saved. Try again.",
+                ),
+              )
               .finally(() => {
                 submitting.current = false;
                 setPending(false);
