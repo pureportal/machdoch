@@ -204,6 +204,7 @@ export class RalphRunStore {
   public async persistCheckpoint(
     checkpoint: RalphRunCheckpoint,
     summary: string,
+    beforeCommit?: () => Promise<void>,
   ): Promise<{ generation: number; path: string }> {
     await mkdir(this.checkpointDirectory, { recursive: true });
     const generation = this.checkpointGeneration + 1;
@@ -218,7 +219,11 @@ export class RalphRunStore {
       this.checkpointDirectory,
       `${String(generation).padStart(10, "0")}-${randomUUID()}.json`,
     );
-    await writeJsonAtomically(path, envelope);
+    await writeJsonAtomically(
+      path,
+      envelope,
+      beforeCommit ? { beforeCommit } : {},
+    );
     this.checkpointGeneration = generation;
     await this.appendJournal({
       kind: "checkpoint",

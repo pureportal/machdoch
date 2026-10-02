@@ -6392,181 +6392,228 @@ describe("runRalphFlow", () => {
     GIT_SCOPE_GUARD_TEST_TIMEOUT_MS,
   );
 
-  it("rejects invalid scope outcomes without inferring their meaning", async () => {
-    const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-registry-"));
-    const registryPath =
-      ".machdoch/ralph/scope-registry/test-flow.scope-registry.json";
+  it.each([false, true])(
+    "rebuilds invalid scope outcomes from evidence with a preceding cycle=%s",
+    async (beginCycle) => {
+      const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-registry-"));
+      const registryPath =
+        ".machdoch/ralph/scope-registry/test-flow.scope-registry.json";
 
-    try {
-      await mkdir(join(workspace, "src"), { recursive: true });
-      await mkdir(join(workspace, "packages", "api"), { recursive: true });
-      await writeFile(join(workspace, "package.json"), "{}", "utf8");
-      await writeFile(join(workspace, "src", "index.ts"), "", "utf8");
-      await writeFile(
-        join(workspace, "packages", "api", "package.json"),
-        "{}",
-        "utf8",
-      );
-      const persistedRegistryPath = join(workspace, registryPath);
-      await mkdir(join(workspace, ".machdoch", "ralph", "scope-registry"), {
-        recursive: true,
-      });
-      await writeFile(
-        persistedRegistryPath,
-        JSON.stringify({
-          flowAlias: "test-flow",
-          updatedAt: "2026-06-25T10:00:00.000Z",
-          selection: {
-            strategy: "start-to-end",
-            cursor: 1,
-            cycle: 2,
-            seed: "test-flow",
-            currentScopeId: "src",
-            completedScopeIds: [],
-          },
-          scopes: [
-            {
-              id: "src",
-              title: "Src",
-              kind: "source-root",
-              status: "active",
-              paths: ["src"],
-              globs: ["src/**/*"],
-              tags: ["source-root"],
-              priority: 70,
-              risk: "low",
-              fingerprint: "legacy-src",
-              evidence: ["src/index.ts"],
-              discoveredAt: "2026-06-25T10:00:00.000Z",
-              updatedAt: "2026-06-25T10:00:00.000Z",
-              lastSelectedAt: "2026-06-25T10:00:00.000Z",
-              lastValidatedAt: null,
-              selectedCount: 1,
-              validatedCount: 0,
-              lastOutcome: "DEFERRED_AFTER_BOUNDED_REPAIR",
-              lastOutcomeAt: "2026-06-25T10:00:00.000Z",
-              eligibleAfter: null,
+      try {
+        await mkdir(join(workspace, "src"), { recursive: true });
+        await mkdir(join(workspace, "packages", "api"), { recursive: true });
+        await writeFile(join(workspace, "package.json"), "{}", "utf8");
+        await writeFile(join(workspace, "src", "index.ts"), "", "utf8");
+        await writeFile(
+          join(workspace, "packages", "api", "package.json"),
+          "{}",
+          "utf8",
+        );
+        const persistedRegistryPath = join(workspace, registryPath);
+        await mkdir(join(workspace, ".machdoch", "ralph", "scope-registry"), {
+          recursive: true,
+        });
+        await writeFile(
+          persistedRegistryPath,
+          JSON.stringify({
+            flowAlias: "test-flow",
+            updatedAt: "2026-06-25T10:00:00.000Z",
+            selection: {
+              strategy: "start-to-end",
+              cursor: 1,
+              cycle: 2,
+              seed: "test-flow",
+              currentScopeId: "src",
+              completedScopeIds: [],
             },
-          ],
-          history: [],
-        }),
-        "utf8",
-      );
-
-      const result = await runRalphFlow(
-        createFlow({
-          blocks: [
-            { id: "start", type: "START", title: "Start" },
-            {
-              id: "scan-scopes",
-              type: "UTILITY",
-              title: "Scan Scopes",
-              utility: {
-                type: "SCAN_SCOPE_EVIDENCE",
-                rootPath: ".",
-                maxDepth: 3,
+            scopes: [
+              {
+                id: "src",
+                title: "Src",
+                kind: "source-root",
+                status: "active",
+                paths: ["src"],
+                globs: ["src/**/*"],
+                tags: ["source-root"],
+                priority: 70,
+                risk: "low",
+                fingerprint: "legacy-src",
+                evidence: ["src/index.ts"],
+                discoveredAt: "2026-06-25T10:00:00.000Z",
+                updatedAt: "2026-06-25T10:00:00.000Z",
+                lastSelectedAt: "2026-06-25T10:00:00.000Z",
+                lastValidatedAt: null,
+                selectedCount: 1,
+                validatedCount: 0,
+                lastOutcome: "DEFERRED_AFTER_BOUNDED_REPAIR",
+                lastOutcomeAt: "2026-06-25T10:00:00.000Z",
+                eligibleAfter: null,
               },
-            },
-            {
-              id: "update-registry",
-              type: "UTILITY",
-              title: "Update Registry",
-              utility: {
-                type: "UPDATE_SCOPE_REGISTRY",
-                flowAlias: "test-flow",
-                registryPath,
-                strategy: "start-to-end",
-              },
-            },
-            {
-              id: "select-scope",
-              type: "UTILITY",
-              title: "Select Scope",
-              utility: {
-                type: "SELECT_SCOPE",
-                flowAlias: "test-flow",
-                registryPath,
-                strategy: "start-to-end",
-              },
-            },
-            {
-              id: "mark-scope",
-              type: "UTILITY",
-              title: "Mark Scope",
-              utility: {
-                type: "MARK_SCOPE_RESULT",
-                flowAlias: "test-flow",
-                registryPath,
-                scopeOutcome: "completed",
-              },
-            },
-            { id: "success", type: "END", title: "Success" },
-          ],
-          edges: [
-            {
-              id: "start-to-scan",
-              from: "start",
-              fromOutput: "SUCCESS",
-              to: "scan-scopes",
-            },
-            {
-              id: "scan-to-update",
-              from: "scan-scopes",
-              fromOutput: "SUCCESS",
-              to: "update-registry",
-            },
-            {
-              id: "update-to-select",
-              from: "update-registry",
-              fromOutput: "SUCCESS",
-              to: "select-scope",
-            },
-            {
-              id: "select-to-mark",
-              from: "select-scope",
-              fromOutput: "SELECTED",
-              to: "mark-scope",
-            },
-            {
-              id: "mark-to-success",
-              from: "mark-scope",
-              fromOutput: "SUCCESS",
-              to: "success",
-            },
-          ],
-        }),
-        { ...runtimeConfig, workspaceRoot: workspace },
-        customizations,
-        { maxTransitions: 10 },
-      );
-      const registry = JSON.parse(
-        await readFile(persistedRegistryPath, "utf8"),
-      ) as { scopes: Array<{ lastOutcome: string }> };
-
-      expect(result.status).toBe("crashed");
-      expect(registry.scopes[0]?.lastOutcome).toBe(
-        "DEFERRED_AFTER_BOUNDED_REPAIR",
-      );
-      expect(result.blockResults).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            blockId: "scan-scopes",
-            output: "SUCCESS",
+            ],
+            history: [],
           }),
-          expect.objectContaining({
-            blockId: "update-registry",
-            output: "ERROR",
-            error: expect.stringContaining(
-              "Expected a valid persisted Ralph scope outcome.",
+          "utf8",
+        );
+
+        const result = await runRalphFlow(
+          createFlow({
+            blocks: [
+              { id: "start", type: "START", title: "Start" },
+              ...(beginCycle
+                ? [
+                    {
+                      id: "begin-cycle",
+                      type: "UTILITY" as const,
+                      title: "Begin Cycle",
+                      utility: {
+                        type: "BEGIN_SCOPE_CYCLE" as const,
+                        registryPath,
+                        flowAlias: "test-flow",
+                        strategy: "start-to-end" as const,
+                      },
+                    },
+                  ]
+                : []),
+              {
+                id: "scan-scopes",
+                type: "UTILITY",
+                title: "Scan Scopes",
+                utility: {
+                  type: "SCAN_SCOPE_EVIDENCE",
+                  rootPath: ".",
+                  maxDepth: 3,
+                },
+              },
+              {
+                id: "update-registry",
+                type: "UTILITY",
+                title: "Update Registry",
+                utility: {
+                  type: "UPDATE_SCOPE_REGISTRY",
+                  flowAlias: "test-flow",
+                  registryPath,
+                  strategy: "start-to-end",
+                },
+              },
+              {
+                id: "select-scope",
+                type: "UTILITY",
+                title: "Select Scope",
+                utility: {
+                  type: "SELECT_SCOPE",
+                  flowAlias: "test-flow",
+                  registryPath,
+                  strategy: "start-to-end",
+                },
+              },
+              {
+                id: "mark-scope",
+                type: "UTILITY",
+                title: "Mark Scope",
+                utility: {
+                  type: "MARK_SCOPE_RESULT",
+                  flowAlias: "test-flow",
+                  registryPath,
+                  scopeOutcome: "completed",
+                },
+              },
+              { id: "success", type: "END", title: "Success" },
+            ],
+            edges: [
+              {
+                id: "start-to-scan",
+                from: "start",
+                fromOutput: "SUCCESS",
+                to: beginCycle ? "begin-cycle" : "scan-scopes",
+              },
+              ...(beginCycle
+                ? [
+                    {
+                      id: "begin-to-scan",
+                      from: "begin-cycle",
+                      fromOutput: "SUCCESS",
+                      to: "scan-scopes",
+                    },
+                  ]
+                : []),
+              {
+                id: "scan-to-update",
+                from: "scan-scopes",
+                fromOutput: "SUCCESS",
+                to: "update-registry",
+              },
+              {
+                id: "update-to-select",
+                from: "update-registry",
+                fromOutput: "SUCCESS",
+                to: "select-scope",
+              },
+              {
+                id: "select-to-mark",
+                from: "select-scope",
+                fromOutput: "SELECTED",
+                to: "mark-scope",
+              },
+              {
+                id: "mark-to-success",
+                from: "mark-scope",
+                fromOutput: "SUCCESS",
+                to: "success",
+              },
+            ],
+          }),
+          { ...runtimeConfig, workspaceRoot: workspace },
+          customizations,
+          { maxTransitions: 10 },
+        );
+        const registry = JSON.parse(
+          await readFile(persistedRegistryPath, "utf8"),
+        ) as { scopes: Array<{ lastOutcome: string }> };
+
+        expect(result.status, result.summary).toBe("completed");
+        expect(
+          registry.scopes.every(
+            (scope) => scope.lastOutcome !== "DEFERRED_AFTER_BOUNDED_REPAIR",
+          ),
+        ).toBe(true);
+        const archives = (
+          await readdir(join(workspace, ".machdoch", "ralph", "scope-registry"))
+        ).filter((name) => name.startsWith(".invalid-scope-registry-"));
+        expect(archives).toHaveLength(1);
+        const archived = JSON.parse(
+          await readFile(
+            join(
+              workspace,
+              ".machdoch",
+              "ralph",
+              "scope-registry",
+              archives[0]!,
+              "test-flow.scope-registry.json",
             ),
-          }),
-        ]),
-      );
-      expect(executeTask).not.toHaveBeenCalled();
-    } finally {
-      await rm(workspace, { recursive: true, force: true });
-    }
-  });
+            "utf8",
+          ),
+        ) as { scopes: Array<{ lastOutcome: string }> };
+        expect(archived.scopes[0]?.lastOutcome).toBe(
+          "DEFERRED_AFTER_BOUNDED_REPAIR",
+        );
+        expect(result.blockResults).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              blockId: "scan-scopes",
+              output: "SUCCESS",
+            }),
+            expect.objectContaining({
+              blockId: "update-registry",
+              output: "SUCCESS",
+            }),
+          ]),
+        );
+        expect(executeTask).not.toHaveBeenCalled();
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("routes HTTP_FETCH SUCCESS, HTTP_ERROR, and TIMEOUT outputs", async () => {
     const fetchMock = vi

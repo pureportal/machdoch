@@ -158,6 +158,8 @@ export interface RalphScopeRegistryCycleResult {
   cycleStarted: boolean;
 }
 
+export class RalphScopeRegistryInvalidError extends Error {}
+
 const REQUIRED_SCOPE_EXCLUDE_PATHS = [".tmp", "__pycache__"] as const;
 
 const DEFAULT_SCOPE_SCAN_EXCLUDE_PATHS = [
@@ -1953,11 +1955,9 @@ export const readRalphScopeRegistryFile = async (
     now?: string;
   },
 ): Promise<RalphScopeRegistry> => {
+  let content: string;
   try {
-    return parseRalphScopeRegistry(
-      JSON.parse(await readFile(path, "utf8")),
-      options,
-    );
+    content = await readFile(path, "utf8");
   } catch (error) {
     if (isRecord(error) && error.code === "ENOENT") {
       return createDefaultRegistry(
@@ -1969,14 +1969,31 @@ export const readRalphScopeRegistryFile = async (
 
     throw error;
   }
+  try {
+    const value: unknown = JSON.parse(content);
+    if (!isRecord(value)) {
+      throw new Error("Expected a Ralph scope registry record.");
+    }
+    return parseRalphScopeRegistry(value, options);
+  } catch (error) {
+    throw new RalphScopeRegistryInvalidError(
+      error instanceof Error ? error.message : String(error),
+      { cause: error },
+    );
+  }
 };
 
 export const writeRalphScopeRegistryFile = async (
   path: string,
   registry: RalphScopeRegistry,
+  beforeCommit?: () => Promise<void>,
 ): Promise<void> => {
   await mkdir(dirname(path), { recursive: true });
-  await writeJsonAtomically(path, registry);
+  await writeJsonAtomically(
+    path,
+    registry,
+    beforeCommit ? { beforeCommit } : {},
+  );
 };
 
 export const formatRalphScopeRegistryMarkdown = (
