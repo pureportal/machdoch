@@ -1,12 +1,28 @@
 .ralph-overview {
+  --ralph-overview-accent: var(--app-sky-300);
+  --ralph-overview-success: var(--app-emerald-300);
+  --ralph-overview-warning: var(--app-amber-300);
+  --ralph-overview-danger: var(--app-rose-300);
   display: flex;
   min-height: 0;
   min-width: 0;
   height: 100%;
   flex-direction: column;
-  color: #e2e8f0;
-  background: #020617;
+  color: var(--app-text);
+  background: var(--app-bg);
   font-size: 13px;
+  line-height: 1.5;
+}
+
+:root[data-theme="light"] .ralph-overview {
+  --ralph-overview-accent: var(--app-sky-700);
+  --ralph-overview-success: var(--app-emerald-700);
+  --ralph-overview-warning: color-mix(
+    in srgb,
+    var(--app-amber-500) 60%,
+    var(--app-text)
+  );
+  --ralph-overview-danger: var(--app-red-500);
 }
 
 .ralph-overview button {
@@ -14,21 +30,29 @@
   min-height: 40px;
   align-items: center;
   gap: 10px;
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
   cursor: pointer;
+  font: inherit;
   text-align: left;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
 }
 
-.ralph-overview button:hover {
-  background: #172033;
+.ralph-overview button:hover:not(:disabled) {
+  background: var(--app-hover);
 }
 .ralph-overview button:focus-visible {
-  outline: 2px solid #38bdf8;
+  outline: 2px solid var(--app-sky-500);
   outline-offset: -2px;
 }
 .ralph-overview button:disabled {
-  cursor: default;
-  opacity: 0.6;
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 .ralph-overview svg {
   width: 16px;
@@ -47,6 +71,9 @@
   font-size: 16px;
   font-weight: 650;
 }
+.ralph-overview h1 > svg {
+  color: var(--ralph-overview-accent);
+}
 .ralph-overview h2 {
   display: flex;
   gap: 10px;
@@ -56,7 +83,7 @@
   margin-bottom: 12px;
 }
 .ralph-overview h2 > span {
-  color: #7dd3fc;
+  color: var(--ralph-overview-accent);
   font-variant-numeric: tabular-nums;
 }
 .ralph-overview-toolbar {
@@ -66,7 +93,9 @@
   justify-content: space-between;
   gap: 12px;
   padding: 12px 20px;
-  border-bottom: 1px solid #1e293b;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-surface);
 }
 .ralph-overview-toolbar > div {
   display: flex;
@@ -76,7 +105,15 @@
 .ralph-overview-toolbar button,
 .ralph-overview-add {
   padding: 0 12px;
-  border: 1px solid #334155;
+  border-color: var(--app-border-strong);
+  background: var(--app-surface-raised);
+  color: var(--app-text-soft);
+  font-size: 12px;
+  font-weight: 500;
+}
+.ralph-overview-toolbar button:hover:not(:disabled),
+.ralph-overview-add:hover:not(:disabled) {
+  color: var(--app-text);
 }
 .ralph-overview-content {
   min-height: 0;
@@ -96,11 +133,12 @@
   gap: 14px;
   width: 100%;
   padding: 14px;
-  border: 1px solid #164e63;
-  background: #0c182a;
+  border-color: color-mix(in srgb, var(--app-sky-500) 35%, var(--app-border));
+  background: var(--app-surface);
 }
-.ralph-overview button.ralph-overview-run:hover {
-  background: #12243a;
+.ralph-overview button.ralph-overview-run:hover:not(:disabled) {
+  border-color: var(--app-sky-500);
+  background: var(--app-hover);
 }
 .ralph-overview-flow-name,
 .ralph-overview-workspace {
@@ -117,31 +155,31 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #94a3b8;
+  color: var(--app-text-muted);
   font-size: 11px;
 }
 .ralph-overview-running-icon {
-  color: #38bdf8;
+  color: var(--ralph-overview-accent);
   animation: ralph-overview-spin 1.5s linear infinite;
 }
 .ralph-overview-status {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--app-text-muted);
   white-space: nowrap;
 }
 .ralph-overview-status[data-state="running"] {
-  color: #7dd3fc;
+  color: var(--ralph-overview-accent);
 }
 .ralph-overview-status[data-state="completed"] {
-  color: #6ee7b7;
+  color: var(--ralph-overview-success);
 }
 .ralph-overview-status[data-state="blocked"],
 .ralph-overview-status[data-state="abandoned"] {
-  color: #fcd34d;
+  color: var(--ralph-overview-warning);
 }
 .ralph-overview-status[data-state="crashed"],
 .ralph-overview-status[data-state="unknown"] {
-  color: #fda4af;
+  color: var(--ralph-overview-danger);
 }
 .ralph-overview-libraries {
   display: grid;
@@ -151,13 +189,14 @@
 }
 .ralph-overview-library {
   min-width: 0;
-  border: 1px solid #1e293b;
-  border-radius: 8px;
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
   overflow: hidden;
-  background: #080f20;
+  background: var(--app-surface);
 }
 .ralph-overview-library > header {
-  border-bottom: 1px solid #1e293b;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-surface-raised);
 }
 .ralph-overview-library > header > button {
   display: flex;
@@ -172,7 +211,7 @@
   gap: 4px;
 }
 .ralph-overview-library > header svg {
-  color: #94a3b8;
+  color: var(--app-text-muted);
 }
 .ralph-overview-library ul {
   list-style: none;
@@ -190,11 +229,11 @@
 }
 .ralph-overview-library li svg {
   width: 14px;
-  color: #64748b;
+  color: var(--app-text-muted);
 }
 .ralph-overview p.ralph-overview-empty {
   padding: 16px;
-  color: #94a3b8;
+  color: var(--app-text-muted);
 }
 .ralph-overview-error {
   display: flex;
@@ -202,7 +241,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 12px;
-  color: #fda4af;
+  color: var(--ralph-overview-danger);
   overflow-wrap: anywhere;
 }
 .ralph-overview-error button {
@@ -217,6 +256,9 @@
 @media (prefers-reduced-motion: reduce) {
   .ralph-overview-running-icon {
     animation: none;
+  }
+  .ralph-overview button {
+    transition: none;
   }
 }
 @media (max-width: 640px) {

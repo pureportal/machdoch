@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { build } from "vite";
 import react from "@vitejs/plugin-react";
@@ -57,6 +57,12 @@ beforeAll(async () => {
   await page.setContent(
     '<style>*{box-sizing:border-box}html,body,#root{height:100%;margin:0}body{font-family:system-ui}button{font:inherit;color:inherit;background:none;border:0}button,svg{vertical-align:middle}</style><div id="root"></div>',
   );
+  await page.addStyleTag({
+    content: await readFile(
+      new URL(import.meta.resolve("@machdoch/product-ui/theme.css")),
+      "utf8",
+    ),
+  });
   await page.addStyleTag({ content: styles });
   await page.addScriptTag({ content: script });
   await page.waitForSelector(".ralph-overview-run").catch((error: unknown) => {
