@@ -26,6 +26,7 @@ import { createCliInstructionCapabilityFromProbe } from "../provider-enrollment/
 import { hasUnpairedUtf16Surrogate } from "../../shared/unicode.ts";
 import type { ModelDrivenExecutionParams } from "./agent-runtime-types.ts";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.ts";
+import type { AgentToolExecutionResult } from "./agent-tools-shared.ts";
 import {
   assertWindowsCommandLineLength,
   maybeExecuteExternalAgentProviderTask,
@@ -889,6 +890,94 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     ]);
     expect(result?.executedTools).toEqual(["shell", "filesystem"]);
     await expect(fetch(endpoint)).rejects.toThrow();
+  });
+
+  it("publishes the completed answer without Stop when a tool stalls during shutdown", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    const diagnostic = vi.spyOn(console, "error").mockImplementation(() => {});
+    const controller = new AbortController();
+    const params = createParams(workspaceRoot);
+    params.signal = controller.signal;
+    let toolSignal: AbortSignal | undefined;
+    let release: ((result: AgentToolExecutionResult) => void) | undefined;
+    params.additionalToolDefinitions = [
+      {
+        spec: {
+          name: "fixture_stalled_tool",
+          description: "Wait",
+          inputSchema: { type: "object", additionalProperties: false },
+        },
+        backingTool: "utilities",
+        effect: "read",
+        riskLevel: "low",
+        execute: async (_args, context) => {
+          toolSignal = context.signal;
+          return new Promise<AgentToolExecutionResult>(
+            (resolve) => (release = resolve),
+          );
+        },
+      },
+    ];
+    const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+    const completed = vi.fn();
+    const completion = resultPromise.then(completed);
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    const childEnv = call.options.env as NodeJS.ProcessEnv;
+    const configuration = await readFile(
+      join(childEnv.CODEX_HOME!, "config.toml"),
+      "utf8",
+    );
+    const endpoint = JSON.parse(
+      configuration.match(/MACHDOCH_LOCAL_MCP_URL = ("[^"]+")/u)![1]!,
+    ) as string;
+    const token = JSON.parse(
+      configuration.match(/MACHDOCH_LOCAL_MCP_TOKEN = ("[^"]+")/u)![1]!,
+    ) as string;
+    const client = new Client({ name: "shutdown-fixture", version: "1" });
+    let toolCall: Promise<unknown> | undefined;
+    try {
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(endpoint), {
+          requestInit: { headers: { Authorization: `Bearer ${token}` } },
+        }) as unknown as Transport,
+      );
+      toolCall = client
+        .callTool({ name: "fixture_stalled_tool", arguments: {} })
+        .catch(() => undefined);
+      await waitForCondition(() => expect(release).toBeDefined());
+      writeStructuredAnswer(call, "The task is complete.");
+      call.child.emit("close", 0, null);
+      await vi.waitFor(() => expect(completed).toHaveBeenCalledOnce(), {
+        timeout: 10_000,
+      });
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "executed",
+        response: { markdown: "The task is complete." },
+        executedTools: ["shell"],
+      });
+      expect(controller.signal.aborted).toBe(false);
+      expect(toolSignal?.aborted).toBe(true);
+      expect(diagnostic).toHaveBeenCalledWith(
+        "Machdoch MCP shutdown timed out waiting for 1 tool call(s).",
+      );
+      await expect(fetch(endpoint)).rejects.toThrow();
+    } finally {
+      release?.({
+        toolResult: {
+          callId: "",
+          name: "fixture_stalled_tool",
+          output: "Late",
+        },
+        sections: [],
+        traceLines: [],
+      });
+      call.child.emit("close", 0, null);
+      await client.close();
+      await toolCall;
+      await completion;
+    }
   });
 
   it("starts Codex after a transient run-scoped capability probe", async () => {
