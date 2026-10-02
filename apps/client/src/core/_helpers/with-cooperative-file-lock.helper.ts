@@ -408,6 +408,20 @@ const formatLockTimeout = (
   return `${prefix} The lock was released while diagnostics were collected; retry the operation.`;
 };
 
+export class CooperativeFileLockTimeoutError extends Error {
+  readonly inspection: CooperativeFileLockInspection;
+
+  constructor(
+    inspection: CooperativeFileLockInspection,
+    timeoutMs: number,
+    options?: ErrorOptions,
+  ) {
+    super(formatLockTimeout(inspection, timeoutMs), options);
+    this.name = "CooperativeFileLockTimeoutError";
+    this.inspection = inspection;
+  }
+}
+
 const releaseOwnedLock = async (
   lockPath: string,
   token: string,
@@ -492,6 +506,7 @@ export const withCooperativeFileLock = async <T>(
       } catch (error) {
         if (await targetExists(lockPath)) {
           await quarantineAbandonedLock(lockPath, staleLockAgeMs);
+          if (!(await targetExists(lockPath))) continue;
         } else if (!(await targetExists(candidatePath))) {
           throw error;
         }
@@ -500,7 +515,7 @@ export const withCooperativeFileLock = async <T>(
           const inspection = await inspectCooperativeFileLock(destination, {
             staleLockAgeMs,
           });
-          throw new Error(formatLockTimeout(inspection, timeoutMs), {
+          throw new CooperativeFileLockTimeoutError(inspection, timeoutMs, {
             cause: error,
           });
         }

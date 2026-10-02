@@ -7,6 +7,7 @@ import {
   DesktopTaskRunProtocolError,
   getDesktopTaskRunFailure,
 } from "../../desktop-task-error";
+import { isSessionGoal } from "../../../../shared/goals.js";
 import type {
   DesktopTaskRunResponse,
   RecentDesktopTaskResult,
@@ -79,8 +80,12 @@ export const applyRecoveredTaskResult = (
   const execution = (result.outcome.response as DesktopTaskRunResponse)
     ?.execution;
   if (!execution) return session;
+  const goal = execution.metadata?.goal;
+  const goalMode = execution.metadata?.goalMode;
   return {
     ...session,
+    ...(goal === null || isSessionGoal(goal) ? { goal } : {}),
+    ...(goalMode === "machdoch" || goalMode === "native" ? { goalMode } : {}),
     updatedAt: timestamp,
     messages: [
       ...messages.map((message) =>

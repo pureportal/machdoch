@@ -3953,6 +3953,19 @@ const recoverInterruptedSessionTasks = (
 
   return {
     ...session,
+    ...(session.goal?.status === "active" &&
+    !session.messages.some((message) =>
+      activeTaskIds.has(getMessageTaskId(message)),
+    )
+      ? {
+          goal: {
+            ...session.goal,
+            status: "paused" as const,
+            reason: "Execution interrupted. Resume to continue.",
+            updatedAt: timestamp,
+          },
+        }
+      : {}),
     messages: nextMessages,
   };
 };
