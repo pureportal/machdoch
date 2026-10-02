@@ -21,11 +21,15 @@ impl Fixture {
     }
 
     fn job(&self, id: &str, status: &str) {
+        self.job_with_manifest(id, status, &FLUX_MANIFEST);
+    }
+
+    fn job_with_manifest(&self, id: &str, status: &str, manifest: &BuiltinModelManifest) {
         database::open(&self.paths)
             .unwrap()
             .execute(
                 "INSERT INTO media_model_install_jobs(id, model_id, revision, status, manifest_digest, license_digest, files_total, bytes_total, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
-                params![id, FLUX_MANIFEST.model_id, FLUX_MANIFEST.revision, status, manifest_digest(&FLUX_MANIFEST), FLUX_MANIFEST.license_digest, FLUX_MANIFEST.files.len() as i64, total_bytes(&FLUX_MANIFEST) as i64, database::now()],
+                params![id, manifest.model_id, manifest.revision, status, manifest_digest(manifest), manifest.license_digest, manifest.files.len() as i64, total_bytes(manifest) as i64, database::now()],
             )
             .expect("insert fixture job");
     }
@@ -36,6 +40,9 @@ impl Drop for Fixture {
         fs::remove_dir_all(&self.root).expect("remove fixture directory");
     }
 }
+
+#[path = "model_install_download_cancellation_tests.rs"]
+mod downloads;
 
 #[tokio::test]
 async fn cancellation_before_execution_settles_within_one_second() {
@@ -75,7 +82,7 @@ fn cancellation_before_activation_prevents_publication() {
     let stage = fixture.root.join("staging");
     fs::create_dir_all(&stage).unwrap();
     assert_eq!(
-        activate(&fixture.paths, "before-activation", &stage),
+        activate(&fixture.paths, "before-activation", &stage, &FLUX_MANIFEST),
         Err(CANCELED_SENTINEL.to_string())
     );
     mark_canceled(&fixture.paths, "before-activation").unwrap();
