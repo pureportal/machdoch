@@ -188,3 +188,68 @@ the race cases on baseline and candidate and complete broad verification when
 the build lock is available. Strict lifecycle review, process cleanup evidence,
 restart isolation, and non-Windows behavior remain unverified. No task state was
 modified.
+
+## Resumption checkpoint, 2026-10-02
+
+Task: `serialize-sequential-run-cancellation-with-child-start`.
+Active plan: `improvement-1cceca4aaec0d050ec7058ed828e736e`.
+Run: `2026-10-02T11-36-14-524Z`; supplied task attempts: 3;
+implementation-pass counter: 2 of 3. No lifecycle fields or counters were edited.
+
+The deferred portfolio `improvement-5a3148895e14f0fa1638aaab2d7ab701`
+still retains this task with attempts 2 and `count-verification-repair` outcome
+`LIMIT_REACHED` at limit 4. Its original checkpoint directory and logs listed
+above remain present and untouched. The current engine checkpoint is
+`.machdoch/ralph/runs/2026-10-02T11-36-14-524Z/checkpoints/0000000091-ecf4e4aa-0752-48b7-8d8d-d08a9aae907e.json`.
+Results for other tasks in that checkpoint or the supplied cache-exclusion review
+do not establish lifecycle acceptance.
+
+At HEAD `634a2accfef64013ad589425de3fd1fce6e4e382`, `manager.rs` is unchanged
+from Git and has SHA-256
+`8cf0c81b0328d43e80cef5ae80d0ed21361e7556508f7e020795424d2f83b39f`.
+The earlier statements that the admission fix is unimplemented are historical:
+the current source checks coordinator identity and cancellation under the manager
+lock during admission, and stop waits for child supervisors and coordinator removal.
+These observations are source inspection, not behavioral verification.
+
+Current test synchronization to retain for engine freeze:
+
+- `stopping_a_sequential_composite_waits_for_admission_cleanup` pauses the second
+  child before admission, waits up to 10 seconds for acknowledgement and 5 seconds
+  for coordinator cancellation, checks stop remains pending for 150 milliseconds,
+  then releases admission and requires stop completion within 10 seconds and no
+  second-child launch marker.
+- `restarting_a_sequential_composite_rejects_stale_child_admission` uses the same
+  admission and cancellation points and bounds, then requires exactly one launch
+  marker from the replacement and stops it.
+- `sequential_composite_continues_after_a_successful_rapid_exit` covers successful
+  rapid exit followed by a running second child and composite stop. The coordinator
+  identity predicate also has an existing unit test.
+
+The supplied engine baseline ran the selected combined command and exited 1 during
+`whisper-rs-sys v0.15.0` compilation. A local unchanged-source observation from
+`apps/client`, at 12:29:19.671Z through 12:29:39.886Z, reproduced that failure:
+
+```powershell
+cargo test --manifest-path src-tauri/Cargo.toml --lib workspace_run::manager::tests; if (-not $?) { exit 1 }; cargo check --manifest-path src-tauri/Cargo.toml --lib; if (-not $?) { exit 1 }
+```
+
+The local process used `CARGO_TARGET_DIR=apps/client/target/ralph-verification`.
+`VULKAN_SDK` is unset in process, user, and machine environments; the standard
+`C:/VulkanSDK`, `C:/Program Files/VulkanSDK`, and
+`C:/Program Files (x86)/VulkanSDK` directories are absent, and `glslc` is not on PATH.
+The build script reports: `Please install Vulkan SDK and ensure that VULKAN_SDK env variable is set`.
+No tests or supervised child fixtures executed; `cargo check` was skipped by the
+command's failure guard. Child termination, reaping, and shutdown timing therefore
+have no new process evidence. Logs and local observation metadata are retained at
+`apps/client/target/sequential-cancellation-resumption-2026-10-02/` as
+`stdout.log`, `stderr.log`, and `observation.json`; these are not engine acceptance.
+
+Resume after the native Vulkan build prerequisite is restored. Have the engine
+freeze identical baseline/candidate commands, synchronization points, shutdown
+bounds, and process outcomes, including the cancellation-after-admission and
+ordinary readiness-ordering cases proposed above. Execute the cases and collect
+PID termination/reaping evidence before treating the prerequisite as complete or
+implementing dependent failure reporting. This pass made no production or test
+changes, installed no dependencies, and started no servers. The task remains
+behaviorally inconclusive; only this resumption record was updated.
