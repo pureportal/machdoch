@@ -268,7 +268,7 @@ describe("withCooperativeFileLock", () => {
 
         await expect(
           withCooperativeFileLock(destination, async () => "refreshed", {
-            timeoutMs: 1_000,
+            timeoutMs: 1,
           }),
         ).resolves.toBe("refreshed");
         await expect(

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -197,6 +197,21 @@ describe("goal lifecycle", () => {
     expect((await read()).goal?.status).toBe("budget-limited");
     expect(execute).toHaveBeenCalledTimes(2);
   });
+  it("pauses repeated work even when the evaluator keeps changing its next step", async () => {
+    let evaluations = 0;
+    const execute = vi.fn<GoalTurnExecutor>(
+      async (_task, _config, turnOptions) =>
+        turnOptions.resultProtocol
+          ? {
+              ...evaluation("continue"),
+              summary: `Try another check ${++evaluations}.`,
+            }
+          : result(),
+    );
+    await run("/goal Fix auth", execute);
+    expect((await read()).goal).toMatchObject({ status: "paused", turns: 4 });
+    expect(execute).toHaveBeenCalledTimes(8);
+  });
   it("continues until an independent evaluator verifies the full objective", async () => {
     let passes = 0;
     const execute = vi.fn(
@@ -323,6 +338,79 @@ describe("goal lifecycle", () => {
     options.conversationContext!.sessionId = randomUUID();
     expect((await run("/goal")).metadata?.goal).toBeNull();
   });
+  it("pauses an interrupted goal when its status is read after restart", async () => {
+    await run("/goal Fix auth");
+    const path = getGoalPath(
+      directory,
+      options.conversationContext!.sessionId!,
+    );
+    await updateGoalRecord(path, (record) => ({
+      ...record,
+      goal: { ...record.goal!, status: "active" },
+    }));
+    const execute = vi.fn(async () => result());
+    expect((await run("/goal", execute)).metadata?.goal).toMatchObject({
+      status: "paused",
+      objective: "Fix auth",
+      turns: 1,
+    });
+    expect((await read()).goal?.status).toBe("paused");
+    expect(execute).not.toHaveBeenCalled();
+    await run("/goal resume");
+    expect((await read()).goal).toMatchObject({ status: "complete", turns: 2 });
+  });
+  it("recovers an orphaned run lock and retries the same goal without resetting its budget", async () => {
+    await run("/goal --turns 2 Fix auth");
+    const path = getGoalPath(
+      directory,
+      options.conversationContext!.sessionId!,
+    );
+    await updateGoalRecord(path, (record) => ({
+      ...record,
+      goal: { ...record.goal!, status: "active" },
+    }));
+    const savedGoal = (await read()).goal!;
+    const ownerDirectory = join(`${path}.run.machdoch.lock`, "owner.dead-run");
+    await mkdir(ownerDirectory, { recursive: true });
+    await writeFile(
+      join(ownerDirectory, "owner.json"),
+      JSON.stringify({ token: "dead-run", pid: 2_000_000_000 }),
+    );
+    await run("/goal --turns 2 Fix auth");
+    expect((await read()).goal).toMatchObject({
+      id: savedGoal.id,
+      status: "complete",
+      turnBudget: 2,
+      turns: 2,
+    });
+  });
+  it("replaces an interrupted goal when setting a different objective", async () => {
+    await run("/goal Fix auth");
+    const path = getGoalPath(
+      directory,
+      options.conversationContext!.sessionId!,
+    );
+    await updateGoalRecord(path, (record) => ({
+      ...record,
+      goal: { ...record.goal!, status: "active" },
+    }));
+    const savedGoal = (await read()).goal!;
+    await run("/goal Fix search");
+    expect((await read()).goal).toMatchObject({
+      objective: "Fix search",
+      status: "complete",
+      turns: 1,
+    });
+    expect((await read()).goal?.id).not.toBe(savedGoal.id);
+  });
+  it("pauses repeated outcomes even when the worker keeps calling tools", async () => {
+    const execute = vi.fn<GoalTurnExecutor>(
+      async (_task, _config, turnOptions) =>
+        turnOptions.resultProtocol ? evaluation("continue") : result(),
+    );
+    await run("/goal Fix auth", execute);
+    expect((await read()).goal).toMatchObject({ status: "paused", turns: 4 });
+  });
   it("rejects corrupt goal storage", async () => {
     const path = getGoalPath(
       config.workspaceRoot,
@@ -386,6 +474,10 @@ describe("goal interruption and limits", () => {
   });
   it("rejects a second runner without pausing the first", async () => {
     const { pending } = await waitForStart();
+    expect((await run("/goal")).metadata?.goal).toMatchObject({
+      status: "active",
+      turns: 1,
+    });
     await expect(run("Continue")).rejects.toThrow();
     expect((await read()).goal?.status).toBe("active");
     await expect(run("/goal Another objective")).rejects.toThrow("active");
@@ -442,6 +534,18 @@ describe("goal interruption and limits", () => {
       "Focus on the password reset tests",
     );
     expect(execute.mock.calls[0]![0]).toContain("Fix auth");
+  });
+
+  it("does not activate a goal when the request was already cancelled", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("Stopped by user."));
+    options.signal = controller.signal;
+    const execute = vi.fn(async () => result());
+    await expect(run("/goal Fix auth", execute)).rejects.toThrow(
+      "Stopped by user.",
+    );
+    expect((await read()).goal).toBeNull();
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it("keeps token accounting across work and evaluation", async () => {

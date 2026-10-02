@@ -9,11 +9,25 @@ import {
   type ChatSessionTaskOutcomeStatus,
 } from "../../chat-session.model";
 import { createInitialThinkingTrace } from "../../task-thinking.model";
+import { parseGoalCommand } from "../../../../core/goals/goal-command.js";
 import {
   createExecutionRetryPrompt,
   getPendingExecutionRetry,
 } from "./execution-retry";
 import { reconcileRecoveredTaskResults } from "./recovered-task-result";
+
+const activeGoal = {
+  id: "report-goal",
+  objective: "Build the report",
+  mode: "machdoch" as const,
+  status: "active" as const,
+  turns: 1,
+  tokensUsed: 20,
+  elapsedMs: 1_000,
+  reason: "",
+  createdAt: 100,
+  updatedAt: 200,
+};
 
 const failed = (
   status: ChatSessionTaskOutcomeStatus = "failed",
@@ -47,6 +61,18 @@ const failed = (
   });
 
 describe("automatic execution retries", () => {
+  it.each(["/goal --turns 3 -- Fix auth\nand verify tests", "/goal resume"])(
+    "preserves goal commands without adding diagnostics to the objective: %s",
+    (task) => {
+      const session = failed("crashed");
+      session.messages[0].executionAttempt!.task = task;
+      const retry = getPendingExecutionRetry(session, settings)!;
+      const prompt = createExecutionRetryPrompt(retry.attempt);
+      expect(prompt).toBe(task);
+      expect(parseGoalCommand(prompt)).toEqual(parseGoalCommand(task));
+    },
+  );
+
   it("does not restart historical failures without a recorded attempt", () => {
     const session = failed();
     delete session.messages[0].executionAttempt;
@@ -161,49 +187,88 @@ describe("automatic execution retries", () => {
     ).toBeNull();
   });
 
-  it("reconciles a completed native result before treating a reload as a crash", () => {
-    const state = { ...createInitialShellState(), sessions: [failed()] };
-    state.sessions[0].messages.pop();
-    const reconciled = reconcileRecoveredTaskResults(state, [
-      {
-        id: "task",
-        kind: "chat-run",
-        sessionId: "session",
-        workspaceRoot: "",
-        arguments: [],
-        startedAt: 100,
-        finishedAt: 200,
-        outcome: {
-          status: "succeeded",
-          response: {
-            execution: {
-              task: "Build the report",
-              mode: "machdoch",
-              status: "executed",
-              summary: "Report saved",
-              executedTools: [],
-              outputSections: [],
+  it.each([false, true])(
+    "recovers goal state while respecting a live desktop runner: %s",
+    (running) => {
+      const session = failed();
+      session.goal = { ...activeGoal };
+      session.messages.pop();
+      session.messages.push({
+        id: "thinking",
+        taskId: "task",
+        role: "agent",
+        content: "",
+        source: {
+          kind: "thinking",
+          thinking: createInitialThinkingTrace("machdoch", 100),
+        },
+      });
+      const recovered = recoverInterruptedTasksForLaunch(
+        { ...createInitialShellState(), sessions: [session] },
+        "restart",
+        300,
+        running ? ["task"] : [],
+      );
+      expect(recovered.sessions[0].goal).toMatchObject({
+        ...activeGoal,
+        status: running ? "active" : "paused",
+        updatedAt: running ? 200 : 300,
+        reason: running ? "" : "Execution interrupted. Resume to continue.",
+      });
+    },
+  );
+
+  it.each(["complete", "clear"])(
+    "reconciles a completed native result and goal %s before treating a reload as a crash",
+    (goalState) => {
+      const state = { ...createInitialShellState(), sessions: [failed()] };
+      state.sessions[0].goal = { ...activeGoal };
+      const completedGoal =
+        goalState === "clear" ? null : { ...activeGoal, status: "complete" };
+      state.sessions[0].messages.pop();
+      const reconciled = reconcileRecoveredTaskResults(state, [
+        {
+          id: "task",
+          kind: "chat-run",
+          sessionId: "session",
+          workspaceRoot: "",
+          arguments: [],
+          startedAt: 100,
+          finishedAt: 200,
+          outcome: {
+            status: "succeeded",
+            response: {
+              execution: {
+                task: "Build the report",
+                mode: "machdoch",
+                status: "executed",
+                summary: "Report saved",
+                executedTools: [],
+                outputSections: [],
+                metadata: { goal: completedGoal, goalMode: "machdoch" },
+              },
             },
           },
         },
-      },
-    ]);
-    const recovered = recoverInterruptedTasksForLaunch(
-      reconciled,
-      "reload",
-      300,
-      [],
-    );
-    expect(
-      getPendingExecutionRetry(recovered.sessions[0], settings),
-    ).toBeNull();
-    expect(recovered.sessions[0].messages.at(-1)?.content).toContain(
-      "Report saved",
-    );
-    expect(
-      recovered.sessions[0].messages.some(
-        (message) => message.source?.kind === "interrupted-task",
-      ),
-    ).toBe(false);
-  });
+      ]);
+      const recovered = recoverInterruptedTasksForLaunch(
+        reconciled,
+        "reload",
+        300,
+        [],
+      );
+      expect(
+        getPendingExecutionRetry(recovered.sessions[0], settings),
+      ).toBeNull();
+      expect(recovered.sessions[0].goal).toEqual(completedGoal);
+      expect(recovered.sessions[0].messages.at(-1)?.content).toContain(
+        "Report saved",
+      );
+      expect(
+        recovered.sessions[0].messages.some(
+          (message) => message.source?.kind === "interrupted-task",
+        ),
+      ).toBe(false);
+    },
+  );
 });

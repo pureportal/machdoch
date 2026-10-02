@@ -11,7 +11,10 @@ import {
 } from "./goal-store.js";
 import { commandResult, describeGoal } from "./goal-result.js";
 import { executeGoalRun, type GoalTurnExecutor } from "./run-goal.js";
-import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
+import {
+  CooperativeFileLockTimeoutError,
+  withCooperativeFileLock,
+} from "../_helpers/with-cooperative-file-lock.helper.js";
 
 export const executeWithSessionGoal = async (
   task: string,
@@ -49,6 +52,40 @@ export const executeWithSessionGoal = async (
     );
   }
   let record = await readGoalRecord(path);
+  if (
+    record.goal?.status === "active" &&
+    (command?.kind === "status" || command?.kind === "mode")
+  ) {
+    try {
+      record = await withCooperativeFileLock(
+        `${path}.run`,
+        () =>
+          updateGoalRecord(path, (current) => ({
+            ...current,
+            goal:
+              current.goal?.status === "active"
+                ? {
+                    ...current.goal,
+                    status: "paused",
+                    reason: "Execution interrupted. Resume to continue.",
+                    updatedAt: Date.now(),
+                  }
+                : current.goal,
+          })),
+        {
+          timeoutMs: 1_000,
+          ...(options.signal ? { signal: options.signal } : {}),
+        },
+      );
+    } catch (error) {
+      if (
+        !(error instanceof CooperativeFileLockTimeoutError) ||
+        !["active", "initializing"].includes(error.inspection.state)
+      )
+        throw error;
+      record = await readGoalRecord(path);
+    }
+  }
   if (
     selectedMode &&
     command?.kind !== "mode" &&
@@ -130,13 +167,23 @@ export const executeWithSessionGoal = async (
         record = await updateGoalRecord(path, (current) => {
           if (
             current.goal &&
-            !["complete", "paused", "blocked", "budget-limited"].includes(
-              current.goal.status,
-            )
+            ["active", "paused", "blocked"].includes(current.goal.status) &&
+            current.goal.objective === command.objective &&
+            current.goal.mode === mode &&
+            current.goal.tokenBudget === command.tokenBudget &&
+            current.goal.turnBudget === command.turnBudget &&
+            current.goal.timeBudgetMs === command.timeBudgetMs
           ) {
-            throw new Error(
-              "A goal is active. Pause or clear it before setting another.",
-            );
+            return {
+              ...current,
+              mode,
+              goal: {
+                ...current.goal,
+                status: "active",
+                reason: "",
+                updatedAt: Date.now(),
+              },
+            };
           }
           const timestamp = Date.now();
           return {
@@ -201,6 +248,10 @@ export const executeWithSessionGoal = async (
         !command,
       );
     },
-    { timeoutMs: 1, ownerDescription: "session goal runner" },
+    {
+      timeoutMs: 1_000,
+      ...(options.signal ? { signal: options.signal } : {}),
+      ownerDescription: "session goal runner",
+    },
   );
 };

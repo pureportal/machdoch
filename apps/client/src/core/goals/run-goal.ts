@@ -34,11 +34,6 @@ export const executeGoalRun = async (
 ): Promise<TaskExecutionResult> => {
   let goal = record.goal;
   if (!goal || goal.status !== "active") return execute(task, config, options);
-  if (!getAvailableGoalModes(config.provider).includes(goal.mode)) {
-    throw new Error(
-      "This goal uses an unavailable native provider. Select its provider or clear the goal.",
-    );
-  }
   const goalId = goal.id;
   const runStartedAt = Date.now();
   const elapsedBeforeRun = goal.elapsedMs;
@@ -54,6 +49,24 @@ export const executeGoalRun = async (
   let pendingPoll: Promise<void> | undefined;
   let pollFailure: Error | undefined;
   let limitReason: string | undefined;
+  let lastAccountingAt = runStartedAt;
+  const accountGoal = (snapshot: SessionGoal): SessionGoal => ({
+    ...snapshot,
+    elapsedMs: Math.max(
+      snapshot.elapsedMs,
+      elapsedBeforeRun + Math.max(0, Date.now() - runStartedAt),
+    ),
+    tokensUsed: Math.max(
+      snapshot.tokensUsed,
+      tokensBeforeRun +
+        Math.max(
+          0,
+          (recorder?.getTokenUsage().totalTokens ?? 0) -
+            tokensRecordedBeforeRun,
+        ),
+    ),
+    updatedAt: Date.now(),
+  });
   const checkRunLimit = (): void => {
     if (!goal || goal.id !== goalId || goal.status !== "active") return;
     if (
@@ -76,7 +89,20 @@ export const executeGoalRun = async (
   const poll = setInterval(() => {
     checkRunLimit();
     if (pendingPoll || signal.aborted) return;
-    pendingPoll = readGoalRecord(path)
+    pendingPoll = (
+      Date.now() - lastAccountingAt >= 5_000
+        ? updateGoalRecord(path, (current) => ({
+            ...current,
+            goal:
+              current.goal?.id === goalId && current.goal.status === "active"
+                ? accountGoal(current.goal)
+                : current.goal,
+          })).then((latest) => {
+            lastAccountingAt = Date.now();
+            return latest;
+          })
+        : readGoalRecord(path)
+    )
       .then((latest) => {
         if (latest.goal?.id !== goalId || latest.goal.status !== "active")
           abortController.abort("Goal stopped by user.");
@@ -101,37 +127,30 @@ export const executeGoalRun = async (
     ...(options.conversationContext?.history ?? []),
   ];
   let noProgressTurns = 0;
+  let previousOutcome: string | undefined;
   let runTurns = 0;
   const checkpoint = async (
     status: SessionGoal["status"],
     reason: string,
   ): Promise<void> => {
-    const usage = recorder?.getTokenUsage();
-    const updated: SessionGoal = {
-      ...goal!,
-      status,
-      reason: reason.slice(0, 12_000),
-      elapsedMs: elapsedBeforeRun + Math.max(0, Date.now() - runStartedAt),
-      tokensUsed:
-        tokensBeforeRun +
-        Math.max(0, (usage?.totalTokens ?? 0) - tokensRecordedBeforeRun),
-      updatedAt: Date.now(),
-    };
     record = await updateGoalRecord(path, (current) =>
       current.goal?.id === goalId
         ? {
             ...current,
-            goal:
-              current.goal.status === "active"
-                ? updated
-                : {
-                    ...updated,
-                    status: current.goal.status,
-                    reason: current.goal.reason,
-                  },
+            goal: accountGoal({
+              ...current.goal,
+              turns: goal!.turns,
+              status:
+                current.goal.status === "active" ? status : current.goal.status,
+              reason:
+                current.goal.status === "active"
+                  ? reason.slice(0, 12_000)
+                  : current.goal.reason,
+            }),
           }
         : current,
     );
+    lastAccountingAt = Date.now();
     goal = record.goal;
     await options.onStateChange?.({
       task,
@@ -165,6 +184,11 @@ export const executeGoalRun = async (
     });
   };
   try {
+    if (!getAvailableGoalModes(config.provider).includes(goal.mode)) {
+      throw new Error(
+        "This goal uses an unavailable native provider. Select its provider or clear the goal.",
+      );
+    }
     try {
       while (
         goal?.id === goalId &&
@@ -183,6 +207,9 @@ export const executeGoalRun = async (
             : `${task}\n\nContinue toward the active goal: ${JSON.stringify(goal.objective)}`;
         goal = { ...goal, turns: goal.turns + 1 };
         runTurns += 1;
+        await checkpoint("active", goal.reason);
+        if (!goal || goal.id !== goalId || goal.status !== "active") break;
+        signal.throwIfAborted();
         lastResult = await execute(directive, config, {
           ...options,
           signal,
@@ -279,7 +306,16 @@ export const executeGoalRun = async (
           typeof lastResult.metadata?.goalToolCallCount === "number"
             ? lastResult.metadata.goalToolCallCount
             : lastResult.executedTools.length;
-        noProgressTurns = toolActivity === 0 ? noProgressTurns + 1 : 0;
+        const outcome = JSON.stringify([
+          resultText(lastResult),
+          lastResult.metadata?.goalToolEvidence,
+          lastResult.outputSections,
+        ]);
+        noProgressTurns =
+          toolActivity === 0 || outcome === previousOutcome
+            ? noProgressTurns + 1
+            : 0;
+        previousOutcome = outcome;
         if (noProgressTurns >= 3 || goal.mode === "native") {
           await checkpoint(
             "paused",
