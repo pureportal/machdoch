@@ -1959,6 +1959,10 @@ export const MediaStudio = ({
           recipe: {
             ...current.recipe,
             modelId: imageModel.id,
+            outputFormat:
+              current.recipe.outputFormat === "svg"
+                ? "png"
+                : current.recipe.outputFormat,
             modelAddons: modelAddons.some(
               (selection) => selection.addonId === addonId,
             )
@@ -4818,22 +4822,29 @@ export const MediaStudio = ({
           ) : null}
           {loaded && state.activeSection === "train" ? (
             <MediaTrainView
+              models={activeModelCatalog.models}
               onImported={refreshModelCatalog}
               onUseAddon={useAddonInCreate}
-              canUseAddon={activeModelCatalog.models.some(
+              canUseAddon={(architecture) => activeModelCatalog.models.some(
                 (model) =>
+                  model.target === "local" &&
                   model.installed &&
-                  model.architecture === "krea-2" &&
+                  model.architecture === architecture &&
+                  model.addonCapabilities.some((capability) => capability.kind === "lora") &&
                   (runtimeStatus?.directGenerationModelIds ?? []).includes(
                     model.id,
                   ),
               )}
-              onFindModel={() =>
+              onFindModel={(architecture) => {
+                const model = activeModelCatalog.models.find(
+                  (candidate) => candidate.target === "local" && candidate.architecture === architecture,
+                );
+                setImportedResourceId(model?.id ?? null);
                 setState((current) => ({
                   ...current,
                   activeSection: "library",
-                }))
-              }
+                }));
+              }}
             />
           ) : null}
           {loaded && state.activeSection === "flow" ? (

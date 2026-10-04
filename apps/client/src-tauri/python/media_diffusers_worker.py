@@ -998,6 +998,7 @@ def _load_pipeline(
     model: dict[str, Any],
     *,
     flux2_inpainting: bool = False,
+    torch_dtype: Any | None = None,
 ) -> Any:
     architecture = _required_text(model, "architecture", 64)
     if architecture not in SUPPORTED_ARCHITECTURES:
@@ -1005,7 +1006,7 @@ def _load_pipeline(
     package_kind = _required_text(model, "packageKind", 64)
     model_path = _absolute_existing_path(model.get("path"), file=package_kind == "single-file")
     device, _, _ = _device(torch)
-    dtype = _pipeline_dtype(torch, device)
+    dtype = torch_dtype if torch_dtype is not None else _pipeline_dtype(torch, device)
     common = {
         "torch_dtype": dtype,
         "local_files_only": True,

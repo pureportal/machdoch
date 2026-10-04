@@ -491,6 +491,14 @@ pub(crate) fn terminate_child_process_tree_by_id(process_id: u32) -> bool {
         .unwrap_or(false)
 }
 
+#[cfg(unix)]
+pub(crate) fn terminate_child_process_tree_by_id(process_id: u32) -> bool {
+    let Ok(process_group) = i32::try_from(process_id) else {
+        return false;
+    };
+    process_group > 0 && unsafe { libc::kill(-process_group, libc::SIGKILL) == 0 }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
