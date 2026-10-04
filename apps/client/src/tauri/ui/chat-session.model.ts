@@ -3308,6 +3308,7 @@ const getLatestTerminalAgentMessageForTask = (
   taskId: string,
 ): ChatSessionMessage | null => {
   let latestThinkingMessage: ChatSessionMessage | null = null;
+  let interruptedMessage: ChatSessionMessage | null = null;
 
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
@@ -3329,10 +3330,15 @@ const getLatestTerminalAgentMessageForTask = (
       continue;
     }
 
+    if (message.source?.kind === "interrupted-task") {
+      interruptedMessage ??= message;
+      continue;
+    }
+
     return message;
   }
 
-  return latestThinkingMessage;
+  return interruptedMessage ?? latestThinkingMessage;
 };
 
 const getExecutionTaskOutcomeStatus = (
@@ -3360,6 +3366,12 @@ export const createTaskOutcomeFromExecution = (
 export const getMessageTaskOutcome = (
   message: ChatSessionMessage,
 ): ChatSessionTaskOutcome | null => {
+  if (
+    message.source?.kind === "execution" &&
+    (!message.outcome || message.outcome.status === "crashed")
+  ) {
+    return createTaskOutcomeFromExecution(message.source.execution);
+  }
   if (message.outcome) {
     return message.outcome;
   }
@@ -3372,10 +3384,6 @@ export const getMessageTaskOutcome = (
 
   if (source.kind === "interrupted-task") {
     return { status: "crashed" };
-  }
-
-  if (source.kind === "execution") {
-    return createTaskOutcomeFromExecution(source.execution);
   }
 
   if (source.kind === "thinking") {
@@ -3814,6 +3822,17 @@ const getInterruptedTaskIds = (
 
     const taskId = message.taskId ?? latestUserTaskId ?? message.id;
 
+    const existing = latestTerminalAgentMessageByTaskId.get(taskId);
+    if (
+      existing &&
+      existing.source?.kind !== "thinking" &&
+      existing.source?.kind !== "interrupted-task" &&
+      (message.source?.kind === "thinking" ||
+        message.source?.kind === "interrupted-task")
+    ) {
+      continue;
+    }
+
     latestTerminalAgentMessageByTaskId.set(taskId, message);
   }
 
@@ -3887,11 +3906,8 @@ const recoverInterruptedSessionTasks = (
     activeTaskIds,
   );
 
-  if (interruptedTaskIds.size === 0) {
-    return session;
-  }
-
   const messageTaskIds: string[] = [];
+  const completedExecutionTaskIds = new Set<string>();
   const lastMessageIndexByTaskId = new Map<string, number>();
   const hasCrashMessageByTaskId = new Map<string, boolean>();
   let latestUserTaskId: string | null = null;
@@ -3909,6 +3925,10 @@ const recoverInterruptedSessionTasks = (
     messageTaskIds[index] = taskId;
     lastMessageIndexByTaskId.set(taskId, index);
 
+    if (message.role === "agent" && message.source?.kind === "execution") {
+      completedExecutionTaskIds.add(taskId);
+    }
+
     if (
       message.role === "agent" &&
       message.source?.kind === "interrupted-task"
@@ -3919,16 +3939,23 @@ const recoverInterruptedSessionTasks = (
 
   const nextMessages: ChatSessionMessage[] = [];
   let crashMessageIndex = 0;
+  let removedStaleMessages = false;
 
   for (const [index, message] of session.messages.entries()) {
     const taskId = messageTaskIds[index] ?? getMessageTaskId(message);
     const isStaleRunningThinkingMessage =
-      interruptedTaskIds.has(taskId) &&
+      (interruptedTaskIds.has(taskId) ||
+        completedExecutionTaskIds.has(taskId)) &&
       message.role === "agent" &&
       message.source?.kind === "thinking" &&
       message.source.thinking.status === "running";
+    const isStaleCrashMessage =
+      completedExecutionTaskIds.has(taskId) &&
+      message.source?.kind === "interrupted-task";
 
-    if (!isStaleRunningThinkingMessage) {
+    if (isStaleRunningThinkingMessage || isStaleCrashMessage) {
+      removedStaleMessages = true;
+    } else {
       nextMessages.push(
         interruptedTaskIds.has(taskId) &&
           message.role === "user" &&
@@ -3961,6 +3988,10 @@ const recoverInterruptedSessionTasks = (
       );
       crashMessageIndex += 1;
     }
+  }
+
+  if (interruptedTaskIds.size === 0 && !removedStaleMessages) {
+    return session;
   }
 
   return {

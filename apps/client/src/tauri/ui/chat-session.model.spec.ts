@@ -120,7 +120,7 @@ describe("session goal state", () => {
 
   it("uses managed mode for unsupported providers and rejects malformed goal state", () => {
     const session = createSession({
-      provider: "codex-cli",
+      provider: "openai",
       goalMode: "native",
     });
     expect(session.goalMode).toBe("machdoch");
@@ -130,6 +130,74 @@ describe("session goal state", () => {
     });
     expect(restored.sessions[0]?.goal).toBeUndefined();
   });
+  it("preserves native Codex mode after saving and reloading", () => {
+    const session = createSession({
+      provider: "codex-cli",
+      goalMode: "native",
+    });
+    const restored = normalizeShellState({
+      ...createInitialShellState(),
+      sessions: [session],
+    });
+    expect(restored.sessions[0]?.goalMode).toBe("native");
+  });
+  it.each(["blocked", "executed", "cancelled"] as const)(
+    "keeps a final %s result authoritative over late progress and crash recovery",
+    (status) => {
+      const taskId = "goal-task";
+      const execution = {
+        ...createMockExecutionFixture("Finish intake"),
+        status,
+      };
+      const session = createSession({
+        messages: [
+          { id: taskId, taskId, role: "user", content: "Finish intake" },
+          {
+            id: `${taskId}-execution`,
+            taskId,
+            role: "agent",
+            content: "Goal stopped",
+            source: { kind: "execution", execution },
+            outcome: { status: "crashed" },
+          },
+          {
+            id: `${taskId}-late-thinking`,
+            taskId,
+            role: "agent",
+            content: "",
+            source: {
+              kind: "thinking",
+              thinking: createInitialThinkingTrace("machdoch", 2),
+            },
+          },
+          {
+            id: `${taskId}-stale-crash`,
+            taskId,
+            role: "agent",
+            content: "Task crashed",
+            source: {
+              kind: "interrupted-task",
+              status: "crashed",
+              reason: "inactive",
+            },
+            outcome: { status: "crashed" },
+          },
+        ],
+      });
+      const state = { ...createInitialShellState(), sessions: [session] };
+      expect(getSessionOverviewStatus(session)).toBe(
+        status === "executed" ? "done" : status,
+      );
+      expect(getLatestRunningTaskId(session)).toBeNull();
+      const recovered = recoverInactiveRunningTasks(state, [], 100);
+      const recoveredSession = recovered.sessions[0]!;
+      expect(recoveredSession.messages).toEqual(session.messages.slice(0, 2));
+      expect(getSessionOverviewStatus(recoveredSession)).toBe(
+        status === "executed" ? "done" : status,
+      );
+      expect(recoverInactiveRunningTasks(recovered, [], 101)).toBe(recovered);
+    },
+  );
 });
 
 describe("parallel agent session mode", () => {
