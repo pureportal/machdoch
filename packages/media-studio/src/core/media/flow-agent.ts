@@ -58,30 +58,64 @@ export function validateMediaAgentPoseMaps(
     throw new Error("The assistant returned invalid pose maps.");
   const ids = new Set<string>();
   const maps = value.map((entry: unknown) => {
-    if (!isRecord(entry) || Object.keys(entry).length !== 2 ||
-      typeof entry.id !== "string" || !/^[a-z0-9-]{1,64}$/u.test(entry.id) ||
-      ids.has(entry.id) || !isMediaPoseMap(entry.map))
+    if (
+      !isRecord(entry) ||
+      Object.keys(entry).length !== 2 ||
+      typeof entry.id !== "string" ||
+      !/^[a-z0-9-]{1,64}$/u.test(entry.id) ||
+      ids.has(entry.id) ||
+      !isMediaPoseMap(entry.map)
+    )
       throw new Error("The assistant returned an invalid pose map.");
     ids.add(entry.id);
     return { id: entry.id, map: entry.map };
   });
-  const poseSources = flow?.nodes.filter((node) =>
-    node.type === "source.image" && String(node.config.assetId ?? "").startsWith("pose-map:")) ?? [];
-  const referenced = new Set(poseSources.map((node) => String(node.config.assetId)));
-  if (referenced.size !== maps.length ||
-    maps.some((entry) => !referenced.has(`pose-map:${entry.id}`)))
-    throw new Error("Every generated pose map must be a connected pose source for an image task.");
+  const poseSources =
+    flow?.nodes.filter(
+      (node) =>
+        node.type === "source.image" &&
+        String(node.config.assetId ?? "").startsWith("pose-map:"),
+    ) ?? [];
+  const referenced = new Set(
+    poseSources.map((node) => String(node.config.assetId)),
+  );
+  if (
+    referenced.size !== maps.length ||
+    maps.some((entry) => !referenced.has(`pose-map:${entry.id}`))
+  )
+    throw new Error(
+      "Every generated pose map must be a connected pose source for an image task.",
+    );
   for (const source of poseSources) {
-    const targets = flow?.edges.filter((edge) =>
-      edge.fromNodeId === source.id && edge.fromPortId === "image" && edge.toPortId === "image")
-      .flatMap((edge) => flow.nodes.filter((node) =>
-        node.id === edge.toNodeId &&
-        (node.type === "task.generate-image" || node.type === "task.edit-image"))) ?? [];
+    const targets =
+      flow?.edges
+        .filter(
+          (edge) =>
+            edge.fromNodeId === source.id &&
+            edge.fromPortId === "image" &&
+            edge.toPortId === "image",
+        )
+        .flatMap((edge) =>
+          flow.nodes.filter(
+            (node) =>
+              node.id === edge.toNodeId &&
+              (node.type === "task.generate-image" ||
+                node.type === "task.edit-image"),
+          ),
+        ) ?? [];
     if (source.config.referenceRole !== "pose" || targets.length === 0)
-      throw new Error("Every generated pose map must be a connected pose source for an image task.");
-    const map = maps.find((entry) => source.config.assetId === `pose-map:${entry.id}`)?.map;
-    if (targets.some((target) => target.config.aspectRatio !== map?.aspectRatio))
-      throw new Error("A generated pose map must match the image task aspect ratio.");
+      throw new Error(
+        "Every generated pose map must be a connected pose source for an image task.",
+      );
+    const map = maps.find(
+      (entry) => source.config.assetId === `pose-map:${entry.id}`,
+    )?.map;
+    if (
+      targets.some((target) => target.config.aspectRatio !== map?.aspectRatio)
+    )
+      throw new Error(
+        "A generated pose map must match the image task aspect ratio.",
+      );
   }
   return maps;
 }
@@ -154,13 +188,13 @@ export function parseMediaAgentGraph(
       toPortId: edge.toPortId as string,
     };
   });
-  const flow: MediaFlow = {
+  const flow: MediaFlow = structuredClone({
     ...base,
     name: graph.name.trim(),
     nodes,
     edges,
     updatedAt: new Date().toISOString(),
-  };
+  });
   const unknownVariable = resolveMediaFlowVariables(flow).issues.find(
     (issue) => issue.code === "VARIABLE_REFERENCE_UNKNOWN",
   );
@@ -173,20 +207,46 @@ export function parseMediaAgentGraph(
 
 export function createMediaAgentNodeContext() {
   return listMediaNodeDefinitions().map(
-    ({ type, summary, inputs, outputs, fields }) => ({
+    ({ type, displayName, summary, inputs, outputs, fields }) => ({
       type,
+      displayName,
       summary,
       inputs,
       outputs,
       config: createDefaultMediaNodeConfig(type),
-      fields: fields.map(({ id, kind, min, max, options, required }) => ({
-        id,
-        kind,
-        min,
-        max,
-        required,
-        options: options?.map((option) => option.value),
-      })),
+      fields: fields.map(
+        ({
+          id,
+          label,
+          description,
+          kind,
+          min,
+          max,
+          step,
+          integer,
+          maxLength,
+          allowEmpty,
+          readOnly,
+          visibleWhen,
+          options,
+          required,
+        }) => ({
+          id,
+          label,
+          description,
+          kind,
+          min,
+          max,
+          step,
+          integer,
+          maxLength,
+          allowEmpty,
+          readOnly,
+          visibleWhen,
+          required,
+          options: options?.map((option) => option.value),
+        }),
+      ),
     }),
   );
 }
@@ -203,34 +263,44 @@ export function validateMediaAgentResources(
     );
     for (const field of getMediaNodeDefinition(node.type)?.fields ?? []) {
       const value = node.config[field.id];
-      if (
-        !value ||
-        JSON.stringify(value) === JSON.stringify(previous?.config[field.id])
-      )
-        continue;
-      if (
-        field.kind === "model" &&
-        typeof value === "string" &&
-        !request.models.some((model) => model.id === value)
-      ) {
-        throw new Error(`Unknown model: ${value}.`);
+      if (!value) continue;
+      const unchanged =
+        JSON.stringify(value) === JSON.stringify(previous?.config[field.id]);
+      const modelIds =
+        field.kind === "model" && typeof value === "string"
+          ? [value]
+          : field.kind === "model-priority" && Array.isArray(value)
+            ? value
+            : [];
+      if (!unchanged) {
+        for (const modelId of modelIds) {
+          if (!request.models.some((model) => model.id === modelId))
+            throw new Error(`Unknown model: ${modelId}.`);
+        }
       }
       if (
         field.kind === "asset" &&
         typeof value === "string" &&
-        !generatedPoseIds.some((id) => value === `pose-map:${id}`) &&
-        !request.assets.some((asset) => asset.id === value)
+        !generatedPoseIds.some((id) => value === `pose-map:${id}`)
       ) {
-        throw new Error(`Unknown asset: ${value}.`);
+        const asset = request.assets.find((entry) => entry.id === value);
+        if (!asset && !unchanged) throw new Error(`Unknown asset: ${value}.`);
+        if (asset && node.type === "source.image" && asset.kind !== "image")
+          throw new Error(`Choose an image asset: ${value}.`);
       }
       if (field.kind === "addons" && Array.isArray(value)) {
         for (const selection of value) {
-          if (
-            !isRecord(selection) ||
-            !request.addons.some((addon) => addon.id === selection.addonId)
-          ) {
+          if (!isRecord(selection))
+            throw new Error("The assistant selected an invalid model addon.");
+          const addon = request.addons.find(
+            (entry) => entry.id === selection.addonId,
+          );
+          if (!addon && !unchanged)
             throw new Error("The assistant selected an unknown model addon.");
-          }
+          if (addon && addon.kind !== selection.kind)
+            throw new Error(
+              "The assistant selected the wrong model addon type.",
+            );
         }
       }
     }

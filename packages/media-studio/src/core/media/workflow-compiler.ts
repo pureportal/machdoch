@@ -34,7 +34,19 @@ export const requiresWorkflowCompilation = (flow: MediaFlow): boolean =>
   flow.nodes.filter((node) =>
     ["task.generate-image", "task.edit-image"].includes(node.type),
   ).length > 1 ||
-  flow.nodes.filter((node) => node.type === "source.prompt").length > 1;
+  flow.nodes.filter((node) => node.type === "source.prompt").length > 1 ||
+  flow.edges.some(
+    (edge) =>
+      edge.toPortId === "image" &&
+      flow.nodes.some(
+        (node) =>
+          node.id === edge.toNodeId &&
+          ["task.generate-image", "task.edit-image"].includes(node.type),
+      ) &&
+      flow.nodes.some(
+        (node) => node.id === edge.fromNodeId && node.type !== "source.image",
+      ),
+  );
 
 export const isConnectedMediaFlow = (flow: MediaFlow): boolean =>
   requiresWorkflowCompilation(flow) ||
@@ -80,6 +92,7 @@ export function workflowTaskFlow(
   );
   const nodes: MediaFlowNode[] = [];
   const edges: MediaFlow["edges"] = [];
+  const sourceIds = new Map<string, string>();
   for (const [index, edge] of inputs.entries()) {
     const source = flow.nodes.find((node) => node.id === edge.fromNodeId);
     const type =
@@ -88,25 +101,33 @@ export function workflowTaskFlow(
         : edge.toPortId === "seed"
           ? "source.seed"
           : "source.image";
-    const config = {
-      ...createDefaultMediaNodeConfig(type),
-      ...(source?.type === type ? source.config : {}),
-    };
-    if (type === "source.prompt") config.prompt ||= "Workflow prompt";
-    if (type === "source.image")
-      config.assetId ||= `workflow-input:${edge.fromNodeId}:${edge.fromPortId}`;
-    const id = `workflow-input-${index}`;
-    nodes.push({
-      id,
-      type,
-      version: 1,
-      label: source?.label ?? "Input",
-      layer: "source",
-      config,
-    });
+    const sourceKey = JSON.stringify([edge.fromNodeId, edge.fromPortId]);
+    let id = sourceIds.get(sourceKey);
+    if (id === undefined) {
+      id = `workflow-input-${index}`;
+      if (id === task.id) id += "-source";
+      sourceIds.set(sourceKey, id);
+      const config = {
+        ...createDefaultMediaNodeConfig(type),
+        ...(source?.type === type ? structuredClone(source.config) : {}),
+      };
+      if (source?.type !== type) {
+        if (type === "source.prompt") config.prompt = "Workflow prompt";
+        if (type === "source.image")
+          config.assetId = `workflow-input:${edge.fromNodeId}:${edge.fromPortId}`;
+      }
+      nodes.push({
+        id,
+        type,
+        version: 1,
+        label: source?.label ?? "Input",
+        layer: "source",
+        config,
+      });
+    }
     edges.push({
       ...edge,
-      id,
+      id: `workflow-edge-${index}`,
       fromNodeId: id,
       fromPortId:
         type === "source.prompt"
@@ -130,8 +151,11 @@ export function workflowTaskFlow(
         toPortId: "last-frame",
       });
   }
-  nodes.push(task, {
-    id: "workflow-output",
+  let outputId = "workflow-output";
+  while (outputId === task.id || nodes.some((node) => node.id === outputId))
+    outputId += "-asset";
+  nodes.push(structuredClone(task), {
+    id: outputId,
     type: outputType,
     label: "Output",
     version: 1,
@@ -147,7 +171,7 @@ export function workflowTaskFlow(
     id: "workflow-output",
     fromNodeId: task.id,
     fromPortId: outputType === "output.video" ? "video" : "image",
-    toNodeId: "workflow-output",
+    toNodeId: outputId,
     toPortId: outputType === "output.video" ? "video" : "image",
   });
   return { ...flow, nodes, edges };
@@ -293,13 +317,14 @@ export function compileConnectedMediaFlow(
         error(node.id, "Use one ControlNet input per image generation.");
       const taskPlan = compileTask({
         ...input,
-        models: hasControlnet
-          ? input.models.filter(
-              (model) =>
-                model.providerId === "local-diffusers" &&
-                model.architecture === "stable-diffusion-1",
-            )
-          : input.models,
+        models: input.models.filter(
+          (model) =>
+            (!hasControlnet ||
+              (model.providerId === "local-diffusers" &&
+                model.architecture === "stable-diffusion-1")) &&
+            (!connectedMask ||
+              model.capabilities.includes("masked-image-edit")),
+        ),
         flow: workflowTaskFlow(effective, node),
       });
       diagnostics.push(
@@ -423,15 +448,25 @@ export function compileConnectedMediaFlow(
         );
     }
     if (
+      node.type === "task.generate-prompt" &&
+      effective.edges.some(
+        (edge) =>
+          edge.toNodeId === node.id &&
+          edge.toPortId === "prompt" &&
+          effective.nodes.some(
+            (source) =>
+              source.id === edge.fromNodeId &&
+              source.type === "source.prompt" &&
+              !String(source.config.prompt ?? "").trim(),
+          ),
+      )
+    )
+      error(node.id, "Enter a prompt.");
+    if (
       node.type === "operation.segment" &&
       !String(node.config.query ?? "").trim()
     )
       error(node.id, "Enter the object to select.");
-    if (
-      node.type === "source.prompt" &&
-      !String(node.config.prompt ?? "").trim()
-    )
-      error(node.id, "Enter a prompt.");
     if (
       node.type === "source.image" &&
       !String(node.config.assetId ?? "").trim()
