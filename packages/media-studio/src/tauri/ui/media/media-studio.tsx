@@ -3,6 +3,9 @@ import {
   openMediaModelProfile,
 } from "../../../core/media/open-model-profiles.js";
 import { useMediaStudioAutosave } from "./use-media-studio-autosave";
+import { createAudioRecipeFlow, readAudioRecipeSettings } from "../../../core/media/audio-flow.js";
+import { prepareAudioSubmission } from "./media-audio-execution.js";
+import { generateMediaAudio } from "./media-runtime.js";
 import { assessRemoteEditExecution } from "./media-remote-edit-assessment";
 import { useMediaGenerationTiming } from "./use-media-generation-timing";
 import {
@@ -205,7 +208,6 @@ import {
   listMediaAssets,
   listMediaRuns,
   planMediaAssetDeletion,
-  probeMediaLocalModel,
   retryMediaFixtureRun,
   resolveMediaHumanReview,
   resolveMediaProviderReview,
@@ -356,6 +358,11 @@ const recipeSnapshotFromRevision = (
   const target = readMediaGenerationTarget(revision.flow);
   const imageSettings = readMediaFlowImageSettings(revision.flow);
   const videoSettings = readMediaVideoRecipeSettings(revision.flow);
+  const savedAudioSettings = readAudioRecipeSettings(revision.flow);
+  const audioOperation = run.assets.find((asset) => asset.kind === "audio")?.operation;
+  const audioSettings = savedAudioSettings && audioOperation?.kind === "local-audio-generation"
+    ? { ...savedAudioSettings, modelId: audioOperation.modelId, seed: audioOperation.generation.output.seed }
+    : savedAudioSettings;
   let outputBranches: MediaImageOutputBranch[] = [];
   if (target === "image") {
     try {
@@ -375,7 +382,9 @@ const recipeSnapshotFromRevision = (
     planId: run.planId,
     prompt: readMediaFlowPrompt(revision.flow),
     modelId:
-      target === "video"
+      target === "audio"
+        ? (audioSettings?.modelId ?? null)
+        : target === "video"
         ? (videoSettings?.modelId ?? null)
         : (imageSettings?.modelId ?? null),
     modelLabel: run.modelLabel,
@@ -384,6 +393,7 @@ const recipeSnapshotFromRevision = (
     outputBranches,
     imageSettings,
     videoSettings,
+    ...(audioSettings ? { audioSettings } : {}),
     resultDestination: "assets",
   };
 };
@@ -580,7 +590,6 @@ export const MediaStudio = ({
   );
   const [providerReviewPending, setProviderReviewPending] = useState(false);
   const [humanReviewPending, setHumanReviewPending] = useState(false);
-  const [verifyingModelId, setVerifyingModelId] = useState<string | null>(null);
   const [modelCatalog, setModelCatalog] =
     useState<MediaModelCatalogSnapshot | null>(null);
   const [workspaceModelDiscovery, setWorkspaceModelDiscovery] =
@@ -854,30 +863,6 @@ export const MediaStudio = ({
     setModelCatalog(catalog);
     setRuntimeError(null);
   });
-
-  const verifyLocalModel = useCallback(
-    async (model: MediaModelDescriptor): Promise<void> => {
-      setVerifyingModelId(model.id);
-      try {
-        await probeMediaLocalModel(model.id);
-        await refreshModelCatalog();
-        setRuntimeError(null);
-      } catch (error: unknown) {
-        setRuntimeError(normalizeMediaError(error, "probe_local_model"));
-        await refreshModelCatalog();
-      } finally {
-        setVerifyingModelId(null);
-      }
-      void initializeMediaRuntime()
-        .then(setRuntimeStatus)
-        .catch((error: unknown) =>
-          setRuntimeError(
-            normalizeMediaError(error, "initialize_media_runtime"),
-          ),
-        );
-    },
-    [refreshModelCatalog],
-  );
 
   const refreshWorkspaceModels = useCallback((): void => {
     const normalizedWorkspaceRoot = workspaceRoot?.trim();
@@ -1237,6 +1222,7 @@ export const MediaStudio = ({
   ]);
   const models = activeModelCatalog.models;
   const recipeFlow = useMemo(() => {
+    if (state.target === "audio") return createAudioRecipeFlow({ id: basicImageFlowId, createdAt: draftCreatedAt, settings: state.audioRecipe });
     const settings = {
       ...state.recipe,
       prompt: normalizeMediaSubmissionText(state.recipe.prompt, 8_000),
@@ -1247,7 +1233,7 @@ export const MediaStudio = ({
       target: state.target,
       settings,
     });
-  }, [basicImageFlowId, draftCreatedAt, models, state.recipe, state.target]);
+  }, [basicImageFlowId, draftCreatedAt, models, state.recipe, state.audioRecipe, state.target]);
   const recipeLayout = useMemo(
     () => createMediaFlowLayout(recipeFlow),
     [recipeFlow],
@@ -1849,6 +1835,10 @@ export const MediaStudio = ({
     (model: MediaModelCatalogSnapshot["models"][number]): void => {
       const target = getMediaModelPrimaryGenerationTarget(model);
       if (!target) return;
+      if (target === "audio") {
+        setState((current) => ({ ...current, activeSection: "generate", target, audioRecipe: { ...current.audioRecipe, modelId: model.id } }));
+        return;
+      }
       setState((current) => ({
         ...current,
         activeSection: "generate",
@@ -3876,13 +3866,41 @@ export const MediaStudio = ({
       true,
     );
   }, [basicVideoDraft, localFlowPending, runVideoFlowDocument]);
+  const runAudioFlowDocument = useCallback((sourceFlow: MediaFlow, sourceLayout: MediaFlowLayout, basic: boolean): void => {
+    if (localFlowPending) return;
+    const preparation = setLocalFlowPending(true);
+    setRuntimeError(null);
+    const submittedFlow = normalizeMediaFlowForPersistence(sourceFlow);
+    const submittedLayout = normalizeMediaFlowLayoutForPersistence(sourceLayout);
+    const persist = basic ? persistBasicFlowRevision : persistFlowRevision;
+    void preparation.then(() => persist(submittedFlow, submittedLayout, "Pinned for audio generation"))
+      .then((saved) => {
+        if (!saved) return;
+        const runId = createRunId();
+        const submission = prepareAudioSubmission({ revision: saved.revision, models, runId,
+          mode: basic ? "basic" : "advanced", compiledAt: new Date().toISOString(), randomSeed: Math.floor(Math.random() * Number.MAX_SAFE_INTEGER) });
+        ++selectedRunDetailSequence.current;
+        selectedRunIdRef.current = runId;
+        setSelectedRunId(runId);
+        setSelectedRun(null);
+        if (!basic) setFlowRunOverlayId(runId);
+        enqueueMediaGeneration({ runId, recipe: submission.recipe,
+          execute: () => generateMediaAudio(submission.request), cancel: () => cancelMediaRun(runId) });
+      })
+      .catch((error: unknown) => setRuntimeError(normalizeMediaError(error, "media_generate_audio")))
+      .finally(() => setLocalFlowPending(false));
+  }, [localFlowPending, models, persistBasicFlowRevision, persistFlowRevision]);
   const runGeneration = useCallback(() => {
+    if (state.target === "audio") {
+      runAudioFlowDocument(recipeFlow, recipeLayout, true);
+      return;
+    }
     if (state.target === "video") {
       runQuickVideo();
       return;
     }
     runRecipeGeneration();
-  }, [runQuickVideo, runRecipeGeneration, state.target]);
+  }, [runQuickVideo, runRecipeGeneration, runAudioFlowDocument, recipeFlow, recipeLayout, state.target]);
   const selectRun = useCallback(
     (runId: string) => {
       const requestSequence = ++selectedRunDetailSequence.current;
@@ -4065,6 +4083,9 @@ export const MediaStudio = ({
             videoRecipe: recipe.videoSettings
               ? structuredClone(recipe.videoSettings)
               : current.videoRecipe,
+            audioRecipe: recipe.audioSettings
+              ? structuredClone(recipe.audioSettings)
+              : current.audioRecipe,
           }));
           return;
         }
@@ -4731,6 +4752,16 @@ export const MediaStudio = ({
               target={state.target}
               settings={state.recipe}
               videoSettings={state.videoRecipe}
+              audioSettings={state.audioRecipe}
+              audioGenerationSupported={runtimeStatus?.mode === "native" && runtimeStatus.localDiffusers.ready}
+              audioGenerationBlockedReason={
+                !runtimeStatus
+                  ? "Loading Media Studio…"
+                  : runtimeStatus.mode === "browser-preview"
+                    ? "Open the desktop app to generate audio."
+                    : null
+              }
+              onAudioSettingsChange={(audioRecipe) => setState((current) => ({ ...current, audioRecipe }))}
               assetMetadata={state.assetMetadata}
               categories={state.categories}
               plan={recipePlan}
@@ -4876,7 +4907,9 @@ export const MediaStudio = ({
                 onDismissImport={dismissFlowImport}
                 onExportRevision={exportCurrentFlowRevision}
                 onRunLocalFlow={
-                  isConnectedMediaFlow(flow)
+                  flow.nodes.some((node) => node.type === "task.generate-audio")
+                    ? () => runAudioFlowDocument(flow, layout, false)
+                    : isConnectedMediaFlow(flow)
                     ? runLocalFlow
                     : advancedLocalImageExecution.supported
                       ? runAdvancedLocalImageFlow
@@ -4886,14 +4919,24 @@ export const MediaStudio = ({
                 }
                 localRunPending={localFlowPending}
                 localRunSupported={
-                  isConnectedMediaFlow(flow)
+                  flow.nodes.some((node) => node.type === "task.generate-audio")
+                    ? plan.status === "ready" && runtimeStatus?.mode === "native" && runtimeStatus.localDiffusers.ready
+                    : isConnectedMediaFlow(flow)
                     ? localFlowExecution.supported
                     : advancedLocalImageExecution.supported ||
                       localFlowExecution.supported ||
                       videoFlowExecution.supported
                 }
                 localRunDescription={
-                  isConnectedMediaFlow(flow)
+                  flow.nodes.some((node) => node.type === "task.generate-audio")
+                    ? !runtimeStatus
+                      ? "Loading Media Studio…"
+                      : runtimeStatus.mode === "native"
+                        ? runtimeStatus.localDiffusers.ready
+                          ? plan.diagnostics.find((entry) => entry.severity === "error")?.message ?? ""
+                          : runtimeStatus.localDiffusers.diagnostic ?? "Set up Media Studio."
+                        : "Open the desktop app to generate audio."
+                    : isConnectedMediaFlow(flow)
                     ? localFlowExecution.reason
                     : advancedLocalImageExecution.supported
                       ? advancedLocalImageExecution.reason
@@ -4974,7 +5017,6 @@ export const MediaStudio = ({
               onDismissImport={dismissAssetImport}
               onUseModel={useModelInCreate}
               onSetupRuntime={() => void runtimeSetup.start()}
-              onVerifyModel={(model) => void verifyLocalModel(model)}
               onRefreshModels={async (removedResourceId) => {
                 if (removedResourceId) {
                   for (const job of mediaImportQueue.getSnapshot()) {
@@ -5031,7 +5073,6 @@ export const MediaStudio = ({
               onScanModels={refreshWorkspaceModels}
               runtimeSetup={runtimeSetup.status}
               runtimeReady={runtimeStatus?.localDiffusers.ready ?? false}
-              verifyingModelId={verifyingModelId}
               onUseAddon={useAddonInCreate}
               onUpdateTags={updateAssetTags}
               onSaveResource={async (resourceId, request, metadata) => {

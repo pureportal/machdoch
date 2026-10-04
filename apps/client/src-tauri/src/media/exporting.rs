@@ -77,6 +77,9 @@ fn prepare_export(
     let (bytes, expected_pixels) = match mode {
         MediaAssetExportMode::VerifiedOriginal => (original_bytes, None),
         MediaAssetExportMode::MetadataStripped => {
+            if mime_type == "audio/wav" {
+                return Err("WAV export requires verified-original mode.".to_string());
+            }
             if mime_type == "application/json" {
                 return Err("Report export requires verified-original mode".to_string());
             }
@@ -209,6 +212,7 @@ fn validate_destination(destination_path: &str, mime_type: &str) -> MediaResult<
         "image/webp" => extension == "webp",
         "image/svg+xml" => extension == "svg",
         "video/webm" => extension == "webm",
+        "audio/wav" => extension == "wav",
         "application/json" => extension == "json",
         _ => false,
     };

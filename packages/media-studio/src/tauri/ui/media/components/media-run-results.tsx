@@ -59,9 +59,13 @@ export const MediaRunResults = ({
                 <MediaAssetPreview
                   asset={asset}
                   maxEdge={512}
-                  controls={asset.kind === "video"}
+                  controls={asset.kind === "video" || asset.kind === "audio"}
                   fit="contain"
-                  className="aspect-video max-h-64 w-full rounded-lg"
+                  className={
+                    asset.kind === "audio"
+                      ? "w-full rounded-lg"
+                      : "aspect-video max-h-64 w-full rounded-lg"
+                  }
                 />
                 <Button
                   type="button"

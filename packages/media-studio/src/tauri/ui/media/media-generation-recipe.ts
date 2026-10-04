@@ -92,6 +92,7 @@ export const formatMediaImageRecipeOutput = (
 export const readMediaGenerationTarget = (
   flow: MediaFlow,
 ): MediaGenerationTarget => {
+  if (flow.nodes.some((node) => node.type === "task.generate-audio")) return "audio";
   if (flow.nodes.some((node) => node.type === "task.generate-video")) {
     return "video";
   }

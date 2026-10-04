@@ -47,7 +47,7 @@ describe("media model readiness", () => {
     });
   });
 
-  it("distinguishes acquisition, verification, and provider configuration", () => {
+  it("allows installed models without a separate model probe", () => {
     const flux = models().find(
       (model) => model.id === "local:flux-2-klein-4b",
     )!;
@@ -63,7 +63,10 @@ describe("media model readiness", () => {
         ...flux,
         runtimeReadiness: "unverified",
       }).issue,
-    ).toBe("verification-required");
+    ).toBeNull();
+    expect(isMediaModelReady({ ...flux, runtimeReadiness: "failed" })).toBe(
+      true,
+    );
 
     const remote = models().find(
       (model) => model.id === "openai:gpt-image-2.5-sunburst",

@@ -2656,5 +2656,157 @@
       }
     ],
     "excludedPaths": ["Duplicate weights, repository code and examples"]
+  },
+  {
+    "modelId": "local:audioldm2",
+    "excludedPaths": [],
+    "slug": "audioldm2",
+    "displayName": "AudioLDM 2",
+    "revision": "c8e7e189d324425c05c4c2f81214041ef4107983",
+    "sourceUrl": "https://huggingface.co/cvssp/audioldm2",
+    "downloadRoot": "https://huggingface.co/cvssp/audioldm2/resolve",
+    "licenseDigest": "ea09e056e8ef02ee75eb86e8052bf3bd9b36417f2b7b3090f3b1595c1da64aed",
+    "licenseName": "Creative Commons Attribution Non Commercial Share Alike 4.0",
+    "licenseSpdxId": "CC-BY-NC-SA-4.0",
+    "licenseSourceUrl": "https://huggingface.co/cvssp/audioldm2/resolve/c8e7e189d324425c05c4c2f81214041ef4107983/README.md",
+    "licenseRequiresAcceptance": true,
+    "packageDescription": "Pinned Diffusers package",
+    "files": [
+      {
+        "path": "README.md",
+        "byteSize": 5376,
+        "sha256": "ea09e056e8ef02ee75eb86e8052bf3bd9b36417f2b7b3090f3b1595c1da64aed"
+      },
+      {
+        "path": "feature_extractor/preprocessor_config.json",
+        "byteSize": 541,
+        "sha256": "9739f58296aa6f9ac18008fd0150fb2649bc554985fbde86d0a4041c882ac753"
+      },
+      {
+        "path": "language_model/config.json",
+        "byteSize": 902,
+        "sha256": "dfd666349774232748f24a9fcc71c1cec577af0b9a1a18846cedbc37bbbf87bb"
+      },
+      {
+        "path": "language_model/model.safetensors",
+        "byteSize": 497772432,
+        "sha256": "925012ada53083b40604540406b53570066b6d218380af45dd426fa531b875fb"
+      },
+      {
+        "path": "model_index.json",
+        "byteSize": 805,
+        "sha256": "b79d5e17a8ba73e1131c98daf52e9fab18f9dfa98648a13fbfe1ab79b5c0752e"
+      },
+      {
+        "path": "projection_model/config.json",
+        "byteSize": 173,
+        "sha256": "78d94ba74ecacd622e206e6d751810c7bebd46a70632c318ae159056f100058a"
+      },
+      {
+        "path": "projection_model/diffusion_pytorch_model.safetensors",
+        "byteSize": 4737688,
+        "sha256": "8d4d8b1233e8193c784ac7c99aed9f76b66312a9ddfe8b1bbad68fe03dd71bde"
+      },
+      {
+        "path": "scheduler/scheduler_config.json",
+        "byteSize": 507,
+        "sha256": "b6d79c593aa336438b0826c5c00273e3c773283f6df0f365d1e908a291ec5367"
+      },
+      {
+        "path": "text_encoder/config.json",
+        "byteSize": 801,
+        "sha256": "8680493b8b6622bf44565aaa69c80a9da28be20577bba2ef14095c845fdb1d17"
+      },
+      {
+        "path": "text_encoder/model.safetensors",
+        "byteSize": 776327432,
+        "sha256": "a4a47b4a637dd58e9edb7b64a06acf37328b7cc3eafb0b8a85df895cc9e45d09"
+      },
+      {
+        "path": "text_encoder_2/config.json",
+        "byteSize": 766,
+        "sha256": "45c375b0b91e81ff41960cac9e9c7bef294ca637fee1e3c40a8c12001190a0fd"
+      },
+      {
+        "path": "text_encoder_2/model.safetensors",
+        "byteSize": 1364951064,
+        "sha256": "c1d0c8f1c739db9343c12ea4b0e3f2c97a833b3c072c251e91d97b7326fefb4e"
+      },
+      {
+        "path": "tokenizer/merges.txt",
+        "byteSize": 456318,
+        "sha256": "1ce1664773c50f3e0cc8842619a93edc4624525b728b188a9e0be33b7726adc5"
+      },
+      {
+        "path": "tokenizer/special_tokens_map.json",
+        "byteSize": 280,
+        "sha256": "06e405a36dfe4b9604f484f6a1e619af1a7f7d09e34a8555eb0b77b66318067f"
+      },
+      {
+        "path": "tokenizer/tokenizer.json",
+        "byteSize": 2108774,
+        "sha256": "dc239041d98de27ffc3975473a1a23e3db4c937b23c138c38bbc66588bd247e5"
+      },
+      {
+        "path": "tokenizer/tokenizer_config.json",
+        "byteSize": 494,
+        "sha256": "41a59cba3ee32bd67c4822f8a4d715b980ac7050d82fa9161f7ed1ad40817dc5"
+      },
+      {
+        "path": "tokenizer/vocab.json",
+        "byteSize": 798293,
+        "sha256": "ed19656ea1707df69134c4af35c8ceda2cc9860bf2c3495026153a133670ab5e"
+      },
+      {
+        "path": "tokenizer_2/special_tokens_map.json",
+        "byteSize": 2201,
+        "sha256": "5c87151ef0f72a99d1f766a4c418bd2a1f90aaa30a8e22fe5eca9641daebb64f"
+      },
+      {
+        "path": "tokenizer_2/spiece.model",
+        "byteSize": 791656,
+        "sha256": "d60acb128cf7b7f2536e8f38a5b18a05535c9e14c7a355904270e15b0945ea86"
+      },
+      {
+        "path": "tokenizer_2/tokenizer.json",
+        "byteSize": 2422164,
+        "sha256": "d7af4599a1914d04aaf44839418757f40ccca4c78033edeba369484978378335"
+      },
+      {
+        "path": "tokenizer_2/tokenizer_config.json",
+        "byteSize": 2349,
+        "sha256": "a02a72019d4f2b43d4f3b438c653051f846ceab9fa71d8dbaa04aed12c62cd56"
+      },
+      {
+        "path": "unet/config.json",
+        "byteSize": 1514,
+        "sha256": "c5fbbbbe20b03c44e59c43176f806a28ff16c0c199f142fafb2173a50d09a23d"
+      },
+      {
+        "path": "unet/diffusion_pytorch_model.safetensors",
+        "byteSize": 1387964784,
+        "sha256": "359a5ffb89a844beb2fcfac584aae2cd7cd6e87c3ab1ec4e892ef45d91db77c2"
+      },
+      {
+        "path": "vae/config.json",
+        "byteSize": 559,
+        "sha256": "260633c192a61d95d6d6b61ccf34ffe28957a5cee87ccf1db5bdc07ea0f50f70"
+      },
+      {
+        "path": "vae/diffusion_pytorch_model.safetensors",
+        "byteSize": 221530308,
+        "sha256": "5f8ddddc5c45eddaab38a67a434e8a64486964540ba3fc248a0da7cbd599d4ad"
+      },
+      {
+        "path": "vocoder/config.json",
+        "byteSize": 654,
+        "sha256": "fbee5b8848af276ca526792091fa7bd7ce68941343be9accd6ca77013215c738"
+      },
+      {
+        "path": "vocoder/model.safetensors",
+        "byteSize": 221079092,
+        "sha256": "d9dc6513c30a5b86c2497712690c04fe74b4aa79fdab6d490b34fcb4e24c590c"
+      }
+    ]
   }
 ]

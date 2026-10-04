@@ -14,10 +14,19 @@ export type MediaVideoLoopMode =
   | "crossfade";
 export type MediaVideoQualityPresetId = "draft" | "quality" | "maximum";
 
-export const mediaVideoDimensionsError = (config: {
-  width?: unknown;
-  height?: unknown;
-}): string | null => {
+export const resolveMediaVideoSpatialMultiple = (
+  architecture?: MediaLocalModelArchitecture | null,
+): number =>
+  openMediaModelProfile(architecture)?.spatialMultiple ??
+  (architecture === "hunyuan-video-1.5-i2v" || architecture === "framepack-i2v"
+    ? 16
+    : 32);
+
+export const mediaVideoDimensionsError = (
+  config: { width?: unknown; height?: unknown },
+  architecture?: MediaLocalModelArchitecture | null,
+): string | null => {
+  const multiple = resolveMediaVideoSpatialMultiple(architecture);
   if ((config.width != null) !== (config.height != null))
     return "Enter both width and height.";
   if (
@@ -28,10 +37,10 @@ export const mediaVideoDimensionsError = (config: {
           !Number.isInteger(value) ||
           value < 128 ||
           value > 1536 ||
-          value % 32 !== 0),
+          value % multiple !== 0),
     )
   )
-    return "Video width and height must be multiples of 32 between 128 and 1536.";
+    return `Video width and height must be multiples of ${multiple} between 128 and 1536.`;
   return null;
 };
 
@@ -670,7 +679,7 @@ export const summarizeMediaVideoDelivery = (
   const fps = config.fps;
   const encodingQuality = config.encodingQuality;
   if (
-    mediaVideoDimensionsError(config) !== null ||
+    mediaVideoDimensionsError(config, architecture) !== null ||
     !["1:1", "16:9", "9:16", "21:9"].includes(String(aspectRatio)) ||
     !["preview-512", "quality-640", "quality-768", "quality-2k"].includes(
       String(resolution),

@@ -63,7 +63,12 @@ describe("Basic image model options", () => {
     expect(settings.seed).toBe(0);
   });
 
-  it.each(["flux-2", "krea-2", "qwen-image-2.1", "stable-diffusion-xl"] as const)(
+  it.each([
+    "flux-2",
+    "krea-2",
+    "qwen-image-2.1",
+    "stable-diffusion-xl",
+  ] as const)(
     "preserves compatible settings when switching to %s",
     (architecture) => {
       const selected = model(architecture, ["text-to-image"]);
@@ -96,7 +101,10 @@ describe("Basic image model options", () => {
   );
 
   it("uses Qwen image context without an edit strength control", () => {
-    const selected = model("qwen-image-2.1", ["text-to-image", "image-to-image"]);
+    const selected = model("qwen-image-2.1", [
+      "text-to-image",
+      "image-to-image",
+    ]);
     const settings = {
       ...DEFAULT_IMAGE_RECIPE_SETTINGS,
       baseImageAssetId: "base",
@@ -104,6 +112,13 @@ describe("Basic image model options", () => {
     expect(basicImageUsesEditStrength(settings, selected)).toBe(false);
     expect(defaultMediaImageSteps(selected.architecture, "balanced")).toBe(30);
   });
+
+  it.each(["fast", "balanced", "quality"] as const)(
+    "keeps Krea Turbo's distilled recipe for the %s policy",
+    (policy) => {
+      expect(defaultMediaImageSteps("krea-2", policy)).toBe(8);
+    },
+  );
 
   it("does not report resets for compatible defaults or clear image inputs", () => {
     const settings = {
@@ -205,10 +220,12 @@ describe("Basic image model options", () => {
     ).toMatch(/base image/);
     expect(basicImageModelError(settings, flux)).toBeNull();
     expect(basicImageReferenceLimit(settings, flux)).toBe(7);
-    expect(basicImageModelError(
-      { ...DEFAULT_IMAGE_RECIPE_SETTINGS, poseImageAssetId: "pose" },
-      model("krea-2", ["text-to-image"]),
-    )).toMatch(/local Stable Diffusion model/);
+    expect(
+      basicImageModelError(
+        { ...DEFAULT_IMAGE_RECIPE_SETTINGS, poseImageAssetId: "pose" },
+        model("krea-2", ["text-to-image"]),
+      ),
+    ).toMatch(/local Stable Diffusion model/);
   });
 
   it("keeps unsupported model options from being silently ignored", () => {
@@ -256,11 +273,41 @@ describe("Basic image model options", () => {
     ).toMatch(/guidance/);
   });
   it("does not apply a delayed pose preset after the generation setup changes", () => {
-    const selected = { ...DEFAULT_IMAGE_RECIPE_SETTINGS, modelId: "local:sd15", poseImageAssetId: null };
-    expect(basicPosePresetSelectionStillCurrent(selected, { ...selected, prompt: "A new prompt" }, "image")).toBe(true);
-    expect(basicPosePresetSelectionStillCurrent(selected, { ...selected, modelId: "local:sdxl" }, "image")).toBe(false);
-    expect(basicPosePresetSelectionStillCurrent(selected, { ...selected, aspectRatio: "9:16" }, "image")).toBe(false);
-    expect(basicPosePresetSelectionStillCurrent(selected, { ...selected, poseImageAssetId: "other" }, "image")).toBe(false);
-    expect(basicPosePresetSelectionStillCurrent(selected, selected, "video")).toBe(false);
+    const selected = {
+      ...DEFAULT_IMAGE_RECIPE_SETTINGS,
+      modelId: "local:sd15",
+      poseImageAssetId: null,
+    };
+    expect(
+      basicPosePresetSelectionStillCurrent(
+        selected,
+        { ...selected, prompt: "A new prompt" },
+        "image",
+      ),
+    ).toBe(true);
+    expect(
+      basicPosePresetSelectionStillCurrent(
+        selected,
+        { ...selected, modelId: "local:sdxl" },
+        "image",
+      ),
+    ).toBe(false);
+    expect(
+      basicPosePresetSelectionStillCurrent(
+        selected,
+        { ...selected, aspectRatio: "9:16" },
+        "image",
+      ),
+    ).toBe(false);
+    expect(
+      basicPosePresetSelectionStillCurrent(
+        selected,
+        { ...selected, poseImageAssetId: "other" },
+        "image",
+      ),
+    ).toBe(false);
+    expect(
+      basicPosePresetSelectionStillCurrent(selected, selected, "video"),
+    ).toBe(false);
   });
 });

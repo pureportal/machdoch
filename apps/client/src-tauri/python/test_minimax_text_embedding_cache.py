@@ -41,7 +41,7 @@ class MiniMaxTextEmbeddingCacheTests(unittest.TestCase):
 
         self.assertEqual(uncapped.shape, (1, 4, 1))
         self.assertEqual(capped.shape, (1, 2, 1))
-        self.assertEqual(set(self.encoder._cache), {
+        self.assertEqual(set(self.encoder._cache.keys()), {
             (self.caption, None), (self.caption, 2)})
         self.assertTrue(torch.equal(self.encoder.encode(self.caption, max_length=0), uncapped))
         self.assertTrue(torch.equal(self.encoder.encode(self.caption, max_length=2), capped))

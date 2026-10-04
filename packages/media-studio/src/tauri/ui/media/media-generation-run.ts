@@ -42,7 +42,9 @@ export const generationJobToRunDetail = (
     progress: job.progress,
     currentStep: job.currentStep,
     executor:
-      job.recipe.target === "video"
+      job.recipe.target === "audio"
+        ? "local-audio"
+        : job.recipe.target === "video"
         ? "local-video"
         : job.recipe.target === "svg"
           ? "svg-ai-pipeline"

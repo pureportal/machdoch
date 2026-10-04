@@ -143,12 +143,10 @@ interface MediaAssetsViewProps {
   onDismissImport: () => void;
   onUseModel: (model: MediaModelDescriptor) => void;
   onSetupRuntime: () => void;
-  onVerifyModel: (model: MediaModelDescriptor) => void;
   onRefreshModels: (removedResourceId?: string) => Promise<void>;
   onScanModels: () => void;
   runtimeSetup: MediaRuntimeSetupStatus;
   runtimeReady: boolean;
-  verifyingModelId: string | null;
   onUseAddon: (addonId: string) => void;
   onUseAsReference: (asset: MediaAssetRecord) => void;
   onUseAsPose: (asset: MediaAssetRecord) => void;
@@ -184,6 +182,7 @@ const FILTERS: ReadonlyArray<{ id: MediaAssetTypeFilter; label: string }> = [
   { id: "image", label: "Images" },
   { id: "openpose", label: "OpenPose" },
   { id: "video", label: "Videos" },
+  { id: "audio", label: "Audio" },
   { id: "svg", label: "SVGs" },
 ];
 
@@ -226,12 +225,10 @@ export const MediaAssetsView = ({
   onDismissImport,
   onUseModel,
   onSetupRuntime,
-  onVerifyModel,
   onRefreshModels,
   onScanModels,
   runtimeSetup,
   runtimeReady,
-  verifyingModelId,
   onUseAddon,
   onUseAsReference,
   onUseAsPose,
@@ -513,13 +510,26 @@ export const MediaAssetsView = ({
 
   const showResource = useCallback(
     (resourceId: string): boolean => {
-      const model = listMediaLibraryModels(catalog.models).find(
-        (item) => item.id === resourceId,
+      const model = catalog.models.find(
+        (item) =>
+          item.id === resourceId &&
+          item.lifecycle !== "removed" &&
+          (item.target === "local" || item.configured),
       );
       const addon = catalog.addons.find((item) => item.id === resourceId);
       if (!model && !addon) return false;
       setSelectedAssetId(null);
       setSelectedResourceId(resourceId);
+      if (model && !model.installed) {
+        if (model.management.acquisition === "managed-install") {
+          setSelectedResourceId(null);
+          setInstallModel(model);
+        } else if (model.management.acquisition === "file-import") {
+          setSelectedResourceId(null);
+          setImportPath(undefined);
+          setImportOpen(true);
+        }
+      }
       setFilter(
         model ? "model" : addon?.kind === "lora" ? "lora" : "embedding",
       );
@@ -944,21 +954,6 @@ export const MediaAssetsView = ({
                         >
                           {setupLabel}
                         </Button>
-                      ) : model.runtimeReadiness !== "runtime-unavailable" &&
-                        model.installed &&
-                        model.management.verification !== "none" ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => onVerifyModel(model)}
-                          disabled={setupActive || verifyingModelId !== null}
-                          className="w-full"
-                        >
-                          {verifyingModelId === model.id
-                            ? "Verifying…"
-                            : "Verify model"}
-                        </Button>
                       ) : null}
                     </div>
                   </article>
@@ -1169,9 +1164,15 @@ export const MediaAssetsView = ({
                             ) : (
                               <FileImage className="h-4 w-4 text-sky-300" />
                             )}
-                            <span className="truncate text-xs text-slate-400">
-                              {asset.width} × {asset.height}
-                            </span>
+                            {asset.kind === "audio" ? (
+                              <span className="text-xs text-slate-400">
+                                WAV
+                              </span>
+                            ) : (
+                              <span className="truncate text-xs text-slate-400">
+                                {asset.width} × {asset.height}
+                              </span>
+                            )}
                           </div>
                           <time
                             dateTime={asset.createdAt}
@@ -1290,7 +1291,6 @@ export const MediaAssetsView = ({
                 key={selectedResourceModel.id}
                 id={selectedResourceModel.id}
                 kind="model"
-                disabled={verifyingModelId !== null}
                 onRemoved={async () => {
                   setSelectedResourceId(null);
                   await onRefreshModels(selectedResourceModel.id);
@@ -1352,22 +1352,6 @@ export const MediaAssetsView = ({
                     className="w-full"
                   >
                     {setupLabel}
-                  </Button>
-                ) : selectedResourceModel.runtimeReadiness !==
-                    "runtime-unavailable" &&
-                  selectedResourceModel.installed &&
-                  selectedResourceModel.management.verification !== "none" ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onVerifyModel(selectedResourceModel)}
-                    disabled={setupActive || verifyingModelId !== null}
-                    className="w-full"
-                  >
-                    {verifyingModelId === selectedResourceModel.id
-                      ? "Verifying…"
-                      : "Verify model"}
                   </Button>
                 ) : null}
               </div>

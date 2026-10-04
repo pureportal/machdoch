@@ -1282,7 +1282,7 @@ const productMediaModelSchema = z.strictObject({
 const productMediaAssetSchema = z.strictObject({
   id: identifier,
   runId: identifier,
-  kind: z.enum(["image", "video", "vector", "report"]),
+  kind: z.enum(["image", "video", "vector", "report", "audio"]),
   mimeType: z.string().max(80),
   byteSize: z.number().int().nonnegative(),
   width: z.number().int().nonnegative(),

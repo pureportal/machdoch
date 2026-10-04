@@ -49,19 +49,19 @@ fn worker_start_failure_is_persisted_and_removed_models_cannot_be_verified() {
     .unwrap();
     assert_eq!(failed.status, "failed");
     let mut catalog = database::get_model_catalog(&paths, &HashSet::new()).unwrap();
-    annotate_catalog_readiness(&paths, &runtime, &mut catalog.models).unwrap();
+    annotate_catalog_readiness(&runtime, &mut catalog.models);
     let stored = catalog
         .models
         .iter()
         .find(|entry| entry.id == result.model_id)
         .unwrap();
     assert!(stored.installed);
-    assert_eq!(stored.runtime_readiness, "failed");
+    assert_eq!(stored.runtime_readiness, "ready");
+    assert!(stored.runtime_readiness_diagnostic.is_none());
     assert_eq!(
-        stored.runtime_readiness_diagnostic.as_deref(),
-        Some(failed.diagnostic.as_str())
+        runnable_model_ids(&paths, &runtime).unwrap(),
+        [model.id.clone()]
     );
-    assert!(runnable_model_ids(&paths, &runtime).unwrap().is_empty());
     let components = paths.models_root().unwrap().join("components/krea-2");
     fs::create_dir_all(&components).unwrap();
     fs::write(components.join("shared-weights"), b"shared model data").unwrap();
@@ -174,7 +174,7 @@ fn playwright_model_store() {
                 "media_get_model_catalog" => {
                     let status = runtime.get_or_insert_with(|| probe_python(&python, &script));
                     let mut catalog = database::get_model_catalog(&paths, &HashSet::new())?;
-                    annotate_catalog_readiness(&paths, status, &mut catalog.models)?;
+                    annotate_catalog_readiness(status, &mut catalog.models);
                     serde_json::to_value(catalog)
                 }
                 "media_initialize_runtime" => {

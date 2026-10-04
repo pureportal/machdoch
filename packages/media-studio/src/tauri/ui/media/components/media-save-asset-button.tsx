@@ -14,13 +14,15 @@ export const MediaSaveAssetButton = ({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const label =
-    asset.kind === "video"
-      ? "Save video"
-      : asset.kind === "vector"
-        ? "Save SVG"
-        : asset.kind === "report"
-          ? "Save report"
-          : "Save image";
+    asset.kind === "audio"
+      ? "Save audio"
+      : asset.kind === "video"
+        ? "Save video"
+        : asset.kind === "vector"
+          ? "Save SVG"
+          : asset.kind === "report"
+            ? "Save report"
+            : "Save image";
   const saveAsset = async (): Promise<void> => {
     setSaving(true);
     setError(null);
@@ -32,6 +34,7 @@ export const MediaSaveAssetButton = ({
         "image/webp": "webp",
         "image/svg+xml": "svg",
         "video/webm": "webm",
+        "audio/wav": "wav",
         "application/json": "json",
       }[asset.mimeType];
       const destinationPath = await save({

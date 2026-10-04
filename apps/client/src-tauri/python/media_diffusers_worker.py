@@ -24,12 +24,13 @@ import types
 from typing import Any
 
 PROCESS_STARTED_AT = time.monotonic()
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import numpy as np
 from PIL import Image, ImageOps
 import media_open_models
 
-WORKER_VERSION = "media-diffusers-worker/1.74.0"
+WORKER_VERSION = "media-diffusers-worker/1.75.0"
 # Disk group files contain only checkpoint/adapter tensors. Keep their
 # compatibility identity independent from response/provenance releases until
 # that serialization contract itself changes.
@@ -146,6 +147,7 @@ BASE_CAPABILITIES = (
     "periodic-wind-streaks",
     "text-to-svg",
     "image-to-svg",
+    "text-to-audio",
 )
 
 # Never resolve model components or custom Python code over the network.
@@ -2059,7 +2061,7 @@ def _steps(architecture: str, policy: str) -> int:
         # move the sample away from the checkpoint's trained trajectory.
         return 4
     if architecture == "krea-2":
-        return {"fast": 8, "balanced": 10, "quality": 12}[policy]
+        return 8
     if architecture == "qwen-image-2.1":
         return {"fast": 20, "balanced": 30, "quality": 40}[policy]
     return {"fast": 16, "balanced": 24, "quality": 32}[policy]
@@ -2606,7 +2608,7 @@ def _sampling_progress(index: int = 0, count: int = 1) -> Any:
     return callback
 
 
-def _enable_hunyuan_sampling_progress(pipeline: Any) -> None:
+def _enable_sampling_progress(pipeline: Any) -> None:
     original_progress_bar = pipeline.progress_bar
 
     @contextmanager
@@ -5305,7 +5307,7 @@ def _generate_hunyuan_video_15_latents_subprocess(
         performance["loopEndpointStrength"] = float(loop_endpoint_strength)
         performance["loopEndpointSpan"] = loop_endpoint_span
     pipeline.target_size = target_size
-    _enable_hunyuan_sampling_progress(pipeline)
+    _enable_sampling_progress(pipeline)
     model_ready_at = time.perf_counter()
     execution_device = torch.device(f"cuda:{torch.cuda.current_device()}")
     generator = torch.Generator(device=execution_device).manual_seed(seed)
@@ -6358,6 +6360,13 @@ def _wan_vae_tile_configuration(device_memory: int | None) -> dict[str, int]:
     }
 
 
+def _video_spatial_multiple(architecture: str) -> int:
+    profile = media_open_models.PROFILES.get(architecture)
+    if profile is not None:
+        return profile.get("spatialMultiple", 16)
+    return 16 if architecture in ("hunyuan-video-1.5-i2v", "framepack-i2v") else 32
+
+
 def _video_dimensions(
     aspect_ratio: str,
     resolution: str = "preview-512",
@@ -6428,7 +6437,7 @@ def _video_dimensions(
         raise WorkerError("Video aspectRatio must be 1:1, 16:9, 9:16, or 21:9")
     profile = media_open_models.PROFILES.get(architecture)
     if profile is not None:
-        multiple = profile.get("spatialMultiple", 16)
+        multiple = _video_spatial_multiple(architecture)
         return tuple((value + multiple - 1) // multiple * multiple for value in resolved)
     return resolved
 
@@ -9046,8 +9055,9 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
     if (requested_width is None) != (requested_height is None):
         raise WorkerError("Enter both video width and height")
     if requested_width is not None:
-        if any(not isinstance(value, int) or isinstance(value, bool) or not 128 <= value <= 1536 or value % 32 for value in (requested_width, requested_height)):
-            raise WorkerError("Video width and height must be multiples of 32 between 128 and 1536")
+        multiple = _video_spatial_multiple(architecture)
+        if any(not isinstance(value, int) or isinstance(value, bool) or not 128 <= value <= 1536 or value % multiple for value in (requested_width, requested_height)):
+            raise WorkerError(f"Video width and height must be multiples of {multiple} between 128 and 1536")
         width, height = requested_width, requested_height
     num_frames = request.get("numFrames")
     if architecture == "ltx-video":
@@ -9741,7 +9751,6 @@ def main() -> int:
     command = sys.argv[1] if len(sys.argv) == 2 else ""
     try:
         if command == "serve":
-            sys.path.insert(0, str(Path(__file__).resolve().parent))
             from media_model_server import serve
 
             return serve(sys.modules[__name__])
@@ -9776,6 +9785,14 @@ def main() -> int:
             torch, _ = _runtime()
             _emit(_svg_model_module().generate(request, torch))
             return 0
+        if command == "generate-audio":
+            from media_audio import generate as generate_audio
+
+            request = json.load(sys.stdin)
+            if not isinstance(request, dict):
+                raise WorkerError("Worker request must be a JSON object")
+            _emit(generate_audio(request, sys.modules[__name__]))
+            return 0
         if command == "render-source-anchored-loop":
             request = json.load(sys.stdin)
             if not isinstance(request, dict):
@@ -9808,7 +9825,7 @@ def main() -> int:
             return 0
         raise WorkerError(
             "Expected exactly one command: probe, verify-runtime, probe-model, generate, "
-            "generate-video, generate-svg, or render-source-anchored-loop"
+            "generate-video, generate-svg, generate-audio, or render-source-anchored-loop"
         )
     except WorkerError as error:
         _emit(

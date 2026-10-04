@@ -8,7 +8,6 @@ export interface MediaRuntimeSetupStatus {
     | "python"
     | "dependencies"
     | "verifying"
-    | "models"
     | "ready"
     | "failed";
   downloadPercent: number | null;
@@ -59,8 +58,6 @@ export const mediaRuntimeSetupLabel = (
       return "Installing components…";
     case "verifying":
       return "Checking Media Studio…";
-    case "models":
-      return "Checking models…";
     case "ready":
       return "Media Studio is ready";
     case "failed":

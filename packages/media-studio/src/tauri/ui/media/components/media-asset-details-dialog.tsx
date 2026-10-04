@@ -48,14 +48,12 @@ export const MediaAssetDetailsDialog = ({
           key={asset.id}
           asset={asset}
           maxEdge={2048}
-          controls={asset.kind === "video"}
+          controls={asset.kind === "video" || asset.kind === "audio"}
           fit="contain"
           className="h-[min(65dvh,720px)] min-h-48 w-full bg-slate-950"
         />
         <div className="min-w-0 space-y-4 border-t border-slate-800 p-4 lg:border-l lg:border-t-0">
-          <p className="text-xs text-slate-400">
-            {asset.width} × {asset.height}
-          </p>
+          {asset.kind !== "audio" ? <p className="text-xs text-slate-400">{asset.width} × {asset.height}</p> : null}
           <MediaSaveAssetButton key={`save-${asset.id}`} asset={asset} />
           {asset.kind === "image" ? (
             <div className="grid gap-2">

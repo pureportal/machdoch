@@ -122,6 +122,7 @@ def generate(request: dict[str, Any], worker: Any) -> dict[str, Any]:
         pipeline.to(device)
     if hasattr(pipeline.vae, "enable_tiling"):
         pipeline.vae.enable_tiling()
+    worker._enable_sampling_progress(pipeline)
     worker._progress("Generating video", 0.12)
     with torch.inference_mode():
         result = pipeline(**arguments)

@@ -7,8 +7,6 @@ export type MediaModelReadinessIssue =
   | "lifecycle-removed"
   | "provider-unconfigured"
   | "not-installed"
-  | "verification-required"
-  | "verification-failed"
   | "runtime-unavailable";
 
 export interface MediaModelReadiness {
@@ -53,18 +51,6 @@ export const inspectMediaModelReadiness = (
   }
 
   switch (model.runtimeReadiness) {
-    case "unverified":
-      return {
-        ready: false,
-        issue: "verification-required",
-        management: model.management,
-      };
-    case "failed":
-      return {
-        ready: false,
-        issue: "verification-failed",
-        management: model.management,
-      };
     case "runtime-unavailable":
       return {
         ready: false,
@@ -118,22 +104,6 @@ export const describeMediaModelReadiness = (
       return {
         message: `${model.displayName} is not installed on this device.`,
         action: "Browse Civitai to find a model.",
-      };
-    case "verification-required":
-      return {
-        message: `${model.displayName} has not passed a clean offline runtime verification on this device.`,
-        action:
-          model.management.verification === "runtime-probe"
-            ? "Probe the local runtime again."
-            : "Verify the model files.",
-      };
-    case "verification-failed":
-      return {
-        message: `${model.displayName} failed its most recent verification.`,
-        action:
-          model.management.verification === "runtime-probe"
-            ? "Retry the runtime check."
-            : "Retry verification when generation has finished.",
       };
     case "runtime-unavailable":
       return {

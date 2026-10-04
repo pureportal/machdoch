@@ -72,7 +72,7 @@ describe("media node registry", () => {
     const flow = createFlow();
 
     expect(validateMediaFlowNodes(flow)).toEqual([]);
-    expect(listMediaNodeDefinitions()).toHaveLength(36);
+    expect(listMediaNodeDefinitions()).toHaveLength(38);
     for (const definition of listMediaNodeDefinitions()) {
       expect(definition.version).toBe(1);
       expect(definition.fields.every((field) => "defaultValue" in field)).toBe(

@@ -103,12 +103,10 @@ const createProps = (overrides: Partial<Props> = {}): Props => ({
   onDismissImport: vi.fn(),
   onUseModel: vi.fn(),
   onSetupRuntime: vi.fn(),
-  onVerifyModel: vi.fn(),
   onRefreshModels: vi.fn(async () => undefined),
   onScanModels: vi.fn(),
   runtimeSetup: EMPTY_MEDIA_RUNTIME_SETUP,
   runtimeReady: false,
-  verifyingModelId: null,
   onUseAddon: vi.fn(),
   onUseAsReference: vi.fn(),
   onUseAsPose: vi.fn(),
@@ -351,7 +349,7 @@ describe("MediaAssetsView discovery", () => {
                 id: "unverified",
                 displayName: "Unverified import",
                 userImported: true,
-                runtimeReadiness: "unverified",
+                runtimeReadiness: "runtime-unavailable",
               },
             ],
           },
@@ -595,7 +593,6 @@ describe("MediaAssetsView asset actions", () => {
     };
     const onUseModel = vi.fn();
     const onSetupRuntime = vi.fn();
-    const onVerifyModel = vi.fn();
 
     render(
       createElement(
@@ -605,7 +602,6 @@ describe("MediaAssetsView asset actions", () => {
           catalog,
           onUseModel,
           onSetupRuntime,
-          onVerifyModel,
         }),
       ),
     );
@@ -663,9 +659,10 @@ describe("MediaAssetsView asset actions", () => {
       .closest("article");
     expect(unverifiedCard).not.toBeNull();
     fireEvent.click(
-      within(unverifiedCard!).getByRole("button", { name: "Verify model" }),
+      within(unverifiedCard!).getByRole("button", { name: "Use model" }),
     );
-    expect(onVerifyModel).toHaveBeenCalledWith(unverified);
+    expect(onUseModel).toHaveBeenLastCalledWith(unverified);
+    expect(screen.queryByRole("button", { name: "Verify model" })).toBeNull();
   });
 
   it("opens a newly imported resource after the catalog refreshes", async () => {
@@ -700,6 +697,26 @@ describe("MediaAssetsView asset actions", () => {
       screen.getByRole("button", { name: "Close asset details" }),
     ).toBeTruthy();
     expect(screen.getAllByText(importedModel.displayName)).toHaveLength(2);
+  });
+
+  it("opens the download when Basic requests an uninstalled model", async () => {
+    const onOpenResourceHandled = vi.fn();
+    render(
+      createElement(
+        MediaAssetsView,
+        createProps({
+          assets: [],
+          openResourceId: "local:audioldm2",
+          onOpenResourceHandled,
+        }),
+      ),
+    );
+    await waitFor(() => expect(onOpenResourceHandled).toHaveBeenCalledOnce());
+    expect(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Download model",
+      }),
+    ).toBeTruthy();
   });
 
   it("offers a direct retry when library metadata cannot be saved", () => {

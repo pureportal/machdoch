@@ -4,19 +4,14 @@ mod process;
 #[cfg(test)]
 mod tests;
 
-use std::{
-    collections::{HashMap, HashSet},
-    path::PathBuf,
-    sync::RwLock,
-};
+use std::{collections::HashMap, path::PathBuf, sync::RwLock};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use super::{
-    database,
     error::{command_result, MediaCommandResult},
-    provider_local_diffusers, MediaResult, MediaRuntimePaths, MediaRuntimeState,
+    provider_local_diffusers, MediaResult, MediaRuntimeState,
 };
 
 pub(crate) use installer::python_path;
@@ -74,7 +69,6 @@ pub(crate) enum SetupPhase {
     Python,
     Dependencies,
     Verifying,
-    Models,
     Ready,
     Failed,
 }
@@ -166,24 +160,7 @@ fn setup(app: &AppHandle) -> MediaResult<()> {
     *app.state::<MediaRuntimeState>()
         .local_diffusers_status
         .lock()
-        .map_err(|_| "Media runtime status is unavailable")? = Some(runtime.clone());
-    update(app, SetupStatus::running(SetupPhase::Models));
-    let paths = MediaRuntimePaths::resolve(app)?;
-    database::ensure_initialized(&paths)?;
-    let mut models = database::get_model_catalog(&paths, &HashSet::new())?.models;
-    provider_local_diffusers::annotate_catalog_readiness(&paths, &runtime, &mut models)?;
-    for model in models.iter().filter(|model| {
-        model.provider_id == "local-diffusers"
-            && model.installed
-            && model.runtime_readiness != "ready"
-    }) {
-        if let Err(error) = provider_local_diffusers::probe_model(app, &paths, &model.id) {
-            eprintln!(
-                "Media Studio model verification failed for {}: {error}",
-                model.id
-            );
-        }
-    }
+        .map_err(|_| "Media runtime status is unavailable")? = Some(runtime);
     update(app, SetupStatus::running(SetupPhase::Ready));
     Ok(())
 }

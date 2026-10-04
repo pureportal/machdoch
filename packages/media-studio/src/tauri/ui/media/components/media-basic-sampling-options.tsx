@@ -43,7 +43,7 @@ export const MediaBasicSamplingOptions = ({
     target === "image"
       ? mediaImageSamplingError(sampling)
       : target === "video"
-        ? mediaVideoDimensionsError(videoSettings)
+        ? mediaVideoDimensionsError(videoSettings, architecture)
         : null;
   const customSampling = Object.values(sampling).some((value) => value != null);
   if (

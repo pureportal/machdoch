@@ -8,6 +8,7 @@ import {
   readMediaImageSampling,
 } from "./image-sampling.js";
 import { createMediaFlowFingerprint } from "./canonicalize.js";
+import { compileAudioFlow } from "./audio-flow.js";
 import {
   compileConnectedMediaFlow,
   requiresWorkflowCompilation,
@@ -3187,6 +3188,8 @@ export const compileMediaFlow = ({
   addons = [],
   compiledAt,
 }: CompileMediaFlowInput): MediaCompiledPlan => {
+  if (flow.nodes.some((node) => node.type === "task.generate-audio"))
+    return compileAudioFlow({ flow, models, compiledAt });
   if (requiresWorkflowCompilation(flow))
     return compileConnectedMediaFlow(
       { flow, models, addons, compiledAt },
@@ -3774,7 +3777,7 @@ export const compileMediaFlow = ({
         ? "Playback rate must be an integer from 1 through 60 fps."
         : null,
       minimaxH3 && config.fps !== 24 ? "MiniMax H3 requires 24 fps." : null,
-      mediaVideoDimensionsError(config),
+      mediaVideoDimensionsError(config, videoModel?.architecture),
       !["preview-512", "quality-640", "quality-768", "quality-2k"].includes(
         String(config.resolution),
       )
