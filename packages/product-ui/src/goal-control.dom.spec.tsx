@@ -23,6 +23,62 @@ function GoalControl(
 afterEach(cleanup);
 
 describe("goal control", () => {
+  it("shows native availability for a provider with only managed goals", () => {
+    render(
+      <GoalControl
+        id="goal-input"
+        open
+        mode="machdoch"
+        modes={["machdoch"]}
+        running={false}
+        onClose={vi.fn()}
+        onModeChange={vi.fn()}
+        onCommand={vi.fn()}
+        onPause={vi.fn()}
+      />,
+    );
+    const mode = screen.getByRole<HTMLSelectElement>("combobox", {
+      name: "Goal mode",
+    });
+    expect(mode.value).toBe("machdoch");
+    expect(
+      screen.getByRole<HTMLOptionElement>("option", {
+        name: "Native (unavailable)",
+      }).disabled,
+    ).toBe(true);
+  });
+  it("starts in the newly selected mode instead of resuming the saved mode", () => {
+    const onCommand = vi.fn();
+    render(
+      <GoalControl
+        id="goal-input"
+        open
+        mode="native"
+        modes={["machdoch", "native"]}
+        goal={{
+          id: "goal",
+          objective: "Fix auth",
+          mode: "machdoch",
+          status: "blocked",
+          turns: 1,
+          tokensUsed: 10,
+          elapsedMs: 1,
+          reason: "Previous blocker",
+          createdAt: 1,
+          updatedAt: 1,
+        }}
+        running={false}
+        onClose={vi.fn()}
+        onModeChange={vi.fn()}
+        onCommand={onCommand}
+        onPause={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Resume goal" })).toBeNull();
+    expect(screen.queryByText("Previous blocker")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Start goal" }));
+    expect(onCommand).toHaveBeenCalledWith("/goal -- Fix auth");
+  });
   it("does not mark an open panel as an active goal", () => {
     const props = {
       open: true,

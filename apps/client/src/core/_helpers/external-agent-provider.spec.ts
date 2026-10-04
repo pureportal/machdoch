@@ -33,6 +33,7 @@ import {
 } from "./external-agent-provider.ts";
 import { createExternalAgentResultProtocolInstructions } from "./external-agent-result-protocol.ts";
 import { maybeExecuteModelDrivenTask } from "../agent-runtime.ts";
+import { runWithTaskModelUsageRecording } from "../model-usage.ts";
 
 interface MockChildProcess extends EventEmitter {
   pid: number;
@@ -511,6 +512,118 @@ afterEach(async () => {
 });
 
 describe("maybeExecuteExternalAgentProviderTask", () => {
+  it("runs native Codex goals through app-server until provider continuation finishes", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    const params = createParams(workspaceRoot, {
+      provider: "codex-cli",
+      model: "gpt-5.6-sol",
+      reasoning: "ultra",
+      contextWindow: 1_050_000,
+    });
+    params.nativeGoal = "All intake tests pass";
+    params.captureGoalEvidence = true;
+    const pending = runWithTaskModelUsageRecording(async () => {
+      const result = await maybeExecuteExternalAgentProviderTask(params);
+      if (!result) throw new Error("Native Codex execution was not selected.");
+      return result;
+    });
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    expect(call.args.slice(0, 3)).toEqual([
+      "app-server",
+      "--listen",
+      "stdio://",
+    ]);
+    expect(call.args).toContain("features.goals=true");
+    expect(call.args).toContain('model_reasoning_effort="ultra"');
+    expect(call.args).toContain("model_context_window=1050000");
+    expect(call.args).not.toContain("--ephemeral");
+    expect(call.args).not.toContain("--json");
+    expect(await readRunScopedSystemInstructions("codex-cli", call)).toContain(
+      "MACHDOCH-INSTRUCTION-ENVELOPE/1",
+    );
+    const emit = (event: Record<string, unknown>) =>
+      call.child.stdout.write(`${JSON.stringify(event)}\n`);
+    emit({ id: 1, result: {} });
+    emit({ id: 2, result: { thread: { id: "thread-1" } } });
+    emit({ id: 3, result: { goal: { status: "paused" } } });
+    emit({ id: 4, result: { turn: { id: "turn-1" } } });
+    emit({ id: 5, result: { goal: { status: "active" } } });
+    emit({
+      method: "item/completed",
+      params: {
+        threadId: "thread-1",
+        item: {
+          id: "test-1",
+          type: "commandExecution",
+          aggregatedOutput: "Every intake test passed.",
+          exitCode: 0,
+        },
+      },
+    });
+    emit({
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+        turn: { id: "turn-1", status: "completed" },
+      },
+    });
+    expect(call.child.stdin.writableEnded).toBe(false);
+    emit({
+      method: "turn/started",
+      params: { threadId: "thread-1", turn: { id: "turn-2" } },
+    });
+    emit({
+      method: "thread/goal/updated",
+      params: { threadId: "thread-1", goal: { status: "complete" } },
+    });
+    emit({
+      method: "item/completed",
+      params: {
+        threadId: "thread-1",
+        item: {
+          id: "answer",
+          type: "agentMessage",
+          text: "Intake is verified.",
+        },
+      },
+    });
+    emit({
+      method: "thread/tokenUsage/updated",
+      params: {
+        threadId: "thread-1",
+        tokenUsage: {
+          total: {
+            inputTokens: 100,
+            outputTokens: 20,
+            totalTokens: 120,
+            cachedInputTokens: 10,
+            reasoningOutputTokens: 5,
+          },
+        },
+      },
+    });
+    emit({
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+        turn: { id: "turn-2", status: "completed" },
+      },
+    });
+    expect(call.child.stdin.writableEnded).toBe(true);
+    call.child.emit("close", 0, null);
+    await expect(pending).resolves.toMatchObject({
+      status: "executed",
+      metadata: {
+        goalToolEvidence: expect.stringContaining("Every intake test passed."),
+        goalToolCallCount: 1,
+        modelUsage: {
+          totals: { modelCallCount: 2, totalTokens: 120 },
+        },
+      },
+    });
+  });
   it.each([
     ["codex-cli", "gpt-5.5", "MACHDOCH_CODEX_CLI_PATH"],
     ["claude-cli", "claude-opus-4-6", "MACHDOCH_CLAUDE_CLI_PATH"],

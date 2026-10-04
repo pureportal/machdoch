@@ -267,7 +267,7 @@ export const executeAgentCliInference = async (
 
     if (result.exitCode !== 0) {
       throw new Error(
-        `${providerLabel} internal inference failed: ${result.stderr || result.stdout || `exit code ${result.exitCode ?? "unknown"}`}`,
+        `${providerLabel} internal inference failed: ${result.failureMessage || result.stderr || result.stdout || `exit code ${result.exitCode ?? "unknown"}`}`,
       );
     }
 

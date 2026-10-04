@@ -136,8 +136,8 @@ describe.sequential("Fleet CLI product runtime", () => {
         command: {
           kind: "set-session-model",
           sessionId,
-          provider: "codex-cli",
-          model: "gpt-6-sol",
+          provider: "openai",
+          model: "gpt-5.5",
         },
       }),
     ).toMatchObject({ type: "commandAccepted" });

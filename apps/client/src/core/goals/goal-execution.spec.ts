@@ -756,10 +756,15 @@ describe("native goals", () => {
     await expect(run("/goal Fix auth")).rejects.toThrow("unavailable");
     await expect(run("/goal mode native")).rejects.toThrow("unavailable");
   });
-  it.each(["command", "submission"])(
-    "delegates a native goal from a %s to Claude and validates its result independently",
-    async (source) => {
-      config.provider = "claude-cli";
+  it.each([
+    ["claude-cli", "command"],
+    ["claude-cli", "submission"],
+    ["codex-cli", "command"],
+    ["codex-cli", "submission"],
+  ] as const)(
+    "delegates a native %s goal from a %s and validates its result independently",
+    async (provider, source) => {
+      config.provider = provider;
       options.conversationContext!.goalMode = "native";
       const execute = vi.fn(
         async (

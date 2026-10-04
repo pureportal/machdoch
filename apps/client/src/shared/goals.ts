@@ -27,7 +27,9 @@ export interface SessionGoal {
 }
 
 export const getAvailableGoalModes = (provider: string): readonly GoalMode[] =>
-  provider === "claude-cli" ? ["machdoch", "native"] : ["machdoch"];
+  provider === "claude-cli" || provider === "codex-cli"
+    ? ["machdoch", "native"]
+    : ["machdoch"];
 
 export const resolveGoalMode = (
   provider: string,
