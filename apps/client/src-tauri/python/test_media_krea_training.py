@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 
-RUNNER = Path(__file__).with_name("media_krea_training.py")
+RUNNER = Path(__file__).with_name("media_training.py")
 
 
 class LocalKreaTrainingTests(unittest.TestCase):
@@ -19,7 +19,8 @@ class LocalKreaTrainingTests(unittest.TestCase):
             job = root / "job"
             (job / "dataset").mkdir(parents=True)
             spec = {
-                "raw_model_path": str(root / "raw"),
+                "architecture": "krea-2",
+                "model": {"path": str(root / "raw")},
                 "trigger_phrase": "sks person",
                 "precision": "bf16",
                 "resolution": 768,
@@ -30,6 +31,7 @@ class LocalKreaTrainingTests(unittest.TestCase):
                 "attention_only": True,
                 "four_bit": four_bit,
                 "resume": False,
+                "seed": 42,
             }
             (job / "job.json").write_text(json.dumps(spec), encoding="utf-8")
             result = subprocess.run(
@@ -51,6 +53,7 @@ assert '--offload' in arguments
 assert '--cache_latents' in arguments
 assert '--skip_final_inference' in arguments
 assert '--skip_final_validation' not in arguments
+assert arguments[arguments.index('--seed') + 1] == '42'
 assert '--lora_layers' in arguments
 assert '--bnb_quantization_config_path' in arguments
 assert '--push_to_hub' not in arguments

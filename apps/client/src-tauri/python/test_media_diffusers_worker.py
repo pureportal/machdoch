@@ -23,6 +23,23 @@ SPEC.loader.exec_module(WORKER)
 
 
 class MediaDiffusersQualityTests(unittest.TestCase):
+    def test_training_precision_is_applied_when_loading_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            checkpoint = root / "checkpoint.safetensors"
+            checkpoint.write_bytes(b"checkpoint")
+            config = root / "config"
+            config.mkdir()
+            pipeline = SimpleNamespace()
+            loader = mock.Mock(return_value=pipeline)
+            diffusers = SimpleNamespace(StableDiffusionXLPipeline=SimpleNamespace(from_single_file=loader))
+            model = {"architecture": "stable-diffusion-xl", "packageKind": "single-file", "path": str(checkpoint), "configPath": str(config)}
+            with mock.patch.object(WORKER, "_device", return_value=("cuda", "test GPU", 0)), mock.patch.object(WORKER, "_pipeline_dtype") as inference_dtype:
+                self.assertIs(WORKER._load_pipeline(diffusers, object(), model, torch_dtype="bf16"), pipeline)
+                inference_dtype.assert_not_called()
+            self.assertEqual(loader.call_args.kwargs["torch_dtype"], "bf16")
+            self.assertTrue(loader.call_args.kwargs["local_files_only"])
+
     def test_qwen_image_21_loads_civitai_transformer_with_pinned_components(self) -> None:
         transformer_loader = mock.Mock(return_value=SimpleNamespace())
         pipeline_loader = mock.Mock(return_value=SimpleNamespace())

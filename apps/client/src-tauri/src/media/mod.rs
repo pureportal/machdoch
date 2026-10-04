@@ -22,7 +22,6 @@ mod flow;
 mod hardware;
 mod image_sampling;
 mod ingest;
-mod krea_training;
 mod local_flow;
 mod model_addon;
 mod model_components;
@@ -46,6 +45,7 @@ pub(crate) mod storage;
 mod storage_migration;
 mod subject_cutout;
 mod svg;
+mod training;
 mod transform;
 mod video_loop;
 mod worker_deadline;
@@ -3964,71 +3964,71 @@ pub(crate) async fn media_inspect_model_addon(
 }
 
 #[tauri::command]
-pub(crate) async fn media_inspect_krea_training_images(
+pub(crate) async fn media_inspect_training_images(
     paths: Vec<PathBuf>,
-) -> MediaCommandResult<Vec<krea_training::KreaTrainingImageInspection>> {
-    let result = tauri::async_runtime::spawn_blocking(move || krea_training::inspect_images(paths))
+) -> MediaCommandResult<Vec<training::TrainingImageInspection>> {
+    let result = tauri::async_runtime::spawn_blocking(move || training::inspect_images(paths))
         .await
         .map_err(|error| format!("Image inspection failed: {error}"))
         .and_then(|result| result);
-    command_result("media_inspect_krea_training_images", result)
+    command_result("media_inspect_training_images", result)
 }
 
 #[tauri::command]
-pub(crate) async fn media_submit_krea_training(
+pub(crate) async fn media_submit_training(
     app: AppHandle,
-    request: krea_training::KreaTrainingRequest,
-) -> MediaCommandResult<krea_training::KreaTrainingJob> {
+    request: training::TrainingRequest,
+) -> MediaCommandResult<training::TrainingJob> {
     let result = match MediaRuntimePaths::resolve(&app) {
-        Ok(paths) => tauri::async_runtime::spawn_blocking(move || {
-            krea_training::submit(&app, &paths, request)
-        })
-        .await
-        .map_err(|error| format!("Training worker failed: {error}"))
-        .and_then(|result| result),
+        Ok(paths) => {
+            tauri::async_runtime::spawn_blocking(move || training::submit(&app, &paths, request))
+                .await
+                .map_err(|error| format!("Training worker failed: {error}"))
+                .and_then(|result| result)
+        }
         Err(error) => Err(error),
     };
-    command_result("media_submit_krea_training", result)
+    command_result("media_submit_training", result)
 }
 
 #[tauri::command]
-pub(crate) async fn media_get_krea_training_status(
+pub(crate) async fn media_get_training_status(
     app: AppHandle,
     request_id: String,
-) -> MediaCommandResult<krea_training::KreaTrainingStatus> {
-    let result = MediaRuntimePaths::resolve(&app)
-        .and_then(|paths| krea_training::status(&paths, &request_id));
-    command_result("media_get_krea_training_status", result)
+) -> MediaCommandResult<training::TrainingStatus> {
+    let result =
+        MediaRuntimePaths::resolve(&app).and_then(|paths| training::status(&paths, &request_id));
+    command_result("media_get_training_status", result)
 }
 
 #[tauri::command]
-pub(crate) async fn media_cancel_krea_training(
+pub(crate) async fn media_cancel_training(
+    app: AppHandle,
+    request_id: String,
+) -> MediaCommandResult<()> {
+    let result =
+        MediaRuntimePaths::resolve(&app).and_then(|paths| training::cancel(&paths, &request_id));
+    command_result("media_cancel_training", result)
+}
+
+#[tauri::command]
+pub(crate) async fn media_resume_training(
     app: AppHandle,
     request_id: String,
 ) -> MediaCommandResult<()> {
     let result = MediaRuntimePaths::resolve(&app)
-        .and_then(|paths| krea_training::cancel(&paths, &request_id));
-    command_result("media_cancel_krea_training", result)
+        .and_then(|paths| training::resume(&app, &paths, &request_id));
+    command_result("media_resume_training", result)
 }
 
 #[tauri::command]
-pub(crate) async fn media_resume_krea_training(
+pub(crate) async fn media_finish_training(
     app: AppHandle,
     request_id: String,
 ) -> MediaCommandResult<()> {
     let result = MediaRuntimePaths::resolve(&app)
-        .and_then(|paths| krea_training::resume(&app, &paths, &request_id));
-    command_result("media_resume_krea_training", result)
-}
-
-#[tauri::command]
-pub(crate) async fn media_finish_krea_training(
-    app: AppHandle,
-    request_id: String,
-) -> MediaCommandResult<()> {
-    let result = MediaRuntimePaths::resolve(&app)
-        .and_then(|paths| krea_training::remove_job(&paths, &request_id));
-    command_result("media_finish_krea_training", result)
+        .and_then(|paths| training::remove_job(&paths, &request_id));
+    command_result("media_finish_training", result)
 }
 
 #[tauri::command]

@@ -1,5 +1,5 @@
 use std::{
-    fs::{self, File},
+    fs::{self, File, OpenOptions},
     io::{Cursor, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -11,18 +11,37 @@ use serde::{Deserialize, Serialize};
 use sysinfo::{Pid, System};
 use tauri::{AppHandle, Manager};
 
+use crate::child_process::{terminate_child_process_tree_by_id, SupervisedChild};
+
 use super::{provider_local_diffusers, runtime_setup, MediaResult, MediaRuntimePaths};
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+pub(crate) enum TrainingArchitecture {
+    #[serde(rename = "krea-2")]
+    Krea2,
+    #[serde(rename = "stable-diffusion-xl")]
+    StableDiffusionXl,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum TrainingConcept {
+    Style,
+    Face,
+    Character,
+    Object,
+}
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct KreaTrainingImage {
+pub(crate) struct TrainingImage {
     path: PathBuf,
     caption: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct KreaTrainingImageInspection {
+pub(crate) struct TrainingImageInspection {
     path: PathBuf,
     width: u32,
     height: u32,
@@ -30,27 +49,31 @@ pub(crate) struct KreaTrainingImageInspection {
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct KreaTrainingRequest {
+pub(crate) struct TrainingRequest {
     name: String,
-    concept: String,
+    concept: TrainingConcept,
     trigger_phrase: String,
-    images: Vec<KreaTrainingImage>,
-    raw_model_path: PathBuf,
+    images: Vec<TrainingImage>,
+    architecture: TrainingArchitecture,
+    model_id: Option<String>,
+    model_path: PathBuf,
     steps: u32,
     learning_rate: f64,
     resolution: u32,
     rank: u32,
     attention_only: bool,
     four_bit: bool,
+    seed: u32,
 }
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct KreaTrainingJob {
+pub(crate) struct TrainingJob {
     id: String,
     name: String,
-    concept: String,
+    concept: TrainingConcept,
     trigger_phrase: String,
+    architecture: TrainingArchitecture,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -61,7 +84,7 @@ struct RunnerStatus {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct KreaTrainingStatus {
+pub(crate) struct TrainingStatus {
     state: String,
     message: Option<String>,
     output_path: Option<PathBuf>,
@@ -70,9 +93,23 @@ pub(crate) struct KreaTrainingStatus {
     total_steps: u32,
 }
 
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TrainingModel {
+    id: Option<String>,
+    architecture: TrainingArchitecture,
+    package_kind: String,
+    path: PathBuf,
+    config_path: Option<PathBuf>,
+    revision: Option<String>,
+    digest: Option<String>,
+}
+
 #[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct JobSpec {
-    raw_model_path: PathBuf,
+    architecture: TrainingArchitecture,
+    model: TrainingModel,
     trigger_phrase: String,
     precision: String,
     resolution: u32,
@@ -83,6 +120,32 @@ struct JobSpec {
     attention_only: bool,
     four_bit: bool,
     resume: bool,
+    seed: u32,
+}
+
+impl JobSpec {
+    fn new(request: &TrainingRequest, model: TrainingModel) -> Self {
+        Self {
+            architecture: request.architecture,
+            model,
+            trigger_phrase: request.trigger_phrase.trim().into(),
+            precision: if cfg!(target_os = "macos") {
+                "fp16"
+            } else {
+                "bf16"
+            }
+            .into(),
+            resolution: request.resolution,
+            rank: request.rank,
+            learning_rate: request.learning_rate,
+            steps: request.steps,
+            checkpoint_interval: (request.steps / 4).clamp(1, 250),
+            attention_only: request.attention_only,
+            four_bit: request.four_bit,
+            resume: false,
+            seed: request.seed,
+        }
+    }
 }
 
 fn job_directory(paths: &MediaRuntimePaths, id: &str) -> MediaResult<PathBuf> {
@@ -103,7 +166,7 @@ fn runner_script(app: &AppHandle) -> MediaResult<PathBuf> {
         .resource_dir()
         .map_err(|error| error.to_string())?
         .join("python")
-        .join("media_krea_training.py");
+        .join("media_training.py");
     if resource.is_file() {
         return Ok(resource);
     }
@@ -111,15 +174,15 @@ fn runner_script(app: &AppHandle) -> MediaResult<PathBuf> {
     {
         let development = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("python")
-            .join("media_krea_training.py");
+            .join("media_training.py");
         if development.is_file() {
             return Ok(development);
         }
     }
-    Err("The local KREA 2 trainer is missing. Reinstall Media Studio.".into())
+    Err("The local trainer is missing. Reinstall Media Studio.".into())
 }
 
-fn validate_model(path: &Path) -> MediaResult<PathBuf> {
+fn validate_raw_model(path: &Path) -> MediaResult<PathBuf> {
     let root = path
         .canonicalize()
         .map_err(|_| "Choose a local KREA 2 RAW model folder.".to_string())?;
@@ -166,12 +229,9 @@ fn validate_model(path: &Path) -> MediaResult<PathBuf> {
     Ok(root)
 }
 
-fn validate_request(request: &KreaTrainingRequest) -> MediaResult<PathBuf> {
+fn validate_request(request: &TrainingRequest) -> MediaResult<()> {
     if request.name.trim().is_empty() || request.name.chars().count() > 100 {
         return Err("Enter a name of up to 100 characters.".into());
-    }
-    if !["style", "face", "character", "object"].contains(&request.concept.as_str()) {
-        return Err("Choose a LoRA type.".into());
     }
     if request.trigger_phrase.trim().is_empty() || request.trigger_phrase.chars().count() > 120 {
         return Err("Enter a trigger phrase of up to 120 characters.".into());
@@ -179,8 +239,8 @@ fn validate_request(request: &KreaTrainingRequest) -> MediaResult<PathBuf> {
     if !(3..=50).contains(&request.images.len()) {
         return Err("Choose 3 to 50 images.".into());
     }
-    if !(100..=10_000).contains(&request.steps)
-        || ![16, 32, 64].contains(&request.rank)
+    if !(1..=10_000).contains(&request.steps)
+        || ![4, 8, 16, 32, 64].contains(&request.rank)
         || ![512, 768, 1024].contains(&request.resolution)
         || !request.learning_rate.is_finite()
         || !(0.00001..=0.001).contains(&request.learning_rate)
@@ -194,7 +254,99 @@ fn validate_request(request: &KreaTrainingRequest) -> MediaResult<PathBuf> {
     {
         return Err("Each caption must be under 2000 characters.".into());
     }
-    validate_model(&request.raw_model_path)
+    if request.architecture == TrainingArchitecture::StableDiffusionXl {
+        if request
+            .model_id
+            .as_deref()
+            .is_none_or(|id| id.trim().is_empty())
+        {
+            return Err("Choose an installed SDXL model.".into());
+        }
+        if request.four_bit || !request.attention_only {
+            return Err(
+                "SDXL training requires attention-only LoRA without four-bit quantization.".into(),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn installed_sdxl_model(paths: &MediaRuntimePaths, id: &str) -> MediaResult<TrainingModel> {
+    let model = provider_local_diffusers::installed_model(paths, id)?;
+    if model.architecture != "stable-diffusion-xl" {
+        return Err("The selected model is not SDXL.".into());
+    }
+    if model.package_kind == "single-file" && model.config_path.is_none() {
+        return Err("The installed SDXL configuration is missing. Reinstall the model.".into());
+    }
+    Ok(TrainingModel {
+        id: Some(model.id),
+        architecture: TrainingArchitecture::StableDiffusionXl,
+        package_kind: model.package_kind,
+        path: model.path,
+        config_path: model.config_path,
+        revision: Some(model.revision),
+        digest: Some(model.digest),
+    })
+}
+
+fn resolve_model(
+    paths: &MediaRuntimePaths,
+    request: &TrainingRequest,
+) -> MediaResult<TrainingModel> {
+    match request.architecture {
+        TrainingArchitecture::Krea2 => Ok(TrainingModel {
+            id: request.model_id.clone(),
+            architecture: request.architecture,
+            package_kind: "diffusers-directory".into(),
+            path: validate_raw_model(&request.model_path)?,
+            config_path: None,
+            revision: None,
+            digest: None,
+        }),
+        TrainingArchitecture::StableDiffusionXl => {
+            let id = request
+                .model_id
+                .as_deref()
+                .ok_or("Choose an installed SDXL model.")?;
+            let model = installed_sdxl_model(paths, id)?;
+            if !request.model_path.as_os_str().is_empty() {
+                let requested_path = request
+                    .model_path
+                    .canonicalize()
+                    .map_err(|error| format!("Could not open the selected SDXL model: {error}"))?;
+                if requested_path != model.path {
+                    return Err("The selected SDXL path does not match its installed model.".into());
+                }
+            }
+            Ok(model)
+        }
+    }
+}
+
+fn validate_job_model(paths: &MediaRuntimePaths, spec: &JobSpec) -> MediaResult<()> {
+    if spec.architecture != spec.model.architecture {
+        return Err("The training architecture does not match the saved model.".into());
+    }
+    match spec.architecture {
+        TrainingArchitecture::Krea2 => {
+            validate_raw_model(&spec.model.path)?;
+        }
+        TrainingArchitecture::StableDiffusionXl => {
+            let id = spec
+                .model
+                .id
+                .as_deref()
+                .ok_or("The saved SDXL model ID is missing.")?;
+            if spec.four_bit
+                || !spec.attention_only
+                || installed_sdxl_model(paths, id)? != spec.model
+            {
+                return Err("The installed SDXL model or training settings changed. Create a new training job.".into());
+            }
+        }
+    }
+    Ok(())
 }
 
 fn image_extension(path: &Path, bytes: &[u8]) -> MediaResult<(&'static str, ImageFormat)> {
@@ -241,7 +393,7 @@ fn read_training_image(path: &Path) -> MediaResult<(Vec<u8>, &'static str, u32, 
     Ok((bytes, extension, decoded.width(), decoded.height()))
 }
 
-pub(crate) fn inspect_images(paths: Vec<PathBuf>) -> MediaResult<Vec<KreaTrainingImageInspection>> {
+pub(crate) fn inspect_images(paths: Vec<PathBuf>) -> MediaResult<Vec<TrainingImageInspection>> {
     if paths.len() > 50 {
         return Err("Choose up to 50 images.".into());
     }
@@ -249,7 +401,7 @@ pub(crate) fn inspect_images(paths: Vec<PathBuf>) -> MediaResult<Vec<KreaTrainin
         .into_iter()
         .map(|path| {
             let (_, _, width, height) = read_training_image(&path)?;
-            Ok(KreaTrainingImageInspection {
+            Ok(TrainingImageInspection {
                 path,
                 width,
                 height,
@@ -258,7 +410,7 @@ pub(crate) fn inspect_images(paths: Vec<PathBuf>) -> MediaResult<Vec<KreaTrainin
         .collect()
 }
 
-fn prepare_dataset(request: &KreaTrainingRequest, directory: &Path) -> MediaResult<()> {
+fn prepare_dataset(request: &TrainingRequest, directory: &Path) -> MediaResult<()> {
     fs::create_dir_all(directory)
         .map_err(|error| format!("Could not create training dataset: {error}"))?;
     let mut metadata = File::create(directory.join("metadata.jsonl"))
@@ -333,25 +485,19 @@ fn start_process(app: &AppHandle, paths: &MediaRuntimePaths, directory: &Path) -
     if !python.is_file() {
         return Err("Install the Media Studio local model runtime before training.".into());
     }
-    let runtime = provider_local_diffusers::probe(app);
-    if !runtime.ready {
-        return Err(format!(
-            "Local model runtime is not ready: {}",
-            runtime.diagnostic
-        ));
-    }
-    if !matches!(runtime.device.as_deref(), Some("cuda" | "mps")) {
-        return Err("KREA 2 training requires a supported GPU.".into());
-    }
-    let log = File::create(directory.join("training.log"))
-        .map_err(|error| format!("Could not create training log: {error}"))?;
+    let script = runner_script(app)?;
+    let log = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(directory.join("training.log"))
+        .map_err(|error| format!("Could not open training log: {error}"))?;
     let error_log = log.try_clone().map_err(|error| error.to_string())?;
     let mut command = Command::new(python);
     command
         .arg("-I")
         .arg("-B")
         .arg("-Xutf8")
-        .arg(runner_script(app)?)
+        .arg(script)
         .arg(directory)
         .stdin(Stdio::null())
         .stdout(log)
@@ -366,28 +512,48 @@ fn start_process(app: &AppHandle, paths: &MediaRuntimePaths, directory: &Path) -
         .env_remove("HUGGING_FACE_HUB_TOKEN")
         .env_remove("WANDB_API_KEY");
     provider_local_diffusers::configure_preferred_gpu(&mut command);
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("Could not start local training: {error}"))?;
-    if let Err(error) = fs::write(directory.join("pid"), child.id().to_string()) {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(format!("Could not save training process ID: {error}"));
-    }
+    fs::write(
+        directory.join("status.json"),
+        serde_json::to_vec(&RunnerStatus {
+            state: "starting".into(),
+            message: None,
+        })
+        .map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| format!("Could not save training status: {error}"))?;
+    let (started, receiver) = std::sync::mpsc::sync_channel(1);
     let storage_lease = paths.clone();
     std::thread::spawn(move || {
         let _storage_lease = storage_lease;
+        let mut child = match SupervisedChild::spawn(&mut command) {
+            Ok(child) => child,
+            Err(error) => {
+                let _ = started.send(Err(format!("Could not start local training: {error}")));
+                return;
+            }
+        };
+        if started.send(Ok(child.id())).is_err() {
+            return;
+        }
         let _ = child.wait();
     });
+    let pid = receiver
+        .recv()
+        .map_err(|error| format!("Could not start local training: {error}"))??;
+    if let Err(error) = fs::write(directory.join("pid"), pid.to_string()) {
+        terminate_child_process_tree_by_id(pid);
+        return Err(format!("Could not save training process ID: {error}"));
+    }
     Ok(())
 }
 
 pub(crate) fn submit(
     app: &AppHandle,
     paths: &MediaRuntimePaths,
-    request: KreaTrainingRequest,
-) -> MediaResult<KreaTrainingJob> {
-    let raw_model_path = validate_request(&request)?;
+    request: TrainingRequest,
+) -> MediaResult<TrainingJob> {
+    validate_request(&request)?;
+    let model = resolve_model(paths, &request)?;
     let root = paths.models_root()?.join("training");
     fs::create_dir_all(&root)
         .map_err(|error| format!("Could not create training folder: {error}"))?;
@@ -403,30 +569,13 @@ pub(crate) fn submit(
         .duration_since(UNIX_EPOCH)
         .map_err(|error| error.to_string())?
         .as_millis();
-    let id = format!("krea-{stamp}-{}", std::process::id());
+    let id = format!("training-{stamp}-{}", std::process::id());
     let directory = job_directory(paths, &id)?;
     fs::create_dir(&directory)
         .map_err(|error| format!("Could not create training job: {error}"))?;
     let result = (|| {
         prepare_dataset(&request, &directory.join("dataset"))?;
-        let spec = JobSpec {
-            raw_model_path,
-            trigger_phrase: request.trigger_phrase.trim().into(),
-            precision: if cfg!(target_os = "macos") {
-                "fp16"
-            } else {
-                "bf16"
-            }
-            .into(),
-            resolution: request.resolution,
-            rank: request.rank,
-            learning_rate: request.learning_rate,
-            steps: request.steps,
-            checkpoint_interval: request.steps.min(250),
-            attention_only: request.attention_only,
-            four_bit: request.four_bit,
-            resume: false,
-        };
+        let spec = JobSpec::new(&request, model);
         fs::write(
             directory.join("job.json"),
             serde_json::to_vec(&spec).map_err(|error| error.to_string())?,
@@ -450,27 +599,42 @@ pub(crate) fn submit(
             )
             .map_err(|error| format!("Could not save quantization settings: {error}"))?;
         }
+        validate_job_model(paths, &spec)?;
         start_process(app, paths, &directory)
     })();
     if let Err(error) = result {
         let _ = fs::remove_dir_all(&directory);
         return Err(error);
     }
-    Ok(KreaTrainingJob {
+    Ok(TrainingJob {
         id,
         name: request.name.trim().into(),
         concept: request.concept,
         trigger_phrase: request.trigger_phrase.trim().into(),
+        architecture: request.architecture,
     })
 }
 
-fn has_checkpoint(directory: &Path) -> bool {
+fn has_checkpoint(directory: &Path, architecture: TrainingArchitecture) -> bool {
     directory.join("output").read_dir().is_ok_and(|entries| {
         entries.flatten().any(|entry| {
-            entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with("checkpoint-")
+            let checkpoint = entry.path();
+            let complete = match architecture {
+                TrainingArchitecture::StableDiffusionXl => {
+                    checkpoint.join("state.pt").is_file()
+                        && checkpoint.join("adapter.safetensors").is_file()
+                }
+                TrainingArchitecture::Krea2 => checkpoint
+                    .join("pytorch_lora_weights.safetensors")
+                    .is_file(),
+            };
+            complete
+                && checkpoint.is_dir()
+                && entry
+                    .file_name()
+                    .to_str()
+                    .and_then(|name| name.strip_prefix("checkpoint-"))
+                    .is_some_and(|step| step.parse::<u32>().is_ok())
         })
     })
 }
@@ -492,7 +656,7 @@ fn completed_steps_from_log(path: &Path) -> Option<u32> {
         .last()
 }
 
-pub(crate) fn status(paths: &MediaRuntimePaths, id: &str) -> MediaResult<KreaTrainingStatus> {
+pub(crate) fn status(paths: &MediaRuntimePaths, id: &str) -> MediaResult<TrainingStatus> {
     let directory = job_directory(paths, id)?;
     let spec: JobSpec = serde_json::from_slice(
         &fs::read(directory.join("job.json"))
@@ -522,8 +686,8 @@ pub(crate) fn status(paths: &MediaRuntimePaths, id: &str) -> MediaResult<KreaTra
         runner.state
     };
     let can_resume = ["interrupted", "failed", "cancelled"].contains(&state.as_str())
-        && has_checkpoint(&directory);
-    Ok(KreaTrainingStatus {
+        && has_checkpoint(&directory, spec.architecture);
+    Ok(TrainingStatus {
         message: if missing_output {
             Some("Trained LoRA weights are missing. Remove this job and train again.".into())
         } else if state == "failed" {
@@ -545,8 +709,8 @@ pub(crate) fn status(paths: &MediaRuntimePaths, id: &str) -> MediaResult<KreaTra
 
 pub(crate) fn cancel(paths: &MediaRuntimePaths, id: &str) -> MediaResult<()> {
     let directory = job_directory(paths, id)?;
-    if let Some((system, pid)) = process_for_job(&directory)? {
-        if !system.process(pid).is_some_and(sysinfo::Process::kill) {
+    if let Some((_, pid)) = process_for_job(&directory)? {
+        if !terminate_child_process_tree_by_id(pid.as_u32()) {
             return Err("Could not stop local training.".into());
         }
     }
@@ -573,14 +737,15 @@ pub(crate) fn resume(app: &AppHandle, paths: &MediaRuntimePaths, id: &str) -> Me
             return Err("Another local training job is running.".into());
         }
     }
-    if !has_checkpoint(&directory) {
-        return Err("No saved checkpoint is available to resume.".into());
+    if !status(paths, id)?.can_resume {
+        return Err("This job has no resumable training checkpoint.".into());
     }
     let mut spec: JobSpec = serde_json::from_slice(
         &fs::read(directory.join("job.json"))
             .map_err(|error| format!("Could not read training job: {error}"))?,
     )
     .map_err(|error| format!("Training job is invalid: {error}"))?;
+    validate_job_model(paths, &spec)?;
     spec.resume = true;
     fs::write(
         directory.join("job.json"),
@@ -600,102 +765,5 @@ pub(crate) fn remove_job(paths: &MediaRuntimePaths, id: &str) -> MediaResult<()>
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn prepares_captioned_local_dataset_and_requires_raw_components() {
-        let root = std::env::temp_dir().join(format!(
-            "krea-training-test-{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let model = root.join("Krea-2-Raw");
-        fs::create_dir_all(&model).unwrap();
-        fs::write(
-            model.join("model_index.json"),
-            br#"{"_class_name":"Krea2Pipeline","is_distilled":false}"#,
-        )
-        .unwrap();
-        for component in ["transformer", "text_encoder", "vae"] {
-            fs::create_dir(model.join(component)).unwrap();
-            fs::write(model.join(component).join("model.safetensors"), b"weight").unwrap();
-        }
-        fs::create_dir(model.join("tokenizer")).unwrap();
-        fs::write(model.join("tokenizer/tokenizer.json"), b"{}").unwrap();
-        fs::create_dir(model.join("scheduler")).unwrap();
-        fs::write(model.join("scheduler/scheduler_config.json"), b"{}").unwrap();
-        let images = (0..3)
-            .map(|index| {
-                let path = root.join(format!("source-{index}.png"));
-                image::RgbaImage::new(32, 24).save(&path).unwrap();
-                KreaTrainingImage {
-                    path,
-                    caption: format!("portrait {index}"),
-                }
-            })
-            .collect();
-        let request = KreaTrainingRequest {
-            name: "Portrait".into(),
-            concept: "face".into(),
-            trigger_phrase: "sks person".into(),
-            images,
-            raw_model_path: model.clone(),
-            steps: 1000,
-            learning_rate: 0.0003,
-            resolution: 768,
-            rank: 32,
-            attention_only: false,
-            four_bit: true,
-        };
-        assert!(validate_request(&request).is_ok());
-        let transformer_weights = model.join("transformer/model.safetensors");
-        fs::remove_file(&transformer_weights).unwrap();
-        assert!(validate_model(&model)
-            .unwrap_err()
-            .contains("transformer weights"));
-        fs::write(transformer_weights, b"weight").unwrap();
-        let inspected = inspect_images(
-            request
-                .images
-                .iter()
-                .map(|image| image.path.clone())
-                .collect(),
-        )
-        .unwrap();
-        assert_eq!((inspected[0].width, inspected[0].height), (32, 24));
-        let dataset = root.join("dataset");
-        prepare_dataset(&request, &dataset).unwrap();
-        let lines: Vec<serde_json::Value> = fs::read_to_string(dataset.join("metadata.jsonl"))
-            .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str(line).unwrap())
-            .collect();
-        assert_eq!(lines.len(), 3);
-        assert_eq!(lines[1]["text"], "portrait 1, sks person");
-        assert!(dataset.join("image-001.png").is_file());
-        fs::write(&request.images[0].path, b"\x89PNG\r\n\x1a\ntruncated").unwrap();
-        assert!(inspect_images(vec![request.images[0].path.clone()])
-            .unwrap_err()
-            .contains("could not be decoded"));
-        fs::write(
-            root.join("training.log"),
-            b"Steps:  10%|#         | 100/1000 [00:12]",
-        )
-        .unwrap();
-        assert_eq!(
-            completed_steps_from_log(&root.join("training.log")),
-            Some(100)
-        );
-        fs::write(
-            model.join("model_index.json"),
-            br#"{"_class_name":"Krea2Pipeline","is_distilled":true}"#,
-        )
-        .unwrap();
-        assert!(validate_model(&model).is_err());
-        fs::remove_dir_all(root).unwrap();
-    }
-}
+#[path = "training_tests.rs"]
+mod tests;
