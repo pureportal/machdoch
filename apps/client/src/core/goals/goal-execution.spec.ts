@@ -380,8 +380,10 @@ describe("goal lifecycle", () => {
     await run("/goal Fix auth", execute);
     expect((await read()).goal).toMatchObject({
       status: "blocked",
+      turns: 3,
       reason: "A required credential is missing.",
     });
+    expect(execute).toHaveBeenCalledTimes(6);
     await run("/goal resume");
     expect((await read()).goal?.status).toBe("complete");
   });
@@ -395,6 +397,68 @@ describe("goal lifecycle", () => {
       status: "blocked",
       reason: "Authentication failed.",
     });
+  });
+  it("continues after a partial blocker and completes independent requirements", async () => {
+    let workTurns = 0;
+    const execute = vi.fn<GoalTurnExecutor>(
+      async (task, _config, turnOptions) => {
+        if (turnOptions.resultProtocol)
+          return evaluation(workTurns === 1 ? "blocked" : "complete");
+        workTurns += 1;
+        if (workTurns === 2) {
+          expect(task).toContain("Audit it against current evidence");
+          expect(task).toContain(
+            "finish all work that can proceed independently",
+          );
+          expect(turnOptions.conversationContext?.history).toHaveLength(2);
+        }
+        return result({ summary: `Verified requirement ${workTurns}.` });
+      },
+    );
+    expect(
+      (
+        await run(
+          "/goal Implement and verify every intake requirement",
+          execute,
+        )
+      ).status,
+    ).toBe("executed");
+    expect((await read()).goal).toMatchObject({ status: "complete", turns: 2 });
+  });
+  it("resets blocker confirmation when useful work remains", async () => {
+    const decisions = [
+      "blocked",
+      "continue",
+      "blocked",
+      "blocked",
+      "blocked",
+    ] as const;
+    let workTurns = 0;
+    const execute = vi.fn<GoalTurnExecutor>(
+      async (_task, _config, turnOptions) => {
+        if (turnOptions.resultProtocol)
+          return evaluation(decisions[workTurns - 1]!);
+        workTurns += 1;
+        return result({ summary: `Audited requirement ${workTurns}.` });
+      },
+    );
+    await run("/goal Finish all requirements", execute);
+    expect((await read()).goal).toMatchObject({ status: "blocked", turns: 5 });
+  });
+  it("audits a blocked work result instead of immediately stopping the goal", async () => {
+    let workTurns = 0;
+    const execute = vi.fn<GoalTurnExecutor>(
+      async (_task, _config, turnOptions) => {
+        if (turnOptions.resultProtocol)
+          return evaluation(workTurns === 1 ? "continue" : "complete");
+        workTurns += 1;
+        return result({ status: workTurns === 1 ? "blocked" : "executed" });
+      },
+    );
+    expect((await run("/goal Finish all requirements", execute)).status).toBe(
+      "executed",
+    );
+    expect((await read()).goal?.turns).toBe(2);
   });
   it("pauses after three turns without tool activity", async () => {
     const execute = vi.fn(

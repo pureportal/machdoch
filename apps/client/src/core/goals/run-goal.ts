@@ -127,6 +127,7 @@ export const executeGoalRun = async (
     ...(options.conversationContext?.history ?? []),
   ];
   let noProgressTurns = 0;
+  let blockedAssessments = 0;
   let previousOutcome: string | undefined;
   let runTurns = 0;
   const checkpoint = async (
@@ -203,7 +204,7 @@ export const executeGoalRun = async (
         }
         const directive =
           !userSteering || runTurns > 0
-            ? `Work toward this goal and verify the full outcome: ${JSON.stringify(goal.objective)}.\n${goal.reason ? `Next step: ${goal.reason}` : ""}`
+            ? `Work toward this goal and verify the full outcome: ${JSON.stringify(goal.objective)}.\n${goal.reason ? `Next step: ${goal.reason}` : ""}\n${blockedAssessments ? `A blocker was reported in ${blockedAssessments} consecutive assessment(s). Audit it against current evidence, investigate approaches within the user's requirements, and finish all work that can proceed independently. A partial limitation does not block the entire goal. Do not repeat an unchanged failed approach or ask to reduce the goal's scope.` : ""}`
             : `${task}\n\nContinue toward the active goal: ${JSON.stringify(goal.objective)}`;
         goal = { ...goal, turns: goal.turns + 1 };
         runTurns += 1;
@@ -226,7 +227,7 @@ export const executeGoalRun = async (
           },
           systemPromptSections: [
             ...(options.systemPromptSections ?? []),
-            `The user has explicitly set a persistent goal: ${JSON.stringify(goal.objective)}. Keep its full scope. Gather evidence of every requirement before claiming completion. Do not infer new goals. Tool and approval rules remain in effect.`,
+            `The user has explicitly set a persistent goal: ${JSON.stringify(goal.objective)}. Keep its full scope. Gather evidence of every requirement before claiming completion. Investigate obstacles and finish independent requirements before declaring the goal blocked. Missing verification is a next action, not by itself an external blocker. Do not infer new goals. Tool and approval rules remain in effect.`,
           ],
           ...(goal.mode === "native" ? { nativeGoal: goal.objective } : {}),
         });
@@ -238,7 +239,7 @@ export const executeGoalRun = async (
         if (!goal || goal.id !== goalId || goal.status !== "active") break;
         checkRunLimit();
         if (signal.aborted || lastResult.status === "cancelled") break;
-        if (!["executed", "planned"].includes(lastResult.status)) {
+        if (!["executed", "planned", "blocked"].includes(lastResult.status)) {
           await checkpoint("blocked", lastResult.reason ?? lastResult.summary);
           break;
         }
@@ -287,10 +288,15 @@ export const executeGoalRun = async (
           );
           break;
         }
+        blockedAssessments =
+          verdict.decision === "blocked" ? blockedAssessments + 1 : 0;
+        const confirmedBlocked =
+          verdict.decision === "blocked" &&
+          (blockedAssessments >= 3 || goal.mode === "native");
         await checkpoint(
           verdict.decision === "complete"
             ? "complete"
-            : verdict.decision === "blocked"
+            : confirmedBlocked
               ? "blocked"
               : "active",
           resultText(evaluation),
@@ -316,7 +322,10 @@ export const executeGoalRun = async (
             ? noProgressTurns + 1
             : 0;
         previousOutcome = outcome;
-        if (noProgressTurns >= 3 || goal.mode === "native") {
+        if (
+          (noProgressTurns >= 3 && blockedAssessments === 0) ||
+          goal.mode === "native"
+        ) {
           await checkpoint(
             "paused",
             goal.mode === "native"
