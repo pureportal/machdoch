@@ -1746,6 +1746,16 @@ export const useChatSessionController = (
           : state.updateSessionById;
 
       updateSession(sessionId, (session) => {
+        if (
+          session.messages.some(
+            (message) =>
+              message.taskId === taskId &&
+              message.role === "agent" &&
+              message.source?.kind === "execution",
+          )
+        ) {
+          return session;
+        }
         let thinkingMessageIndex = -1;
 
         for (let index = session.messages.length - 1; index >= 0; index -= 1) {
