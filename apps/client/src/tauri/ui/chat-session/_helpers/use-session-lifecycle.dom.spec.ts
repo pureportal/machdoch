@@ -49,9 +49,7 @@ describe("new session agent preferences", () => {
       act(() => result.current.createNewSession());
 
       expect(shellState.sessions[0]?.parallelAgentMode).toBe("native");
-      expect(shellState.sessions[0]?.goalMode).toBe(
-        provider === "claude-cli" ? "native" : "machdoch",
-      );
+      expect(shellState.sessions[0]?.goalMode).toBe("native");
       expect(shellState.sessions[0]?.goal).toBeUndefined();
       expect(shellState.activeSessionId).toBe(activeSessionId);
     },

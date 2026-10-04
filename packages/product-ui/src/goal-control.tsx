@@ -65,7 +65,9 @@ export function GoalControl({
   const disabledReasonId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const active = running && goal?.status === "active";
-  const changed = objective.trim() !== (goal?.objective ?? "");
+  const changed =
+    objective.trim() !== (goal?.objective ?? "") ||
+    Boolean(goal && goal.mode !== mode);
   const canResume =
     goal &&
     !changed &&
@@ -139,22 +141,28 @@ export function GoalControl({
               {status}
             </span>
           ) : null}
-          {modes.length > 1 ? (
-            <select
-              aria-label="Goal mode"
-              value={mode}
-              disabled={disabled || running}
-              onChange={(event) =>
-                onModeChange(event.target.value as "machdoch" | "native")
-              }
-            >
-              {modes.map((value) => (
-                <option key={value} value={value}>
-                  {value === "machdoch" ? "Machdoch" : "Native"}
-                </option>
-              ))}
-            </select>
-          ) : null}
+          <select
+            aria-label="Goal mode"
+            value={mode}
+            disabled={disabled || running}
+            onChange={(event) =>
+              onModeChange(event.target.value as "machdoch" | "native")
+            }
+          >
+            {(["machdoch", "native"] as const).map((value) => (
+              <option
+                key={value}
+                value={value}
+                disabled={!modes.includes(value)}
+              >
+                {value === "machdoch"
+                  ? "Machdoch"
+                  : modes.includes(value)
+                    ? "Native"
+                    : "Native (unavailable)"}
+              </option>
+            ))}
+          </select>
           <button
             type="button"
             className="m-goal-close"
