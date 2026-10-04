@@ -21,14 +21,16 @@ Initial job: `training-1791101108049-19716`. The first export failed native insp
 
 Actual Basic Generate image run `9f8f9424-75ac-4646-b784-fc83c35f0a8c` completed in 135.45 seconds of harness time at 1024 × 1024, 30 sampling steps, guidance five, and seed 314159. Its provenance records the trained adapter digest, all 560 modules, strength one, and loaded denoiser. The PNG digest is `1e9e3a9a7100e51de139e8e91ed57dc35632240ecb827f38f97eca50d245cd55`. Visual inspection shows a coherent red teapot and white cup, but a pale tabletop and large gray background; the dark-wood request remains unmet. There is no trained-concept quality claim.
 
-The corrected build's additional real cancellation/resume and automatic export/import checks are still in progress. Unit tests establish exact CPU optimizer/random-state continuation and export/reload, not GPU bitwise determinism. Earlier interrupted startup attempts remain separate and are not counted as successful training.
+The corrected built desktop completed a second actual job, `training-1791103882812-24572`, in a 1,485.911-second Playwright cycle. Stop terminated its real worker while the screen reported step four. The paused job retained complete checkpoint two and an unfinished temporary checkpoint four. Resume recovered checkpoint two, repeated steps three/four, and finished step eight. Its six resumed losses match the corresponding uninterrupted losses exactly. The final checkpoint adapter digest `dfc976698625a76fbe521d01c6c3fd5b1065a25a0dd156cbab08b9997bdbdaae` and exported adapter digest both match the first job byte for byte. This establishes reproducible resume for this exact GPU/recipe; it does not establish determinism across other devices or recipes.
+
+Native automatic inspection/import succeeded directly from that trainer's output, and the job's temporary files were removed after import. Playwright switched through SVG during training and verified that “Use in Basic” returned to PNG with Generate image enabled. The native chooser, stop/resume, final import, trigger, architecture, and transition passed without page errors. Evidence is in `native-resume/`: paused status and job files, final output, training summary, addon descriptor, screenshots, `checkpoint-repeatability.json`, and `playwright-training-result.json`. The slow cycle includes startup, model reload, checkpoint copying, and UI work; it is not an eight-step sampling benchmark. Captured stacks show both Python imports and model/tensor loading. Earlier interrupted startup attempts remain separate and are not counted as successes.
 
 ## Checks
 
 - 619 studio tests passed. After extracting the training settings component, its 21 view tests passed again; studio typecheck and lint passed.
 - 362 native media tests passed; 12 external fixture/service/runtime checks were ignored. All nine training checks passed, including actual descendant-process cancellation.
 - 289 Python tests passed, including the SDXL CPU UNet/PEFT checkpoint and export/reload tests, Krea runner arguments, and explicit training dtype selection.
-- Desktop production assets and native compilation are being rebuilt for the final real lifecycle check. No development server was started.
+- The rebuilt desktop with embedded production assets passed the real lifecycle check, and its bundled trainer hash matches the source. Client UI and core typechecks passed. No development server was started. The normal desktop configuration will be rebuilt after verification cleanup.
 
 ## Full goal coverage
 
