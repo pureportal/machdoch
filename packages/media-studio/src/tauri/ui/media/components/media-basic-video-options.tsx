@@ -7,6 +7,7 @@ import {
   mediaVideoOutputFrameCount,
   resolveMediaVideoDimensions,
   resolveMediaVideoFrameContract,
+  resolveMediaVideoSpatialMultiple,
 } from "../../../../core/media/video-quality.js";
 import { openMediaModelProfile } from "../../../../core/media/open-model-profiles.js";
 
@@ -25,6 +26,7 @@ export const MediaBasicVideoOptions = ({
 }): JSX.Element => {
   const architecture = model?.architecture;
   const profile = openMediaModelProfile(architecture);
+  const spatialMultiple = resolveMediaVideoSpatialMultiple(architecture);
   const frameContract = resolveMediaVideoFrameContract(architecture);
   const videoDimensions = resolveMediaVideoDimensions(
     videoSettings.aspectRatio,
@@ -51,8 +53,12 @@ export const MediaBasicVideoOptions = ({
               ...videoSettings,
               ...(event.target.value === "custom"
                 ? {
-                    width: Math.round(videoDimensions[0] / 32) * 32,
-                    height: Math.round(videoDimensions[1] / 32) * 32,
+                    width:
+                      Math.round(videoDimensions[0] / spatialMultiple) *
+                      spatialMultiple,
+                    height:
+                      Math.round(videoDimensions[1] / spatialMultiple) *
+                      spatialMultiple,
                   }
                 : {
                     resolution: event.target
@@ -97,7 +103,7 @@ export const MediaBasicVideoOptions = ({
                 type="number"
                 min={128}
                 max={1536}
-                step={32}
+                step={spatialMultiple}
                 value={videoSettings[key] ?? ""}
                 onChange={(event) =>
                   onVideoChange({

@@ -91,7 +91,10 @@ import type {
   MediaPortDataType,
   MediaRunDetail,
 } from "../../../../core/media/contracts.js";
-import type { MediaPoseMap, MediaSavedPoseScene } from "../../../../core/media/pose-map.js";
+import type {
+  MediaPoseMap,
+  MediaSavedPoseScene,
+} from "../../../../core/media/pose-map.js";
 import { MediaPoseWorkspace } from "./media-pose-workspace";
 import { invoke } from "../media-platform";
 import { listSelectableMediaModels } from "../../../../core/media/model-library.js";
@@ -141,6 +144,7 @@ import {
   MEDIA_VIDEO_QUALITY_PRESETS,
   resolveMediaVideoExecutionSettings,
   resolveMediaVideoFrameContract,
+  resolveMediaVideoSpatialMultiple,
   resolveMediaVideoQualityPresetSettings,
   summarizeMediaVideoDelivery,
 } from "../../../../core/media/video-quality.js";
@@ -1129,11 +1133,17 @@ const NodeFieldEditor = ({
     field.kind === "model-priority"
       ? readSubjectCutoutModelPriority(node.config)
       : [];
-  const currentModelId = typeof value === "string" ? value : null;
+  const modelId = field.kind === "model" ? value : node.config.modelId;
+  const currentModelId = typeof modelId === "string" ? modelId : null;
   const selectedModel =
     compatibleModels.find((model) => model.id === currentModelId) ??
     compatibleModels.find((model) => model.id === resolvedModel?.id) ??
     null;
+  const numericStep =
+    node.type === "task.generate-video" &&
+    (field.id === "width" || field.id === "height")
+      ? resolveMediaVideoSpatialMultiple(selectedModel?.architecture)
+      : field.step;
   const currentModelIsMissing =
     currentModelId !== null &&
     !compatibleModels.some((model) => model.id === currentModelId);
@@ -1273,59 +1283,60 @@ const NodeFieldEditor = ({
       );
       break;
     case "number":
-      control = node.type === "source.seed" && field.id === "seed" ? (
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          <select
+      control =
+        node.type === "source.seed" && field.id === "seed" ? (
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <select
+              id={controlId}
+              value={value == null ? "random" : "fixed"}
+              onChange={(event) =>
+                onChange(field.id, event.target.value === "random" ? null : 0)
+              }
+              className={cn(FIELD_CONTROL_CLASS, "h-9 rounded-md border px-3")}
+            >
+              <option value="random">Random</option>
+              <option value="fixed">Fixed</option>
+            </select>
+            {value != null ? (
+              <Input
+                aria-label="Seed value"
+                type="number"
+                value={typeof value === "number" ? value : ""}
+                min={field.min}
+                max={field.max}
+                step={field.step}
+                aria-invalid={issue !== null}
+                aria-describedby={describedBy}
+                onChange={(event) => {
+                  if (event.target.value !== "") {
+                    onChange(field.id, event.target.valueAsNumber);
+                  }
+                }}
+                className={FIELD_CONTROL_CLASS}
+              />
+            ) : null}
+          </div>
+        ) : (
+          <Input
             id={controlId}
-            value={value == null ? "random" : "fixed"}
-            onChange={(event) =>
-              onChange(field.id, event.target.value === "random" ? null : 0)
-            }
-            className={cn(FIELD_CONTROL_CLASS, "h-9 rounded-md border px-3")}
-          >
-            <option value="random">Random</option>
-            <option value="fixed">Fixed</option>
-          </select>
-          {value != null ? (
-            <Input
-              aria-label="Seed value"
-              type="number"
-              value={typeof value === "number" ? value : ""}
-              min={field.min}
-              max={field.max}
-              step={field.step}
-              aria-invalid={issue !== null}
-              aria-describedby={describedBy}
-              onChange={(event) => {
-                if (event.target.value !== "") {
-                  onChange(field.id, event.target.valueAsNumber);
-                }
-              }}
-              className={FIELD_CONTROL_CLASS}
-            />
-          ) : null}
-        </div>
-      ) : (
-        <Input
-          id={controlId}
-          type="number"
-          value={typeof value === "number" ? value : ""}
-          min={field.min}
-          max={field.max}
-          step={field.step}
-          disabled={field.readOnly}
-          aria-invalid={issue !== null}
-          aria-describedby={describedBy}
-          onChange={(event) => {
-            if (event.target.value !== "") {
-              onChange(field.id, event.target.valueAsNumber);
-            } else if (!field.required && field.defaultValue === null) {
-              onChange(field.id, null);
-            }
-          }}
-          className={FIELD_CONTROL_CLASS}
-        />
-      );
+            type="number"
+            value={typeof value === "number" ? value : ""}
+            min={field.min}
+            max={field.max}
+            step={numericStep}
+            disabled={field.readOnly}
+            aria-invalid={issue !== null}
+            aria-describedby={describedBy}
+            onChange={(event) => {
+              if (event.target.value !== "") {
+                onChange(field.id, event.target.valueAsNumber);
+              } else if (!field.required && field.defaultValue === null) {
+                onChange(field.id, null);
+              }
+            }}
+            className={FIELD_CONTROL_CLASS}
+          />
+        );
       break;
     case "boolean":
       control = (
@@ -2093,10 +2104,6 @@ const VisualGroupsPanel = ({
             <LayoutDashboard className="h-4 w-4 text-cyan-300" />
             Canvas organization
           </div>
-          <p className="mt-1 text-[10px] leading-4 text-slate-500">
-            Layout-only groups and comments are revisioned but never affect
-            execution.
-          </p>
         </div>
         <Button
           type="button"
@@ -2137,11 +2144,7 @@ const VisualGroupsPanel = ({
             <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/20 p-5 text-center">
               <Group className="mx-auto h-5 w-5 text-slate-700" />
               <p className="mt-2 text-xs font-medium text-slate-400">
-                No visual groups
-              </p>
-              <p className="mt-1 text-[10px] leading-4 text-slate-600">
-                Select at least two nodes on the canvas, then choose Group
-                selected nodes.
+                No groups
               </p>
             </div>
           )}
@@ -2191,10 +2194,6 @@ const VisualGroupsPanel = ({
           ) : (
             <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/20 p-4 text-center">
               <StickyNote className="mx-auto h-5 w-5 text-slate-700" />
-              <p className="mt-2 text-[10px] leading-4 text-slate-600">
-                Add review context, handoff notes, or creative direction
-                directly to the canvas.
-              </p>
             </div>
           )}
         </div>
@@ -2686,24 +2685,40 @@ const NodeInspector = ({
       binding.modality === "image" &&
       outgoing.some((edge) => edge.toNodeId === binding.nodeId),
   );
-  const poseTargetNode = node.type === "source.image"
-    ? flow.edges.flatMap((edge) => edge.fromNodeId === node.id && edge.fromPortId === "image" && edge.toPortId === "image"
-      ? flow.nodes.filter((target) => target.id === edge.toNodeId &&
-        (target.type === "task.generate-image" || target.type === "task.edit-image"))
-      : [])[0]
-    : undefined;
-  const poseTargetModel = imageTaskBinding?.model ??
-    models.find((model) => model.id === poseTargetNode?.config.modelId) ?? null;
+  const poseTargetNode =
+    node.type === "source.image"
+      ? flow.edges.flatMap((edge) =>
+          edge.fromNodeId === node.id &&
+          edge.fromPortId === "image" &&
+          edge.toPortId === "image"
+            ? flow.nodes.filter(
+                (target) =>
+                  target.id === edge.toNodeId &&
+                  (target.type === "task.generate-image" ||
+                    target.type === "task.edit-image"),
+              )
+            : [],
+        )[0]
+      : undefined;
+  const poseTargetModel =
+    imageTaskBinding?.model ??
+    models.find((model) => model.id === poseTargetNode?.config.modelId) ??
+    null;
   const poseTargetRatio = poseTargetNode?.config.aspectRatio;
   const poseAspectRatio: MediaPoseMap["aspectRatio"] =
-    poseTargetRatio === "4:5" || poseTargetRatio === "16:9" || poseTargetRatio === "9:16"
+    poseTargetRatio === "4:5" ||
+    poseTargetRatio === "16:9" ||
+    poseTargetRatio === "9:16"
       ? poseTargetRatio
       : "1:1";
   const createInspectorPoseAsset = async (map: MediaPoseMap): Promise<void> => {
     const flowAtSelection = flow;
     setPosePresetPending(true);
     try {
-      const result = await invoke<MediaAssetImportResult>("media_create_pose_map", { map });
+      const result = await invoke<MediaAssetImportResult>(
+        "media_create_pose_map",
+        { map },
+      );
       onPoseAssetsCreated([result.asset]);
       if (latestFlow.current === flowAtSelection) {
         onNodeConfigChange(node.id, "assetId", result.asset.id);
@@ -2741,10 +2756,8 @@ const NodeInspector = ({
   });
   const baseImageSource =
     imageInputSources.find(
-      (source) => source.config.referenceRole === "base",
-    ) ??
-    imageInputSources[0] ??
-    null;
+      (source) => (source.config.referenceRole ?? "base") === "base",
+    ) ?? null;
   const baseImageAssetId =
     typeof baseImageSource?.config.assetId === "string"
       ? baseImageSource.config.assetId
@@ -2786,40 +2799,57 @@ const NodeInspector = ({
     (edge) => edge.toPortId === "first-frame",
   );
   const lastFrameEdge = incoming.find((edge) => edge.toPortId === "last-frame");
+  const firstFrameSource = resolvedFlow.nodes.find(
+    (entry) => entry.id === firstFrameEdge?.fromNodeId,
+  );
+  const lastFrameSource = resolvedFlow.nodes.find(
+    (entry) => entry.id === lastFrameEdge?.fromNodeId,
+  );
+  const sameFrameAsset =
+    firstFrameSource?.type === "source.image" &&
+    lastFrameSource?.type === "source.image" &&
+    typeof firstFrameSource.config.assetId === "string" &&
+    firstFrameSource.config.assetId.trim().length > 0 &&
+    firstFrameSource.config.assetId === lastFrameSource.config.assetId;
   const videoNeedsTerminalConditioning =
     node.config.loopMode === "seamless" ||
     (firstFrameEdge !== undefined &&
       lastFrameEdge !== undefined &&
-      firstFrameEdge.fromNodeId !== lastFrameEdge.fromNodeId);
+      (firstFrameEdge.fromNodeId !== lastFrameEdge.fromNodeId ||
+        firstFrameEdge.fromPortId !== lastFrameEdge.fromPortId) &&
+      !sameFrameAsset);
+  const hasMaskInput =
+    hasMediaImageMaskContent(editMask) ||
+    incoming.some((edge) => edge.toPortId === "mask");
   const requiredModelCapabilities: readonly MediaCapability[] =
-    node.type === "task.generate-video"
+    node.type === "task.generate-audio"
+      ? ["text-to-audio"]
+      : node.type === "task.generate-video"
       ? videoNeedsTerminalConditioning
         ? ["image-to-video", "start-end-to-video"]
-        : ["image-to-video"]
-      : node.type === "task.edit-image"
+        : firstFrameEdge || lastFrameEdge
+          ? ["image-to-video"]
+          : ["text-to-video"]
+      : node.type === "task.generate-image" &&
+          node.config.outputFormat === "svg"
         ? [
+            node.config.svgMode === "vectorize"
+              ? "image-to-svg"
+              : imageInputEdges.length > 0
+                ? "guided-svg-generation"
+                : "text-to-svg",
+          ]
+        : [
             ...(hasPoseInput ? (["pose-control"] as const) : []),
-            ...(hasMediaImageMaskContent(editMask) ||
-            incoming.some((edge) => edge.toPortId === "mask")
-              ? (["masked-image-edit"] as const)
-              : []),
+            ...(hasMaskInput ? (["masked-image-edit"] as const) : []),
             ...(conditionedImageCount > 1
               ? (["multi-reference-edit"] as const)
-              : conditionedImageCount === 1 &&
-                  !hasMediaImageMaskContent(editMask)
+              : conditionedImageCount === 1 && !hasMaskInput
                 ? (["image-to-image"] as const)
-                : []),
-          ]
-        : node.type === "task.generate-image" &&
-            node.config.outputFormat === "svg"
-          ? [
-              node.config.svgMode === "vectorize"
-                ? "image-to-svg"
-                : imageInputEdges.length > 0
-                  ? "guided-svg-generation"
-                  : "text-to-svg",
-            ]
-          : ["text-to-image"];
+                : imageInputEdges.length === 0
+                  ? (["text-to-image"] as const)
+                  : []),
+          ];
   const videoKeyframes =
     node.type === "task.generate-video"
       ? (["first-frame", "last-frame"] as const).map((portId) => {
@@ -3092,20 +3122,35 @@ const NodeInspector = ({
                   onPatch={(values) => onNodeConfigPatch(node.id, values)}
                 />
               ))}
-              {node.type === "source.image" && node.config.referenceRole === "pose" ? (
+              {node.type === "source.image" &&
+              node.config.referenceRole === "pose" ? (
                 <>
                   <MediaPoseWorkspace
                     aspectRatio={poseAspectRatio}
                     savedScenes={savedPoseScenes}
                     onRenamePoseScene={onRenamePoseScene}
                     onLoadScene={(scene) => {
-                      if (poseTargetNode) onNodeConfigChange(poseTargetNode.id, "aspectRatio", scene.aspectRatio);
+                      if (poseTargetNode)
+                        onNodeConfigChange(
+                          poseTargetNode.id,
+                          "aspectRatio",
+                          scene.aspectRatio,
+                        );
                     }}
                     disabled={posePresetPending}
                     guidance={{
-                      strength: typeof poseTargetNode?.config.poseStrength === "number" ? poseTargetNode.config.poseStrength : 1,
-                      start: typeof poseTargetNode?.config.poseStart === "number" ? poseTargetNode.config.poseStart : 0,
-                      end: typeof poseTargetNode?.config.poseEnd === "number" ? poseTargetNode.config.poseEnd : 1,
+                      strength:
+                        typeof poseTargetNode?.config.poseStrength === "number"
+                          ? poseTargetNode.config.poseStrength
+                          : 1,
+                      start:
+                        typeof poseTargetNode?.config.poseStart === "number"
+                          ? poseTargetNode.config.poseStart
+                          : 0,
+                      end:
+                        typeof poseTargetNode?.config.poseEnd === "number"
+                          ? poseTargetNode.config.poseEnd
+                          : 1,
                     }}
                     onGuidanceChange={(guidance) => {
                       if (!poseTargetNode) return;
@@ -3118,16 +3163,33 @@ const NodeInspector = ({
                     onGenerate={onGeneratePoseChat}
                     onApply={createInspectorPoseAsset}
                   />
-                  {!poseTargetNode ? <p className="text-xs text-amber-300">Connect this pose source to an image task.</p> :
-                    !poseTargetModel ? <p className="text-xs text-amber-300">Choose a local Stable Diffusion model for this image task.</p> :
-                    poseTargetModel && (poseTargetModel.runtimeReadiness !== "ready" || !poseTargetModel.capabilities.includes("pose-control")) ?
-                      <p className="text-xs text-amber-300">{poseTargetModel.runtimeReadiness !== "ready"
+                  {!poseTargetNode ? (
+                    <p className="text-xs text-amber-300">
+                      Connect this pose source to an image task.
+                    </p>
+                  ) : !poseTargetModel ? (
+                    <p className="text-xs text-amber-300">
+                      Choose a local Stable Diffusion model for this image task.
+                    </p>
+                  ) : poseTargetModel &&
+                    (poseTargetModel.runtimeReadiness !== "ready" ||
+                      !poseTargetModel.capabilities.includes(
+                        "pose-control",
+                      )) ? (
+                    <p className="text-xs text-amber-300">
+                      {poseTargetModel.runtimeReadiness !== "ready"
                         ? "Verify this model in Assets to use a pose."
                         : poseTargetModel.architecture === "stable-diffusion-2"
-                        ? "SD 2 needs a matching OpenPose ControlNet installed manually."
-                        : ["stable-diffusion-1", "stable-diffusion-xl", "pony"].includes(poseTargetModel.architecture ?? "")
-                          ? "Install OpenPose for this model in Basic."
-                          : "Choose a local Stable Diffusion model to use this pose."}</p> : null}
+                          ? "SD 2 needs a matching OpenPose ControlNet installed manually."
+                          : [
+                                "stable-diffusion-1",
+                                "stable-diffusion-xl",
+                                "pony",
+                              ].includes(poseTargetModel.architecture ?? "")
+                            ? "Install OpenPose for this model in Basic."
+                            : "Choose a local Stable Diffusion model to use this pose."}
+                    </p>
+                  ) : null}
                 </>
               ) : null}
             </div>
@@ -6175,12 +6237,7 @@ export const MediaFlowView = ({
           <VisualGroupsPanel
             flow={flow}
             layout={layout}
-            onChange={(nextLayout) => {
-              commitLayout(nextLayout);
-              setLayoutNotice(
-                "Updated canvas organization without changing execution identity.",
-              );
-            }}
+            onChange={commitLayout}
             onClose={() => setGroupsPanelOpen(false)}
           />
         ) : historyPanelOpen ? (

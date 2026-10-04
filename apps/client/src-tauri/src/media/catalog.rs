@@ -8,7 +8,7 @@ use super::{
     MediaModelManagement, MediaProviderCatalogEntry, MediaResult,
 };
 
-pub(crate) const CATALOG_REVISION: &str = "builtin-2026-10-02-open-media";
+pub(crate) const CATALOG_REVISION: &str = "builtin-2026-10-03-open-media-audio";
 const CATALOG_CHECKED_AT: &str = "2026-07-15T00:00:00.000Z";
 const WEEK_SECONDS: u64 = 7 * 24 * 60 * 60;
 const MONTH_SECONDS: u64 = 30 * 24 * 60 * 60;

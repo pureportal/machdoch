@@ -2241,6 +2241,13 @@ export const generateMediaVideo = async (
   return invoke<MediaRunDetail>("media_generate_video", { request });
 };
 
+export const generateMediaAudio = async (
+  request: import("../../../core/media/contracts.js").GenerateMediaAudioRequest,
+): Promise<MediaRunDetail> => {
+  if (!canInvokeNativeRuntime()) throw new Error("Open the desktop app to generate audio.");
+  return invoke<MediaRunDetail>("media_generate_audio", { request });
+};
+
 export const enqueueMediaMockRemoteRun = async (
   request: EnqueueMockRemoteRunRequest,
 ): Promise<MediaRunDetail> => {

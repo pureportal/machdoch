@@ -9,6 +9,7 @@ import {
   isMediaVideoFrameCountValid,
   isMediaAssetKnownTransparent,
   MEDIA_VIDEO_QUALITY_PRESETS,
+  mediaVideoDimensionsError,
   resolveMediaAssetVideoFrameRate,
   resolveMediaAssetVideoLoopMode,
   resolveMediaVideoDimensions,
@@ -52,6 +53,61 @@ const videoAsset = (
 });
 
 describe("media video quality helpers", () => {
+  it("accepts CogVideoX's native canvas without relaxing other model grids", () => {
+    const canvas = { width: 720, height: 480 };
+    expect(mediaVideoDimensionsError(canvas, "cogvideox-2b")).toBeNull();
+    expect(mediaVideoDimensionsError(canvas, "wan-2.2-ti2v")).toMatch(/32/);
+    expect(
+      mediaVideoDimensionsError({ ...canvas, width: 721 }, "cogvideox-2b"),
+    ).toMatch(/8/);
+    expect(
+      summarizeMediaVideoDelivery(
+        {
+          ...canvas,
+          aspectRatio: "16:9",
+          resolution: "quality-768",
+          loopMode: "none",
+          numFrames: 49,
+          fps: 8,
+          encodingQuality: "lossless",
+          transparentBackground: false,
+        },
+        "cogvideox-2b",
+      ),
+    ).toMatchObject({ width: 720, height: 480, durationSeconds: 49 / 8 });
+  });
+
+  it("accepts Hunyuan and FramePack canvases on their sixteen-pixel grid", () => {
+    const canvas = { width: 848, height: 480 };
+    expect(
+      mediaVideoDimensionsError(canvas, "hunyuan-video-1.5-i2v"),
+    ).toBeNull();
+    expect(mediaVideoDimensionsError(canvas, "framepack-i2v")).toBeNull();
+    expect(mediaVideoDimensionsError(canvas, "wan-2.2-ti2v")).toMatch(/32/);
+    expect(
+      mediaVideoDimensionsError({ ...canvas, width: 840 }, "framepack-i2v"),
+    ).toMatch(/16/);
+  });
+
+  it("keeps CogVideoX 2B's training cadence across quality presets", () => {
+    for (const preset of MEDIA_VIDEO_QUALITY_PRESETS) {
+      const settings = resolveMediaVideoQualityPresetSettings(
+        preset,
+        "cogvideox-2b",
+      );
+      expect(settings.fps).toBe(8);
+      expect(settings.numInferenceSteps).toBe(50);
+      expect(
+        fitMediaVideoDuration(
+          settings.numFrames / 8,
+          settings.fps,
+          "none",
+          "cogvideox-2b",
+        ),
+      ).toMatchObject({ exact: true });
+    }
+  });
+
   it("accepts MiniMax H3 frame counts on its native grid", () => {
     expect(isMediaVideoFrameCountValid(124, "minimax-h3-ref2va")).toBe(true);
     expect(isMediaVideoFrameCountValid(141, "minimax-h3-ref2va")).toBe(true);
@@ -65,8 +121,12 @@ describe("media video quality helpers", () => {
   });
 
   it("resolves the local H3 2K output separately from the base canvas", () => {
-    expect(resolveMediaVideoDimensions("16:9", "quality-2k", "minimax-h3-ref2va")).toEqual([2560, 1440]);
-    expect(resolveMediaVideoDimensions("9:16", "quality-2k", "minimax-h3-ref2va")).toEqual([1440, 2560]);
+    expect(
+      resolveMediaVideoDimensions("16:9", "quality-2k", "minimax-h3-ref2va"),
+    ).toEqual([2560, 1440]);
+    expect(
+      resolveMediaVideoDimensions("9:16", "quality-2k", "minimax-h3-ref2va"),
+    ).toEqual([1440, 2560]);
   });
 
   it.each([

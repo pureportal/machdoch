@@ -31,6 +31,9 @@ use super::{
     MediaRuntimePaths,
 };
 
+#[path = "database_audio.rs"]
+pub(crate) mod audio;
+
 pub(crate) const SCHEMA_VERSION: u32 = 26;
 
 #[derive(Debug)]
@@ -8053,7 +8056,7 @@ mod tests {
         assert_eq!(initial.schema_version, 1);
         assert_eq!(initial.catalog_revision, catalog::CATALOG_REVISION);
         assert_eq!(initial.providers.len(), 8);
-        assert_eq!(initial.models.len(), 44);
+        assert_eq!(initial.models.len(), 45);
         for profile in super::super::open_models::profiles() {
             let model = initial
                 .models

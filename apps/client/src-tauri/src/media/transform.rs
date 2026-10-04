@@ -284,9 +284,7 @@ pub(crate) fn read_asset_preview(
     max_edge: u32,
 ) -> MediaResult<Vec<u8>> {
     let source = database::get_asset_blob_source(paths, asset_id)?;
-    if source.mime_type == "video/webm" {
-        // The browser needs the original container for native playback. The
-        // immutable CAS read still verifies the recorded size and SHA-256.
+    if matches!(source.mime_type.as_str(), "video/webm" | "audio/wav") {
         return read_verified_blob(paths, &source);
     }
     let is_svg = source.mime_type == "image/svg+xml";

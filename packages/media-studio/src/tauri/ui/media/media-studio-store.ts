@@ -14,6 +14,7 @@ import type {
   MediaStudioSection,
   MediaStudioState,
   MediaVideoRecipeSettings,
+  MediaAudioRecipeSettings,
 } from "../../../core/media/contracts.js";
 import {
   DEFAULT_MEDIA_ASSET_CATEGORIES,
@@ -27,6 +28,7 @@ import {
 import { getMediaNodeDefinition } from "../../../core/media/node-registry.js";
 import { normalizeMediaImageMask } from "../../../core/media/image-mask.js";
 import { MEDIA_VIDEO_QUALITY_PRESETS } from "../../../core/media/video-quality.js";
+import { DEFAULT_AUDIO_RECIPE_SETTINGS } from "../../../core/media/audio-flow.js";
 import { validateMediaFlowVariableDocument } from "../../../core/media/variables.js";
 import {
   loadStoredValue,
@@ -83,6 +85,7 @@ export const DEFAULT_MEDIA_STUDIO_STATE = {
   target: "image",
   recipe: DEFAULT_IMAGE_RECIPE_SETTINGS,
   videoRecipe: DEFAULT_VIDEO_RECIPE_SETTINGS,
+  audioRecipe: DEFAULT_AUDIO_RECIPE_SETTINGS,
   categories: DEFAULT_MEDIA_ASSET_CATEGORIES.map((category) => ({
     ...category,
   })),
@@ -94,6 +97,19 @@ export const DEFAULT_MEDIA_STUDIO_STATE = {
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null;
+};
+
+const normalizeAudioRecipeSettings = (value: unknown): MediaAudioRecipeSettings => {
+  if (!isRecord(value)) return { ...DEFAULT_AUDIO_RECIPE_SETTINGS };
+  return {
+    prompt: typeof value.prompt === "string" ? value.prompt.slice(0, 8000) : "",
+    modelId: typeof value.modelId === "string" ? value.modelId.slice(0, 128) : null,
+    negativePrompt: typeof value.negativePrompt === "string" ? value.negativePrompt.slice(0, 8000) : "",
+    durationSeconds: normalizeBoundedNumber(value.durationSeconds, 5, 1, 30),
+    numInferenceSteps: Math.round(normalizeBoundedNumber(value.numInferenceSteps, 100, 1, 200)),
+    guidanceScale: normalizeBoundedNumber(value.guidanceScale, 3.5, 0, 20),
+    seed: typeof value.seed === "number" && Number.isSafeInteger(value.seed) && value.seed >= 0 ? value.seed : null,
+  };
 };
 
 const normalizeOneOf = <T extends string>(
@@ -885,11 +901,12 @@ export const normalizeMediaStudioState = (value: unknown): MediaStudioState => {
     ),
     target: normalizeOneOf<MediaGenerationTarget>(
       value.target,
-      ["image", "video", "svg"],
+      ["image", "video", "svg", "audio"],
       DEFAULT_MEDIA_STUDIO_STATE.target,
     ),
     recipe: normalizeImageRecipeSettings(value.recipe),
     videoRecipe: normalizeVideoRecipeSettings(value.videoRecipe),
+    audioRecipe: normalizeAudioRecipeSettings(value.audioRecipe),
     categories,
     assetMetadata: normalizeAssetMetadata(value.assetMetadata, categories),
     flow: normalizeStoredFlow(value.flow),

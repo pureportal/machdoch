@@ -26,6 +26,13 @@ def load_pipeline(diffusers: Any, model: dict[str, Any], dtype: Any, *, image_co
     if pipeline_class is None:
         raise ValueError(f"The media runtime does not expose {class_name}. Repair runtime setup.")
     options = {}
+    if profile["architecture"] == "audioldm-2":
+        from transformers import GPT2LMHeadModel
+
+        options["language_model"] = GPT2LMHeadModel.from_pretrained(
+            str(root / "language_model"), torch_dtype=dtype,
+            local_files_only=True, use_safetensors=True, trust_remote_code=False,
+        )
     if profile["pipeline"] == "Flux2KleinPipeline":
         options["is_distilled"] = profile["fixedSteps"]
     if profile["architecture"] == "krea-2-raw":

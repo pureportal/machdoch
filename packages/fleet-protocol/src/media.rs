@@ -32,6 +32,7 @@ const MEDIA_COMMANDS: &[&str] = &[
     "media_generate_images",
     "media_generate_svg",
     "media_generate_video",
+    "media_generate_audio",
     "media_get_civitai_model",
     "media_get_flow",
     "media_get_model_catalog",

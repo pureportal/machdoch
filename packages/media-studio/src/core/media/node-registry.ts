@@ -6,6 +6,7 @@ import type {
   MediaPortDataType,
 } from "./contracts.js";
 import { resolveMediaFlowVariables } from "./variables.js";
+import { AUDIO_NODE_DEFINITIONS } from "./audio-nodes.js";
 import { DEFAULT_SUBJECT_CUTOUT_MODEL_PRIORITY } from "./subject-cutout-policy.js";
 import { isMediaImageMask } from "./image-mask.js";
 import {
@@ -247,6 +248,7 @@ const backgroundVideoInput: MediaNodePortDefinition = {
 };
 
 export const MEDIA_NODE_DEFINITIONS = [
+  ...AUDIO_NODE_DEFINITIONS,
   ...WORKFLOW_NODE_DEFINITIONS,
   {
     type: "source.prompt",
@@ -1134,7 +1136,7 @@ export const MEDIA_NODE_DEFINITIONS = [
           defaultValue: null,
           min: 128,
           max: 1536,
-          step: 32,
+          step: 8,
           examples: [],
         }),
       ),

@@ -29,7 +29,8 @@ if sys.argv[1] != 'serve':
     request = json.load(sys.stdin) if sys.argv[1] in ('canny', 'generate-video') else {}
     emit_progress(request)
     if request.get('delay'):
-        (root / 'active').write_text(str(os.getpid()))
+        (root / 'active.pending').write_text(str(os.getpid()))
+        (root / 'active.pending').replace(root / 'active')
         time.sleep(request['delay'])
     print(json.dumps({'pid': os.getpid()}))
     sys.exit(0)
@@ -38,7 +39,8 @@ for line in sys.stdin:
     request = envelope.get('request') or {}
     emit_progress(request)
     if request.get('delay'):
-        (root / 'active').write_text(str(os.getpid()))
+        (root / 'active.pending').write_text(str(os.getpid()))
+        (root / 'active.pending').replace(root / 'active')
         time.sleep(request['delay'])
     if request.get('fail'):
         print(json.dumps({'error': 'CUDA out of memory'}), flush=True)

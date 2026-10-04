@@ -75,11 +75,17 @@ import {
   type MediaSavedPoseScene,
 } from "../../../../core/media/pose-map.js";
 import { MediaPoseWorkspace } from "./media-pose-workspace";
+import { MediaAudioGenerateView } from "./media-audio-generate-view";
+import type { MediaAudioRecipeSettings } from "../../../../core/media/contracts.js";
 
 interface MediaGenerateViewProps {
   target: MediaGenerationTarget;
   settings: ImageRecipeSettings;
   videoSettings: MediaVideoRecipeSettings;
+  audioSettings: MediaAudioRecipeSettings;
+  onAudioSettingsChange: (settings: MediaAudioRecipeSettings) => void;
+  audioGenerationSupported: boolean;
+  audioGenerationBlockedReason: string | null;
   assetMetadata: Record<string, MediaGenerationAssetMetadata>;
   categories: readonly MediaAssetCategory[];
   plan: MediaCompiledPlan;
@@ -128,12 +134,17 @@ const TARGETS: ReadonlyArray<{
   { id: "image", label: "Image" },
   { id: "video", label: "Video" },
   { id: "svg", label: "SVG" },
+  { id: "audio", label: "Audio" },
 ];
 
 export const MediaGenerateView = ({
   target,
   settings,
   videoSettings,
+  audioSettings,
+  onAudioSettingsChange,
+  audioGenerationSupported,
+  audioGenerationBlockedReason,
   assetMetadata,
   categories,
   plan,
@@ -241,32 +252,34 @@ export const MediaGenerateView = ({
       directPoseModelIds,
     );
   }
-  const requiredImageCapabilities: readonly MediaCapability[] | undefined =
-    target !== "image"
-      ? undefined
-      : [
-          ...(settings.baseImageAssetId
-            ? settings.editMask
-              ? (["masked-image-edit"] as const)
-              : []
-            : []),
-          ...(settings.referenceImages.length +
-            (settings.baseImageAssetId ? 1 : 0) >
-          1
-            ? (["multi-reference-edit"] as const)
-            : settings.referenceImages.length +
-                  (settings.baseImageAssetId ? 1 : 0) ===
-                1
-              ? (["image-to-image"] as const)
-              : !settings.baseImageAssetId &&
-                  settings.referenceImages.length === 0
-                ? (["text-to-image"] as const)
-                : []),
-        ];
+  const requiredModelCapabilities: readonly MediaCapability[] | undefined =
+    target === "svg"
+      ? [settings.referenceImages.length > 0 ? "image-to-svg" : "text-to-svg"]
+      : target === "image"
+        ? [
+            ...(settings.baseImageAssetId
+              ? settings.editMask
+                ? (["masked-image-edit"] as const)
+                : []
+              : []),
+            ...(settings.referenceImages.length +
+              (settings.baseImageAssetId ? 1 : 0) >
+            1
+              ? (["multi-reference-edit"] as const)
+              : settings.referenceImages.length +
+                    (settings.baseImageAssetId ? 1 : 0) ===
+                  1
+                ? (["image-to-image"] as const)
+                : !settings.baseImageAssetId &&
+                    settings.referenceImages.length === 0
+                  ? (["text-to-image"] as const)
+                  : []),
+          ]
+        : undefined;
   const models = listSelectableMediaModels(catalog.models, {
     target,
     requiredCapabilities:
-      target === "image" ? undefined : requiredImageCapabilities,
+      target === "image" ? undefined : requiredModelCapabilities,
     allowedModelIds:
       target === "image"
         ? directGenerationModelIds
@@ -287,7 +300,7 @@ export const MediaGenerateView = ({
       : catalog.models.find(
           (model) =>
             model.management.acquisition === "managed-install" &&
-            (requiredImageCapabilities ?? []).every((capability) =>
+            (requiredModelCapabilities ?? []).every((capability) =>
               model.capabilities.includes(capability),
             ),
         );
@@ -314,8 +327,8 @@ export const MediaGenerateView = ({
       "pony",
     ].includes(poseModelFamily ?? "")
       ? "Choose a local Stable Diffusion model to use a pose."
-      : selectedModel.runtimeReadiness !== "ready"
-        ? "Verify this model in Assets to use a pose."
+      : !isMediaModelReady(selectedModel)
+        ? "Install this model to use a pose."
         : poseModelFamily === "stable-diffusion-2" &&
             directPoseModelIds !== null &&
             !poseModelReady
@@ -460,16 +473,18 @@ export const MediaGenerateView = ({
     !missingImage &&
     (target !== "image" ||
       mediaImageSamplingError(settings.sampling ?? {}) === null) &&
-    (target !== "video" || mediaVideoDimensionsError(videoSettings) === null) &&
+    (target !== "video" ||
+      mediaVideoDimensionsError(videoSettings, selectedModel?.architecture) ===
+        null) &&
     promptReady &&
     svgReferenceReady &&
     baseMaskReady &&
-    (!settings.editMask || maskHasPixels) &&
+    (target !== "image" || !settings.editMask || maskHasPixels) &&
     modelReady &&
     runtimeReady &&
     planReady &&
     (target !== "video" || videoGenerationSupported) &&
-    !settings.qualityGateEnabled &&
+    (target === "video" || !settings.qualityGateEnabled) &&
     !generationPending;
   const generationBlockedReason =
     (referenceImportPending ? "Adding image" : null) ??
@@ -479,7 +494,7 @@ export const MediaGenerateView = ({
     samplingError ??
     (missingImage
       ? "Remove or replace the unavailable image."
-      : settings.editMask && !maskHasPixels
+      : target === "image" && settings.editMask && !maskHasPixels
         ? "Paint the area to change"
         : !svgReferenceReady
           ? "Choose an image to vectorize"
@@ -502,7 +517,7 @@ export const MediaGenerateView = ({
                           ? (plan.diagnostics.find(
                               (diagnostic) => diagnostic.severity === "error",
                             )?.message ?? "Resolve the generation settings")
-                          : settings.qualityGateEnabled
+                          : target !== "video" && settings.qualityGateEnabled
                             ? "Run quality gates in Advanced"
                             : null);
   const resultAssets =
@@ -635,15 +650,15 @@ export const MediaGenerateView = ({
   };
 
   const addReference = (asset: MediaAssetRecord): void => {
-    if (selectedReferenceIds.has(asset.id)) return;
+    if (target === "video" || isSvgVectorization) {
+      changeReferences([{ assetId: asset.id, role: "base", influence: 1 }]);
+      return;
+    }
     if (
+      selectedReferenceIds.has(asset.id) ||
       asset.id === settings.baseImageAssetId ||
       asset.id === settings.poseImageAssetId
     ) {
-      return;
-    }
-    if (target === "video" || isSvgVectorization) {
-      changeReferences([{ assetId: asset.id, role: "base", influence: 1 }]);
       return;
     }
     if (settings.referenceImages.length >= referenceLimit) return;
@@ -720,42 +735,68 @@ export const MediaGenerateView = ({
     </div>
   );
 
+  const targetHeader = (
+    <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 px-5 py-3">
+      <div className="flex rounded-xl border border-slate-800 bg-slate-900/70 p-1">
+        {TARGETS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            aria-pressed={target === item.id}
+            onClick={() => onTargetChange(item.id)}
+            className={cn(
+              "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+              target === item.id
+                ? "bg-slate-700 text-white"
+                : "text-slate-400 hover:text-slate-100",
+            )}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        onClick={onOpenFlow}
+        disabled={flowOpening}
+      >
+        {flowOpening ? (
+          <LoaderCircle className="h-4 w-4 animate-spin" />
+        ) : (
+          <Workflow className="h-4 w-4" />
+        )}
+        {flowOpening ? "Loading workflow" : "Convert to Advanced"}
+      </Button>
+    </header>
+  );
+
+  if (target === "audio") {
+    return (
+      <MediaAudioGenerateView
+        header={targetHeader}
+        audioSettings={audioSettings}
+        onAudioSettingsChange={onAudioSettingsChange}
+        audioGenerationSupported={audioGenerationSupported}
+        audioGenerationBlockedReason={audioGenerationBlockedReason}
+        models={catalog.models}
+        plan={plan}
+        generationJob={generationJob}
+        generationJobs={generationJobs}
+        generationPending={generationPending}
+        onSelectGenerationJob={onSelectGenerationJob}
+        onCancelGeneration={onCancelGeneration}
+        onOpenActivity={onOpenActivity}
+        onOpenAssets={onOpenAssets}
+        onGenerate={onGenerate}
+      />
+    );
+  }
+
   return (
     <SubmitShortcut asChild>
       <div className="flex h-full min-h-0 flex-col overflow-hidden bg-slate-950">
-        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 px-5 py-3">
-          <div className="flex rounded-xl border border-slate-800 bg-slate-900/70 p-1">
-            {TARGETS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                aria-pressed={target === item.id}
-                onClick={() => onTargetChange(item.id)}
-                className={cn(
-                  "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-                  target === item.id
-                    ? "bg-slate-700 text-white"
-                    : "text-slate-400 hover:text-slate-100",
-                )}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onOpenFlow}
-            disabled={flowOpening}
-          >
-            {flowOpening ? (
-              <LoaderCircle className="h-4 w-4 animate-spin" />
-            ) : (
-              <Workflow className="h-4 w-4" />
-            )}
-            {flowOpening ? "Loading workflow" : "Convert to Advanced"}
-          </Button>
-        </header>
+        {targetHeader}
 
         <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto xl:grid-cols-[minmax(420px,1fr)_minmax(420px,1fr)] xl:overflow-hidden">
           <section className="flex flex-col border-slate-800/70 xl:min-h-0 xl:border-r xl:overflow-hidden">

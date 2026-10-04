@@ -220,6 +220,11 @@ fn execute(
     work: &Work,
     stopping: &AtomicBool,
 ) -> MediaResult<Output> {
+    let _generation_database_connection = work
+        .cancellation
+        .as_ref()
+        .map(|(paths, _)| database::open(paths))
+        .transpose()?;
     let mut next_cancellation_check = Instant::now();
     let mut monitor = |event: Option<worker_output::WorkerProgress>| {
         check_shutdown(stopping)?;
@@ -232,10 +237,10 @@ fn execute(
             }
             if let Some(event) = event {
                 if !database::workflow::progress(paths, run, &event.stage, event.progress)? {
-                    let node_types: &[&str] = if work.command == "generate-video" {
-                        &["task.generate-video"]
-                    } else {
-                        &["task.generate-image", "task.edit-image"]
+                    let node_types: &[&str] = match work.command.as_str() {
+                        "generate-video" => &["task.generate-video"],
+                        "generate-audio" => &["task.generate-audio"],
+                        _ => &["task.generate-image", "task.edit-image"],
                     };
                     database::transition_nodes_by_type(
                         paths,

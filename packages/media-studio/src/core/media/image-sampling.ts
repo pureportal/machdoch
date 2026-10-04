@@ -65,7 +65,7 @@ export const defaultMediaImageSteps = (
   (architecture === "flux-2"
     ? 4
     : architecture === "krea-2"
-      ? { fast: 8, balanced: 10, quality: 12 }[policy]
+      ? 8
       : architecture === "qwen-image-2.1"
         ? { fast: 20, balanced: 30, quality: 40 }[policy]
         : { fast: 16, balanced: 24, quality: 32 }[policy]);

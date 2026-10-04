@@ -224,6 +224,7 @@ export type MediaNodeType =
   | "task.generate-image"
   | "task.edit-image"
   | "task.generate-video"
+  | "task.generate-audio"
   | "operation.crop"
   | "operation.resize"
   | "operation.text-overlay"
@@ -241,7 +242,8 @@ export type MediaNodeType =
   | "control.quality-gate"
   | "control.human-review"
   | "output.asset"
-  | "output.video";
+  | "output.video"
+  | "output.audio";
 
 export type MediaPortDataType =
   | "controlnet"
@@ -1098,7 +1100,36 @@ export interface ImageRecipeSettings {
   modelAddons: MediaModelAddonSelection[];
 }
 
-export type MediaGenerationTarget = "image" | "video" | "svg";
+export type MediaGenerationTarget = "image" | "video" | "svg" | "audio";
+
+export interface MediaAudioRecipeSettings {
+  prompt: string;
+  modelId: string | null;
+  negativePrompt: string;
+  durationSeconds: number;
+  numInferenceSteps: number;
+  guidanceScale: number;
+  seed: number | null;
+}
+
+export interface GenerateMediaAudioRequest {
+  schemaVersion: 1;
+  runId: string;
+  flowId: string;
+  flowRevisionId: string;
+  flowName: string;
+  planId: string;
+  modelId: string;
+  modelLabel: string;
+  prompt: string;
+  negativePrompt: string;
+  durationSeconds: number;
+  numInferenceSteps: number;
+  guidanceScale: number;
+  seed: number;
+  diagnosticCount: number;
+  planSnapshot: MediaRunPlanSnapshot;
+}
 
 export type MediaVideoModelId =
   | "local:framepack-i2v-hy-13b"
@@ -1314,6 +1345,7 @@ export interface MediaExecutionStep {
     | "resolve-model-addons"
     | "generate-image"
     | "generate-video"
+    | "generate-audio"
     | "generate-svg"
     | "vectorize-svg"
     | "validate-svg"
@@ -1478,6 +1510,7 @@ export interface MediaRuntimeRunRecord extends MediaRunRecord {
     | "media-workflow"
     | "local-analysis"
     | "local-video"
+    | "local-audio"
     | "local-wan-video"
     | "mock-remote-provider"
     | "svg-ai-pipeline";
@@ -1578,13 +1611,14 @@ export interface MediaAssetRecord {
   id: string;
   runId: string;
   digest: string;
-  kind: "image" | "video" | "vector" | "report";
+  kind: "image" | "video" | "audio" | "vector" | "report";
   mimeType:
     | "image/png"
     | "image/jpeg"
     | "image/webp"
     | "image/svg+xml"
     | "video/webm"
+    | "audio/wav"
     | "application/json";
   byteSize: number;
   width: number;
@@ -2110,9 +2144,32 @@ export type MediaAssetOperation =
   | MediaRemoteImageGenerationOperation
   | MediaLocalDiffusionGenerationOperation
   | MediaLocalVideoGenerationOperation
+  | MediaLocalAudioGenerationOperation
   | MediaLocalWanVideoGenerationOperation
   | MediaRemoteImageEditOperation
   | MediaRemoteSvgGenerationOperation;
+
+export interface MediaLocalAudioGenerationOperation {
+  kind: "local-audio-generation";
+  providerId: "local-diffusers";
+  modelId: string;
+  flowRevisionId: string;
+  generation: {
+    schemaVersion: number;
+    workerVersion: string;
+    modelArchitecture: string;
+    modelRevision: string;
+    modelDigest: string;
+    device: string;
+    deviceLabel: string;
+    prompt: string;
+    negativePrompt: string;
+    numInferenceSteps: number;
+    guidanceScale: number;
+    output: { fileName: string; sampleRate: number; channels: number; frames: number; durationSeconds: number; seed: number; digest: string; byteSize: number; peak: number; rms: number; gain: number };
+    performance: { loadSeconds: number; generationSeconds: number; totalSeconds: number };
+  };
+}
 
 export interface MediaVisualAssessment {
   checks: {
@@ -2633,6 +2690,7 @@ export interface MediaStudioState {
   target: MediaGenerationTarget;
   recipe: ImageRecipeSettings;
   videoRecipe: MediaVideoRecipeSettings;
+  audioRecipe: MediaAudioRecipeSettings;
   categories: MediaAssetCategory[];
   assetMetadata: Record<string, MediaGenerationAssetMetadata>;
   flow: MediaFlow | null;

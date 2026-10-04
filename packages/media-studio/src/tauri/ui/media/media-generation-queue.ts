@@ -8,6 +8,7 @@ import type {
   MediaRunDetail,
   MediaRuntimeRunStatus,
   MediaVideoRecipeSettings,
+  MediaAudioRecipeSettings,
 } from "../../../core/media/contracts.js";
 import { normalizeMediaError } from "./media-runtime.js";
 
@@ -29,6 +30,7 @@ export interface MediaGenerationRecipeSnapshot {
   outputBranches: MediaImageOutputBranch[];
   imageSettings: ImageRecipeSettings | null;
   videoSettings: MediaVideoRecipeSettings | null;
+  audioSettings?: MediaAudioRecipeSettings;
   resultDestination: "assets";
 }
 

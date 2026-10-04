@@ -36,7 +36,7 @@ pub(crate) struct MediaFlowNode {
     pub(crate) r#type: String,
     version: u32,
     pub(crate) label: String,
-    layer: String,
+    pub(crate) layer: String,
     pub(crate) config: Map<String, Value>,
 }
 
@@ -2810,6 +2810,7 @@ fn is_supported_node(node_type: &str, version: u32) -> bool {
                 | "task.generate-image"
                 | "task.edit-image"
                 | "task.generate-video"
+                | "task.generate-audio"
                 | "operation.crop"
                 | "operation.resize"
                 | "operation.text-overlay"
@@ -2828,6 +2829,7 @@ fn is_supported_node(node_type: &str, version: u32) -> bool {
                 | "control.human-review"
                 | "output.asset"
                 | "output.video"
+                | "output.audio"
         )
 }
 
@@ -3647,6 +3649,7 @@ impl MediaFlowNode {
             "task.generate-image"
             | "task.edit-image"
             | "task.generate-video"
+            | "task.generate-audio"
             | "task.generate-prompt" => "task",
             "operation.visual-check"
             | "operation.canny"
@@ -3672,7 +3675,7 @@ impl MediaFlowNode {
             | "operation.video-composite"
             | "operation.quality-analyze" => "operation",
             "control.quality-gate" | "control.human-review" | "control.repeat" => "control",
-            "output.asset" | "output.video" => "output",
+            "output.asset" | "output.video" | "output.audio" => "output",
             _ => return Err(format!("flow node {} has an unsupported type", self.id)),
         };
         if self.layer != expected_layer {
@@ -4274,6 +4277,51 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
             }
             Ok(())
         }
+        "task.generate-audio" => {
+            validate_config_keys(
+                node,
+                &[
+                    "modelId",
+                    "negativePrompt",
+                    "durationSeconds",
+                    "numInferenceSteps",
+                    "guidanceScale",
+                    "seed",
+                ],
+            )?;
+            if !node.config.get("modelId").is_none_or(Value::is_null) {
+                config_string(node, "modelId", 128, false)?;
+            }
+            config_multiline_string(node, "negativePrompt", 8_000, true)?;
+            for (key, minimum, maximum) in
+                [("durationSeconds", 1.0, 30.0), ("guidanceScale", 0.0, 20.0)]
+            {
+                let value = node
+                    .config
+                    .get(key)
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| format!("Enter {key}"))?;
+                if !value.is_finite() || !(minimum..=maximum).contains(&value) {
+                    return Err(format!("{key} must be between {minimum} and {maximum}"));
+                }
+            }
+            let steps = node
+                .config
+                .get("numInferenceSteps")
+                .and_then(Value::as_u64)
+                .ok_or("Enter audio steps")?;
+            let seed = node.config.get("seed");
+            let seed_invalid = seed.is_some_and(|value| {
+                !value.is_null()
+                    && value
+                        .as_u64()
+                        .is_none_or(|number| number > 9_007_199_254_740_991)
+            });
+            if !(1..=200).contains(&steps) || seed_invalid {
+                return Err("Check audio steps and seed".into());
+            }
+            Ok(())
+        }
         "task.generate-video" => {
             validate_config_keys(
                 node,
@@ -4330,6 +4378,7 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                             .ok_or_else(|| "Invalid video height".to_string())
                     })
                     .transpose()?,
+                8,
             )?;
             config_enum(node, "providerPolicy", &["local"])?;
             config_enum(node, "modelPolicy", &["balanced", "fast", "quality"])?;
@@ -4872,6 +4921,10 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
             }
             Ok(())
         }
+        "output.audio" => {
+            validate_config_keys(node, &["format"])?;
+            config_enum(node, "format", &["wav"])
+        }
         _ => unreachable!("node type was validated before config"),
     }
 }
@@ -4972,6 +5025,8 @@ fn port_type(node_type: &str, port_id: &str, output: bool) -> Option<&'static st
         ("task.generate-video", false, "prompt") => Some("prompt"),
         ("task.generate-video", false, "first-frame" | "last-frame") => Some("image"),
         ("task.generate-video", true, "video") => Some("video"),
+        ("task.generate-audio", false, "prompt") => Some("prompt"),
+        ("task.generate-audio", true, "audio") | ("output.audio", false, "audio") => Some("audio"),
         ("operation.crop", false | true, "image") => Some("image"),
         ("operation.resize", false | true, "image") => Some("image"),
         ("operation.text-overlay", false | true, "image") => Some("image"),
@@ -5036,7 +5091,7 @@ fn required_input_ports(node_type: &str, is_svg_vectorization: bool) -> &'static
         | "operation.segment"
         | "operation.upscale" => &["image"],
         "source.prompt" | "source.image" | "source.seed" | "source.animated-background" => &[],
-        "task.generate-image" | "task.generate-video" => &["prompt"],
+        "task.generate-image" | "task.generate-video" | "task.generate-audio" => &["prompt"],
         "task.edit-image" => &["prompt", "image"],
         "operation.crop"
         | "operation.resize"
@@ -5053,6 +5108,7 @@ fn required_input_ports(node_type: &str, is_svg_vectorization: bool) -> &'static
         | "control.human-review"
         | "output.asset" => &["image"],
         "output.video" => &["video"],
+        "output.audio" => &["audio"],
         "control.quality-gate" => &["image", "report"],
         "operation.composite" => &["foreground", "background"],
         "operation.video-composite" => &["foreground-video", "background-video"],
@@ -5088,9 +5144,10 @@ fn required_output_ports(node_type: &str) -> &'static [&'static str] {
         | "control.quality-gate"
         | "control.human-review" => &["image"],
         "task.generate-video" => &["video"],
+        "task.generate-audio" => &["audio"],
         "operation.video-composite" => &["video"],
         "operation.visual-check" | "operation.quality-analyze" => &["report"],
-        "output.asset" | "output.video" => &[],
+        "output.asset" | "output.video" | "output.audio" => &[],
         _ => &[],
     }
 }

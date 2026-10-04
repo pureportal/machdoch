@@ -59,6 +59,7 @@
       "python/media_diffusers_worker.py": "python/media_diffusers_worker.py",
       "python/media_open_models.py": "python/media_open_models.py",
       "python/media_open_video.py": "python/media_open_video.py",
+      "python/media_audio.py": "python/media_audio.py",
       "python/open_media_models.json": "python/open_media_models.json",
       "python/media_minimax_h3.py": "python/media_minimax_h3.py",
       "python/fizgig": "python/fizgig",

@@ -303,6 +303,7 @@ pub fn run() {
             media::media_enqueue_fixture_run,
             media::media_generate_images,
             media::media_generate_video,
+            media::audio::media_generate_audio,
             media::media_generate_svg,
             media::media_execute_remote_image_edit_flow,
             media::media_enqueue_mock_remote_run,

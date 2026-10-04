@@ -1,4 +1,4 @@
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
 import type {
   MediaModelDescriptor,
   MediaModelInstallJob,
@@ -38,6 +38,7 @@ export const MediaModelInstallDialog = ({
   const [accepted, setAccepted] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const jobMutation = useRef(0);
   useEffect(() => {
     let current = true;
     void planMediaModelInstall(model.id)
@@ -64,9 +65,14 @@ export const MediaModelInstallDialog = ({
     let current = true;
     let timer: ReturnType<typeof setTimeout>;
     const poll = async (): Promise<void> => {
+      const mutation = jobMutation.current;
       try {
         const result = await getMediaModelInstallJob(jobId);
         if (!current) return;
+        if (mutation !== jobMutation.current) {
+          timer = setTimeout(() => void poll(), 1000);
+          return;
+        }
         setJob(result);
         if (result.status === "installed") await onInstalled();
         if (current && activeJob(result))
@@ -83,6 +89,7 @@ export const MediaModelInstallDialog = ({
   }, [jobId, active, onInstalled]);
   const start = async (): Promise<void> => {
     if (!plan) return;
+    jobMutation.current += 1;
     setPending(true);
     setError(null);
     try {
@@ -103,6 +110,7 @@ export const MediaModelInstallDialog = ({
   };
   const cancel = async (): Promise<void> => {
     if (!job) return;
+    jobMutation.current += 1;
     setPending(true);
     try {
       setJob(await cancelMediaModelInstall(job.id));

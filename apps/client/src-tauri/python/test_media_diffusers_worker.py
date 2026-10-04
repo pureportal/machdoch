@@ -200,7 +200,7 @@ class MediaDiffusersQualityTests(unittest.TestCase):
                 bar = tqdm(total=8, mininterval=3600, disable=disabled, file=io.StringIO())
                 pipeline = SimpleNamespace(progress_bar=mock.Mock(return_value=bar))
                 original_progress_bar = pipeline.progress_bar
-                WORKER._enable_hunyuan_sampling_progress(pipeline)
+                WORKER._enable_sampling_progress(pipeline)
 
                 with mock.patch.object(WORKER, "_progress") as report:
                     with pipeline.progress_bar(total=8) as sampling:
@@ -228,7 +228,7 @@ class MediaDiffusersQualityTests(unittest.TestCase):
             pipeline = SimpleNamespace(
                 progress_bar=lambda *, total: tqdm(total=total, mininterval=0)
             )
-            WORKER._enable_hunyuan_sampling_progress(pipeline)
+            WORKER._enable_sampling_progress(pipeline)
             with pipeline.progress_bar(total=8) as sampling:
                 for _ in range(8):
                     sampling.update()
@@ -276,6 +276,14 @@ class MediaDiffusersQualityTests(unittest.TestCase):
         self.assertEqual(WORKER._steps("flux-2", "fast"), 4)
         self.assertEqual(WORKER._steps("flux-2", "balanced"), 4)
         self.assertEqual(WORKER._steps("flux-2", "quality"), 4)
+
+    def test_krea_turbo_quality_policies_keep_the_distilled_eight_step_recipe(self) -> None:
+        for policy in ("fast", "balanced", "quality"):
+            with self.subTest(policy=policy):
+                self.assertEqual(
+                    WORKER._image_sampling({"aspectRatio": "1:1"}, "krea-2", policy)[2],
+                    8,
+                )
 
     def test_flux2_accepts_generic_reference_images(self) -> None:
         self.assertEqual(
@@ -1457,6 +1465,8 @@ class MediaDiffusersQualityTests(unittest.TestCase):
                         "outputDirectory": "output",
                         "aspectRatio": "1:1",
                         "resolution": "quality-640",
+                        "width": 848,
+                        "height": 480,
                         "numFrames": 17,
                         "numInferenceSteps": 8,
                         "fps": 16,

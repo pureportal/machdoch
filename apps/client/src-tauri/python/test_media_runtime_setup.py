@@ -26,7 +26,7 @@ class RuntimeReadinessTests(unittest.TestCase):
         with mock.patch.object(WORKER, "_package_versions", return_value=versions), mock.patch.object(WORKER, "_runtime") as runtime:
             result = WORKER.probe(verify_operations=True)
         self.assertFalse(result["ready"])
-        self.assertIn("missing diffusers", result["diagnostic"])
+        self.assertRegex(result["diagnostic"], r"missing [^;]*\bdiffusers\b")
         self.assertIn("torch=2.2.2", result["diagnostic"])
         runtime.assert_not_called()
 

@@ -134,6 +134,37 @@ it("starts a download with the reviewed package identity and supports cancellati
   ).toBeTruthy();
 });
 
+it("ignores a status response started before cancellation", async () => {
+  let resolveStatus!: (value: MediaModelInstallJob) => void;
+  runtime.get.mockReturnValue(
+    new Promise<MediaModelInstallJob>((resolve) => {
+      resolveStatus = resolve;
+    }),
+  );
+  const plan = createLocalFluxInstallPlan();
+  runtime.plan.mockResolvedValue({
+    ...plan,
+    activeJob: { ...job, manifestDigest: plan.manifestDigest },
+  });
+  render(
+    createElement(MediaModelInstallDialog, {
+      model,
+      onClose: vi.fn(),
+      onInstalled: vi.fn(async () => undefined),
+    }),
+  );
+  await waitFor(() => expect(runtime.get).toHaveBeenCalledWith(job.id));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel download" }));
+  await screen.findByRole("button", { name: "Retry download" });
+  resolveStatus(job);
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: "Retry download" })).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Cancel download" }),
+    ).toBeNull();
+  });
+});
+
 it("requires acceptance when the package terms require it", async () => {
   runtime.plan.mockResolvedValue(createLocalFluxInstallPlan());
   render(

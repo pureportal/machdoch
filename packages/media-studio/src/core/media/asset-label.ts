@@ -8,4 +8,4 @@ export const mediaAssetLabel = (
     ? asset.operation.sourceFileName
     : null) ||
   asset.tags.find((tag) => tag.source === "user")?.label ||
-  `${asset.kind === "vector" ? "SVG" : asset.kind === "video" ? "Video" : "Image"} ${index + 1}`;
+  `${asset.kind === "vector" ? "SVG" : asset.kind === "video" ? "Video" : asset.kind === "audio" ? "Audio" : "Image"} ${index + 1}`;

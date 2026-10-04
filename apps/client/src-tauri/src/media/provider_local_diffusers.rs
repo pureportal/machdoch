@@ -12,6 +12,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use tauri::{AppHandle, Manager as _};
 
+#[path = "provider_audio.rs"]
+mod audio;
+pub(crate) use audio::generate_audio;
+
 use super::{
     database, model_addon, model_components, model_import,
     provider_images::{self, GeneratedImageAsset},
@@ -560,14 +564,15 @@ pub(crate) struct LocalGeneratedVideo {
     pub(crate) composite_output: Option<LocalWanCompositeOutputProvenance>,
 }
 
-struct InstalledModel {
-    id: String,
-    architecture: String,
-    package_kind: String,
-    path: PathBuf,
-    config_path: Option<PathBuf>,
-    revision: String,
-    digest: String,
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct InstalledModel {
+    pub(super) id: String,
+    pub(super) architecture: String,
+    pub(super) package_kind: String,
+    pub(super) path: PathBuf,
+    pub(super) config_path: Option<PathBuf>,
+    pub(super) revision: String,
+    pub(super) digest: String,
 }
 
 struct ResolvedAddon {
@@ -864,77 +869,36 @@ fn ready_runtime(
 }
 
 pub(crate) fn annotate_catalog_readiness(
-    paths: &MediaRuntimePaths,
     runtime: &LocalDiffusersRuntimeStatus,
     models: &mut [MediaModelDescriptor],
-) -> MediaResult<()> {
-    let fingerprint = runtime_fingerprint(runtime);
-    let connection = database::open(paths)?;
-    let mut statement = connection
-        .prepare(
-            "SELECT p.revision, p.model_digest, p.runtime_fingerprint, p.status,
-                    p.diagnostic, p.probed_at, i.manifest_digest
-             FROM media_model_runtime_probes p
-             JOIN media_model_installations i ON i.model_id = p.model_id
-             WHERE p.model_id = ?1",
-        )
-        .map_err(|error| format!("failed to prepare model readiness query: {error}"))?;
+) {
     for model in models {
         if model.provider_id != "local-diffusers" || !model.installed {
             continue;
         }
-        let Some(current_fingerprint) = fingerprint.as_deref() else {
+        if !runtime.ready {
             model.runtime_readiness = "runtime-unavailable".to_string();
             model.runtime_readiness_diagnostic = Some(runtime.diagnostic.clone());
             model.runtime_readiness_checked_at = None;
             continue;
-        };
-        let stored = statement
-            .query_row([&model.id], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, String>(5)?,
-                    row.get::<_, String>(6)?,
-                ))
-            })
-            .optional()
-            .map_err(|error| format!("failed to read model readiness: {error}"))?;
-        let Some((
-            revision,
-            model_digest,
-            stored_fingerprint,
-            status,
-            diagnostic,
-            checked_at,
-            installed_digest,
-        )) = stored
-        else {
-            model.runtime_readiness = "unverified".to_string();
-            model.runtime_readiness_diagnostic = Some(
-                "Run Verify model once before using this checkpoint for generation.".to_string(),
-            );
-            continue;
-        };
-        if model.installed_revision.as_deref() != Some(revision.as_str())
-            || model_digest != installed_digest
-            || stored_fingerprint != current_fingerprint
+        }
+        if !model
+            .architecture
+            .as_ref()
+            .is_some_and(|architecture| runtime.architectures.contains(architecture))
         {
-            model.runtime_readiness = "unverified".to_string();
+            model.runtime_readiness = "runtime-unavailable".to_string();
             model.runtime_readiness_diagnostic = Some(
-                "The model or local runtime changed; verify this checkpoint again.".to_string(),
+                "The installed runtime cannot load this model architecture. Set up Media Studio again."
+                    .to_string(),
             );
-            model.runtime_readiness_checked_at = Some(checked_at);
+            model.runtime_readiness_checked_at = None;
             continue;
         }
-        model.runtime_readiness = status;
-        model.runtime_readiness_diagnostic = Some(diagnostic);
-        model.runtime_readiness_checked_at = Some(checked_at);
+        model.runtime_readiness = "ready".to_string();
+        model.runtime_readiness_diagnostic = None;
+        model.runtime_readiness_checked_at = None;
     }
-    Ok(())
 }
 
 fn safe_managed_path(root: &Path, relative_path: &str) -> MediaResult<PathBuf> {
@@ -1036,7 +1000,10 @@ fn verify_model_file(path: &Path, expected_digest: &str) -> MediaResult<()> {
     Ok(())
 }
 
-fn installed_model(paths: &MediaRuntimePaths, model_id: &str) -> MediaResult<InstalledModel> {
+pub(super) fn installed_model(
+    paths: &MediaRuntimePaths,
+    model_id: &str,
+) -> MediaResult<InstalledModel> {
     let connection = database::open(paths)?;
     let row = connection
         .query_row(
@@ -1440,33 +1407,6 @@ fn model_probe_matches_runtime(
                 .contains(&"textual-inversion".to_string()))
 }
 
-fn ensure_model_is_probe_ready(
-    paths: &MediaRuntimePaths,
-    model: &InstalledModel,
-    runtime: &LocalDiffusersRuntimeStatus,
-) -> MediaResult<()> {
-    let fingerprint = runtime_fingerprint(runtime).ok_or_else(|| runtime.diagnostic.clone())?;
-    let connection = database::open(paths)?;
-    let ready = connection
-        .query_row(
-            "SELECT 1 FROM media_model_runtime_probes
-             WHERE model_id = ?1 AND revision = ?2 AND model_digest = ?3
-               AND runtime_fingerprint = ?4 AND status = 'ready'",
-            params![model.id, model.revision, model.digest, fingerprint],
-            |_| Ok(()),
-        )
-        .optional()
-        .map_err(|error| format!("failed to check model runtime readiness: {error}"))?
-        .is_some();
-    if !ready {
-        return Err(
-            "Verify this local model in Models before generation; its checkpoint/runtime combination has not passed a clean offline load."
-                .to_string(),
-        );
-    }
-    Ok(())
-}
-
 fn resolve_addons(
     paths: &MediaRuntimePaths,
     model: &InstalledModel,
@@ -1730,23 +1670,18 @@ fn runnable_models(
     if !runtime.ready {
         return Ok(Vec::new());
     }
-    let fingerprint = runtime_fingerprint(runtime)
-        .ok_or_else(|| "local Diffusers runtime fingerprint is unavailable".to_string())?;
     let connection = database::open(paths)?;
     let mut statement = connection
         .prepare(
             "SELECT m.id, m.architecture, m.package_type, i.relative_path FROM media_models m
              JOIN media_model_installations i ON i.model_id = m.id
-             JOIN media_model_runtime_probes p ON p.model_id = m.id
              WHERE m.provider_id = 'local-diffusers' AND m.target = 'local'
                AND m.lifecycle != 'removed' AND i.status = 'installed'
-               AND p.status = 'ready' AND p.revision = i.revision
-               AND p.model_digest = i.manifest_digest AND p.runtime_fingerprint = ?1
              ORDER BY m.id",
         )
         .map_err(|error| format!("failed to prepare runnable model query: {error}"))?;
     let candidates = statement
-        .query_map([fingerprint], |row| {
+        .query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, Option<String>>(1)?,
@@ -1787,6 +1722,7 @@ fn runnable_models(
     Ok(runnable)
 }
 
+#[cfg(test)]
 pub(crate) fn runnable_model_ids(
     paths: &MediaRuntimePaths,
     runtime: &LocalDiffusersRuntimeStatus,
@@ -2629,7 +2565,6 @@ pub(crate) fn generate(
     let script = worker_script(app)?;
     let (runtime, python) = ready_runtime(app, &script)?;
     let model = installed_model(paths, &request.model_id)?;
-    ensure_model_is_probe_ready(paths, &model, &runtime)?;
     let has_conditioning = !request.reference_images.is_empty()
         || request.base_image_asset_id.is_some()
         || request.pose_image_asset_id.is_some()
@@ -3043,12 +2978,11 @@ pub(crate) fn generate_svg(
     mut request: serde_json::Value,
 ) -> MediaResult<Vec<String>> {
     let script = worker_script(app)?;
-    let (runtime, python) = ready_runtime(app, &script)?;
+    let (_, python) = ready_runtime(app, &script)?;
     let model = installed_model(paths, model_id)?;
     if model.architecture != "intro-svg" {
         return Err("Choose a supported SVG model".to_string());
     }
-    ensure_model_is_probe_ready(paths, &model, &runtime)?;
     request["model"] = serde_json::to_value(WorkerModel {
         id: &model.id,
         architecture: &model.architecture,
@@ -4054,9 +3988,6 @@ pub(crate) fn generate_video(
     }) {
         return Err("The selected checkpoint is not a supported video model".to_string());
     }
-    if let Some(model) = &managed_model {
-        ensure_model_is_probe_ready(paths, model, &runtime)?;
-    }
     let (architecture, model_revision, model_path, model_digest) =
         if let Some(model) = &managed_model {
             (
@@ -4106,6 +4037,11 @@ pub(crate) fn generate_video(
         .as_ref()
         .and_then(|model| model.config_path.as_deref());
     let open_profile = super::open_models::by_architecture(architecture);
+    super::validate_video_dimensions(
+        request.width,
+        request.height,
+        super::video_spatial_multiple(architecture),
+    )?;
     if request.prompt.trim().is_empty() && open_profile.is_none_or(|profile| profile.prompt) {
         return Err("Describe the video to generate".to_string());
     }
@@ -5728,7 +5664,7 @@ time.sleep(60)
     }
 
     #[test]
-    fn runnable_models_use_probe_state_and_validate_checkpoint_on_use() {
+    fn runnable_models_do_not_require_probes_and_validate_checkpoint_on_use() {
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -5773,25 +5709,6 @@ time.sleep(60)
             "masked-region-inpainting".to_string(),
             "openpose-controlnet".to_string(),
         ]);
-        assert!(runnable_model_ids(&paths, &runtime).unwrap().is_empty());
-
-        let fingerprint = runtime_fingerprint(&runtime).unwrap();
-        connection
-            .execute(
-                "INSERT INTO media_model_runtime_probes(
-                   model_id, revision, model_digest, runtime_fingerprint, status,
-                   worker_version, pipeline_class, device_label, diagnostic, probed_at
-                 ) VALUES (?1, ?2, ?2, ?3, 'ready', ?4, 'Flux2Pipeline', ?5, 'ready', ?6)",
-                params![
-                    model_id,
-                    digest,
-                    fingerprint,
-                    runtime.worker_version.as_deref().unwrap(),
-                    runtime.device_label.as_deref().unwrap(),
-                    database::now(),
-                ],
-            )
-            .unwrap();
         assert_eq!(
             runnable_model_ids(&paths, &runtime).unwrap(),
             vec![model_id]

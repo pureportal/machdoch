@@ -2433,7 +2433,7 @@ describe("media flow compiler", () => {
     );
   });
 
-  it("does not resolve an installed model until its runtime is verified", () => {
+  it("resolves an installed model without a separate model probe", () => {
     const models = createMediaModelCatalog({
       isOpenAiConfigured: false,
       isLocalFluxInstalled: true,
@@ -2452,16 +2452,14 @@ describe("media flow compiler", () => {
       compiledAt: "2026-07-14T00:01:00.000Z",
     });
 
-    expect(plan.status).toBe("blocked");
-    expect(plan.model).toBeNull();
+    expect(plan.status).not.toBe("blocked");
+    expect(plan.model?.id).toBe("local:flux-2-klein-4b");
     expect(plan.preflight.requiresModelDownload).toBe(false);
-    expect(plan.diagnostics).toContainEqual(
-      expect.objectContaining({
-        code: "MODEL_NOT_READY",
-        message: "The selected model is unavailable for this task.",
-        action: "Choose an available compatible model.",
-      }),
-    );
+    expect(
+      plan.diagnostics.some(
+        (diagnostic) => diagnostic.code === "MODEL_NOT_READY",
+      ),
+    ).toBe(false);
   });
 
   it("does not resolve a model outside the selected provider boundary", () => {

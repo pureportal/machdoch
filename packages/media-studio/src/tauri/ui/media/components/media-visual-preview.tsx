@@ -1,4 +1,4 @@
-import { CircleX, Sparkles } from "lucide-react";
+import { CircleX, Music2, Sparkles } from "lucide-react";
 import { mediaAssetLabel } from "../../../../core/media/asset-label.js";
 import { useEffect, useState, type JSX } from "react";
 import {
@@ -47,7 +47,7 @@ export const MediaAssetPreview = ({
   }, [previewElement, visible]);
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || (asset.kind === "audio" && !controls)) return;
     let active = true;
     let objectUrl: string | null = null;
     setUrl(null);
@@ -55,7 +55,7 @@ export const MediaAssetPreview = ({
     void readMediaAssetReferencePreview(
       asset.id,
       maxEdge,
-      asset.kind === "video" ? asset.mimeType : "image/webp",
+      asset.kind === "video" || asset.kind === "audio" ? asset.mimeType : "image/webp",
     )
       .then((blob) => {
         if (!active) return;
@@ -69,7 +69,13 @@ export const MediaAssetPreview = ({
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [asset.id, asset.kind, asset.mimeType, maxEdge, visible]);
+  }, [asset.id, asset.kind, asset.mimeType, controls, maxEdge, visible]);
+
+  if (asset.kind === "audio" && !controls) return (
+    <div ref={setPreviewElement} role="img" aria-label={mediaAssetLabel(asset)} className={cn("flex items-center justify-center bg-slate-900 text-slate-400", className)}>
+      <Music2 className="h-10 w-10" />
+    </div>
+  );
 
   if (failed) {
     return (
@@ -97,6 +103,10 @@ export const MediaAssetPreview = ({
   }
 
   const objectFit = fit === "contain" ? "object-contain" : "object-cover";
+  if (asset.kind === "audio") return (
+    <audio ref={setPreviewElement} src={url} controls preload="metadata"
+      aria-label={mediaAssetLabel(asset)} onError={() => setFailed(true)} className={cn("w-full", className)} />
+  );
   const loopMode = resolveMediaAssetVideoLoopMode(asset);
   const transparencyStyle = isMediaAssetKnownTransparent(asset)
     ? {

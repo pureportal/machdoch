@@ -1,4 +1,5 @@
 mod analysis;
+pub(crate) mod audio;
 mod catalog;
 mod civitai_addon;
 mod civitai_catalog;
@@ -69,6 +70,7 @@ const LOCAL_MODEL_PROBE_COMMAND_TIMEOUT: Duration = Duration::from_secs(15 * 60)
 const MAX_IMAGE_GENERATION_SEED: u64 = 9_007_199_254_740_991;
 const IMAGE_TASK_NODE_TYPES: &[&str] = &["task.generate-image", "task.edit-image"];
 
+pub(crate) use audio::GenerateMediaAudioRequest;
 use error::{command_result, MediaCommandResult, MediaError};
 
 #[derive(Debug, Clone)]
@@ -2250,18 +2252,32 @@ impl GenerateMediaImagesRequest {
     }
 }
 
-fn validate_video_dimensions(width: Option<u32>, height: Option<u32>) -> MediaResult<()> {
+fn video_spatial_multiple(architecture: &str) -> u32 {
+    open_models::by_architecture(architecture).map_or_else(
+        || match architecture {
+            "hunyuan-video-1.5-i2v" | "framepack-i2v" => 16,
+            _ => 32,
+        },
+        |profile| profile.spatial_multiple,
+    )
+}
+
+fn validate_video_dimensions(
+    width: Option<u32>,
+    height: Option<u32>,
+    spatial_multiple: u32,
+) -> MediaResult<()> {
     if width.is_some() != height.is_some() {
         return Err("Enter both video width and height.".to_string());
     }
     if [width, height]
         .into_iter()
         .flatten()
-        .any(|value| !(128..=1536).contains(&value) || value % 32 != 0)
+        .any(|value| !(128..=1536).contains(&value) || value % spatial_multiple != 0)
     {
-        return Err(
-            "Video width and height must be multiples of 32 between 128 and 1536.".to_string(),
-        );
+        return Err(format!(
+            "Video width and height must be multiples of {spatial_multiple} between 128 and 1536."
+        ));
     }
     Ok(())
 }
@@ -2423,7 +2439,7 @@ impl GenerateMediaVideoRequest {
                     .to_string(),
             );
         }
-        validate_video_dimensions(self.width, self.height)?;
+        validate_video_dimensions(self.width, self.height, 8)?;
         if self.fps == 0 || self.fps > 60 {
             return Err("fps must be between 1 and 60".to_string());
         }
@@ -2732,6 +2748,7 @@ impl MediaRunPlanSnapshot {
                     | "task.generate-image"
                     | "task.edit-image"
                     | "task.generate-video"
+                    | "task.generate-audio"
                     | "operation.crop"
                     | "operation.resize"
                     | "operation.text-overlay"
@@ -2750,6 +2767,7 @@ impl MediaRunPlanSnapshot {
                     | "control.human-review"
                     | "output.asset"
                     | "output.video"
+                    | "output.audio"
             ) || !matches!(
                 node.layer.as_str(),
                 "source" | "task" | "operation" | "control" | "output" | "runtime"
@@ -2793,6 +2811,7 @@ impl MediaRunPlanSnapshot {
                     | "resolve-model-addons"
                     | "generate-image"
                     | "generate-video"
+                    | "generate-audio"
                     | "generate-svg"
                     | "vectorize-svg"
                     | "validate-svg"
@@ -3106,6 +3125,37 @@ mod run_plan_contract_tests {
 
         assert!(request.validate().is_ok());
         assert!(request.edit_mask.is_none());
+    }
+
+    #[test]
+    fn custom_video_dimensions_follow_the_selected_model_grid() {
+        let cogvideo = super::open_models::by_architecture("cogvideox-2b").unwrap();
+        for architecture in ["hunyuan-video-1.5-i2v", "framepack-i2v"] {
+            assert!(super::validate_video_dimensions(
+                Some(848),
+                Some(480),
+                super::video_spatial_multiple(architecture)
+            )
+            .is_ok());
+        }
+        assert!(super::validate_video_dimensions(
+            Some(848),
+            Some(480),
+            super::video_spatial_multiple("wan-2.2-ti2v")
+        )
+        .is_err());
+        assert!(
+            super::validate_video_dimensions(Some(720), Some(480), cogvideo.spatial_multiple)
+                .is_ok()
+        );
+        assert!(super::validate_video_dimensions(Some(720), Some(480), 32).is_err());
+        assert!(
+            super::validate_video_dimensions(Some(721), Some(480), cogvideo.spatial_multiple)
+                .is_err()
+        );
+        assert!(
+            super::validate_video_dimensions(Some(720), None, cogvideo.spatial_multiple).is_err()
+        );
     }
 
     #[test]
@@ -5246,10 +5296,9 @@ pub(crate) async fn media_get_model_catalog(
                     .state::<MediaRuntimeState>()
                     .local_diffusers_status(&app);
                 provider_local_diffusers::annotate_catalog_readiness(
-                    &paths,
                     &runtime,
                     &mut snapshot.models,
-                )?;
+                );
             }
             Ok(snapshot)
         })

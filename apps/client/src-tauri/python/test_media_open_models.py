@@ -19,6 +19,12 @@ import media_open_video as video
 
 
 class OpenMediaModelTests(unittest.TestCase):
+    def test_catalog_model_ids_and_architectures_are_unique(self):
+        profiles = json.loads(Path(__file__).with_name("open_media_models.json").read_text(encoding="utf-8"))
+        for field in ("id", "architecture"):
+            values = [profile[field] for profile in profiles]
+            self.assertEqual(len(values), len(set(values)), field)
+
     def test_qwen_edit_preserves_multiple_references_and_true_cfg(self):
         images = [object(), object(), object()]
         arguments = models.image_arguments("qwen-image-edit-2511", {}, images, "")
@@ -49,6 +55,19 @@ class OpenMediaModelTests(unittest.TestCase):
             Path(directory, "model_index.json").write_text('{"_class_name":"WanPipeline"}', encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "does not match"):
                 models.load_pipeline(SimpleNamespace(), {"architecture": "z-image-turbo", "path": directory, "packageKind": "diffusers-directory"}, "bf16")
+
+    def test_audio_uses_the_current_gpt2_generation_component_without_changing_weights(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "model_index.json").write_text('{"_class_name":"AudioLDM2Pipeline"}', encoding="utf-8")
+            language_model = mock.Mock()
+            constructor = mock.Mock(return_value=language_model)
+            loader = mock.Mock(return_value=SimpleNamespace())
+            diffusers = SimpleNamespace(AudioLDM2Pipeline=SimpleNamespace(from_pretrained=loader))
+            with mock.patch.dict("sys.modules", {"transformers": SimpleNamespace(GPT2LMHeadModel=SimpleNamespace(from_pretrained=constructor))}):
+                models.load_pipeline(diffusers, {"architecture": "audioldm-2", "path": directory, "packageKind": "diffusers-directory"}, "fp16")
+            self.assertEqual(constructor.call_args.args, (str(Path(directory) / "language_model"),))
+            self.assertTrue(constructor.call_args.kwargs["local_files_only"])
+            self.assertIs(loader.call_args.kwargs["language_model"], language_model)
 
     def test_fixed_sampling_is_enforced_and_base_sampling_is_adjustable(self):
         models.validate_sampling("flux-2-klein-base-4b", 35, 3.5)
@@ -121,7 +140,8 @@ class OpenMediaModelTests(unittest.TestCase):
             _runtime=lambda: (torch, SimpleNamespace()), _device=lambda _: ("cpu", "CPU", None),
             _configure_video_conv3d_backend=lambda *_: "cpu", _start_video_memory_observation=lambda *_: None,
             _pipeline_dtype=lambda *_: "fp32", _fresh_output_directory=lambda path: Path(path),
-            _progress=mock.Mock(), _finish_video_memory_observation=lambda *_: None, _package_versions=lambda: {})
+            _progress=mock.Mock(), _enable_sampling_progress=mock.Mock(),
+            _finish_video_memory_observation=lambda *_: None, _package_versions=lambda: {})
         with tempfile.TemporaryDirectory() as directory:
             runtime._encode_video_webm = mock.Mock(return_value=(Path(directory, "video.webm"), {"durationSeconds": 0.3125}, None))
             request = {"schemaVersion": 1, "model": {"architecture": "wan-2.2-t2v-a14b", "revision": "revision", "digest": "digest"}, "prompt": "A bird flies", "numFrames": 5, "numInferenceSteps": 40, "guidanceScale": 4, "fps": 16, "seed": 1, "loopMode": "none", "aspectRatio": "16:9", "resolution": "preview-512", "outputDirectory": directory, "matteQuality": "production", "encodingQuality": "lossless"}
@@ -130,6 +150,7 @@ class OpenMediaModelTests(unittest.TestCase):
             self.assertEqual(result["conditioningMode"], "native-text-to-video")
             self.assertNotIn("image", pipeline.call_args.kwargs)
             self.assertEqual(result["output"]["fileName"], "video.webm")
+            runtime._enable_sampling_progress.assert_called_once_with(pipeline)
 
     def test_generated_audio_is_muxed_and_both_tracks_decode(self):
         ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()

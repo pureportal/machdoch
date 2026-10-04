@@ -29,7 +29,7 @@ const LOCAL_IMAGE_GENERATION_CAPABILITIES = [
   "masked-image-edit",
 ] as const satisfies readonly MediaCapability[];
 
-export const BUILTIN_MEDIA_CATALOG_REVISION = "builtin-2026-10-02-open-media";
+export const BUILTIN_MEDIA_CATALOG_REVISION = "builtin-2026-10-03-open-media-audio";
 export const BUILTIN_MEDIA_CATALOG_CHECKED_AT = "2026-07-14T00:00:00.000Z";
 
 const createProviders = (
@@ -95,6 +95,7 @@ const createProviders = (
       "image-to-svg",
       "guided-svg-generation",
       "svg-structure-evaluation",
+      "text-to-audio",
     ],
     privacySummary: "Prompts and pixels remain on this device.",
     checkedAt: BUILTIN_MEDIA_CATALOG_CHECKED_AT,

@@ -19,19 +19,20 @@ class WanVideoTests(unittest.TestCase):
             encoded_lengths.append(video.shape[2])
             return SimpleNamespace(latents=torch.zeros(1, 48, 1, 2, 2))
 
+        vae = torch.nn.Module()
+        vae.dtype = torch.float32
+        vae.device = torch.device("cpu")
+        vae.encode = encode
+        vae.config = SimpleNamespace(
+            z_dim=48,
+            latents_mean=[0.0] * 48,
+            latents_std=[1.0] * 48,
+        )
         pipeline = SimpleNamespace(
             vae_scale_factor_temporal=4,
             vae_scale_factor_spatial=16,
             config=SimpleNamespace(expand_timesteps=True),
-            vae=SimpleNamespace(
-                dtype=torch.float32,
-                encode=encode,
-                config=SimpleNamespace(
-                    z_dim=48,
-                    latents_mean=[0.0] * 48,
-                    latents_std=[1.0] * 48,
-                ),
-            ),
+            vae=vae,
         )
         pipeline.prepare_latents = MethodType(
             WanImageToVideoPipeline.prepare_latents, pipeline

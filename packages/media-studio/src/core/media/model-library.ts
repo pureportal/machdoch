@@ -9,6 +9,7 @@ export const mediaModelSupportsGenerationTarget = (
   model: MediaModelDescriptor,
   target: MediaGenerationTarget,
 ): boolean => {
+  if (target === "audio") return model.capabilities.includes("text-to-audio");
   if (target === "video") {
     return model.capabilities.some((capability) =>
       ["text-to-video", "image-to-video", "start-end-to-video"].includes(
@@ -35,7 +36,7 @@ export const mediaModelSupportsGenerationTarget = (
 };
 
 export const isMediaGenerationModel = (model: MediaModelDescriptor): boolean =>
-  (["image", "video", "svg"] as const).some((target) =>
+  (["image", "video", "svg", "audio"] as const).some((target) =>
     mediaModelSupportsGenerationTarget(model, target),
   );
 
@@ -45,6 +46,7 @@ export const getMediaModelPrimaryGenerationTarget = (
   if (mediaModelSupportsGenerationTarget(model, "video")) return "video";
   if (mediaModelSupportsGenerationTarget(model, "svg")) return "svg";
   if (mediaModelSupportsGenerationTarget(model, "image")) return "image";
+  if (mediaModelSupportsGenerationTarget(model, "audio")) return "audio";
   return null;
 };
 

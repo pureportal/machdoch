@@ -144,6 +144,8 @@ describe("matchesMediaModelQuery", () => {
     expect(available.map((model) => model.id)).toEqual([
       providerReady.id,
       importedReady.id,
+      brokenInstalled.id,
+      unverified.id,
     ]);
 
     expect(

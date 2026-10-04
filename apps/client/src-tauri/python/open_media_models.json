@@ -545,7 +545,7 @@
       "minimum": 9,
       "maximum": 49,
       "stride": 8,
-      "fps": 16
+      "fps": 8
     },
     "audio": false,
     "imagePipeline": null,
@@ -697,6 +697,28 @@
     "spatialMultiple": 8,
     "negativePrompt": false,
     "prompt": false
+  },
+  {
+    "id": "local:audioldm2",
+    "architecture": "audioldm-2",
+    "displayName": "AudioLDM 2",
+    "family": "AudioLDM 2",
+    "repository": "cvssp/audioldm2",
+    "pipeline": "AudioLDM2Pipeline",
+    "capabilities": ["text-to-audio"],
+    "revision": "c8e7e189d324425c05c4c2f81214041ef4107983",
+    "steps": 100,
+    "guidance": 3.5,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "license": {
+      "name": "Creative Commons Attribution Non Commercial Share Alike 4.0",
+      "spdxId": "CC-BY-NC-SA-4.0",
+      "commercialUse": "review-required"
+    },
+    "audio": true,
+    "imagePipeline": null
   },
   {
     "id": "local:sulphur-2-dev",
