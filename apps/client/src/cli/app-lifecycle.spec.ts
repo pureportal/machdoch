@@ -72,6 +72,7 @@ describe("runCli agent resource lifecycle", () => {
   afterEach(() => vi.useRealTimers());
 
   it("closes agent resources after a one-shot task", async () => {
+    vi.useFakeTimers();
     await expect(
       runCli(["--quick", "--task", "inspect the workspace"]),
     ).resolves.toBe("run");
@@ -79,6 +80,97 @@ describe("runCli agent resource lifecycle", () => {
     expect(mocks.printTaskPreview).toHaveBeenCalledOnce();
     expect(mocks.closeAll).toHaveBeenCalledOnce();
     expect(mocks.closeAllBrowserSessions).toHaveBeenCalledOnce();
+    expect(mocks.writeStderrLine).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  describe.each([
+    ["browser", mocks.closeAllBrowserSessions],
+    ["MCP", mocks.closeAll],
+  ] as const)("rejected %s shutdown", (_resource, closeResource) => {
+    it.each([
+      ["Error", new Error("task failed")],
+      ["string", "task failed"],
+      ["object", { message: "task failed" }],
+      ["undefined", undefined],
+      ["null", null],
+      ["false", false],
+      ["empty string", ""],
+    ])("preserves a command rejection with %s", async (_kind, commandError) => {
+      vi.useFakeTimers();
+      mocks.printTaskPreview.mockRejectedValueOnce(commandError);
+      closeResource.mockRejectedValueOnce(new Error("cleanup failed"));
+
+      await expect(
+        runCli(["--quick", "--task", "inspect the workspace"]),
+      ).rejects.toBe(commandError);
+
+      expect(mocks.closeAll).toHaveBeenCalledOnce();
+      expect(mocks.closeAllBrowserSessions).toHaveBeenCalledOnce();
+      expect(mocks.writeStderrLine).toHaveBeenCalledExactlyOnceWith(
+        "Agent resource shutdown failed: cleanup failed",
+      );
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it.each([
+      ["Error", new Error("cleanup failed")],
+      ["string", "cleanup failed"],
+    ])(
+      "propagates a cleanup-only rejection with %s",
+      async (_kind, cleanupError) => {
+        vi.useFakeTimers();
+        closeResource.mockRejectedValueOnce(cleanupError);
+
+        await expect(
+          runCli(["--quick", "--task", "inspect the workspace"]),
+        ).rejects.toBe(cleanupError);
+
+        expect(mocks.printTaskPreview).toHaveBeenCalledOnce();
+        expect(mocks.closeAll).toHaveBeenCalledOnce();
+        expect(mocks.closeAllBrowserSessions).toHaveBeenCalledOnce();
+        expect(vi.getTimerCount()).toBe(0);
+      },
+    );
+
+    it("reports a non-Error cleanup rejection while preserving the command failure", async () => {
+      vi.useFakeTimers();
+      const commandError = new Error("task failed");
+      mocks.printTaskPreview.mockRejectedValueOnce(commandError);
+      closeResource.mockRejectedValueOnce("cleanup failed");
+
+      await expect(
+        runCli(["--quick", "--task", "inspect the workspace"]),
+      ).rejects.toBe(commandError);
+
+      expect(mocks.writeStderrLine).toHaveBeenCalledExactlyOnceWith(
+        "Agent resource shutdown failed: cleanup failed",
+      );
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("handles a cleanup rejection after the shutdown timeout", async () => {
+      vi.useFakeTimers();
+      let rejectCleanup!: (reason: unknown) => void;
+      closeResource.mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectCleanup = reject;
+          }),
+      );
+      const running = runCli(["--quick", "--task", "inspect the workspace"]);
+      await vi.waitFor(() => expect(closeResource).toHaveBeenCalledOnce());
+      await vi.advanceTimersByTimeAsync(5_000);
+      await expect(running).resolves.toBe("run");
+
+      rejectCleanup(new Error("late cleanup failure"));
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mocks.writeStderrLine).toHaveBeenCalledExactlyOnceWith(
+        "Agent resource shutdown timed out after 5 seconds.",
+      );
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 
   it("finishes a one-shot task when resource shutdown never resolves", async () => {
@@ -213,6 +305,7 @@ describe("runCli agent resource lifecycle", () => {
   );
 
   it("closes agent resources when a one-shot task fails", async () => {
+    vi.useFakeTimers();
     const error = new Error("task failed");
     mocks.printTaskPreview.mockRejectedValueOnce(error);
 
@@ -222,6 +315,8 @@ describe("runCli agent resource lifecycle", () => {
 
     expect(mocks.closeAll).toHaveBeenCalledOnce();
     expect(mocks.closeAllBrowserSessions).toHaveBeenCalledOnce();
+    expect(mocks.writeStderrLine).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("closes agent resources after a task interview", async () => {
