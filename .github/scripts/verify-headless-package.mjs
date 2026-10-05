@@ -138,13 +138,13 @@ try {
   ]);
   assert.equal(generateCertificate.status, 0, generateCertificate.stderr);
   let httpStatus = 401;
-  let requests = 0;
+  let gatewayRequests = 0;
   const secret = `mch_instance_${Buffer.alloc(32, 1).toString("base64url")}`;
   const manager = createServer(
     { key: readFileSync(key), cert: readFileSync(certificate) },
     (request, response) => {
       assert.equal(request.headers.authorization, `Bearer ${secret}`);
-      requests++;
+      if (request.url?.startsWith("/api/gateway/connect/")) gatewayRequests++;
       response.writeHead(httpStatus);
       response.end();
     },
@@ -216,7 +216,7 @@ try {
     httpStatus = 503;
     await runService(true);
     assert.equal(
-      requests,
+      gatewayRequests,
       2,
       "Authentication failure should not loop; SIGTERM should stop backoff",
     );
