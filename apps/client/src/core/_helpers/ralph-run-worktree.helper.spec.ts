@@ -1,5 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -30,15 +37,10 @@ const createRepository = async (): Promise<{
   const repository = join(root, "repository");
   await mkdir(repository);
   execFileSync("git", ["init", "-q"], { cwd: repository });
-  execFileSync("git", ["config", "user.email", "ralph@example.invalid"], {
-    cwd: repository,
-  });
-  execFileSync("git", ["config", "user.name", "RALPH Test"], {
-    cwd: repository,
-  });
-  execFileSync("git", ["config", "core.autocrlf", "false"], {
-    cwd: repository,
-  });
+  await appendFile(
+    join(repository, ".git", "config"),
+    "\n[user]\nname = RALPH Test\nemail = ralph@example.invalid\n[core]\nautocrlf = false\n",
+  );
   await writeFile(join(repository, "source.txt"), "original\n");
   execFileSync("git", ["add", "source.txt"], { cwd: repository });
   execFileSync("git", ["commit", "-qm", "initial"], { cwd: repository });

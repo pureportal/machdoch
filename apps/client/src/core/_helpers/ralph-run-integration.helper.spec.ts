@@ -1,5 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -38,9 +45,10 @@ const createRepository = async () => {
   const repository = join(root, "repository");
   await mkdir(repository);
   git(repository, "init", "-q");
-  git(repository, "config", "user.name", "RALPH Test");
-  git(repository, "config", "user.email", "test@example.invalid");
-  git(repository, "config", "core.autocrlf", "false");
+  await appendFile(
+    join(repository, ".git", "config"),
+    "\n[user]\nname = RALPH Test\nemail = test@example.invalid\n[core]\nautocrlf = false\n",
+  );
   await writeFile(join(repository, "source.txt"), "original\n");
   await writeFile(join(repository, "binary.bin"), Buffer.from([0, 1, 2]));
   await writeFile(join(repository, "deleted.txt"), "delete me\n");

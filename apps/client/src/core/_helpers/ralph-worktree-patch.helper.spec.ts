@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { snapshotRalphWorktree } from "./ralph-worktree-git.helper.js";
+import * as worktreeGit from "./ralph-worktree-git.helper.js";
 import { applyRalphTreeDifference } from "./ralph-worktree-patch.helper.js";
 
 const roots: string[] = [];
@@ -32,9 +33,10 @@ const createRepository = async () => {
   const root = await mkdtemp(join(tmpdir(), "ralph-tree-patch-"));
   roots.push(root);
   git(root, "init", "-q");
-  git(root, "config", "user.name", "Test");
-  git(root, "config", "user.email", "test@example.invalid");
-  git(root, "config", "core.autocrlf", "false");
+  await appendFile(
+    join(root, ".git", "config"),
+    "\n[user]\nname = Test\nemail = test@example.invalid\n[core]\nautocrlf = false\n",
+  );
   await writeFile(join(root, "first.txt"), "original\n");
   await writeFile(join(root, "second.txt"), "original\n");
   git(root, "add", ".");
@@ -44,6 +46,7 @@ const createRepository = async () => {
 
 describe("RALPH worktree patches", () => {
   it("streams patches larger than the command output buffer and removes temporary files", async () => {
+    const commands = vi.spyOn(worktreeGit, "runRalphWorktreeGit");
     const { root, before } = await createRepository();
     const contents = Buffer.alloc(33 * 1024 * 1024, "x");
     contents[contents.length - 1] = 10;
@@ -54,14 +57,14 @@ describe("RALPH worktree patches", () => {
     expect((await readFile(join(root, "large.txt"))).equals(contents)).toBe(
       true,
     );
-    expect(
-      (await readdir(join(root, ".git"))).filter((path) =>
-        path.startsWith("ralph-patch-"),
-      ),
-    ).toEqual([]);
+    const patch = commands.mock.calls
+      .find(([, args]) => args[0] === "apply")![1]
+      .at(-1)!;
+    await expect(readFile(patch)).rejects.toMatchObject({ code: "ENOENT" });
   }, 90_000);
 
   it("checks the complete patch before applying any paths and cleans up after failure", async () => {
+    const commands = vi.spyOn(worktreeGit, "runRalphWorktreeGit");
     const { root, before } = await createRepository();
     await writeFile(join(root, "first.txt"), "candidate\n");
     await writeFile(join(root, "second.txt"), "candidate\n");
@@ -75,10 +78,9 @@ describe("RALPH worktree patches", () => {
     expect(await readFile(join(root, "second.txt"), "utf8")).toBe(
       "external edit\n",
     );
-    expect(
-      (await readdir(join(root, ".git"))).filter((path) =>
-        path.startsWith("ralph-patch-"),
-      ),
-    ).toEqual([]);
+    const patch = commands.mock.calls
+      .find(([, args]) => args[0] === "apply")![1]
+      .at(-1)!;
+    await expect(readFile(patch)).rejects.toMatchObject({ code: "ENOENT" });
   }, 90_000);
 });

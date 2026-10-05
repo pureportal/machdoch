@@ -83,14 +83,14 @@ export const integrateRalphRunWorktree = async (
     async () => {
       const assertSourceBranch = async (): Promise<void> => {
         options.signal?.throwIfAborted();
-        if (
-          (
-            await git(worktree.repositoryRoot, ["branch", "--show-current"])
-          ).trim() !== worktree.sourceBranch
-        ) {
+        const [branch, conflicts] = await Promise.all([
+          git(worktree.repositoryRoot, ["branch", "--show-current"]),
+          git(worktree.repositoryRoot, ["ls-files", "--unmerged"]),
+        ]);
+        if (branch.trim() !== worktree.sourceBranch) {
           throw new Error("RALPH source branch changed during this run.");
         }
-        if (await git(worktree.repositoryRoot, ["ls-files", "--unmerged"])) {
+        if (conflicts) {
           throw new Error(
             "RALPH cannot integrate while the source repository has unresolved conflicts.",
           );
@@ -173,17 +173,18 @@ export const integrateRalphRunWorktree = async (
       }
       for (let attempt = 0; attempt < 3; attempt += 1) {
         await assertSourceBranch();
-        const sourceHead = (
-          await git(worktree.repositoryRoot, ["rev-parse", "HEAD"])
-        ).trim();
-        const sourceTree = await snapshotRalphWorktree(worktree.repositoryRoot);
-        const runTree = await snapshotRalphWorktree(worktree.worktreeRoot);
-        const baseTree = (
-          await git(worktree.repositoryRoot, [
-            "rev-parse",
-            `${state.baseCommit}^{tree}`,
-          ])
-        ).trim();
+        const [sourceHeadOutput, sourceTree, runTree, baseTreeOutput] =
+          await Promise.all([
+            git(worktree.repositoryRoot, ["rev-parse", "HEAD"]),
+            snapshotRalphWorktree(worktree.repositoryRoot),
+            snapshotRalphWorktree(worktree.worktreeRoot),
+            git(worktree.repositoryRoot, [
+              "rev-parse",
+              `${state.baseCommit}^{tree}`,
+            ]),
+          ]);
+        const sourceHead = sourceHeadOutput.trim();
+        const baseTree = baseTreeOutput.trim();
         const sourceCommit = await commitRalphSnapshot(
           worktree.repositoryRoot,
           sourceTree,
@@ -271,7 +272,7 @@ export const integrateRalphRunWorktree = async (
               failure = "Resolve all remaining Git merge conflicts.";
               continue;
             }
-            mergedTree = await snapshotRalphWorktree(integrationRoot);
+            mergedTree = (await git(integrationRoot, ["write-tree"])).trim();
             try {
               await git(integrationRoot, [
                 "diff",

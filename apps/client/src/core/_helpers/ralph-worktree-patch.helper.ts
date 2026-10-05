@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { open, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runRalphWorktreeGit as git } from "./ralph-worktree-git.helper.js";
 
@@ -10,10 +11,7 @@ export const applyRalphTreeDifference = async (
   after: string,
 ): Promise<void> => {
   if (before === after) return;
-  const gitDirectory = (
-    await git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"])
-  ).trim();
-  const patchPath = join(gitDirectory, `ralph-patch-${randomUUID()}`);
+  const patchPath = join(tmpdir(), `ralph-patch-${randomUUID()}`);
   try {
     const patch = await open(patchPath, "wx");
     let bytes = 0;
