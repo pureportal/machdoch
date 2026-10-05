@@ -413,19 +413,26 @@ export const mergeLoadedRalphSettings = (
 };
 
 export interface RalphAppProps {
+  initialSettings?: Partial<RalphSettings>;
+  workspaceRoots?: readonly string[];
   isActive: boolean;
   providerStatuses?: readonly RuntimeProviderAvailability[];
+  modelCatalog?: ProviderModelCatalogSnapshot;
   onOpenMediaRun?: (runId: string) => void;
 }
 
 export const RalphApp = ({
+  initialSettings,
+  workspaceRoots,
   isActive,
   providerStatuses,
+  modelCatalog,
   onOpenMediaRun,
 }: RalphAppProps): JSX.Element => {
-  const [settings, setSettings] = useState<RalphSettings>(
-    DEFAULT_RALPH_SETTINGS,
-  );
+  const [settings, setSettings] = useState<RalphSettings>(() => ({
+    ...DEFAULT_RALPH_SETTINGS,
+    ...initialSettings,
+  }));
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [providerAvailability, setProviderAvailability] = useState<
     RuntimeProviderAvailability[] | null
@@ -441,6 +448,9 @@ export const RalphApp = ({
   const [editorSelection, setEditorSelection] = useState<
     (RalphOverviewSelection & { revision: number }) | null
   >(null);
+  useEffect(() => {
+    if (modelCatalog) setCatalog(modelCatalog);
+  }, [modelCatalog]);
   const overview = useRalphOverview(
     settings.workspaceRoot
       ? [settings.workspaceRoot, ...recentWorkspaces]
@@ -528,15 +538,25 @@ export const RalphApp = ({
     let cancelled = false;
     const editRevisionAtStart = settingsEditRevisionRef.current;
 
-    void loadRalphSettings()
+    void loadRalphSettings({ ...DEFAULT_RALPH_SETTINGS, ...initialSettings })
       .then((loadedSettings) => {
         if (!cancelled) {
           const dirtyFields = dirtySettingsFieldsRef.current;
+          const loaded = workspaceRoots
+            ? {
+                ...loadedSettings,
+                workspaceRoot: workspaceRoots.includes(
+                  loadedSettings.workspaceRoot ?? "",
+                )
+                  ? loadedSettings.workspaceRoot
+                  : (initialSettings?.workspaceRoot ?? null),
+              }
+            : loadedSettings;
           const mergedSettings =
             settingsEditRevisionRef.current === editRevisionAtStart
-              ? loadedSettings
+              ? loaded
               : mergeLoadedRalphSettings(
-                  loadedSettings,
+                  loaded,
                   settingsRef.current,
                   dirtyFields,
                 );
@@ -648,6 +668,11 @@ export const RalphApp = ({
     let unsubscribe: (() => void) | undefined;
 
     const refreshRecentWorkspaces = async (): Promise<void> => {
+      if (workspaceRoots) {
+        setRecentWorkspaces([...workspaceRoots]);
+        setShellStateLoaded(true);
+        return;
+      }
       const requestId = recentWorkspacesRequestRef.current + 1;
       recentWorkspacesRequestRef.current = requestId;
       try {
@@ -682,9 +707,10 @@ export const RalphApp = ({
       recentWorkspacesRequestRef.current += 1;
       unsubscribe?.();
     };
-  }, []);
+  }, [workspaceRoots]);
 
   const persistRecentWorkspace = async (workspace: string): Promise<void> => {
+    if (workspaceRoots) return;
     await updateShellStateAtomically(createInitialShellState(), (current) => {
       const shellState = normalizeShellState(current);
 
@@ -702,6 +728,7 @@ export const RalphApp = ({
   const persistRecentWorkspaceRemoval = async (
     workspace: string,
   ): Promise<void> => {
+    if (workspaceRoots) return;
     await updateShellStateAtomically(createInitialShellState(), (current) => {
       const shellState = normalizeShellState(current);
 
@@ -718,6 +745,8 @@ export const RalphApp = ({
 
   const applyWorkspaceSelection = (workspace: string): boolean => {
     const normalizedWorkspace = workspace.trim();
+    if (workspaceRoots && !workspaceRoots.includes(normalizedWorkspace))
+      return false;
 
     if (!normalizedWorkspace) return false;
     if (normalizedWorkspace === settingsRef.current.workspaceRoot) return true;
@@ -789,7 +818,9 @@ export const RalphApp = ({
             workspaceRoot={settings.workspaceRoot}
             onOpen={openOverviewSelection}
             onRefresh={overview.refresh}
-            onChooseWorkspace={() => void chooseWorkspace()}
+            onChooseWorkspace={
+              workspaceRoots ? undefined : () => void chooseWorkspace()
+            }
             onReturnToEditor={
               editorSelection ? () => setView("editor") : undefined
             }
@@ -835,6 +866,7 @@ export const RalphApp = ({
               buttonAriaLabel="Ralph workspace"
               commandId="ralph.workspace.select"
               commandViewId="ralph"
+              allowBrowse={!workspaceRoots}
               onSelectWorkspace={(workspace) => {
                 if (workspace) {
                   applyWorkspaceSelection(workspace);

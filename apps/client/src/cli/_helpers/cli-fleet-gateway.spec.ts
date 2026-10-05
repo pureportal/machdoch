@@ -1,6 +1,6 @@
 import { once } from "node:events";
 import { createServer } from "node:http";
-import { productCapability } from "@machdoch/fleet-protocol";
+import { productCapability, ralphEditorCapability } from "@machdoch/fleet-protocol";
 import { WebSocketServer } from "ws";
 import type { FleetConnectionConfig } from "../../core/fleet-connection.ts";
 import {
@@ -283,7 +283,7 @@ describe("Fleet CLI gateway", () => {
           type: "hello",
           protocolVersion: 4,
           productVersion: "6.3.0",
-          capabilities: [productCapability, "workspace-runs.v1"],
+          capabilities: [productCapability, ralphEditorCapability, "workspace-runs.v1"],
         }),
         expect.objectContaining({ type: "response", requestId: "request-1" }),
       ]),

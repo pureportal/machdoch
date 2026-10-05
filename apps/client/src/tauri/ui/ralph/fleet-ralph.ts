@@ -174,7 +174,7 @@ export const loadFleetRalphSnapshot = async (
         ...(flow.alias ? { alias: flow.alias } : {}),
         name: flow.name,
         scope,
-        ...(flow.description ? { description: flow.description } : {}),
+        ...(flow.description ? { description: flow.description.slice(0, 12_000) } : {}),
         blockCount: flow.blockCount,
         edgeCount: flow.edgeCount,
         variables: flow.variables,

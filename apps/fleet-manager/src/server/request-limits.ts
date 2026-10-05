@@ -24,7 +24,7 @@ export function maximumRequestBodyBytes(
   if (/^\/api\/instances\/[^/]+\/product\/commands$/u.test(pathname)) {
     return maximumGatewayMessageBytes;
   }
-  if (/^\/api\/instances\/[^/]+\/product\/media$/u.test(pathname)) {
+  if (/^\/api\/instances\/[^/]+\/product\/(?:media|ralph)$/u.test(pathname)) {
     return maximumMediaRequestBodyBytes;
   }
   if (/^\/api\/instances\/[^/]+\/runs$/u.test(pathname))

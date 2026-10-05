@@ -12,12 +12,12 @@ pub(crate) fn run() -> Result<(), String> {
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(crate::sleep_inhibition::SystemSleepInhibitor::default())
         .manage(super::MediaRuntimeState::default())
-        .manage(super::fleet::FleetMediaState::default())
+        .manage(crate::fleet_operations::FleetOperationState::default())
         .manage(super::fleet_transfer::FleetTransferState::default())
         .build(context)
         .map_err(|error| error.to_string())?;
     super::storage::resume_pending(app.handle())?;
-    super::fleet::initialize(app.handle());
+    crate::fleet_operations::initialize(app.handle());
     let app_handle = app.handle().clone();
     std::thread::spawn(move || {
         let mut input = std::io::stdin().lock();
@@ -31,7 +31,7 @@ pub(crate) fn run() -> Result<(), String> {
                 _ => break,
             }
             let response = match serde_json::from_str::<Value>(&line) {
-                Ok(request) => super::fleet::handle(&app_handle, request),
+                Ok(request) => crate::fleet_operations::handle(&app_handle, request, false),
                 Err(error) => json!({ "state": "failed", "error": error.to_string() }),
             };
             if writeln!(output, "{response}")

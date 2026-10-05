@@ -9,6 +9,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { verifyAndroidController } from "./verify-android.mjs";
+import { verifyRalphEditor } from "./verify-ralph.mjs";
 
 const managerRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const clientRoot = resolve(managerRoot, "../client");
@@ -392,6 +393,37 @@ async function main() {
   );
   process.stdout.write("Both clients enrolled and synchronized.\n");
   const page = await context.newPage();
+  if (process.env.FLEET_VERIFY_RALPH_ONLY === "1") {
+    const small = await context.newPage();
+    await small.setViewportSize({ width: 390, height: 844 });
+    evidence.push(
+      await verifyRalphEditor({
+        page,
+        small,
+        api,
+        origin,
+        fixtureRoot,
+        device: devices[0],
+      }),
+    );
+    await writeFile(
+      join(fixtureRoot, "result.json"),
+      JSON.stringify(
+        {
+          passed: true,
+          verifiedAt: new Date().toISOString(),
+          evidence,
+          scope: "ralph",
+        },
+        null,
+        2,
+      ),
+    );
+    process.stdout.write(
+      `${JSON.stringify({ passed: true, fixtureRoot, evidence }, null, 2)}\n`,
+    );
+    return;
+  }
   await page.goto(`${origin}/settings`);
   await page.getByRole("tab", { name: "Device settings", exact: true }).click();
   await page
@@ -528,6 +560,17 @@ async function main() {
   evidence.push(
     "The mobile Copilot selected workspaces, routed one session to a selected device, and opened the shared Chat. Repeated requests returned the same session.",
   );
+  evidence.push(
+    await verifyRalphEditor({
+      page,
+      small,
+      api,
+      origin,
+      fixtureRoot,
+      device: devices[0],
+    }),
+  );
+  process.stdout.write("Remote RALPH editor and execution checks passed.\n");
   if (process.env.FLEET_VERIFY_ANDROID_SERIAL) {
     evidence.push(
       await verifyAndroidController({

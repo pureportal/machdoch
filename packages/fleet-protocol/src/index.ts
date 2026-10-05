@@ -3,6 +3,9 @@
   mediaResponseSchema,
 } from "@machdoch/fleet-protocol/media";
 export * from "@machdoch/fleet-protocol/media";
+import { ralphRequestSchema, ralphResponseSchema } from "@machdoch/fleet-protocol/ralph";
+export * from "@machdoch/fleet-protocol/ralph";
+export * from "@machdoch/fleet-protocol/operation";
 export { createFleetSessionId } from "@machdoch/fleet-protocol/session-routing";
 import { z } from "zod";
 import { hostTelemetrySchema } from "@machdoch/fleet-protocol/telemetry";
@@ -1266,6 +1269,7 @@ const productRalphRunSchema = z.strictObject({
 });
 
 export const productRalphSchema = z.strictObject({
+  editorAvailable: z.boolean().optional(),
   workspaceRoot: workspace.optional(),
   loading: z.boolean(),
   error: text.optional(),
@@ -1616,6 +1620,7 @@ export type CommandReceipt = z.infer<typeof commandReceiptSchema>;
 
 export const hostRequestSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("media"), request: mediaRequestSchema }),
+  z.strictObject({ type: z.literal("ralph"), request: ralphRequestSchema }),
   z.strictObject({
     type: z.literal("getWorkspaceRuns"),
     workspace,
@@ -1643,6 +1648,7 @@ export type HostRequest = z.infer<typeof hostRequestSchema>;
 
 export const hostResponseSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("media"), response: mediaResponseSchema }),
+  z.strictObject({ type: z.literal("ralph"), response: ralphResponseSchema }),
   z.strictObject({
     type: z.literal("workspaceRuns"),
     snapshot: runSnapshotSchema,

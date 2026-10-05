@@ -25,7 +25,7 @@ interface RalphOverviewProps {
   workspaceRoot: string | null;
   onOpen: (selection: RalphOverviewSelection) => void;
   onRefresh: () => void;
-  onChooseWorkspace: () => void;
+  onChooseWorkspace?: () => void;
   onReturnToEditor?: () => void;
 }
 
@@ -86,9 +86,11 @@ export const RalphOverview = ({
               Back to editor
             </button>
           ) : null}
-          <button type="button" onClick={onChooseWorkspace}>
-            <Plus aria-hidden="true" /> Add workspace
-          </button>
+          {onChooseWorkspace ? (
+            <button type="button" onClick={onChooseWorkspace}>
+              <Plus aria-hidden="true" /> Add workspace
+            </button>
+          ) : null}
           <button type="button" aria-label="Refresh flows" onClick={onRefresh}>
             <RefreshCw aria-hidden="true" />
           </button>
@@ -314,7 +316,7 @@ export const RalphOverview = ({
               );
             })}
           </div>
-          {!libraries.length ? (
+          {!libraries.length && onChooseWorkspace ? (
             <button
               type="button"
               className="ralph-overview-add"

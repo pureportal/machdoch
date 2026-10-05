@@ -1,13 +1,5 @@
-export type DesktopTaskRunFailure =
-  | { kind: "task-already-active"; taskId: string }
-  | { kind: "operation-already-active"; activeTaskId: string }
-  | { kind: "cancelled"; message: string }
-  | {
-      kind: "timed-out";
-      timeoutKind: "idle" | "absolute";
-      message: string;
-    }
-  | { kind: "runtime"; message: string };
+import type { DesktopTaskRunFailure } from "../../shared/task-run-state.js";
+export type { DesktopTaskRunFailure } from "../../shared/task-run-state.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);

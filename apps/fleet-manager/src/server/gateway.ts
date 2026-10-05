@@ -175,6 +175,10 @@ export class GatewayHub {
     );
   }
 
+  supportsCapability(instanceId: string, capability: string): boolean {
+    return this.isOnline(instanceId) && Boolean(this.connections.get(instanceId)?.capabilities.includes(capability));
+  }
+
   generation(instanceId: string): string | null {
     return this.isOnline(instanceId)
       ? (this.connections.get(instanceId)?.generation ?? null)
@@ -235,8 +239,8 @@ export class GatewayHub {
           signal?.removeEventListener("abort", abort);
         },
         responseType:
-          request.type === "media"
-            ? "media"
+          request.type === "media" || request.type === "ralph"
+            ? request.type
             : request.type === "getProductSnapshot"
             ? "productSnapshot"
             : request.type === "getWorkspaceRuns"

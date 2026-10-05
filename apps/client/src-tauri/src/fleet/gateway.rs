@@ -142,7 +142,7 @@ async fn connect_once(
         instance_id: config.instance_id.clone(),
         protocol_version: GATEWAY_PROTOCOL_VERSION,
         product_version: app_handle.package_info().version.to_string(),
-        capabilities: vec![PRODUCT_CAPABILITY.to_string()],
+        capabilities: vec![PRODUCT_CAPABILITY.to_string(), "ralph-editor.v1".to_string()],
     };
     if send_host_message(&mut sender, &hello).await.is_err() {
         return ConnectionResult::Reconnect(

@@ -12,6 +12,7 @@ mod embedded_browser_runtime;
 mod embedded_runtime_inputs;
 mod fleet;
 mod fleet_control;
+mod fleet_operations;
 mod idle_shutdown;
 mod launcher;
 mod media;
@@ -151,7 +152,7 @@ pub fn run() {
         .manage(fleet::FleetConnectionState::default())
         .manage(fleet_control::FleetControlState::default())
         .manage(media::MediaRuntimeState::default())
-        .manage(media::fleet::FleetMediaState::default())
+        .manage(fleet_operations::FleetOperationState::default())
         .manage(media::fleet_transfer::FleetTransferState::default())
         .manage(idle_shutdown::IdleShutdownState::default())
         .manage(shell_state::ShellStateStoreLock::default())
@@ -170,7 +171,7 @@ pub fn run() {
         })
         .setup(move |app| {
             cli_settings_bridge::initialize(app.handle()).map_err(std::io::Error::other)?;
-            media::fleet::initialize(app.handle());
+            fleet_operations::initialize(app.handle());
             settings_transfer::initialize(app.handle()).map_err(std::io::Error::other)?;
             desktop_task::cleanup_stale_task_context_files();
 

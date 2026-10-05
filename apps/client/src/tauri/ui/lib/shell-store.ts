@@ -73,7 +73,11 @@ const RUNNING_TASK_MESSAGE_ACTION_STORAGE_KEY =
   "machdoch.desktop.running-task-message-action";
 const RUNNING_TASK_MESSAGE_ACTION_IMPORT_REVISION_KEY =
   "machdoch.desktop.running-task-message-action-import-revision";
-const RALPH_SETTINGS_STORAGE_KEY = "machdoch.desktop.ralph-settings";
+let RALPH_SETTINGS_STORAGE_KEY = "machdoch.desktop.ralph-settings";
+
+export function configureRalphSettingsStorage(instanceId: string): void {
+  RALPH_SETTINGS_STORAGE_KEY = `machdoch.fleet.${instanceId}.ralph-settings`;
+}
 const ONBOARDING_STORAGE_KEY = "machdoch.desktop.onboarding-state";
 const APPEARANCE_STORAGE_KEY = "machdoch.desktop.appearance-state";
 const TERMINAL_PROFILE_SETTINGS_STORAGE_KEY =
@@ -456,10 +460,10 @@ export const saveRunningTaskMessageAction = async (
   );
 };
 
-export const loadRalphSettings = async (): Promise<RalphSettings> => {
+export const loadRalphSettings = async (fallback: RalphSettings = DEFAULT_RALPH_SETTINGS): Promise<RalphSettings> => {
   return loadStoredValue<RalphSettings>({
     storageKey: RALPH_SETTINGS_STORAGE_KEY,
-    fallback: DEFAULT_RALPH_SETTINGS,
+    fallback,
     normalize: normalizeRalphSettings,
     tauriErrorMessage: "Failed to load Ralph settings from Tauri store",
     localStorageErrorMessage: "Failed to load Ralph settings from localStorage",
@@ -489,7 +493,7 @@ export const saveRalphSettings = async (
   const committed = await withStoredValueWriteLock(
     RALPH_SETTINGS_STORAGE_KEY,
     async () => {
-      const latest = await loadRalphSettings();
+      const latest = await loadRalphSettings(normalizedBase ?? DEFAULT_RALPH_SETTINGS);
       if (!normalizedBase) {
         await saveRequiredStoredValueUnlocked({
           storageKey: RALPH_SETTINGS_STORAGE_KEY,

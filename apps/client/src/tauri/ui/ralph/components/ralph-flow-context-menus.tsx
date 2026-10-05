@@ -68,7 +68,7 @@ interface RalphFlowListContextMenuProps {
   draftFlow: RalphFlow | null;
   getFlowActiveRuns: (flow: RalphFlowSummary) => ActiveRalphRun[];
   isGenerationTargetingFlow: (flow: RalphFlowSummary) => boolean;
-  openFlowInExplorer: (flow: RalphFlowSummary) => void | Promise<void>;
+  openFlowInExplorer?: (flow: RalphFlowSummary) => void | Promise<void>;
   copyOrMoveFlowToScope: (
     flow: RalphFlowSummary,
     targetScope: RalphFlowScope,
@@ -144,16 +144,20 @@ export const RalphFlowListContextMenu = ({
       <div className="app-menu-label min-w-0">
         <span className="block truncate">{flow.name}</span>
       </div>
-      <RalphContextMenuButton
-        label="Open in Explorer"
-        onClick={() => void openFlowInExplorer(flow)}
-        options={{
-          disabled: baseDisabled,
-          icon: FolderOpen,
-          iconClassName: "text-cyan-300",
-        }}
-      />
-      <div className="app-menu-separator" />
+      {openFlowInExplorer ? (
+        <>
+          <RalphContextMenuButton
+            label="Open in Explorer"
+            onClick={() => void openFlowInExplorer(flow)}
+            options={{
+              disabled: baseDisabled,
+              icon: FolderOpen,
+              iconClassName: "text-cyan-300",
+            }}
+          />
+          <div className="app-menu-separator" />
+        </>
+      ) : null}
       <RalphContextMenuButton
         label="Copy to global"
         onClick={() => void copyOrMoveFlowToScope(flow, globalScope, "copy")}

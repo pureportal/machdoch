@@ -8,7 +8,7 @@ import {
 } from "@xyflow/react";
 import { isTauri } from "@tauri-apps/api/core";
 import { useIsMobile } from "../lib/use-mobile";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog } from "@machdoch/media-studio/tauri/ui/media/media-platform.js";
 import {
   createDefaultRalphVariableValues,
   getRalphVariableValue,
@@ -7816,7 +7816,7 @@ export const RalphFlowEditor = ({
       draftFlow={draftFlow}
       getFlowActiveRuns={getFlowActiveRuns}
       isGenerationTargetingFlow={isGenerationTargetingFlow}
-      openFlowInExplorer={openFlowInExplorer}
+      openFlowInExplorer={isTauri() ? openFlowInExplorer : undefined}
       copyOrMoveFlowToScope={copyOrMoveFlowToScope}
       deleteFlow={deleteFlow}
     />

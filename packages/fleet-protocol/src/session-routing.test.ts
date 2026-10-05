@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import { createFleetSessionId } from "./session-routing.ts";
 
-test("session identities are stable, bounded, and safe for arbitrary command text", async () => {
+void test("session identities are stable, bounded, and safe for arbitrary command text", async () => {
   for (const commandId of ["request-1", "../request/日本語", "x".repeat(128)]) {
     const identifier = await createFleetSessionId(commandId);
     assert.equal(await createFleetSessionId(commandId), identifier);

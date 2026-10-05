@@ -11,6 +11,7 @@ import {
 } from "./workspace-select";
 
 export interface WorkspacePickerProps {
+  allowBrowse?: boolean;
   currentWorkspace: string | null;
   workspaceLabel: string;
   recentWorkspaces: string[];
@@ -63,6 +64,7 @@ const createWorkspaceOptions = (
 };
 
 export const WorkspacePicker = ({
+  allowBrowse = true,
   currentWorkspace,
   workspaceLabel,
   recentWorkspaces,
@@ -124,14 +126,14 @@ export const WorkspacePicker = ({
                       onSelectWorkspace(option.path, workspaceLocked),
                   }),
                 ),
-                {
+                ...(allowBrowse ? [{
                   id: "choose-new",
                   title: "Choose another workspace",
                   keywords: ["browse", "folder"],
                   execute: async () => {
                     await onChooseNewWorkspace(workspaceLocked);
                   },
-                },
+                }] : []),
               ],
             },
           ],
@@ -171,6 +173,7 @@ export const WorkspacePicker = ({
       },
     ],
     [
+      allowBrowse,
       commandId,
       commandViewId,
       currentWorkspaceKey,
@@ -204,10 +207,10 @@ export const WorkspacePicker = ({
             : undefined)
       }
       buttonClassName={buttonClassName}
-      action={{
+      action={allowBrowse ? {
         label: "Choose another workspace",
         onSelect: () => onChooseNewWorkspace(workspaceLocked),
-      }}
+      } : undefined}
       selectActionOnTrigger={
         recentWorkspaces.length === 0 && (!hasActiveWorkspace || !allowNotSet)
       }

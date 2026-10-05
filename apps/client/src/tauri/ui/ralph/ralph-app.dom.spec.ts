@@ -47,19 +47,15 @@ vi.mock("../lib/shell-store", async (importOriginal) => {
   const original = await importOriginal<typeof import("../lib/shell-store")>();
   return {
     ...original,
-    loadRalphSettings: vi
-      .fn()
-      .mockResolvedValue({
-        ...original.DEFAULT_RALPH_SETTINGS,
-        workspaceRoot: "/one",
-      }),
+    loadRalphSettings: vi.fn().mockResolvedValue({
+      ...original.DEFAULT_RALPH_SETTINGS,
+      workspaceRoot: "/one",
+    }),
     saveRalphSettings: mocks.save,
-    loadShellState: vi
-      .fn()
-      .mockImplementation(async (initial) => ({
-        ...initial,
-        recentWorkspaces: ["/one", "/two"],
-      })),
+    loadShellState: vi.fn().mockImplementation(async (initial) => ({
+      ...initial,
+      recentWorkspaces: ["/one", "/two"],
+    })),
     subscribeToShellStateChanged: vi.fn().mockResolvedValue(() => {}),
     updateShellStateAtomically: vi.fn().mockResolvedValue(undefined),
     broadcastShellStateChanged: vi.fn().mockResolvedValue(undefined),
@@ -85,6 +81,30 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("RALPH overview navigation", () => {
+  it("retains remote defaults on the first save and rebases a later edit from another window", async () => {
+    const storage =
+      await vi.importActual<typeof import("../lib/shell-store")>(
+        "../lib/shell-store",
+      );
+    storage.configureRalphSettingsStorage("first-save-test");
+    window.localStorage.clear();
+    const initial = {
+      ...storage.DEFAULT_RALPH_SETTINGS,
+      workspaceRoot: "/one",
+      runModel: "gpt-5.4",
+    };
+    const next = { ...initial, generationModel: "gpt-5.6-sol" };
+    expect(await storage.saveRalphSettings(next, initial)).toMatchObject(next);
+    const concurrent = await storage.saveRalphSettings(
+      { ...initial, runReasoning: "high" },
+      initial,
+    );
+    expect(concurrent.workspaceRoot).toBe("/one");
+    expect(concurrent.generationModel).toBe("gpt-5.6-sol");
+    expect(concurrent.runReasoning).toBe("high");
+    expect(await storage.loadRalphSettings()).toEqual(concurrent);
+  });
+
   it("opens activity in the matching workspace and preserves the editor draft while checking other workspaces", async () => {
     render(createElement(RalphApp, { isActive: true }));
     await waitFor(() =>
