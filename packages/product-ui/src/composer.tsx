@@ -166,7 +166,7 @@ export function Composer({
   } = useComposerDraft(composer, onCommand, drafts);
   const [sessionMemoryOpen, setSessionMemoryOpen] = useState(false);
   const goalId = useId();
-  const [goalOpen, setGoalOpen] = useState(Boolean(composer.goal));
+  const [goalOpen, setGoalOpen] = useState(false);
   const goalDraft = useGoalDraft(
     composer.sessionId,
     composer.goal,
@@ -183,8 +183,8 @@ export function Composer({
   }, [composer.sessionId]);
 
   useEffect(() => {
-    setGoalOpen(Boolean(composer.goal));
-  }, [composer.sessionId, composer.goal?.id]);
+    setGoalOpen(false);
+  }, [composer.sessionId]);
 
   useEffect(() => {
     const textarea = textareaRef.current;

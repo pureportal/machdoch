@@ -79,7 +79,7 @@ describe("goal control", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start goal" }));
     expect(onCommand).toHaveBeenCalledWith("/goal -- Fix auth");
   });
-  it("does not mark an open panel as an active goal", () => {
+  it("highlights an enabled goal and keeps a running goal highlighted when hidden", () => {
     const props = {
       open: true,
       controls: "goal-input",
@@ -88,6 +88,10 @@ describe("goal control", () => {
     const view = render(<GoalTrigger {...props} active={false} />);
     const trigger = screen.getByRole("button", { name: "Goal" });
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(trigger.getAttribute("aria-pressed")).toBe("true");
+    expect(trigger.getAttribute("data-active")).toBe("true");
+    view.rerender(<GoalTrigger {...props} open={false} active={false} />);
+    expect(trigger.getAttribute("aria-pressed")).toBe("false");
     expect(trigger.getAttribute("data-active")).toBe("false");
     view.rerender(<GoalTrigger {...props} open={false} active />);
     expect(trigger.getAttribute("aria-expanded")).toBe("false");

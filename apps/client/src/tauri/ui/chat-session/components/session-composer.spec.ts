@@ -150,6 +150,84 @@ const createProps = (
 });
 
 describe("SessionComposer goal", () => {
+  it.each([
+    "active",
+    "paused",
+    "blocked",
+    "complete",
+    "budget-limited",
+  ] as const)(
+    "keeps a saved %s goal disabled when opening or switching sessions",
+    (status) => {
+      const onSend = vi.fn();
+      const props = createProps({
+        editingMessageId: null,
+        canSendMessage: true,
+        isExecuting: false,
+        onSend,
+      });
+      const goal = {
+        id: "saved-goal",
+        objective: "All tests pass",
+        mode: "machdoch" as const,
+        status,
+        turns: 1,
+        tokensUsed: 10,
+        elapsedMs: 1,
+        reason: "",
+        createdAt: 1,
+        updatedAt: 1,
+      };
+      const view = render(
+        createElement(SessionComposer, {
+          ...props,
+          activeSession: { ...props.activeSession, goal },
+        }),
+      );
+      expect(
+        screen
+          .getByRole("button", { name: "Goal" })
+          .getAttribute("aria-pressed"),
+      ).toBe("false");
+      expect(
+        screen.queryByRole("textbox", { name: "Goal objective" }),
+      ).toBeNull();
+      view.rerender(
+        createElement(SessionComposer, {
+          ...props,
+          activeSession: { ...props.activeSession, id: "other-session", goal },
+        }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+      expect(onSend).toHaveBeenCalledExactlyOnceWith(EDIT_DRAFT, 1, "continue");
+      fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+      expect(
+        screen
+          .getByRole("button", { name: "Goal" })
+          .getAttribute("aria-pressed"),
+      ).toBe("true");
+      expect(
+        screen.getByRole<HTMLTextAreaElement>("textbox", {
+          name: "Goal objective",
+        }).value,
+      ).toBe(goal.objective);
+      fireEvent.click(screen.getByRole("button", { name: "Hide goal" }));
+      view.rerender(
+        createElement(SessionComposer, {
+          ...props,
+          activeSession: {
+            ...props.activeSession,
+            id: "other-session",
+            goal: { ...goal, id: "new-goal" },
+          },
+        }),
+      );
+      expect(
+        screen.queryByRole("textbox", { name: "Goal objective" }),
+      ).toBeNull();
+    },
+  );
+
   it.each(["button", "keyboard"])(
     "starts the drafted goal when sending by %s",
     (method) => {

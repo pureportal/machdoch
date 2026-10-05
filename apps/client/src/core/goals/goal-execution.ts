@@ -40,7 +40,7 @@ export const executeWithSessionGoal = async (
     options = { ...options, conversationContext };
   }
   const sessionId = options.conversationContext?.sessionId;
-  if (!command && !sessionId) return execute(task, config, options);
+  if (!command) return execute(task, config, options);
   const path = getGoalPath(config.workspaceRoot, sessionId ?? "command-line");
   const selectedMode = options.conversationContext?.goalMode;
   if (command?.kind === "clear") {
@@ -153,8 +153,6 @@ export const executeWithSessionGoal = async (
       record.mode,
     );
   }
-  if (!command && record.goal?.status !== "active")
-    return execute(task, config, options);
   return withCooperativeFileLock(
     `${path}.run`,
     async () => {
