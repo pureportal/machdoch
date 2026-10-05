@@ -76,8 +76,9 @@ mod tests {
         path::PathBuf,
         time::{SystemTime, UNIX_EPOCH},
     };
+    use tar::EntryType;
 
-    fn archive(files: &[(&str, &[u8])]) -> Vec<u8> {
+    fn archive(files: &[(&str, &[u8])], links: &[(&str, &str, EntryType)]) -> Vec<u8> {
         let mut archive = tar::Builder::new(GzEncoder::new(Vec::new(), Compression::default()));
         for (path, contents) in files {
             let mut header = tar::Header::new_gnu();
@@ -87,6 +88,13 @@ mod tests {
             archive
                 .append_data(&mut header, path, Cursor::new(contents))
                 .unwrap();
+        }
+        for (path, target, kind) in links {
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(*kind);
+            header.set_size(0);
+            header.set_mode(0o644);
+            archive.append_link(&mut header, path, target).unwrap();
         }
         archive.into_inner().unwrap().finish().unwrap()
     }
@@ -107,14 +115,17 @@ mod tests {
     #[test]
     fn repairs_deleted_and_corrupt_modules_without_rewriting_healthy_files() {
         let directory = directory();
-        let archive = archive(&[
-            ("node_modules/playwright-core/package.json", b"{}"),
-            (
-                "node_modules/playwright-core/index.mjs",
-                b"export const chromium = {};",
-            ),
-            ("node_modules/playwright-core/lib/server.js", b"server"),
-        ]);
+        let archive = archive(
+            &[
+                ("node_modules/playwright-core/package.json", b"{}"),
+                (
+                    "node_modules/playwright-core/index.mjs",
+                    b"export const chromium = {};",
+                ),
+                ("node_modules/playwright-core/lib/server.js", b"server"),
+            ],
+            &[],
+        );
         materialize_browser_runtime(&directory, &archive).unwrap();
         let package = directory.join("node_modules/playwright-core/package.json");
         let package_modified_at = fs::metadata(&package).unwrap().modified().unwrap();
@@ -133,9 +144,30 @@ mod tests {
     }
 
     #[test]
+    fn rejects_links_and_special_files() {
+        let directory = directory();
+        let source = "node_modules/playwright-core/index.mjs";
+        let link = "node_modules/playwright-core/lib/link.mjs";
+        for kind in [
+            EntryType::Link,
+            EntryType::Symlink,
+            EntryType::Fifo,
+            EntryType::Char,
+            EntryType::Block,
+        ] {
+            let archive = archive(&[(source, b"export {};")], &[(link, source, kind)]);
+            assert!(materialize_browser_runtime(&directory, &archive)
+                .unwrap_err()
+                .contains("invalid file type"));
+            assert!(!directory.join(link).exists());
+        }
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn rejects_missing_module_entry_points() {
         let directory = directory();
-        let archive = archive(&[("node_modules/playwright-core/package.json", b"{}")]);
+        let archive = archive(&[("node_modules/playwright-core/package.json", b"{}")], &[]);
         assert!(materialize_browser_runtime(&directory, &archive)
             .unwrap_err()
             .contains("incomplete"));
@@ -145,7 +177,7 @@ mod tests {
     #[test]
     fn rejects_files_outside_the_browser_package() {
         let directory = directory();
-        let archive = archive(&[("other-package/index.mjs", b"invalid")]);
+        let archive = archive(&[("other-package/index.mjs", b"invalid")], &[]);
         assert!(materialize_browser_runtime(&directory, &archive)
             .unwrap_err()
             .contains("invalid path"));
