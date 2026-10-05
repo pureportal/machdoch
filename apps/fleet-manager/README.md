@@ -4,6 +4,10 @@ Fleet Manager is a self-hosted dashboard, WebSocket relay, and optional managed-
 
 Headless hosts support remote project services and private previews: start, stop, restart, health and logs, with isolated HTTP/WebSocket previews and backend routing. Set the optional `previews.baseUrl` and configure wildcard HTTPS to enable previews.
 
+Workspaces lists sessions across devices, opens the selected session, and can stop selected tasks. It also shows CPU and memory usage, device version warnings, and reported task failures.
+
+The [Android controller](../fleet-android/README.md) connects to the same HTTPS manager and uses the same product views.
+
 ## Docker
 
 Releases publish `ghcr.io/pureportal/machdoch-fleet-manager` for Linux `amd64`. Copy `fleet-manager.example.json` to a deployment directory as `fleet-manager.json`, then set `externalBaseUrl` to the HTTPS origin served by your reverse proxy. Keep the example port and loopback address.
@@ -71,6 +75,12 @@ pnpm --filter @machdoch/fleet-manager settings-key
 
 Back up the encryption key separately from the SQLite database. Encrypted secrets cannot be recovered without it.
 
+Desktop clients and headless `fleet service` instances receive assigned profiles and report the revision they applied. Headless clients retain the last profile during a manager outage and keep local settings separate, so disabling the connection or removing the assignment restores local values.
+
+Clients capture their original settings before applying their first profile. Open a profile's **Device settings** tab, select a device, review the differences, and choose which value to keep for each conflict. **Merge settings** updates the profile for every assigned device. API credentials are excluded from this capture; use the **Secrets** tab to share credentials.
+
+Headless hosts also expose assigned prompts, instructions, and context packs. Context packs that require desktop-only controls return an explicit error when applied on a headless host.
+
 ## Enrollment and connection recovery
 
 The Enrollment page lists unused, unexpired enrollment keys and allows the owner to revoke them immediately. It displays key values only when they are created; refreshing the inventory returns metadata only. Revoking an unused key releases its enrollment slot. Revoke an instance separately on the Instances page to disconnect it and invalidate its credential.
@@ -82,3 +92,13 @@ Gateway requests have bounded queues, payloads, buffered writes, and response de
 ## Projects
 
 Headless hosts also support a remote project library: clone repositories, create empty projects, import existing folders, and open agent tasks in a host-configured workspace root.
+
+## Verification
+
+After building, `node apps/fleet-manager/scripts/verify-live.mjs` runs an isolated production manager over temporary TLS, enrolls two real CLI services, and checks the browser merge, revision conflicts, outage recovery, and device revocation. It requires Chrome and OpenSSL; set `CHROME_PATH` and `OPENSSL_PATH` for installations outside the script's Windows defaults. Fixtures and screenshots stay under `.next/fleet-verification/`.
+
+Run `pnpm --filter @machdoch/client build:cli-bundle` and set `FLEET_VERIFY_CLIENT_BUNDLE=1` to verify the built CLI instead of the TypeScript entry point.
+
+Set `FLEET_VERIFY_ANDROID_SERIAL` to a running isolated emulator, such as `emulator-5568`, to also check APK installation, HTTPS validation, certificate rejection, and connection recovery. This resets the controller's data on that emulator. Authenticated Android workflows require a manager certificate trusted by Android.
+
+See [requirement evidence and remaining gaps](../../docs/fleet-manager-verification-2026-10-05.md) before treating the full remote-control goal as complete.

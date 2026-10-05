@@ -23,6 +23,7 @@ import type { TaskExecutionRole, TaskExecutionSection } from "../types.ts";
 import { createInstructionResolutionFixture } from "../__test__/instruction-test-helpers.ts";
 import { createInstructionDeliveryPlan } from "../instruction-system/index.ts";
 import { createCliInstructionCapabilityFromProbe } from "../provider-enrollment/instruction-delivery-preflight.ts";
+import { probeProviderCli } from "../provider-enrollment/capability-registry.ts";
 import { hasUnpairedUtf16Surrogate } from "../../shared/unicode.ts";
 import type { ModelDrivenExecutionParams } from "./agent-runtime-types.ts";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.ts";
@@ -1112,6 +1113,8 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         stdout: "Usage: codex exec --json",
         stderr: "",
       } as never);
+
+    await probeProviderCli("codex-cli", process.execPath, { force: true });
 
     const resultPromise = maybeExecuteExternalAgentProviderTask(
       createParams(workspaceRoot),

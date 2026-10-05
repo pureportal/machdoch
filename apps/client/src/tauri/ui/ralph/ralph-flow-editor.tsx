@@ -85,6 +85,7 @@ import {
 } from "../../../core/ralph-starter-flows.js";
 import type { RalphGenerationInterviewSession } from "../../../core/ralph-generation.js";
 import { createRalphFlowFingerprint } from "../../../core/_helpers/create-ralph-flow-fingerprint.helper.js";
+import { isRecoverableRalphRunStatus } from "../../../core/_helpers/is-recoverable-ralph-run-status.helper.js";
 import { discoverRalphFlowVariables } from "../../../core/_helpers/ralph-placeholders.helper.js";
 import type {
   RalphAnnotationTone,
@@ -255,7 +256,6 @@ import {
   formatGenerationErrorClipboardText,
   formatJsonDraft,
   formatPromptBlockTargetLabel,
-  formatRunMessage,
   getEffectiveProvider,
   getGenerationJobStatusLabel,
   getGenerationPhaseLabel,
@@ -1751,10 +1751,32 @@ export const RalphFlowEditor = ({
     () => `${canvasIdentityKey}::${getFlowLayoutKey(draftFlow)}`,
     [canvasIdentityKey, draftFlow],
   );
-  const setupVariables = useMemo(
-    () => (draftFlow ? discoverRalphFlowVariables(draftFlow) : []),
-    [draftFlow],
-  );
+  const setupVariables = useMemo(() => {
+    const priority = [
+      "featureRequest",
+      "previousGoal",
+      "acceptanceCriteria",
+      "verificationCommand",
+      "implementationScope",
+      "featureId",
+      "enableOnlineResearch",
+      "enableVisualReview",
+      "maxImplementationPasses",
+      "maxTasksPerImplementationPass",
+    ];
+    return draftFlow
+      ? discoverRalphFlowVariables(draftFlow).sort((left, right) => {
+          const leftIndex = priority.indexOf(left.name);
+          const rightIndex = priority.indexOf(right.name);
+          return (
+            Number(right.required) - Number(left.required) ||
+            (leftIndex < 0 ? priority.length : leftIndex) -
+              (rightIndex < 0 ? priority.length : rightIndex) ||
+            left.name.localeCompare(right.name)
+          );
+        })
+      : [];
+  }, [draftFlow]);
   useEffect(() => {
     const defaults = createDefaultRalphVariableValues(setupVariables);
     setVariableValues((current) => {
@@ -1827,7 +1849,7 @@ export const RalphFlowEditor = ({
     !inputSubmitting &&
     !pendingInputSupersededByActiveRun &&
     selectedFlowActiveRunCount === 0 &&
-    (lastRun.status === "blocked" || lastRun.status === "crashed"),
+    isRecoverableRalphRunStatus(lastRun.status),
   );
   const runButtonLabel = selectedFlowPrimaryActiveRun
     ? "View active run"
@@ -5639,11 +5661,7 @@ export const RalphFlowEditor = ({
       }
 
       replaceLastRun(result.run);
-      setMessage(
-        result.runLogPath
-          ? `${formatRunMessage(result.run)} Run log: ${result.runLogPath}`
-          : formatRunMessage(result.run),
-      );
+      setMessage(null);
       if (result.run.runId) {
         void openRunDetail(result.run.runId, scopeAtStart, {
           selectTab: false,
@@ -5673,7 +5691,7 @@ export const RalphFlowEditor = ({
       !lastRun?.runId ||
       !lastRun.checkpoint ||
       pendingInput ||
-      (lastRun.status !== "blocked" && lastRun.status !== "crashed")
+      !isRecoverableRalphRunStatus(lastRun.status)
     ) {
       return;
     }
@@ -5770,11 +5788,7 @@ export const RalphFlowEditor = ({
       }
 
       replaceLastRun(result.run);
-      setMessage(
-        result.runLogPath
-          ? `${formatRunMessage(result.run)} Run log: ${result.runLogPath}`
-          : formatRunMessage(result.run),
-      );
+      setMessage(null);
       if (result.run.runId) {
         void openRunDetail(result.run.runId, scopeAtStart, {
           selectTab: false,
@@ -5940,11 +5954,7 @@ export const RalphFlowEditor = ({
             [...result.run.events].reverse().find((event) => "blockId" in event)
               ?.blockId ?? selectedBlockId,
           );
-          setMessage(
-            result.runLogPath
-              ? `${formatRunMessage(result.run)} Run log: ${result.runLogPath}`
-              : formatRunMessage(result.run),
-          );
+          setMessage(null);
           if (result.run.runId) {
             void openRunDetail(result.run.runId, runScope, {
               selectTab: false,
@@ -9638,7 +9648,6 @@ export const RalphFlowEditor = ({
             </Button>
           ) : null}
         </div>
-        <p className="sr-only">Edit and run saved Ralph prompt flow graphs.</p>
       </header>
 
       <div
@@ -9756,6 +9765,7 @@ export const RalphFlowEditor = ({
                 removeEdges(deletedEdges.map((edge) => edge.id));
               }}
               fitView
+              minZoom={0.04}
               showMiniMap={showMiniMap}
               miniMapNodeColor={(node) =>
                 getBlockVisual((node.data as RalphNodeData).block).miniMapColor
@@ -12079,7 +12089,10 @@ export const RalphFlowEditor = ({
 
                     <div
                       data-ralph-inspector-section="routes"
-                      className="grid gap-3 rounded-lg bg-slate-900/25 p-3 ring-1 ring-slate-800/60"
+                      className={cn(
+                        "grid gap-3 rounded-lg bg-slate-900/25 p-3 ring-1 ring-slate-800/60",
+                        selectedBlockOutputs.length === 0 && "hidden",
+                      )}
                     >
                       <div className="text-xs font-semibold tracking-[0.12em] text-slate-400 uppercase">
                         Routes
@@ -12094,132 +12107,125 @@ export const RalphFlowEditor = ({
                           scrollInspectorSectionIntoView("routes")
                         }
                       />
-                      {selectedBlockOutputs.length === 0 ? (
-                        <div className="text-xs text-slate-500">
-                          END blocks do not route further.
-                        </div>
-                      ) : (
-                        selectedBlockOutputs.map((output) => {
-                          const edge = selectedRoutesByOutput.get(output);
-                          const unconnectedLabel = formatUnconnectedRouteLabel(
-                            selectedBlock,
-                            output,
-                          );
-                          const selectedRouteTarget = edge
-                            ? (selectedRouteTargets.find(
-                                (target) => target.id === edge.to,
-                              ) ?? null)
-                            : null;
-                          const routeTargetLabel = edge
-                            ? selectedRouteTarget
-                              ? formatRouteOptionTargetLabel(
-                                  selectedBlock,
-                                  selectedRouteTarget,
-                                )
-                              : `${edge.to} (missing)`
-                            : unconnectedLabel;
-                          const routeOptions = [
-                            {
-                              id: "",
-                              label: unconnectedLabel,
-                              type: "none" as const,
-                            },
-                            ...selectedRouteTargets.map((target) => ({
-                              id: target.id,
-                              label: formatRouteOptionTargetLabel(
+                      {selectedBlockOutputs.map((output) => {
+                        const edge = selectedRoutesByOutput.get(output);
+                        const unconnectedLabel = formatUnconnectedRouteLabel(
+                          selectedBlock,
+                          output,
+                        );
+                        const selectedRouteTarget = edge
+                          ? (selectedRouteTargets.find(
+                              (target) => target.id === edge.to,
+                            ) ?? null)
+                          : null;
+                        const routeTargetLabel = edge
+                          ? selectedRouteTarget
+                            ? formatRouteOptionTargetLabel(
                                 selectedBlock,
-                                target,
-                              ),
-                              type: target.type,
-                            })),
-                          ];
+                                selectedRouteTarget,
+                              )
+                            : `${edge.to} (missing)`
+                          : unconnectedLabel;
+                        const routeOptions = [
+                          {
+                            id: "",
+                            label: unconnectedLabel,
+                            type: "none" as const,
+                          },
+                          ...selectedRouteTargets.map((target) => ({
+                            id: target.id,
+                            label: formatRouteOptionTargetLabel(
+                              selectedBlock,
+                              target,
+                            ),
+                            type: target.type,
+                          })),
+                        ];
 
-                          return (
-                            <div
-                              key={output}
-                              className="grid gap-1.5 rounded-md bg-slate-950/55 p-2 text-xs text-slate-300 ring-1 ring-slate-800/55"
-                            >
-                              <div className="flex min-w-0 items-center justify-between gap-2">
-                                <span className="min-w-0 truncate font-semibold text-slate-200">
-                                  {output}
-                                </span>
-                                {edge ? (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    aria-label={`Remove ${output} route`}
-                                    tooltip={`Remove ${output} route`}
-                                    onClick={() => removeEdge(edge.id)}
-                                    className="h-6 w-6 rounded text-slate-500 hover:bg-red-500/10 hover:text-red-200"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                ) : null}
-                              </div>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    aria-label={`${output} route target`}
-                                    className={cn(
-                                      "h-8 min-w-0 justify-between rounded-md border px-2 text-xs font-medium shadow-none",
-                                      edge
-                                        ? "border-slate-700 bg-slate-950 text-slate-100 hover:border-slate-600 hover:bg-slate-900"
-                                        : "border-amber-400/35 bg-amber-500/10 text-amber-100 hover:border-amber-300/50 hover:bg-amber-500/15",
-                                    )}
-                                  >
-                                    <span className="min-w-0 truncate">
-                                      {routeTargetLabel}
-                                    </span>
-                                    <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent
-                                  align="start"
-                                  sideOffset={5}
-                                  className="z-[90] min-w-[var(--radix-dropdown-menu-trigger-width)]"
+                        return (
+                          <div
+                            key={output}
+                            className="grid gap-1.5 rounded-md bg-slate-950/55 p-2 text-xs text-slate-300 ring-1 ring-slate-800/55"
+                          >
+                            <div className="flex min-w-0 items-center justify-between gap-2">
+                              <span className="min-w-0 truncate font-semibold text-slate-200">
+                                {output}
+                              </span>
+                              {edge ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label={`Remove ${output} route`}
+                                  tooltip={`Remove ${output} route`}
+                                  onClick={() => removeEdge(edge.id)}
+                                  className="h-6 w-6 rounded text-slate-500 hover:bg-red-500/10 hover:text-red-200"
                                 >
-                                  {routeOptions.map((option) => {
-                                    const active =
-                                      (edge?.to ?? "") === option.id;
-
-                                    return (
-                                      <DropdownMenuItem
-                                        key={option.id || "unconnected"}
-                                        onSelect={() => {
-                                          setRouteTarget(
-                                            selectedBlock.id,
-                                            output,
-                                            option.id,
-                                          );
-                                        }}
-                                        className={cn(
-                                          "flex min-w-0 cursor-pointer items-center justify-between gap-3 rounded px-2 py-1.5 text-xs outline-none focus:bg-emerald-500/15 focus:text-emerald-100",
-                                          active
-                                            ? "bg-emerald-500/10 text-emerald-100"
-                                            : "text-slate-300",
-                                          option.id
-                                            ? "font-medium"
-                                            : "text-amber-100",
-                                        )}
-                                      >
-                                        <span className="min-w-0 truncate">
-                                          {option.label}
-                                        </span>
-                                        {active ? (
-                                          <Check className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
-                                        ) : null}
-                                      </DropdownMenuItem>
-                                    );
-                                  })}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              ) : null}
                             </div>
-                          );
-                        })
-                      )}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  aria-label={`${output} route target`}
+                                  className={cn(
+                                    "h-8 min-w-0 justify-between rounded-md border px-2 text-xs font-medium shadow-none",
+                                    edge
+                                      ? "border-slate-700 bg-slate-950 text-slate-100 hover:border-slate-600 hover:bg-slate-900"
+                                      : "border-amber-400/35 bg-amber-500/10 text-amber-100 hover:border-amber-300/50 hover:bg-amber-500/15",
+                                  )}
+                                >
+                                  <span className="min-w-0 truncate">
+                                    {routeTargetLabel}
+                                  </span>
+                                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent
+                                align="start"
+                                sideOffset={5}
+                                className="z-[90] min-w-[var(--radix-dropdown-menu-trigger-width)]"
+                              >
+                                {routeOptions.map((option) => {
+                                  const active = (edge?.to ?? "") === option.id;
+
+                                  return (
+                                    <DropdownMenuItem
+                                      key={option.id || "unconnected"}
+                                      onSelect={() => {
+                                        setRouteTarget(
+                                          selectedBlock.id,
+                                          output,
+                                          option.id,
+                                        );
+                                      }}
+                                      className={cn(
+                                        "flex min-w-0 cursor-pointer items-center justify-between gap-3 rounded px-2 py-1.5 text-xs outline-none focus:bg-emerald-500/15 focus:text-emerald-100",
+                                        active
+                                          ? "bg-emerald-500/10 text-emerald-100"
+                                          : "text-slate-300",
+                                        option.id
+                                          ? "font-medium"
+                                          : "text-amber-100",
+                                      )}
+                                    >
+                                      <span className="min-w-0 truncate">
+                                        {option.label}
+                                      </span>
+                                      {active ? (
+                                        <Check className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
+                                      ) : null}
+                                    </DropdownMenuItem>
+                                  );
+                                })}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ) : selectedEdge ? (
@@ -12586,17 +12592,13 @@ export const RalphFlowEditor = ({
                           ? "Run blocked"
                           : "Ready"}
                 </div>
-                <div className="truncate text-slate-600">
-                  {selectedBlock && selectedBlockOutputs.length > 0
-                    ? `${connectedSelectedRouteCount}/${selectedBlockOutputs.length} routes connected`
-                    : selectedBlock
-                      ? selectedBlock.type
-                      : selectedEdge
-                        ? "Route selected"
-                        : draftFlow
-                          ? `${draftFlow.blocks.length} blocks`
-                          : "No flow selected"}
-                </div>
+                {selectedBlock &&
+                connectedSelectedRouteCount < selectedBlockOutputs.length ? (
+                  <div className="truncate text-slate-400">
+                    {connectedSelectedRouteCount}/{selectedBlockOutputs.length}{" "}
+                    routes connected
+                  </div>
+                ) : null}
               </div>
             </div>
           </aside>
@@ -13446,11 +13448,6 @@ export const RalphFlowEditor = ({
                                 <div className="text-sm font-semibold text-white">
                                   Run inputs
                                 </div>
-                                <div className="mt-1 text-xs text-slate-400">
-                                  {setupVariables.length > 0
-                                    ? `${setupVariables.length} variable${setupVariables.length === 1 ? "" : "s"} discovered from this flow.`
-                                    : "No inputs required."}
-                                </div>
                               </div>
                               {requiredMissingVariables.length > 0 ? (
                                 <span className="shrink-0 rounded-full border border-amber-400/25 bg-amber-500/10 px-2 py-1 text-[0.68rem] font-semibold text-amber-100">
@@ -13476,7 +13473,7 @@ export const RalphFlowEditor = ({
                                       <span className="flex min-w-0 items-center justify-between gap-3">
                                         <span className="flex min-w-0 items-center gap-2">
                                           <span className="min-w-0 break-words font-medium [overflow-wrap:anywhere]">
-                                            {variable.name}
+                                            {titleFromId(variable.name)}
                                           </span>
                                           {variable.required ? (
                                             <span className="rounded border border-amber-400/30 bg-amber-500/10 px-1.5 py-0.5 text-[0.62rem] font-semibold text-amber-100">
@@ -13484,11 +13481,6 @@ export const RalphFlowEditor = ({
                                             </span>
                                           ) : null}
                                         </span>
-                                        <ControlTooltip content="Defined by the flow">
-                                          <span className="h-7 shrink-0 rounded border border-slate-800 bg-slate-950 px-2 py-1 text-[0.7rem] text-slate-400">
-                                            {variable.type}
-                                          </span>
-                                        </ControlTooltip>
                                       </span>
                                       <RalphSetupVariableControl
                                         variable={variable}
@@ -13538,11 +13530,7 @@ export const RalphFlowEditor = ({
                                 <div className="grid max-w-sm gap-1">
                                   <CheckCircle2 className="mx-auto h-5 w-5 text-lime-300" />
                                   <div className="text-sm font-medium text-slate-200">
-                                    No variables required
-                                  </div>
-                                  <div className="text-xs leading-5 text-slate-500">
-                                    Start the run when the readiness panel shows
-                                    no blockers.
+                                    No inputs required
                                   </div>
                                 </div>
                               </div>
@@ -13920,11 +13908,6 @@ export const RalphFlowEditor = ({
                                   <div className="text-sm font-semibold text-slate-200">
                                     No active runs
                                   </div>
-                                  <div className="mt-1 text-xs leading-5 text-slate-500">
-                                    Running flows appear here together, with
-                                    their current node, elapsed time, and live
-                                    output.
-                                  </div>
                                 </div>
                                 <Button
                                   type="button"
@@ -13965,24 +13948,6 @@ export const RalphFlowEditor = ({
                               <p className="break-words text-sm text-slate-400">
                                 {visibleLastRun.summary}
                               </p>
-                              <div className="grid gap-1 md:grid-cols-2">
-                                {visibleLastRun.events
-                                  .slice(-10)
-                                  .map((event, index) => (
-                                    <div
-                                      key={`${event.type}-${index}`}
-                                      className="truncate text-xs text-slate-500"
-                                    >
-                                      {event.type}
-                                      {"blockId" in event
-                                        ? ` ${event.blockId}`
-                                        : ""}
-                                      {"output" in event
-                                        ? ` ${event.output}`
-                                        : ""}
-                                    </div>
-                                  ))}
-                              </div>
                             </div>
                           ) : null}
                         </div>

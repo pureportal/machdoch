@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { loadFleetManagedProfile } from "./fleet-settings.js";
 import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
 import {
   assertContextWindowSupportedForProviderModel,
@@ -521,6 +522,7 @@ export const loadRuntimeConfig = async (
   const userInternalTaskModelSettings =
     await loadUserInternalTaskModelSettings();
   const { config, path } = await loadWorkspaceConfigFile(workspaceRoot);
+  const managedDefaults = (await loadFleetManagedProfile())?.document.defaults;
   const providerAvailability = getProviderAvailability(env);
   const webSearchProviderAvailability = getWebSearchProviderAvailability(env);
   const modeFromEnv = isRunMode(env.MACHDOCH_MODE)
@@ -529,7 +531,12 @@ export const loadRuntimeConfig = async (
   const configuredMode = isRunMode(config.defaultMode)
     ? config.defaultMode
     : undefined;
-  const mode = overrideMode ?? modeFromEnv ?? configuredMode ?? "machdoch";
+  const mode =
+    overrideMode ??
+    modeFromEnv ??
+    configuredMode ??
+    managedDefaults?.mode ??
+    "machdoch";
   const rawReasoningFromEnv = normalizeOptionalString(env.MACHDOCH_REASONING);
   const reasoningFromEnv = isReasoningMode(rawReasoningFromEnv)
     ? rawReasoningFromEnv
@@ -555,7 +562,11 @@ export const loadRuntimeConfig = async (
     );
   }
   const reasoning =
-    overrideReasoning ?? reasoningFromEnv ?? configuredReasoning ?? "default";
+    overrideReasoning ??
+    reasoningFromEnv ??
+    configuredReasoning ??
+    managedDefaults?.reasoning ??
+    "default";
   const rawReasoningModeFromEnv = normalizeOptionalString(
     env.MACHDOCH_REASONING_MODE,
   );
@@ -613,13 +624,19 @@ export const loadRuntimeConfig = async (
     configuredContextWindow ??
     "default";
   const provider = resolveProvider(
-    overrideProvider ?? config.provider,
+    overrideProvider ??
+      config.provider ??
+      managedDefaults?.provider ??
+      undefined,
     providerAvailability,
   );
+  const managedModel =
+    provider === managedDefaults?.provider ? managedDefaults?.model : null;
   const model =
     normalizeOptionalString(overrideModel) ??
     normalizeOptionalString(env.MACHDOCH_MODEL) ??
     config.model ??
+    managedModel ??
     getDefaultModelForRuntimeProvider(provider);
 
   if (provider !== "unconfigured") {

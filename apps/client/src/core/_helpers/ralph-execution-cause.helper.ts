@@ -24,12 +24,17 @@ export const findRalphExecutionCause = (
       retryCondition?: string;
     }
   | undefined => {
+  const reviewedBlockIds = new Set<string>();
   for (let index = beforeIndex - 1; index >= 0; index -= 1) {
     const result = results[index]!;
     const data = result.data as Record<string, unknown> | undefined;
     if (data?.workOutcome) {
       break;
     }
+    if (reviewedBlockIds.has(result.blockId)) {
+      continue;
+    }
+    reviewedBlockIds.add(result.blockId);
     if (result.status !== "error" && !failureOutputs.has(result.output)) {
       continue;
     }

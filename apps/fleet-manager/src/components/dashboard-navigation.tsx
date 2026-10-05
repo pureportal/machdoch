@@ -1,6 +1,12 @@
 "use client";
 
-import { KeyRound, LayoutDashboard, Settings2, Users } from "lucide-react";
+import {
+  FolderKanban,
+  KeyRound,
+  LayoutDashboard,
+  Settings2,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -12,6 +18,7 @@ const items: {
   settingsOnly?: boolean;
 }[] = [
   { href: "/instances", label: "Overview", icon: LayoutDashboard },
+  { href: "/workspaces", label: "Workspaces", icon: FolderKanban },
   { href: "/enrollment", label: "Enrollment", icon: KeyRound },
   { href: "/settings", label: "Settings", icon: Settings2, settingsOnly: true },
   { href: "/users", label: "Users", icon: Users },

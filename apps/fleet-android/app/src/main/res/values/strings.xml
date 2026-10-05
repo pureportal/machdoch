@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Machdoch Fleet</string>
+    <string name="manager">Fleet Manager</string>
+    <string name="https_url">HTTPS URL</string>
+    <string name="connect">Connect</string>
+    <string name="change_manager">Change manager</string>
+</resources>

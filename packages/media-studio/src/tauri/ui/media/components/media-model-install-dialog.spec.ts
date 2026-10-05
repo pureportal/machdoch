@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { createElement } from "react";
+import { act, createElement } from "react";
 import {
   cleanup,
   fireEvent,
@@ -163,6 +163,35 @@ it("ignores a status response started before cancellation", async () => {
       screen.queryByRole("button", { name: "Cancel download" }),
     ).toBeNull();
   });
+});
+
+it("pauses status polling until cancellation completes", async () => {
+  let resolveCancellation!: (value: MediaModelInstallJob) => void;
+  runtime.cancel.mockReturnValue(
+    new Promise<MediaModelInstallJob>((resolve) => {
+      resolveCancellation = resolve;
+    }),
+  );
+  const plan = createLocalFluxInstallPlan();
+  runtime.plan.mockResolvedValue({ ...plan, activeJob: job });
+  const props = {
+    model,
+    onClose: vi.fn(),
+    onInstalled: vi.fn(async () => undefined),
+  };
+  const view = render(createElement(MediaModelInstallDialog, props));
+  await waitFor(() => expect(runtime.get).toHaveBeenCalledWith(job.id));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel download" }));
+  const requests = runtime.get.mock.calls.length;
+  view.rerender(
+    createElement(MediaModelInstallDialog, {
+      ...props,
+      onInstalled: vi.fn(async () => undefined),
+    }),
+  );
+  expect(runtime.get).toHaveBeenCalledTimes(requests);
+  await act(async () => resolveCancellation({ ...job, status: "canceled" }));
+  expect(screen.getByRole("button", { name: "Retry download" })).toBeTruthy();
 });
 
 it("requires acceptance when the package terms require it", async () => {

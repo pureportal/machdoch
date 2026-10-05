@@ -788,7 +788,7 @@ mod tests {
     fn strips_signed_url_queries_and_bounds_diagnostics() {
         let long_tail = "x".repeat(2_100);
         let error = MediaError::from_internal(
-            "media_import_image",
+            "media_import_asset",
             format!("download failed at https://example.test/result.png?secret=token {long_tail}"),
         );
         assert!(!error.technical_diagnostic.contains("secret=token"));

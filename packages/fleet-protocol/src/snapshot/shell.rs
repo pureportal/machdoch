@@ -265,7 +265,10 @@ fn composer() -> Shape {
         required("uiControlDescription", text()),
         required("attachments", array(attachment(), 64)),
         required("chooserProviders", array(string(240), 32)),
-        required("matchedContextPackIds", array(identifier(), 60)),
+        required(
+            "matchedContextPackIds",
+            array(identifier(), crate::MAX_MANAGED_SETTINGS_COLLECTION_ENTRIES),
+        ),
     ])
 }
 
@@ -612,7 +615,7 @@ pub(super) fn shape() -> Shape {
         optional("runtime", runtime()),
         optional("scheduler", scheduler()),
         optional("ralph", ralph()),
-        required("contextPacks", array(context_pack(), 60)),
+        required("contextPacks", array(context_pack(), 128)),
         optional("instructions", instructions()),
         required("promptHistory", array(string(8_000), 30)),
         optional("voice", voice()),

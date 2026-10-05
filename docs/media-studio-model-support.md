@@ -8,7 +8,7 @@ The canonical profile file contains 31 models, including AudioLDM 2. Profiles de
 | Wan 2.2 T2V-A14B / I2V-A14B; Wan 2.1 T2V 1.3B; HunyuanVideo 1.5 T2V; CogVideoX 2B / 1.5 T2V / 1.5 I2V; Mochi; Helios | Managed downloads with pinned revisions and SHA-256 checks |
 | FLUX.1 schnell / dev; FLUX.2 klein Base 4B / distilled 9B / Base 9B / dev; Krea 2 Raw; HiDream Full; Ideogram 4 NF4  | Import a complete Diffusers folder                         |
 | LTX-2.5 distilled; LTX-2.3 dev; Sulphur 2 dev; Stable Video Diffusion XT                                             | Import a complete Diffusers folder                         |
-| AudioLDM 2                                                                                                         | Managed download with pinned revision and SHA-256 checks   |
+| AudioLDM 2                                                                                                         | Managed download or native Diffusers folder import        |
 
 Existing MiniMax H3, Qwen-Image 2.1, Krea Turbo, FLUX.2 klein 4B, LTX-Video 0.9.8, FramePack, HunyuanVideo I2V, and Stable Diffusion paths remain part of the current catalog.
 
@@ -18,7 +18,8 @@ Existing MiniMax H3, Qwen-Image 2.1, Krea Turbo, FLUX.2 klein 4B, LTX-Video 0.9.
 - Saved video workflows use the new profiles' sampling and input contracts; source-free video steps publish without image lineage.
 - Image-to-video accepts an opening image; distinct closing images are checked against the chosen model's capabilities.
 - LTX-2 audio is muxed into WebM and both tracks are decoded for verification.
-- AudioLDM 2 produces standalone mono 16 kHz PCM WAV files. Basic and Advanced expose prompt, duration, negative prompt, steps, guidance, and seed. Advanced currently accepts one prompt, one audio generator, and one audio output; mixed audio/video graphs are rejected.
+- AudioLDM 2 produces standalone mono 16 kHz PCM WAV files. Basic and Advanced expose prompt, duration, negative prompt, steps, guidance, and seed. Connected Advanced workflows can generate audio alongside image/video steps.
+- Advanced can import WAV audio and WebM video, join up to eight ordered scenes, preserve scene audio, or replace the soundtrack with a supplied audio asset and start offset. MuseTalk 1.5 applies lip sync using separate vocals and soundtrack inputs.
 - Turbo and base variants use different steps and guidance. Frame counts and dimensions follow the selected pipeline.
 - The Models tab includes uninstalled models with download or import actions. Downloads show size, progress, cancellation, and errors, and reconnect when their dialog is reopened.
 - Model folders are inspected, copied, hashed, and registered. Missing shards, invalid weights, executable repository files, and symlinks are rejected.
@@ -42,6 +43,12 @@ Only the modes listed by each profile are implemented. This change does not add 
 The distilled LTX-2.5 adapter uses the explicit sigma schedule and unguided settings from the [official inference recipe](https://huggingface.co/Lightricks/LTX-2.5-Diffusers/blob/main/README.md). Pipeline call arguments were compared with the pinned Diffusers source for all 30 profiles.
 
 The figures above describe earlier profile implementation checks. The [2026-10-03 verification report](media-studio-verification-2026-10-03.md) records subsequent SDXL/LoRA, Krea, CogVideoX, IntroSVG, and AudioLDM 2 requests, Codex, Playwright, and remaining gaps. IntroSVG produced a document but failed visual quality; audio evidence is scoped to the tested recipe. Manual model verification is no longer required. Full interactive inference coverage remains incomplete.
+
+The [Basic assistant continuation](media-studio-basic-assistant-verification-2026-10-04.md) adds Codex field filling to all four Basic forms and records native SDXL generation and AudioLDM 2 folder import. That importer recognizes the native `audioldm2` projection/UNet components and requires vocoder weights; it continues to reject arbitrary repository classes.
+
+Of the 31 exact profiles in `open_media_models.json`, recorded real inference covers CogVideoX 2B through the worker and AudioLDM 2 through worker and desktop requests. The other 29 profiles lack real execution evidence in these reports. Krea 2 RAW is among those 29: the measured Krea checkpoint was the separate scaled-FP8 Turbo path. SDXL and IntroSVG also live outside that profile file. Their successful requests do not establish execution of other profiles or variants. IntroSVG's completed document failed visual quality, and SDXL's image composition and cold speed remain deficient.
+
+The [October 5 scene continuation](media-studio-verification-2026-10-05.md) verifies native scene composition and soundtrack playback using actual earlier outputs and Codex 6.1 Sol. The subsequent [startup continuation](media-studio-startup-verification-2026-10-05.md) records fresh LTX inference after runtime and sampling fixes; motion quality and speed remain deficient. The [SVG and lip-sync continuation](media-studio-svg-lipsync-verification-2026-10-05.md) records a real Codex-created native MuseTalk graph, a generated human-face clip, original-byte export, and bundled desktop playback. Teeth softness, limited mouth variation, and cold latency remain; singing and perceptual synchronization are unverified.
 
 The canonical profiles are in `apps/client/src-tauri/python/open_media_models.json`; managed file manifests are in `apps/client/src-tauri/src/media/open_model_manifests.json`.
 

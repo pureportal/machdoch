@@ -110,16 +110,33 @@ describe("provider capability registry", () => {
     }
   });
 
-  it("retries unavailable executables after the shorter negative-cache TTL", async () => {
+  it("retains verified capabilities across a long agent operation", async () => {
     let now = 1_000;
     vi.spyOn(Date, "now").mockImplementation(() => now);
+    probeCommandMock.mockReturnValue({
+      status: 0,
+      stdout: "codex-cli 1.0.0 --config --json",
+      stderr: "",
+    });
+    await probeProviderCli("codex-cli", "long-agent-operation.exe");
+    now += 6 * 60 * 1_000;
+    expect(
+      (await probeProviderCli("codex-cli", "long-agent-operation.exe"))
+        .features,
+    ).toEqual(["--config", "--json"]);
+    expect(probeCommandMock).toHaveBeenCalledTimes(3);
+
+    now += 25 * 60 * 1_000;
+    await probeProviderCli("codex-cli", "long-agent-operation.exe");
+    expect(probeCommandMock).toHaveBeenCalledTimes(6);
+  });
+
+  it("rechecks an unavailable executable immediately after recovery", async () => {
     probeCommandMock.mockReturnValue({ status: null, stdout: "", stderr: "" });
     expect(
       (await probeProviderCli("claude-cli", "missing-cache.exe")).available,
     ).toBe(false);
-    await probeProviderCli("claude-cli", "missing-cache.exe");
     expect(probeCommandMock).toHaveBeenCalledTimes(4);
-    now += 15_001;
     probeCommandMock.mockReturnValue({
       status: 0,
       stdout: "--output-format",
@@ -129,6 +146,32 @@ describe("provider capability registry", () => {
       (await probeProviderCli("claude-cli", "missing-cache.exe")).available,
     ).toBe(true);
     expect(probeCommandMock).toHaveBeenCalledTimes(6);
+  });
+
+  it("rechecks incomplete help evidence even when the version probe succeeded", async () => {
+    probeCommandMock.mockImplementation(async (_command, args) => ({
+      status: args[0] === "--version" ? 0 : null,
+      stdout: args[0] === "--version" ? "codex-cli 1.0.0" : "",
+      stderr: "",
+    }));
+    const incomplete = await probeProviderCli(
+      "codex-cli",
+      "incomplete-help-cache.exe",
+    );
+    expect(incomplete.available).toBe(true);
+    expect(incomplete.features).toEqual([]);
+    expect(probeCommandMock).toHaveBeenCalledTimes(5);
+    probeCommandMock.mockReturnValue({
+      status: 0,
+      stdout: "codex-cli 1.0.0 --config --json",
+      stderr: "",
+    });
+    const recovered = await probeProviderCli(
+      "codex-cli",
+      "incomplete-help-cache.exe",
+    );
+    expect(recovered.features).toEqual(["--config", "--json"]);
+    expect(probeCommandMock).toHaveBeenCalledTimes(8);
   });
 
   it.runIf(process.platform === "win32")(

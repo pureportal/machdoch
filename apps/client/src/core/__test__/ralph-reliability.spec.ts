@@ -1,11 +1,14 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as atomicWrites from "../_helpers/write-file-atomically.helper.js";
 import { RalphRunStore } from "../_helpers/ralph-run-store.helper.js";
 import {
   createRalphRunLogger,
+  readRalphRunRecord,
   runRalphFlow,
   type RalphRunRecord,
 } from "../ralph.js";
@@ -14,7 +17,10 @@ import {
   customizations,
   runtimeConfig,
 } from "./ralph-test-helpers.js";
-import { lockWindowsFileReplacement } from "./windows-file-lock.js";
+import {
+  lockWindowsFileReplacement,
+  prepareWindowsFileLocker,
+} from "./windows-file-lock.js";
 
 const workspaces: string[] = [];
 const createRun = async () => {
@@ -109,33 +115,37 @@ describe("RALPH durable execution recovery", () => {
   it.runIf(process.platform === "win32")(
     "recovers a Windows record lock lasting beyond atomic replacement retries",
     async () => {
+      await prepareWindowsFileLocker();
       const { workspace, flow, logger, config } = await createRun();
       const writeJson = atomicWrites.writeJsonAtomically;
       let releaseLock: (() => Promise<void>) | undefined;
-      let releaseTimer: ReturnType<typeof setTimeout> | undefined;
       let failedReplacement = false;
       vi.spyOn(atomicWrites, "writeJsonAtomically").mockImplementation(
         async (path, value, options) => {
           const record = value as RalphRunRecord;
           if (
             !releaseLock &&
+            !failedReplacement &&
             path === logger.paths!.recordPath &&
             record.status === "running" &&
             record.summary.includes("Persisted completion")
           ) {
             releaseLock = await lockWindowsFileReplacement(path);
-            releaseTimer = setTimeout(() => {
-              void releaseLock!();
-            }, 5_500);
           }
           try {
             await writeJson(path, value, options);
           } catch (error) {
             if (
               path === logger.paths!.recordPath &&
-              (error as NodeJS.ErrnoException).code === "EPERM"
-            )
+              ["EPERM", "EACCES", "EBUSY"].includes(
+                (error as NodeJS.ErrnoException).code ?? "",
+              )
+            ) {
               failedReplacement = true;
+              const release = releaseLock;
+              releaseLock = undefined;
+              await release?.();
+            }
             throw error;
           }
         },
@@ -144,17 +154,17 @@ describe("RALPH durable execution recovery", () => {
         const result = await runRalphFlow(flow, config, customizations, {
           logger,
         });
-        expect(failedReplacement).toBe(true);
         expect(result.status, result.summary).toBe("completed");
+        expect(failedReplacement, result.summary).toBe(true);
         expect(result.durability?.status).toBe("healthy");
         expect(await readFile(join(workspace, "effects.txt"), "utf8")).toBe(
           "once\n",
         );
       } finally {
-        clearTimeout(releaseTimer);
         await releaseLock?.();
       }
     },
+    60_000,
   );
   it("recovers run projection contention without replaying completed side effects", async () => {
     const { workspace, flow, logger, config } = await createRun();
@@ -195,6 +205,79 @@ describe("RALPH durable execution recovery", () => {
     expect(record.status).toBe("completed");
     expect(record.durability?.error).toBeUndefined();
   });
+
+  it("immediately resumes a recently killed owner without replaying committed progress", async () => {
+    const { workspace, flow, logger, config } = await createRun();
+    const deadPid = Number(
+      execFileSync(process.execPath, ["-e", "console.log(process.pid)"], {
+        encoding: "utf8",
+        timeout: 20_000,
+      }),
+    );
+    const paused = await runRalphFlow(flow, config, customizations, {
+      logger,
+      maxTransitions: 2,
+    });
+    expect(paused.checkpoint?.currentBlockId).toBe("next");
+    const now = new Date().toISOString();
+    const checkpoint = {
+      ...paused.checkpoint!,
+      lease: {
+        ownerId: `${deadPid}:${randomUUID()}`,
+        generation: paused.checkpoint!.lease!.generation,
+        acquiredAt: now,
+        heartbeatAt: now,
+        expiresAt: new Date(Date.now() + 120_000).toISOString(),
+      },
+    };
+    const record = JSON.parse(
+      await readFile(logger.paths!.recordPath, "utf8"),
+    ) as RalphRunRecord;
+    await writeFile(
+      logger.paths!.recordPath,
+      JSON.stringify({ ...record, status: "running", checkpoint }),
+      "utf8",
+    );
+    const store = new RalphRunStore(logger.paths!.directory);
+    await store.initialize();
+    await store.persistCheckpoint(
+      checkpoint,
+      "Retained checkpoint after abrupt owner exit.",
+    );
+    await store.acquireLease(
+      {
+        runId: logger.runId,
+        flowId: flow.id,
+        ownerId: checkpoint.lease.ownerId,
+        generation: checkpoint.lease.generation,
+        acquiredAt: now,
+      },
+      120_000,
+    );
+    expect((await store.readLease())?.active).toBe(false);
+    expect(
+      (await readRalphRunRecord(workspace, logger.runId)).effectiveStatus,
+    ).toBe("abandoned");
+    const resumeLogger = await createRalphRunLogger(workspace, flow, {
+      runId: logger.runId,
+      paths: logger.paths!,
+      append: true,
+    });
+    const resumed = await runRalphFlow(flow, config, customizations, {
+      logger: resumeLogger,
+      checkpoint,
+      maxTransitions: 10,
+    });
+    expect(resumed.status, resumed.summary).toBe("completed");
+    expect(resumed.durability?.status).toBe("healthy");
+    expect(await readFile(join(workspace, "effects.txt"), "utf8")).toBe(
+      "once\n",
+    );
+    expect(await readFile(join(workspace, "next.txt"), "utf8")).toBe("next");
+    expect(
+      resumed.checkpoint?.totalTransitions ?? resumed.blockResults.length,
+    ).toBeGreaterThanOrEqual(paused.checkpoint!.totalTransitions!);
+  }, 30_000);
 
   it("refuses further side effects when a persistence retry loses ownership", async () => {
     const { workspace, flow, logger, config } = await createRun();

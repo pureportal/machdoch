@@ -959,12 +959,6 @@ pub(super) fn persist_import(
         .map_err(|error| format!("failed to publish imported model readiness: {error}"))?;
     transaction
         .execute(
-            "DELETE FROM media_model_runtime_probes WHERE model_id = ?1",
-            [&model_id],
-        )
-        .map_err(|error| format!("failed to reset imported model verification: {error}"))?;
-    transaction
-        .execute(
             "INSERT OR IGNORE INTO media_model_lifecycle_snapshots(
                model_id, lifecycle, checked_at, source_url, catalog_revision, observed_at
              ) VALUES (?1, 'active', ?2, ?3, ?4, ?2)",
@@ -1391,10 +1385,6 @@ mod tests {
         )
         .unwrap();
         let mut connection = database::open(&paths).unwrap();
-        connection.execute("INSERT INTO media_model_runtime_probes
-            (model_id, revision, model_digest, runtime_fingerprint, status, worker_version, diagnostic, probed_at)
-            VALUES (?1, 'revision', 'digest', 'runtime', 'ready', 'worker', 'Ready', '2026-09-19')",
-            [&result.model_id]).unwrap();
         let mut edit = super::super::model_resource_edit::UpdateMediaModelResourceRequest {
             resource_id: result.model_id.clone(),
             display_name: "Renamed".to_string(),
@@ -1405,19 +1395,8 @@ mod tests {
             trigger_words: vec![],
         };
         super::super::model_resource_edit::update(&paths, &edit).unwrap();
-        let probe_count = || {
-            connection
-                .query_row(
-                    "SELECT COUNT(*) FROM media_model_runtime_probes WHERE model_id = ?1",
-                    [&result.model_id],
-                    |row| row.get::<_, i64>(0),
-                )
-                .unwrap()
-        };
-        assert_eq!(probe_count(), 1);
         edit.architecture = "stable-diffusion-3".to_string();
         super::super::model_resource_edit::update(&paths, &edit).unwrap();
-        assert_eq!(probe_count(), 0);
         catalog::synchronize(&mut connection).unwrap();
         let snapshot = catalog::snapshot(&connection, &Default::default()).unwrap();
         let model = snapshot
@@ -1564,7 +1543,6 @@ mod tests {
         for table in [
             "media_models",
             "media_model_installations",
-            "media_model_runtime_probes",
             "media_model_lifecycle_snapshots",
             "media_model_license_acceptances",
             "media_model_install_jobs",

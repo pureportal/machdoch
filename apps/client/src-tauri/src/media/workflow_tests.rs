@@ -1,6 +1,33 @@
 use super::*;
 
 #[test]
+fn scene_workflows_accept_no_workspace_but_video_generation_requires_one() {
+    let request: ExecuteMediaWorkflowRequest = serde_json::from_value(json!({
+        "schemaVersion": 1, "runId": "run:scenes", "flowId": "flow:scenes",
+        "flowRevisionId": "revision:scenes", "planId": "plan:scenes",
+        "planSnapshot": {"schemaVersion": 1, "planId": "plan:scenes", "flowId": "flow:scenes",
+            "flowFingerprint": "digest", "compiledAt": "2026-10-04T00:00:00Z", "nodes": [], "steps": []},
+        "workspaceRoot": null, "modelBindings": {}
+    })).unwrap();
+    let mut flow: MediaFlowDocument = serde_json::from_value(json!({
+        "schemaVersion": 1, "id": "flow:scenes", "name": "Scenes", "description": "",
+        "createdAt": "2026-10-04T00:00:00Z", "updatedAt": "2026-10-04T00:00:00Z",
+        "nodes": [
+            {"id":"scene","type":"source.video","version":1,"label":"Scene","layer":"source","config":{"assetId":"asset:scene"}},
+            {"id":"save","type":"output.video","version":1,"label":"Save","layer":"output","config":{"format":"webm","role":"opaque"}}
+        ],
+        "edges": [{"id":"save","fromNodeId":"scene","fromPortId":"video","toNodeId":"save","toPortId":"video"}]
+    })).unwrap();
+    assert!(request.workspace_root.is_none());
+    assert!(preflight(&flow, &request).is_ok());
+    flow.nodes[0].r#type = "task.generate-video".into();
+    assert_eq!(
+        preflight(&flow, &request).unwrap_err(),
+        "Select a workspace before generating video"
+    );
+}
+
+#[test]
 fn native_video_inputs_preserve_absent_frames_and_resolve_connected_images() {
     let mut flow: MediaFlowDocument = serde_json::from_value(json!({
         "schemaVersion": 1, "id": "flow:video", "name": "Video", "description": "",

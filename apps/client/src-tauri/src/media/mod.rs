@@ -58,7 +58,6 @@ use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::Duration,
 };
 
 use serde::{Deserialize, Serialize};
@@ -66,7 +65,6 @@ use tauri::{AppHandle, Manager as _};
 
 pub(crate) type MediaResult<T> = Result<T, String>;
 
-const LOCAL_MODEL_PROBE_COMMAND_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const MAX_IMAGE_GENERATION_SEED: u64 = 9_007_199_254_740_991;
 const IMAGE_TASK_NODE_TYPES: &[&str] = &["task.generate-image", "task.edit-image"];
 
@@ -340,7 +338,6 @@ pub(crate) struct MediaProviderCatalogEntry {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MediaModelManagement {
     acquisition: String,
-    verification: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -875,7 +872,7 @@ pub(crate) struct MediaRunDetail {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct MediaImageImportResult {
+pub(crate) struct MediaAssetImportResult {
     detail: MediaRunDetail,
     asset: MediaAssetRecord,
     deduplicated: bool,
@@ -2743,6 +2740,8 @@ impl MediaRunPlanSnapshot {
                     | "operation.visual-check"
                     | "operation.prepare-mask"
                     | "source.image"
+                    | "source.audio"
+                    | "source.video"
                     | "source.seed"
                     | "source.animated-background"
                     | "task.generate-image"
@@ -2762,6 +2761,9 @@ impl MediaRunPlanSnapshot {
                     | "operation.alpha-matte"
                     | "operation.composite"
                     | "operation.video-composite"
+                    | "operation.video-sequence"
+                    | "operation.video-audio"
+                    | "operation.lip-sync"
                     | "operation.quality-analyze"
                     | "control.quality-gate"
                     | "control.human-review"
@@ -2832,6 +2834,9 @@ impl MediaRunPlanSnapshot {
                     | "extract-alpha-matte"
                     | "composite-image"
                     | "composite-video"
+                    | "sequence-video"
+                    | "set-video-audio"
+                    | "lip-sync-video"
                     | "analyze-quality"
                     | "evaluate-gate"
                     | "wait-for-review"
@@ -3906,40 +3911,6 @@ pub(crate) async fn media_import_local_model(
         Err(error) => Err(error),
     };
     command_result("media_import_local_model", result)
-}
-
-#[tauri::command]
-pub(crate) async fn media_probe_local_model(
-    app: AppHandle,
-    model_id: String,
-) -> MediaCommandResult<provider_local_diffusers::LocalModelRuntimeProbeResult> {
-    let result = match MediaRuntimePaths::resolve(&app) {
-        Ok(paths) => {
-            if let Err(error) = database::ensure_initialized(&paths) {
-                Err(error)
-            } else {
-                let model_id = match required_text("modelId", &model_id, 256) {
-                    Ok(model_id) => model_id,
-                    Err(error) => return command_result("media_probe_local_model", Err(error)),
-                };
-                match tokio::time::timeout(
-                    LOCAL_MODEL_PROBE_COMMAND_TIMEOUT,
-                    tauri::async_runtime::spawn_blocking(move || {
-                        provider_local_diffusers::probe_model(&app, &paths, &model_id)
-                    }),
-                )
-                .await
-                {
-                    Ok(result) => result
-                        .map_err(|error| format!("local model probe worker failed: {error}"))
-                        .and_then(|result| result),
-                    Err(_) => Err("local model verification exceeded its deadline".to_string()),
-                }
-            }
-        }
-        Err(error) => Err(error),
-    };
-    command_result("media_probe_local_model", result)
 }
 
 #[tauri::command]
@@ -5453,26 +5424,36 @@ pub(crate) fn media_inspect_hardware(
 }
 
 #[tauri::command]
-pub(crate) async fn media_import_image(
+pub(crate) async fn media_import_asset(
     app: AppHandle,
     path: String,
-) -> MediaCommandResult<MediaImageImportResult> {
+) -> MediaCommandResult<MediaAssetImportResult> {
     let result: MediaResult<_> = async {
         let paths = MediaRuntimePaths::resolve(&app)?;
         database::ensure_initialized(&paths)?;
-        tauri::async_runtime::spawn_blocking(move || ingest::import_image(&paths, &path))
-            .await
-            .map_err(|error| format!("image import worker could not be joined: {error}"))?
+        tauri::async_runtime::spawn_blocking(move || {
+            if std::path::Path::new(&path)
+                .extension()
+                .and_then(|value| value.to_str())
+                .is_some_and(|value| value.eq_ignore_ascii_case("webm"))
+            {
+                ingest::import_video(&paths, &app, &path)
+            } else {
+                ingest::import_asset(&paths, &path)
+            }
+        })
+        .await
+        .map_err(|error| format!("asset import worker could not be joined: {error}"))?
     }
     .await;
-    command_result("media_import_image", result)
+    command_result("media_import_asset", result)
 }
 
 #[tauri::command]
 pub(crate) async fn media_create_pose_map(
     app: AppHandle,
     map: pose_map::PoseMap,
-) -> MediaCommandResult<MediaImageImportResult> {
+) -> MediaCommandResult<MediaAssetImportResult> {
     let result: MediaResult<_> = async {
         let paths = MediaRuntimePaths::resolve(&app)?;
         database::ensure_initialized(&paths)?;
@@ -5564,7 +5545,7 @@ pub(crate) async fn media_install_pose_control(
 pub(crate) async fn media_import_image_url(
     app: AppHandle,
     url: String,
-) -> MediaCommandResult<MediaImageImportResult> {
+) -> MediaCommandResult<MediaAssetImportResult> {
     let result: MediaResult<_> = async {
         let paths = MediaRuntimePaths::resolve(&app)?;
         database::ensure_initialized(&paths)?;

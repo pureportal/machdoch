@@ -8,7 +8,7 @@ use std::{
 
 use image::{ImageFormat, ImageReader, Limits};
 use serde::{Deserialize, Serialize};
-use sysinfo::{Pid, System};
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 use tauri::{AppHandle, Manager};
 
 use crate::child_process::{terminate_child_process_tree_by_id, SupervisedChild};
@@ -448,8 +448,13 @@ fn process_for_job(directory: &Path) -> MediaResult<Option<(System, Pid)>> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(format!("Could not read training process ID: {error}")),
     };
-    let system = System::new_all();
     let pid = Pid::from_u32(pid);
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
+    );
     let Some(process) = system.process(pid) else {
         return Ok(None);
     };
@@ -481,6 +486,13 @@ pub(super) fn ensure_idle(storage_root: &Path) -> MediaResult<()> {
 }
 
 fn start_process(app: &AppHandle, paths: &MediaRuntimePaths, directory: &Path) -> MediaResult<()> {
+    let runtime = provider_local_diffusers::probe(app);
+    if !runtime.ready {
+        return Err(format!(
+            "Local training is unavailable: {}",
+            runtime.diagnostic
+        ));
+    }
     let python = runtime_setup::python_path(&runtime_setup::root(app)?);
     if !python.is_file() {
         return Err("Install the Media Studio local model runtime before training.".into());

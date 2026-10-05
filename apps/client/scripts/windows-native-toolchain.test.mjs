@@ -14,6 +14,7 @@ void describe(
     const actualSpawnSync = childProcess.spawnSync;
     const environmentMarker = "__MACHDOCH_NATIVE_ENVIRONMENT__";
     let installationPath;
+    let discoveryResult;
     let setupResult;
     let setupOptions;
     let useCommandShell;
@@ -21,6 +22,7 @@ void describe(
 
     beforeEach(() => {
       installationPath = "C:\\Visual Studio Build Tools";
+      discoveryResult = undefined;
       useCommandShell = false;
       toolWorkingDirectories = [];
       setupResult = {
@@ -41,12 +43,14 @@ void describe(
       mock.method(fs, "readFileSync", () => "14.50.35717\r\n");
       mock.method(childProcess, "spawnSync", (command, args, options) => {
         if (basename(command) === "vswhere.exe") {
-          return {
-            status: 0,
-            stdout: JSON.stringify([
-              { installationPath, installationVersion: "18.4.11620.152" },
-            ]),
-          };
+          return (
+            discoveryResult ?? {
+              status: 0,
+              stdout: JSON.stringify([
+                { installationPath, installationVersion: "18.4.11620.152" },
+              ]),
+            }
+          );
         }
         if (basename(command) === "cmd.exe") {
           setupOptions = options;
@@ -113,6 +117,26 @@ void describe(
           return true;
         },
       );
+    });
+
+    void test("distinguishes discovery timeouts from missing build tools", () => {
+      const timeoutError = Object.assign(
+        new Error("spawnSync vswhere.exe ETIMEDOUT"),
+        {
+          code: "ETIMEDOUT",
+        },
+      );
+      discoveryResult = { status: null, error: timeoutError };
+      assert.throws(
+        () => prepareWindowsNativeToolchain({}),
+        (error) => {
+          assert.match(error.message, /discovery timed out after 10 seconds/u);
+          assert.doesNotMatch(error.message, /Build Tools are required/u);
+          assert.equal(error.cause, timeoutError);
+          return true;
+        },
+      );
+      assert.equal(setupOptions, undefined);
     });
 
     void test("reports compiler diagnostics from both output streams", () => {

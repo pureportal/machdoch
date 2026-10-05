@@ -978,7 +978,7 @@ mod tests {
             blobs: root.join("runtime").join("blobs"),
         };
         database::ensure_initialized(&paths).unwrap();
-        let imported = ingest::import_image(&paths, source.to_str().unwrap()).unwrap();
+        let imported = ingest::import_asset(&paths, source.to_str().unwrap()).unwrap();
         let asset_id = imported.asset.id;
         (root, paths, asset_id)
     }
@@ -1192,7 +1192,7 @@ mod tests {
             blobs: root.join("runtime").join("blobs"),
         };
         database::ensure_initialized(&paths).unwrap();
-        let imported = ingest::import_image(&paths, source.to_str().unwrap()).unwrap();
+        let imported = ingest::import_asset(&paths, source.to_str().unwrap()).unwrap();
         let source_asset_id = imported.asset.id;
         let transformed = transform_image(
             &paths,

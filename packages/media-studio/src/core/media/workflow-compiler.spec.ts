@@ -16,6 +16,7 @@ import type {
   MediaFlowNode,
   MediaModelDescriptor,
 } from "./contracts.js";
+import { createAudioRecipeFlow, DEFAULT_AUDIO_RECIPE_SETTINGS } from "./audio-flow.js";
 
 const models = createMediaModelCatalogSnapshot({
   isOpenAiConfigured: false,
@@ -106,6 +107,69 @@ const imageVariantVideoFlow = (): MediaFlow => {
 };
 
 describe("connected workflows", () => {
+  it("compiles generated audio into a typed multi-scene video", () => {
+    const audioModel: MediaModelDescriptor = {
+      ...endpointVideoModel,
+      id: "local:test-audio",
+      architecture: "audioldm-2",
+      capabilities: ["text-to-audio"],
+    };
+    const audioFlow = createAudioRecipeFlow({
+      id: "mixed-audio-video",
+      createdAt: compiledAt,
+      settings: { ...DEFAULT_AUDIO_RECIPE_SETTINGS, prompt: "Ocean waves", modelId: audioModel.id },
+    });
+    const flow: MediaFlow = {
+      ...audioFlow,
+      nodes: [
+        ...audioFlow.nodes.filter((node) => node.type !== "output.audio"),
+        workflowNode("opening", "source.video", { assetId: "asset:opening" }),
+        workflowNode("closing", "source.video", { assetId: "asset:closing" }),
+        workflowNode("sequence", "operation.video-sequence"),
+        workflowNode("save-video", "output.video", { role: "opaque" }),
+      ],
+      edges: [
+        ...audioFlow.edges.filter((edge) => edge.toNodeId !== "output"),
+        { id: "a", fromNodeId: "opening", fromPortId: "video", toNodeId: "sequence", toPortId: "scene-1" },
+        { id: "b", fromNodeId: "closing", fromPortId: "video", toNodeId: "sequence", toPortId: "scene-2" },
+        { id: "c", fromNodeId: "generate", fromPortId: "audio", toNodeId: "sequence", toPortId: "audio" },
+        { id: "d", fromNodeId: "sequence", fromPortId: "video", toNodeId: "save-video", toPortId: "video" },
+      ],
+    };
+    const plan = compileMediaFlow({ flow, models: [audioModel], compiledAt });
+    expect(plan.diagnostics).toEqual([]);
+    expect(plan.status).toBe("ready");
+    expect(plan.runtimeBindings.map((binding) => binding.modality)).toEqual(["audio"]);
+    expect(plan.steps.filter((step) => step.kind === "generate-audio")).toHaveLength(1);
+    expect(plan.steps.find((step) => step.sourceNodeId === "sequence")?.kind).toBe("sequence-video");
+    const wrongType = structuredClone(flow);
+    wrongType.edges.find((edge) => edge.id === "c")!.fromNodeId = "opening";
+    wrongType.edges.find((edge) => edge.id === "c")!.fromPortId = "video";
+    expect(compileMediaFlow({ flow: wrongType, models: [audioModel], compiledAt }).status).toBe("blocked");
+  });
+
+  it("runs user audio and video without a generation model and requires two scenes", () => {
+    const base = imageVariantVideoFlow();
+    const flow: MediaFlow = {
+      ...base,
+      nodes: [
+        workflowNode("clip", "source.video", { assetId: "asset:clip" }),
+        workflowNode("song", "source.audio", { assetId: "asset:song" }),
+        workflowNode("soundtrack", "operation.video-audio", { audioStartSeconds: 1.5 }),
+        workflowNode("save", "output.video", { role: "opaque" }),
+      ],
+      edges: [
+        { id: "clip", fromNodeId: "clip", fromPortId: "video", toNodeId: "soundtrack", toPortId: "video" },
+        { id: "song", fromNodeId: "song", fromPortId: "audio", toNodeId: "soundtrack", toPortId: "audio" },
+        { id: "save", fromNodeId: "soundtrack", fromPortId: "video", toNodeId: "save", toPortId: "video" },
+      ],
+    };
+    expect(compileMediaFlow({ flow, models: [], compiledAt }).status).toBe("ready");
+    flow.nodes.find((node) => node.id === "song")!.config.assetId = "";
+    expect(compileMediaFlow({ flow, models: [], compiledAt }).status).toBe("blocked");
+    const sequence = { ...base, nodes: [workflowNode("sequence", "operation.video-sequence"), workflowNode("save", "output.video", { role: "opaque" })], edges: [{ id: "save", fromNodeId: "sequence", fromPortId: "video", toNodeId: "save", toPortId: "video" }] };
+    expect(compileMediaFlow({ flow: sequence, models: [], compiledAt }).status).toBe("blocked");
+  });
   it("compiles base image generation, resize, a variant, and distinct video endpoints", () => {
     const flow = imageVariantVideoFlow();
     const task = workflowTaskFlow(

@@ -317,7 +317,7 @@ fn sanitize_shell_composer(mut composer: FleetShellComposer) -> Option<FleetShel
         .into_iter()
         .map(|id| sanitize_text(id, MAX_FLEET_SHORT_TEXT_CHARS))
         .filter(|id| !id.is_empty())
-        .take(24)
+        .take(MAX_FLEET_CONTEXT_PACKS)
         .collect();
 
     Some(composer)
@@ -531,7 +531,7 @@ fn sanitize_shell_context_pack(mut pack: FleetShellContextPack) -> Option<FleetS
         .into_iter()
         .map(|variable| sanitize_text(variable, MAX_FLEET_SHORT_TEXT_CHARS))
         .filter(|variable| !variable.is_empty())
-        .take(16)
+        .take(64)
         .collect();
     pack.provider = sanitize_optional_text(pack.provider, MAX_FLEET_SHORT_TEXT_CHARS);
     pack.model = sanitize_optional_text(pack.model, MAX_FLEET_SHORT_TEXT_CHARS);
@@ -741,7 +741,53 @@ fn sanitize_optional_text(value: Option<String>, max_chars: usize) -> Option<Str
 
 #[cfg(test)]
 mod tests {
-    use super::{sanitize_reasoning_options, sanitize_shell_ralph_run, FleetShellRalphRun};
+    use super::{
+        sanitize_reasoning_options, sanitize_shell_ralph_run, sanitize_shell_snapshot,
+        FleetShellComposer, FleetShellContextPack, FleetShellRalphRun, FleetShellSnapshot,
+        MAX_FLEET_CONTEXT_PACKS, PRODUCT_SNAPSHOT_VERSION,
+    };
+
+    #[test]
+    fn managed_context_packs_and_variables_remain_visible() {
+        let mut snapshot: FleetShellSnapshot = serde_json::from_value(serde_json::json!({
+            "version": PRODUCT_SNAPSHOT_VERSION,
+            "capturedAt": 1
+        }))
+        .expect("minimal snapshot should deserialize");
+        snapshot.context_packs = (0..MAX_FLEET_CONTEXT_PACKS)
+            .map(|index| FleetShellContextPack {
+                id: format!("pack-{index}"),
+                name: format!("Pack {index}"),
+                variables: (0..64).map(|index| format!("variable-{index}")).collect(),
+                ..FleetShellContextPack::default()
+            })
+            .collect();
+        snapshot.composer = Some(FleetShellComposer {
+            session_id: "session-1".to_string(),
+            matched_context_pack_ids: snapshot
+                .context_packs
+                .iter()
+                .map(|pack| pack.id.clone())
+                .collect(),
+            ..FleetShellComposer::default()
+        });
+
+        let sanitized = sanitize_shell_snapshot(snapshot).expect("snapshot should remain valid");
+
+        assert_eq!(sanitized.context_packs.len(), 128);
+        assert!(sanitized
+            .context_packs
+            .iter()
+            .all(|pack| pack.variables.len() == 64));
+        assert_eq!(
+            sanitized
+                .composer
+                .expect("composer should remain visible")
+                .matched_context_pack_ids
+                .len(),
+            128
+        );
+    }
 
     fn ralph_run(status: &str, recoverable: bool) -> FleetShellRalphRun {
         FleetShellRalphRun {

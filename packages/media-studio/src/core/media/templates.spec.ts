@@ -204,7 +204,7 @@ describe("built-in media flow templates", () => {
       (candidate) => candidate.id === "local:flux-2-klein-4b",
     );
     expect(flux).toBeDefined();
-    models.push({
+    Object.assign(models.find((model) => model.id === "local:wan2.2-ti2v-5b")!, {
       ...flux!,
       id: "local:wan2.2-ti2v-5b",
       providerId: "local-wan",

@@ -990,22 +990,18 @@ pub(crate) fn snapshot(
                 let management = if provider_id == "codex-cli" {
                     MediaModelManagement {
                         acquisition: "external-runtime".to_string(),
-                        verification: "none".to_string(),
                     }
                 } else if target == "remote" {
                     MediaModelManagement {
                         acquisition: "remote".to_string(),
-                        verification: "none".to_string(),
                     }
                 } else if bundled {
                     MediaModelManagement {
                         acquisition: "bundled".to_string(),
-                        verification: "none".to_string(),
                     }
                 } else if provider_id == "local-svg-runtime" {
                     MediaModelManagement {
                         acquisition: "external-runtime".to_string(),
-                        verification: "none".to_string(),
                     }
                 } else if user_imported
                     || (super::open_models::by_id(&id).is_some()
@@ -1013,16 +1009,10 @@ pub(crate) fn snapshot(
                 {
                     MediaModelManagement {
                         acquisition: "file-import".to_string(),
-                        verification: "model-probe".to_string(),
                     }
                 } else {
                     MediaModelManagement {
                         acquisition: "managed-install".to_string(),
-                        verification: if provider_id == "local-diffusers" {
-                            "model-probe".to_string()
-                        } else {
-                            "none".to_string()
-                        },
                     }
                 };
                 Ok(MediaModelDescriptor {

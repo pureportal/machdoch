@@ -58,7 +58,6 @@ export const createOpenMediaModels = (
       packageType: "diffusers",
       management: {
         acquisition: manifest ? "managed-install" : "file-import",
-        verification: "model-probe",
       },
       addonCapabilities: [],
       runtimeReadiness: "unverified",

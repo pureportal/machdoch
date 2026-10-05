@@ -919,7 +919,7 @@ const probeMatchingCliDeliveryPlan = async (
     attempt += 1
   ) {
     const probe = await probeProviderCli(params.provider, params.executable, {
-      force: true,
+      force: attempt > 0,
     });
     const capability = createCliInstructionCapabilityFromProbe(
       params.resolution,

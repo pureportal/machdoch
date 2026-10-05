@@ -28,6 +28,9 @@ use std::os::unix::fs::PermissionsExt;
 const EMBEDDED_CLI_BUNDLE: &str = include_str!(concat!(env!("OUT_DIR"), "/machdoch-cli.cjs"));
 #[cfg(machdoch_embedded_runtime)]
 const EMBEDDED_NODE_BINARY: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/machdoch-node.bin"));
+#[cfg(machdoch_embedded_runtime)]
+const EMBEDDED_BROWSER_RUNTIME: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/machdoch-browser-runtime.tar.gz"));
 const BUILD_NODE_REQUIREMENT: &str = "Node.js >= 20.10";
 const MAX_SIDE_EFFECT_FREE_CLI_OUTPUT_BYTES: u64 = 8 * 1024 * 1024;
 
@@ -44,7 +47,7 @@ pub(crate) fn create_shared_cli_command(args: &[String]) -> Result<SharedCliComm
     #[cfg(not(machdoch_embedded_runtime))]
     {
         create_source_cli_command(args).ok_or_else(|| {
-            "The shared CLI is unavailable because this development build has no embedded runtime and is not running from a source checkout.".to_string()
+            "The shared CLI bundle is unavailable. Build it with pnpm build:cli-bundle before starting the development desktop.".to_string()
         })
     }
 }
@@ -162,7 +165,7 @@ fn run_side_effect_free_json_command_with_command(
 #[cfg(not(machdoch_embedded_runtime))]
 fn create_source_cli_command(args: &[String]) -> Option<SharedCliCommand> {
     let repo_root = resolve_repo_root()?;
-    let cli_entry_path = repo_root.join("src").join("cli").join("main.ts");
+    let cli_entry_path = repo_root.join("dist").join("machdoch-cli.cjs");
 
     if !cli_entry_path.is_file() {
         return None;
@@ -171,8 +174,6 @@ fn create_source_cli_command(args: &[String]) -> Option<SharedCliCommand> {
     let mut command = Command::new("node");
     command
         .current_dir(repo_root)
-        .arg("--import")
-        .arg("@oxc-node/core/register")
         .arg(cli_entry_path)
         .args(args);
     sanitize_node_debug_environment(&mut command);
@@ -229,17 +230,23 @@ fn resolve_repo_root() -> Option<PathBuf> {
 
 #[cfg(machdoch_embedded_runtime)]
 fn write_embedded_cli_entry() -> Result<PathBuf, String> {
-    materialize_cached_runtime_file(
-        || {
-            format!(
-                "machdoch-cli-{}-{:016x}.cjs",
-                env!("CARGO_PKG_VERSION"),
-                stable_content_hash(EMBEDDED_CLI_BUNDLE.as_bytes()),
-            )
-        },
-        EMBEDDED_CLI_BUNDLE.as_bytes(),
-        false,
-    )
+    let directory = get_runtime_directory()?.join(format!(
+        "machdoch-cli-{}-{:016x}-{:016x}",
+        env!("CARGO_PKG_VERSION"),
+        stable_content_hash(EMBEDDED_CLI_BUNDLE.as_bytes()),
+        stable_content_hash(EMBEDDED_BROWSER_RUNTIME),
+    ));
+    fs::create_dir_all(&directory)
+        .map_err(|error| format!("Could not create {}: {error}", directory.display()))?;
+    let entry_path = directory.join("machdoch-cli.cjs");
+    with_cooperative_file_lock(&entry_path, || {
+        crate::embedded_browser_runtime::materialize_browser_runtime(
+            &directory,
+            EMBEDDED_BROWSER_RUNTIME,
+        )?;
+        materialize_cached_runtime_file_contents(&entry_path, EMBEDDED_CLI_BUNDLE.as_bytes(), false)
+    })?;
+    Ok(entry_path)
 }
 
 #[cfg(machdoch_embedded_runtime)]

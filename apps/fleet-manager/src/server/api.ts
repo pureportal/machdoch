@@ -12,6 +12,14 @@ import {
   type HostResponse,
 } from "@machdoch/fleet-protocol";
 import { z } from "zod";
+import {
+  captureEnrollmentSettings,
+  listEnrollmentSettings,
+  readEnrollmentSettings,
+} from "./enrollment-settings";
+import packageJson from "../../package.json";
+import { productVersionStatus } from "../lib/product-version";
+import { collectFleetStatus } from "./fleet-status";
 import { getPreviewHub, previewOpenSchema } from "./previews";
 import type { AuthenticationOperation } from "./authentication-rate-limiter";
 import {
@@ -145,7 +153,11 @@ export async function handleApiRequest(
     const path = apiPath(url.pathname);
     response = await routeApi(runtime, request, path, context);
   } catch (error) {
-    response = errorResponse(error);
+    response = errorResponse(
+      error instanceof SettingsValidationError
+        ? new HttpError(400, error.message)
+        : error,
+    );
   }
   applyApiResponseHeaders(response);
   return response;
@@ -206,6 +218,12 @@ async function routeApi(
     return enroll(runtime, request);
   if (method === "GET" && matches(path, "instances"))
     return listInstances(runtime, request);
+  if (method === "GET" && matches(path, "fleet", "status")) {
+    requireOwner(runtime, request);
+    const status = await collectFleetStatus(runtime, request.signal);
+    requireOwner(runtime, request);
+    return Response.json(status);
+  }
   if (method === "DELETE" && path[0] === "instances" && path.length === 2) {
     return revokeInstance(runtime, request, path[1] ?? "");
   }
@@ -358,6 +376,55 @@ async function routeApi(
   }
   if (path[0] === "settings")
     return settingsApi(runtime, request, path.slice(1));
+  if (
+    method === "GET" &&
+    path[0] === "client" &&
+    path[1] === "settings" &&
+    path[2] &&
+    path[3] === "enrollment" &&
+    path.length === 4
+  ) {
+    authenticateSettingsInstance(runtime, request, path[2]);
+    return Response.json({
+      captureRequired:
+        runtime.settingsCipher !== null &&
+        !runtime.database.get(
+          "SELECT instance_id FROM enrollment_settings WHERE instance_id = ?",
+          path[2],
+        ),
+    });
+  }
+  if (
+    method === "PUT" &&
+    path[0] === "client" &&
+    path[1] === "settings" &&
+    path[2] &&
+    path[3] === "enrollment" &&
+    path.length === 4
+  ) {
+    authenticateSettingsInstance(runtime, request, path[2]);
+    if (!runtime.settingsCipher) return new Response(null, { status: 204 });
+    const input = await parseJson(
+      request,
+      z.unknown(),
+      400,
+      "Settings document is invalid.",
+      runtime.config.settingsManager.limits.maximumDocumentBytes,
+    );
+    authenticateSettingsInstance(runtime, request, path[2]);
+    const document = validateSettingsDocument(
+      input,
+      runtime.config.settingsManager.limits,
+    );
+    captureEnrollmentSettings(
+      runtime.database,
+      runtime.settingsCipher!,
+      path[2],
+      document,
+      nowSeconds(),
+    );
+    return new Response(null, { status: 204 });
+  }
   if (
     method === "GET" &&
     path[0] === "client" &&
@@ -595,7 +662,10 @@ async function enroll(
     throw new HttpError(400, "Product version is invalid.");
   }
   if (input.protocolVersion !== gatewayProtocolVersion) {
-    throw new HttpError(400, "Gateway protocol version is incompatible.");
+    throw new HttpError(
+      400,
+      "Gateway protocol version is incompatible. Update Machdoch and Fleet Manager to matching versions, then enroll again.",
+    );
   }
   let instanceId: string;
   try {
@@ -635,6 +705,13 @@ function listInstances(runtime: FleetRuntime, request: Request): Response {
       .listInstances()
       .map(({ revokedAt, ...instance }) => ({
         ...instance,
+        managerVersion: packageJson.version,
+        versionStatus: productVersionStatus(
+          instance.productVersion,
+          packageJson.version,
+          instance.protocolVersion,
+          gatewayProtocolVersion,
+        ),
         status:
           revokedAt !== null
             ? "revoked"
@@ -722,6 +799,34 @@ async function settingsApi(
 ): Promise<Response> {
   requireSettings(runtime);
   try {
+    if (request.method === "GET" && matches(path, "enrollment")) {
+      requireOwner(runtime, request);
+      return Response.json({
+        devices: listEnrollmentSettings(runtime.database),
+      });
+    }
+    if (
+      request.method === "GET" &&
+      path[0] === "instances" &&
+      path[1] &&
+      path[2] === "enrollment" &&
+      path.length === 3
+    ) {
+      requireOwner(runtime, request);
+      requireManagedInstance(runtime, path[1]);
+      const document = readEnrollmentSettings(
+        runtime.database,
+        runtime.settingsCipher!,
+        path[1],
+        runtime.config.settingsManager.limits,
+      );
+      if (!document)
+        throw new HttpError(
+          404,
+          "Device settings have not been captured. Connect the device and retry.",
+        );
+      return Response.json({ document });
+    }
     if (request.method === "GET" && matches(path, "catalog")) {
       requireOwner(runtime, request);
       const limits = runtime.config.settingsManager.limits;
@@ -744,6 +849,7 @@ async function settingsApi(
     if (request.method === "POST" && matches(path, "profiles")) {
       requireMutation(runtime, request);
       const input = await parseJson(request, createProfileSchema);
+      requireMutation(runtime, request);
       const name = normalizeProfileName(input.name);
       const description = normalizeProfileDescription(input.description);
       const document = emptySettingsDocument();
@@ -770,6 +876,7 @@ async function settingsApi(
       if (request.method === "PUT" && path.length === 2) {
         requireMutation(runtime, request);
         const input = await parseJson(request, updateProfileSchema);
+        requireMutation(runtime, request);
         runtime.settingsStore.updateProfile(
           profileId,
           input.expectedRevision,
@@ -812,6 +919,7 @@ async function settingsApi(
         if (!Number.isSafeInteger(revision) || revision < 1)
           throw new HttpError(404, "Revision was not found.");
         const input = await parseJson(request, expectedRevisionSchema);
+        requireMutation(runtime, request);
         runtime.settingsStore.restoreVersion(
           profileId,
           revision,
@@ -830,6 +938,7 @@ async function settingsApi(
         requireMutation(runtime, request);
         if (request.method === "PUT") {
           const input = await parseJson(request, secretSchema);
+          requireMutation(runtime, request);
           runtime.settingsStore.setSecret(
             runtime.settingsCipher!,
             profileId,
@@ -845,6 +954,7 @@ async function settingsApi(
         }
         if (request.method === "DELETE") {
           const input = await parseJson(request, expectedRevisionSchema);
+          requireMutation(runtime, request);
           runtime.settingsStore.deleteSecret(
             profileId,
             secretId,
@@ -883,6 +993,7 @@ async function settingsApi(
     ) {
       requireMutation(runtime, request);
       const input = await parseJson(request, assignmentSchema);
+      requireMutation(runtime, request);
       runtime.settingsStore.setAssignment(
         path[1],
         input.profileId,
@@ -951,6 +1062,7 @@ async function reportSettingsSync(
     "Request payload is invalid.",
     maximumSettingsSyncReportBodyBytes,
   );
+  authenticateSettingsInstance(runtime, request, instanceId);
   if (input.managerId !== runtime.database.managerId()) {
     throw new HttpError(
       409,

@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatRelativeTime, formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { versionWarning } from "@/lib/product-version";
 import type { FleetInstance } from "./fleet-overview";
 
 export function DeviceList({
@@ -49,6 +50,14 @@ export function DeviceList({
                 >
                   {device.displayName}
                 </button>
+                {versionWarning(device.versionStatus, device.managerVersion) ? (
+                  <p className="text-xs text-destructive">
+                    {versionWarning(
+                      device.versionStatus,
+                      device.managerVersion,
+                    )}
+                  </p>
+                ) : null}
               </div>
             </div>
             <div className="col-span-2 row-start-2 flex items-center gap-3 xl:contents">

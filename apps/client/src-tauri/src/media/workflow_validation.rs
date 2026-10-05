@@ -163,15 +163,29 @@ pub(super) fn preflight(
         return Err("Add an output to this workflow".into());
     }
     for node in &flow.nodes {
+        if node.r#type == "task.generate-video"
+            && request
+                .workspace_root
+                .as_deref()
+                .is_none_or(|root| root.trim().is_empty())
+        {
+            return Err("Select a workspace before generating video".into());
+        }
         if !matches!(
             node.r#type.as_str(),
             "source.prompt"
                 | "source.image"
+                | "source.audio"
+                | "source.video"
                 | "source.seed"
                 | "task.generate-prompt"
                 | "task.generate-image"
                 | "task.edit-image"
                 | "task.generate-video"
+                | "task.generate-audio"
+                | "operation.video-sequence"
+                | "operation.video-audio"
+                | "operation.lip-sync"
                 | "operation.segment"
                 | "operation.canny"
                 | "operation.image-mask"
@@ -191,12 +205,16 @@ pub(super) fn preflight(
                 | "control.repeat"
                 | "output.asset"
                 | "output.video"
+                | "output.audio"
         ) {
             return Err(format!("{} cannot run in a connected workflow", node.label));
         }
         if matches!(
             node.r#type.as_str(),
-            "task.generate-image" | "task.edit-image" | "task.generate-video"
+            "task.generate-image"
+                | "task.edit-image"
+                | "task.generate-video"
+                | "task.generate-audio"
         ) {
             let model = request
                 .model_bindings
@@ -229,6 +247,7 @@ pub(super) fn preflight(
                 | "operation.upscale"
                 | "task.generate-prompt"
                 | "operation.visual-check"
+                | "operation.lip-sync"
         ) && !std::path::Path::new(config_text(node, "modelPath")).exists()
         {
             return Err(format!("Choose the model for {}", node.label));

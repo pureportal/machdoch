@@ -379,19 +379,6 @@ CREATE TABLE media_model_addon_removals (
   completed_at TEXT
 );
 
-CREATE TABLE media_model_runtime_probes (
-  model_id TEXT PRIMARY KEY REFERENCES media_models(id) ON DELETE CASCADE,
-  revision TEXT NOT NULL,
-  model_digest TEXT NOT NULL,
-  runtime_fingerprint TEXT NOT NULL,
-  status TEXT NOT NULL CHECK(status IN ('ready', 'failed')),
-  worker_version TEXT NOT NULL,
-  pipeline_class TEXT,
-  device_label TEXT,
-  diagnostic TEXT NOT NULL,
-  probed_at TEXT NOT NULL
-);
-
 CREATE TABLE provider_jobs (
   id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
@@ -524,8 +511,6 @@ CREATE INDEX media_model_addons_architecture_kind_idx
   ON media_model_addons(architecture, kind, display_name);
 CREATE INDEX media_model_addon_removals_status_idx
   ON media_model_addon_removals(status, created_at);
-CREATE INDEX media_model_runtime_probes_status_idx
-  ON media_model_runtime_probes(status, probed_at);
 CREATE INDEX provider_jobs_run_idx ON provider_jobs(run_id, attempt DESC);
 CREATE INDEX provider_jobs_due_idx ON provider_jobs(status, next_poll_at);
 CREATE INDEX provider_observations_job_idx

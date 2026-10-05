@@ -48,7 +48,7 @@ class ModelAcquisitionTests(unittest.TestCase):
     def test_svg_generation_extracts_document_and_rejects_truncated_outputs(self):
         svg = '<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></svg>'
         self.assertEqual(extract_svg("```svg\n" + svg + "\n```"), svg)
-        with self.assertRaisesRegex(ValueError, "no complete SVG"):
+        with self.assertRaisesRegex(ValueError, "incomplete SVG"):
             extract_svg("<svg><circle")
 
     def test_svg_candidate_limit_is_validated_before_loading_weights(self):
@@ -65,17 +65,16 @@ class ModelAcquisitionTests(unittest.TestCase):
         transformers.AutoConfig.from_pretrained.return_value.text_config = SimpleNamespace(
             num_hidden_layers=28, num_key_value_heads=4, hidden_size=3584, num_attention_heads=28,
         )
-        mapped_devices = {"model.language_model": "cpu", "lm_head": 0}
         accelerate = SimpleNamespace(
             init_empty_weights=contextlib.nullcontext,
-            infer_auto_device_map=Mock(return_value=mapped_devices),
+            infer_auto_device_map=Mock(),
         )
-        memory = {0: 1024 ** 3, "cpu": 8 * 1024 ** 3}
+        memory = {0: 16 * 1024 ** 3, "cpu": 8 * 1024 ** 3}
         torch = SimpleNamespace(
             bfloat16="bf16", nn=SimpleNamespace(Identity=Mock()),
             cuda=SimpleNamespace(
                 is_available=lambda: True, is_bf16_supported=lambda: True,
-                current_device=lambda: 0, mem_get_info=lambda device: (1024 ** 3, 2 * 1024 ** 3),
+                current_device=lambda: 0, mem_get_info=lambda device: (16 * 1024 ** 3, 16 * 1024 ** 3),
             ),
         )
         modules = {
@@ -85,12 +84,10 @@ class ModelAcquisitionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, patch.dict("sys.modules", modules):
             load_model({"path": directory, "packageKind": "transformers-directory"}, torch, False, 8192)
         self.assertIs(sizing_model.model.visual, torch.nn.Identity.return_value)
-        self.assertEqual(memory[0], 1024 ** 3 - 9216 * 28 * 4 * 128 * 4 - 128 * 1024 ** 2)
-        self.assertEqual(mapped_devices["model.visual"], "cpu")
-        self.assertEqual(mapped_devices["model.language_model"], "cpu")
-        self.assertIs(
+        accelerate.infer_auto_device_map.assert_not_called()
+        self.assertEqual(
             transformers.Qwen2_5_VLForConditionalGeneration.from_pretrained.call_args.kwargs["device_map"],
-            mapped_devices,
+            {"model.language_model": 0, "lm_head": 0, "model.visual": "cpu"},
         )
 
     def test_text_only_svg_keeps_fitting_decoder_resident_without_swap_reservation(self):
@@ -120,21 +117,37 @@ class ModelAcquisitionTests(unittest.TestCase):
         accelerate.infer_auto_device_map.assert_not_called()
         self.assertEqual(
             transformers.Qwen2_5_VLForConditionalGeneration.from_pretrained.call_args.kwargs["device_map"],
-            {"": 0, "model.visual": "cpu"},
+            {"model.language_model": 0, "lm_head": 0, "model.visual": "cpu"},
         )
 
-    def test_image_conditioned_svg_keeps_vision_in_automatic_allocation(self):
+    def test_image_conditioned_svg_allocation_uses_the_selected_gpu_and_cpu(self):
         transformers = SimpleNamespace(
             AutoConfig=Mock(), AutoProcessor=Mock(), Qwen2_5_VLForConditionalGeneration=Mock(spec=["from_pretrained"]),
         )
         torch = SimpleNamespace(
-            bfloat16="bf16", cuda=SimpleNamespace(is_available=lambda: True, is_bf16_supported=lambda: True),
+            bfloat16="bf16", nn=SimpleNamespace(Identity=Mock()), cuda=SimpleNamespace(
+                is_available=lambda: True, is_bf16_supported=lambda: True,
+                current_device=lambda: 1, mem_get_info=lambda device: (16 * 1024 ** 3, 16 * 1024 ** 3),
+            ),
         )
-        with tempfile.TemporaryDirectory() as directory, patch.dict("sys.modules", {"transformers": transformers}):
+        transformers.AutoConfig.from_pretrained.return_value.text_config = SimpleNamespace(
+            num_hidden_layers=28, num_key_value_heads=4, hidden_size=3584, num_attention_heads=28,
+        )
+        sizing_model = transformers.Qwen2_5_VLForConditionalGeneration.return_value
+        sizing_model.parameters.return_value = [SimpleNamespace(numel=lambda: 4 * 1024 ** 3)]
+        accelerate = SimpleNamespace(
+            init_empty_weights=contextlib.nullcontext,
+            infer_auto_device_map=Mock(return_value={"": 1}),
+        )
+        modules = {
+            "transformers": transformers, "accelerate": accelerate,
+            "accelerate.utils": SimpleNamespace(get_max_memory=lambda: {0: 16 * 1024 ** 3, 1: 4 * 1024 ** 3, "cpu": 8 * 1024 ** 3}),
+        }
+        with tempfile.TemporaryDirectory() as directory, patch.dict("sys.modules", modules):
             load_model({"path": directory, "packageKind": "transformers-directory"}, torch, True, 8192)
-        transformers.AutoConfig.from_pretrained.assert_not_called()
+        self.assertEqual(set(accelerate.infer_auto_device_map.call_args.kwargs["max_memory"]), {1, "cpu"})
         self.assertEqual(
-            transformers.Qwen2_5_VLForConditionalGeneration.from_pretrained.call_args.kwargs["device_map"], "auto",
+            transformers.Qwen2_5_VLForConditionalGeneration.from_pretrained.call_args.kwargs["device_map"]["model.visual"], 1,
         )
 
     def test_svg_inputs_use_embedding_device_when_vision_is_offloaded(self):
@@ -156,8 +169,7 @@ class ModelAcquisitionTests(unittest.TestCase):
         inputs.to.assert_called_once_with("cuda:0")
         self.assertEqual(model.generate.call_args.kwargs["max_new_tokens"], 8192)
         self.assertTrue(model.generate.call_args.kwargs["use_cache"])
-        self.assertEqual(model.generate.call_args.kwargs["stop_strings"], ["</svg>"])
-        self.assertIs(model.generate.call_args.kwargs["tokenizer"], processor.tokenizer)
+        self.assertNotIn("stop_strings", model.generate.call_args.kwargs)
 
     def test_svg_quality_is_validated_before_loading_weights(self):
         for policy in (None, True, "best"):

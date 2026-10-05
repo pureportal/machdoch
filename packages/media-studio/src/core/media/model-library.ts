@@ -150,7 +150,6 @@ export const matchesMediaModelQuery = (
         `${capability.maxActive} active`,
       ]),
       model.management.acquisition,
-      model.management.verification,
       model.runtimeReadiness,
       model.runtimeReadinessDiagnostic ?? "",
       model.license.name,

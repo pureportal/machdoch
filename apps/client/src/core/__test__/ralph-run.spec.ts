@@ -1142,9 +1142,9 @@ describe("runRalphFlow", () => {
     expect(result.events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          type: "crash",
+          type: "end",
           blockId: "check",
-          output: "INVALID",
+          status: "blocked",
         }),
       ]),
     );
@@ -5161,6 +5161,17 @@ describe("runRalphFlow", () => {
             data: expect.objectContaining({ decision: "CONTINUE" }),
           }),
         ]),
+      );
+      const reviewTask = vi.mocked(executeTask).mock.calls[0]?.[0];
+      expect(reviewTask).toContain("Return a validator decision.");
+      expect(reviewTask).toContain(
+        "independent review assigned to Validator JSON (validator-json)",
+      );
+      expect(reviewTask).toContain(
+        "Do not require reviews or acceptance campaigns scheduled after this block",
+      );
+      expect(reviewTask).toContain(
+        "failing current verification, unavailable evidence, and actual regressions must still prevent DONE",
       );
       expect(vi.mocked(executeTask).mock.calls[0]?.[3]).toMatchObject({
         structuredOutput: {

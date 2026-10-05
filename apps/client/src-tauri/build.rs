@@ -38,8 +38,14 @@ fn main() {
     let out_dir = required_env_path("OUT_DIR");
     let output_path = out_dir.join("machdoch-cli.cjs");
     let node_output_path = out_dir.join("machdoch-node.bin");
+    let browser_runtime_path = manifest_dir
+        .join("..")
+        .join("dist")
+        .join("machdoch-browser-runtime.tar.gz");
+    let browser_output_path = out_dir.join("machdoch-browser-runtime.tar.gz");
 
     println!("cargo:rerun-if-changed={}", cli_bundle_path.display());
+    println!("cargo:rerun-if-changed={}", browser_runtime_path.display());
     println!("cargo:rerun-if-env-changed=MACHDOCH_NODE_BINARY");
     println!("cargo:rerun-if-env-changed=PATH");
 
@@ -60,6 +66,11 @@ fn main() {
 
             copy_file_or_panic(&cli_bundle, &output_path, "bundled CLI");
             copy_file_or_panic(&node_binary, &node_output_path, "Node runtime");
+            copy_file_or_panic(
+                &browser_runtime_path,
+                &browser_output_path,
+                "browser runtime",
+            );
             println!("cargo:rustc-cfg=machdoch_embedded_runtime");
         }
         EmbeddedRuntimeInputs::Incomplete(issue) => {

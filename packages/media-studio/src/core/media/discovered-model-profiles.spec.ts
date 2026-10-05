@@ -110,6 +110,31 @@ const ltxRuntime = (
   architectures: ["ltx-video"],
 });
 
+it("reports a failed runtime probe before checking hardware limits", () => {
+  const unavailable: MediaLocalDiffusersRuntimeStatus = {
+    ...runtime(),
+    status: "unavailable",
+    ready: false,
+    device: null,
+    deviceMemoryBytes: null,
+    physicalMemoryBytes: null,
+    architectures: [],
+    capabilities: [],
+    diagnostic: "Worker execution timed out.",
+  };
+  const catalog = extendMediaCatalogWithWorkspaceDiscovery({
+    catalog: baseCatalog(),
+    discovery: ltxDiscovery(),
+    runtime: unavailable,
+  });
+  const models = catalog.models.filter((model) => model.architecture === "ltx-video");
+  expect(models).toHaveLength(2);
+  for (const model of models) {
+    expect(model.configured).toBe(false);
+    expect(model.runtimeReadinessDiagnostic).toBe(unavailable.diagnostic);
+  }
+});
+
 const framepackDiscovery = (): MediaWorkspaceModelDiscovery => ({
   ...discovery(),
   entries: [

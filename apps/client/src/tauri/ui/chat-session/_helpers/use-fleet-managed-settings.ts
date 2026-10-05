@@ -15,6 +15,9 @@ import {
 import {
   deleteUserProviderApiKey,
   deleteUserWebSearchApiKey,
+  captureFleetEnrollmentSettings,
+  exportFleetLocalSettings,
+  fleetEnrollmentCaptureRequired,
   getFleetConnectionStatus,
   getFleetManagedSettings,
   listInstructions,
@@ -84,6 +87,7 @@ export const useFleetManagedSettings = (
   const syncInFlightRef = useRef(false);
   const cachedDeliveryRef = useRef<CachedDelivery | null>(null);
   const lastErrorRef = useRef<string | null>(null);
+  const capturedEnrollmentRef = useRef<string | null>(null);
   shellStateRef.current = options.shellState;
   agentLimitsRef.current = options.userAgentLimitsSettings;
 
@@ -110,7 +114,7 @@ export const useFleetManagedSettings = (
       const status = await getFleetConnectionStatus();
       const currentManagedSettings = shellStateRef.current.fleetManagedSettings;
       const currentManagerId = currentManagedSettings?.managerId;
-      if (!status.enabled || !status.managerId) {
+      if (!status.enabled || !status.managerId || !status.instanceId) {
         if (currentManagerId) await clear(currentManagerId);
         lastErrorRef.current = null;
         return;
@@ -122,6 +126,31 @@ export const useFleetManagedSettings = (
       }
       if (currentManagerId && currentManagerId !== status.managerId) {
         await clear(currentManagerId);
+      }
+
+      const enrollmentIdentity = `${status.managerId}:${status.instanceId}`;
+      if (capturedEnrollmentRef.current !== enrollmentIdentity) {
+        if (await fleetEnrollmentCaptureRequired()) {
+          const state = shellStateRef.current;
+          const workspace =
+            state.sessions.find(
+              (session) => session.id === state.activeSessionId,
+            )?.workspace ?? null;
+          const local = await exportFleetLocalSettings(workspace);
+          const appearance = await loadAppearanceSettings();
+          const document = createEnrollmentSettingsDocument(
+            local,
+            state,
+            appearance,
+            agentLimitsRef.current,
+          );
+          await captureFleetEnrollmentSettings(
+            status.managerId,
+            status.instanceId,
+            document,
+          );
+        }
+        capturedEnrollmentRef.current = enrollmentIdentity;
       }
 
       const cached =
@@ -229,6 +258,70 @@ export const useFleetManagedSettings = (
     };
   }, [options.hasHydrated, sync]);
 };
+
+export function createEnrollmentSettingsDocument(
+  local: FleetManagedSettingsDocument,
+  state: ShellPersistedState,
+  appearance: AppearanceSettings,
+  limits: UserAgentLimitsSettings,
+): FleetManagedSettingsDocument {
+  const managedInstructions = new Set(
+    Object.values(state.fleetManagedSettings?.instructionProfileIds ?? {}),
+  );
+  const managedPacks = new Set(
+    state.fleetManagedSettings?.contextPackIds ?? [],
+  );
+  return {
+    ...local,
+    defaults: {
+      ...local.defaults,
+      provider: state.lastSelectedProvider,
+      model:
+        state.lastSelectedModelByProvider[state.lastSelectedProvider] ?? null,
+      mode: state.lastSelectedMode ?? null,
+      reasoning: state.lastSelectedReasoning ?? null,
+      theme: appearance.theme,
+      density: appearance.density,
+      accent: appearance.accent,
+    },
+    agentLimits: {
+      infinite: limits.infinite,
+      executorTurns: limits.executorTurns,
+      autopilotExecutorIterations: limits.autopilotExecutorIterations,
+    },
+    instructions: local.instructions.filter(
+      (instruction) => !managedInstructions.has(instruction.id),
+    ),
+    contextPacks: state.contextPacks
+      .filter(
+        (pack) =>
+          pack.workspace === null &&
+          pack.contextAttachments.length === 0 &&
+          !managedPacks.has(pack.id),
+      )
+      .map((pack) => ({
+        id: pack.id,
+        name: pack.name,
+        instructions: pack.instructions,
+        prompt: pack.prompt,
+        provider: pack.provider ?? null,
+        model: pack.model ?? null,
+        mode: pack.mode ?? null,
+        reasoning: pack.reasoning ?? null,
+        variables: pack.variables.map((variable) => ({
+          name: variable.name,
+          defaultValue: variable.defaultValue ?? null,
+        })),
+        triggerPhrases: pack.trigger.phrases,
+        pathPatterns: pack.trigger.pathPatterns,
+        promptEnhancementMode: pack.promptEnhancementMode ?? null,
+        interviewEnabled: pack.interviewEnabled ?? null,
+        sessionMemoryEnabled: pack.sessionMemoryEnabled ?? null,
+        useGlobalMemory: pack.useGlobalMemory ?? null,
+        uiControlEnabled: pack.uiControlEnabled ?? null,
+      })),
+  };
+}
 
 async function applyDelivery({
   managerId,

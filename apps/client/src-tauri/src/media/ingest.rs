@@ -11,19 +11,35 @@ use reqwest::{redirect::Policy, Client, Url};
 use sha2::{Digest as _, Sha256};
 use tokio::io::AsyncWriteExt as _;
 
-use super::{database, svg, transform, MediaImageImportResult, MediaResult, MediaRuntimePaths};
+use super::{database, svg, transform, MediaAssetImportResult, MediaResult, MediaRuntimePaths};
+
+#[path = "ingest_audio.rs"]
+mod audio;
+
+#[path = "ingest_video.rs"]
+mod video;
+pub(crate) use video::import_video;
 
 pub(super) const MAX_ENCODED_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_DIMENSION: u32 = 20_000;
 const MAX_DECODED_PIXELS: u64 = 100_000_000;
 const MAX_DECODE_ALLOC: u64 = 512 * 1024 * 1024;
 
-pub(crate) fn import_image(
+pub(crate) fn import_asset(
     paths: &MediaRuntimePaths,
     source_path: &str,
-) -> MediaResult<MediaImageImportResult> {
+) -> MediaResult<MediaAssetImportResult> {
     let source_path = validate_source_path(source_path)?;
     let staged = stage_and_hash(paths, &source_path)?;
+    if source_path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("wav"))
+    {
+        let result = audio::import_audio(paths, &staged, &source_path);
+        let _ = fs::remove_file(&staged.path);
+        return result;
+    }
     if source_path
         .extension()
         .and_then(|extension| extension.to_str())
@@ -151,7 +167,7 @@ async fn remote_image_client(url: &Url) -> MediaResult<Client> {
 pub(crate) async fn import_image_url(
     paths: MediaRuntimePaths,
     source_url: &str,
-) -> MediaResult<MediaImageImportResult> {
+) -> MediaResult<MediaAssetImportResult> {
     let url = validated_remote_image_url(source_url)?;
     let client = remote_image_client(&url).await?;
     let mut response = client
@@ -229,7 +245,7 @@ pub(crate) async fn import_image_url(
     let import_path = staging_path.clone();
     let import_paths = paths.clone();
     let worker_result = tauri::async_runtime::spawn_blocking(move || {
-        import_image(&import_paths, import_path.to_string_lossy().as_ref())
+        import_asset(&import_paths, import_path.to_string_lossy().as_ref())
     })
     .await;
     let _ = tokio::fs::remove_file(staging_path).await;
@@ -238,9 +254,9 @@ pub(crate) async fn import_image_url(
 
 fn import_svg(
     paths: &MediaRuntimePaths,
-    staged: &StagedImage,
+    staged: &StagedAsset,
     source_file_name: &str,
-) -> MediaResult<MediaImageImportResult> {
+) -> MediaResult<MediaAssetImportResult> {
     let bytes = fs::read(&staged.path).map_err(|error| error.to_string())?;
     let document = svg::validate_and_canonicalize_svg(&bytes)?;
     let digest = format!("{:x}", Sha256::digest(&document.bytes));
@@ -268,7 +284,7 @@ fn import_svg(
     )
 }
 
-struct StagedImage {
+struct StagedAsset {
     path: PathBuf,
     digest: String,
     byte_size: u64,
@@ -282,32 +298,32 @@ struct ValidatedImage {
 
 fn validate_source_path(source_path: &str) -> MediaResult<PathBuf> {
     if source_path.is_empty() || source_path.len() > 32_768 || source_path.contains('\0') {
-        return Err("Image import path is invalid".to_string());
+        return Err("Asset import path is invalid".to_string());
     }
     let source_path = PathBuf::from(source_path);
     let metadata = fs::symlink_metadata(&source_path)
-        .map_err(|error| format!("failed to inspect selected image: {error}"))?;
+        .map_err(|error| format!("failed to inspect selected asset: {error}"))?;
     if metadata.file_type().is_symlink() || !metadata.is_file() {
-        return Err("Selected image must be a regular file, not a link or device".to_string());
+        return Err("Selected asset must be a regular file, not a link or device".to_string());
     }
     if metadata.len() == 0 {
-        return Err("Selected image is empty".to_string());
+        return Err("Selected asset is empty".to_string());
     }
     if metadata.len() > MAX_ENCODED_BYTES {
         return Err(format!(
-            "Selected image exceeds the {} MB encoded-byte limit",
+            "Selected asset exceeds the {} MB encoded-byte limit",
             MAX_ENCODED_BYTES / 1024 / 1024
         ));
     }
     source_path
         .canonicalize()
-        .map_err(|error| format!("failed to resolve selected image: {error}"))
+        .map_err(|error| format!("failed to resolve selected asset: {error}"))
 }
 
-fn stage_and_hash(paths: &MediaRuntimePaths, source_path: &Path) -> MediaResult<StagedImage> {
+fn stage_and_hash(paths: &MediaRuntimePaths, source_path: &Path) -> MediaResult<StagedAsset> {
     let staging_directory = paths.blobs.join(".staging");
     fs::create_dir_all(&staging_directory)
-        .map_err(|error| format!("failed to create image staging directory: {error}"))?;
+        .map_err(|error| format!("failed to create asset staging directory: {error}"))?;
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
@@ -315,40 +331,40 @@ fn stage_and_hash(paths: &MediaRuntimePaths, source_path: &Path) -> MediaResult<
     let staging_path =
         staging_directory.join(format!("import-{}-{unique}.partial", std::process::id()));
 
-    let result = (|| -> MediaResult<StagedImage> {
+    let result = (|| -> MediaResult<StagedAsset> {
         let mut source = File::open(source_path)
-            .map_err(|error| format!("failed to open selected image: {error}"))?;
+            .map_err(|error| format!("failed to open selected asset: {error}"))?;
         let mut destination = OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&staging_path)
-            .map_err(|error| format!("failed to create image staging file: {error}"))?;
+            .map_err(|error| format!("failed to create asset staging file: {error}"))?;
         let mut digest = Sha256::new();
         let mut buffer = [0_u8; 64 * 1024];
         let mut byte_size = 0_u64;
         loop {
             let bytes_read = source
                 .read(&mut buffer)
-                .map_err(|error| format!("failed while reading selected image: {error}"))?;
+                .map_err(|error| format!("failed while reading selected asset: {error}"))?;
             if bytes_read == 0 {
                 break;
             }
             byte_size = byte_size.saturating_add(bytes_read as u64);
             if byte_size > MAX_ENCODED_BYTES {
                 return Err(format!(
-                    "Selected image changed while importing and now exceeds the {} MB limit",
+                    "Selected asset changed while importing and now exceeds the {} MB limit",
                     MAX_ENCODED_BYTES / 1024 / 1024
                 ));
             }
             digest.update(&buffer[..bytes_read]);
             destination
                 .write_all(&buffer[..bytes_read])
-                .map_err(|error| format!("failed while staging selected image: {error}"))?;
+                .map_err(|error| format!("failed while staging selected asset: {error}"))?;
         }
         destination
             .sync_all()
-            .map_err(|error| format!("failed to flush staged image: {error}"))?;
-        Ok(StagedImage {
+            .map_err(|error| format!("failed to flush staged asset: {error}"))?;
+        Ok(StagedAsset {
             path: staging_path.clone(),
             digest: format!("{:x}", digest.finalize()),
             byte_size,
@@ -363,9 +379,9 @@ fn stage_and_hash(paths: &MediaRuntimePaths, source_path: &Path) -> MediaResult<
 
 fn validate_staged_image(path: &Path) -> MediaResult<ValidatedImage> {
     let reader = ImageReader::open(path)
-        .map_err(|error| format!("failed to inspect staged image: {error}"))?
+        .map_err(|error| format!("failed to inspect staged asset: {error}"))?
         .with_guessed_format()
-        .map_err(|error| format!("failed to identify staged image format: {error}"))?;
+        .map_err(|error| format!("failed to identify staged asset format: {error}"))?;
     let format = reader
         .format()
         .ok_or_else(|| "Selected file is not a recognized image".to_string())?;
@@ -378,20 +394,20 @@ fn validate_staged_image(path: &Path) -> MediaResult<ValidatedImage> {
     reject_animation(path, format)?;
     let (width, height) = reader
         .into_dimensions()
-        .map_err(|error| format!("failed to read selected image dimensions: {error}"))?;
+        .map_err(|error| format!("failed to read selected asset dimensions: {error}"))?;
     if width > MAX_DIMENSION || height > MAX_DIMENSION {
         return Err(format!(
-            "Selected image dimensions {width}x{height} exceed the {MAX_DIMENSION}px per-axis limit"
+            "Selected asset dimensions {width}x{height} exceed the {MAX_DIMENSION}px per-axis limit"
         ));
     }
     let decoded_pixels = u64::from(width) * u64::from(height);
     if decoded_pixels > MAX_DECODED_PIXELS {
         return Err(format!(
-            "Selected image has {decoded_pixels} decoded pixels; the limit is {MAX_DECODED_PIXELS}"
+            "Selected asset has {decoded_pixels} decoded pixels; the limit is {MAX_DECODED_PIXELS}"
         ));
     }
     let mut decode_reader = ImageReader::open(path)
-        .map_err(|error| format!("failed to reopen staged image: {error}"))?;
+        .map_err(|error| format!("failed to reopen staged asset: {error}"))?;
     decode_reader.set_format(format);
     let mut limits = Limits::default();
     limits.max_image_width = Some(MAX_DIMENSION);
@@ -400,9 +416,9 @@ fn validate_staged_image(path: &Path) -> MediaResult<ValidatedImage> {
     decode_reader.limits(limits);
     let decoded = decode_reader
         .decode()
-        .map_err(|error| format!("selected image failed bounded decode validation: {error}"))?;
+        .map_err(|error| format!("selected asset failed bounded decode validation: {error}"))?;
     if (decoded.width(), decoded.height()) != (width, height) {
-        return Err("Selected image dimensions changed during decode validation".to_string());
+        return Err("Selected asset dimensions changed during decode validation".to_string());
     }
     Ok(ValidatedImage {
         mime_type,
@@ -476,7 +492,7 @@ fn webp_has_animation(path: &Path) -> MediaResult<bool> {
     }
 }
 
-fn promote_to_cas(paths: &MediaRuntimePaths, staged: &StagedImage) -> MediaResult<PathBuf> {
+fn promote_to_cas(paths: &MediaRuntimePaths, staged: &StagedAsset) -> MediaResult<PathBuf> {
     let relative_path = Path::new(&staged.digest[0..2])
         .join(&staged.digest[2..4])
         .join(&staged.digest);
@@ -506,7 +522,7 @@ fn promote_to_cas(paths: &MediaRuntimePaths, staged: &StagedImage) -> MediaResul
             Ok(relative_path)
         }
         Err(error) => Err(format!(
-            "failed to atomically publish imported image: {error}"
+            "failed to atomically publish imported asset: {error}"
         )),
     }
 }
@@ -578,7 +594,7 @@ mod tests {
         };
         database::ensure_initialized(&paths).unwrap();
 
-        let result = import_image(&paths, source.to_str().unwrap()).unwrap();
+        let result = import_asset(&paths, source.to_str().unwrap()).unwrap();
         let detail = &result.detail;
 
         assert_eq!(detail.run.status, "completed");
@@ -599,7 +615,7 @@ mod tests {
             .exists());
         assert!(!result.deduplicated);
 
-        let duplicate = import_image(&paths, source.to_str().unwrap()).unwrap();
+        let duplicate = import_asset(&paths, source.to_str().unwrap()).unwrap();
         assert!(duplicate.deduplicated);
         assert_eq!(duplicate.asset.id, result.asset.id);
         assert_eq!(database::list_assets(&paths, 10).unwrap().len(), 1);
@@ -624,7 +640,7 @@ mod tests {
         };
         database::ensure_initialized(&paths).unwrap();
 
-        let result = import_image(&paths, source.to_str().unwrap()).unwrap();
+        let result = import_asset(&paths, source.to_str().unwrap()).unwrap();
         let detail = &result.detail;
 
         assert_eq!(detail.run.executor, "local-svg");
@@ -673,7 +689,7 @@ mod tests {
         };
         database::ensure_initialized(&paths).unwrap();
 
-        let error = import_image(&paths, source.to_str().unwrap()).unwrap_err();
+        let error = import_asset(&paths, source.to_str().unwrap()).unwrap_err();
 
         assert!(error.contains("<script>"));
         assert!(database::list_assets(&paths, 10).unwrap().is_empty());

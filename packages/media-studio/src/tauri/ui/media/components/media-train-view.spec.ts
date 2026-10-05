@@ -88,7 +88,7 @@ const sdxlModel = (
   bundled: false,
   installationStatus: "installed",
   packageType: "safetensors",
-  management: { acquisition: "file-import", verification: "none" },
+  management: { acquisition: "file-import" },
   architecture: "stable-diffusion-xl",
   addonCapabilities: [
     {

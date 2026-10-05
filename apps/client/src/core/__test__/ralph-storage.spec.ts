@@ -8,6 +8,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.ts";
 import { RalphRunStore } from "../_helpers/ralph-run-store.helper.js";
 import {
@@ -86,6 +87,103 @@ describe("Ralph flow storage", () => {
         variableCount: 1,
       }),
     ]);
+  });
+
+  it("invalidates changed run summaries and rebuilds a corrupt summary cache", async () => {
+    const workspaceRoot = await createWorkspace();
+    const flow = createFlow();
+    const result: RalphRunResult = {
+      runId: "summary-update",
+      flow: flow.id,
+      status: "blocked",
+      summary: "Verification unavailable.",
+      events: [],
+      blockResults: [],
+      missingVariables: [],
+      unknownVariables: [],
+      validation: validateRalphFlow(flow),
+    };
+    const written = await writeRalphRunRecord(workspaceRoot, flow, result);
+    await expect(listRalphRunRecords(workspaceRoot)).resolves.toMatchObject([
+      { id: result.runId, status: "blocked" },
+    ]);
+    await expect(listRalphRunRecords(workspaceRoot)).resolves.toMatchObject([
+      { id: result.runId, status: "blocked" },
+    ]);
+    await writeRalphRunRecord(
+      workspaceRoot,
+      flow,
+      { ...result, status: "completed", summary: "Verification passed." },
+      { paths: written.paths },
+    );
+    await expect(listRalphRunRecords(workspaceRoot)).resolves.toMatchObject([
+      {
+        id: result.runId,
+        status: "completed",
+        summary: "Verification passed.",
+      },
+    ]);
+    await writeFile(
+      join(workspaceRoot, ".machdoch", "ralph", "run-summary-cache.json"),
+      "{invalid",
+    );
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(listRalphRunRecords(workspaceRoot)).resolves.toMatchObject([
+        { id: result.runId, status: "completed" },
+      ]);
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining("will be rebuilt"),
+      );
+    } finally {
+      warning.mockRestore();
+    }
+  });
+
+  it("rechecks lease expiry when a running record's summary is cached", async () => {
+    const workspaceRoot = await createWorkspace();
+    const flow = createFlow();
+    const now = Date.now();
+    await writeRalphRunRecord(workspaceRoot, flow, {
+      runId: "cached-owner",
+      flow: flow.id,
+      status: "running",
+      summary: "Work in progress.",
+      events: [],
+      blockResults: [],
+      missingVariables: [],
+      unknownVariables: [],
+      validation: validateRalphFlow(flow),
+      checkpoint: {
+        currentBlockId: "start",
+        transitions: 0,
+        variables: {},
+        resultsByBlock: {},
+        runLog: [],
+        blockResults: [],
+        events: [],
+        errorCounts: {},
+        repeatedFailures: {},
+        lease: {
+          ownerId: "test-owner",
+          generation: 1,
+          acquiredAt: new Date(now).toISOString(),
+          heartbeatAt: new Date(now).toISOString(),
+          expiresAt: new Date(now + 30000).toISOString(),
+        },
+      },
+    });
+    await expect(listRalphRunRecords(workspaceRoot)).resolves.toMatchObject([
+      { status: "running", recoverable: false },
+    ]);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now + 180000);
+    try {
+      await expect(listRalphRunRecords(workspaceRoot)).resolves.toMatchObject([
+        { status: "abandoned", recoverable: true },
+      ]);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it("writes, lists, and reads user-scoped flows from the user config directory", async () => {

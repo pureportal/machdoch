@@ -1,4 +1,5 @@
 import {
+  Handle,
   NodeResizer,
   Position,
   type NodeProps,
@@ -10,7 +11,6 @@ import type { JSX } from "react";
 import type { RalphAnnotationTone } from "../../../../core/ralph.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
-  RALPH_GROUP_COLLAPSED_HEIGHT,
   type RalphCanvasNode,
   type RalphNodeData,
 } from "../_helpers/ralph-canvas-layout.helper";
@@ -209,20 +209,41 @@ const RalphGroupNode = ({
   return (
     <div
       className={cn(
-        "relative flex h-full min-h-[180px] w-full min-w-[280px] flex-col rounded-2xl border border-dashed shadow-inner shadow-black/25",
+        "relative flex h-full w-full min-w-[280px] flex-col rounded-2xl border border-dashed shadow-inner shadow-black/25",
+        block.collapsed ? "min-h-0" : "min-h-[180px]",
         getAnnotationToneClassName(block.tone),
+        data.active &&
+          "ring-2 ring-lime-300/70 shadow-[0_0_20px_rgba(122,154,97,0.2)]",
         isSelected && FLOW_SELECTED_NODE_CLASS_NAME,
       )}
     >
       <RalphNodeLockBadge data={data} />
+      {block.collapsed && data.collapsedGroupInput ? (
+        <Handle
+          type="target"
+          position={Position.Left}
+          isConnectable={false}
+          className="!h-3 !w-3 !border-slate-500 !bg-slate-300"
+        />
+      ) : null}
+      {block.collapsed && data.outputs.length > 0 ? (
+        <Handle
+          type="source"
+          id="group-output"
+          position={Position.Right}
+          isConnectable={false}
+          className="!h-3 !w-3 !border-slate-500 !bg-slate-300"
+        />
+      ) : null}
       <NodeResizer
-        isVisible={isSelected && !block.locked && !data.lockedByGroupId}
-        minWidth={RALPH_GROUP_MIN_SIZE.width}
-        minHeight={
-          block.collapsed
-            ? RALPH_GROUP_COLLAPSED_HEIGHT
-            : RALPH_GROUP_MIN_SIZE.height
+        isVisible={
+          isSelected &&
+          !block.collapsed &&
+          !block.locked &&
+          !data.lockedByGroupId
         }
+        minWidth={RALPH_GROUP_MIN_SIZE.width}
+        minHeight={RALPH_GROUP_MIN_SIZE.height}
         lineClassName={RALPH_SELECTED_RESIZER_LINE_CLASS_NAME}
         handleClassName={RALPH_SELECTED_RESIZER_HANDLE_CLASS_NAME}
         onResizeEnd={(_, params) => {
@@ -245,24 +266,41 @@ const RalphGroupNode = ({
           getAnnotationAccentClassName(block.tone),
         )}
       />
-      <div className="flex min-w-0 items-center justify-between gap-3 rounded-t-2xl border-b border-white/10 bg-black/20 px-3 py-2 pr-10">
+      <div
+        className={cn(
+          "flex min-w-0 items-center justify-between gap-3 rounded-t-2xl border-white/10 bg-black/20 px-3 py-2 pr-10",
+          block.collapsed ? "h-full rounded-b-2xl" : "border-b",
+        )}
+      >
         <div className="flex min-w-0 items-center gap-2">
           <LayoutGrid className="h-3.5 w-3.5 shrink-0 text-white/65" />
-          <span className="truncate text-xs font-semibold">{block.title}</span>
+          <span
+            className={cn(
+              "truncate font-semibold leading-none",
+              block.collapsed ? "text-lg" : "text-xs",
+            )}
+          >
+            {block.title}
+          </span>
         </div>
-        <span className="shrink-0 text-[0.62rem] font-medium text-white/45">
-          {data.derivedChildIds.length} child block(s)
+        <span
+          className={cn(
+            "shrink-0 font-medium",
+            block.collapsed
+              ? "text-sm text-white/65"
+              : "text-[0.62rem] text-white/45",
+          )}
+        >
+          {data.derivedChildIds.length} nodes
         </span>
       </div>
-      <div className="pointer-events-none min-h-0 flex-1 p-3 text-xs text-white/45">
-        {block.collapsed ? (
-          <span>Collapsed group</span>
-        ) : block.description ? (
+      {!block.collapsed && block.description ? (
+        <div className="pointer-events-none min-h-0 flex-1 p-3 text-xs text-white/45">
           <span className="line-clamp-3 whitespace-pre-wrap">
             {block.description}
           </span>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 };
@@ -316,14 +354,16 @@ const RalphBlockNode = ({
           />
         }
       />
-      <div className="mt-2.5 grid min-h-12 gap-1 text-xs leading-4">
-        <div className="truncate font-medium text-white/85">
-          {preview.primary}
+      {preview.primary || preview.secondary ? (
+        <div className="mt-2.5 grid gap-1 text-xs leading-4">
+          <div className="truncate font-medium text-white/85">
+            {preview.primary}
+          </div>
+          {preview.secondary ? (
+            <div className="truncate text-white/65">{preview.secondary}</div>
+          ) : null}
         </div>
-        {preview.secondary ? (
-          <div className="truncate text-white/65">{preview.secondary}</div>
-        ) : null}
-      </div>
+      ) : null}
       {data.issueCount > 0 ? (
         <div className="mt-2 flex items-center gap-1.5 rounded-md border border-amber-400/20 bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-100">
           <AlertTriangle className="h-3.5 w-3.5" />

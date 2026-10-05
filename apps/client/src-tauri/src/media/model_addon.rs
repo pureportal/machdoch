@@ -95,7 +95,7 @@ pub(crate) fn capabilities_for_model(
             supports_separate_component_strengths: false,
             supports_denoising_schedules: false,
         }],
-        Some("wan-2.2-ti2v" | "ltx-video" | "framepack-i2v" | "hunyuan-video-1.5-i2v") => {
+        Some("wan-2.2-ti2v" | "ltx-video" | "framepack-i2v" | "hunyuan-video-1.5-i2v" | "cogvideox-2b" | "cogvideox-1.5-5b" | "cogvideox-1.5-5b-i2v") => {
             vec![MediaModelAddonCapability {
                 kind: "lora".to_string(),
                 target_components: vec!["denoiser".to_string()],
@@ -654,6 +654,12 @@ fn detect_embedding_architecture(
 }
 
 fn detect_lora_architecture(header: &ParsedSafetensorsHeader) -> (Option<String>, &'static str) {
+    if has_lora_key_fragment(header, "transformer.transformer_blocks.")
+        && lora_pair_dimensions(header, ".attn1.to_q").contains(&(1_920, 1_920))
+        && lora_pair_dimensions(header, ".attn1.to_k").contains(&(1_920, 1_920))
+    {
+        return (Some("cogvideox-2b".to_string()), "high");
+    }
     if header
         .tensor_keys
         .iter()
@@ -1426,6 +1432,9 @@ fn validate_request(
     if matches!(
         request.architecture.as_str(),
         "wan-2.2-ti2v"
+            | "cogvideox-2b"
+            | "cogvideox-1.5-5b"
+            | "cogvideox-1.5-5b-i2v"
             | "ltx-video"
             | "framepack-i2v"
             | "hunyuan-video-1.5-i2v"
@@ -2359,6 +2368,13 @@ mod tests {
     #[test]
     fn detects_video_loras_from_tensor_layouts_without_publisher_metadata() {
         for (architecture, targets) in [
+            (
+                "cogvideox-2b",
+                vec![
+                    ("transformer_blocks.0.attn1.to_q", 1_920, 1_920),
+                    ("transformer_blocks.0.attn1.to_k", 1_920, 1_920),
+                ],
+            ),
             (
                 "wan-2.2-ti2v",
                 vec![

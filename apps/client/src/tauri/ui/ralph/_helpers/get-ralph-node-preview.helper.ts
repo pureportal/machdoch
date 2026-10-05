@@ -59,8 +59,7 @@ export const getUtilityNodePreview = (
       if (mode === "until-time") {
         return {
           primary: `Wait until ${compactPreviewText(utility.runAt, "a configured time")}`,
-          secondary: "Schedules the next block after the target time.",
-          chips: ["single success route"],
+          chips: [],
         };
       }
 
@@ -77,8 +76,7 @@ export const getUtilityNodePreview = (
 
       return {
         primary: `Delay for ${formatSeconds(utility.delaySeconds ?? 0)}`,
-        secondary: "Pauses the flow, then continues.",
-        chips: ["single success route"],
+        chips: [],
       };
     }
     case "HTTP_FETCH":
@@ -107,20 +105,17 @@ export const getUtilityNodePreview = (
       return {
         primary: "Route by condition",
         secondary: formatUtilityConditionSummary(utility.condition),
-        chips: ["MATCH", "NO_MATCH", "ERROR"],
+        chips: [],
       };
     case "RUN_COMMAND":
       return {
         primary: compactPreviewText(utility.command, "Command not set"),
-        secondary: utility.cwd
-          ? `Working dir: ${utility.cwd}`
-          : "Runs in the block workspace.",
+        secondary: utility.cwd ? `Working dir: ${utility.cwd}` : undefined,
         chips: [`${formatSeconds(utility.timeoutSeconds ?? 120)} timeout`],
       };
     case "RUN_CHECK":
       return {
         primary: compactPreviewText(utility.command, "Check command not set"),
-        secondary: "Failed exit codes route to FAILED.",
         chips: [`${formatSeconds(utility.timeoutSeconds ?? 120)} timeout`],
       };
     case "UI_ANALYZE":
@@ -146,7 +141,6 @@ export const getUtilityNodePreview = (
     case "READ_FILE":
       return {
         primary: `Read ${compactPreviewText(utility.path, "file path not set")}`,
-        secondary: "Makes file content available to later blocks.",
         chips: utility.encoding ? [utility.encoding] : [],
       };
     case "WRITE_FILE":
@@ -162,10 +156,8 @@ export const getUtilityNodePreview = (
       return {
         primary: `Read JSON ${compactPreviewText(utility.path, "file path not set")}`,
         secondary:
-          utility.schema === undefined
-            ? "No schema validation"
-            : "Schema configured",
-        chips: ["SUCCESS", "NOT_FOUND", "INVALID"],
+          utility.schema === undefined ? undefined : "Schema configured",
+        chips: [],
       };
     case "READ_JSONL":
     case "QUERY_JSONL":
@@ -175,13 +167,9 @@ export const getUtilityNodePreview = (
           utility.type === "QUERY_JSONL"
             ? formatUtilityConditionSummary(utility.condition)
             : utility.schema === undefined
-              ? "No schema validation"
+              ? undefined
               : "Schema configured",
-        chips: [
-          "SUCCESS",
-          "EMPTY",
-          utility.maxResults ? `max ${utility.maxResults}` : "all",
-        ],
+        chips: [utility.maxResults ? `max ${utility.maxResults}` : "all"],
       };
     case "WRITE_JSON":
     case "PATCH_JSON":
@@ -439,9 +427,8 @@ export const getBlockNodePreview = (
 
   if (block.type === "START") {
     return {
-      primary: "Start execution",
-      secondary: "Entry point for this flow.",
-      chips: ["single start"],
+      primary: "",
+      chips: [],
     };
   }
 
@@ -496,7 +483,6 @@ export const getBlockNodePreview = (
   if (block.type === "END") {
     return {
       primary: `${titleFromId(block.status ?? "success")} end`,
-      secondary: "Stops the current flow run.",
       chips: [],
     };
   }

@@ -1,3 +1,9 @@
+import { collectFleetTelemetry } from "../../core/fleet-telemetry.js";
+import { loadFleetManagedProfile } from "../../core/fleet-settings.js";
+import {
+  applyContextPackDraft,
+  createContextPackTextSections,
+} from "../../shared/context-pack-draft.js";
 import {
   getAvailableGoalModes,
   isSessionGoal,
@@ -714,6 +720,65 @@ export class FleetCliProductRuntime {
           session.updatedAt = timestamp;
           return { record: { sessionId: session.id } };
         });
+      case "apply-context-pack":
+        return await this.commitCommand(
+          command,
+          async (state, _id, timestamp) => {
+            const session = this.getSession(state, command.sessionId);
+            const managed = await loadFleetManagedProfile();
+            const pack = managed?.document.contextPacks.find(
+              (entry) =>
+                `fleet:${managed.profileId}:${entry.id}` ===
+                command.contextPackId,
+            );
+            if (!pack)
+              throw new FleetProductError(
+                "invalidRequest",
+                "This context pack is no longer available. Refresh settings.",
+              );
+            if (
+              pack.interviewEnabled ||
+              pack.uiControlEnabled ||
+              (pack.promptEnhancementMode !== null &&
+                pack.promptEnhancementMode !== "off")
+            )
+              throw new FleetProductError(
+                "unavailable",
+                "This context pack requires desktop features. Edit the pack in Settings or use a desktop device.",
+              );
+            const draft = applyContextPackDraft(
+              session.draft,
+              createContextPackTextSections(pack).join("\n\n"),
+            );
+            if (draft.length > 8000)
+              throw new FleetProductError(
+                "invalidRequest",
+                "The context pack and draft exceed the message limit. Shorten the pack or draft.",
+              );
+            const runtime = await this.dependencies.loadRuntimeConfig(
+              session.workspace,
+              pack.mode ?? session.mode,
+              pack.model ?? session.model,
+              pack.provider ??
+                (session.provider === "unconfigured"
+                  ? undefined
+                  : session.provider),
+              undefined,
+              pack.reasoning ?? session.reasoning,
+            );
+            session.draft = draft;
+            session.provider = runtime.provider;
+            session.model = runtime.model;
+            session.mode = runtime.mode;
+            session.reasoning = runtime.reasoning;
+            if (pack.sessionMemoryEnabled !== null)
+              session.sessionMemoryEnabled = pack.sessionMemoryEnabled;
+            if (pack.useGlobalMemory !== null)
+              session.globalMemoryEnabled = pack.useGlobalMemory;
+            session.updatedAt = timestamp;
+            return { record: { sessionId: session.id } };
+          },
+        );
       case "clear-session-history":
         return await this.commitCommand(command, (state, _id, timestamp) => {
           const session = this.getSession(state, command.sessionId);
@@ -850,7 +915,6 @@ export class FleetCliProductRuntime {
       case "set-ui-control":
       case "remove-attachment":
       case "clear-attachments":
-      case "apply-context-pack":
       case "delete-context-pack":
       case "save-message-context-pack":
       case "speak-message":
@@ -1439,6 +1503,7 @@ export class FleetCliProductRuntime {
     await this.mutationTail;
     const state = this.state;
     const activeSession = this.getActiveSession(state);
+    const managed = await loadFleetManagedProfile();
     const [config, memory, { config: workspaceConfig }] = await Promise.all([
       this.loadSessionRuntimeConfig(activeSession),
       this.dependencies.loadUserMemorySettings(),
@@ -1465,6 +1530,7 @@ export class FleetCliProductRuntime {
     const projectLibrary = this.projects.getSnapshot();
     const poseScene = await readPoseScene(activeSession);
     const snapshot = {
+      telemetry: collectFleetTelemetry(),
       enabled: true,
       serverTime: timestamp,
       eventId: this.eventId,
@@ -1657,7 +1723,20 @@ export class FleetCliProductRuntime {
             ),
           },
         },
-        contextPacks: [],
+        contextPacks: (managed?.document.contextPacks ?? []).map((pack) => ({
+          id: `fleet:${managed!.profileId}:${pack.id}`,
+          name: pack.name,
+          scope: "global" as const,
+          instructionsPreview: boundedText(pack.instructions),
+          promptPreview: boundedText(pack.prompt),
+          attachmentCount: 0,
+          variables: pack.variables.map((variable) => variable.name),
+          matched: false,
+          ...(pack.provider ? { provider: pack.provider } : {}),
+          ...(pack.model ? { model: pack.model } : {}),
+          ...(pack.mode ? { mode: pack.mode } : {}),
+          ...(pack.reasoning ? { reasoning: pack.reasoning } : {}),
+        })),
         promptHistory: activeSession.promptHistory,
       },
     };

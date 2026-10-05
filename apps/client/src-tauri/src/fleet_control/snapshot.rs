@@ -7,6 +7,8 @@ use super::{
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct FleetControlSnapshot {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) telemetry: Option<super::telemetry::HostTelemetry>,
     pub(super) enabled: bool,
     pub(super) server_time: u64,
     pub(super) event_id: u64,
@@ -18,6 +20,7 @@ pub(super) struct FleetControlSnapshot {
 
 pub(super) fn create_snapshot_locked(inner: &FleetControlInner) -> FleetControlSnapshot {
     FleetControlSnapshot {
+        telemetry: super::telemetry::collect(),
         enabled: true,
         server_time: now_millis(),
         event_id: inner.event_id,

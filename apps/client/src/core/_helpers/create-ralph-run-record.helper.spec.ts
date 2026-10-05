@@ -427,7 +427,7 @@ describe("createRalphRunSummaryFromRecord", () => {
     expect(summary.worktreePath).toBe("/worktrees/run-1");
   });
 
-  it.each(["blocked", "crashed"] as const)(
+  it.each(["blocked", "crashed", "stopped"] as const)(
     "marks a %s run recoverable only when it has a checkpoint",
     (status) => {
       const withoutCheckpoint = createRalphRunSummaryFromRecord(

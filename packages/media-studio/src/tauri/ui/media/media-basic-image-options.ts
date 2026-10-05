@@ -9,7 +9,10 @@ import {
   getMediaReferenceConditioningCapabilities,
   mediaModelSupportsReferenceRole,
 } from "../../../core/media/reference-conditioning.js";
-import { defaultMediaImageSteps } from "../../../core/media/image-sampling.js";
+import {
+  defaultMediaImageSteps,
+  mediaImageSamplingConstraints,
+} from "../../../core/media/image-sampling.js";
 
 export const basicPosePresetSelectionStillCurrent = (
   selected: ImageRecipeSettings,
@@ -38,37 +41,20 @@ export const reconcileBasicImageModelSettings = (
     }
   } else {
     const sampling = { ...settings.sampling };
-    const profile = openMediaModelProfile(model.architecture);
+    const constraints = mediaImageSamplingConstraints(model.architecture);
     if (
-      profile?.fixedSteps &&
+      constraints.fixedSteps !== null &&
       sampling.numInferenceSteps != null &&
-      sampling.numInferenceSteps !== profile.steps
+      sampling.numInferenceSteps !== constraints.fixedSteps
     ) {
       sampling.numInferenceSteps = null;
       changes.push("Sampling steps reset to model defaults.");
     }
-    if (profile?.fixedGuidance && sampling.guidanceScale != null) {
+    if (!constraints.manualGuidance && sampling.guidanceScale != null) {
       sampling.guidanceScale = null;
       changes.push("Guidance reset to model defaults.");
     }
 
-    if (
-      model.architecture === "flux-2" &&
-      sampling.numInferenceSteps != null &&
-      sampling.numInferenceSteps !== 4
-    ) {
-      sampling.numInferenceSteps = null;
-      changes.push("Sampling steps set to 4.");
-    }
-    if (
-      (model.architecture === "flux-2" ||
-        model.architecture === "krea-2" ||
-        model.architecture === "qwen-image-2.1") &&
-      sampling.guidanceScale != null
-    ) {
-      sampling.guidanceScale = null;
-      changes.push("Guidance reset to model default.");
-    }
     if (changes.length > 0) next.sampling = sampling;
   }
   if (
@@ -155,18 +141,14 @@ export const basicImageModelError = (
     (settings.memoryProfile ?? "auto") !== "auto"
   )
     return "Set memory to Automatic to use this model.";
+  const constraints = mediaImageSamplingConstraints(model.architecture);
   if (
-    model.architecture === "flux-2" &&
+    constraints.fixedSteps !== null &&
     settings.sampling?.numInferenceSteps != null &&
-    settings.sampling.numInferenceSteps !== 4
+    settings.sampling.numInferenceSteps !== constraints.fixedSteps
   )
-    return "This model uses 4 sampling steps.";
-  if (
-    (model.architecture === "flux-2" ||
-      model.architecture === "krea-2" ||
-      model.architecture === "qwen-image-2.1") &&
-    settings.sampling?.guidanceScale != null
-  )
+    return `This model uses ${constraints.fixedSteps} sampling steps.`;
+  if (!constraints.manualGuidance && settings.sampling?.guidanceScale != null)
     return "Clear manual guidance to use this model.";
   return null;
 };

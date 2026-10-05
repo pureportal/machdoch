@@ -66,7 +66,7 @@ export const DEFAULT_IMAGE_RECIPE_SETTINGS = {
   svgTargetSize: 1024,
   svgStyle: "illustration",
   svgTextPolicy: "avoid",
-  svgCandidateCount: 6,
+  svgCandidateCount: 1,
   svgCriticEnabled: false,
 } as const satisfies ImageRecipeSettings;
 

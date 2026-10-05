@@ -1,6 +1,7 @@
 import type { RalphFlow } from "../ralph.js";
 import type { RalphStarterFlow } from "../ralph-starter-flows.js";
 import { RALPH_VALIDATOR_JSON_SCHEMA } from "../_helpers/parse-ralph-validator-json-result.helper.js";
+import { layoutFeatureImplementationFlow } from "./feature-implementation-layout.js";
 
 const RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS = 30 * 60;
 
@@ -15,6 +16,8 @@ const RALPH_TASK_SCHEMA = {
     "dependencies",
     "likelyFiles",
     "size",
+    "acceptanceCriteria",
+    "priority",
   ],
   properties: {
     id: { type: "string", minLength: 1 },
@@ -45,6 +48,7 @@ const RALPH_TASK_SCHEMA = {
     acceptanceCriteria: {
       type: "array",
       items: { type: "string", minLength: 1 },
+      minItems: 1,
       maxItems: 20,
     },
     priority: { type: "number", minimum: 0, maximum: 100 },
@@ -56,8 +60,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
   id: "starter-full-feature-implementation",
   alias: "feature-implementation-checklist-loop",
   name: "Feature Implementation Checklist Loop",
-  description:
-    "Implements and verifies feature tasks, then continues with the next objective.",
+  description: "Implements feature tasks and verifies the complete feature.",
   settings: {
     autonomy: {
       recoverFailedEnd: true,
@@ -82,6 +85,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       required: false,
     },
     { name: "acceptanceCriteria", type: "text", default: "", required: false },
+    { name: "previousGoal", type: "text", default: "", required: false },
     {
       name: "checklistDirectory",
       type: "path",
@@ -224,7 +228,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
         type: "TRANSFORM_JSON",
         input: "{}",
         expression:
-          "(() => { const featureId = String(variables.featureId || 'current-feature').trim().toLowerCase().replace(/[^a-z0-9._-]+/gu, '-').replace(/^-+|-+$/gu, '') || 'current-feature'; const configured = String(variables.checklistFile || '').trim(); const directory = String(variables.checklistDirectory || '.machdoch/feature-implementation').trim().replace(/[\\/]+$/gu, '') || '.machdoch/feature-implementation'; return { featureId, path: configured || `${directory}/${featureId}.checklist.json` }; })()",
+          "(() => { const featureId = String(variables.featureId || 'current-feature').trim().toLowerCase().replace(/[^a-z0-9._-]+/gu, '-').replace(/^-+|-+$/gu, '') || 'current-feature'; const configured = String(variables.checklistFile || '').trim(); const directory = String(variables.checklistDirectory || '.machdoch/feature-implementation').trim().replace(/[\\/]+$/gu, '') || '.machdoch/feature-implementation'; const requestKey = JSON.stringify([variables.featureRequest || '', variables.acceptanceCriteria || '', variables.previousGoal || '']); return { featureId, requestKey, path: configured || `${directory}/${featureId}.checklist.json` }; })()",
       },
     },
     {
@@ -278,6 +282,22 @@ const fullFeatureImplementationFlow: RalphFlow = {
                   operator: "equals-path",
                   valuePath:
                     "resultsByBlock.resolve-checklist-path.data.output.featureId",
+                  conditions: [
+                    {
+                      style: "json-path",
+                      path: "lastData.json.requestKey",
+                      operator: "equals-path",
+                      valuePath:
+                        "resultsByBlock.resolve-checklist-path.data.output.requestKey",
+                      conditions: [
+                        {
+                          style: "json-path",
+                          path: "lastData.json.requestKey",
+                          operator: "non-empty-string",
+                        },
+                      ],
+                    },
+                  ],
                 },
               ],
             },
@@ -313,7 +333,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Prepare a concise implementation brief from normalized feature identity {{data:resolve-checklist-path:output}}, featureRequest={{featureRequest:text=Autonomously identify and implement the highest-value bounded feature supported by repository evidence.}}, acceptanceCriteria={{acceptanceCriteria:text=}}, implementationScope={{implementationScope:text=auto-detect}}, authInstructions={{authInstructions:text=}}, designGuidelines={{designGuidelines:text=}}, detected project commands {{result:detect-project-commands}}, checklist existence {{result:checklist-exists}}, and existing matching checklist JSON {{result:read-checklist}} when present. If the request is blank, autonomously infer the highest-value bounded objective from repository behavior, tests, open work, and product structure. Treat only a feature-id-matching checklist as resume context and ask no questions.",
+        "Prepare a concise implementation brief from normalized feature identity {{data:resolve-checklist-path:output}}, featureRequest={{featureRequest:text=Autonomously identify and implement the highest-value bounded feature supported by repository evidence.}}, previousGoal={{previousGoal:text=}}, acceptanceCriteria={{acceptanceCriteria:text=}}, implementationScope={{implementationScope:text=auto-detect}}, authInstructions={{authInstructions:text=}}, designGuidelines={{designGuidelines:text=}}, detected project commands {{result:detect-project-commands}}, checklist existence {{result:checklist-exists}}, and existing matching checklist JSON {{result:read-checklist}} when present. Use the previous goal to preserve existing product behavior and scope the requested feature. If the request is blank, autonomously infer the highest-value bounded objective from repository behavior, tests, open work, and product structure. Treat only a checklist matching both featureId and requestKey as resume context and ask no questions.",
     },
     {
       id: "research-decision",
@@ -346,7 +366,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Use content enrichment before implementation. If search_web is available, run focused searches for current primary-source documentation, changelogs, release notes, standards, accessibility/security guidance, and comparable implementation examples relevant to this feature brief: {{summary:prepare-feature-brief}}. Use fetch_url on the best official or maintainer pages before relying on them. Also inspect local package/config metadata when it affects version assumptions. Keep findings concise with source links, risks, version/date assumptions, and implementation implications. If web search is unavailable, say so and base findings on local package docs/config plus any provided URLs.",
+        "Research before implementation using the available live web tools, including the provider's native web search and page-opening tools. Use search_web and fetch_url when exposed; their absence does not mean the provider's native web tools are unavailable. Search current official primary-source documentation, standards, accessibility/security guidance, and maintainer examples relevant to this feature brief: {{summary:prepare-feature-brief}}. Open or fetch the best primary pages before relying on them. Inspect local package/config metadata when it affects version assumptions. Return concise findings with exact source links, risks, version/date assumptions, and implementation implications for the checklist, implementation, and reviews. If web search is unavailable after checking all exposed web tools, report that limitation; never invent searches, fetched content, or references.",
     },
     {
       id: "specification-checklist",
@@ -370,17 +390,23 @@ const fullFeatureImplementationFlow: RalphFlow = {
           additionalProperties: false,
           required: [
             "featureId",
+            "requestKey",
             "request",
+            "previousGoal",
+            "research",
             "acceptanceCriteria",
             "tasks",
             "status",
           ],
           properties: {
             featureId: { type: "string", minLength: 1 },
+            requestKey: { type: "string", minLength: 1 },
             request: { type: "string", minLength: 1 },
+            previousGoal: { type: "string" },
+            research: { type: "string" },
             acceptanceCriteria: {
               type: "array",
-              items: { type: "string" },
+              items: { type: "string", minLength: 1 },
               minItems: 1,
               maxItems: 30,
             },
@@ -404,7 +430,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
           },
         },
         prompt:
-          "Create or update the canonical JSON implementation checklist at {{data:resolve-checklist-path:output.path}} for exactly featureId {{data:resolve-checklist-path:output.featureId}}. Preserve completed tasks only when resuming a matching feature. Include feature request, acceptance criteria, implementation guide, source links/version assumptions, test plan, visual review plan, auth notes, design guidelines, resume notes, and actionable tasks with stable ids. Every task must include canonical status planned/implementing/verifying/repairing/completed/deferred, batchKey, dependencies, likelyFiles, size, acceptanceCriteria, and priority. Shape meaningful autonomous batches of up to {{maxTasksPerImplementationPass:number=3}} compatible tasks. Use deferred only for unavailable external state so deterministic selection can continue elsewhere. Make the best bounded reversible assumption from the request, repository, tests, and research; never wait for human input. Inputs: brief {{summary:prepare-feature-brief}}, research {{summary:initial-research}}, detected commands {{result:detect-project-commands}}. Return only schema-valid JSON.",
+          "Create or update the canonical JSON implementation checklist at {{data:resolve-checklist-path:output.path}}. Copy featureId and requestKey exactly from {{data:resolve-checklist-path:output}} and previousGoal exactly from {{previousGoal:text=}}. Preserve completed tasks only when resuming a checklist matching both featureId and requestKey. Include the feature request, acceptance criteria, research with source links and version assumptions, and actionable implementation tasks with stable ids. Runtime nodes execute verification and final review; do not create tasks that only rerun checks or review already implemented work. Put product implementation, test coverage, auth, and design requirements in task acceptanceCriteria. Keep engine scheduling, completion of runtime reviews, future acceptance fault campaigns, and resume orchestration as feature-level process context, never implementation-task criteria. The task validator performs the current independent task review; full-feature acceptance and the next review then gate final DONE. Every task must include canonical status planned/implementing/verifying/repairing/completed/deferred, batchKey, dependencies, likelyFiles, size, acceptanceCriteria, and priority. Shape meaningful autonomous batches of up to {{maxTasksPerImplementationPass:number=3}} compatible tasks. Use deferred only for unavailable external state so deterministic selection can continue elsewhere. Make the best bounded reversible assumption from the request, repository, tests, and research; never wait for human input. Inputs: brief {{result:prepare-feature-brief}}, research {{result:initial-research}}, detected commands {{result:detect-project-commands}}. Return only schema-valid JSON.",
       },
     },
     {
@@ -449,6 +475,17 @@ const fullFeatureImplementationFlow: RalphFlow = {
       },
     },
     {
+      id: "read-selected-checklist",
+      title: "Read Selected Checklist",
+      position: { x: 2560, y: 240 },
+      size: { width: 280, height: 170 },
+      type: "UTILITY",
+      utility: {
+        type: "READ_JSON",
+        path: "{{data:resolve-checklist-path:output.path}}",
+      },
+    },
+    {
       id: "implement-feature",
       title: "Implement Checklist Items",
       position: { x: 2720, y: 0 },
@@ -462,7 +499,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Implement the selected checklist task batch {{data:select-next-task:tasks}} from JSON checklist {{data:resolve-checklist-path:output.path}}. Complete every compatible selected task in this pass. Use checklist/resume context, research, git/verification baselines, detected commands, pass count, latest validation feedback, and work-yield analysis. Apply source-backed guidance, scope {{implementationScope:text=auto-detect}}, riskTolerance={{riskTolerance:text=ambitious}}, designGuidelines={{designGuidelines:text=}}, and authInstructions={{authInstructions:text=}}. Dependency changes use allowDependencyChanges={{allowDependencyChanges:boolean=true}}, schemas/migrations use allowSchemaChanges={{allowSchemaChanges:boolean=true}}, and public APIs use allowPublicApiChanges={{allowPublicApiChanges:boolean=true}} when needed and verified. Never edit lifecycle fields: runtime SELECT_JSON_TASK/MARK_JSON_TASK own them. Repair only new/worsened failures and make bounded reversible assumptions autonomously.",
+        "Implement the selected checklist task batch {{data:select-next-task:tasks}} from JSON checklist {{data:resolve-checklist-path:output.path}}. Complete every compatible selected task in this pass. Preserve the previous goal {{previousGoal:text=}} and use retained research {{data:read-selected-checklist:json.research}}, full research {{result:initial-research}}, checklist/resume context, git/verification baselines, detected commands, pass count, latest validation feedback, and work-yield analysis. Apply source-backed guidance, scope {{implementationScope:text=auto-detect}}, riskTolerance={{riskTolerance:text=ambitious}}, designGuidelines={{designGuidelines:text=}}, and authInstructions={{authInstructions:text=}}. Dependency changes use allowDependencyChanges={{allowDependencyChanges:boolean=true}}, schemas/migrations use allowSchemaChanges={{allowSchemaChanges:boolean=true}}, and public APIs use allowPublicApiChanges={{allowPublicApiChanges:boolean=true}} when needed and verified. Never edit lifecycle fields: runtime SELECT_JSON_TASK/MARK_JSON_TASK own them. Repair only new/worsened failures and make bounded reversible assumptions autonomously.",
     },
     {
       id: "mark-tasks-verifying",
@@ -494,22 +531,6 @@ const fullFeatureImplementationFlow: RalphFlow = {
           workItemBlockId: "select-next-task",
           excludedPaths: ["{{data:resolve-checklist-path:output.path}}"],
           verifyOnObservationError: true,
-        },
-      },
-    },
-    {
-      id: "work-yield-decision",
-      title: "Useful Work Produced?",
-      position: { x: 3060, y: 30 },
-      size: { width: 256, height: 170 },
-      type: "UTILITY",
-      utility: {
-        type: "CONDITION",
-        condition: {
-          style: "json-path",
-          path: "lastData.output.shouldVerify",
-          operator: "equals",
-          value: "true",
         },
       },
     },
@@ -666,7 +687,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
         maxAttempts: 2,
         schema: RALPH_VALIDATOR_JSON_SCHEMA,
         prompt:
-          "Validate implementation against JSON checklist {{data:resolve-checklist-path:output.path}}, selected task batch {{data:select-next-task:tasks}}, work-yield analysis {{data:work-yield-analysis:output}}, feature request, acceptance criteria, research, baseline verification {{result:baseline-verification}}, post-change verification {{result:run-configured-checks}}, git diff {{result:git-diff-summary}}, and visual review {{result:visual-analysis}}. Judge only the active feature and required adjacent tests/docs/imports; ignore unrelated workspace changes. The selected tasks must already be in runtime-owned verifying state. Return DONE only when all tasks and acceptance criteria pass, at least one implementation file changed since the deterministic baseline unless the task explicitly required state-only work, and no new/worsened verification failure exists. Return CONTINUE when bounded work remains, RETRY for own regressions, and ERROR only for unavailable external credentials/state or repeated non-progress. Never wait for a human. Include confidence, summary, evidence, and remainingWork.",
+          "Perform the independent task review of implementation against JSON checklist {{data:resolve-checklist-path:output.path}}, current selected task batch {{data:mark-tasks-verifying:tasks}}, work-yield analysis {{data:work-yield-analysis:output}}, feature request {{featureRequest:text=}}, previous goal {{previousGoal:text=}}, acceptance criteria {{acceptanceCriteria:text=}}, retained research {{data:mark-tasks-verifying:json.research}}, baseline verification {{result:baseline-verification}}, post-change verification {{result:run-configured-checks}}, git diff {{result:git-diff-summary}}, and visual review {{result:visual-analysis}}. Judge the selected product work and required adjacent tests/docs/imports; ignore unrelated workspace changes. Inspect code, behavior, accessibility, and available screenshots yourself. The selected tasks must already be in runtime-owned verifying state. Return DONE when the selected task's product criteria pass, the previous goal's existing behavior is preserved, cumulative changes against the original task or run baseline establish the requested implementation unless the task explicitly required state-only work, and no new/worsened verification failure exists. DONE completes this task review only; the engine will then perform full-feature acceptance and review. Do not require those later stages or their fault campaigns to be complete here, and do not require another implementation diff to rereview retained verified work. Return CONTINUE for missing selected product work, RETRY for own regressions, and ERROR only for unavailable external credentials/state or repeated non-progress. Never wait for a human. Include confidence, summary, evidence, and remainingWork.",
       },
     },
     {
@@ -709,6 +730,88 @@ const fullFeatureImplementationFlow: RalphFlow = {
         jsonPath: "tasks",
         input: "{{data:select-next-task}}",
         status: "deferred",
+      },
+    },
+    {
+      id: "read-completed-checklist",
+      title: "Read Completed Checklist",
+      type: "UTILITY",
+      utility: {
+        type: "READ_JSON",
+        path: "{{data:resolve-checklist-path:output.path}}",
+      },
+    },
+    {
+      id: "count-feature-review",
+      title: "Count Feature Review",
+      type: "UTILITY",
+      utility: {
+        type: "LOOP_COUNTER",
+        counterName:
+          "feature-implementation-checklist-loop.feature-review.{{data:resolve-checklist-path:output.featureId}}",
+        maxAttempts: "{{maxImplementationPasses:number=8}}",
+      },
+    },
+    {
+      id: "verify-complete-feature",
+      title: "Verify Complete Feature",
+      type: "UTILITY",
+      utility: {
+        type: "RUN_CHECK",
+        command: "{{verificationCommand:text=}}",
+        fallbackCommand: "{{data:detect-project-commands:verificationCommand}}",
+        cwd: "{{data:detect-project-commands:rootPath}}",
+        timeoutSeconds: RALPH_VERIFICATION_COMMAND_TIMEOUT_SECONDS,
+      },
+    },
+    {
+      id: "validate-feature",
+      title: "Review Complete Feature",
+      type: "UTILITY",
+      utility: {
+        type: "VALIDATOR_JSON",
+        maxAttempts: 2,
+        schema: RALPH_VALIDATOR_JSON_SCHEMA,
+        prompt:
+          "Review the whole delivered feature against request {{featureRequest:text=}}, previous goal {{previousGoal:text=}}, acceptance criteria {{acceptanceCriteria:text=}}, and the complete persisted checklist {{data:read-completed-checklist:json}}. Inspect the actual implementation, tests, and product behavior using retained research and design guidelines {{designGuidelines:text=}}. Fresh full-feature verification: {{result:verify-complete-feature}}. Prior visual review: {{result:visual-analysis}}. Task completion alone is insufficient: check that the checklist covers the entire request, previous behavior is preserved, and the integrated feature meets every acceptance criterion. Return DONE only with concrete evidence for full delivery and passing verification. Return CONTINUE or RETRY with specific missing work or regressions to repair. Return ERROR for unavailable external state. Include confidence, summary, evidence, and remainingWork.",
+      },
+    },
+    {
+      id: "repair-feature-gaps",
+      title: "Repair Feature Gaps",
+      type: "PROMPT",
+      settings: { maxIterations: 1 },
+      prompt:
+        "Repair the specific remaining feature gaps from {{result:validate-feature}} and verification failures {{result:verify-complete-feature}}. Use the complete checklist {{data:read-completed-checklist:json}}, original request {{featureRequest:text=}}, previous goal {{previousGoal:text=}}, acceptance criteria {{acceptanceCriteria:text=}}, retained research, scope {{implementationScope:text=auto-detect}}, auth instructions {{authInstructions:text=}}, and design guidelines {{designGuidelines:text=}}. Make bounded changes to the actual implementation and relevant tests; preserve unrelated workspace changes and completed task lifecycle records. Dependency changes require allowDependencyChanges={{allowDependencyChanges:boolean=true}}, schemas/migrations require allowSchemaChanges={{allowSchemaChanges:boolean=true}}, and public API changes require allowPublicApiChanges={{allowPublicApiChanges:boolean=true}}. Do not change the checklist, task status, or verification command to bypass review. Complete the missing work and report concrete evidence; the runtime will rerun full verification and review before recording completion.",
+    },
+    {
+      id: "resolve-feature-scope",
+      title: "Resolve Feature Scope",
+      type: "UTILITY",
+      utility: {
+        type: "TRANSFORM_JSON",
+        input: "{{data:read-completed-checklist:json}}",
+        expression: [
+          "(() => {",
+          'const configured = String(variables.implementationScope ?? "auto-detect").trim();',
+          'const paths = configured && configured !== "auto-detect"',
+          "  ? configured.split(/[,;\\n]/u).map(path => path.trim()).filter(Boolean)",
+          "  : (input.tasks ?? []).flatMap(task => task.likelyFiles ?? []);",
+          "return { allowedPaths: [...new Set(paths)] };",
+          "})()",
+        ].join("\n"),
+      },
+    },
+    {
+      id: "scope-change-guard",
+      title: "Check Feature Scope",
+      type: "UTILITY",
+      utility: {
+        type: "CHANGE_SCOPE_GUARD",
+        cwd: "{{data:detect-project-commands:rootPath}}",
+        baseline: "{{data:detect-project-commands:repositoryBaseline}}",
+        input: "{{data:resolve-feature-scope:output}}",
+        enforce: true,
       },
     },
     {
@@ -842,15 +945,6 @@ const fullFeatureImplementationFlow: RalphFlow = {
               path: "resultsByBlock.record-done-outcome.output",
               operator: "equals",
               value: "SUCCESS",
-              combinator: "any",
-              conditions: [
-                {
-                  style: "json-path",
-                  path: "resultsByBlock.record-invalid-outcome.output",
-                  operator: "equals",
-                  value: "SUCCESS",
-                },
-              ],
             },
           ],
         },
@@ -890,6 +984,162 @@ const fullFeatureImplementationFlow: RalphFlow = {
     },
   ],
   edges: [
+    {
+      id: "completed-checklist-to-review-budget",
+      from: "read-completed-checklist",
+      fromOutput: "SUCCESS",
+      to: "count-feature-review",
+    },
+    {
+      id: "completed-checklist-read-error",
+      from: "read-completed-checklist",
+      fromOutput: "ERROR",
+      to: "record-deferred-outcome",
+    },
+    {
+      id: "completed-checklist-missing",
+      from: "read-completed-checklist",
+      fromOutput: "NOT_FOUND",
+      to: "record-invalid-outcome",
+    },
+    {
+      id: "completed-checklist-invalid",
+      from: "read-completed-checklist",
+      fromOutput: "INVALID",
+      to: "record-invalid-outcome",
+    },
+    {
+      id: "feature-review-budget-continue",
+      from: "count-feature-review",
+      fromOutput: "CONTINUE",
+      to: "verify-complete-feature",
+    },
+    {
+      id: "feature-review-budget-limit",
+      from: "count-feature-review",
+      fromOutput: "LIMIT_REACHED",
+      to: "record-deferred-outcome",
+    },
+    {
+      id: "feature-review-budget-error",
+      from: "count-feature-review",
+      fromOutput: "ERROR",
+      to: "record-deferred-outcome",
+    },
+    {
+      id: "complete-feature-check-to-review",
+      from: "verify-complete-feature",
+      fromOutput: "SUCCESS",
+      to: "validate-feature",
+    },
+    {
+      id: "complete-feature-check-failed",
+      from: "verify-complete-feature",
+      fromOutput: "FAILED",
+      to: "repair-feature-gaps",
+    },
+    {
+      id: "complete-feature-check-inconclusive",
+      from: "verify-complete-feature",
+      fromOutput: "INCONCLUSIVE",
+      to: "record-deferred-outcome",
+    },
+    {
+      id: "complete-feature-check-error",
+      from: "verify-complete-feature",
+      fromOutput: "ERROR",
+      to: "record-deferred-outcome",
+    },
+    {
+      id: "complete-feature-review-done",
+      from: "validate-feature",
+      fromOutput: "DONE",
+      to: "resolve-feature-scope",
+    },
+    {
+      id: "resolved-feature-scope",
+      from: "resolve-feature-scope",
+      fromOutput: "SUCCESS",
+      to: "scope-change-guard",
+    },
+    {
+      id: "feature-scope-resolution-error",
+      from: "resolve-feature-scope",
+      fromOutput: "ERROR",
+      to: "record-deferred-outcome",
+    },
+    {
+      id: "feature-scope-verified",
+      from: "scope-change-guard",
+      fromOutput: "IN_SCOPE",
+      to: "record-done-outcome",
+    },
+    ...["OUT_OF_SCOPE", "ADVISORY", "EMPTY", "ERROR"].map((output) => ({
+      id: `feature-scope-${output.toLowerCase().replaceAll("_", "-")}`,
+      from: "scope-change-guard",
+      fromOutput: output,
+      to: "record-deferred-outcome",
+    })),
+    {
+      id: "complete-feature-review-continue",
+      from: "validate-feature",
+      fromOutput: "CONTINUE",
+      to: "repair-feature-gaps",
+    },
+    {
+      id: "complete-feature-review-retry",
+      from: "validate-feature",
+      fromOutput: "RETRY",
+      to: "repair-feature-gaps",
+    },
+    {
+      id: "complete-feature-review-error",
+      from: "validate-feature",
+      fromOutput: "ERROR",
+      to: "record-deferred-outcome",
+    },
+    {
+      id: "complete-feature-review-invalid",
+      from: "validate-feature",
+      fromOutput: "INVALID",
+      to: "record-invalid-outcome",
+    },
+    {
+      id: "feature-gaps-repaired",
+      from: "repair-feature-gaps",
+      fromOutput: "SUCCESS",
+      to: "read-completed-checklist",
+    },
+    {
+      id: "feature-gaps-repair-error",
+      from: "repair-feature-gaps",
+      fromOutput: "ERROR",
+      to: "record-deferred-outcome",
+    },
+    {
+      id: "selected-checklist-to-implementation",
+      from: "read-selected-checklist",
+      fromOutput: "SUCCESS",
+      to: "implement-feature",
+    },
+    {
+      id: "selected-checklist-error",
+      from: "read-selected-checklist",
+      fromOutput: "ERROR",
+      to: "mark-tasks-deferred",
+    },
+    {
+      id: "selected-checklist-missing",
+      from: "read-selected-checklist",
+      fromOutput: "NOT_FOUND",
+      to: "record-invalid-outcome",
+    },
+    {
+      id: "selected-checklist-invalid",
+      from: "read-selected-checklist",
+      fromOutput: "INVALID",
+      to: "record-invalid-outcome",
+    },
     {
       id: "start-to-detect-commands",
       from: "start",
@@ -1071,10 +1321,10 @@ const fullFeatureImplementationFlow: RalphFlow = {
       to: "select-next-task",
     },
     {
-      id: "assessed-checklist-complete-to-done-ledger",
+      id: "assessed-checklist-complete-to-review",
       from: "assess-checklist-tasks",
       fromOutput: "COMPLETE",
-      to: "record-done-outcome",
+      to: "read-completed-checklist",
     },
     {
       id: "assessed-checklist-blocked-to-ledger",
@@ -1188,7 +1438,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       id: "count-implementation-pass-continue",
       from: "count-implementation-pass",
       fromOutput: "CONTINUE",
-      to: "implement-feature",
+      to: "read-selected-checklist",
     },
     {
       id: "count-implementation-pass-limit",
@@ -1260,29 +1510,11 @@ const fullFeatureImplementationFlow: RalphFlow = {
       id: "work-yield-analysis-success",
       from: "work-yield-analysis",
       fromOutput: "SUCCESS",
-      to: "work-yield-decision",
+      to: "verification-decision",
     },
     {
       id: "work-yield-analysis-error",
       from: "work-yield-analysis",
-      fromOutput: "ERROR",
-      to: "verification-decision",
-    },
-    {
-      id: "work-yield-useful",
-      from: "work-yield-decision",
-      fromOutput: "MATCH",
-      to: "verification-decision",
-    },
-    {
-      id: "work-yield-empty-to-validate",
-      from: "work-yield-decision",
-      fromOutput: "NO_MATCH",
-      to: "validate-progress",
-    },
-    {
-      id: "work-yield-error-to-verification-decision",
-      from: "work-yield-decision",
       fromOutput: "ERROR",
       to: "verification-decision",
     },
@@ -1518,7 +1750,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       id: "record-invalid-to-report",
       from: "record-invalid-outcome",
       fromOutput: "SUCCESS",
-      to: "final-report",
+      to: "retained-checklist-report",
     },
     {
       id: "record-invalid-invalid-to-retained-report",
@@ -1621,7 +1853,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
 
 export const featureImplementationChecklistLoopStarterFlow = {
   id: "full-feature-implementation",
-  version: 22,
+  version: 28,
   defaultAlias: "feature-implementation-checklist-loop",
   category: "Implementation",
   tags: ["feature", "research", "visual-check"],
@@ -1640,5 +1872,5 @@ export const featureImplementationChecklistLoopStarterFlow = {
       { blockId: "deferred", outcome: "deferred" },
     ],
   },
-  flow: fullFeatureImplementationFlow,
+  flow: layoutFeatureImplementationFlow(fullFeatureImplementationFlow),
 } as const satisfies RalphStarterFlow;

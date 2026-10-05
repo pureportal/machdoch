@@ -10,6 +10,7 @@ import {
 import { basename, join } from "node:path";
 import type { RalphRunCheckpoint } from "../ralph.js";
 import { writeJsonAtomically } from "./write-file-atomically.helper.js";
+import { isRalphRunOwnerAlive } from "./is-ralph-run-owner-alive.helper.js";
 
 const CHECKPOINT_SCHEMA_VERSION = 1;
 const LEASE_SCHEMA_VERSION = 1;
@@ -317,7 +318,8 @@ export class RalphRunStore {
         heartbeatAt,
         active:
           !lease.releasedAt &&
-          Date.now() - leaseStat.mtimeMs <= lease.durationMs,
+          Date.now() - leaseStat.mtimeMs <= lease.durationMs &&
+          isRalphRunOwnerAlive(lease.ownerId),
       };
     } catch (error) {
       if (isMissingFileError(error)) {

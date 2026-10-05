@@ -116,6 +116,7 @@ export type ProviderSyncCliAction =
 
 export type FleetCliAction =
   | "status"
+  | "settings-export"
   | "enroll"
   | "enable"
   | "disable"

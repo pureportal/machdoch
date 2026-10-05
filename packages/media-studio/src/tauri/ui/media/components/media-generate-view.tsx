@@ -79,6 +79,7 @@ import { MediaAudioGenerateView } from "./media-audio-generate-view";
 import type { MediaAudioRecipeSettings } from "../../../../core/media/contracts.js";
 
 interface MediaGenerateViewProps {
+  assistant?: JSX.Element;
   target: MediaGenerationTarget;
   settings: ImageRecipeSettings;
   videoSettings: MediaVideoRecipeSettings;
@@ -138,6 +139,7 @@ const TARGETS: ReadonlyArray<{
 ];
 
 export const MediaGenerateView = ({
+  assistant,
   target,
   settings,
   videoSettings,
@@ -755,19 +757,22 @@ export const MediaGenerateView = ({
           </button>
         ))}
       </div>
-      <Button
-        type="button"
-        variant="outline"
-        onClick={onOpenFlow}
-        disabled={flowOpening}
-      >
-        {flowOpening ? (
-          <LoaderCircle className="h-4 w-4 animate-spin" />
-        ) : (
-          <Workflow className="h-4 w-4" />
-        )}
-        {flowOpening ? "Loading workflow" : "Convert to Advanced"}
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        {assistant}
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onOpenFlow}
+          disabled={flowOpening}
+        >
+          {flowOpening ? (
+            <LoaderCircle className="h-4 w-4 animate-spin" />
+          ) : (
+            <Workflow className="h-4 w-4" />
+          )}
+          {flowOpening ? "Loading workflow" : "Convert to Advanced"}
+        </Button>
+      </div>
     </header>
   );
 

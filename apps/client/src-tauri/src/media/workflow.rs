@@ -19,7 +19,7 @@ pub(crate) struct ExecuteMediaWorkflowRequest {
     flow_revision_id: String,
     plan_id: String,
     plan_snapshot: MediaRunPlanSnapshot,
-    workspace_root: String,
+    workspace_root: Option<String>,
     model_bindings: HashMap<String, String>,
 }
 
@@ -29,6 +29,7 @@ enum WorkflowValue {
     Text(String),
     Image(String),
     Video(String),
+    Audio(String),
     Mask { asset_id: String, source_id: String },
     Report(MediaQualityReport),
     Seed(u64),
@@ -185,27 +186,57 @@ fn execute_started(
                             .unwrap_or(base_seed),
                     ))
                 }
-                "source.image" => {
+                "source.image" | "source.audio" | "source.video" => {
                     let id = config_text(node, "assetId");
+                    let record = database::get_asset(paths, id)?;
+                    let kind = node.r#type.strip_prefix("source.").unwrap();
+                    if record.kind != kind {
+                        return Err(format!("Choose a {kind} asset for {}", node.label));
+                    }
                     transform::read_asset_original(paths, id)?;
-                    Some(WorkflowValue::Image(id.to_string()))
+                    output_port = kind;
+                    Some(match kind {
+                        "audio" => WorkflowValue::Audio(id.to_string()),
+                        "video" => WorkflowValue::Video(id.to_string()),
+                        _ => WorkflowValue::Image(id.to_string()),
+                    })
+                }
+                "operation.video-sequence" | "operation.video-audio" => {
+                    output_port = "video";
+                    Some(WorkflowValue::Video(av::compose(
+                        app, paths, request, flow, &values, node, iteration,
+                    )?))
+                }
+                "operation.lip-sync" => {
+                    output_port = "video";
+                    Some(WorkflowValue::Video(av::lip_sync(
+                        app, paths, request, flow, &values, node, iteration,
+                    )?))
                 }
                 "control.repeat" => None,
                 "task.generate-prompt"
                 | "task.generate-image"
                 | "task.edit-image"
-                | "task.generate-video" => {
+                | "task.generate-video"
+                | "task.generate-audio" => {
                     let video_profile = if node.r#type == "task.generate-video" {
-                        let architecture = database::open(paths)?
-                            .query_row(
-                                "SELECT architecture FROM media_models WHERE id = ?1",
-                                [&request.model_bindings[&node.id]],
-                                |row| row.get::<_, Option<String>>(0),
-                            )
-                            .map_err(|error| format!("Could not resolve video model: {error}"))?;
-                        architecture
-                            .as_deref()
-                            .and_then(open_models::by_architecture)
+                        let model_id = &request.model_bindings[&node.id];
+                        if model_id.starts_with(model_import::USER_MODEL_ID_PREFIX) {
+                            let architecture = database::open(paths)?
+                                .query_row(
+                                    "SELECT architecture FROM media_models WHERE id = ?1",
+                                    [model_id],
+                                    |row| row.get::<_, Option<String>>(0),
+                                )
+                                .map_err(|error| {
+                                    format!("Could not resolve video model: {error}")
+                                })?;
+                            architecture
+                                .as_deref()
+                                .and_then(open_models::by_architecture)
+                        } else {
+                            open_models::by_id(model_id)
+                        }
                     } else {
                         None
                     };
@@ -259,6 +290,11 @@ fn execute_started(
                         )?;
                         output_port = "prompt";
                         Some(WorkflowValue::Text(text))
+                    } else if node.r#type == "task.generate-audio" {
+                        output_port = "audio";
+                        Some(WorkflowValue::Audio(av::generate_audio(
+                            app, paths, request, flow, node, prompt, seed, iteration,
+                        )?))
                     } else if node.r#type == "task.generate-video" {
                         let (first, last) =
                             video_frame_inputs(flow, &values, node, video_profile.is_some())?;
@@ -291,7 +327,7 @@ fn execute_started(
                             &asset,
                             "video",
                             &[first, last].into_iter().flatten().collect::<Vec<_>>(),
-                            json!({"prompt":prompt,"seed":seed,"modelId":generation.model_id,"modelRevision":video.model_revision,"numFrames":video.output.frame_count,"fps":generation.fps,"performance":video.performance}),
+                            json!({"prompt":prompt,"seed":seed,"modelId":generation.model_id,"modelRevision":video.model_revision,"numFrames":video.output.frame_count,"fps":generation.fps,"addons":video.addons,"performance":video.performance}),
                         )?;
                         output_port = "video";
                         Some(WorkflowValue::Video(id))
@@ -604,9 +640,16 @@ fn execute_started(
                     }
                     Some(WorkflowValue::Image(source))
                 }
-                "output.video" => {
-                    let WorkflowValue::Video(source) = input(flow, &values, node, "video")? else {
-                        return Err("Connect a video output".into());
+                "output.video" | "output.audio" => {
+                    let kind = if node.r#type == "output.audio" {
+                        "audio"
+                    } else {
+                        "video"
+                    };
+                    let source = match (kind, input(flow, &values, node, kind)?) {
+                        ("video", WorkflowValue::Video(source))
+                        | ("audio", WorkflowValue::Audio(source)) => source,
+                        _ => return Err(format!("Connect an {kind} output")),
                     };
                     let (_, bytes) = transform::read_asset_original(paths, source)?;
                     let record = database::get_asset(paths, source)?;
@@ -616,7 +659,11 @@ fn execute_started(
                         digest,
                         relative_path: relative.to_string_lossy().into_owned(),
                         byte_size: bytes.len() as u64,
-                        mime_type: "video/webm",
+                        mime_type: if kind == "audio" {
+                            "audio/wav"
+                        } else {
+                            "video/webm"
+                        },
                         width: record.width,
                         height: record.height,
                         output_index: 0,
@@ -628,7 +675,7 @@ fn execute_started(
                         &node.id,
                         iteration,
                         &asset,
-                        "video",
+                        kind,
                         std::slice::from_ref(source),
                         json!({"finalOutput":true}),
                     )?;
@@ -817,6 +864,8 @@ pub(crate) async fn media_execute_workflow(
     command_result("media_execute_workflow", result)
 }
 
+#[path = "workflow_media.rs"]
+mod av;
 #[path = "workflow_operations.rs"]
 mod operations;
 #[path = "workflow_preservation.rs"]

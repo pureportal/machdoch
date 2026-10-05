@@ -16,6 +16,8 @@ export function maximumRequestBodyBytes(
   if (/^\/api\/client\/settings\/[^/]+\/sync-status$/u.test(pathname)) {
     return maximumSettingsSyncReportBodyBytes;
   }
+  if (/^\/api\/client\/settings\/[^/]+\/enrollment$/u.test(pathname))
+    return config.settingsManager.limits.maximumDocumentBytes;
   if (/^\/api\/instances\/[^/]+\/product\/commands$/u.test(pathname)) {
     return maximumGatewayMessageBytes;
   }

@@ -11,7 +11,7 @@ pub(crate) async fn media_install_workflow_model(
                 .map_err(|e| e.to_string())?;
         let files = manifest
             .get(&kind)
-            .ok_or("Choose a prompt model, vision model, or upscaler")?
+            .ok_or("Choose a model to download")?
             .to_string();
         let paths = MediaRuntimePaths::resolve(&app)?;
         let root = paths.models_root()?.join("workflow").join(&kind);

@@ -102,11 +102,8 @@ export type MediaModelAcquisition =
   | "workspace-discovery"
   | "external-runtime";
 
-export type MediaModelVerification = "none" | "model-probe" | "runtime-probe";
-
 export interface MediaModelManagement {
   acquisition: MediaModelAcquisition;
-  verification: MediaModelVerification;
 }
 
 export type MediaBuiltinLocalModelArchitecture =
@@ -219,6 +216,8 @@ export type MediaNodeType =
   | "control.repeat"
   | "source.prompt"
   | "source.image"
+  | "source.audio"
+  | "source.video"
   | "source.seed"
   | "source.animated-background"
   | "task.generate-image"
@@ -238,6 +237,9 @@ export type MediaNodeType =
   | "operation.alpha-matte"
   | "operation.composite"
   | "operation.video-composite"
+  | "operation.video-sequence"
+  | "operation.video-audio"
+  | "operation.lip-sync"
   | "operation.quality-analyze"
   | "control.quality-gate"
   | "control.human-review"
@@ -643,20 +645,6 @@ export interface MediaModelDescriptor {
   privacySummary: string;
   limitation?: string;
   userImported: boolean;
-}
-
-export interface MediaLocalModelRuntimeProbeResult {
-  schemaVersion: 1;
-  modelId: string;
-  revision: string;
-  status: "ready" | "failed" | "unavailable";
-  diagnostic: string;
-  checkedAt: string;
-  workerVersion: string | null;
-  pipelineClass: string | null;
-  deviceLabel: string | null;
-  components: string[];
-  capabilities: string[];
 }
 
 export interface MediaModelAddonDescriptor {
@@ -1366,6 +1354,9 @@ export interface MediaExecutionStep {
     | "extract-alpha-matte"
     | "composite-image"
     | "composite-video"
+    | "sequence-video"
+    | "set-video-audio"
+    | "lip-sync-video"
     | "analyze-quality"
     | "evaluate-gate"
     | "wait-for-review"

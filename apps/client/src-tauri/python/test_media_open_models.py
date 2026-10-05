@@ -48,7 +48,7 @@ class OpenMediaModelTests(unittest.TestCase):
                 loader = mock.Mock(return_value=SimpleNamespace())
                 diffusers = SimpleNamespace(Flux2KleinPipeline=SimpleNamespace(from_pretrained=loader))
                 models.load_pipeline(diffusers, {"architecture": architecture, "path": directory, "packageKind": "diffusers-directory"}, "bf16")
-                self.assertEqual(loader.call_args.kwargs, {"torch_dtype": "bf16", "local_files_only": True, "use_safetensors": True, "trust_remote_code": False, "is_distilled": distilled})
+                self.assertEqual(loader.call_args.kwargs, {"dtype": "bf16", "local_files_only": True, "use_safetensors": True, "trust_remote_code": False, "is_distilled": distilled})
 
     def test_wrong_pipeline_folder_is_rejected_before_loading(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -151,6 +151,21 @@ class OpenMediaModelTests(unittest.TestCase):
             self.assertNotIn("image", pipeline.call_args.kwargs)
             self.assertEqual(result["output"]["fileName"], "video.webm")
             runtime._enable_sampling_progress.assert_called_once_with(pipeline)
+            request.update(model={"architecture": "cogvideox-2b", "revision": "revision", "digest": "digest"}, numFrames=9, numInferenceSteps=20, guidanceScale=6, addons=[{"addonId": "liquid-art"}])
+            pipeline.return_value = SimpleNamespace(frames=[[object()] * 9])
+            runtime._load_video_addons = mock.Mock(return_value=[{"addonId": "liquid-art", "modelStrength": 0.15}])
+            runtime._device = lambda _: ("cuda", "GPU", 16 * 1024**3)
+            torch.float16 = "fp16"
+            torch.cuda = SimpleNamespace(empty_cache=mock.Mock())
+            with mock.patch.object(models, "load_pipeline", return_value=pipeline) as load:
+                result = video.generate(request, runtime)
+            self.assertEqual(load.call_args.args[2], "fp16")
+            self.assertEqual(result["performance"]["inferenceDtype"], "fp16")
+            runtime._load_video_addons.assert_called_once_with(pipeline.transformer, request["addons"])
+            self.assertEqual(result["addons"], [{"addonId": "liquid-art", "modelStrength": 0.15}])
+            request["model"]["architecture"] = "wan-2.2-t2v-a14b"
+            with self.assertRaisesRegex(ValueError, "does not support LoRAs"):
+                video.generate(request, runtime)
 
     def test_generated_audio_is_muxed_and_both_tracks_decode(self):
         ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()

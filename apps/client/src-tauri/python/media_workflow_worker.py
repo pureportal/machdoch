@@ -219,6 +219,17 @@ def main():
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     request = json.load(sys.stdin)
     command = sys.argv[1]
+    if command == "lip-sync":
+        from media_lip_sync import lip_sync
+
+        print(json.dumps({"schemaVersion": 1, **lip_sync(request, progress)}))
+        return
+    if command in ("video-sequence", "video-audio", "video-inspect"):
+        from media_video_composition import inspect_video, video_audio, video_sequence
+
+        video_operations = {"video-sequence": video_sequence, "video-audio": video_audio, "video-inspect": inspect_video}
+        print(json.dumps({"schemaVersion": 1, **video_operations[command](request, progress)}))
+        return
     image_operations = {"prepare-mask": prepare_mask, "image-mask": image_mask, "mask-composite": mask_composite}
     if command in image_operations:
         print(json.dumps({"schemaVersion": 1, **image_operations[command](request)}))

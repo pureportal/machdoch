@@ -12,6 +12,7 @@ import { autonomousUiImprovementLoopStarterFlow } from "./ralph-starter-flows/au
 import { featureImplementationChecklistLoopStarterFlow } from "./ralph-starter-flows/feature-implementation-checklist-loop.js";
 import { repositoryRefactorValidationLoopStarterFlow } from "./ralph-starter-flows/repository-refactor-validation-loop.js";
 import { securityReviewFixLoopStarterFlow } from "./ralph-starter-flows/security-review-fix-loop.js";
+import { layoutGroupedRalphStarterFlow } from "./ralph-starter-flows/starter-phase-layout.js";
 import { enableContinuousRalphScopeCycles } from "./ralph-starter-flows/continuous-scope-cycle.js";
 
 export type RalphStarterFlowId =
@@ -768,7 +769,7 @@ export const applyRalphStarterFlowProtocol = (
   return {
     ...starterFlow,
     protocol,
-    version: starterFlow.version + 1,
+    version: starterFlow.version + 2,
     flow,
   };
 };
@@ -776,6 +777,9 @@ export const applyRalphStarterFlowProtocol = (
 export const STARTER_RALPH_FLOWS: readonly RalphStarterFlow[] =
   RAW_STARTER_RALPH_FLOWS.map((starter) => {
     const current = applyRalphStarterFlowProtocol(starter);
+    if (current.id !== "full-feature-implementation") {
+      current.flow = layoutGroupedRalphStarterFlow(current.id, current.flow);
+    }
     current.flow.variables = discoverRalphFlowVariables(current.flow);
     return current;
   });

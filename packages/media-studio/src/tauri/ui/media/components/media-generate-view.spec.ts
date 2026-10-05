@@ -549,7 +549,7 @@ describe("MediaGenerateView", () => {
         screen.getByText(
           target === "remote"
             ? "Custom sampling reset to model defaults."
-            : "Sampling steps set to 4. Guidance reset to model default.",
+            : "Sampling steps reset to model defaults. Guidance reset to model defaults.",
         ),
       ).toBeTruthy();
       expect(

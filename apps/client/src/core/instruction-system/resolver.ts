@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { getInstructionCapabilityDescriptor } from "./delivery.js";
 import { getModelContextWindowTokens } from "../model-capabilities.js";
 import { loadInstructionLibrary } from "./library-store.js";
+import { loadFleetManagedProfile } from "../fleet-settings.js";
 import { inventoryNativeInstructions } from "./native-inventory.js";
 import { instructionTagRuleMatches } from "./tag-rules.js";
 import {
@@ -582,8 +583,23 @@ export const resolveInstructionSet = async (
   let sequence = 0;
   let precedence = 0;
 
+  const managed = await loadFleetManagedProfile();
+  const managedInstructions = managed?.document.instructions ?? [];
+  const managedInstructionIds = new Set(
+    managedInstructions.map((profile) => profile.id),
+  );
+  const managedInstructionNames = new Set(
+    managedInstructions.map((profile) =>
+      profile.name.normalize("NFKC").toLocaleLowerCase("en-US"),
+    ),
+  );
   for (const profile of library.profiles.filter(
-    (candidate) => candidate.global,
+    (candidate) =>
+      candidate.global &&
+      !managedInstructionIds.has(candidate.id) &&
+      !managedInstructionNames.has(
+        candidate.name.normalize("NFKC").toLocaleLowerCase("en-US"),
+      ),
   )) {
     const source = createProfileSource({
       id: `profile-global:${profile.id}`,
@@ -598,6 +614,30 @@ export const resolveInstructionSet = async (
     });
     assignmentEntries.push(source);
     selected.push(source);
+  }
+
+  for (const profile of managedInstructions) {
+    const source = createProfileSource({
+      id: `profile-global:fleet:${managed!.profileId}:${profile.id}`,
+      kind: profile.global ? "profile-global" : "profile-unassigned",
+      name: profile.name,
+      body: profile.body,
+      profileId: `fleet:${managed!.profileId}:${profile.id}`,
+      scopePath: ".",
+      assignmentPath: "global",
+      precedence: precedence++,
+      sequence: sequence++,
+      ...(!profile.enabled || !profile.global
+        ? {
+            status: "skipped" as const,
+            reason: !profile.enabled
+              ? ("PROFILE_DISABLED" as const)
+              : ("NO_APPLICABLE_ASSIGNMENT" as const),
+          }
+        : {}),
+    });
+    assignmentEntries.push(source);
+    if (profile.enabled && profile.global) selected.push(source);
   }
 
   for (const profile of library.profiles.filter(

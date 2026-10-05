@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { AssistantSurfaceLayout } from "./assistant-surface-geometry";
 import { useAssistantDisplayLayout } from "./use-assistant-display-layout";
 
 const native = vi.hoisted(() => ({
@@ -23,16 +24,14 @@ vi.mock("./assistant-surface", () => ({
   setWindowPosition: native.position,
   setWindowSize: native.size,
 }));
-const layout = {
-  popupPosition: { x: -500, y: 100 },
-  popupSize: { width: 400, height: 600 },
+const layout: AssistantSurfaceLayout = {
   quickVoicePosition: { x: -400, y: 200 },
   quickVoiceSize: { width: 300, height: 200 },
 };
 const unlisten = vi.fn();
 const unscale = vi.fn();
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   native.listen.mockResolvedValue(unlisten);
   native.scale.mockResolvedValue(unscale);
   native.resolve.mockResolvedValue(layout);
@@ -42,12 +41,16 @@ beforeEach(() => {
 afterEach(cleanup);
 
 it("coalesces display-change storms, uses window affinity and cleans up subscriptions", async () => {
-  const { unmount } = renderHook(() => useAssistantDisplayLayout("popup"));
+  const { unmount } = renderHook(() => useAssistantDisplayLayout());
   await act(async () => {});
-  let finish!: (value: typeof layout) => void;
+  expect(native.listen).toHaveBeenCalledWith(
+    "display-change",
+    expect.any(Function),
+  );
+  let finish!: (value: AssistantSurfaceLayout) => void;
   native.resolve.mockImplementationOnce(
     () =>
-      new Promise((resolve) => {
+      new Promise<AssistantSurfaceLayout>((resolve) => {
         finish = resolve;
       }),
   );
@@ -63,13 +66,15 @@ it("coalesces display-change storms, uses window affinity and cleans up subscrip
   });
   expect(native.resolve).toHaveBeenCalledTimes(2);
   expect(native.resolve).toHaveBeenLastCalledWith("window");
+  expect(native.position).toHaveBeenCalledTimes(2);
   expect(native.position).toHaveBeenLastCalledWith(
     expect.anything(),
-    layout.popupPosition,
+    layout.quickVoicePosition,
   );
+  expect(native.size).toHaveBeenCalledTimes(2);
   expect(native.size).toHaveBeenLastCalledWith(
     expect.anything(),
-    layout.popupSize,
+    layout.quickVoiceSize,
   );
   unmount();
   expect(unlisten).toHaveBeenCalledOnce();
@@ -77,14 +82,14 @@ it("coalesces display-change storms, uses window affinity and cleans up subscrip
 });
 
 it("does not mutate a destroyed window when monitor lookup completes after disposal", async () => {
-  let finish!: (value: typeof layout) => void;
+  let finish!: (value: AssistantSurfaceLayout) => void;
   native.resolve.mockImplementationOnce(
     () =>
-      new Promise((resolve) => {
+      new Promise<AssistantSurfaceLayout>((resolve) => {
         finish = resolve;
       }),
   );
-  const { unmount } = renderHook(() => useAssistantDisplayLayout("quickVoice"));
+  const { unmount } = renderHook(() => useAssistantDisplayLayout());
   await act(async () => {});
   await act(async () => {
     (native.scale.mock.calls[0]![0] as () => void)();
@@ -97,15 +102,49 @@ it("does not mutate a destroyed window when monitor lookup completes after dispo
   expect(native.size).not.toHaveBeenCalled();
 });
 
+it("does not resize a destroyed window when positioning completes after disposal", async () => {
+  let finish!: (value: boolean) => void;
+  native.position.mockImplementationOnce(
+    () =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const { unmount } = renderHook(() => useAssistantDisplayLayout());
+  await act(async () => {});
+  await act(async () => {
+    (native.scale.mock.calls[0]![0] as () => void)();
+  });
+  expect(native.position).toHaveBeenCalledOnce();
+  unmount();
+  await act(async () => {
+    finish(true);
+  });
+  expect(native.size).not.toHaveBeenCalled();
+});
+
+it("skips geometry updates while the display is unavailable", async () => {
+  native.resolve.mockResolvedValueOnce(null);
+  renderHook(() => useAssistantDisplayLayout());
+  await act(async () => {});
+  await act(async () => {
+    (native.scale.mock.calls[0]![0] as () => void)();
+  });
+
+  expect(native.resolve).toHaveBeenCalledWith("window");
+  expect(native.position).not.toHaveBeenCalled();
+  expect(native.size).not.toHaveBeenCalled();
+});
+
 it("cleans up listeners that register after unmount", async () => {
   let finish!: (value: () => void) => void;
   native.listen.mockImplementationOnce(
     () =>
-      new Promise((resolve) => {
+      new Promise<() => void>((resolve) => {
         finish = resolve;
       }),
   );
-  const { unmount } = renderHook(() => useAssistantDisplayLayout("quickVoice"));
+  const { unmount } = renderHook(() => useAssistantDisplayLayout());
   unmount();
   await act(async () => {
     finish(unlisten);

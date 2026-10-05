@@ -134,7 +134,19 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
         if component[0].is_null() && component[1].is_null() {
             continue;
         }
-        if !matches!(component[0].as_str(), Some("diffusers" | "transformers")) {
+        let class = component[1].as_str().ok_or("Invalid component class")?;
+        let native_audio_component = pipeline == "AudioLDM2Pipeline"
+            && matches!(
+                (name.as_str(), component[0].as_str(), class),
+                (
+                    "projection_model",
+                    Some("audioldm2"),
+                    "AudioLDM2ProjectionModel"
+                ) | ("unet", Some("audioldm2"), "AudioLDM2UNet2DConditionModel")
+            );
+        if !matches!(component[0].as_str(), Some("diffusers" | "transformers"))
+            && !native_audio_component
+        {
             return Err(format!("Component {name} requires custom repository code."));
         }
         let relative = Path::new(name);
@@ -147,13 +159,13 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
         if !component_root.is_dir() {
             return Err(format!("Missing model component: {name}"));
         }
-        let class = component[1].as_str().ok_or("Invalid component class")?;
         if class.contains("Scheduler") {
             read_json(&component_root.join("scheduler_config.json"))?;
         } else if class.contains("Tokenizer") {
             read_json(&component_root.join("tokenizer_config.json"))?;
         }
-        if class.contains("Model") || class.starts_with("Autoencoder") {
+        if class.contains("Model") || class.starts_with("Autoencoder") || class == "SpeechT5HifiGan"
+        {
             read_json(&component_root.join("config.json"))?;
             let weights = files
                 .iter()

@@ -30,7 +30,7 @@ def load_pipeline(diffusers: Any, model: dict[str, Any], dtype: Any, *, image_co
         from transformers import GPT2LMHeadModel
 
         options["language_model"] = GPT2LMHeadModel.from_pretrained(
-            str(root / "language_model"), torch_dtype=dtype,
+            str(root / "language_model"), dtype=dtype,
             local_files_only=True, use_safetensors=True, trust_remote_code=False,
         )
     if profile["pipeline"] == "Flux2KleinPipeline":
@@ -38,7 +38,7 @@ def load_pipeline(diffusers: Any, model: dict[str, Any], dtype: Any, *, image_co
     if profile["architecture"] == "krea-2-raw":
         options["is_distilled"] = False
     pipeline = pipeline_class.from_pretrained(
-        str(root), torch_dtype=dtype, local_files_only=True,
+        str(root), dtype=dtype, local_files_only=True,
         use_safetensors=True, trust_remote_code=False, **options,
     )
     if hasattr(pipeline, "set_progress_bar_config"):

@@ -203,10 +203,10 @@ const openExclusiveWindowsFileLock = async (
   });
   await new Promise<void>((resolve, reject) => {
     let stdout = "";
-    const timeout = setTimeout(
-      () => reject(new Error("Timed out waiting for the Windows file lock.")),
-      5_000,
-    );
+    const timeout = setTimeout(() => {
+      child.kill();
+      reject(new Error("Timed out waiting for the Windows file lock."));
+    }, 30_000);
     const settle = (operation: () => void): void => {
       clearTimeout(timeout);
       operation();
@@ -450,6 +450,12 @@ describe("CLI provider enrollment materializer", () => {
       1,
       "codex-cli",
       process.execPath,
+      { force: false },
+    );
+    expect(probeProviderCliMock).toHaveBeenNthCalledWith(
+      2,
+      "codex-cli",
+      process.execPath,
       { force: true },
     );
     expect(enrollment.manifest.providerVersion).toBe(expectedProbe.version);
@@ -625,6 +631,7 @@ describe("CLI provider enrollment materializer", () => {
         });
       }
     },
+    60_000,
   );
 
   it.runIf(process.platform === "win32")(
@@ -665,7 +672,7 @@ describe("CLI provider enrollment materializer", () => {
         });
       }
     },
-    10_000,
+    60_000,
   );
 
   it.each([

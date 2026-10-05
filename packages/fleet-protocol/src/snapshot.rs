@@ -18,6 +18,7 @@ enum Shape {
     PositiveInteger,
     ProjectListItem,
     BoundedInteger(u64, u64),
+    HostTelemetry,
 }
 
 struct Field {
@@ -74,6 +75,23 @@ impl Shape {
     fn accepts(&self, value: &Value) -> bool {
         match self {
             Self::Bool => value.is_boolean(),
+            Self::HostTelemetry => {
+                let shape = object(vec![
+                    required("capturedAt", Shape::Integer),
+                    required("platform", Shape::String(64, true)),
+                    required("architecture", Shape::String(64, true)),
+                    required("cpuCount", Shape::PositiveInteger),
+                    required(
+                        "cpuUsagePercent",
+                        Shape::Nullable(Box::new(Shape::Number(0.0, 100.0))),
+                    ),
+                    required("memoryTotalBytes", Shape::Integer),
+                    required("memoryUsedBytes", Shape::Integer),
+                    required("uptimeSeconds", Shape::Integer),
+                ]);
+                shape.accepts(value)
+                    && value["memoryUsedBytes"].as_f64() <= value["memoryTotalBytes"].as_f64()
+            }
             Self::Integer => value.as_f64().is_some_and(|number| {
                 (0.0..=9_007_199_254_740_991.0).contains(&number) && number.fract() == 0.0
             }),
@@ -231,6 +249,7 @@ where
 
 fn product_snapshot_shape() -> Shape {
     object(vec![
+        optional("telemetry", Shape::HostTelemetry),
         required("enabled", Shape::Bool),
         required("serverTime", Shape::Integer),
         required("eventId", Shape::Integer),

@@ -194,7 +194,7 @@ importers:
         version: 4.13.0
       jsdom:
         specifier: ^26.1.0
-        version: 26.1.0(supports-color@5.5.0)
+        version: 26.1.0
       rolldown:
         specifier: ^1.2.0
         version: 1.2.4
@@ -210,6 +210,12 @@ importers:
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@25.9.3)(@vitest/coverage-v8@4.1.10)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.9.3)(jiti@2.7.0))
+
+  apps/fleet-android:
+    devDependencies:
+      jsdom:
+        specifier: ^26.1.0
+        version: 26.1.0
 
   apps/fleet-manager:
     dependencies:
@@ -356,7 +362,7 @@ importers:
         version: 19.2.5(@types/react@19.2.18)
       jsdom:
         specifier: ^26.1.0
-        version: 26.1.0(supports-color@5.5.0)
+        version: 26.1.0
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -7680,7 +7686,7 @@ snapshots:
   gaxios@7.3.1:
     dependencies:
       extend: 3.0.2
-      https-proxy-agent: 7.0.6(supports-color@5.5.0)
+      https-proxy-agent: 7.0.6
       node-fetch: 3.3.2
     transitivePeerDependencies:
       - supports-color
@@ -7796,14 +7802,14 @@ snapshots:
       statuses: 2.0.2
       toidentifier: 1.0.1
 
-  http-proxy-agent@7.0.2(supports-color@5.5.0):
+  http-proxy-agent@7.0.2:
     dependencies:
       agent-base: 7.1.4
       debug: 4.4.3(supports-color@5.5.0)
     transitivePeerDependencies:
       - supports-color
 
-  https-proxy-agent@7.0.6(supports-color@5.5.0):
+  https-proxy-agent@7.0.6:
     dependencies:
       agent-base: 7.1.4
       debug: 4.4.3(supports-color@5.5.0)
@@ -7886,14 +7892,14 @@ snapshots:
 
   js-tokens@4.0.0: {}
 
-  jsdom@26.1.0(supports-color@5.5.0):
+  jsdom@26.1.0:
     dependencies:
       cssstyle: 4.6.0
       data-urls: 5.0.0
       decimal.js: 10.6.0
       html-encoding-sniffer: 4.0.0
-      http-proxy-agent: 7.0.2(supports-color@5.5.0)
-      https-proxy-agent: 7.0.6(supports-color@5.5.0)
+      http-proxy-agent: 7.0.2
+      https-proxy-agent: 7.0.6
       is-potential-custom-element-name: 1.0.1
       nwsapi: 2.2.24
       parse5: 7.3.0
@@ -9267,7 +9273,7 @@ snapshots:
     optionalDependencies:
       '@types/node': 25.9.3
       '@vitest/coverage-v8': 4.1.10(vitest@4.1.10)
-      jsdom: 26.1.0(supports-color@5.5.0)
+      jsdom: 26.1.0
     transitivePeerDependencies:
       - msw
 

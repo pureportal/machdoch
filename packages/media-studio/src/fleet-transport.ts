@@ -222,7 +222,7 @@ export function createFleetMediaTransport(
         await download(request.destinationPath);
       if (
         [
-          "media_import_image",
+          "media_import_asset",
           "media_import_local_model",
           "media_import_model_addon",
           "media_import_flow",

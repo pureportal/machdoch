@@ -121,7 +121,7 @@ export const MediaAssetPreview = ({
       ref={setPreviewElement}
       src={url}
       controls={controls}
-      muted
+      muted={!controls}
       loop={
         loopMode === "seamless" ||
         loopMode === "ping-pong" ||

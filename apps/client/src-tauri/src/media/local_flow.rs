@@ -1104,7 +1104,7 @@ mod tests {
             .write_to(&mut bytes, ImageFormat::Png)
             .unwrap();
         fs::write(&source, bytes.into_inner()).unwrap();
-        ingest::import_image(paths, source.to_str().unwrap())
+        ingest::import_asset(paths, source.to_str().unwrap())
             .unwrap()
             .asset
             .id
@@ -1309,7 +1309,7 @@ mod tests {
             .write_to(&mut foreground_bytes, ImageFormat::Png)
             .unwrap();
         fs::write(&foreground_path, foreground_bytes.into_inner()).unwrap();
-        let foreground_asset_id = ingest::import_image(&paths, foreground_path.to_str().unwrap())
+        let foreground_asset_id = ingest::import_asset(&paths, foreground_path.to_str().unwrap())
             .unwrap()
             .asset
             .id;
@@ -1320,7 +1320,7 @@ mod tests {
             .write_to(&mut background_bytes, ImageFormat::Png)
             .unwrap();
         fs::write(&background_path, background_bytes.into_inner()).unwrap();
-        let background_asset_id = ingest::import_image(&paths, background_path.to_str().unwrap())
+        let background_asset_id = ingest::import_asset(&paths, background_path.to_str().unwrap())
             .unwrap()
             .asset
             .id;
@@ -1478,7 +1478,7 @@ mod tests {
             .write_to(&mut source_bytes, ImageFormat::Png)
             .unwrap();
         fs::write(&source_path, source_bytes.into_inner()).unwrap();
-        let source_asset_id = ingest::import_image(&paths, source_path.to_str().unwrap())
+        let source_asset_id = ingest::import_asset(&paths, source_path.to_str().unwrap())
             .unwrap()
             .asset
             .id;
@@ -1637,7 +1637,7 @@ mod tests {
             .write_to(&mut source_bytes, ImageFormat::Png)
             .unwrap();
         fs::write(&source_path, source_bytes.into_inner()).unwrap();
-        let source_asset_id = ingest::import_image(&paths, source_path.to_str().unwrap())
+        let source_asset_id = ingest::import_asset(&paths, source_path.to_str().unwrap())
             .unwrap()
             .asset
             .id;

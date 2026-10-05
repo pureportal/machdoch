@@ -119,6 +119,87 @@ const result = (
 });
 
 describe("RALPH evidence-based outcome", () => {
+  it("completes verified recovered work while retaining historical deferrals and budget", () => {
+    const recoveredFlow: RalphFlow = {
+      ...flow,
+      blocks: [
+        ...flow.blocks,
+        {
+          id: "journal-done",
+          title: "Done journal",
+          type: "UTILITY",
+          utility: { type: "APPEND_JSONL", workOutcome: "DONE" },
+        },
+      ],
+    };
+    const retained: RalphRunAutonomyMetadata = {
+      ...autonomy,
+      totalTransitions: 42,
+      deferred: [
+        {
+          blockId: "review",
+          output: "ERROR",
+          attempts: 3,
+          reason: "Provider startup failed",
+        },
+      ],
+      exhaustion: {
+        kind: "repeated-failure",
+        blockId: "review",
+        recoverable: true,
+        limit: 3,
+        reason: "Provider startup failed",
+      },
+    };
+    const results = [
+      result("diff", "SUCCESS", {
+        changedFiles: ["src/a.ts"],
+        files: [{ path: "src/a.ts" }],
+      }),
+      result("scope", "IN_SCOPE"),
+      result("verify", "SUCCESS", {
+        verification: {
+          role: "candidate",
+          comparison: {
+            disposition: "PASSED",
+            candidateFingerprint: "candidate",
+          },
+        },
+      }),
+      result("journal-done", "SUCCESS", { workOutcome: "DONE" }),
+      result("report", "SUCCESS"),
+    ];
+    expect(
+      deriveRalphRunOutcome({
+        flow: recoveredFlow,
+        lifecycleStatus: "completed",
+        terminalBlockId: "done",
+        blockResults: results,
+        autonomy: retained,
+      }),
+    ).toMatchObject({ status: "succeeded", verified: true });
+    expect(retained.totalTransitions).toBe(42);
+    expect(retained.deferred).toHaveLength(1);
+    expect(
+      deriveRalphRunOutcome({
+        flow: recoveredFlow,
+        lifecycleStatus: "completed",
+        terminalBlockId: "done",
+        blockResults: results.filter((entry) => entry.blockId !== "verify"),
+        autonomy: retained,
+      }).verified,
+    ).toBe(false);
+    expect(
+      deriveRalphRunOutcome({
+        flow: recoveredFlow,
+        lifecycleStatus: "completed",
+        terminalBlockId: "defer",
+        blockResults: results,
+        autonomy: retained,
+      }),
+    ).toMatchObject({ status: "deferred", verified: false });
+  });
+
   it("retains the concrete cause and retry condition when work is deferred", () => {
     const outcome = deriveRalphRunOutcome({
       flow,

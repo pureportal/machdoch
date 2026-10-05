@@ -9,9 +9,9 @@ import type {
 } from "../../../../core/media/contracts.js";
 import type {
   MediaFlowAgentMessage,
-  MediaFlowAgentRequest,
   MediaFlowAgentResult,
 } from "../../../../core/media/flow-agent.js";
+import { createMediaFlowAgentRequest } from "../../../../core/media/flow-agent.js";
 import { createMediaFlowDocumentDigest } from "../../../../core/media/canonicalize.js";
 import { hasMediaHost, invoke } from "../media-platform";
 import { Button } from "../../components/ui/button";
@@ -57,53 +57,14 @@ export function MediaFlowAgentPanel(props: MediaFlowAgentPanelProps) {
     busy.current = true;
     const sequence = ++requestSequence.current;
     const digest = createMediaFlowDocumentDigest(flow);
-    const request: MediaFlowAgentRequest = {
+    const request = createMediaFlowAgentRequest({
       prompt: content,
       flow,
-      messages: messages.slice(-40),
-      models: models.map(
-        ({
-          id,
-          displayName,
-          target,
-          installed,
-          configured,
-          architecture,
-          capabilities,
-        }) => ({
-          id,
-          displayName,
-          target,
-          installed,
-          configured,
-          architecture,
-          capabilities,
-        }),
-      ),
-      addons: addons.map(
-        ({
-          id,
-          displayName,
-          kind,
-          architecture,
-          triggerWords,
-          defaultToken,
-        }) => ({
-          id,
-          displayName,
-          kind,
-          architecture,
-          triggerWords,
-          defaultToken,
-        }),
-      ),
-      assets: assets.map(({ id, kind, width, height }) => ({
-        id,
-        kind,
-        width,
-        height,
-      })),
-    };
+      messages,
+      models,
+      addons,
+      assets,
+    });
     setPending(true);
     setError(null);
     try {
@@ -121,12 +82,18 @@ export function MediaFlowAgentPanel(props: MediaFlowAgentPanelProps) {
         );
       }
       if (!Array.isArray(result.poseMaps))
-        throw new Error("The flow assistant returned an invalid pose response. Send your request again.");
+        throw new Error(
+          "The flow assistant returned an invalid pose response. Send your request again.",
+        );
       if (result.flow) {
         const generated = await Promise.all(
           result.poseMaps.map(async ({ id, map }) => ({
             id,
-            asset: (await invoke<MediaAssetImportResult>("media_create_pose_map", { map })).asset,
+            asset: (
+              await invoke<MediaAssetImportResult>("media_create_pose_map", {
+                map,
+              })
+            ).asset,
           })),
         );
         if (sequence !== requestSequence.current) return;
@@ -134,15 +101,29 @@ export function MediaFlowAgentPanel(props: MediaFlowAgentPanelProps) {
           latest.current.workspaceRoot !== workspaceRoot ||
           createMediaFlowDocumentDigest(latest.current.flow) !== digest
         ) {
-          throw new Error("The flow changed while the assistant was working. Send your request again to use the latest flow.");
+          throw new Error(
+            "The flow changed while the assistant was working. Send your request again to use the latest flow.",
+          );
         }
-        if (generated.length) latest.current.onPoseAssetsCreated(generated.map((entry) => entry.asset));
-        const assetsById = new Map(generated.map((entry) => [`pose-map:${entry.id}`, entry.asset.id]));
+        if (generated.length)
+          latest.current.onPoseAssetsCreated(
+            generated.map((entry) => entry.asset),
+          );
+        const assetsById = new Map(
+          generated.map((entry) => [`pose-map:${entry.id}`, entry.asset.id]),
+        );
         latest.current.onApply({
           ...result.flow,
           nodes: result.flow.nodes.map((node) =>
-            node.type === "source.image" && assetsById.has(String(node.config.assetId ?? ""))
-              ? { ...node, config: { ...node.config, assetId: assetsById.get(String(node.config.assetId)) } }
+            node.type === "source.image" &&
+            assetsById.has(String(node.config.assetId ?? ""))
+              ? {
+                  ...node,
+                  config: {
+                    ...node.config,
+                    assetId: assetsById.get(String(node.config.assetId)),
+                  },
+                }
               : node,
           ),
         });

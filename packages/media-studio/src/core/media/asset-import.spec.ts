@@ -10,6 +10,7 @@ describe("media asset import types", () => {
   it("restricts each file extension to compatible asset types", () => {
     expect(listCompatibleMediaAssetImportTypes("cat.PNG")).toEqual(["image"]);
     expect(listCompatibleMediaAssetImportTypes("clip.webm")).toEqual(["video"]);
+    expect(listCompatibleMediaAssetImportTypes("song.WAV")).toEqual(["audio"]);
     expect(
       listCompatibleMediaAssetImportTypes("checkpoint.safetensors"),
     ).toEqual(["model", "lora", "embedding"]);
@@ -21,6 +22,7 @@ describe("media asset import types", () => {
     ["/library/loras/characters/nova.safetensors", "lora"],
     ["/library/embeddings/nova.safetensors", "embedding"],
     ["/library/images/nova.webp", "image"],
+    ["/library/music/voice.wav", "audio"],
   ] as const)("infers %s as %s", (path, expected) => {
     expect(inferMediaAssetImportType(path)).toBe(expected);
   });

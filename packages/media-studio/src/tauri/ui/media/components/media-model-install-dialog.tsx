@@ -61,7 +61,7 @@ export const MediaModelInstallDialog = ({
   const jobId = job?.id;
   const active = activeJob(job);
   useEffect(() => {
-    if (!jobId || !active) return;
+    if (!jobId || !active || pending) return;
     let current = true;
     let timer: ReturnType<typeof setTimeout>;
     const poll = async (): Promise<void> => {
@@ -86,7 +86,7 @@ export const MediaModelInstallDialog = ({
       current = false;
       clearTimeout(timer);
     };
-  }, [jobId, active, onInstalled]);
+  }, [jobId, active, pending, onInstalled]);
   const start = async (): Promise<void> => {
     if (!plan) return;
     jobMutation.current += 1;

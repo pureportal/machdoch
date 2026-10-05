@@ -879,7 +879,6 @@ fn delete_model_data(paths: &MediaRuntimePaths, removal_id: &str) -> MediaResult
         .transaction()
         .map_err(|error| format!("failed to begin model data deletion: {error}"))?;
     for table in [
-        "media_model_runtime_probes",
         "media_model_install_jobs",
         "media_model_license_acceptances",
         "media_model_lifecycle_snapshots",

@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   startupError: false,
   shutdown: vi.fn<() => Promise<void>>(),
   gateway: vi.fn(async () => ({ reason: "disabled" as const })),
+  synchronize: vi.fn(async () => undefined),
+  settingsService: vi.fn(async () => undefined),
 }));
 vi.mock("../../core/fleet-connection.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../core/fleet-connection.js")>()),
@@ -19,6 +21,10 @@ vi.mock("../../core/fleet-connection.js", async (importOriginal) => ({
 }));
 vi.mock("./cli-fleet-gateway.js", () => ({
   runFleetGatewayService: mocks.gateway,
+}));
+vi.mock("../../core/fleet-settings.js", () => ({
+  synchronizeFleetSettings: mocks.synchronize,
+  runFleetSettingsService: mocks.settingsService,
 }));
 vi.mock("./cli-fleet-product.js", () => ({
   FleetCliProductRuntime: {

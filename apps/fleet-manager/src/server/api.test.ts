@@ -28,6 +28,245 @@ afterEach(() => {
 });
 
 describe("Fleet Manager API", () => {
+  it("captures encrypted device settings once and only exposes them to the owner", async () => {
+    runtime = testRuntime();
+    setRuntimeForTests(runtime);
+    const device = enrollTestInstance(runtime);
+    const capture = async (document: unknown, secret = device.instanceSecret) =>
+      handleApiRequest(
+        new Request(
+          `https://fleet.example.test/api/client/settings/${device.instanceId}/enrollment`,
+          {
+            method: "PUT",
+            headers: {
+              Authorization: `Bearer ${secret}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(document),
+          },
+        ),
+        { clientAddress: "198.51.100.10" },
+      );
+    const original = emptySettingsDocument();
+    original.defaults.theme = "dark";
+    expect((await capture(original, createSecret("mch_instance"))).status).toBe(
+      401,
+    );
+    expect(
+      (
+        await capture({
+          ...original,
+          secrets: { openai: "never-capture-api-keys" },
+        })
+      ).status,
+    ).toBe(400);
+    expect((await capture(original)).status).toBe(204);
+    expect(
+      (
+        await capture({
+          ...original,
+          defaults: { ...original.defaults, theme: "light" },
+        })
+      ).status,
+    ).toBe(204);
+    const row = runtime.database.get(
+      "SELECT document_ciphertext FROM enrollment_settings WHERE instance_id = ?",
+      device.instanceId,
+    );
+    expect(row!.document_ciphertext).toBeInstanceOf(Uint8Array);
+    expect(
+      Buffer.from(row!.document_ciphertext as Uint8Array).toString("utf8"),
+    ).not.toContain("dark");
+    expect((await apiRequest("/api/settings/enrollment", "GET")).status).toBe(
+      401,
+    );
+    const { cookie } = await authenticateTestOwner();
+    const inventory = await apiRequest(
+      "/api/settings/enrollment",
+      "GET",
+      undefined,
+      cookie,
+    );
+    expect((await inventory.json()).devices).toMatchObject([
+      { instanceId: device.instanceId },
+    ]);
+    const response = await apiRequest(
+      `/api/settings/instances/${device.instanceId}/enrollment`,
+      "GET",
+      undefined,
+      cookie,
+    );
+    expect((await response.json()).document.defaults.theme).toBe("dark");
+    expect(runtime.settingsStore.listProfiles()).toEqual([]);
+    runtime.fleetStore.revokeInstance(device.instanceId, nowSeconds());
+    expect((await capture(original)).status).toBe(401);
+    expect(
+      (
+        await apiRequest(
+          `/api/settings/instances/${device.instanceId}/enrollment`,
+          "GET",
+          undefined,
+          cookie,
+        )
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await (
+          await apiRequest("/api/settings/enrollment", "GET", undefined, cookie)
+        ).json()
+      ).devices,
+    ).toEqual([]);
+  });
+
+  it("cannot capture settings after instance revocation during body reading", async () => {
+    runtime = testRuntime();
+    setRuntimeForTests(runtime);
+    const device = enrollTestInstance(runtime);
+    const request = new Request(
+      `https://fleet.example.test/api/client/settings/${device.instanceId}/enrollment`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${device.instanceSecret}`,
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      },
+    );
+    vi.spyOn(request, "text").mockImplementation(async () => {
+      runtime!.fleetStore.revokeInstance(device.instanceId, nowSeconds());
+      return JSON.stringify(emptySettingsDocument());
+    });
+    expect(
+      (await handleApiRequest(request, { clientAddress: "198.51.100.10" }))
+        .status,
+    ).toBe(401);
+    expect(
+      runtime.database.all("SELECT instance_id FROM enrollment_settings"),
+    ).toEqual([]);
+  });
+  it("rejects a settings sync report when the instance is revoked while reading its body", async () => {
+    runtime = testRuntime();
+    setRuntimeForTests(runtime);
+    const { instanceId, instanceSecret } = enrollTestInstance(runtime);
+    const body = {
+      managerId: runtime.database.managerId(),
+      status: "applied",
+      profileId: null,
+      revision: null,
+    };
+    const request = new Request(
+      `https://fleet.example.test/api/client/settings/${instanceId}/sync-status`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${instanceSecret}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      },
+    );
+    vi.spyOn(request, "text").mockImplementation(async () => {
+      runtime!.fleetStore.revokeInstance(instanceId, nowSeconds());
+      return JSON.stringify(body);
+    });
+    const recordApplied = vi.spyOn(runtime.settingsStore, "recordApplied");
+    expect(
+      (await handleApiRequest(request, { clientAddress: "198.51.100.10" }))
+        .status,
+    ).toBe(401);
+    expect(recordApplied).not.toHaveBeenCalled();
+  });
+  it("rejects settings writes when the owner session is revoked while reading the body", async () => {
+    runtime = testRuntime();
+    setRuntimeForTests(runtime);
+    const { cookie, csrf } = await authenticateTestOwner();
+    const request = new Request(
+      "https://fleet.example.test/api/settings/profiles",
+      {
+        method: "POST",
+        headers: {
+          Origin: "https://fleet.example.test",
+          Cookie: cookie,
+          "X-Machdoch-Fleet-CSRF": csrf,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: "Engineering" }),
+      },
+    );
+    vi.spyOn(request, "json").mockImplementation(async () => {
+      runtime!.authStore.changeOwnerPassword(
+        "owner",
+        "a changed secure password",
+        nowSeconds(),
+      );
+      return { name: "Engineering" };
+    });
+    const response = await handleApiRequest(request, {
+      clientAddress: "198.51.100.10",
+    });
+    expect(response.status).toBe(401);
+    expect(runtime.settingsStore.listProfiles()).toEqual([]);
+  });
+  it("authenticates fleet status and removes instances revoked during collection", async () => {
+    runtime = testRuntime();
+    setRuntimeForTests(runtime);
+    expect((await apiRequest("/api/fleet/status", "GET")).status).toBe(401);
+    const { cookie } = await authenticateTestOwner();
+    const instance = enrollTestInstance(runtime);
+    vi.spyOn(runtime.gateways, "isOnline").mockReturnValue(true);
+    vi.spyOn(runtime.gateways, "relay").mockImplementation(async () => {
+      runtime!.fleetStore.revokeInstance(instance.instanceId, nowSeconds());
+      return {
+        type: "productSnapshot",
+        snapshot: {
+          enabled: true,
+          serverTime: Date.now(),
+          eventId: 0,
+          sessions: [],
+          commands: [],
+        },
+      };
+    });
+    const response = await apiRequest(
+      "/api/fleet/status",
+      "GET",
+      undefined,
+      cookie,
+    );
+    expect(response.status).toBe(200);
+    expect((await response.json()).devices).toEqual([]);
+  });
+
+  it("rechecks owner authentication after collecting fleet status", async () => {
+    runtime = testRuntime();
+    setRuntimeForTests(runtime);
+    const { cookie } = await authenticateTestOwner();
+    enrollTestInstance(runtime);
+    vi.spyOn(runtime.gateways, "isOnline").mockReturnValue(true);
+    vi.spyOn(runtime.gateways, "relay").mockImplementation(async () => {
+      runtime!.authStore.changeOwnerPassword(
+        "owner",
+        "a changed secure password",
+        nowSeconds(),
+      );
+      return {
+        type: "productSnapshot",
+        snapshot: {
+          enabled: true,
+          serverTime: Date.now(),
+          eventId: 0,
+          sessions: [],
+          commands: [],
+        },
+      };
+    });
+    expect(
+      (await apiRequest("/api/fleet/status", "GET", undefined, cookie)).status,
+    ).toBe(401);
+  });
+
   it("delivers no managed settings when Settings Manager is disabled and preserves assignments", async () => {
     runtime = testRuntime();
     setRuntimeForTests(runtime);

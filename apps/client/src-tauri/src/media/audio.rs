@@ -32,7 +32,7 @@ pub(crate) struct GenerateMediaAudioRequest {
 }
 
 impl GenerateMediaAudioRequest {
-    fn validate(&mut self) -> MediaResult<()> {
+    pub(super) fn validate_values(&mut self) -> MediaResult<()> {
         if self.schema_version != 1 {
             return Err("Audio generation requires schemaVersion 1".into());
         }
@@ -58,6 +58,11 @@ impl GenerateMediaAudioRequest {
         {
             return Err("Check audio duration, steps, guidance, and seed.".into());
         }
+        Ok(())
+    }
+
+    fn validate(&mut self) -> MediaResult<()> {
+        self.validate_values()?;
         self.plan_snapshot.validate(&self.plan_id, &self.flow_id)?;
         let tasks: Vec<_> = self
             .plan_snapshot
