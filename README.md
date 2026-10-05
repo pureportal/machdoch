@@ -117,7 +117,7 @@ Use `machdoch --help` or `machdoch config` for terminal diagnostics. For updates
 
 ## Credits
 
-MiniMax H3 support uses code from [Fizgig](https://github.com/shootthesound/Fizgig) by [@shootthesound](https://github.com/shootthesound).
+MiniMax H3 support uses code from [Fizgig](https://github.com/shootthesound/Fizgig) by [@shootthesound](https://github.com/shootthesound) - (Apache-2.0).
 
 ## Licence
 
