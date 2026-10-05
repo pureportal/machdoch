@@ -1,8 +1,8 @@
-import { mkdir, readFile, readdir } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
+import { mkdir, readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { create as createTar } from "tar";
+import { buildBrowserRuntimeArchive } from "./browser-runtime-archive.mjs";
 
 import { build } from "rolldown";
 
@@ -26,22 +26,9 @@ require.resolve = (request, options) => {
 
 await mkdir(dirname(outputFile), { recursive: true });
 const playwrightRoot = dirname(require.resolve("playwright-core/package.json"));
-const playwrightFiles = (
-  await readdir(playwrightRoot, { recursive: true, withFileTypes: true })
-)
-  .filter((entry) => entry.isFile())
-  .map((entry) => relative(playwrightRoot, join(entry.parentPath, entry.name)))
-  .sort();
-await createTar(
-  {
-    cwd: playwrightRoot,
-    file: resolve(projectRoot, "dist", "machdoch-browser-runtime.tar.gz"),
-    gzip: true,
-    portable: true,
-    strict: true,
-    prefix: "node_modules/playwright-core",
-  },
-  playwrightFiles,
+await buildBrowserRuntimeArchive(
+  playwrightRoot,
+  resolve(projectRoot, "dist", "machdoch-browser-runtime.tar.gz"),
 );
 
 await build({
