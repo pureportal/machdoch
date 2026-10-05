@@ -2,8 +2,9 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { prepareRalphRunWorktree } from "./ralph-run-worktree.helper.js";
+import * as worktreeGit from "./ralph-worktree-git.helper.js";
 
 const temporaryRoots: string[] = [];
 
@@ -35,6 +36,9 @@ const createRepository = async (): Promise<{
   execFileSync("git", ["config", "user.name", "RALPH Test"], {
     cwd: repository,
   });
+  execFileSync("git", ["config", "core.autocrlf", "false"], {
+    cwd: repository,
+  });
   await writeFile(join(repository, "source.txt"), "original\n");
   execFileSync("git", ["add", "source.txt"], { cwd: repository });
   execFileSync("git", ["commit", "-qm", "initial"], { cwd: repository });
@@ -42,6 +46,69 @@ const createRepository = async (): Promise<{
 };
 
 describe("RALPH run worktrees", () => {
+  it("removes an interrupted checkout and permits another attempt", async () => {
+    const { repository } = await createRepository();
+    const runDirectory = join(
+      repository,
+      ".machdoch",
+      "ralph",
+      "runs",
+      "interrupted",
+    );
+    await mkdir(runDirectory, { recursive: true });
+    const runGit = worktreeGit.runRalphWorktreeGit;
+    let interruptedRoot = "";
+    let interruptedBranch = "";
+    let interruptCheckout = true;
+    vi.spyOn(worktreeGit, "runRalphWorktreeGit").mockImplementation(
+      async (cwd, args, options) => {
+        if (interruptCheckout && args[0] === "worktree" && args[1] === "add") {
+          interruptCheckout = false;
+          interruptedRoot = args[2]!;
+          interruptedBranch = args[3]!;
+          await runGit(cwd, [
+            "worktree",
+            "add",
+            "--no-checkout",
+            interruptedRoot,
+            interruptedBranch,
+          ]);
+          await runGit(cwd, [
+            "worktree",
+            "lock",
+            "--reason",
+            "initializing",
+            interruptedRoot,
+          ]);
+          throw new Error("Git checkout timed out");
+        }
+        return runGit(cwd, args, options);
+      },
+    );
+
+    await expect(
+      prepareRalphRunWorktree(repository, runDirectory),
+    ).rejects.toThrow("Git checkout timed out");
+    await expect(readFile(join(interruptedRoot, ".git"))).rejects.toMatchObject(
+      { code: "ENOENT" },
+    );
+    expect(
+      await runGit(repository, ["branch", "--list", interruptedBranch]),
+    ).toBe("");
+    expect(await readFile(join(repository, "source.txt"), "utf8")).toBe(
+      "original\n",
+    );
+
+    const worktree = await prepareRalphRunWorktree(repository, runDirectory);
+    expect(worktree.worktreeRoot).toBe(interruptedRoot);
+    expect(
+      await readFile(
+        join(worktree.executionWorkspaceRoot, "source.txt"),
+        "utf8",
+      ),
+    ).toBe("original\n");
+  }, 60_000);
+
   it("creates independent worktrees for simultaneous runs and reuses one on resume", async () => {
     const { repository } = await createRepository();
     const firstDirectory = join(

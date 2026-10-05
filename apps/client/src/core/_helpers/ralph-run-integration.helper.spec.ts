@@ -63,6 +63,51 @@ const noRepair = async (): Promise<void> => {
 const noVerification = async (): Promise<void> => undefined;
 
 describe("automatic RALPH integration", () => {
+  it("integrates while ignored runtime data exists in the verification candidate", async () => {
+    const { repository, createRun } = await createRepository();
+    await writeFile(join(repository, ".gitignore"), ".machdoch\n");
+    git(repository, "add", ".gitignore");
+    git(repository, "commit", "-qm", "ignore runtime data");
+    const { directory, worktree } = await createRun("ignored-runtime");
+    await writeFile(join(worktree.worktreeRoot, "source.txt"), "candidate\n");
+    const verify = vi.fn(async (candidate: string) => {
+      await mkdir(join(candidate, ".machdoch"), { recursive: true });
+      await writeFile(join(candidate, ".machdoch", "private.json"), "{}");
+      await mkdir(join(candidate, "nested"), { recursive: true });
+      await writeFile(join(candidate, "nested", ".machdoch"), "private");
+    });
+
+    const result = await integrateRalphRunWorktree(worktree, directory, {
+      verify,
+      repair: noRepair,
+    });
+
+    expect(result).toMatchObject({
+      status: "merged",
+      changedPaths: ["source.txt"],
+    });
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(await readFile(join(repository, "source.txt"), "utf8")).toBe(
+      "candidate\n",
+    );
+    await expect(
+      readFile(join(repository, "nested", ".machdoch")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect(
+      await readFile(
+        join(
+          repository,
+          ".machdoch",
+          "ralph",
+          "runs",
+          "ignored-runtime",
+          "workspace-isolation.json",
+        ),
+        "utf8",
+      ),
+    ).toContain(worktree.branch);
+  }, 90_000);
+
   it("merges source files using Windows line endings", async () => {
     const { repository, createRun } = await createRepository();
     git(repository, "config", "core.autocrlf", "true");

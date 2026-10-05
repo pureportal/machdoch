@@ -233,14 +233,6 @@ export const prepareRalphRunWorktree = async (
       `RALPH run worktree already exists without ownership metadata: ${worktreeRoot}`,
     );
   }
-  await runGit(repositoryRoot, [
-    "worktree",
-    "add",
-    "-b",
-    branch,
-    worktreeRoot,
-    head,
-  ]);
   const worktree: RalphRunWorktree = {
     sourceWorkspaceRoot,
     executionWorkspaceRoot,
@@ -250,7 +242,9 @@ export const prepareRalphRunWorktree = async (
     sourceBranch: await runGit(repositoryRoot, ["branch", "--show-current"]),
     baseCommit: "",
   };
+  await runGit(repositoryRoot, ["branch", branch, head]);
   try {
+    await runGit(repositoryRoot, ["worktree", "add", worktreeRoot, branch]);
     await snapshotWorkspaceChanges(repositoryRoot, worktreeRoot, head);
     worktree.baseCommit = await commitRalphSnapshot(
       worktreeRoot,
@@ -265,12 +259,37 @@ export const prepareRalphRunWorktree = async (
     await writeJsonAtomically(metadataPath, worktree);
   } catch (error) {
     try {
-      await runGit(repositoryRoot, [
+      const registeredWorktrees = await runGit(repositoryRoot, [
         "worktree",
-        "remove",
-        "--force",
-        worktreeRoot,
+        "list",
+        "--porcelain",
+        "-z",
       ]);
+      if (
+        registeredWorktrees
+          .split("\0")
+          .some(
+            (field) =>
+              field.startsWith("worktree ") &&
+              resolve(field.slice("worktree ".length)) === worktreeRoot,
+          )
+      ) {
+        if (
+          (await runGit(worktreeRoot, ["branch", "--show-current"])) !==
+            branch ||
+          (await getCommonGitDirectory(worktreeRoot)) !==
+            (await getCommonGitDirectory(repositoryRoot))
+        ) {
+          throw new Error("RALPH cannot remove a worktree it does not own.");
+        }
+        await runGit(repositoryRoot, [
+          "worktree",
+          "remove",
+          "--force",
+          "--force",
+          worktreeRoot,
+        ]);
+      }
       await runGit(repositoryRoot, ["branch", "-D", branch]);
       await runGit(repositoryRoot, [
         "update-ref",

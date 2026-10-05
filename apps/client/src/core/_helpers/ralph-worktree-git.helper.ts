@@ -5,7 +5,9 @@ import { runStreamingCommand } from "./streaming-command.js";
 
 export const RALPH_SOURCE_PATHS = [
   ".",
+  ":(glob,exclude).machdoch",
   ":(glob,exclude).machdoch/**",
+  ":(glob,exclude)**/.machdoch",
   ":(glob,exclude)**/.machdoch/**",
 ];
 
@@ -45,6 +47,38 @@ export const runRalphWorktreeGit = async (
   }
 };
 
+export const stageRalphSourceChanges = async (
+  root: string,
+  options: { env?: NodeJS.ProcessEnv } = {},
+): Promise<void> => {
+  const files = await runRalphWorktreeGit(
+    root,
+    [
+      "ls-files",
+      "--cached",
+      "--others",
+      "--exclude-standard",
+      "-z",
+      "--",
+      ...RALPH_SOURCE_PATHS,
+    ],
+    options,
+  );
+  const paths = [...new Set(files.split("\0").filter(Boolean))];
+  if (paths.length === 0) return;
+  await runRalphWorktreeGit(
+    root,
+    [
+      "--literal-pathspecs",
+      "add",
+      "--all",
+      "--pathspec-from-file=-",
+      "--pathspec-file-nul",
+    ],
+    { ...options, input: `${paths.join("\0")}\0` },
+  );
+};
+
 export const snapshotRalphWorktree = async (root: string): Promise<string> => {
   const gitDirectory = (
     await runRalphWorktreeGit(root, [
@@ -57,14 +91,18 @@ export const snapshotRalphWorktree = async (root: string): Promise<string> => {
   const env = { ...process.env, GIT_INDEX_FILE: indexPath };
   try {
     await runRalphWorktreeGit(root, ["read-tree", "HEAD"], { env });
-    await runRalphWorktreeGit(
-      root,
-      ["add", "--all", "--", ...RALPH_SOURCE_PATHS],
-      { env },
-    );
+    await stageRalphSourceChanges(root, { env });
     const artifacts = await runRalphWorktreeGit(
       root,
-      ["ls-files", "-z", "--", ":(glob).machdoch/**", ":(glob)**/.machdoch/**"],
+      [
+        "ls-files",
+        "-z",
+        "--",
+        ":(glob).machdoch",
+        ":(glob).machdoch/**",
+        ":(glob)**/.machdoch",
+        ":(glob)**/.machdoch/**",
+      ],
       { env },
     );
     if (artifacts) {
