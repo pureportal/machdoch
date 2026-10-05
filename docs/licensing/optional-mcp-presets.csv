@@ -1,0 +1,6 @@
+name,version_observed,license,repository,url,scope,error
+serper-search-mcp,3.0.3,Apache-2.0,git+https://github.com/smjahid012/serper-search-mcp-server.git,https://registry.npmjs.org/serper-search-mcp/latest,"optional runtime npx preset; unpinned, not necessarily installed or redistributed",
+firecrawl-mcp,3.27.3,MIT,git+https://github.com/firecrawl/firecrawl-mcp-server.git,https://registry.npmjs.org/firecrawl-mcp/latest,"optional runtime npx preset; unpinned, not necessarily installed or redistributed",
+chrome-devtools-mcp,1.10.1,Apache-2.0,git+https://github.com/ChromeDevTools/chrome-devtools-mcp.git,https://registry.npmjs.org/chrome-devtools-mcp/latest,"optional runtime npx preset; unpinned, not necessarily installed or redistributed",
+@playwright/mcp,0.0.83,Apache-2.0,git+https://github.com/microsoft/playwright-mcp.git,https://registry.npmjs.org/%40playwright%2Fmcp/latest,"optional runtime npx preset; unpinned, not necessarily installed or redistributed",
+@hypothesi/tauri-mcp-server,0.13.0,MIT,git+https://github.com/hypothesi/mcp-server-tauri.git,https://registry.npmjs.org/%40hypothesi%2Ftauri-mcp-server/latest,"optional runtime npx preset; unpinned, not necessarily installed or redistributed",

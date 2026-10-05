@@ -10,7 +10,7 @@
     },
     "beforeBuildCommand": {
       "cwd": "..",
-      "script": "node scripts/prepare-whisper-model.mjs && pnpm run build:cli-bundle && pnpm run build:ui"
+      "script": "node scripts/prepare-whisper-model.mjs && pnpm run build:cli-bundle && pnpm run build:ui && node ../../scripts/licensing/generate.mjs desktop"
     },
     "devUrl": "http://127.0.0.1:4173",
     "frontendDist": "../dist/ui-preview"
@@ -48,11 +48,14 @@
   "bundle": {
     "active": true,
     "publisher": "machdoch",
+    "license": "Apache-2.0",
+    "licenseFile": "../../../LICENSE",
     "homepage": "https://github.com/pureportal/machdoch",
     "category": "Productivity",
     "shortDescription": "Local-first OS AI agent for CLI and desktop.",
     "longDescription": "Machdoch is a local-first AI assistant for Windows and Linux that works with folders, runs tasks, and automates repeatable workflows from the desktop or CLI.",
     "resources": {
+      "../dist/legal-desktop": "legal",
       "resources/whisper/ggml-base-q5_1.bin": "whisper/ggml-base-q5_1.bin",
       "resources/whisper/LICENSE-whisper.cpp.txt": "whisper/LICENSE-whisper.cpp.txt",
       "resources/whisper/LICENSE-whisper-model.txt": "whisper/LICENSE-whisper-model.txt",

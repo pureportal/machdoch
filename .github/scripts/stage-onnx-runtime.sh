@@ -31,3 +31,7 @@ install -Dm755 \
   apps/client/src-tauri/target/onnxruntime/libonnxruntime.so.1
 ln -sfn libonnxruntime.so.1 \
   apps/client/src-tauri/target/onnxruntime/libonnxruntime.so
+install -Dm644 "$extraction_directory/LICENSE" \
+  apps/client/src-tauri/target/onnxruntime/legal/LICENSE
+install -Dm644 "$extraction_directory/ThirdPartyNotices.txt" \
+  apps/client/src-tauri/target/onnxruntime/legal/ThirdPartyNotices.txt

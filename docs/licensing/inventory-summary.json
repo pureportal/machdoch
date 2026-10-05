@@ -1,0 +1,59 @@
+{
+  "date": "2026-10-05",
+  "git_head": "adca921d2463856b64edd0d3b03bb8a72abcb037",
+  "pnpm_lock_sha256": "eb30bbd96cce0235372bed3b081ce4cd7c337e9d726878fb83bfefca8a5803ad",
+  "npm_locked_packages": 883,
+  "npm_unresolved": [],
+  "npm_installed_outside_lock": 239,
+  "rust_lock_packages": 862,
+  "rust_exact_cached_metadata": 599,
+  "rust_unresolved": [],
+  "python_direct_requirements": 17,
+  "python_unresolved": [],
+  "model_profiles": 31,
+  "tracked_binary_assets": 66,
+  "python_installed_metadata_records": 163,
+  "python_installed_unique_versions": 83,
+  "publisher_model_metadata_records": 39,
+  "android_runtime_coordinates": 36,
+  "android_unresolved": [],
+  "embedded_legal_files": 156,
+  "comfyui_source_commit_checked": "5c460d8172fe30761ff67c0df3d5643bb74e0d70",
+  "npm_exact_local_metadata": 707,
+  "npm_installed_outside_lock_are_pnpm_cache_only": true,
+  "python_metadata_without_license_or_inspected_license_text": [
+    "amd-torch-device-gfx12-0",
+    "amd-torch-device-gfx1201",
+    "amd-torchvision-device-gfx1201",
+    "rocm",
+    "rocm-sdk-core",
+    "rocm-sdk-device-gfx1201",
+    "rocm-sdk-libraries"
+  ],
+  "model_license_digest_checks": 20,
+  "model_license_digests_matching": 20,
+  "primary_source_checks": 22,
+  "primary_sources_unresolved": [
+    {
+      "url": "https://raw.githubusercontent.com/Stability-AI/ModelSpec/main/LICENSE.md",
+      "sha256": "",
+      "bytes": "",
+      "checked": "2026-10-05",
+      "error": "HTTP Error 404: Not Found"
+    }
+  ],
+  "direct_npm_runtime_packages_verified": 66,
+  "direct_npm_runtime_package_version_mismatches": 0,
+  "restricted_model_license_documents_inspected": 10,
+  "restricted_model_license_documents_unresolved": [
+    {
+      "repository": "krea/Krea-2-Raw",
+      "revision": "6b0ece7fffb640c5e3bcbe0a7f10f66b8e60a603",
+      "document_url": "https://huggingface.co/krea/Krea-2-Raw/resolve/6b0ece7fffb640c5e3bcbe0a7f10f66b8e60a603/LICENSE.pdf",
+      "sha256": "",
+      "bytes": "",
+      "evidence": "Publisher public community-licence text inspected; exact pinned PDF inaccessible",
+      "error": "HTTP Error 401: Unauthorized"
+    }
+  ]
+}

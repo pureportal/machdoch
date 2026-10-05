@@ -1,0 +1,8 @@
+{
+  "name": "convert_case",
+  "version": "0.4.0",
+  "license": "MIT",
+  "source": "https://crates.io/api/v1/crates/convert_case/0.4.0",
+  "termsSource": "https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/MIT.txt",
+  "terms": "Standard permission and disclaimer clauses; retain upstream attribution in the original package manifest and source."
+}
