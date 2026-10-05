@@ -32,17 +32,9 @@ if (dirname(stage) !== dist)
 try {
   const root = join(stage, "machdoch");
   await mkdir(root);
-  await cp(join(dist, "legal-headless"), join(root, "legal"), {
+  await cp(join(dist, "legal-headless"), root, {
     recursive: true,
   });
-  for (const name of [
-    "LICENSE",
-    "NOTICE",
-    "EULA.md",
-    "THIRD_PARTY_NOTICES.md",
-  ]) {
-    await cp(join(repositoryRoot, name), join(root, name));
-  }
   await cp(join(dist, "machdoch-cli.cjs"), join(root, "machdoch-cli.cjs"));
   await cp(
     join(repositoryRoot, "packaging/headless/machdoch"),
