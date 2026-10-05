@@ -167,6 +167,7 @@ import {
   transitionRalphWorkItemState,
 } from "./_helpers/transition-ralph-work-item-state.helper.js";
 import { collectActiveRalphJsonTaskClaims } from "./_helpers/ralph-json-task-claims.helper.js";
+import { startRalphHeartbeat } from "./_helpers/start-ralph-heartbeat.helper.js";
 import {
   createRalphAppendJsonlLedger,
   parseRalphAppendJsonlLedger,
@@ -2632,22 +2633,18 @@ export const acquireRalphFileMutationLock = async (
         }
       };
       await assertOwnership();
-      let heartbeatPending = Promise.resolve();
-      const heartbeatHandle = setInterval(
-        () => {
-          heartbeatPending = heartbeatPending
-            .then(async () => {
-              await assertOwnership();
-              await retryRalphMutationLeaseOperation(async () => {
-                const now = new Date();
-                await utimes(lockPath, now, now);
-              }, retryWindowMs);
-            })
-            .catch((error: unknown) => {
-              compromiseError ??= error;
-            });
+      const stopHeartbeat = startRalphHeartbeat(
+        async () => {
+          await assertOwnership();
+          await retryRalphMutationLeaseOperation(async () => {
+            const now = new Date();
+            await utimes(lockPath, now, now);
+          }, retryWindowMs);
         },
         Math.max(1_000, Math.floor(staleAfterMs / 3)),
+        (error) => {
+          compromiseError ??= error;
+        },
       );
 
       let lock: RalphFileMutationLock;
@@ -2655,8 +2652,7 @@ export const acquireRalphFileMutationLock = async (
         path: lockPath,
         assertOwnership,
         release: async () => {
-          clearInterval(heartbeatHandle);
-          await heartbeatPending.catch(() => undefined);
+          await stopHeartbeat();
           const record = await retryRalphMutationLeaseOperation(
             async () =>
               JSON.parse(await readFile(lockPath, "utf8")) as {
@@ -7906,6 +7902,16 @@ const executeSelectJsonTaskUtilityBlock = async (
       "completed",
     );
   } catch (error) {
+    if (error instanceof RalphMutationLeaseActiveError) {
+      return createUtilityResult(
+        block,
+        "DEFERRED",
+        `${block.title} is waiting for an active task update.`,
+        { path, jsonPath: utility.jsonPath ?? "tasks", retryable: true },
+        "completed",
+      );
+    }
+
     if (isFileNotFoundError(error)) {
       return createUtilityResult(
         block,
@@ -17331,30 +17337,26 @@ const runRalphFlowImpl = async (
         once: true,
       });
     }
-    let heartbeatPending = Promise.resolve();
-    const heartbeatHandle = setInterval(
-      () => {
-        heartbeatPending = heartbeatPending
-          .then(async () => {
-            await assertWorkspaceWriterOwnership();
-            await heartbeatRunOwnership();
-          })
-          .catch((error: unknown) => {
-            if (options.signal?.aborted) return;
-            if (
-              error instanceof RalphRunOwnershipLostError ||
-              error instanceof RalphRunStoreOwnershipError
-            ) {
-              markOwnershipLost(error);
-            } else {
-              markDurabilityDegraded(error);
-            }
-            if (durability.required) {
-              blockAbortController.abort(error);
-            }
-          });
+    const stopHeartbeat = startRalphHeartbeat(
+      async () => {
+        await assertWorkspaceWriterOwnership();
+        await heartbeatRunOwnership();
       },
       Math.max(250, Math.floor(leaseDurationMs / 3)),
+      (error) => {
+        if (options.signal?.aborted) return;
+        if (
+          error instanceof RalphRunOwnershipLostError ||
+          error instanceof RalphRunStoreOwnershipError
+        ) {
+          markOwnershipLost(error);
+        } else {
+          markDurabilityDegraded(error);
+        }
+        if (durability.required) {
+          blockAbortController.abort(error);
+        }
+      },
     );
     let stepResult: RalphExecutionStepResult;
     try {
@@ -17383,8 +17385,7 @@ const runRalphFlowImpl = async (
               createRalphBlockExecutionErrorResult(block, error, attempt),
             ));
     } finally {
-      clearInterval(heartbeatHandle);
-      await heartbeatPending;
+      await stopHeartbeat();
       options.signal?.removeEventListener("abort", abortBlockFromOuterSignal);
     }
 
