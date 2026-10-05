@@ -1,5 +1,13 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type { ComponentProps } from "react";
 import { GoalControl as GoalControlView, GoalTrigger } from "./goal-control";
 import { useGoalDraft } from "./use-goal-draft";
@@ -22,6 +30,17 @@ function GoalControl(
 
 afterEach(cleanup);
 
+beforeAll(() => {
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: vi.fn(),
+  });
+});
+
+afterAll(() => {
+  Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+});
+
 describe("goal control", () => {
   it("shows native availability for a provider with only managed goals", () => {
     render(
@@ -37,15 +56,18 @@ describe("goal control", () => {
         onPause={vi.fn()}
       />,
     );
-    const mode = screen.getByRole<HTMLSelectElement>("combobox", {
+    const mode = screen.getByRole("combobox", {
       name: "Goal mode",
     });
-    expect(mode.value).toBe("machdoch");
+    expect(mode.textContent).toBe("Machdoch");
+    fireEvent.keyDown(mode, { key: "ArrowDown" });
     expect(
-      screen.getByRole<HTMLOptionElement>("option", {
-        name: "Native (unavailable)",
-      }).disabled,
-    ).toBe(true);
+      screen
+        .getByRole("option", {
+          name: "Native (unavailable)",
+        })
+        .getAttribute("aria-disabled"),
+    ).toBe("true");
   });
   it("starts in the newly selected mode instead of resuming the saved mode", () => {
     const onCommand = vi.fn();
@@ -161,9 +183,10 @@ describe("goal control", () => {
           onPause={vi.fn()}
         />,
       );
-      fireEvent.change(screen.getByRole("combobox", { name: "Goal mode" }), {
-        target: { value: "native" },
+      fireEvent.keyDown(screen.getByRole("combobox", { name: "Goal mode" }), {
+        key: "ArrowDown",
       });
+      fireEvent.click(screen.getByRole("option", { name: "Native" }));
       expect(onModeChange).toHaveBeenCalledWith("native");
       fireEvent.change(
         screen.getByRole("textbox", { name: "Goal objective" }),
