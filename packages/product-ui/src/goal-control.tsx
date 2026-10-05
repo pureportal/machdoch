@@ -1,5 +1,6 @@
 import type { ProductGoal } from "@machdoch/fleet-protocol";
-import { X } from "lucide-react";
+import { Check, ChevronDown, X } from "lucide-react";
+import { Select } from "radix-ui";
 import { GoalIcon } from "./composer-icons";
 import { useEffect, useId, useRef, type ReactElement } from "react";
 
@@ -143,28 +144,54 @@ export function GoalControl({
               {status}
             </span>
           ) : null}
-          <select
-            aria-label="Goal mode"
+          <Select.Root
             value={mode}
             disabled={disabled || running}
-            onChange={(event) =>
-              onModeChange(event.target.value as "machdoch" | "native")
+            onValueChange={(value) =>
+              onModeChange(value as "machdoch" | "native")
             }
           >
-            {(["machdoch", "native"] as const).map((value) => (
-              <option
-                key={value}
-                value={value}
-                disabled={!modes.includes(value)}
+            <Select.Trigger
+              className="m-goal-mode-trigger"
+              aria-label="Goal mode"
+            >
+              <Select.Value />
+              <Select.Icon asChild>
+                <ChevronDown aria-hidden="true" />
+              </Select.Icon>
+            </Select.Trigger>
+            <Select.Portal>
+              <Select.Content
+                className="m-goal-mode-menu"
+                position="popper"
+                align="start"
+                sideOffset={6}
+                collisionPadding={12}
               >
-                {value === "machdoch"
-                  ? "Machdoch"
-                  : modes.includes(value)
-                    ? "Native"
-                    : "Native (unavailable)"}
-              </option>
-            ))}
-          </select>
+                <Select.Viewport>
+                  {(["machdoch", "native"] as const).map((value) => (
+                    <Select.Item
+                      key={value}
+                      className="m-goal-mode-option"
+                      value={value}
+                      disabled={!modes.includes(value)}
+                    >
+                      <Select.ItemText>
+                        {value === "machdoch"
+                          ? "Machdoch"
+                          : modes.includes(value)
+                            ? "Native"
+                            : "Native (unavailable)"}
+                      </Select.ItemText>
+                      <Select.ItemIndicator>
+                        <Check aria-hidden="true" />
+                      </Select.ItemIndicator>
+                    </Select.Item>
+                  ))}
+                </Select.Viewport>
+              </Select.Content>
+            </Select.Portal>
+          </Select.Root>
           <button
             type="button"
             className="m-goal-close"
