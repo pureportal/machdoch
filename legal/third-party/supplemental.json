@@ -796,5 +796,160 @@
         "sha256": "9645fb6e878aebd5e959be648a71973a108d4aa0d18eee478d0579066ad99958"
       }
     ]
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "cookie-factory",
+    "version": "0.3.3",
+    "evidence": ["https://crates.io/api/v1/crates/cookie-factory/0.3.3"],
+    "files": [
+      {
+        "file": "legal/third-party/supplemental/cargo/cookie-factory@0.3.3/MIT.txt",
+        "source": "https://raw.githubusercontent.com/rust-bakery/cookie-factory/d36b805dbd7dd65f2df947235c5bcc573afe2c76/LICENSES/MIT.txt",
+        "sha256": "d09216dc1ea5f273997667935a8d6514d80f00b89fb6954ecc3a43e0a6e360de"
+      }
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "dlopen2",
+    "version": "0.8.2",
+    "evidence": ["https://crates.io/api/v1/crates/dlopen2/0.8.2"],
+    "files": [
+      {
+        "file": "legal/third-party/supplemental/cargo/dlopen2@0.8.2/LICENSE",
+        "source": "https://raw.githubusercontent.com/OpenByteDev/dlopen2/cc80e4a0a90d499b677fdf7743699b4b3a43a989/LICENSE",
+        "sha256": "39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2"
+      }
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "dlopen2_derive",
+    "version": "0.4.3",
+    "evidence": ["https://crates.io/api/v1/crates/dlopen2_derive/0.4.3"],
+    "files": [
+      {
+        "file": "legal/third-party/supplemental/cargo/dlopen2_derive@0.4.3/LICENSE",
+        "source": "https://raw.githubusercontent.com/OpenByteDev/dlopen2/cc80e4a0a90d499b677fdf7743699b4b3a43a989/LICENSE",
+        "sha256": "39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2"
+      }
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "drm-fourcc",
+    "version": "2.2.0",
+    "evidence": ["https://crates.io/api/v1/crates/drm-fourcc/2.2.0"],
+    "files": [
+      {
+        "file": "legal/third-party/supplemental/cargo/drm-fourcc@2.2.0/LICENSE",
+        "source": "https://raw.githubusercontent.com/danielzfranklin/drm-fourcc-rs/bb1b81f184650e1418e1dce512e34071675206d7/LICENSE",
+        "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+      }
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "gbm-sys",
+    "version": "0.4.0",
+    "evidence": ["https://crates.io/api/v1/crates/gbm-sys/0.4.0"],
+    "files": [
+      {
+        "file": "legal/third-party/supplemental/cargo/gbm-sys@0.4.0/LICENSE",
+        "source": "https://raw.githubusercontent.com/Drakulix/gbm.rs/2b4047f8e5ab4d050d4ed88f5ee2515069478fac/LICENSE",
+        "sha256": "56ab09c42eb251646c1c00ba32f5db0e51e297cd379eccc5a1cb7808f2de4ce7"
+      }
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "gl",
+    "version": "0.14.0",
+    "evidence": ["https://crates.io/api/v1/crates/gl/0.14.0"],
+    "files": [
+      {
+        "file": "legal/third-party/supplemental/cargo/gl@0.14.0/LICENSE",
+        "source": "https://raw.githubusercontent.com/brendanzab/gl-rs/ea503e8d5fb6d73c6030e6191ce738cd3bf3433e/LICENSE",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      }
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "gl_generator",
+    "version": "0.14.0",
+    "evidence": ["https://crates.io/api/v1/crates/gl_generator/0.14.0"],
+    "files": [
+      {
+        "file": "legal/third-party/supplemental/cargo/gl_generator@0.14.0/LICENSE",
+        "source": "https://raw.githubusercontent.com/brendanzab/gl-rs/ea503e8d5fb6d73c6030e6191ce738cd3bf3433e/LICENSE",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      }
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "khronos_api",
+    "version": "3.1.0",
+    "evidence": ["https://crates.io/api/v1/crates/khronos_api/3.1.0"],
+    "files": [
+      {
+        "file": "legal/third-party/supplemental/cargo/khronos_api@3.1.0/LICENSE",
+        "source": "https://raw.githubusercontent.com/brendanzab/gl-rs/f150967b1c44ae888e6676f93f639ebc82771bdc/LICENSE",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      }
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "libappindicator-sys",
+    "version": "0.9.0",
+    "evidence": ["https://crates.io/api/v1/crates/libappindicator-sys/0.9.0"],
+    "files": [
+      {
+        "file": "legal/third-party/supplemental/cargo/libappindicator-sys@0.9.0/LICENSE-APACHE",
+        "source": "https://raw.githubusercontent.com/tauri-apps/libappindicator-rs/eafd1e3682a1247f595410266091e9684021cb6f/LICENSE-APACHE",
+        "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+      },
+      {
+        "file": "legal/third-party/supplemental/cargo/libappindicator-sys@0.9.0/LICENSE-MIT",
+        "source": "https://raw.githubusercontent.com/tauri-apps/libappindicator-rs/eafd1e3682a1247f595410266091e9684021cb6f/LICENSE-MIT",
+        "sha256": "eb227437252b2a7a9c1fc342c93ade1f3d7ce38cc6dd754f613db07d53ceff0b"
+      }
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "libwayshot-xcap",
+    "version": "0.3.2",
+    "evidence": ["https://crates.io/api/v1/crates/libwayshot-xcap/0.3.2"],
+    "files": [
+      {
+        "file": "legal/third-party/supplemental/cargo/libwayshot-xcap@0.3.2/LICENSE",
+        "source": "https://raw.githubusercontent.com/nashaofu/wayshot/2802b6822f7bd49131862025b67b7a5f9b3fae1e/LICENSE",
+        "sha256": "5e7ded91ff4154ae6787c6abafba9d63d2b12a0167382fb9ca50ce73e1b9e8ab"
+      }
+    ]
+  },
+  {
+    "ecosystem": "npm",
+    "name": "@img/sharp-libvips-linux-x64",
+    "version": "1.3.3",
+    "evidence": [
+      "https://registry.npmjs.org/%40img%2Fsharp-libvips-linux-x64/1.3.3"
+    ],
+    "files": [
+      {
+        "file": "legal/third-party/supplemental/npm/%40img%2Fsharp-libvips-linux-x64@1.3.3/THIRD-PARTY-NOTICES.md",
+        "source": "https://raw.githubusercontent.com/lovell/sharp-libvips/6e5971d333377743163edc3ad9e5d0b897abcbc9/THIRD-PARTY-NOTICES.md",
+        "sha256": "25ffcfa69e28b1913ced27ec778b90f24911a1bb3021253577e8b0af55db0d49"
+      },
+      {
+        "file": "legal/third-party/supplemental/npm/%40img%2Fsharp-libvips-linux-x64@1.3.3/LICENSE",
+        "source": "https://raw.githubusercontent.com/libvips/libvips/426af3f44246fce9cfa8dd51a353aa4dfd48c553/LICENSE",
+        "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
+      }
+    ]
   }
 ]
