@@ -8,8 +8,6 @@ import {
   runCommandSchema,
   type FleetManagedSettingsDelivery,
   type FleetManagedSettingsSyncReport,
-  type HostRequest,
-  type HostResponse,
 } from "@machdoch/fleet-protocol";
 import { z } from "zod";
 import {
@@ -20,6 +18,13 @@ import {
 import packageJson from "../../package.json";
 import { productVersionStatus } from "../lib/product-version";
 import { collectFleetStatus } from "./fleet-status";
+import { fleetSessionRequestSchema } from "../lib/fleet-session-routing";
+import { openFleetSession } from "./fleet-sessions";
+import {
+  relayInstanceRequest as relay,
+  requireManagedInstance,
+  throwHostError,
+} from "./instance-relay";
 import { getPreviewHub, previewOpenSchema } from "./previews";
 import type { AuthenticationOperation } from "./authentication-rate-limiter";
 import {
@@ -31,7 +36,6 @@ import {
 } from "./crypto";
 import { nowSeconds } from "./database";
 import { errorResponse, HttpError } from "./errors";
-import { GatewayError } from "./gateway";
 import { FleetStoreError, type EnrollmentGrant } from "./fleet-store";
 import {
   bearerToken,
@@ -57,7 +61,10 @@ import {
   validateSettingsDocument,
 } from "./settings";
 import { SettingsStoreError } from "./settings-store";
-import { maximumMediaRequestBodyBytes } from "./request-limits";
+import {
+  maximumMediaRequestBodyBytes,
+  maximumFleetSessionRequestBodyBytes,
+} from "./request-limits";
 
 const maximumAuthenticationBodyBytes = 16 * 1024;
 const maximumSettingsSyncReportBodyBytes = 16 * 1024;
@@ -223,6 +230,19 @@ async function routeApi(
     const status = await collectFleetStatus(runtime, request.signal);
     requireOwner(runtime, request);
     return Response.json(status);
+  }
+  if (method === "POST" && matches(path, "fleet", "sessions")) {
+    requireMutation(runtime, request);
+    const input = await parseJson(
+      request,
+      fleetSessionRequestSchema,
+      400,
+      "Session request is invalid.",
+      maximumFleetSessionRequestBodyBytes,
+    );
+    return Response.json(await openFleetSession(runtime, request, input), {
+      status: 201,
+    });
   }
   if (method === "DELETE" && path[0] === "instances" && path.length === 2) {
     return revokeInstance(runtime, request, path[1] ?? "");
@@ -782,6 +802,8 @@ async function executeInstanceProductCommand(
     },
     request.signal,
   );
+  requireOwner(runtime, request);
+  requireManagedInstance(runtime, instanceId);
   if (response.type === "error") throwHostError(response);
   if (
     response.type !== "commandAccepted" ||
@@ -1135,53 +1157,6 @@ function etagMatches(value: string | null, etag: string): boolean {
         return normalized === "*" || normalized === etag;
       })
     : false;
-}
-
-async function relay(
-  runtime: FleetRuntime,
-  instanceId: string,
-  request: HostRequest,
-  signal?: AbortSignal,
-): Promise<HostResponse> {
-  try {
-    return await runtime.gateways.relay(instanceId, request, signal);
-  } catch (error) {
-    if (!(error instanceof GatewayError)) throw error;
-    const failure = {
-      offline: [503, "Instance is offline."],
-      closed: [503, "Instance is offline."],
-      cancelled: [408, "Request was cancelled."],
-      timeout: [504, "Instance did not respond in time."],
-      busy: [429, "Instance has too many active requests."],
-      protocol: [502, "Instance returned an invalid gateway response."],
-    }[error.reason] as [number, string];
-    throw new HttpError(failure[0], failure[1]);
-  }
-}
-
-function throwHostError(
-  response: Extract<HostResponse, { type: "error" }>,
-): never {
-  const status = {
-    invalidRequest: 400,
-    conflict: 409,
-    unavailable: 503,
-    internal: 502,
-  }[response.code];
-  throw new HttpError(status, response.message);
-}
-
-function requireManagedInstance(
-  runtime: FleetRuntime,
-  instanceId: string,
-): void {
-  if (!validateId(instanceId, "instance")) {
-    throw new HttpError(404, "Instance was not found.");
-  }
-  const instance = runtime.fleetStore.getInstance(instanceId);
-  if (!instance || instance.revokedAt !== null) {
-    throw new HttpError(404, "Instance was not found.");
-  }
 }
 
 function requireSettings(runtime: FleetRuntime): void {

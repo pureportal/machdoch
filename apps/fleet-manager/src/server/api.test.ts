@@ -28,6 +28,51 @@ afterEach(() => {
 });
 
 describe("Fleet Manager API", () => {
+  it("protects fleet session routing with authentication, CSRF, and payload validation", async () => {
+    runtime = testRuntime();
+    setRuntimeForTests(runtime);
+    const relay = vi.spyOn(runtime.gateways, "relay");
+    expect((await apiRequest("/api/fleet/sessions", "POST", {})).status).toBe(
+      401,
+    );
+    const { cookie, csrf } = await authenticateTestOwner();
+    expect(
+      (await apiRequest("/api/fleet/sessions", "POST", {}, cookie)).status,
+    ).toBe(403);
+    expect(
+      (await apiRequest("/api/fleet/sessions", "POST", {}, cookie, csrf))
+        .status,
+    ).toBe(400);
+    expect(relay).not.toHaveBeenCalled();
+  });
+
+  it("does not disclose a command receipt after owner revocation during dispatch", async () => {
+    runtime = testRuntime();
+    setRuntimeForTests(runtime);
+    const { cookie, csrf } = await authenticateTestOwner();
+    const instance = enrollTestInstance(runtime);
+    vi.spyOn(runtime.gateways, "relay").mockImplementation(async () => {
+      runtime!.authStore.changeOwnerPassword(
+        "owner",
+        "a changed secure test password",
+        nowSeconds(),
+      );
+      return {
+        type: "commandAccepted",
+        receipt: { commandId: "command-1", duplicate: false },
+      };
+    });
+    const response = await apiRequest(
+      `/api/instances/${instance.instanceId}/product/commands`,
+      "POST",
+      { kind: "cancel", taskId: "task-1", commandId: "command-1" },
+      cookie,
+      csrf,
+    );
+    expect(response.status).toBe(401);
+    expect(await response.text()).not.toContain("command-1");
+  });
+
   it("captures encrypted device settings once and only exposes them to the owner", async () => {
     runtime = testRuntime();
     setRuntimeForTests(runtime);

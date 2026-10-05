@@ -3,6 +3,7 @@
   mediaResponseSchema,
 } from "@machdoch/fleet-protocol/media";
 export * from "@machdoch/fleet-protocol/media";
+export { createFleetSessionId } from "@machdoch/fleet-protocol/session-routing";
 import { z } from "zod";
 import { hostTelemetrySchema } from "@machdoch/fleet-protocol/telemetry";
 export {
@@ -1380,6 +1381,7 @@ export const projectLibrarySchema = z.strictObject({
 });
 
 export const productShellSchema = z.strictObject({
+  sessionRoutingAvailable: z.boolean().optional(),
   projectLibrary: projectLibrarySchema.optional(),
   poseSceneSvg: z.string().max(64_000).optional(),
   version: z.literal(productSnapshotVersion),

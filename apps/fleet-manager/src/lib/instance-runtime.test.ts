@@ -7,7 +7,10 @@ vi.mock("@machdoch/product-ui/fleet-api", () => ({
   api: vi.fn(),
   jsonBody: JSON.stringify,
 }));
-afterEach(() => vi.resetAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.resetAllMocks();
+});
 
 describe("fleet session navigation", () => {
   it("selects the requested session once through the normal command endpoint", async () => {
@@ -15,15 +18,19 @@ describe("fleet session navigation", () => {
     const sessionId = initial.shell!.sessions[0]!.id;
     initial.shell!.activeSessionId = "other";
     vi.mocked(api).mockImplementation(async (path, init) => {
-      if (path.endsWith("commands"))
+      if (path.endsWith("commands")) {
+        initial.shell!.activeSessionId = sessionId;
         return {
           commandId: JSON.parse(init!.body as string).commandId,
           duplicate: false,
         };
+      }
       return initial;
     });
     const runtime = createInstanceRuntime("device", false, sessionId);
-    await runtime.getSnapshot();
+    expect((await runtime.getSnapshot()).shell?.activeSessionId).toBe(
+      sessionId,
+    );
     await runtime.getSnapshot();
     const commands = vi
       .mocked(api)
@@ -33,6 +40,63 @@ describe("fleet session navigation", () => {
       kind: "activate-session",
       sessionId,
     });
+  });
+
+  it("waits for queued desktop activation before exposing the composer", async () => {
+    const initial = snapshot();
+    const sessionId = initial.shell!.sessions[0]!.id;
+    initial.shell!.activeSessionId = "other";
+    let queued = false;
+    let pendingReads = 0;
+    vi.mocked(api).mockImplementation(async (path, init) => {
+      if (path.endsWith("commands")) {
+        queued = true;
+        return {
+          commandId: JSON.parse(init!.body as string).commandId,
+          duplicate: false,
+        };
+      }
+      if (queued && ++pendingReads === 3)
+        initial.shell!.activeSessionId = sessionId;
+      return structuredClone(initial);
+    });
+    const runtime = createInstanceRuntime("device", false, sessionId);
+    const selected = await runtime.getSnapshot();
+    expect(selected.shell?.activeSessionId).toBe(sessionId);
+    expect(pendingReads).toBe(3);
+    expect(
+      vi.mocked(api).mock.calls.filter(([path]) => path.endsWith("commands")),
+    ).toHaveLength(1);
+  });
+
+  it("retries confirmation with the same command identity when activation is unconfirmed", async () => {
+    const initial = snapshot();
+    const sessionId = initial.shell!.sessions[0]!.id;
+    initial.shell!.activeSessionId = "other";
+    let queued = false;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.mocked(api).mockImplementation(async (path, init) => {
+      if (path.endsWith("commands")) {
+        queued = true;
+        return {
+          commandId: JSON.parse(init!.body as string).commandId,
+          duplicate: false,
+        };
+      }
+      if (queued) vi.setSystemTime(Date.now() + 9_000);
+      return initial;
+    });
+    const runtime = createInstanceRuntime("device", false, sessionId);
+    await expect(runtime.getSnapshot()).rejects.toThrow(
+      "could not be selected",
+    );
+    initial.shell!.activeSessionId = sessionId;
+    expect((await runtime.getSnapshot()).shell?.activeSessionId).toBe(
+      sessionId,
+    );
+    expect(
+      vi.mocked(api).mock.calls.filter(([path]) => path.endsWith("commands")),
+    ).toHaveLength(1);
   });
 
   it("does not select missing sessions or issue commands after cancellation", async () => {

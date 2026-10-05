@@ -33,6 +33,8 @@ LongCat-Video, SkyReels V3, HunyuanImage 3.0, and Open-Sora are **not integrated
 
 Only the modes listed by each profile are implemented. This change does not add MiniMax FL2VA, Wan Animate/S2V/VACE, quantized import formats, or every family derivative.
 
+Audio generation coverage remains limited to AudioLDM 2. The [audio research](media-studio-audio-research-2026-10-05.md) identifies ACE-Step 1.5, Stable Audio Open, and MiniMax Speech/Music as unintegrated publisher routes. MuseTalk provides supplied-vocal lip sync, not song generation.
+
 ## Earlier profile implementation checks
 
 - 571 Media Studio tests passed; TypeScript checks, lint, and desktop/fleet Media Studio production builds passed.

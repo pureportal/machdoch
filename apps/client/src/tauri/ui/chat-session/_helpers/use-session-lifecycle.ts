@@ -42,6 +42,7 @@ export interface SessionLifecycleActions {
 
 export interface CreateNewSessionOptions {
   workspace?: string | null;
+  id?: string;
 }
 
 const isReusableNewSession = (session: ChatSessionRecord): boolean => {
@@ -131,6 +132,21 @@ export const useSessionLifecycle = (options: {
         const hasWorkspaceOverride = "workspace" in options;
 
         state.applyShellState((prev) => {
+          const existingSession = options.id
+            ? prev.sessions.find((session) => session.id === options.id)
+            : undefined;
+          if (existingSession) {
+            if (
+              (hasWorkspaceOverride &&
+                existingSession.workspace !== options.workspace) ||
+              existingSession.archivedAt !== undefined
+            )
+              throw new Error(
+                "This Fleet session is no longer in the requested workspace. Open the device to check its sessions.",
+              );
+            nextActiveSessionId = existingSession.id;
+            return { ...prev, activeSessionId: existingSession.id };
+          }
           const currentActiveSession =
             prev.sessions.find(
               (session) => session.id === state.activeSessionId,
@@ -138,11 +154,15 @@ export const useSessionLifecycle = (options: {
             prev.sessions.find(
               (session) => session.id === prev.activeSessionId,
             );
-          const reusableSession =
-            (currentActiveSession && isReusableNewSession(currentActiveSession)
-              ? currentActiveSession
-              : undefined) ??
-            sortSessionsByUpdatedAt(prev.sessions).find(isReusableNewSession);
+          const reusableSession = options.id
+            ? undefined
+            : ((currentActiveSession &&
+              isReusableNewSession(currentActiveSession)
+                ? currentActiveSession
+                : undefined) ??
+              sortSessionsByUpdatedAt(prev.sessions).find(
+                isReusableNewSession,
+              ));
           const newSessionWorkspace = hasWorkspaceOverride
             ? options.workspace
             : (prev.recentWorkspaces[0] ??
@@ -179,6 +199,7 @@ export const useSessionLifecycle = (options: {
           }
 
           const session = createSession(newSessionDefaults);
+          if (options.id) session.id = options.id;
 
           nextActiveSessionId = session.id;
 

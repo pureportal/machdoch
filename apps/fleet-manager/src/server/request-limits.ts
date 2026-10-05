@@ -5,11 +5,14 @@ const maximumAuthenticationBodyBytes = 16 * 1024;
 const maximumSettingsSyncReportBodyBytes = 16 * 1024;
 const maximumSmallApiBodyBytes = 64 * 1024;
 export const maximumMediaRequestBodyBytes = 2_250_000;
+export const maximumFleetSessionRequestBodyBytes = 80 * 1024;
 
 export function maximumRequestBodyBytes(
   pathname: string,
   config: FleetManagerConfig,
 ): number {
+  if (pathname === "/api/fleet/sessions")
+    return maximumFleetSessionRequestBodyBytes;
   if (pathname === "/api/auth/login" || pathname === "/api/auth/account") {
     return maximumAuthenticationBodyBytes;
   }

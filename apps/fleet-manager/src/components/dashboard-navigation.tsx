@@ -4,6 +4,7 @@ import {
   FolderKanban,
   KeyRound,
   LayoutDashboard,
+  MessagesSquare,
   Settings2,
   Users,
 } from "lucide-react";
@@ -19,6 +20,7 @@ const items: {
 }[] = [
   { href: "/instances", label: "Overview", icon: LayoutDashboard },
   { href: "/workspaces", label: "Workspaces", icon: FolderKanban },
+  { href: "/copilot", label: "Copilot", icon: MessagesSquare },
   { href: "/enrollment", label: "Enrollment", icon: KeyRound },
   { href: "/settings", label: "Settings", icon: Settings2, settingsOnly: true },
   { href: "/users", label: "Users", icon: Users },

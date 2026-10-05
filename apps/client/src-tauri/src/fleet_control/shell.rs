@@ -3,6 +3,8 @@
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FleetShellSnapshot {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) session_routing_available: Option<bool>,
     pub(super) version: u32,
     #[serde(default)]
     pub(super) captured_at: u64,

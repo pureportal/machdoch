@@ -11,7 +11,10 @@ import {
   useState,
   type MutableRefObject,
 } from "react";
-import { productSnapshotVersion } from "@machdoch/fleet-protocol";
+import {
+  createFleetSessionId,
+  productSnapshotVersion,
+} from "@machdoch/fleet-protocol";
 import { getAvailableParallelAgentModes } from "../../../../core/parallel-agent-capabilities.js";
 import {
   isMediaAssetContextAttachment,
@@ -604,7 +607,7 @@ export const useFleetControl = (options: {
   onMarkFleetCommandHandled: (commandId: string) => void;
   onRetryTask: (message: ChatSessionMessage) => void;
   onContinueTask: (message: ChatSessionMessage) => void;
-  onCreateSession: (workspace?: string) => void;
+  onCreateSession: (workspace?: string, sessionId?: string) => void;
   onActivateSession: (sessionId: string) => void;
   onArchiveSession: (sessionId: string) => void;
   onTogglePinnedSession: (sessionId: string) => void;
@@ -934,6 +937,7 @@ export const useFleetControl = (options: {
     });
 
     return {
+      sessionRoutingAvailable: Boolean(globalThis.crypto?.subtle),
       version: productSnapshotVersion,
       capturedAt: Date.now(),
       activeSessionId: options.activeSession.id,
@@ -1416,7 +1420,10 @@ export const useFleetControl = (options: {
         }
 
         case "create-session": {
-          options.onCreateSession(command.workspace);
+          options.onCreateSession(
+            command.workspace,
+            await createFleetSessionId(command.commandId),
+          );
           break;
         }
 

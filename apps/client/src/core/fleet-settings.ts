@@ -201,7 +201,7 @@ export async function synchronizeFleetSettings(options: {
   };
   try {
     await requireCurrentConnection(config, signal);
-    if (!cached && options.captureLocalSettings) {
+    if (options.captureLocalSettings) {
       const stateResponse = await fetchImplementation(
         `${endpoint}/enrollment`,
         {

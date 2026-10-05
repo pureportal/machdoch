@@ -1,4 +1,5 @@
 import { collectFleetTelemetry } from "../../core/fleet-telemetry.js";
+import { createFleetSessionId } from "@machdoch/fleet-protocol";
 import { loadFleetManagedProfile } from "../../core/fleet-settings.js";
 import {
   applyContextPackDraft,
@@ -657,7 +658,13 @@ export class FleetCliProductRuntime {
       case "continue":
         return await this.repeatTask(command);
       case "create-session":
-        return await this.commitCommand(command, async (state) => {
+        return await this.commitCommand(command, async (state, commandId) => {
+          const sessionId = await createFleetSessionId(commandId);
+          if (state.sessions.some((session) => session.id === sessionId))
+            throw new FleetProductError(
+              "conflict",
+              "This session already exists. Open it from Sessions.",
+            );
           if (state.sessions.length >= 80)
             throw new FleetProductError(
               "conflict",
@@ -675,6 +682,7 @@ export class FleetCliProductRuntime {
             this.dependencies.createId,
             this.dependencies.now,
           );
+          session.id = sessionId;
           if (command.specialKind === "pose") {
             session.specialKind = "pose";
             session.title = "Pose scene";
@@ -1541,6 +1549,7 @@ export class FleetCliProductRuntime {
         ({ digest: _digest, ...command }) => command,
       ),
       shell: {
+        sessionRoutingAvailable: true,
         ralph: await this.ralph.snapshot(activeSession.workspace),
         ...(poseScene ? { poseSceneSvg: renderMediaPoseSvg(poseScene) } : {}),
         projectLibrary,

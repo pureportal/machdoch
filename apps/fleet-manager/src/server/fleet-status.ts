@@ -15,11 +15,16 @@ import type { FleetRuntime } from "./runtime";
 export async function collectFleetStatus(
   runtime: FleetRuntime,
   requestSignal: AbortSignal,
+  instanceIds?: ReadonlySet<string>,
 ): Promise<FleetStatus> {
   const signal = AbortSignal.any([requestSignal, AbortSignal.timeout(8_000)]);
   const instances = runtime.fleetStore
     .listInstances()
-    .filter((instance) => instance.revokedAt === null);
+    .filter(
+      (instance) =>
+        instance.revokedAt === null &&
+        (!instanceIds || instanceIds.has(instance.instanceId)),
+    );
   const devices: FleetDeviceStatus[] = instances.map((instance) => ({
     instanceId: instance.instanceId,
     displayName: instance.displayName,
@@ -33,6 +38,7 @@ export async function collectFleetStatus(
     ),
     capturedAt: null,
     error: null,
+    canCreateSession: false,
     sessions: [],
     workspaces: [],
     tasks: [],

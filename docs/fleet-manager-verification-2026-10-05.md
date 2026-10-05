@@ -2,6 +2,8 @@
 
 The complete remote-control goal is not yet verified.
 
+The table and checks below record the earlier pass. See the [continuation report](fleet-manager-continuation-2026-10-05.md) for implemented headless settings delivery, enrollment merge, Copilot routing, live two-client checks, and Android emulator verification.
+
 ## Requirement evidence
 
 | Requirement                                                                   | Implemented evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Remaining gap                                                                                                                                                                                                                                                                                       |
