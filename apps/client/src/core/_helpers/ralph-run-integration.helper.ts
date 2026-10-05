@@ -12,9 +12,9 @@ import {
 import type { RalphRunWorktree } from "./ralph-run-worktree.helper.js";
 import {
   commitRalphSnapshot,
-  RALPH_SOURCE_PATHS,
   runRalphWorktreeGit as git,
   snapshotRalphWorktree,
+  stageRalphSourceChanges,
 } from "./ralph-worktree-git.helper.js";
 import { applyRalphTreeDifference } from "./ralph-worktree-patch.helper.js";
 import { withCooperativeFileLock } from "./with-cooperative-file-lock.helper.js";
@@ -266,12 +266,7 @@ export const integrateRalphRunWorktree = async (
                 continue;
               }
             }
-            await git(integrationRoot, [
-              "add",
-              "--all",
-              "--",
-              ...RALPH_SOURCE_PATHS,
-            ]);
+            await stageRalphSourceChanges(integrationRoot);
             if (await git(integrationRoot, ["ls-files", "--unmerged"])) {
               failure = "Resolve all remaining Git merge conflicts.";
               continue;
