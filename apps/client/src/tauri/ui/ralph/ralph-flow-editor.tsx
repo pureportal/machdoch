@@ -13361,10 +13361,7 @@ export const RalphFlowEditor = ({
                                   setIsolatedRunOverride(event.target.checked)
                                 }
                               />
-                              <span>
-                                Separate worktree. Changes stay in the run's
-                                worktree.
-                              </span>
+                              <span>Separate worktree</span>
                             </label>
                             <div className="grid gap-1">
                               <div className="text-sm font-semibold text-white">

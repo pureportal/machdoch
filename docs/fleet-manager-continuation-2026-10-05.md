@@ -1,6 +1,6 @@
 # Fleet Manager continuation — 2026-10-05
 
-The accumulated work was committed to `main` and pushed in `fd26221d` (297 files). `e2794086` subsequently integrated RALPH worktree recovery and source staging. This continuation adds reliable session placement and settings capture recovery. The complete remote-control goal remains unfinished.
+The accumulated work was committed to `main` and pushed in `fd26221d` (297 files). `e2794086` subsequently integrated RALPH worktree recovery and source staging. `cedae016` adds reliable session placement and settings capture recovery. The complete remote-control goal remains unfinished.
 
 ## Changes
 
@@ -11,6 +11,7 @@ The accumulated work was committed to `main` and pushed in `fd26221d` (297 files
 - Headless settings capture can recover when the manager enables enrollment capture after the client cached an earlier delivery. Successful captures remain once-only. Existing delivery, encryption, conflict handling, and enrollment merge were already present in the accumulated source; the earlier report's missing-path findings are superseded.
 - Session creation and ordinary product commands recheck owner and device access after asynchronous relay operations. Requests retain CSRF, origin, schema, cancellation, and body-budget checks.
 - Live verification artifacts now survive production builds in `.tmp/fleet-verification`, instead of the disposable `.next` directory.
+- The remaining reviewed RALPH changes consolidate runtime-file exclusion in source staging, avoid redundant candidate snapshots, move temporary patches outside the repository, reduce test-fixture process launches, and correct Windows file-lock fixture setup. The isolated-run label now describes the worktree without suggesting that completed changes cannot be integrated.
 
 ## Requirement evidence
 
@@ -26,6 +27,8 @@ The accumulated work was committed to `main` and pushed in `fd26221d` (297 files
 | Self-hosted enrollment                                        | A fresh isolated production manager and two bundled clients completed real HTTPS enrollment. Existing enrollment controls and deployment documentation provide the URL/key flow. Device settings can be reviewed and merged in the UI.                                                                                                                                                   | A fresh public deployment, desktop enrollment, and beginner usability have not been verified.                                                                                                    |
 
 ## Verification
+
+One completed RALPH campaign passed 22 worktree/integration tests. The final literal-path staging regression passed separately, including tracked/ignored runtime files, deletions, and source/index preservation. Final scoped lint, UI/test type checks, and the CLI bundle passed. Later comprehensive campaigns were stopped after prolonged startup delays without completed file results; they are not counted as passes.
 
 | Check                                                         | Result                                                                                                                                                            |
 | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -52,6 +55,7 @@ The live clients used offline provider fixtures. No paid provider task or genera
 - A complete desktop native check could not finish: the project's Visual Studio environment initializer exceeded its 120-second deadline. A direct check with the installed Vulkan SDK then failed because CMake's Visual Studio 18 generator could not locate an instance. The isolated shell checks do not cover native command delivery or a release build.
 - Authenticated Android testing needs a trusted HTTPS deployment or a suitable test certificate environment. The isolated emulator's system store could not be remounted because its bootloader is locked. No TLS checks were weakened; ADB was returned to its original non-root mode.
 - Process startup remains intermittent. One earlier live retry failed before both services connected within 60 seconds; the final bundled run passed. The watcher failure remains unresolved, and the complete repository verification command is not green. Deadlines were not increased to conceal failures.
+- Final broad RALPH verification is incomplete. Only this task's two overlapping verification process trees were stopped; another agent's verification and application processes were preserved. The final staging regression and static checks do not prove every integration or Windows file-lock path.
 - The complete remote RALPH editor, broader orchestration, platform-specific feature parity, release Android signing, and full live phone/desktop/provider verification remain open.
 
 See [Android setup](../apps/fleet-android/README.md), [RALPH verification](ralph-main-integration-verification-2026-10-05.md), and [Media Studio verification](media-studio-svg-lipsync-verification-2026-10-05.md) for their separate evidence and limits.

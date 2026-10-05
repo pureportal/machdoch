@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runStreamingCommand } from "./streaming-command.js";
 
@@ -53,68 +54,42 @@ export const stageRalphSourceChanges = async (
 ): Promise<void> => {
   const files = await runRalphWorktreeGit(
     root,
-    [
-      "ls-files",
-      "--cached",
-      "--others",
-      "--exclude-standard",
-      "-z",
-      "--",
-      ...RALPH_SOURCE_PATHS,
-    ],
+    ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
     options,
   );
-  const paths = [...new Set(files.split("\0").filter(Boolean))];
-  if (paths.length === 0) return;
-  await runRalphWorktreeGit(
-    root,
-    [
-      "--literal-pathspecs",
-      "add",
-      "--all",
-      "--pathspec-from-file=-",
-      "--pathspec-file-nul",
-    ],
-    { ...options, input: `${paths.join("\0")}\0` },
-  );
+  const paths: string[] = [];
+  const artifacts: string[] = [];
+  for (const path of new Set(files.split("\0").filter(Boolean))) {
+    (path.split("/").includes(".machdoch") ? artifacts : paths).push(path);
+  }
+  if (paths.length > 0) {
+    await runRalphWorktreeGit(
+      root,
+      [
+        "--literal-pathspecs",
+        "add",
+        "--all",
+        "--pathspec-from-file=-",
+        "--pathspec-file-nul",
+      ],
+      { ...options, input: `${paths.join("\0")}\0` },
+    );
+  }
+  if (artifacts.length > 0) {
+    await runRalphWorktreeGit(
+      root,
+      ["update-index", "--force-remove", "-z", "--stdin"],
+      { ...options, input: `${artifacts.join("\0")}\0` },
+    );
+  }
 };
 
 export const snapshotRalphWorktree = async (root: string): Promise<string> => {
-  const gitDirectory = (
-    await runRalphWorktreeGit(root, [
-      "rev-parse",
-      "--path-format=absolute",
-      "--git-common-dir",
-    ])
-  ).trim();
-  const indexPath = join(gitDirectory, `ralph-index-${randomUUID()}`);
+  const indexPath = join(tmpdir(), `ralph-index-${randomUUID()}`);
   const env = { ...process.env, GIT_INDEX_FILE: indexPath };
   try {
     await runRalphWorktreeGit(root, ["read-tree", "HEAD"], { env });
     await stageRalphSourceChanges(root, { env });
-    const artifacts = await runRalphWorktreeGit(
-      root,
-      [
-        "ls-files",
-        "-z",
-        "--",
-        ":(glob).machdoch",
-        ":(glob).machdoch/**",
-        ":(glob)**/.machdoch",
-        ":(glob)**/.machdoch/**",
-      ],
-      { env },
-    );
-    if (artifacts) {
-      await runRalphWorktreeGit(
-        root,
-        ["update-index", "--force-remove", "-z", "--stdin"],
-        {
-          env,
-          input: artifacts,
-        },
-      );
-    }
     return (await runRalphWorktreeGit(root, ["write-tree"], { env })).trim();
   } finally {
     await Promise.all(

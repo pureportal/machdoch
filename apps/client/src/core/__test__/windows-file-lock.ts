@@ -11,7 +11,10 @@ let compilerDirectory: string | undefined;
 let lockerExecutable: Promise<string> | undefined;
 
 const compileFileLocker = async (): Promise<string> => {
-  const systemRoot = process.env.SystemRoot;
+  const systemRootKey = Object.keys(process.env).find(
+    (key) => key.toLowerCase() === "systemroot",
+  );
+  const systemRoot = systemRootKey ? process.env[systemRootKey] : undefined;
   if (!systemRoot) throw new Error("Windows SystemRoot is required.");
   compilerDirectory = await mkdtemp(join(tmpdir(), "ralph-file-locker-"));
   const executable = join(compilerDirectory, "locker.exe");
