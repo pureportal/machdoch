@@ -80,3 +80,7 @@ __pycache__/
 *.py[cod]
 
 apps/fleet-manager/public/media-studio/
+apps/fleet-android/.gradle/
+apps/fleet-android/.kotlin/
+apps/fleet-android/**/build/
+apps/fleet-android/local.properties

@@ -138,6 +138,48 @@ pub async fn get_fleet_managed_settings(
 }
 
 #[tauri::command]
+pub async fn export_fleet_local_settings(
+    workspace_root: Option<String>,
+) -> Result<machdoch_fleet_protocol::FleetManagedSettingsDocument, String> {
+    tokio::task::spawn_blocking(move || {
+        let mut args = vec![
+            "fleet".to_string(),
+            "settings-export".to_string(),
+            "--json".to_string(),
+        ];
+        if let Some(workspace) = workspace_root {
+            args.extend(["--cwd".to_string(), workspace]);
+        }
+        let value = crate::shared_cli::run_side_effect_free_json_command(
+            &args,
+            zeroize::Zeroizing::new(Vec::new()),
+            std::time::Duration::from_secs(60),
+        )?;
+        serde_json::from_value(value)
+            .map_err(|error| format!("Device settings are invalid: {error}"))
+    })
+    .await
+    .map_err(|error| format!("Device settings export failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn capture_fleet_enrollment_settings(
+    state: tauri::State<'_, FleetConnectionState>,
+    manager_id: String,
+    instance_id: String,
+    document: machdoch_fleet_protocol::FleetManagedSettingsDocument,
+) -> Result<(), String> {
+    settings::capture_enrollment(&state, &manager_id, &instance_id, document).await
+}
+
+#[tauri::command]
+pub async fn fleet_enrollment_capture_required(
+    state: tauri::State<'_, FleetConnectionState>,
+) -> Result<bool, String> {
+    settings::enrollment_capture_required(&state).await
+}
+
+#[tauri::command]
 pub async fn report_fleet_managed_settings_applied(
     state: tauri::State<'_, FleetConnectionState>,
     manager_id: String,

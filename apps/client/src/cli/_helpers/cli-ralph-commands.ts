@@ -1,6 +1,7 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, isAbsolute, relative, resolve } from "node:path";
 import { loadRuntimeConfig } from "../../core/config.js";
+import { isRecoverableRalphRunStatus } from "../../core/_helpers/is-recoverable-ralph-run-status.helper.js";
 import { discoverCustomizations } from "../../core/customizations.js";
 import {
   createRalphGenerationInterviewWithAgent,
@@ -39,8 +40,6 @@ import {
   type RalphRunLogger,
   type RalphRunRecord,
   type RalphRunResult,
-  type RalphRunStatus,
-  type RalphRunSummaryStatus,
   type RalphValidationResult,
 } from "../../core/ralph.js";
 import {
@@ -644,6 +643,8 @@ export const summarizeRun = (
     summary: result.summary,
     missingVariables: result.missingVariables,
     unknownVariables: result.unknownVariables,
+    validation: result.validation,
+    checkpoint: result.checkpoint ?? null,
     pendingInput: result.pendingInput ?? null,
     events: result.events,
     blockResults: result.blockResults.map((blockResult) => ({
@@ -704,14 +705,6 @@ interface RunRalphFlowForCliOptions {
     | "new-boundary";
   isolated?: boolean;
 }
-
-export const isRecoverableRalphRunStatus = (
-  status: RalphRunStatus,
-  effectiveStatus: RalphRunSummaryStatus,
-): boolean =>
-  status === "blocked" ||
-  status === "crashed" ||
-  effectiveStatus === "abandoned";
 
 const runRalphFlowForCli = async ({
   json,

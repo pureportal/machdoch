@@ -30,7 +30,7 @@ import numpy as np
 from PIL import Image, ImageOps
 import media_open_models
 
-WORKER_VERSION = "media-diffusers-worker/1.75.0"
+WORKER_VERSION = "media-diffusers-worker/1.76.0"
 # Disk group files contain only checkpoint/adapter tensors. Keep their
 # compatibility identity independent from response/provenance releases until
 # that serialization contract itself changes.
@@ -55,8 +55,6 @@ MAX_PING_PONG_ENDPOINT_FEATHER_PASSES = 3
 REFERENCE_EDIT_PIXEL_DELTA_THRESHOLD = 8.0
 REFERENCE_EDIT_MIN_CHANGED_PIXEL_RATIO = 0.01
 REFERENCE_EDIT_MIN_MEAN_ABSOLUTE_DIFFERENCE = 3.0
-LTX_DISTILLED_TIMESTEPS = (1000, 993, 987, 981, 975, 909, 725, 0.03)
-LTX_REFINEMENT_TIMESTEPS = (1000, 909, 725, 421, 0)
 LORA_TENSOR_PAIRS = (
     (".lora_down.weight", ".lora_up.weight"),
     (".lora_a.weight", ".lora_b.weight"),
@@ -1093,196 +1091,6 @@ def _svg_model_module() -> Any:
     module = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(module)
     return module
-
-
-def probe_model(request: dict[str, Any]) -> dict[str, Any]:
-    if request.get("schemaVersion") != SCHEMA_VERSION:
-        raise WorkerError("Unsupported worker request schema")
-    model = request.get("model")
-    if not isinstance(model, dict):
-        raise WorkerError("model is required")
-    torch, diffusers = _runtime()
-    architecture = _required_text(model, "architecture", 64)
-    pipeline_class_name = None
-    component_names = None
-    probe_diagnostic = None
-    if architecture in media_open_models.PROFILES:
-        pipeline = _load_pipeline(diffusers, torch, model)
-        required_methods = []
-        capabilities = media_open_models.PROFILES[architecture]["capabilities"][:]
-    elif architecture == "intro-svg":
-        pipeline, _ = _svg_model_module().load_model(model, torch)
-        component_names = ["model", "processor"]
-        required_methods = []
-        capabilities = ["text-to-svg", "image-to-svg"]
-    elif architecture == "minimax-h3-ref2va":
-        model_root = _absolute_existing_path(model.get("path"), file=False)
-        for relative in (
-            "diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors",
-            "vae/minimax_h3_video_vae_fp16.safetensors",
-            "vae/minimax_h3_audio_vae_fp32.safetensors",
-            "loras/minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
-            "small_te/mmh3-4b-ClipProj-v3.1.safetensors",
-        ):
-            _absolute_existing_path(str(model_root / relative), file=True)
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-        import media_minimax_h3
-
-        media_minimax_h3.verify_video_vae_checkpoint(
-            model_root / "vae/minimax_h3_video_vae_fp16.safetensors"
-        )
-        pipeline = None
-        pipeline_class_name = "MiniMaxH3DirectRuntime"
-        component_names = ["transformer", "text_encoder", "video_vae", "audio_vae", "lora"]
-        probe_diagnostic = "MiniMax H3 components are ready."
-        required_methods = []
-        capabilities = ["image-to-video", "lora"]
-    elif architecture == "framepack-i2v":
-        pipeline, _, _, _, _ = _load_framepack_pipeline(
-            diffusers,
-            torch,
-            model,
-            "A subject moves naturally with clear continuous motion.",
-            "memory-saver",
-        )
-        required_methods = []
-        capabilities = [
-            "image-to-video",
-            "start-end-to-video",
-            "vp9-alpha",
-            "alpha-video",
-            "video-composite",
-        ]
-    elif architecture == "hunyuan-video-1.5-i2v":
-        _validate_hunyuan_video_15_package(model, torch)
-        for class_name in (
-            "HunyuanVideo15ImageToVideoPipeline",
-            "HunyuanVideo15Transformer3DModel",
-            "AutoencoderKLHunyuanVideo15",
-        ):
-            if getattr(diffusers, class_name, None) is None:
-                raise WorkerError(
-                    f"The pinned Diffusers runtime does not expose {class_name}"
-                )
-        pipeline = None
-        pipeline_class_name = "HunyuanVideo15ImageToVideoPipeline"
-        component_names = [
-            "feature_extractor",
-            "guider",
-            "image_encoder",
-            "scheduler",
-            "text_encoder",
-            "text_encoder_2",
-            "tokenizer",
-            "tokenizer_2",
-            "transformer",
-            "vae",
-        ]
-        probe_diagnostic = (
-            "HunyuanVideo15ImageToVideoPipeline and the complete pinned offline "
-            "component inventory were validated without retaining model weights."
-        )
-        required_methods = []
-        capabilities = [
-            "image-to-video",
-            "vp9-alpha",
-            "alpha-video",
-            "video-composite",
-        ]
-    elif architecture == "ltx-video":
-        pipeline, _, _, _ = _load_ltx_video_pipeline(
-            diffusers,
-            torch,
-            model,
-            "A subject moves naturally with clear continuous motion.",
-            "memory-saver",
-        )
-        required_methods = []
-        capabilities = [
-            "image-to-video",
-            "start-end-to-video",
-            "vp9-alpha",
-            "alpha-video",
-            "video-composite",
-        ]
-    elif architecture == "wan-2.2-ti2v":
-        pipeline, _, _ = _load_video_pipeline(diffusers, torch, model)
-        required_methods: list[str] = []
-        capabilities = [
-            "image-to-video",
-            "start-end-to-video",
-            "vp9-alpha",
-            "alpha-video",
-            "video-composite",
-        ]
-    else:
-        pipeline = _load_pipeline(diffusers, torch, model)
-        required_methods = (
-            [] if architecture == "qwen-image-2.1"
-            else ["load_lora_weights", "set_adapters", "get_list_adapters"]
-        )
-        if architecture in (
-            "stable-diffusion-1",
-            "stable-diffusion-2",
-            "stable-diffusion-xl",
-            "pony",
-            "flux-1",
-        ):
-            required_methods.append("load_textual_inversion")
-        capabilities = [] if architecture == "qwen-image-2.1" else [
-            "lora",
-            "multi-lora",
-            *(["textual-inversion"] if hasattr(pipeline, "load_textual_inversion") else []),
-        ]
-    video_transformers = {
-        "wan-2.2-ti2v": "WanTransformer3DModel",
-        "ltx-video": "LTXVideoTransformer3DModel",
-        "framepack-i2v": "HunyuanVideoFramepackTransformer3DModel",
-        "hunyuan-video-1.5-i2v": "HunyuanVideo15Transformer3DModel",
-    }
-    if architecture in video_transformers:
-        transformer_class = getattr(diffusers, video_transformers[architecture])
-        if any(not hasattr(transformer_class, name) for name in ("load_lora_adapter", "set_adapters")):
-            raise WorkerError("The video runtime does not expose LoRA loading")
-        capabilities.extend(["lora", "multi-lora"])
-    missing_methods = [name for name in required_methods if not hasattr(pipeline, name)]
-    if missing_methods:
-        raise WorkerError(
-            "Loaded pipeline is missing required add-on methods: "
-            + ", ".join(missing_methods)
-        )
-    if component_names is None:
-        components = getattr(pipeline, "components", {})
-        component_names = (
-            sorted(
-                name
-                for name, component in components.items()
-                if isinstance(name, str) and component is not None
-            )
-            if isinstance(components, dict)
-            else []
-        )
-    if pipeline_class_name is None:
-        pipeline_class_name = type(pipeline).__name__
-    if probe_diagnostic is None:
-        probe_diagnostic = (
-            f"{pipeline_class_name} loaded successfully with offline components."
-        )
-    device, device_label, device_memory = _device(torch)
-    return {
-        "schemaVersion": SCHEMA_VERSION,
-        "workerVersion": WORKER_VERSION,
-        "packages": _package_versions(),
-        "ready": True,
-        "architecture": architecture,
-        "pipelineClass": pipeline_class_name,
-        "components": component_names[:64],
-        "capabilities": capabilities,
-        "device": device,
-        "deviceLabel": device_label,
-        "deviceMemoryBytes": device_memory,
-        "diagnostic": probe_diagnostic,
-    }
 
 
 def _token_exists(pipeline: Any, token: str) -> bool:
@@ -5836,6 +5644,8 @@ def _load_ltx_video_pipeline(
     memory_profile: Any = None,
     addons: list[dict[str, Any]] | None = None,
 ) -> tuple[Any, Any, Any, dict[str, Any]]:
+    from media_ltx_loading import load_checkpoint_timesteps, load_checkpoint_vae
+
     if _required_text(model, "packageKind", 64) != "diffusers-directory":
         raise WorkerError("LTX-Video generation requires a Diffusers directory")
     model_path = _absolute_existing_path(model.get("path"), file=False)
@@ -5844,7 +5654,6 @@ def _load_ltx_video_pipeline(
         model_path / "model_index.json",
         model_path / "scheduler" / "scheduler_config.json",
         model_path / "text_encoder" / "model.safetensors.index.json",
-        model_path / "vae" / "diffusion_pytorch_model.safetensors",
         model_path / config_subfolder / "config.json",
         checkpoint,
         model_path / "spatial_upscaler" / "model_index.json",
@@ -5863,6 +5672,7 @@ def _load_ltx_video_pipeline(
         raise WorkerError(
             "LTX-Video model package is incomplete; missing " + ", ".join(missing)
         )
+    distilled_timesteps = load_checkpoint_timesteps(checkpoint)
     device, _, device_memory = _device(torch)
     if (
         variant.startswith("13b")
@@ -5929,13 +5739,7 @@ def _load_ltx_video_pipeline(
             "windowsDiskOffloadCompatibility": False,
         }
     vae_dtype = torch.bfloat16 if device == "cuda" else torch.float32
-    vae = diffusers.AutoencoderKLLTXVideo.from_pretrained(
-        str(model_path),
-        subfolder="vae",
-        torch_dtype=vae_dtype,
-        local_files_only=True,
-        use_safetensors=True,
-    )
+    vae = load_checkpoint_vae(diffusers, checkpoint, vae_dtype)
     if hasattr(vae, "enable_tiling"):
         vae.enable_tiling()
     if device == "cuda":
@@ -5968,6 +5772,7 @@ def _load_ltx_video_pipeline(
             disable=os.environ.get("MACHDOCH_MEDIA_DEBUG_PROGRESS") != "1"
         )
     performance["variant"] = variant
+    performance["distilledTimesteps"] = distilled_timesteps
     performance["addons"] = applied_addons
     performance["weightStorageDtype"] = "float8_e4m3fn"
     performance["computeDtype"] = str(compute_dtype).removeprefix("torch.")
@@ -9247,6 +9052,7 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
     prompt_attention_mask = None
     negative_prompt_embeddings = None
     model_load_started_at = time.perf_counter()
+    _progress("Loading video model", 0.08)
     if architecture == "hunyuan-video-1.5-i2v":
         effective_hunyuan_steps = 8 if steps <= 8 else 12
         target_size = {
@@ -9402,6 +9208,7 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             LTXVideoCondition,
         )
 
+        _enable_sampling_progress(pipeline)
         execution_device = torch.device(
             f"cuda:{torch.cuda.current_device()}" if device == "cuda" else device
         )
@@ -9421,11 +9228,14 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
                 strength=1.0,
             ),
         ]
+        distilled_timesteps = performance["distilledTimesteps"]
         multiscale = (
             performance["variant"].startswith("13b")
             and resolution in ("quality-640", "quality-768")
         )
         if multiscale:
+            first_pass_timesteps = distilled_timesteps[:-1]
+            refinement_timesteps = distilled_timesteps[5:]
             from diffusers.pipelines.ltx.modeling_latent_upsampler import (
                 LTXLatentUpsamplerModel,
             )
@@ -9443,7 +9253,7 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
                 height=first_height,
                 num_frames=num_frames,
                 frame_rate=fps,
-                timesteps=list(LTX_DISTILLED_TIMESTEPS),
+                timesteps=first_pass_timesteps,
                 guidance_scale=1.0,
                 guidance_rescale=0.7,
                 image_cond_noise_scale=0.0,
@@ -9485,7 +9295,7 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
                 num_frames=num_frames,
                 frame_rate=fps,
                 denoise_strength=0.999,
-                timesteps=list(LTX_REFINEMENT_TIMESTEPS),
+                timesteps=[distilled_timesteps[0], *refinement_timesteps],
                 latents=upscaled_latents,
                 guidance_scale=1.0,
                 guidance_rescale=0.7,
@@ -9502,16 +9312,17 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             performance["firstPass"] = {
                 "width": first_width,
                 "height": first_height,
-                "timesteps": list(LTX_DISTILLED_TIMESTEPS),
+                "timesteps": first_pass_timesteps,
             }
             performance["refinementPass"] = {
                 "width": refined_width,
                 "height": refined_height,
-                "timesteps": list(LTX_REFINEMENT_TIMESTEPS),
+                "timesteps": refinement_timesteps,
                 "downsampledWidth": width,
                 "downsampledHeight": height,
             }
             conditioning_mode = "ltx-native-first-last-keyframes-multiscale"
+            effective_steps = len(first_pass_timesteps) + len(refinement_timesteps)
         else:
             result = pipeline(
                 conditions=conditions,
@@ -9523,7 +9334,7 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
                 height=height,
                 num_frames=num_frames,
                 frame_rate=fps,
-                timesteps=list(LTX_DISTILLED_TIMESTEPS),
+                timesteps=distilled_timesteps,
                 guidance_scale=1.0,
                 guidance_rescale=0.7,
                 image_cond_noise_scale=0.0,
@@ -9534,8 +9345,8 @@ def generate_video(request: dict[str, Any]) -> dict[str, Any]:
             generated_frames = list(result.frames[0])
             performance["renderStrategy"] = "distilled-single-pass"
             conditioning_mode = "ltx-native-first-last-keyframes"
+            effective_steps = len(distilled_timesteps)
         effective_guidance_scale = 1.0
-        effective_steps = len(LTX_DISTILLED_TIMESTEPS)
         negative_prompt_applied = False
     else:
         pipeline, prompt_embeddings, negative_prompt_embeddings = _load_video_pipeline(
@@ -9761,12 +9572,6 @@ def main() -> int:
         if command == "verify-runtime":
             _emit(probe(verify_operations=True))
             return 0
-        if command == "probe-model":
-            request = json.load(sys.stdin)
-            if not isinstance(request, dict):
-                raise WorkerError("Worker request must be a JSON object")
-            _emit(probe_model(request))
-            return 0
         if command == "generate":
             request = json.load(sys.stdin)
             if not isinstance(request, dict):
@@ -9784,7 +9589,9 @@ def main() -> int:
             if not isinstance(request, dict):
                 raise WorkerError("Worker request must be a JSON object")
             torch, _ = _runtime()
-            _emit(_svg_model_module().generate(request, torch))
+            device, _, _ = _device(torch)
+            _configure_amd_convolution_backend(torch, device)
+            _emit(_svg_model_module().generate(request, torch, _progress))
             return 0
         if command == "generate-audio":
             from media_audio import generate as generate_audio
@@ -9825,7 +9632,7 @@ def main() -> int:
             _emit(_generate_hunyuan_video_15_latents_subprocess(request))
             return 0
         raise WorkerError(
-            "Expected exactly one command: probe, verify-runtime, probe-model, generate, "
+            "Expected exactly one command: probe, verify-runtime, generate, "
             "generate-video, generate-svg, generate-audio, or render-source-anchored-loop"
         )
     except WorkerError as error:

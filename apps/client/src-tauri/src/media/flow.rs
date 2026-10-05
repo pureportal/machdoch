@@ -29,6 +29,10 @@ const FLOW_BUNDLE_SCHEMA_URI: &str = "https://machdoch.app/schemas/media-flow-bu
 #[path = "flow_open_video.rs"]
 mod open_video;
 
+#[cfg(test)]
+#[path = "flow_video_composition_tests.rs"]
+mod video_composition_tests;
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct MediaFlowNode {
@@ -2805,6 +2809,8 @@ fn is_supported_node(node_type: &str, version: u32) -> bool {
                 | "operation.visual-check"
                 | "operation.prepare-mask"
                 | "source.image"
+                | "source.audio"
+                | "source.video"
                 | "source.seed"
                 | "source.animated-background"
                 | "task.generate-image"
@@ -2824,6 +2830,9 @@ fn is_supported_node(node_type: &str, version: u32) -> bool {
                 | "operation.alpha-matte"
                 | "operation.composite"
                 | "operation.video-composite"
+                | "operation.video-sequence"
+                | "operation.video-audio"
+                | "operation.lip-sync"
                 | "operation.quality-analyze"
                 | "control.quality-gate"
                 | "control.human-review"
@@ -3643,9 +3652,12 @@ impl MediaFlowNode {
             ));
         }
         let expected_layer = match self.r#type.as_str() {
-            "source.prompt" | "source.image" | "source.seed" | "source.animated-background" => {
-                "source"
-            }
+            "source.prompt"
+            | "source.image"
+            | "source.audio"
+            | "source.video"
+            | "source.seed"
+            | "source.animated-background" => "source",
             "task.generate-image"
             | "task.edit-image"
             | "task.generate-video"
@@ -3673,6 +3685,9 @@ impl MediaFlowNode {
             | "operation.alpha-matte"
             | "operation.composite"
             | "operation.video-composite"
+            | "operation.video-sequence"
+            | "operation.video-audio"
+            | "operation.lip-sync"
             | "operation.quality-analyze" => "operation",
             "control.quality-gate" | "control.human-review" | "control.repeat" => "control",
             "output.asset" | "output.video" | "output.audio" => "output",
@@ -3964,10 +3979,17 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
         | "operation.upscale"
         | "control.repeat"
         | "operation.visual-check"
-        | "operation.prepare-mask" => super::workflow_schema::validate_node(node),
+        | "operation.prepare-mask"
+        | "operation.video-sequence"
+        | "operation.video-audio"
+        | "operation.lip-sync" => super::workflow_schema::validate_node(node),
         "source.prompt" => {
             validate_config_keys(node, &["prompt"])?;
             config_multiline_string(node, "prompt", 8_000, true).map(|_| ())
+        }
+        "source.audio" | "source.video" => {
+            validate_config_keys(node, &["assetId"])?;
+            config_string(node, "assetId", 256, true).map(|_| ())
         }
         "source.image" => {
             validate_config_keys(node, &["assetId", "referenceRole", "influence"])?;
@@ -4051,6 +4073,9 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                         "outputCount",
                         "outputFormat",
                         "transparentBackground",
+                        "poseStrength",
+                        "poseStart",
+                        "poseEnd",
                         "svgMode",
                         "svgAutoCrop",
                         "svgTargetSize",
@@ -4198,41 +4223,51 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                         ));
                     }
                 }
-                if let Some(pose_strength) = node.config.get("poseStrength") {
-                    let pose_strength = pose_strength.as_f64().ok_or_else(|| {
-                        format!("flow node {} poseStrength must be numeric", node.id)
-                    })?;
-                    if !pose_strength.is_finite() || !(0.0..=2.0).contains(&pose_strength) {
-                        return Err(format!(
-                            "flow node {} poseStrength must be between 0 and 2",
-                            node.id
-                        ));
-                    }
-                }
-                let pose_start = node
-                    .config
-                    .get("poseStart")
-                    .and_then(serde_json::Value::as_f64)
-                    .unwrap_or(0.0);
-                let pose_end = node
-                    .config
-                    .get("poseEnd")
-                    .and_then(serde_json::Value::as_f64)
-                    .unwrap_or(1.0);
-                if !pose_start.is_finite()
-                    || !pose_end.is_finite()
-                    || pose_start < 0.0
-                    || pose_start >= pose_end
-                    || pose_end > 1.0
-                {
-                    return Err(format!(
-                        "flow node {} pose control range must satisfy 0 <= start < end <= 1",
-                        node.id
-                    ));
-                }
                 if node.config.contains_key("requireChromaBackground") {
                     config_bool(node, "requireChromaBackground")?;
                 }
+            }
+            if let Some(pose_strength) = node.config.get("poseStrength") {
+                let pose_strength = pose_strength
+                    .as_f64()
+                    .ok_or_else(|| format!("flow node {} poseStrength must be numeric", node.id))?;
+                if !pose_strength.is_finite() || !(0.0..=2.0).contains(&pose_strength) {
+                    return Err(format!(
+                        "flow node {} poseStrength must be between 0 and 2",
+                        node.id
+                    ));
+                }
+            }
+            let pose_start = node
+                .config
+                .get("poseStart")
+                .map(|value| {
+                    value
+                        .as_f64()
+                        .ok_or_else(|| format!("flow node {} poseStart must be numeric", node.id))
+                })
+                .transpose()?
+                .unwrap_or(0.0);
+            let pose_end = node
+                .config
+                .get("poseEnd")
+                .map(|value| {
+                    value
+                        .as_f64()
+                        .ok_or_else(|| format!("flow node {} poseEnd must be numeric", node.id))
+                })
+                .transpose()?
+                .unwrap_or(1.0);
+            if !pose_start.is_finite()
+                || !pose_end.is_finite()
+                || pose_start < 0.0
+                || pose_start >= pose_end
+                || pose_end > 1.0
+            {
+                return Err(format!(
+                    "flow node {} pose control range must satisfy 0 <= start < end <= 1",
+                    node.id
+                ));
             }
             if node.config.contains_key("memoryProfile") {
                 config_enum(
@@ -5013,6 +5048,20 @@ fn port_type(node_type: &str, port_id: &str, output: bool) -> Option<&'static st
         ("operation.segment", true, "mask") | ("task.edit-image", false, "mask") => Some("mask"),
         ("source.prompt", true, "prompt") => Some("prompt"),
         ("source.image", true, "image") => Some("image"),
+        ("source.audio", true, "audio") => Some("audio"),
+        ("source.video", true, "video") => Some("video"),
+        ("operation.video-audio", false, "audio")
+        | ("operation.lip-sync", false, "audio" | "voice")
+        | ("operation.video-sequence", false, "audio") => Some("audio"),
+        ("operation.video-audio", false | true, "video")
+        | ("operation.lip-sync", false | true, "video")
+        | ("operation.video-sequence", true, "video") => Some("video"),
+        (
+            "operation.video-sequence",
+            false,
+            "scene-1" | "scene-2" | "scene-3" | "scene-4" | "scene-5" | "scene-6" | "scene-7"
+            | "scene-8",
+        ) => Some("video"),
         ("source.seed", true, "seed") => Some("seed"),
         ("source.animated-background", true, "video") => Some("video"),
         ("task.generate-image", false, "prompt") => Some("prompt"),
@@ -5090,7 +5139,14 @@ fn required_input_ports(node_type: &str, is_svg_vectorization: bool) -> &'static
         | "operation.prepare-mask"
         | "operation.segment"
         | "operation.upscale" => &["image"],
-        "source.prompt" | "source.image" | "source.seed" | "source.animated-background" => &[],
+        "source.prompt"
+        | "source.image"
+        | "source.audio"
+        | "source.video"
+        | "source.seed"
+        | "source.animated-background" => &[],
+        "operation.video-sequence" => &["scene-1", "scene-2"],
+        "operation.video-audio" | "operation.lip-sync" => &["video", "audio"],
         "task.generate-image" | "task.generate-video" | "task.generate-audio" => &["prompt"],
         "task.edit-image" => &["prompt", "image"],
         "operation.crop"
@@ -5125,6 +5181,8 @@ fn required_output_ports(node_type: &str) -> &'static [&'static str] {
         "operation.upscale" => &["image"],
         "source.prompt" => &["prompt"],
         "source.image" => &["image"],
+        "source.audio" => &["audio"],
+        "source.video" | "operation.video-sequence" | "operation.video-audio" | "operation.lip-sync" => &["video"],
         "source.seed" => &[],
         "source.animated-background" => &["video"],
         "task.generate-image"
@@ -5671,6 +5729,35 @@ mod tests {
             1
         );
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn image_tasks_validate_pose_guidance_values_and_intervals() {
+        for task_type in ["task.generate-image", "task.edit-image"] {
+            let mut node = request("pose", None, "Portrait").flow.nodes[1].clone();
+            node.r#type = task_type.into();
+            node.config.insert("editStrength".into(), json!(0.65));
+            if task_type == "task.generate-image" {
+                node.config.remove("editStrength");
+            }
+            node.config.insert("poseStrength".into(), json!(0.73));
+            node.config.insert("poseStart".into(), json!(0.12));
+            node.config.insert("poseEnd".into(), json!(0.87));
+            validate_node_config(&node).unwrap();
+            for (field, value, message) in [
+                ("poseStart", json!("0.1"), "poseStart must be numeric"),
+                ("poseEnd", json!(null), "poseEnd must be numeric"),
+                ("poseStart", json!(0.87), "pose control range"),
+                ("poseEnd", json!(0.1), "pose control range"),
+                ("poseStrength", json!(2.1), "poseStrength must be between"),
+            ] {
+                let mut invalid = node.clone();
+                invalid.config.insert(field.into(), value);
+                assert!(validate_node_config(&invalid)
+                    .unwrap_err()
+                    .contains(message));
+            }
+        }
     }
 
     #[test]
@@ -6316,6 +6403,12 @@ mod tests {
             config.insert("guidanceScale".into(), json!(profile.guidance));
             config.insert("generateAudio".into(), json!(profile.audio));
             config.insert("experimentalLowMemory".into(), json!(false));
+            if profile.family == "CogVideoX" {
+                config.insert("modelAddons".into(), json!([{
+                    "kind": "lora", "addonId": "addon:cogvideo", "enabled": true,
+                    "modelStrength": 0.15, "textEncoderStrength": null, "denoisingSchedule": null
+                }]));
+            }
             if !profile.prompt {
                 config.insert("negativePrompt".into(), json!(""));
             }

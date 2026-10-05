@@ -18,7 +18,6 @@ describe("managed video and SVG models", () => {
       expect(model.capabilities).not.toContain("text-to-image");
       expect(model.management).toEqual({
         acquisition: "managed-install",
-        verification: "model-probe",
       });
       expect(model.installed).toBe(false);
       expect(describeMediaModelReadiness(model)?.action).toBe(

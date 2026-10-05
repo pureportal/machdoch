@@ -965,6 +965,30 @@ describe("RALPH autonomy integration", () => {
     expect(
       result.blockResults.filter((entry) => entry.blockId === "select"),
     ).toHaveLength(2);
+    const consumedTransitions = result.events.filter(
+      (event) => event.type === "edge-route",
+    ).length;
+    expect(result.checkpoint?.totalTransitions).toBeGreaterThanOrEqual(
+      consumedTransitions,
+    );
+    expect(
+      (result.checkpoint?.transitionBase ?? 0) +
+        (result.checkpoint?.transitions ?? 0),
+    ).toBe(result.checkpoint?.totalTransitions);
+    const resumedEvents: string[] = [];
+    await runRalphFlow(
+      flow,
+      { ...runtimeConfig, workspaceRoot: workspace },
+      { ...customizations, workspaceRoot: workspace },
+      {
+        checkpoint: result.checkpoint!,
+        maxTotalTransitions: consumedTransitions,
+        onEvent: (event) => {
+          if (event.type === "block-start") resumedEvents.push(event.blockId);
+        },
+      },
+    );
+    expect(resumedEvents).toEqual([]);
     expect(
       result.blockResults.map((entry) => entry.blockId + ":" + entry.output),
     ).toEqual(
@@ -1453,7 +1477,10 @@ describe("RALPH autonomy integration", () => {
       starter.flow,
       { ...runtimeConfig, workspaceRoot: workspace },
       { ...customizations, workspaceRoot: workspace },
-      { runId: "starter-security-no-op", variableValues: { continuous: "false" } },
+      {
+        runId: "starter-security-no-op",
+        variableValues: { continuous: "false" },
+      },
     );
 
     expect(

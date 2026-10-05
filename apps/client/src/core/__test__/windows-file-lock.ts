@@ -1,21 +1,44 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
+import { afterAll } from "vitest";
+
+let compilerDirectory: string | undefined;
+let lockerExecutable: Promise<string> | undefined;
+
+const compileFileLocker = async (): Promise<string> => {
+  const systemRoot = process.env.SystemRoot;
+  if (!systemRoot) throw new Error("Windows SystemRoot is required.");
+  compilerDirectory = await mkdtemp(join(tmpdir(), "ralph-file-locker-"));
+  const executable = join(compilerDirectory, "locker.exe");
+  await promisify(execFile)(
+    join(systemRoot, "Microsoft.NET", "Framework64", "v4.0.30319", "csc.exe"),
+    [
+      "/nologo",
+      `/out:${executable}`,
+      fileURLToPath(
+        new URL("./fixtures/windows-file-lock.cs", import.meta.url),
+      ),
+    ],
+    { windowsHide: true, timeout: 30_000 },
+  );
+  return executable;
+};
+
+afterAll(async () => {
+  if (compilerDirectory)
+    await rm(compilerDirectory, { recursive: true, force: true });
+});
 
 export const lockWindowsFileReplacement = async (path: string) => {
-  const child = spawn(
-    "powershell.exe",
-    [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "$ErrorActionPreference = 'Stop'; $lock = [System.IO.File]::Open($env:RALPH_LOCK_TEST_PATH, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read); try { [Console]::Out.WriteLine('locked'); [Console]::Out.Flush(); [Console]::In.ReadLine() | Out-Null } finally { $lock.Dispose() }",
-    ],
-    {
-      env: { ...process.env, RALPH_LOCK_TEST_PATH: path },
-      windowsHide: true,
-      stdio: ["pipe", "pipe", "pipe"],
-    },
-  );
+  const child = spawn(await prepareWindowsFileLocker(), [path], {
+    windowsHide: true,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
   const exited = once(child, "exit");
   let stderr = "";
   child.stderr.on("data", (chunk) => {
@@ -26,7 +49,7 @@ export const lockWindowsFileReplacement = async (path: string) => {
       let stdout = "";
       const timeout = setTimeout(
         () => reject(new Error("Windows file lock did not become ready.")),
-        10_000,
+        30_000,
       );
       child.stdout.on("data", (chunk) => {
         stdout += String(chunk);
@@ -58,3 +81,6 @@ export const lockWindowsFileReplacement = async (path: string) => {
         throw new Error(`Windows file lock exited ${code}: ${stderr}`);
     })());
 };
+
+export const prepareWindowsFileLocker = (): Promise<string> =>
+  (lockerExecutable ??= compileFileLocker());

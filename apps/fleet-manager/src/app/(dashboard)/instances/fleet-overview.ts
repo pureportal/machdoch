@@ -1,3 +1,5 @@
+import type { VersionStatus } from "@/lib/product-version";
+
 export interface FleetInstance {
   instanceId: string;
   displayName: string;
@@ -6,6 +8,8 @@ export interface FleetInstance {
   enrolledAt: number;
   lastSeenAt: number | null;
   status: "online" | "offline" | "revoked";
+  versionStatus?: VersionStatus;
+  managerVersion?: string;
 }
 
 export type DeviceFilter = "active" | FleetInstance["status"];

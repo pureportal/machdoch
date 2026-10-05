@@ -43,4 +43,17 @@ describe("transitionRalphWorkItemState", () => {
       transitionRalphWorkItemState("completed", "repairing"),
     ).toThrow("Invalid work-item state transition completed -> repairing.");
   });
+
+  it("resumes deferred phases while requiring verification before completion", () => {
+    for (const phase of ["implementing", "verifying", "repairing"] as const) {
+      expect(transitionRalphWorkItemState("deferred", phase)).toEqual({
+        from: "deferred",
+        to: phase,
+        changed: true,
+      });
+    }
+    expect(() => transitionRalphWorkItemState("deferred", "completed")).toThrow(
+      "Invalid work-item state transition deferred -> completed.",
+    );
+  });
 });

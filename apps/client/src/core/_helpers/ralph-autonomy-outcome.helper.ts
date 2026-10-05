@@ -467,10 +467,15 @@ export const deriveRalphRunOutcome = (input: {
       },
     );
   }
+  const completedRecordedWork =
+    lifecycleStatus === "completed" &&
+    recorded?.outcome === "DONE" &&
+    terminal &&
+    (terminal.outcome === undefined || terminal.outcome === "succeeded");
   if (
     recorded?.outcome === "DEFER" ||
     terminal?.outcome === "deferred" ||
-    autonomy?.deferred.length
+    (autonomy?.deferred.length && !completedRecordedWork)
   ) {
     return createOutcome(
       "deferred",

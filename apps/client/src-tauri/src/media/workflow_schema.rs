@@ -6,6 +6,8 @@ use serde_json::Value;
 
 pub(crate) fn validate_node(node: &MediaFlowNode) -> MediaResult<()> {
     let keys: &[&str] = match node.r#type.as_str() {
+        "operation.video-sequence" | "operation.video-audio" => &["audioStartSeconds"],
+        "operation.lip-sync" => &["modelPath", "audioStartSeconds", "cropShift", "batchSize", "seed"],
         "operation.image-mask" => &["channel", "invert"],
         "operation.mask-composite" => &["operation"],
         "operation.canny" => &["lowThreshold", "highThreshold"],
@@ -63,6 +65,10 @@ pub(crate) fn validate_node(node: &MediaFlowNode) -> MediaResult<()> {
             .get(*key)
             .ok_or_else(|| format!("{} requires {key}", node.label))?;
         let valid = match *key {
+            "audioStartSeconds" => in_range(value, 0.0, 86400.0, false),
+            "cropShift" => in_range(value, -64.0, 64.0, true),
+            "batchSize" => in_range(value, 1.0, 8.0, true),
+            "seed" => in_range(value, 0.0, 4294967295.0, true),
             "channel" => value.as_str().is_some_and(|channel| {
                 ["alpha", "luminance", "red", "green", "blue"].contains(&channel)
             }),

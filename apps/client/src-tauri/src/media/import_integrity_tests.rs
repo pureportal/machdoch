@@ -89,7 +89,7 @@ impl Fixture {
         }
     }
 
-    fn register(&self) -> MediaResult<MediaImageImportResult> {
+    fn register(&self) -> MediaResult<MediaAssetImportResult> {
         database::record_imported_asset(
             &self.paths,
             database::ImportedAssetRegistration {
@@ -106,7 +106,7 @@ impl Fixture {
         )
     }
 
-    fn assert_success(&self, result: &MediaImageImportResult) {
+    fn assert_success(&self, result: &MediaAssetImportResult) {
         assert_eq!(result.asset.digest, self.digest);
         assert_eq!(result.asset.byte_size, PNG.len() as u64);
         let metadata = fs::symlink_metadata(self.destination()).unwrap();
@@ -131,9 +131,9 @@ impl Drop for Fixture {
 
 fn duplicate_import(content: StoredContent) {
     let fixture = Fixture::new();
-    let original = import_image(&fixture.paths, fixture.source.to_str().unwrap()).unwrap();
+    let original = import_asset(&fixture.paths, fixture.source.to_str().unwrap()).unwrap();
     fixture.set_content(content);
-    let result = import_image(&fixture.paths, fixture.source.to_str().unwrap());
+    let result = import_asset(&fixture.paths, fixture.source.to_str().unwrap());
     fixture.assert_content(content);
     assert_eq!(database::list_assets(&fixture.paths, 10).unwrap().len(), 1);
     assert!(fs::read_dir(fixture.paths.blobs.join(".staging"))

@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatTime } from "@/lib/format";
+import { versionWarning } from "@/lib/product-version";
 import type { FleetInstance } from "./fleet-overview";
 
 export function DeviceDetails({
@@ -27,6 +28,7 @@ export function DeviceDetails({
   onRevoked: () => Promise<void>;
   onCloseAutoFocus: (event: Event) => void;
 }): React.ReactElement {
+  const warning = versionWarning(device.versionStatus, device.managerVersion);
   return (
     <Dialog
       open
@@ -54,6 +56,11 @@ export function DeviceDetails({
               : formatTime(device.lastSeenAt)}
           </dd>
         </dl>
+        {warning ? (
+          <p role="status" className="text-sm text-destructive">
+            {warning}
+          </p>
+        ) : null}
         <ShowMore>
           <CopyField label="Device ID" value={device.instanceId} monospace />
         </ShowMore>

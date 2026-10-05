@@ -65,6 +65,9 @@ const ARCHITECTURE_ADDON_CAPABILITIES: Readonly<
   "krea-2": [capability("lora", ["denoiser"], 8, false, true)],
   "wan-2.2-ti2v": [capability("lora", ["denoiser"], 8, false, false)],
   "ltx-video": [capability("lora", ["denoiser"], 8, false, false)],
+  "cogvideox-2b": [capability("lora", ["denoiser"], 8, false, false)],
+  "cogvideox-1.5-5b": [capability("lora", ["denoiser"], 8, false, false)],
+  "cogvideox-1.5-5b-i2v": [capability("lora", ["denoiser"], 8, false, false)],
   "framepack-i2v": [capability("lora", ["denoiser"], 8, false, false)],
   "hunyuan-video-1.5-i2v": [capability("lora", ["denoiser"], 8, false, false)],
   "minimax-h3-ref2va": [capability("lora", ["denoiser"], 1, false, false)],
@@ -250,6 +253,9 @@ export const inspectMediaModelAddonCompatibility = (
     addon.loraProfile !== null &&
     [
       "wan-2.2-ti2v",
+      "cogvideox-2b",
+      "cogvideox-1.5-5b",
+      "cogvideox-1.5-5b-i2v",
       "ltx-video",
       "framepack-i2v",
       "hunyuan-video-1.5-i2v",

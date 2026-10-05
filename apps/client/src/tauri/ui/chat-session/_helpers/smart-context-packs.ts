@@ -15,12 +15,14 @@ import {
   type SmartContextPackSettingOverrides,
   type SmartContextPackVariable,
 } from "../../chat-session.model";
-import type {
-  RuntimeProvider,
-} from "../../model-catalog";
+import type { RuntimeProvider } from "../../model-catalog";
 import { getProviderLabel } from "../../model-catalog";
 import { mergeContextAttachments } from "./session-context-attachments";
 import { normalizeSessionReasoningOverride } from "./session-reasoning";
+import {
+  applyContextPackDraft,
+  createContextPackTextSections,
+} from "../../../../shared/context-pack-draft.js";
 
 export interface SaveSmartContextPackInput extends SmartContextPackSettingOverrides {
   id?: string;
@@ -83,13 +85,18 @@ export const getSmartContextPackSortTimestamp = (
 };
 
 const getWorkspaceComparisonKey = (workspace: string | null): string => {
-  const normalized = workspace?.replace(/\\/gu, "/").replace(/\/+$/u, "").trim();
+  const normalized = workspace
+    ?.replace(/\\/gu, "/")
+    .replace(/\/+$/u, "")
+    .trim();
 
   if (!normalized) {
     return "";
   }
 
-  return /^[A-Za-z]:\//u.test(normalized) ? normalized.toLowerCase() : normalized;
+  return /^[A-Za-z]:\//u.test(normalized)
+    ? normalized.toLowerCase()
+    : normalized;
 };
 
 export const areSmartContextPackWorkspacesEqual = (
@@ -410,36 +417,6 @@ export const createSmartContextPackVariables = (
   return variables;
 };
 
-const replaceSmartContextPackVariables = (
-  value: string,
-  variables: SmartContextPackVariable[],
-  variableValues: Record<string, string>,
-): string => {
-  const replacementByName = new Map<string, string>();
-
-  for (const variable of variables) {
-    const valueForVariable =
-      variableValues[variable.name]?.trim() ?? variable.defaultValue ?? "";
-
-    if (valueForVariable) {
-      replacementByName.set(variable.name, valueForVariable);
-    }
-  }
-
-  return value.replace(
-    /\{([A-Za-z][A-Za-z0-9_-]{0,39})\}/gu,
-    (raw, name: string, offset: number, fullValue: string) => {
-      const endIndex = offset + raw.length;
-
-      if (fullValue[offset - 1] === "{" || fullValue[endIndex] === "}") {
-        return raw;
-      }
-
-      return replacementByName.get(name) ?? raw;
-    },
-  );
-};
-
 export const getSmartContextPackMissingVariableNames = (
   pack: SmartContextPack,
   variableValues: Record<string, string>,
@@ -447,7 +424,10 @@ export const getSmartContextPackMissingVariableNames = (
   const missingVariableNames: string[] = [];
 
   for (const variable of pack.variables) {
-    if (variableValues[variable.name]?.trim() || variable.defaultValue?.trim()) {
+    if (
+      variableValues[variable.name]?.trim() ||
+      variable.defaultValue?.trim()
+    ) {
       continue;
     }
 
@@ -461,25 +441,7 @@ export const createSmartContextPackDraftBlock = (
   pack: SmartContextPack,
   variableValues: Record<string, string> = {},
 ): string => {
-  const sections = [`## Context Pack: ${pack.name}`];
-  const instructions = replaceSmartContextPackVariables(
-    pack.instructions,
-    pack.variables,
-    variableValues,
-  ).trim();
-  const prompt = replaceSmartContextPackVariables(
-    pack.prompt,
-    pack.variables,
-    variableValues,
-  ).trim();
-
-  if (instructions) {
-    sections.push(`### Instructions\n${instructions}`);
-  }
-
-  if (prompt) {
-    sections.push(`### Prompt\n${prompt}`);
-  }
+  const sections = createContextPackTextSections(pack, variableValues);
 
   const promptFiles = pack.contextAttachments.filter(isPromptFileAttachment);
   const skillFiles = pack.contextAttachments.filter(isSkillFileAttachment);
@@ -511,23 +473,6 @@ export const createSmartContextPackDraftBlock = (
   return sections.length > 1 ? sections.join("\n\n") : "";
 };
 
-const applySmartContextPackToDraft = (
-  draft: string,
-  packDraftBlock: string,
-): string => {
-  if (!packDraftBlock) {
-    return draft;
-  }
-
-  const normalizedDraft = draft.trim();
-
-  if (!normalizedDraft) {
-    return packDraftBlock;
-  }
-
-  return `${packDraftBlock}\n\n## Current Task\n${normalizedDraft}`;
-};
-
 export const applySmartContextPackToComposer = (
   draft: string,
   contextAttachments: ChatSessionContextAttachment[],
@@ -540,7 +485,7 @@ export const applySmartContextPackToComposer = (
   );
 
   return {
-    draft: applySmartContextPackToDraft(draft, packDraftBlock),
+    draft: applyContextPackDraft(draft, packDraftBlock),
     contextAttachments: mergeContextAttachments(
       contextAttachments,
       clonedAttachments,
@@ -631,10 +576,11 @@ export const doesSmartContextPackMatchComposer = (
   }
 
   return input.contextAttachments.some((attachment) =>
-    pack.trigger.pathPatterns.some((pattern) =>
-      (isPathContextAttachment(attachment) &&
-        pathMatchesPattern(attachment.path, pattern)) ||
-      pathMatchesPattern(attachment.name, pattern),
+    pack.trigger.pathPatterns.some(
+      (pattern) =>
+        (isPathContextAttachment(attachment) &&
+          pathMatchesPattern(attachment.path, pattern)) ||
+        pathMatchesPattern(attachment.name, pattern),
     ),
   );
 };
@@ -645,9 +591,10 @@ const hasSensitivePathSegment = (
   if (!isPathContextAttachment(attachment)) return false;
   const normalizedPath = attachment.path.replace(/\\/gu, "/").toLowerCase();
 
-  return /(^|\/)(\.env|id_rsa|id_dsa|\.ssh|secrets?)(\/|$)/u.test(
-    normalizedPath,
-  ) || /\.(pem|key|p12|pfx)$/u.test(normalizedPath);
+  return (
+    /(^|\/)(\.env|id_rsa|id_dsa|\.ssh|secrets?)(\/|$)/u.test(normalizedPath) ||
+    /\.(pem|key|p12|pfx)$/u.test(normalizedPath)
+  );
 };
 
 const getNormalizedAttachmentPath = (
@@ -698,8 +645,11 @@ export const getSkillFileDisplayName = (
     .filter(Boolean);
   const parentName = pathParts.at(-2);
 
-  return parentName?.trim() || attachment.name ||
-    (isPathContextAttachment(attachment) ? attachment.path : attachment.assetId);
+  return (
+    parentName?.trim() ||
+    attachment.name ||
+    (isPathContextAttachment(attachment) ? attachment.path : attachment.assetId)
+  );
 };
 
 export const createSmartContextPackPreview = (
@@ -923,14 +873,18 @@ const parseSmartContextPackExportPayload = (
     candidate.version !== 1 ||
     !Array.isArray(candidate.contextPacks)
   ) {
-    throw new Error("Context pack import file is not a supported machdoch export.");
+    throw new Error(
+      "Context pack import file is not a supported machdoch export.",
+    );
   }
 
   return {
     kind: "machdoch.context-packs",
     version: 1,
     exportedAt:
-      typeof candidate.exportedAt === "number" ? candidate.exportedAt : Date.now(),
+      typeof candidate.exportedAt === "number"
+        ? candidate.exportedAt
+        : Date.now(),
     contextPacks: candidate.contextPacks,
   };
 };
@@ -950,19 +904,23 @@ export const importSmartContextPacksIntoShellState = (
     sessions: state.sessions.length > 0 ? state.sessions : [fallbackSession],
     contextPacks: payload.contextPacks,
   });
-  const importedPacks = normalizedImportState.contextPacks.map((pack, index) => {
-    return {
-      ...pack,
-      id: crypto.randomUUID(),
-      workspace: targetScope === "global" ? null : targetWorkspace,
-      createdAt: timestamp + index,
-      updatedAt: timestamp + index,
-      useCount: 0,
-    };
-  });
+  const importedPacks = normalizedImportState.contextPacks.map(
+    (pack, index) => {
+      return {
+        ...pack,
+        id: crypto.randomUUID(),
+        workspace: targetScope === "global" ? null : targetWorkspace,
+        createdAt: timestamp + index,
+        updatedAt: timestamp + index,
+        useCount: 0,
+      };
+    },
+  );
 
   if (importedPacks.length === 0) {
-    throw new Error("Context pack import file does not contain importable packs.");
+    throw new Error(
+      "Context pack import file does not contain importable packs.",
+    );
   }
 
   return {

@@ -22,7 +22,16 @@ const findVisualStudio = (environment, workingDirectory) => {
   );
   if (result.error || result.status !== 0) {
     throw new Error(
-      "Visual Studio C++ Build Tools are required to build the Windows desktop app.",
+      [
+        result.error?.code === "ETIMEDOUT"
+          ? "Visual Studio discovery timed out after 10 seconds."
+          : "Visual Studio discovery could not run.",
+        result.error?.message,
+        result.stderr?.trim(),
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      { cause: result.error },
     );
   }
   const installation = JSON.parse(result.stdout)

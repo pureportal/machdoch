@@ -1,4 +1,7 @@
-import { productCommandSchema, type ProductSnapshot } from "@machdoch/fleet-protocol";
+import {
+  productCommandSchema,
+  type ProductSnapshot,
+} from "@machdoch/fleet-protocol";
 import {
   Aperture,
   FolderKanban,
@@ -29,6 +32,7 @@ import { ProjectLibrary } from "./project-library";
 import type { ComposerDraftStore } from "./use-composer-draft";
 
 export function ProductShell({
+  initialView = "projects",
   instanceName,
   mediaHref,
   servicesHref,
@@ -42,6 +46,7 @@ export function ProductShell({
   onCommand,
   onRefresh,
 }: {
+  initialView?: ProductView;
   instanceName: string;
   mediaHref?: string | undefined;
   servicesHref?: string | undefined;
@@ -58,8 +63,11 @@ export function ProductShell({
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [mediaOpened, setMediaOpened] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
-  const [requestedView, setRequestedView] = useState<ProductView>("projects");
-  const [pendingPoseChat, setPendingPoseChat] = useState<{ previousSessionId: string | null; hasScene: boolean } | null>(null);
+  const [requestedView, setRequestedView] = useState<ProductView>(initialView);
+  const [pendingPoseChat, setPendingPoseChat] = useState<{
+    previousSessionId: string | null;
+    hasScene: boolean;
+  } | null>(null);
   const mediaFrameRef = useRef<HTMLIFrameElement>(null);
   const compact = useMediaQuery("(max-width: 900px)");
   const viewportRef = useProductViewport();
@@ -92,14 +100,31 @@ export function ProductShell({
 
   useEffect(() => {
     const receivePoseChat = (event: MessageEvent): void => {
-      if (event.origin !== window.location.origin || event.source !== mediaFrameRef.current?.contentWindow) return;
+      if (
+        event.origin !== window.location.origin ||
+        event.source !== mediaFrameRef.current?.contentWindow
+      )
+        return;
       const data = event.data as { type?: unknown; map?: unknown } | null;
-      if (data?.type !== "machdoch:pose-chat" || (data.map !== null && (typeof data.map !== "object" || data.map === undefined))) return;
-      const command = productCommandSchema.safeParse({ kind: "create-session", specialKind: "pose", ...(data.map ? { poseScene: data.map } : {}) });
+      if (
+        data?.type !== "machdoch:pose-chat" ||
+        (data.map !== null &&
+          (typeof data.map !== "object" || data.map === undefined))
+      )
+        return;
+      const command = productCommandSchema.safeParse({
+        kind: "create-session",
+        specialKind: "pose",
+        ...(data.map ? { poseScene: data.map } : {}),
+      });
       if (!command.success || command.data.kind !== "create-session") return;
       const previousSessionId = snapshot?.shell?.activeSessionId ?? null;
       void onCommand(command.data).then((created) => {
-        if (created) setPendingPoseChat({ hasScene: data.map !== null, previousSessionId });
+        if (created)
+          setPendingPoseChat({
+            hasScene: data.map !== null,
+            previousSessionId,
+          });
       });
     };
     window.addEventListener("message", receivePoseChat);
@@ -108,12 +133,27 @@ export function ProductShell({
 
   useEffect(() => {
     const sessionId = snapshot?.shell?.activeSessionId;
-    if (!pendingPoseChat || !sessionId || sessionId === pendingPoseChat.previousSessionId) return;
+    if (
+      !pendingPoseChat ||
+      !sessionId ||
+      sessionId === pendingPoseChat.previousSessionId
+    )
+      return;
     setPendingPoseChat(null);
     void (async () => {
-      if (!await onCommand({ kind: "set-session-mode", sessionId, mode: "machdoch" })) return;
-      const prompt = pendingPoseChat.hasScene ? "Refine this pose scene" : "Create a pose scene";
-      if (await onCommand({ kind: "update-draft", sessionId, prompt })) selectView("chat");
+      if (
+        !(await onCommand({
+          kind: "set-session-mode",
+          sessionId,
+          mode: "machdoch",
+        }))
+      )
+        return;
+      const prompt = pendingPoseChat.hasScene
+        ? "Refine this pose scene"
+        : "Create a pose scene";
+      if (await onCommand({ kind: "update-draft", sessionId, prompt }))
+        selectView("chat");
     })();
   }, [pendingPoseChat, snapshot?.shell?.activeSessionId, onCommand]);
 
@@ -332,7 +372,13 @@ export function ProductShell({
                   }}
                 />
               )}
-              <main className="m-product-main" data-pose-scene={activeSession?.specialKind === "pose" && Boolean(shell.poseSceneSvg)}>
+              <main
+                className="m-product-main"
+                data-pose-scene={
+                  activeSession?.specialKind === "pose" &&
+                  Boolean(shell.poseSceneSvg)
+                }
+              >
                 {activeSession ? (
                   <>
                     <SessionHeader
@@ -341,8 +387,14 @@ export function ProductShell({
                       pending={commandsBlocked}
                       onCommand={onCommand}
                     />
-                    {activeSession.specialKind === "pose" && shell.poseSceneSvg ? (
-                      <div className="m-product-pose-scene"><img alt="Current pose scene" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(shell.poseSceneSvg)}`} /></div>
+                    {activeSession.specialKind === "pose" &&
+                    shell.poseSceneSvg ? (
+                      <div className="m-product-pose-scene">
+                        <img
+                          alt="Current pose scene"
+                          src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(shell.poseSceneSvg)}`}
+                        />
+                      </div>
                     ) : null}
                     <Conversation
                       messages={shell.visibleMessages}

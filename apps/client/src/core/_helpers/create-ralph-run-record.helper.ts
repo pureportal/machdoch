@@ -1,4 +1,5 @@
 import { truncateRalphResultText } from "./ralph-result-text.helper.js";
+import { isRecoverableRalphRunStatus } from "./is-recoverable-ralph-run-status.helper.js";
 import type {
   RalphBlockExecutionResult,
   RalphFlow,
@@ -349,8 +350,7 @@ export const createRalphRunSummaryFromRecord = (
     flowName: record.flowName,
     status: record.status,
     recoverable:
-      Boolean(record.checkpoint) &&
-      (record.status === "blocked" || record.status === "crashed"),
+      Boolean(record.checkpoint) && isRecoverableRalphRunStatus(record.status),
     ...(record.outcome ? { outcome: record.outcome } : {}),
     summary: record.summary,
     ...(record.logPaths?.simpleMarkdownPath

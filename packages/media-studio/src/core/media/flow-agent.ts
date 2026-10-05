@@ -3,6 +3,8 @@ import type {
   MediaFlowNode,
   MediaModelDescriptor,
   MediaModelAddonDescriptor,
+  MediaAssetRecord,
+  MediaModelAddonSelection,
 } from "./contracts.js";
 import {
   createDefaultMediaNodeConfig,
@@ -12,6 +14,7 @@ import {
 } from "./node-registry.js";
 import { resolveMediaFlowVariables } from "./variables.js";
 import { isMediaPoseMap, type MediaPoseMap } from "./pose-map.js";
+import { mediaImageSamplingConstraints } from "./image-sampling.js";
 
 export interface MediaFlowAgentMessage {
   role: "user" | "assistant";
@@ -22,7 +25,7 @@ export interface MediaFlowAgentRequest {
   prompt: string;
   flow: MediaFlow;
   messages: MediaFlowAgentMessage[];
-  models: Pick<
+  models: (Pick<
     MediaModelDescriptor,
     | "id"
     | "displayName"
@@ -31,7 +34,10 @@ export interface MediaFlowAgentRequest {
     | "configured"
     | "architecture"
     | "capabilities"
-  >[];
+    | "addonCapabilities"
+  > & {
+    samplingConstraints?: ReturnType<typeof mediaImageSamplingConstraints>;
+  })[];
   addons: Pick<
     MediaModelAddonDescriptor,
     | "id"
@@ -48,6 +54,75 @@ export interface MediaFlowAgentResult {
   message: string;
   flow: MediaFlow | null;
   poseMaps: { id: string; map: MediaPoseMap }[];
+}
+
+export function createMediaFlowAgentRequest({
+  prompt,
+  flow,
+  messages,
+  models,
+  addons,
+  assets,
+}: {
+  prompt: string;
+  flow: MediaFlow;
+  messages: MediaFlowAgentMessage[];
+  models: readonly MediaModelDescriptor[];
+  addons: readonly MediaModelAddonDescriptor[];
+  assets: readonly MediaAssetRecord[];
+}): MediaFlowAgentRequest {
+  return {
+    prompt,
+    flow,
+    messages: messages.slice(-40),
+    models: models.map(
+      ({
+        id,
+        displayName,
+        target,
+        installed,
+        configured,
+        architecture,
+        capabilities,
+        addonCapabilities,
+      }) => ({
+        id,
+        displayName,
+        target,
+        installed,
+        configured,
+        architecture,
+        capabilities,
+        addonCapabilities,
+        ...(target === "local" && capabilities.includes("text-to-image")
+          ? { samplingConstraints: mediaImageSamplingConstraints(architecture) }
+          : {}),
+      }),
+    ),
+    addons: addons.map(
+      ({
+        id,
+        displayName,
+        kind,
+        architecture,
+        triggerWords,
+        defaultToken,
+      }) => ({
+        id,
+        displayName,
+        kind,
+        architecture,
+        triggerWords,
+        defaultToken,
+      }),
+    ),
+    assets: assets.map(({ id, kind, width, height }) => ({
+      id,
+      kind,
+      width,
+      height,
+    })),
+  };
 }
 
 export function validateMediaAgentPoseMaps(
@@ -245,6 +320,18 @@ export function createMediaAgentNodeContext() {
           visibleWhen,
           required,
           options: options?.map((option) => option.value),
+          ...(kind === "addons" ? {
+            selectionExamples: [
+              {
+                kind: "lora", addonId: "<supplied addon id>", enabled: true,
+                modelStrength: 1, textEncoderStrength: null, denoisingSchedule: null,
+              },
+              {
+                kind: "textual-inversion", addonId: "<supplied addon id>", enabled: true,
+                token: "<supplied embedding token>", placement: "positive",
+              },
+            ] satisfies MediaModelAddonSelection[],
+          } : {}),
         }),
       ),
     }),
@@ -285,8 +372,12 @@ export function validateMediaAgentResources(
       ) {
         const asset = request.assets.find((entry) => entry.id === value);
         if (!asset && !unchanged) throw new Error(`Unknown asset: ${value}.`);
-        if (asset && node.type === "source.image" && asset.kind !== "image")
-          throw new Error(`Choose an image asset: ${value}.`);
+        if (
+          asset &&
+          ["source.image", "source.audio", "source.video"].includes(node.type) &&
+          node.type !== `source.${asset.kind}`
+        )
+          throw new Error(`Choose ${node.type === "source.video" ? "a video" : node.type === "source.audio" ? "an audio" : "an image"} asset: ${value}.`);
       }
       if (field.kind === "addons" && Array.isArray(value)) {
         for (const selection of value) {

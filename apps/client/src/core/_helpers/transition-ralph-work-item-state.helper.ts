@@ -17,7 +17,7 @@ const ALLOWED_RALPH_WORK_ITEM_TRANSITIONS: Readonly<
   verifying: ["completed", "repairing", "deferred"],
   repairing: ["verifying", "deferred"],
   completed: [],
-  deferred: ["planned", "implementing"],
+  deferred: ["planned", "implementing", "verifying", "repairing"],
 };
 
 export interface RalphWorkItemStateTransition {

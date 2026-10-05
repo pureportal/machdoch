@@ -4,6 +4,7 @@ import type { ProductCommand, ProductSnapshot } from "@machdoch/fleet-protocol";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProductRuntime } from "./product-runtime";
 import { ProductShell } from "./product-shell";
+import type { ProductView } from "./product-rail";
 import { SnapshotRefreshCoordinator } from "./snapshot-refresh-coordinator";
 import { createComposerDraftStore } from "./use-composer-draft";
 
@@ -17,9 +18,11 @@ interface RuntimeLifecycle {
 }
 
 export function RemoteProductApp({
+  initialView,
   instanceName,
   runtime,
 }: {
+  initialView?: ProductView;
   instanceName: string;
   runtime: ProductRuntime;
 }): React.ReactElement {
@@ -140,6 +143,7 @@ export function RemoteProductApp({
 
   return (
     <ProductShell
+      {...(initialView ? { initialView } : {})}
       drafts={drafts}
       mediaHref={runtime.mediaHref}
       servicesHref={runtime.servicesHref}

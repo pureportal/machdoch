@@ -42,7 +42,7 @@ static NEXT_RALPH_CANCEL_REQUEST_ID: AtomicU64 = AtomicU64::new(0);
 fn ralph_command_timeout_ms(action: &str) -> Option<u64> {
     match action {
         "run" | "resume" => None,
-        "snapshot" | "list" | "runs" => Some(30_000),
+        "snapshot" | "list" | "runs" => Some(60_000),
         _ => Some(RALPH_COMMAND_TIMEOUT_MS),
     }
 }
@@ -133,6 +133,17 @@ fn finish_ralph_command_response(
             format_ralph_command_failure(stderr)
         )),
     }
+}
+
+fn finish_cancelled_ralph_command_response(stdout: &str, stderr: &str) -> Result<Value, String> {
+    if let Ok(response) = parse_ralph_command_response(stdout) {
+        return Ok(response);
+    }
+    let diagnostic = format_command_failure(stderr, "");
+    if diagnostic == "The shared CLI exited without additional diagnostics." {
+        return Err("The Ralph CLI command was cancelled.".to_string());
+    }
+    Err(format!("The Ralph CLI command was cancelled. {diagnostic}"))
 }
 
 fn normalize_ralph_flow_scope(scope: Option<&str>) -> Result<Option<String>, String> {
@@ -371,17 +382,8 @@ pub(super) fn execute_ralph_command(
                                 return Err(error);
                             }
                         };
-                    let failure_tail = format_command_failure(&stderr_text, &stdout_text);
                     cleanup_temporary_files(&payload_paths);
-
-                    if failure_tail == "The shared CLI exited without additional diagnostics." {
-                        return Err("The Ralph CLI command was cancelled.".to_string());
-                    }
-
-                    return Err(format!(
-                        "The Ralph CLI command was cancelled. {}",
-                        failure_tail
-                    ));
+                    return finish_cancelled_ralph_command_response(&stdout_text, &stderr_text);
                 }
 
                 if let Some(timeout_ms) =
@@ -501,9 +503,10 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        create_ralph_cancel_path, finish_ralph_command_response, normalize_ralph_flow_scope,
-        parse_ralph_command_response, ralph_command_timeout_ms, read_ralph_stdout,
-        read_ralph_stdout_with_limit, request_ralph_cli_stop, RALPH_CANCEL_PATH_ENV,
+        create_ralph_cancel_path, finish_cancelled_ralph_command_response,
+        finish_ralph_command_response, normalize_ralph_flow_scope, parse_ralph_command_response,
+        ralph_command_timeout_ms, read_ralph_stdout, read_ralph_stdout_with_limit,
+        request_ralph_cli_stop, RALPH_CANCEL_PATH_ENV,
     };
     use crate::child_process::{ChildCleanupKind, SupervisedChild};
     use crate::desktop_task::process::SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES;
@@ -511,9 +514,26 @@ mod tests {
     const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_RALPH_LIFECYCLE_TEST_MODE";
 
     #[test]
+    fn cancelled_run_retains_its_structured_checkpoint_response() {
+        let response =
+            json!({ "run": { "status": "stopped", "checkpoint": { "currentBlockId": "write" } } });
+        assert_eq!(
+            finish_cancelled_ralph_command_response(&response.to_string(), "").unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn cancelled_command_does_not_expose_unparsed_stdout() {
+        let error = finish_cancelled_ralph_command_response("internal partial run payload", "")
+            .unwrap_err();
+        assert_eq!(error, "The Ralph CLI command was cancelled.");
+    }
+
+    #[test]
     fn ralph_status_queries_do_not_share_the_execution_timeout() {
         for action in ["snapshot", "list", "runs"] {
-            assert_eq!(ralph_command_timeout_ms(action), Some(30_000));
+            assert_eq!(ralph_command_timeout_ms(action), Some(60_000));
         }
         for action in ["run", "resume"] {
             assert_eq!(ralph_command_timeout_ms(action), None);

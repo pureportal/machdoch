@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createImageRecipeFlow } from "./compiler.js";
+import { createMediaModelCatalogSnapshot } from "./catalog.js";
 import { DEFAULT_IMAGE_RECIPE_SETTINGS } from "../../tauri/ui/media/media-studio-store.js";
 import {
   createMediaAgentNodeContext,
+  createMediaFlowAgentRequest,
   parseMediaAgentGraph,
   validateMediaAgentResources,
   type MediaFlowAgentRequest,
@@ -17,6 +19,40 @@ const graph = () =>
   structuredClone({ name: base.name, nodes: base.nodes, edges: base.edges });
 
 describe("Media Studio assistant graph validation", () => {
+  it("sends model sampling constraints without exposing local paths", () => {
+    const catalog = createMediaModelCatalogSnapshot({
+      isOpenAiConfigured: true,
+      isLocalFluxInstalled: true,
+    });
+    const request = createMediaFlowAgentRequest({
+      prompt: "Fill the image settings",
+      flow: base,
+      messages: Array.from({ length: 45 }, (_, index) => ({
+        role: "user" as const,
+        content: String(index),
+      })),
+      models: catalog.models,
+      addons: [],
+      assets: [],
+    });
+    expect(request.messages).toHaveLength(40);
+    expect(request.messages[0]?.content).toBe("5");
+    expect(
+      request.models.find((model) => model.id === "local:flux-2-klein-4b"),
+    ).toMatchObject({
+      samplingConstraints: { fixedSteps: 4, manualGuidance: false },
+      addonCapabilities: [expect.objectContaining({ kind: "lora" })],
+    });
+    expect(
+      request.models.find((model) => model.target === "remote"),
+    ).not.toHaveProperty("samplingConstraints");
+    expect(
+      request.models.every(
+        (model) => !("runtimeBinding" in model) && !("relativePath" in model),
+      ),
+    ).toBe(true);
+  });
+
   it("keeps inherited arrays and flow bindings independent of the source flow", () => {
     const candidate = graph();
     candidate.nodes.find(

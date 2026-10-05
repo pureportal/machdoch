@@ -206,16 +206,27 @@ export const RalphSetupVariableControl = ({
     );
   }
 
-  if (variable.type === "files" || variable.type === "images") {
+  if (
+    variable.type === "text" ||
+    variable.type === "files" ||
+    variable.type === "images"
+  ) {
     return (
       <Textarea
         value={value}
         aria-label={`Ralph variable ${variable.name}`}
         aria-invalid={error ? true : undefined}
         aria-describedby={errorId}
-        placeholder={variable.default ?? "One path per line"}
+        placeholder={
+          variable.default ??
+          (variable.type === "text" ? undefined : "One path per line")
+        }
         onChange={(event) => onChange(variable.name, event.target.value)}
-        className={cn("min-h-20", "font-mono text-xs", commonClassName)}
+        className={cn(
+          "min-h-24",
+          variable.type !== "text" && "font-mono text-xs",
+          commonClassName,
+        )}
       />
     );
   }

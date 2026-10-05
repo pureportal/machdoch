@@ -1,53 +1,30 @@
 "use client";
 
-import {
-  commandReceiptSchema,
-  productCommandSchema,
-  productSnapshotSchema,
-  type ProductCommand,
-} from "@machdoch/fleet-protocol";
-import { RemoteProductApp, type ProductRuntime } from "@machdoch/product-ui";
+import { RemoteProductApp } from "@machdoch/product-ui";
 import { useMemo } from "react";
-import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
+import { createInstanceRuntime } from "@/lib/instance-runtime";
 
 export function InstanceProduct({
   instanceId,
   instanceName,
   settingsEnabled,
+  initialSessionId,
 }: {
   instanceId: string;
   instanceName: string;
   settingsEnabled: boolean;
+  initialSessionId?: string;
 }): React.ReactElement {
-  const runtime = useMemo<ProductRuntime>(() => {
-    const basePath = `/api/instances/${encodeURIComponent(instanceId)}/product`;
-    return {
-      mediaHref: `/media-studio/index.html?instance=${encodeURIComponent(instanceId)}`,
-      servicesHref: `/instances/${encodeURIComponent(instanceId)}/runs`,
-      ...(settingsEnabled ? { settingsHref: "/settings" } : {}),
-      async getSnapshot(signal) {
-        const payload = await api<unknown>(`${basePath}/snapshot`, { signal });
-        const result = productSnapshotSchema.safeParse(payload);
-        if (!result.success) {
-          throw new Error("Instance returned incompatible product data.");
-        }
-        return result.data;
-      },
-      async execute(command: ProductCommand, signal?: AbortSignal) {
-        const validatedCommand = productCommandSchema.parse(command);
-        const payload = await api<unknown>(`${basePath}/commands`, {
-          method: "POST",
-          body: jsonBody(validatedCommand),
-          signal,
-        });
-        const result = commandReceiptSchema.safeParse(payload);
-        if (!result.success) {
-          throw new Error("Instance returned an invalid command receipt.");
-        }
-        return result.data;
-      },
-    };
-  }, [instanceId, settingsEnabled]);
+  const runtime = useMemo(
+    () => createInstanceRuntime(instanceId, settingsEnabled, initialSessionId),
+    [instanceId, settingsEnabled, initialSessionId],
+  );
 
-  return <RemoteProductApp instanceName={instanceName} runtime={runtime} />;
+  return (
+    <RemoteProductApp
+      instanceName={instanceName}
+      runtime={runtime}
+      {...(initialSessionId ? { initialView: "chat" } : {})}
+    />
+  );
 }

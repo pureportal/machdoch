@@ -5,6 +5,8 @@ mod cli_settings_bridge;
 mod cooperative_file_lock;
 mod desktop_shell;
 mod desktop_task;
+#[cfg(any(machdoch_embedded_runtime, test))]
+mod embedded_browser_runtime;
 #[cfg(test)]
 #[path = "../embedded_runtime_inputs.rs"]
 mod embedded_runtime_inputs;
@@ -323,7 +325,7 @@ pub fn run() {
             media::media_refresh_local_diffusers_runtime,
             media::runtime_setup::media_start_runtime_setup,
             media::runtime_setup::media_get_runtime_setup,
-            media::media_import_image,
+            media::media_import_asset,
             media::media_create_pose_map,
             media::media_read_pose_scene,
             media::media_write_pose_scene,
@@ -334,7 +336,6 @@ pub fn run() {
             media::media_import_flow,
             media::media_inspect_local_model,
             media::media_import_local_model,
-            media::media_probe_local_model,
             media::media_inspect_model_addon,
             media::media_inspect_training_images,
             media::media_submit_training,
@@ -379,6 +380,9 @@ pub fn run() {
             fleet::enroll_fleet_manager,
             fleet::get_fleet_connection_status,
             fleet::get_fleet_managed_settings,
+            fleet::export_fleet_local_settings,
+            fleet::capture_fleet_enrollment_settings,
+            fleet::fleet_enrollment_capture_required,
             fleet::report_fleet_managed_settings_applied,
             fleet::report_fleet_managed_settings_failure,
             fleet::reset_fleet_manager_connection,

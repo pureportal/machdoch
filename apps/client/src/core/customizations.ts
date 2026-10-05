@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
 import { getUserConfigPath } from "./env.js";
+import { loadFleetManagedProfile } from "./fleet-settings.js";
 import { parseMarkdownDocument } from "./frontmatter.js";
 import type {
   CustomizationDiscoveryResult,
@@ -76,6 +77,7 @@ const PROMPT_TOOL_ALIASES: Record<string, ToolName> = {
 };
 
 export interface CustomizationDiscoveryOptions {
+  discoverFleetManagedPrompts?: boolean;
   discoverGithubCustomizations?: boolean;
   discoverUserCustomizations?: boolean;
   includeDiagnostics?: boolean;
@@ -141,15 +143,16 @@ const normalizePromptTools = (tools: unknown): ToolName[] => {
   return normalizedTools;
 };
 
-const loadPrompt = async (
+const parsePrompt = (
   workspaceRoot: string,
   filePath: string,
+  content: string,
   options?: {
     scope?: CustomizationScope;
     pathRoot?: "user" | "workspace";
   },
-): Promise<DiscoveredPrompt> => {
-  const document = parseMarkdownDocument(await readFile(filePath, "utf8"));
+): DiscoveredPrompt => {
+  const document = parseMarkdownDocument(content);
   const description =
     typeof document.attributes.description === "string"
       ? document.attributes.description
@@ -186,6 +189,18 @@ const loadPrompt = async (
   };
 };
 
+const loadPrompt = async (
+  workspaceRoot: string,
+  filePath: string,
+  options?: { scope?: CustomizationScope; pathRoot?: "user" | "workspace" },
+): Promise<DiscoveredPrompt> =>
+  parsePrompt(
+    workspaceRoot,
+    filePath,
+    await readFile(filePath, "utf8"),
+    options,
+  );
+
 const loadSkill = async (
   workspaceRoot: string,
   filePath: string,
@@ -207,7 +222,7 @@ const loadSkill = async (
     name:
       typeof document.attributes.name === "string"
         ? document.attributes.name
-        : pathSegments.at(-2) ?? "skill",
+        : (pathSegments.at(-2) ?? "skill"),
     ...(options?.scope ? { scope: options.scope } : {}),
     description:
       typeof document.attributes.description === "string"
@@ -276,6 +291,22 @@ export const discoverCustomizations = async (
       }),
     ),
   ]);
+  if (
+    options?.discoverUserCustomizations &&
+    options.discoverFleetManagedPrompts !== false
+  ) {
+    const managed = await loadFleetManagedProfile();
+    for (const prompt of managed?.document.prompts ?? []) {
+      prompts.push(
+        parsePrompt(
+          workspaceRoot,
+          `fleet:${managed!.profileId}/${prompt.relativePath}`,
+          prompt.content,
+          { scope: "user", pathRoot: "user" },
+        ),
+      );
+    }
+  }
   const skills = await Promise.all([
     ...workspaceSkillPaths.map((path) => loadSkill(workspaceRoot, path)),
     ...githubSkillPaths.map((path) =>

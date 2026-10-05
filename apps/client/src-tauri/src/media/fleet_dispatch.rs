@@ -250,15 +250,6 @@ pub(super) async fn invoke(
             )
             .map_err(|error| json!(error.to_string()))?
         }
-        "media_probe_local_model" => {
-            check_arguments(&args, &["modelId"])?;
-            serde_json::to_value(
-                super::media_probe_local_model(app.clone(), argument(&args, "modelId")?)
-                    .await
-                    .map_err(error_value)?,
-            )
-            .map_err(|error| json!(error.to_string()))?
-        }
         "media_inspect_model_addon" => {
             check_arguments(&args, &["sourcePath"])?;
             serde_json::to_value(
@@ -559,10 +550,10 @@ pub(super) async fn invoke(
             serde_json::to_value(super::media_inspect_hardware(app.clone()).map_err(error_value)?)
                 .map_err(|error| json!(error.to_string()))?
         }
-        "media_import_image" => {
+        "media_import_asset" => {
             check_arguments(&args, &["path"])?;
             serde_json::to_value(
-                super::media_import_image(app.clone(), argument(&args, "path")?)
+                super::media_import_asset(app.clone(), argument(&args, "path")?)
                     .await
                     .map_err(error_value)?,
             )

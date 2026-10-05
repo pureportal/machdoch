@@ -2,6 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { loadFleetManagedProfile } from "./fleet-settings.js";
 import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
 import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "./_helpers/write-file-atomically.helper.js";
@@ -404,7 +405,8 @@ export const loadUserApiKeys = async (): Promise<
   Partial<Record<UserApiProvider, string>>
 > => {
   const { config } = await loadUserConfigFile();
-  const apiKeys = config.apiKeys ?? {};
+  const managed = await loadFleetManagedProfile();
+  const apiKeys = { ...config.apiKeys, ...managed?.secrets };
 
   return Object.fromEntries(
     Object.entries(apiKeys)
@@ -441,7 +443,8 @@ export const loadUserWebSearchApiKeys = async (): Promise<
   Partial<Record<UserWebSearchProvider, string>>
 > => {
   const { config } = await loadUserConfigFile();
-  const apiKeys = config.webSearch?.apiKeys ?? {};
+  const managed = await loadFleetManagedProfile();
+  const apiKeys = { ...config.webSearch?.apiKeys, ...managed?.secrets };
 
   return Object.fromEntries(
     Object.entries(apiKeys)
@@ -696,10 +699,13 @@ export const loadUserWebSearchSettings = async (): Promise<{
   providerAvailability: WebSearchProviderAvailability[];
 }> => {
   const { config } = await loadUserConfigFile();
-  const activeProvider = isWebSearchProvider(
-    config.webSearch?.activeProvider ?? "none",
-  )
-    ? (config.webSearch?.activeProvider ?? "none")
+  const managed = await loadFleetManagedProfile();
+  const selectedProvider =
+    managed?.document.defaults.webSearchProvider ??
+    config.webSearch?.activeProvider ??
+    "none";
+  const activeProvider = isWebSearchProvider(selectedProvider)
+    ? selectedProvider
     : "none";
   const apiKeys = await loadUserWebSearchApiKeys();
 
@@ -716,8 +722,16 @@ export const loadUserWebSearchSettings = async (): Promise<{
 export const loadUserAgentLimitsSettings =
   async (): Promise<UserAgentLimitsSettings> => {
     const { config } = await loadUserConfigFile();
-
-    return normalizeUserAgentLimitsSettings(config.agentLimits);
+    const managed = await loadFleetManagedProfile();
+    const overrides = Object.fromEntries(
+      Object.entries(managed?.document.agentLimits ?? {}).filter(
+        ([, value]) => value !== null,
+      ),
+    );
+    return normalizeUserAgentLimitsSettings({
+      ...config.agentLimits,
+      ...overrides,
+    });
   };
 
 /**

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from collections.abc import Iterable
+from itertools import chain
 import subprocess
 import tempfile
 import threading
@@ -10,8 +12,8 @@ from typing import Any
 def encode_frames(
     ffmpeg: str,
     destination: Path,
-    frames: list[Any],
-    fps: int,
+    frames: Iterable[Any],
+    fps: float,
     output_arguments: list[str],
     *,
     alpha: bool,
@@ -19,18 +21,14 @@ def encode_frames(
 ) -> None:
     import numpy as np
 
-    if not frames:
+    iterator = iter(frames)
+    first = next(iterator, None)
+    if first is None:
         raise ValueError("Video encoding requires frames")
-    height, width = frames[0].shape[:2]
-    channels = 4 if alpha else 3
-    if any(
-        frame.dtype != np.uint8
-        or frame.ndim != 3
-        or frame.shape[:2] != (height, width)
-        or frame.shape[2] < channels
-        for frame in frames
-    ):
+    if first.ndim != 3 or first.dtype != np.uint8 or first.shape[2] < (4 if alpha else 3):
         raise ValueError("Video frames must have matching dimensions and uint8 channels")
+    height, width = first.shape[:2]
+    channels = 4 if alpha else 3
     command = [
         ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
         "-f", "rawvideo", "-pixel_format", "rgba" if alpha else "rgb24",
@@ -61,7 +59,14 @@ def encode_frames(
             if process.stdin is None:
                 raise ValueError("Video encoder input is unavailable")
             try:
-                for frame in frames:
+                for frame in chain((first,), iterator):
+                    if (
+                        frame.dtype != np.uint8
+                        or frame.ndim != 3
+                        or frame.shape[:2] != (height, width)
+                        or frame.shape[2] < channels
+                    ):
+                        raise ValueError("Video frames must have matching dimensions and uint8 channels")
                     process.stdin.write(
                         np.ascontiguousarray(frame[..., :channels]).tobytes()
                     )

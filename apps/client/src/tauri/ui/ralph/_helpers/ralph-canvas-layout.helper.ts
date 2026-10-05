@@ -29,6 +29,7 @@ export type RalphNodeData = Record<string, unknown> & {
   selected: boolean;
   derivedChildIds: string[];
   hiddenByCollapsedGroup: boolean;
+  collapsedGroupInput?: boolean;
   lockedByGroupId: string | null;
   onResizeEnd?: RalphNodeResizeEndHandler;
 };
@@ -53,8 +54,9 @@ export interface RalphCanvasBlockBounds {
 export const RALPH_NOTE_DEFAULT_SIZE = { width: 280, height: 180 };
 export const RALPH_GROUP_DEFAULT_SIZE = { width: 720, height: 420 };
 export const RALPH_GROUP_COLLAPSED_HEIGHT = 72;
+export const RALPH_GROUP_COLLAPSED_WIDTH = 320;
 export const RALPH_CANVAS_X_GAP = 420;
-export const RALPH_CANVAS_Y_GAP = 160;
+export const RALPH_CANVAS_Y_GAP = 400;
 export const RALPH_BLOCK_FALLBACK_HEIGHT = 150;
 export const RALPH_CANVAS_STACK_OFFSET = 28;
 
@@ -98,7 +100,10 @@ export const getCanvasBlockSize = (
 
   return {
     width: getBlockFallbackWidth(block),
-    height: RALPH_BLOCK_FALLBACK_HEIGHT,
+    height: Math.max(
+      RALPH_BLOCK_FALLBACK_HEIGHT,
+      220 + getBlockOutputs(block).length * 26,
+    ),
   };
 };
 
@@ -572,6 +577,34 @@ export const forceRalphFlowLayout = (flow: RalphFlow): RalphFlow => {
   };
 };
 
+const createCollapsedGroupRepresentatives = (
+  flow: RalphFlow,
+  childrenByGroupId: Map<string, string[]>,
+  hiddenBlockIds: Set<string>,
+): Map<string, string> => {
+  const representatives = new Map(
+    flow.blocks.map((block) => [block.id, block.id]),
+  );
+  for (const group of flow.blocks) {
+    if (
+      group.type !== "GROUP" ||
+      !group.collapsed ||
+      hiddenBlockIds.has(group.id)
+    )
+      continue;
+    const pending = [...(childrenByGroupId.get(group.id) ?? [])];
+    const visited = new Set<string>();
+    while (pending.length > 0) {
+      const id = pending.pop()!;
+      if (visited.has(id)) continue;
+      visited.add(id);
+      representatives.set(id, group.id);
+      pending.push(...(childrenByGroupId.get(id) ?? []));
+    }
+  }
+  return representatives;
+};
+
 export const flowToNodes = (
   flow: RalphFlow,
   issues: LocalIssue[],
@@ -585,32 +618,79 @@ export const flowToNodes = (
     childrenByGroupId,
   );
   const lockedParentGroupIdByBlockId = createLockedParentGroupIdByBlockId(flow);
+  const representatives = createCollapsedGroupRepresentatives(
+    flow,
+    childrenByGroupId,
+    hiddenBlockIds,
+  );
+  const visibleBlocks = flow.blocks.filter(
+    (block) => !hiddenBlockIds.has(block.id),
+  );
+  const compactOverview =
+    visibleBlocks.length > 0 &&
+    visibleBlocks.every((block) => block.type === "GROUP" && block.collapsed);
+  const overviewPositions = new Map(
+    compactOverview
+      ? visibleBlocks.map(
+          (block, index) =>
+            [
+              block.id,
+              {
+                x: RALPH_CANVAS_X_START + (index % 2) * RALPH_CANVAS_X_GAP,
+                y: RALPH_CANVAS_Y_START + Math.floor(index / 2) * 200,
+              },
+            ] as const,
+        )
+      : [],
+  );
 
   return flow.blocks.map((block, index) => {
     const size = block.size;
     const isCollapsedGroup = block.type === "GROUP" && block.collapsed;
-    const renderSize =
-      size && isCollapsedGroup
-        ? { width: size.width, height: RALPH_GROUP_COLLAPSED_HEIGHT }
-        : size;
+    const renderSize = isCollapsedGroup
+      ? {
+          width: RALPH_GROUP_COLLAPSED_WIDTH,
+          height: RALPH_GROUP_COLLAPSED_HEIGHT,
+        }
+      : size;
     const lockedByGroupId = lockedParentGroupIdByBlockId.get(block.id) ?? null;
     const isLocked = Boolean(block.locked || lockedByGroupId);
 
     return {
       id: block.id,
       type: "ralphBlock",
-      position: getCanvasBlockPosition(block, index),
+      position:
+        overviewPositions.get(block.id) ?? getCanvasBlockPosition(block, index),
       ...(renderSize
         ? { style: { width: renderSize.width, height: renderSize.height } }
         : {}),
       ...(block.type === "GROUP" ? { zIndex: -1 } : {}),
-      ...(isLocked ? { draggable: false } : {}),
+      ...(isLocked || compactOverview ? { draggable: false } : {}),
       ...(hiddenBlockIds.has(block.id) ? { hidden: true } : {}),
       data: {
         block,
-        outputs: getBlockOutputs(block),
+        outputs: isCollapsedGroup
+          ? flow.edges.some(
+              (edge) =>
+                representatives.get(edge.from) === block.id &&
+                representatives.get(edge.to) !== block.id,
+            )
+            ? ["group-output"]
+            : []
+          : getBlockOutputs(block),
+        ...(isCollapsedGroup
+          ? {
+              collapsedGroupInput: flow.edges.some(
+                (edge) =>
+                  representatives.get(edge.to) === block.id &&
+                  representatives.get(edge.from) !== block.id,
+              ),
+            }
+          : {}),
         issueCount: issues.filter((issue) => issue.blockId === block.id).length,
-        active: block.id === activeBlockId,
+        active:
+          activeBlockId !== null &&
+          block.id === representatives.get(activeBlockId),
         selected: block.id === selectedBlockId,
         derivedChildIds: childrenByGroupId.get(block.id) ?? [],
         hiddenByCollapsedGroup: hiddenBlockIds.has(block.id),
@@ -631,21 +711,40 @@ export const flowToEdges = (
     flow,
     childrenByGroupId,
   );
+  const representatives = createCollapsedGroupRepresentatives(
+    flow,
+    childrenByGroupId,
+    hiddenBlockIds,
+  );
+  const visibleGroupConnections = new Set<string>();
 
   return flow.edges.map((edge) => {
+    const source = representatives.get(edge.from) ?? edge.from;
+    const target = representatives.get(edge.to) ?? edge.to;
+    const collapsedConnection = source !== edge.from || target !== edge.to;
+    const connection = JSON.stringify([
+      source,
+      source !== edge.from ? "group-output" : edge.fromOutput,
+      target,
+    ]);
+    const hidden =
+      collapsedConnection &&
+      (source === target || visibleGroupConnections.has(connection));
+    if (collapsedConnection && !hidden) visibleGroupConnections.add(connection);
     const selected = edge.id === selectedEdgeId;
     const connectedToSelectedBlock =
       selectedBlockId !== null &&
-      (edge.from === selectedBlockId || edge.to === selectedBlockId);
-    const tone = getRalphOutputTone(edge.fromOutput);
+      (source === selectedBlockId || target === selectedBlockId);
+    const output = source !== edge.from ? "" : edge.fromOutput;
+    const tone = getRalphOutputTone(output);
 
-    return createFlowCanvasEdge<RalphEdgeData>({
+    const canvasEdge = createFlowCanvasEdge<RalphEdgeData>({
       id: edge.id,
-      source: edge.from,
-      sourceHandle: edge.fromOutput,
-      target: edge.to,
+      source,
+      sourceHandle: source !== edge.from ? "group-output" : edge.fromOutput,
+      target,
       data: {
-        output: edge.fromOutput,
+        output,
       },
       tone,
       emphasis: selected
@@ -654,8 +753,9 @@ export const flowToEdges = (
           ? "medium"
           : "default",
       selected,
-      hidden: hiddenBlockIds.has(edge.from) || hiddenBlockIds.has(edge.to),
+      hidden,
     });
+    return collapsedConnection ? { ...canvasEdge, zIndex: -2 } : canvasEdge;
   });
 };
 

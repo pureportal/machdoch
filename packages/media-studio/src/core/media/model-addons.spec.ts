@@ -167,6 +167,9 @@ describe("media model add-on selection", () => {
   it.each([
     ["local-wan", "wan-2.2-ti2v"],
     ["local-video", "ltx-video"],
+    ["local-diffusers", "cogvideox-2b"],
+    ["local-diffusers", "cogvideox-1.5-5b"],
+    ["local-diffusers", "cogvideox-1.5-5b-i2v"],
     ["local-video", "framepack-i2v"],
     ["local-video", "hunyuan-video-1.5-i2v"],
   ] as const)(

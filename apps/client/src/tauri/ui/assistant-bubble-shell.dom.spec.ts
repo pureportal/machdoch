@@ -1,187 +1,165 @@
 // @vitest-environment jsdom
 
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
-import { createElement, type ReactNode } from "react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { AssistantBubbleShell } from "./assistant-bubble-shell";
+  PhysicalPosition,
+  PhysicalSize,
+  type Monitor,
+} from "@tauri-apps/api/window";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DISPLAY_LAYOUT_CHANGED_EVENT } from "./assistant-surface";
+import { useAssistantDisplayLayout } from "./use-assistant-display-layout";
 
 const native = vi.hoisted(() => ({
-  visible: false,
-  size: { width: 900, height: 700 },
-  position: { x: 0, y: 0 },
-  innerSize: vi.fn(),
-  outerPosition: vi.fn(),
-  isVisible: vi.fn(),
-  isMaximized: vi.fn(),
-  unmaximize: vi.fn(),
-  show: vi.fn(),
-  hide: vi.fn(),
+  label: "quick-voice",
   listen: vi.fn(),
   onScaleChanged: vi.fn(),
-  onMoved: vi.fn(),
-  onResized: vi.fn(),
-  setWindowSize: vi.fn(),
-  setWindowPosition: vi.fn(),
-  resolveLayout: vi.fn(),
-  resolveTopology: vi.fn(),
-  detectFullscreen: vi.fn(),
-  loadTasks: vi.fn(),
-  subscribeTasks: vi.fn(),
-  togglePopup: vi.fn(),
+  setPosition: vi.fn(),
+  setSize: vi.fn(),
+  current: vi.fn(),
+  fromPoint: vi.fn(),
+  cursor: vi.fn(),
+  primary: vi.fn(),
+  monitors: vi.fn(),
 }));
-
-vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
-vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => native }));
-vi.mock("./assistant-surface", () => ({
-  DISPLAY_LAYOUT_CHANGED_EVENT: "display-change",
-  resolveAssistantSurfaceLayout: native.resolveLayout,
-  resolveMonitorTopologyKey: native.resolveTopology,
-  setWindowSize: native.setWindowSize,
-  setWindowPosition: native.setWindowPosition,
-  syncAssistantPopupPosition: vi.fn().mockResolvedValue(undefined),
-  toggleAssistantPopup: native.togglePopup,
-  isAssistantPopupVisible: vi.fn().mockResolvedValue(false),
+vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => true,
+  invoke: vi.fn(),
+}));
+vi.mock("@tauri-apps/api/window", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tauri-apps/api/window")>()),
+  getCurrentWindow: () => native,
+  currentMonitor: native.current,
+  monitorFromPoint: native.fromPoint,
+  cursorPosition: native.cursor,
+  primaryMonitor: native.primary,
+  availableMonitors: native.monitors,
 }));
 vi.mock("./runtime", () => ({
-  ASSISTANT_POPUP_WINDOW_LABEL: "assistant-popup",
-  QUICK_CHAT_DROP_EVENT: "quick-chat-drop",
-  detectFullscreenWindowOnMonitor: native.detectFullscreen,
-  loadActiveDesktopTaskIds: native.loadTasks,
-  subscribeToDesktopTaskProgress: native.subscribeTasks,
-}));
-vi.mock("./_helpers/use-user-desktop-settings", () => ({
-  useUserDesktopSettings: () => ({
-    assistantBubbleEnabled: true,
-    assistantBubbleHideWhenFullscreen: true,
-    assistantBubbleTemporarilyHideSeconds: 6,
-    quickVoiceEnabled: false,
-  }),
-}));
-vi.mock("./chat-session/_helpers/use-appearance-settings", () => ({
-  useAppearanceSettings: () => ({
-    settings: { quickChatBubbleStyle: "default" },
-  }),
-}));
-vi.mock("./chat-session/_helpers/use-session-file-drops", () => ({
-  useSessionFileDrops: () => ({ isActive: false }),
-}));
-vi.mock("@machdoch/media-studio/tauri/ui/components/ui/tooltip.js", () => ({
-  ControlTooltip: ({ children }: { children: ReactNode }) => children,
+  MAIN_WINDOW_LABEL: "main",
+  QUICK_VOICE_START_EVENT: "start",
+  QUICK_VOICE_WINDOW_LABEL: "quick-voice",
 }));
 
-const layout = {
-  monitorBounds: { x: 0, y: 0, width: 1920, height: 1080 },
-  bubbleSize: { width: 128, height: 104 },
-  bubblePosition: { x: 1768, y: 936 },
-};
+const makeMonitor = (x: number, scaleFactor = 1): Monitor => ({
+  name: "monitor",
+  position: new PhysicalPosition(x, 0),
+  size: new PhysicalSize(1920, 1080),
+  scaleFactor,
+  workArea: {
+    position: new PhysicalPosition(x, 40),
+    size: new PhysicalSize(1920, 1040),
+  },
+});
+const unlisten = vi.fn();
+const unscale = vi.fn();
 
 beforeEach(() => {
-  vi.clearAllMocks();
-  native.visible = false;
-  native.size = { width: 900, height: 700 };
-  native.position = { x: 0, y: 0 };
-  native.innerSize.mockImplementation(async () => native.size);
-  native.outerPosition.mockImplementation(async () => native.position);
-  native.isVisible.mockImplementation(async () => native.visible);
-  native.isMaximized.mockResolvedValue(false);
-  native.show.mockImplementation(async () => {
-    native.visible = true;
-  });
-  native.hide.mockImplementation(async () => {
-    native.visible = false;
-  });
-  for (const subscribe of [
-    native.listen,
-    native.onScaleChanged,
-    native.onMoved,
-    native.onResized,
-  ]) {
-    subscribe.mockResolvedValue(() => undefined);
-  }
-  native.resolveLayout.mockResolvedValue(layout);
-  native.resolveTopology.mockResolvedValue("monitor");
-  native.detectFullscreen.mockResolvedValue(false);
-  native.loadTasks.mockResolvedValue([]);
-  native.subscribeTasks.mockResolvedValue(() => undefined);
-  native.togglePopup.mockResolvedValue(true);
-  native.setWindowSize.mockImplementation(async (_window, size) => {
-    native.size = size;
-    return true;
-  });
-  native.setWindowPosition.mockImplementation(async (_window, position) => {
-    native.position = position;
-    return true;
-  });
+  vi.resetAllMocks();
+  native.listen.mockResolvedValue(unlisten);
+  native.onScaleChanged.mockResolvedValue(unscale);
+  native.setPosition.mockResolvedValue(undefined);
+  native.setSize.mockResolvedValue(undefined);
+  native.current.mockResolvedValue(makeMonitor(-1920));
+  native.cursor.mockResolvedValue({ x: 100, y: 100 });
+  native.fromPoint.mockResolvedValue(null);
+  native.primary.mockResolvedValue(null);
+  native.monitors.mockResolvedValue([]);
 });
-
 afterEach(cleanup);
 
-it("opens the popup when the bubble is clicked", async () => {
-  render(createElement(AssistantBubbleShell));
+describe("Quick Voice display layout integration", () => {
+  it("applies native geometry on display and DPI changes while keeping window affinity", async () => {
+    const { unmount } = renderHook(() => useAssistantDisplayLayout());
+    await waitFor(() =>
+      expect(native.listen).toHaveBeenCalledWith(
+        DISPLAY_LAYOUT_CHANGED_EVENT,
+        expect.any(Function),
+      ),
+    );
+    expect(native.setSize).not.toHaveBeenCalled();
 
-  fireEvent.click(screen.getByRole("button", { name: "Open Quick Chat" }));
+    await act(async () => {
+      (native.listen.mock.calls[0]![1] as () => void)();
+    });
+    await waitFor(() =>
+      expect(native.setSize).toHaveBeenLastCalledWith(new PhysicalSize(380, 220)),
+    );
+    expect(native.setPosition).toHaveBeenLastCalledWith(
+      new PhysicalPosition(-404, 836),
+    );
 
-  await waitFor(() => expect(native.togglePopup).toHaveBeenCalledOnce());
-  await waitFor(() =>
-    expect(
-      screen
-        .getByRole("button", { name: "Open Quick Chat" })
-        .getAttribute("aria-expanded"),
-    ).toBe("true"),
-  );
-});
+    native.current.mockResolvedValue(makeMonitor(0, 1.5));
+    await act(async () => {
+      (native.onScaleChanged.mock.calls[0]![0] as () => void)();
+    });
+    await waitFor(() =>
+      expect(native.setSize).toHaveBeenLastCalledWith(new PhysicalSize(570, 330)),
+    );
+    expect(native.setPosition).toHaveBeenLastCalledWith(
+      new PhysicalPosition(1314, 714),
+    );
+    expect(native.cursor).not.toHaveBeenCalled();
+    expect(native.setPosition.mock.invocationCallOrder[1]).toBeLessThan(
+      native.setSize.mock.invocationCallOrder[1]!,
+    );
 
-it("keeps the bubble hidden while a slow size update is pending", async () => {
-  let finishSize!: () => void;
-  native.setWindowSize.mockImplementationOnce(
-    () =>
-      new Promise<boolean>((resolve) => {
-        finishSize = () => {
-          native.size = layout.bubbleSize;
-          resolve(true);
-        };
-      }),
-  );
-
-  render(createElement(AssistantBubbleShell));
-  await waitFor(() => expect(native.setWindowSize).toHaveBeenCalledOnce());
-  expect(native.show).not.toHaveBeenCalled();
-
-  await act(async () => finishSize());
-  await waitFor(() => expect(native.show).toHaveBeenCalledOnce());
-  expect(native.size).toEqual(layout.bubbleSize);
-  expect(native.position).toEqual(layout.bubblePosition);
-});
-
-it("does not reveal the bubble after a failed size update and retries on resize", async () => {
-  native.setWindowSize.mockResolvedValueOnce(false);
-
-  render(createElement(AssistantBubbleShell));
-  await waitFor(() => expect(native.setWindowSize).toHaveBeenCalledOnce());
-  expect(native.show).not.toHaveBeenCalled();
-
-  await waitFor(() => expect(native.onResized).toHaveBeenCalledOnce());
-  await act(async () => {
-    (native.onResized.mock.calls[0]![0] as () => void)();
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    unmount();
+    expect(unlisten).toHaveBeenCalledOnce();
+    expect(unscale).toHaveBeenCalledOnce();
   });
 
-  await waitFor(() => expect(native.show).toHaveBeenCalledOnce());
-  expect(native.setWindowSize).toHaveBeenCalledTimes(2);
-});
+  it("applies the latest display after a slow native size update completes", async () => {
+    let finishSize!: () => void;
+    native.setSize.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSize = resolve;
+        }),
+    );
+    renderHook(() => useAssistantDisplayLayout());
+    await act(async () => {});
+    await act(async () => {
+      (native.listen.mock.calls[0]![1] as () => void)();
+    });
+    await waitFor(() => expect(native.setSize).toHaveBeenCalledOnce());
 
-it("does not reveal a window whose size remains large after an update", async () => {
-  native.setWindowSize.mockResolvedValueOnce(true);
+    native.current.mockResolvedValue(makeMonitor(0, 1.5));
+    await act(async () => {
+      (native.onScaleChanged.mock.calls[0]![0] as () => void)();
+    });
+    expect(native.current).toHaveBeenCalledOnce();
+    expect(native.setPosition).toHaveBeenCalledOnce();
 
-  render(createElement(AssistantBubbleShell));
-  await waitFor(() => expect(native.setWindowSize).toHaveBeenCalledOnce());
-  expect(native.show).not.toHaveBeenCalled();
-  expect(native.size).toEqual({ width: 900, height: 700 });
+    await act(async () => finishSize());
+    await waitFor(() => expect(native.setSize).toHaveBeenCalledTimes(2));
+    expect(native.current).toHaveBeenCalledTimes(2);
+    expect(native.setPosition).toHaveBeenLastCalledWith(
+      new PhysicalPosition(1314, 714),
+    );
+    expect(native.setSize).toHaveBeenLastCalledWith(new PhysicalSize(570, 330));
+  });
+
+  it("resumes native layout updates when a display reconnects", async () => {
+    native.current.mockResolvedValue(null);
+    renderHook(() => useAssistantDisplayLayout());
+    await act(async () => {});
+    await act(async () => {
+      (native.listen.mock.calls[0]![1] as () => void)();
+    });
+    await waitFor(() => expect(native.monitors).toHaveBeenCalledOnce());
+    expect(native.setPosition).not.toHaveBeenCalled();
+    expect(native.setSize).not.toHaveBeenCalled();
+
+    native.current.mockResolvedValue(makeMonitor(1920));
+    await act(async () => {
+      (native.listen.mock.calls[0]![1] as () => void)();
+    });
+    await waitFor(() =>
+      expect(native.setSize).toHaveBeenCalledWith(new PhysicalSize(380, 220)),
+    );
+    expect(native.setPosition).toHaveBeenCalledWith(
+      new PhysicalPosition(3436, 836),
+    );
+  });
 });

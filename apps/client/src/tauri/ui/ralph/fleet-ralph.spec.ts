@@ -31,7 +31,7 @@ const flow = {
 
 const run = (
   id: string,
-  status: "running" | "crashed" | "partial",
+  status: "running" | "crashed" | "partial" | "stopped",
   createdAt: string,
 ) => ({
   id,
@@ -135,6 +135,10 @@ describe("loadFleetRalphSnapshot", () => {
             run("run-two", "running", "2026-01-01T00:00:04.000Z"),
             run("run-crashed", "crashed", "2026-01-01T00:00:01.000Z"),
             run("run-partial", "partial", "2026-01-01T00:00:00.000Z"),
+            {
+              ...run("run-stopped", "stopped", "2026-01-01T00:00:00.000Z"),
+              recoverable: true,
+            },
           ],
         },
         { scope: "user", flows: [], runs: [] },
@@ -193,6 +197,11 @@ describe("loadFleetRalphSnapshot", () => {
         expect.objectContaining({
           id: "run-partial",
           recoverable: false,
+        }),
+        expect.objectContaining({
+          id: "run-stopped",
+          recoverable: true,
+          cancellable: false,
         }),
       ]),
     );

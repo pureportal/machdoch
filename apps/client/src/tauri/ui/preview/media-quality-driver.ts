@@ -311,11 +311,11 @@ export const startAnimationIterationRun = async ({
   seed: number;
   loopMode: "none" | "seamless";
 }) => {
-  const imported = await invoke<MediaAssetImportResult>("media_import_image", {
+  const imported = await invoke<MediaAssetImportResult>("media_import_asset", {
     path: sourcePath,
   });
   const importedLast = lastSourcePath
-    ? await invoke<MediaAssetImportResult>("media_import_image", {
+    ? await invoke<MediaAssetImportResult>("media_import_asset", {
         path: lastSourcePath,
       })
     : null;

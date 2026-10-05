@@ -8,12 +8,17 @@ const mocks = vi.hoisted(() => ({
   printTaskPreview: vi.fn(),
   runInteractiveChat: vi.fn(),
   loadRalphSnapshot: vi.fn(),
+  printRalphSummary: vi.fn(),
   writeStdoutLine: vi.fn(),
   writeStderrLine: vi.fn(),
 }));
 
 vi.mock("../core/ralph-snapshot.js", () => ({
   loadRalphSnapshot: mocks.loadRalphSnapshot,
+}));
+
+vi.mock("./_helpers/cli-ralph-commands.js", () => ({
+  printRalphSummary: mocks.printRalphSummary,
 }));
 
 vi.mock("./_helpers/cli-io.js", async (importOriginal) => ({
@@ -59,6 +64,7 @@ describe("runCli agent resource lifecycle", () => {
     mocks.printTaskPreview.mockReset().mockResolvedValue(undefined);
     mocks.runInteractiveChat.mockReset().mockResolvedValue(undefined);
     mocks.loadRalphSnapshot.mockReset();
+    mocks.printRalphSummary.mockReset().mockResolvedValue(undefined);
     mocks.writeStdoutLine.mockReset();
     mocks.writeStderrLine.mockReset();
   });
@@ -139,6 +145,56 @@ describe("runCli agent resource lifecycle", () => {
     expect(mocks.closeAll).not.toHaveBeenCalled();
     expect(mocks.closeAllBrowserSessions).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["list"],
+    ["show", "feature"],
+    ["runs"],
+    ["run-detail", "run-id"],
+    ["revisions", "feature"],
+    ["log", "run-id"],
+    ["validate", "feature"],
+    ["validate-json", "--flow-json", "{}"],
+  ])(
+    "reads Ralph %s while provider synchronization is unavailable",
+    async (...arguments_) => {
+      mocks.ensureAutomaticProviderSync.mockImplementation(
+        () => new Promise(() => {}),
+      );
+      await runCli(["--json", "ralph", ...arguments_]);
+      expect(mocks.printRalphSummary).toHaveBeenCalledOnce();
+      expect(mocks.ensureAutomaticProviderSync).not.toHaveBeenCalled();
+      expect(mocks.closeAll).not.toHaveBeenCalled();
+      expect(mocks.closeAllBrowserSessions).not.toHaveBeenCalled();
+    },
+  );
+
+  it("propagates a library read failure without initializing agent resources", async () => {
+    mocks.printRalphSummary.mockRejectedValueOnce(
+      new Error("Library unavailable"),
+    );
+    await expect(runCli(["--json", "ralph", "list"])).rejects.toThrow(
+      "Library unavailable",
+    );
+    expect(mocks.ensureAutomaticProviderSync).not.toHaveBeenCalled();
+    expect(mocks.closeAll).not.toHaveBeenCalled();
+    expect(mocks.closeAllBrowserSessions).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["run", "feature"],
+    ["resume", "run-id", "--retry-current"],
+    ["watches", "run"],
+  ])(
+    "retains agent synchronization and cleanup for Ralph %s",
+    async (...arguments_) => {
+      await runCli(["--json", "ralph", ...arguments_]);
+      expect(mocks.ensureAutomaticProviderSync).toHaveBeenCalledOnce();
+      expect(mocks.printRalphSummary).toHaveBeenCalledOnce();
+      expect(mocks.closeAll).toHaveBeenCalledOnce();
+      expect(mocks.closeAllBrowserSessions).toHaveBeenCalledOnce();
+    },
+  );
 
   it.each(["workspace", "user"])(
     "restricts snapshot reads to the requested %s scope",

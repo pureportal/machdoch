@@ -15,6 +15,11 @@ import { FleetCliProductRuntime } from "./cli-fleet-product.js";
 import { writeStdoutLine } from "./cli-io.js";
 import { CliConfigurationError } from "./cli-error.js";
 import { manageFleetService } from "../../core/fleet-service.js";
+import {
+  runFleetSettingsService,
+  synchronizeFleetSettings,
+} from "../../core/fleet-settings.js";
+import { exportFleetLocalSettings } from "../../core/fleet-settings-export.js";
 
 const fail = (message: string): never => {
   throw new Error(message);
@@ -105,6 +110,35 @@ const runService = async (args: ParsedCliArgs): Promise<void> => {
       `${getFleetConnectionPath()}.cli-service`,
       async () => {
         if (controller.signal.aborted) return;
+        const onSettingsError = (error: unknown): void => {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Settings synchronization failed.";
+          if (args.json)
+            writeStdoutLine(
+              JSON.stringify({
+                type: "fleetSettingsSync",
+                status: "failed",
+                message,
+              }),
+            );
+          else process.stderr.write(`Fleet settings: ${message}\n`);
+        };
+        const config = await loadFleetConnectionConfig();
+        if (config?.enabled) {
+          try {
+            await synchronizeFleetSettings({
+              config,
+              signal: controller.signal,
+              captureLocalSettings: () =>
+                exportFleetLocalSettings(workspaceRoot),
+            });
+          } catch (error) {
+            if (controller.signal.aborted) return;
+            onSettingsError(error);
+          }
+        }
         let fleetRuntime: FleetCliProductRuntime;
         try {
           fleetRuntime = await FleetCliProductRuntime.create(workspaceRoot);
@@ -114,6 +148,11 @@ const runService = async (args: ParsedCliArgs): Promise<void> => {
           );
         }
         let result: Awaited<ReturnType<typeof runFleetGatewayService>>;
+        const settingsService = runFleetSettingsService({
+          signal: controller.signal,
+          onError: onSettingsError,
+          captureLocalSettings: () => exportFleetLocalSettings(workspaceRoot),
+        });
         try {
           result = await runFleetGatewayService({
             signal: controller.signal,
@@ -133,6 +172,7 @@ const runService = async (args: ParsedCliArgs): Promise<void> => {
           });
         } finally {
           stop();
+          await settingsService;
           // Retain the ownership lock until task cancellation and persistence finish.
           await fleetRuntime.shutdown("Fleet CLI service stopped.");
         }
@@ -159,6 +199,9 @@ export const printFleetSummary = async (args: ParsedCliArgs): Promise<void> => {
     args.fleet ?? fail("No Fleet action was provided.");
 
   switch (options.action) {
+    case "settings-export":
+      printJson(await exportFleetLocalSettings(args.workspaceRoot));
+      return;
     case "status":
       await printStatus(args.json);
       return;

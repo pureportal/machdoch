@@ -92,10 +92,10 @@ export const formatMediaImageRecipeOutput = (
 export const readMediaGenerationTarget = (
   flow: MediaFlow,
 ): MediaGenerationTarget => {
-  if (flow.nodes.some((node) => node.type === "task.generate-audio")) return "audio";
-  if (flow.nodes.some((node) => node.type === "task.generate-video")) {
+  if (flow.nodes.some((node) => node.type === "output.video" || node.type === "task.generate-video")) {
     return "video";
   }
+  if (flow.nodes.some((node) => node.type === "output.audio" || node.type === "task.generate-audio")) return "audio";
   const imageSettings = readImageRecipeSettings(flow);
   return imageSettings?.outputFormat === "svg" ? "svg" : "image";
 };

@@ -105,7 +105,7 @@ mod tests {
 
     #[test]
     fn missing_progress_and_other_commands_keep_the_original_deadline() {
-        for command in ["generate", "probe", "probe-model", "memory", "canny"] {
+        for command in ["generate", "probe", "memory", "canny"] {
             let started = Instant::now();
             let mut deadline = WorkerDeadline::new(command, Duration::from_secs(30), started);
             if command != "generate" {

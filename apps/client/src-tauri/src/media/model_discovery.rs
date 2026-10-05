@@ -89,8 +89,6 @@ const LTX_REQUIRED_FILES: &[&str] = &[
     "tokenizer/tokenizer_config.json",
     "transformer/config.json",
     "transformer-13b/config.json",
-    "vae/config.json",
-    "vae/diffusion_pytorch_model.safetensors",
     "ltxv-2b-0.9.8-distilled-fp8.safetensors",
     "ltxv-13b-0.9.8-distilled-fp8.safetensors",
     "LTX-Video-Open-Weights-License-0.X.txt",
@@ -1099,12 +1097,9 @@ fn safetensors_artifact(
             byte_size: metadata.len(),
             file_count: 1,
             capabilities: vec!["checkpoint".to_string()],
-            diagnostic: inspection.blocking_reason.unwrap_or_else(|| {
-                format!(
-                    "Safe header inspection passed with {} architecture confidence; import and verify before use.",
-                    inspection.architecture_confidence
-                )
-            }),
+            diagnostic: inspection
+                .blocking_reason
+                .unwrap_or_else(|| "Import this model to use it.".to_string()),
         });
     }
 
@@ -1605,8 +1600,6 @@ mod tests {
             "tokenizer/special_tokens_map.json",
             "tokenizer/spiece.model",
             "tokenizer/tokenizer_config.json",
-            "vae/config.json",
-            "vae/diffusion_pytorch_model.safetensors",
             "ltxv-2b-0.9.8-distilled-fp8.safetensors",
             "ltxv-13b-0.9.8-distilled-fp8.safetensors",
             "LTX-Video-Open-Weights-License-0.X.txt",

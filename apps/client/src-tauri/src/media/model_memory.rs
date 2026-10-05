@@ -382,7 +382,12 @@ fn run_isolated(
     let written = writer
         .map(|writer| writer.join().map_err(|_| "Generation input writer failed"))
         .transpose()?;
-    let status = result?;
+    let status = result.map_err(|error| match &stderr {
+        Ok(bytes) if !bytes.is_empty() => {
+            format!("{error}\n{}", String::from_utf8_lossy(bytes))
+        }
+        _ => error,
+    })?;
     if let Some(written) = written {
         written?;
     }

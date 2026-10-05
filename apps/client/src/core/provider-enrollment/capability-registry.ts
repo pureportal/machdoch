@@ -77,9 +77,9 @@ export const PROVIDER_CAPABILITY_REGISTRY = {
   },
 } as const satisfies Record<ConfiguredModelProvider, ProviderCapabilityProfile>;
 
-const PROVIDER_PROBE_CACHE_TTL_MS = 5 * 60 * 1_000;
-const PROVIDER_PROBE_TIMEOUT_MS = 4_000;
-const PROVIDER_PROBE_RETRY_TIMEOUT_MS = 12_000;
+const PROVIDER_PROBE_CACHE_TTL_MS = 30 * 60 * 1_000;
+const PROVIDER_PROBE_TIMEOUT_MS = 12_000;
+const PROVIDER_PROBE_RETRY_TIMEOUT_MS = 30_000;
 const MAX_CACHED_PROBES = 64;
 let activeProbeCommands = 0;
 const waitingProbeCommands: Array<() => void> = [];
@@ -217,6 +217,7 @@ export const probeProviderCli = async (
   }
   probeCache.delete(key);
 
+  let probeCompleted = false;
   const pending = (async (): Promise<ProviderProbeResult> => {
     const warnings: string[] = [];
     let versionResult = await captureCommand(executable, ["--version"]);
@@ -277,6 +278,7 @@ export const probeProviderCli = async (
       );
     }
 
+    probeCompleted = versionResult.exitCode === 0 && helpResult.exitCode === 0;
     const version =
       versionResult.exitCode === 0
         ? versionResult.output
@@ -303,13 +305,15 @@ export const probeProviderCli = async (
     result: pending,
   });
   void pending.then(
-    (result) => {
+    () => {
       const cached = probeCache.get(key);
       if (cached?.result === pending) {
-        cached.pending = false;
-        cached.expiresAt =
-          Date.now() +
-          (result.available ? PROVIDER_PROBE_CACHE_TTL_MS : 15_000);
+        if (probeCompleted) {
+          cached.pending = false;
+          cached.expiresAt = Date.now() + PROVIDER_PROBE_CACHE_TTL_MS;
+        } else {
+          probeCache.delete(key);
+        }
       }
       for (const [cachedKey, entry] of probeCache) {
         if (

@@ -5,6 +5,7 @@ export type MediaAssetImportType =
   | "lora"
   | "embedding"
   | "image"
+  | "audio"
   | "video"
   | "svg";
 
@@ -41,6 +42,7 @@ export const MEDIA_ASSET_FOLDER_TYPE_RULES: readonly MediaAssetFolderTypeRule[] 
       ],
     },
     { type: "image", folders: ["image", "images"] },
+    { type: "audio", folders: ["audio", "music", "songs"] },
     { type: "video", folders: ["video", "videos"] },
     { type: "svg", folders: ["svg", "vector", "vectors"] },
   ];
@@ -54,6 +56,7 @@ const IMPORT_TYPES_BY_EXTENSION: Readonly<
   jpeg: ["image"],
   webp: ["image"],
   webm: ["video"],
+  wav: ["audio"],
   svg: ["svg"],
 };
 

@@ -115,7 +115,6 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         architecture: "minimax-h3-ref2va",
         management: {
           acquisition: "workspace-discovery",
-          verification: "runtime-probe",
         },
         license: {
           name: "MiniMax H3 Community License",
@@ -182,7 +181,6 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         architecture: "hunyuan-video-1.5-i2v",
         management: {
           acquisition: "workspace-discovery",
-          verification: "runtime-probe",
         },
         license: {
           name: "Tencent Hunyuan Community License",
@@ -254,7 +252,6 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         architecture: "framepack-i2v",
         management: {
           acquisition: "workspace-discovery",
-          verification: "runtime-probe",
         },
         license: {
           name: "FramePack / HunyuanVideo model terms",
@@ -326,7 +323,6 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         architecture: "ltx-video",
         management: {
           acquisition: "workspace-discovery",
-          verification: "runtime-probe",
         },
         license: {
           name: "LTX-Video Open Weights License 0.X",
@@ -397,7 +393,6 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         architecture: "ltx-video",
         management: {
           acquisition: "workspace-discovery",
-          verification: "runtime-probe",
         },
         license: {
           name: "LTX-Video Open Weights License 0.X",
@@ -467,7 +462,6 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         architecture: "wan-2.2-ti2v",
         management: {
           acquisition: "workspace-discovery",
-          verification: "runtime-probe",
         },
         license: {
           name: "Apache License 2.0",
@@ -636,17 +630,23 @@ export const extendMediaCatalogWithWorkspaceDiscovery = ({
           ? artifact.diagnostic
           : runtimeReady
             ? `The ${artifact.displayName} package and local runtime are ready.`
-            : !deviceCompatible
-              ? profile.allowCpu === false && runtime?.device === "cpu"
-                ? `${profile.model.displayName} requires a supported GPU; the 2B variant remains available on CPU.`
-                : `${profile.model.displayName} requires at least ${Math.ceil((profile.minimumDeviceMemoryBytes ?? 0) / 1_024 ** 3)} GiB of reported device memory; choose the 2B variant on this adapter.`
-              : !memoryCompatible
-                ? `${profile.model.displayName} requires at least ${Math.ceil((profile.minimumPhysicalMemoryBytes ?? 0) / 1_024 ** 3)} GiB of physical memory; choose the 2B variant on this host.`
-                : runtimeDiagnostic(
-                    runtime,
-                    missingArchitectures,
-                    missingCapabilities,
-                  );
+            : runtime?.ready !== true
+              ? runtimeDiagnostic(
+                  runtime,
+                  missingArchitectures,
+                  missingCapabilities,
+                )
+              : !deviceCompatible
+                ? profile.allowCpu === false && runtime?.device === "cpu"
+                  ? `${profile.model.displayName} requires a supported GPU; the 2B variant remains available on CPU.`
+                  : `${profile.model.displayName} requires at least ${Math.ceil((profile.minimumDeviceMemoryBytes ?? 0) / 1_024 ** 3)} GiB of reported device memory; choose the 2B variant on this adapter.`
+                : !memoryCompatible
+                  ? `${profile.model.displayName} requires at least ${Math.ceil((profile.minimumPhysicalMemoryBytes ?? 0) / 1_024 ** 3)} GiB of physical memory; choose the 2B variant on this host.`
+                  : runtimeDiagnostic(
+                      runtime,
+                      missingArchitectures,
+                      missingCapabilities,
+                    );
 
     const existingProvider = discoveredProviders.get(profile.provider.id);
     discoveredProviders.set(profile.provider.id, {

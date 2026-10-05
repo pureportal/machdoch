@@ -176,6 +176,9 @@ export const createImageRecipeFlow = ({
       svgTextPolicy: settings.svgTextPolicy ?? "avoid",
       svgCandidateCount: settings.svgCandidateCount ?? settings.outputCount,
       svgCriticEnabled: settings.svgCriticEnabled === true,
+      poseStrength: settings.poseStrength,
+      poseStart: settings.poseStart ?? 0,
+      poseEnd: settings.poseEnd ?? 1,
       memoryProfile: settings.memoryProfile ?? "auto",
     },
   );
@@ -237,6 +240,15 @@ export const createImageRecipeFlow = ({
       ),
     );
   });
+  if (settings.poseImageAssetId) {
+    const pose = createNode("pose-image", "source.image", "Pose", "source", {
+      assetId: settings.poseImageAssetId,
+      referenceRole: "pose",
+      influence: 1,
+    });
+    nodes.push(pose);
+    edges.push(createEdge("pose-to-generate", pose.id, "image", generate.id, "image"));
+  }
   let previousNodeId = generate.id;
 
   if (settings.transparentBackground && settings.outputFormat !== "svg") {
@@ -434,7 +446,7 @@ export const createImageEditFlow = ({
     ? createNode("pose-image", "source.image", "Pose", "source", {
         assetId: settings.poseImageAssetId,
         referenceRole: "pose",
-        influence: settings.poseStrength,
+        influence: 1,
       })
     : null;
   const seed =
@@ -2164,7 +2176,6 @@ export const readImageRecipeSettings = (
     ),
     baseImageAssetId: base?.assetId ?? null,
     poseImageAssetId: pose?.assetId ?? null,
-    poseStrength: pose?.influence ?? settings.poseStrength,
   };
 };
 
@@ -3188,13 +3199,13 @@ export const compileMediaFlow = ({
   addons = [],
   compiledAt,
 }: CompileMediaFlowInput): MediaCompiledPlan => {
-  if (flow.nodes.some((node) => node.type === "task.generate-audio"))
-    return compileAudioFlow({ flow, models, compiledAt });
   if (requiresWorkflowCompilation(flow))
     return compileConnectedMediaFlow(
       { flow, models, addons, compiledAt },
       compileMediaFlow,
     );
+  if (flow.nodes.some((node) => node.type === "task.generate-audio"))
+    return compileAudioFlow({ flow, models, compiledAt });
   const variableResolution = resolveMediaFlowVariables(flow);
   const effectiveFlow = variableResolution.flow;
   const imageTaskNodes = effectiveFlow.nodes.filter(
@@ -3533,9 +3544,8 @@ export const compileMediaFlow = ({
           typeof videoTaskNode.config.modelId === "string"
             ? videoTaskNode.config.modelId.trim()
             : "";
-        const candidates = models.filter(
+        const compatible = models.filter(
           (candidate) =>
-            isMediaModelReady(candidate) &&
             candidate.capabilities.includes(
               videoFrameSources.length === 0
                 ? "text-to-video"
@@ -3551,6 +3561,11 @@ export const compileMediaFlow = ({
                 : "auto",
             ),
         );
+        if (configuredId)
+          return (
+            compatible.find((candidate) => candidate.id === configuredId) ?? null
+          );
+        const candidates = compatible.filter(isMediaModelReady);
         const modelPolicy =
           videoTaskNode.config.modelPolicy === "fast" ||
           videoTaskNode.config.modelPolicy === "balanced"
@@ -3565,10 +3580,7 @@ export const compileMediaFlow = ({
                 : candidate.qualityScore;
           return score(right) - score(left);
         });
-        const configured = configuredId
-          ? ranked.find((candidate) => candidate.id === configuredId)
-          : null;
-        return configuredId ? (configured ?? null) : (ranked[0] ?? null);
+        return ranked[0] ?? null;
       })()
     : null;
   const imageModel = imageTask

@@ -1,0 +1,13 @@
+{
+  "name": "@machdoch/fleet-android",
+  "version": "29.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/gradle.mjs assembleDebug assembleRelease",
+    "test": "node --test scripts/downloads.test.mjs && node scripts/gradle.mjs testDebugUnitTest lintDebug"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0"
+  }
+}

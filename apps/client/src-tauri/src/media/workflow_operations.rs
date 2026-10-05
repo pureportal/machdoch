@@ -50,7 +50,6 @@ pub(super) fn generate_image(
     let mut base = None;
     let mut references = Vec::new();
     let mut pose = None;
-    let mut pose_strength = None;
     for edge in flow
         .edges
         .iter()
@@ -79,7 +78,6 @@ pub(super) fn generate_image(
             if pose.replace(id.clone()).is_some() {
                 return Err("Connect only one pose image".into());
             }
-            pose_strength = Some(config_number(source, "influence", 1.0));
         } else {
             references.push(
                 json!({"assetId":id,"role":role,"influence":config_number(source,"influence",1.0)}),
@@ -134,7 +132,7 @@ pub(super) fn generate_image(
     }
     let mut generation: GenerateMediaImagesRequest = serde_json::from_value(json!({
         "schemaVersion":1,"runId":request.run_id,"flowId":request.flow_id,"flowRevisionId":request.flow_revision_id,"flowName":flow.name,"planId":request.plan_id,"planSnapshot":request.plan_snapshot,
-        "prompt":prompt,"modelId":model_id,"modelLabel":node.label,"outputCount":1,"diagnosticCount":0,"aspectRatio":node.config["aspectRatio"],"outputFormat":node.config["outputFormat"],"modelPolicy":node.config["modelPolicy"],"modelAddons":node.config.get("modelAddons").cloned().unwrap_or(json!([])),"transparentBackground":node.config.get("transparentBackground").and_then(Value::as_bool).unwrap_or(false),"poseImageAssetId":pose,"poseStrength":pose_strength,"referenceImages":references,"baseImageAssetId":base,"editMask":edit_mask,"seed":seed,"negativePrompt":"","editStrength":config_number(node,"editStrength",0.65),"maskStrength":config_number(node,"maskStrength",1.0),"memoryProfile":node.config.get("memoryProfile"),"outputBranches":[]
+        "prompt":prompt,"modelId":model_id,"modelLabel":node.label,"outputCount":1,"diagnosticCount":0,"aspectRatio":node.config["aspectRatio"],"outputFormat":node.config["outputFormat"],"modelPolicy":node.config["modelPolicy"],"modelAddons":node.config.get("modelAddons").cloned().unwrap_or(json!([])),"transparentBackground":node.config.get("transparentBackground").and_then(Value::as_bool).unwrap_or(false),"poseImageAssetId":pose,"poseStrength":pose.as_ref().map(|_|config_number(node,"poseStrength",1.0)),"referenceImages":references,"baseImageAssetId":base,"editMask":edit_mask,"seed":seed,"negativePrompt":"","editStrength":config_number(node,"editStrength",0.65),"maskStrength":config_number(node,"maskStrength",1.0),"memoryProfile":node.config.get("memoryProfile"),"outputBranches":[]
     })).map_err(|e| e.to_string())?;
     generation.sampling = super::image_sampling::ImageSampling::from_config(&node.config)?;
     generation.control_net = match optional_input(flow, values, node, "controlnet")? {

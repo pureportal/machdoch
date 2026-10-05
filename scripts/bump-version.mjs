@@ -12,6 +12,19 @@ const usage = `Usage:\n  pnpm version:bump -- <patch|minor|major|x.y.z> [--dry-r
 
 const targetFiles = [
   {
+    path: "apps/fleet-android/package.json",
+    update: (content, currentVersion, nextVersion) => {
+      const packageJson = JSON.parse(content);
+      assertVersion(
+        packageJson.version,
+        currentVersion,
+        "apps/fleet-android/package.json",
+      );
+      packageJson.version = nextVersion;
+      return `${JSON.stringify(packageJson, null, 2)}\n`;
+    },
+  },
+  {
     path: "package.json",
     update: (content, currentVersion, nextVersion) => {
       const packageJson = JSON.parse(content);

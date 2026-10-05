@@ -2,6 +2,7 @@ import * as tauriCore from "@tauri-apps/api/core";
 import { VALID_SPEECH_TO_TEXT_PROVIDERS } from "../../core/runtime-contract.generated.js";
 import type {
   FleetManagedSettingsDelivery,
+  FleetManagedSettingsDocument,
   FleetManagedPrompt,
   ProductAttachment,
   ProductCommandKind,
@@ -4492,6 +4493,31 @@ export const getFleetManagedSettings = async (
     { knownEtag: knownEtag ?? null },
   );
 };
+
+export async function exportFleetLocalSettings(
+  workspaceRoot: string | null,
+): Promise<FleetManagedSettingsDocument> {
+  return tauriCore.invoke<FleetManagedSettingsDocument>(
+    "export_fleet_local_settings",
+    { workspaceRoot },
+  );
+}
+
+export async function captureFleetEnrollmentSettings(
+  managerId: string,
+  instanceId: string,
+  document: FleetManagedSettingsDocument,
+): Promise<void> {
+  await tauriCore.invoke("capture_fleet_enrollment_settings", {
+    managerId,
+    instanceId,
+    document,
+  });
+}
+
+export async function fleetEnrollmentCaptureRequired(): Promise<boolean> {
+  return tauriCore.invoke<boolean>("fleet_enrollment_capture_required");
+}
 
 export const reportFleetManagedSettingsApplied = async (
   managerId: string,

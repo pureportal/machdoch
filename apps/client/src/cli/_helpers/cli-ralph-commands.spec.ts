@@ -5,18 +5,10 @@ import { createFlow } from "../../core/__test__/ralph-test-helpers.js";
 import {
   createInterruptedRalphRunResult,
   getRalphRunExitCode,
-  isRecoverableRalphRunStatus,
   summarizeFlow,
   summarizeRun,
   validateRalphJsonBatch,
 } from "./cli-ralph-commands.js";
-
-describe("isRecoverableRalphRunStatus", () => {
-  it("allows retrying an expired retained run projected as abandoned", () => {
-    expect(isRecoverableRalphRunStatus("running", "abandoned")).toBe(true);
-    expect(isRecoverableRalphRunStatus("running", "running")).toBe(false);
-  });
-});
 
 const createRunResult = (
   overrides: Partial<RalphRunResult> = {},
@@ -50,6 +42,26 @@ const createRunResult = (
 });
 
 describe("summarizeRun", () => {
+  it("retains a stopped checkpoint and validation for native recovery", () => {
+    const result = createRunResult({
+      status: "stopped",
+      checkpoint: {
+        currentBlockId: "write",
+        transitions: 4,
+        variables: { previousGoal: "Preserve tasks.\nKeep keyboard access." },
+        resultsByBlock: {},
+        runLog: [],
+        blockResults: [],
+        events: [],
+        errorCounts: {},
+        repeatedFailures: {},
+      },
+    });
+    const transported = JSON.parse(JSON.stringify(summarizeRun(result)));
+    expect(transported.checkpoint).toEqual(result.checkpoint);
+    expect(transported.validation).toEqual(result.validation);
+    expect(transported.status).toBe("stopped");
+  });
   it("preserves the run id and integration result in CLI output", () => {
     const integration = {
       status: "merged" as const,

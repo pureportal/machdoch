@@ -321,7 +321,7 @@ export const AppRail = ({
           />
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="app-shell-version mt-1 inline-flex h-5 min-w-12 items-center justify-center rounded-full border border-slate-900/80 bg-slate-950/40 px-1.5 text-[9px] font-medium leading-none text-slate-600 transition-colors hover:text-slate-500">
+              <span className="app-shell-version mt-1 inline-flex h-5 min-w-12 items-center justify-center rounded-full border border-slate-900/80 bg-slate-950/40 px-1.5 text-[9px] font-medium leading-none text-slate-400 transition-colors hover:text-slate-300">
                 v{appVersion}
               </span>
             </TooltipTrigger>

@@ -1,4 +1,4 @@
-use rusqlite::{params, OptionalExtension as _};
+use rusqlite::params;
 use serde::Deserialize;
 
 use super::{database, model_addon, model_import, MediaResult, MediaRuntimePaths};
@@ -54,16 +54,7 @@ pub(crate) fn update(
     let transaction = connection
         .transaction()
         .map_err(|error| format!("failed to begin model update: {error}"))?;
-    let previous_architecture: String = transaction
-        .query_row(
-            "SELECT architecture FROM media_models WHERE id = ?1",
-            [&request.resource_id],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|error| format!("failed to read model: {error}"))?
-        .ok_or_else(|| "The model is unavailable. Refresh the library.".to_string())?;
-    transaction
+    let updated = transaction
         .execute(
             "UPDATE media_models SET display_name = ?2, architecture = ?3, family = ?4,
          lifecycle_source_url = ?5, license_name = ?6, license_source_url = ?7,
@@ -87,13 +78,8 @@ pub(crate) fn update(
             ],
         )
         .map_err(|error| format!("failed to save model: {error}"))?;
-    if previous_architecture != request.architecture {
-        transaction
-            .execute(
-                "DELETE FROM media_model_runtime_probes WHERE model_id = ?1",
-                [&request.resource_id],
-            )
-            .map_err(|error| format!("failed to reset model verification: {error}"))?;
+    if updated == 0 {
+        return Err("The model is unavailable. Refresh the library.".to_string());
     }
     transaction
         .commit()

@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { api, ApiError, jsonBody } from "@machdoch/product-ui/fleet-api";
 import { AssignmentsEditor } from "./assignments-editor";
+import { EnrollmentSettingsEditor } from "./enrollment-settings-editor";
 import { ContextPacksEditor } from "./context-packs-editor";
 import { HistoryEditor } from "./history-editor";
 import { InstructionsEditor } from "./instructions-editor";
@@ -39,6 +40,7 @@ const tabs = [
   ["prompts", "Prompts"],
   ["secrets", "Secrets"],
   ["instances", "Instances"],
+  ["device-settings", "Device settings"],
   ["history", "History"],
 ] as const;
 
@@ -277,6 +279,13 @@ export function ProfileEditor({
           </Tabs.Content>
           <Tabs.Content value="history">
             <HistoryEditor profile={profile} onUpdate={update} />
+          </Tabs.Content>
+          <Tabs.Content value="device-settings">
+            <EnrollmentSettingsEditor
+              profile={profile}
+              disabled={pending || needsReload}
+              onSave={save}
+            />
           </Tabs.Content>
         </div>
       </Tabs.Root>

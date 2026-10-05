@@ -7,6 +7,7 @@ import type {
 } from "./contracts.js";
 import { resolveMediaFlowVariables } from "./variables.js";
 import { AUDIO_NODE_DEFINITIONS } from "./audio-nodes.js";
+import { VIDEO_COMPOSITION_NODE_DEFINITIONS } from "./video-composition-nodes.js";
 import { DEFAULT_SUBJECT_CUTOUT_MODEL_PRIORITY } from "./subject-cutout-policy.js";
 import { isMediaImageMask } from "./image-mask.js";
 import {
@@ -247,8 +248,23 @@ const backgroundVideoInput: MediaNodePortDefinition = {
     "One loop-compatible background video or procedural animated-video source.",
 };
 
+const poseGuidanceFields: readonly MediaNodeFieldDefinition[] = [
+  { id: "poseStrength", label: "Pose strength", defaultValue: 1, min: 0, max: 2 },
+  { id: "poseStart", label: "Pose start", defaultValue: 0, min: 0, max: 1 },
+  { id: "poseEnd", label: "Pose end", defaultValue: 1, min: 0, max: 1 },
+].map((field) => ({
+  ...field,
+  description: "",
+  group: "Creative",
+  kind: "number",
+  required: false,
+  examples: [field.defaultValue],
+  step: 0.01,
+}));
+
 export const MEDIA_NODE_DEFINITIONS = [
   ...AUDIO_NODE_DEFINITIONS,
+  ...VIDEO_COMPOSITION_NODE_DEFINITIONS,
   ...WORKFLOW_NODE_DEFINITIONS,
   {
     type: "source.prompt",
@@ -607,13 +623,12 @@ export const MEDIA_NODE_DEFINITIONS = [
       {
         id: "svgCandidateCount",
         label: "SVG candidates",
-        description:
-          "Generate a wider candidate pool for local render verification and ranking.",
+        description: "",
         group: "Expert",
         kind: "number",
         required: false,
-        defaultValue: 6,
-        examples: [6, 16],
+        defaultValue: 1,
+        examples: [1, 6],
         min: 1,
         max: 16,
         step: 1,
@@ -731,6 +746,7 @@ export const MEDIA_NODE_DEFINITIONS = [
           ),
         ],
       },
+      ...poseGuidanceFields,
     ],
     privacyEffects: [
       "Remote execution uploads prompt text to the resolved provider.",
@@ -875,45 +891,7 @@ export const MEDIA_NODE_DEFINITIONS = [
         max: 1,
         step: 0.05,
       },
-      {
-        id: "poseStrength",
-        label: "Pose strength",
-        description: "Controls pose-map adherence.",
-        group: "Creative",
-        kind: "number",
-        required: false,
-        defaultValue: 1,
-        examples: [0.75, 1],
-        min: 0,
-        max: 2,
-        step: 0.05,
-      },
-      {
-        id: "poseStart",
-        label: "Pose start",
-        description: "Denoising progress where pose control begins.",
-        group: "Creative",
-        kind: "number",
-        required: false,
-        defaultValue: 0,
-        examples: [0, 0.15],
-        min: 0,
-        max: 0.95,
-        step: 0.05,
-      },
-      {
-        id: "poseEnd",
-        label: "Pose end",
-        description: "Denoising progress where pose control stops.",
-        group: "Creative",
-        kind: "number",
-        required: false,
-        defaultValue: 1,
-        examples: [0.8, 1],
-        min: 0.05,
-        max: 1,
-        step: 0.05,
-      },
+      ...poseGuidanceFields,
       {
         id: "requireChromaBackground",
         label: "Require chroma staging",
@@ -1038,7 +1016,7 @@ export const MEDIA_NODE_DEFINITIONS = [
     layer: "task",
     category: "Generation",
     paletteVisibility: "default",
-    maxInstances: 1,
+    maxInstances: 8,
     inputs: [promptPort, firstFrameInput, lastFrameInput],
     outputs: [videoOutput],
     fields: [
@@ -2735,7 +2713,7 @@ const validateFieldValue = (
         severity: "error",
         nodeId: node.id,
         fieldId: field.id,
-        message: `${field.label} does not satisfy the node's versioned constraints.`,
+        message: `Check ${field.label}.`,
       };
 };
 
@@ -2803,6 +2781,18 @@ export const validateMediaFlowNode = (
   for (const field of definition.fields) {
     const issue = validateFieldValue(node, field);
     if (issue) issues.push(issue);
+  }
+  if (
+    (node.type === "task.generate-image" || node.type === "task.edit-image") &&
+    Number(node.config.poseStart ?? 0) >= Number(node.config.poseEnd ?? 1)
+  ) {
+    issues.push({
+      code: "INVALID_CONFIG_VALUE",
+      severity: "error",
+      nodeId: node.id,
+      fieldId: "poseStart",
+      message: "Pose start must be before Pose end.",
+    });
   }
   if (
     (node.type === "operation.canny" &&
@@ -3815,6 +3805,11 @@ const synchronizeMediaFlowAssetCounts = (flow: MediaFlow): MediaFlow => {
     const effectiveSourceNode = effectiveNodes.get(inputEdge.fromNodeId);
     if (sourceNode?.type === "operation.video-composite") {
       videoRoles.set(output.id, "composited");
+    } else if (
+      sourceNode &&
+      ["operation.video-sequence", "operation.video-audio", "operation.lip-sync", "source.video"].includes(sourceNode.type)
+    ) {
+      videoRoles.set(output.id, "opaque");
     } else if (
       sourceNode?.type === "task.generate-video" &&
       effectiveSourceNode?.type === "task.generate-video"

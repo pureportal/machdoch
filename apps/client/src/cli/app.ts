@@ -16,10 +16,22 @@ const AGENT_RUNTIME_COMMANDS = new Set<CommandName>([
 
 const AGENT_RUNTIME_SHUTDOWN_GRACE_MS = 5_000;
 
+const usesAgentRuntime = (args: ParsedCliArgs): boolean => {
+  if (args.command === "ralph") {
+    if (args.ralph?.action === "watches") {
+      return args.ralph.watchAction === "run";
+    }
+    return ["run", "resume", "create", "interview"].includes(
+      args.ralph?.action ?? "",
+    );
+  }
+  return AGENT_RUNTIME_COMMANDS.has(args.command);
+};
+
 const closeAgentRuntimeResources = async (
-  command: CommandName,
+  args: ParsedCliArgs,
 ): Promise<void> => {
-  if (!AGENT_RUNTIME_COMMANDS.has(command)) return;
+  if (!usesAgentRuntime(args)) return;
 
   const [{ closeAllBrowserSessions }, { mcpClientManager }] = await Promise.all(
     [
@@ -57,13 +69,13 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
         args.mcp?.action === "presence" ||
         args.mcp?.action === "serve" ||
         args.mcp?.action === "connect"));
-  const isSideEffectFreeRalphValidation =
-    args.command === "ralph" && args.ralph?.action === "validate-json";
+  const isLocalRalphCommand =
+    args.command === "ralph" && !usesAgentRuntime(args);
   if (
     args.command !== "help" &&
     args.command !== "memory" &&
     !isInternalProviderProcess &&
-    !isSideEffectFreeRalphValidation
+    !isLocalRalphCommand
   ) {
     const { ensureAutomaticProviderSync } =
       await import("./_helpers/cli-provider-sync-commands.js");
@@ -219,7 +231,7 @@ export const runCli = async (argv: string[]): Promise<CommandName> => {
   try {
     await runParsedCliCommand(args);
   } finally {
-    await closeAgentRuntimeResources(args.command);
+    await closeAgentRuntimeResources(args);
   }
   return args.command;
 };

@@ -4,10 +4,7 @@ import {
   PhysicalSize,
   type Monitor,
 } from "@tauri-apps/api/window";
-import {
-  clampSurfacePosition,
-  computeAssistantSurfaceLayout,
-} from "./assistant-surface-geometry";
+import { computeAssistantSurfaceLayout } from "./assistant-surface-geometry";
 
 const monitor = (
   width: number,
@@ -15,16 +12,19 @@ const monitor = (
   scaleFactor: number,
   x = 0,
   y = 0,
-): Monitor => ({
-  name: "test",
-  position: new PhysicalPosition(x, y),
-  size: new PhysicalSize(width, height),
-  scaleFactor,
-  workArea: {
-    position: new PhysicalPosition(x, y + 40),
-    size: new PhysicalSize(width, Math.max(1, height - 40)),
-  },
-});
+): Monitor => {
+  const topInset = Math.min(40, Math.max(0, height - 1));
+  return {
+    name: "test",
+    position: new PhysicalPosition(x, y),
+    size: new PhysicalSize(width, height),
+    scaleFactor,
+    workArea: {
+      position: new PhysicalPosition(x, y + topInset),
+      size: new PhysicalSize(width, height - topInset),
+    },
+  };
+};
 
 describe("assistant surface geometry", () => {
   it.each([
@@ -36,71 +36,84 @@ describe("assistant surface geometry", () => {
     [1080, 1920, 1.25],
     [1, 1, 1],
   ])(
-    "contains every surface on %s × %s at scale %s",
+    "contains Quick Voice on %s × %s at scale %s",
     (width, height, scale) => {
       const screen = monitor(width, height, scale, -1920, -1000);
       const layout = computeAssistantSurfaceLayout(screen)!;
-      for (const [position, size] of [
-        [layout.bubblePosition, layout.bubbleSize],
-        [layout.popupPosition, layout.popupSize],
-        [layout.quickVoicePosition, layout.quickVoiceSize],
-      ] as const) {
-        expect(size.width).toBeGreaterThan(0);
-        expect(size.height).toBeGreaterThan(0);
-        expect(position.x).toBeGreaterThanOrEqual(layout.workArea.x);
-        expect(position.y).toBeGreaterThanOrEqual(layout.workArea.y);
-        expect(position.x + size.width).toBeLessThanOrEqual(
-          layout.workArea.x + layout.workArea.width,
-        );
-        expect(position.y + size.height).toBeLessThanOrEqual(
-          layout.workArea.y + layout.workArea.height,
-        );
-      }
+      const position = layout.quickVoicePosition;
+      const size = layout.quickVoiceSize;
+      const area = screen.workArea;
+
+      expect(size.width).toBeGreaterThan(0);
+      expect(size.height).toBeGreaterThan(0);
+      expect(position.x).toBeGreaterThanOrEqual(area.position.x);
+      expect(position.y).toBeGreaterThanOrEqual(area.position.y);
+      expect(position.x + size.width).toBeLessThanOrEqual(
+        area.position.x + area.size.width,
+      );
+      expect(position.y + size.height).toBeLessThanOrEqual(
+        area.position.y + area.size.height,
+      );
     },
   );
 
-  it("uses the full available height when the preferred minimum cannot fit above the bubble", () => {
-    const layout = computeAssistantSurfaceLayout(monitor(800, 600, 2))!;
-    expect(layout.popupSize).toEqual({ width: 704, height: 464 });
-    expect(layout.popupPosition).toEqual({ x: 48, y: 88 });
+  it("fits Quick Voice within a small work area at high DPI", () => {
+    expect(computeAssistantSurfaceLayout(monitor(800, 600, 2))).toEqual({
+      quickVoiceSize: { width: 704, height: 440 },
+      quickVoicePosition: { x: 48, y: 112 },
+    });
   });
 
-  it("retains preferred physical dimensions and the bubble gap when there is room", () => {
-    const layout = computeAssistantSurfaceLayout(monitor(3840, 2160, 1.5))!;
-    expect(layout.popupSize).toEqual({ width: 672, height: 1080 });
-    expect(layout.popupPosition.y + layout.popupSize.height + 24).toBe(
-      layout.bubblePosition.y,
-    );
-    expect(layout.quickVoiceSize).toEqual({ width: 570, height: 330 });
+  it("retains preferred physical dimensions and the bottom-right margin when there is room", () => {
+    expect(computeAssistantSurfaceLayout(monitor(3840, 2160, 1.5))).toEqual({
+      quickVoiceSize: { width: 570, height: 330 },
+      quickVoicePosition: { x: 3234, y: 1794 },
+    });
   });
 
-  it("rejects empty displays and handles invalid work areas and DPI during reconfiguration", () => {
-    expect(computeAssistantSurfaceLayout(monitor(0, 1080, 1))).toBeNull();
+  it.each([
+    monitor(0, 1080, 1),
+    monitor(1920, -1, 1),
+    monitor(Number.NaN, 1080, 1),
+    monitor(1920, 1080, 1, Number.POSITIVE_INFINITY),
+  ])("rejects invalid monitor bounds", (screen) => {
+    expect(computeAssistantSurfaceLayout(screen)).toBeNull();
+  });
+
+  it("uses monitor bounds when the work area is invalid and default dimensions when DPI is invalid", () => {
     const screen = monitor(1920, 1080, Number.NaN);
     screen.workArea.size = new PhysicalSize(0, 0);
-    const layout = computeAssistantSurfaceLayout(screen)!;
-    expect(layout.workArea).toEqual({ x: 0, y: 0, width: 1920, height: 1080 });
-    expect(layout.bubbleSize).toEqual({ width: 128, height: 104 });
+    const layout = computeAssistantSurfaceLayout(screen);
+
+    expect(layout).toEqual({
+      quickVoiceSize: { width: 380, height: 220 },
+      quickVoicePosition: { x: 1516, y: 836 },
+    });
     expect(
       computeAssistantSurfaceLayout({ ...screen, scaleFactor: -1 }),
     ).toEqual(layout);
   });
 
-  it("clamps stale explicit positions without treating negative desktop coordinates as invalid", () => {
-    const area = { x: -1920, y: -100, width: 1920, height: 1080 };
-    expect(
-      clampSurfacePosition(
-        { x: 5000, y: -2000 },
-        { width: 448, height: 720 },
-        area,
-      ),
-    ).toEqual({ x: -448, y: -100 });
-    expect(
-      clampSurfacePosition(
-        { x: -1600, y: 20 },
-        { width: 448, height: 720 },
-        area,
-      ),
-    ).toEqual({ x: -1600, y: 20 });
+  it("clips work areas that extend beyond their monitor", () => {
+    const screen = monitor(1920, 1080, 1);
+    screen.workArea = {
+      position: new PhysicalPosition(-100, -50),
+      size: new PhysicalSize(1000, 800),
+    };
+
+    expect(computeAssistantSurfaceLayout(screen)).toEqual({
+      quickVoiceSize: { width: 380, height: 220 },
+      quickVoicePosition: { x: 496, y: 506 },
+    });
+  });
+
+  it("uses monitor bounds when the work area no longer intersects its monitor", () => {
+    const screen = monitor(1920, 1080, 1, -1920, -100);
+    screen.workArea.position = new PhysicalPosition(5000, 5000);
+
+    expect(computeAssistantSurfaceLayout(screen)).toEqual({
+      quickVoiceSize: { width: 380, height: 220 },
+      quickVoicePosition: { x: -404, y: 736 },
+    });
   });
 });

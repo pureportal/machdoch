@@ -7,7 +7,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use rusqlite::{params, OptionalExtension as _};
+use rusqlite::OptionalExtension as _;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use tauri::{AppHandle, Manager as _};
@@ -15,6 +15,12 @@ use tauri::{AppHandle, Manager as _};
 #[path = "provider_audio.rs"]
 mod audio;
 pub(crate) use audio::generate_audio;
+#[path = "provider_video_composition.rs"]
+mod video_composition;
+pub(crate) use video_composition::{compose_video, inspect_video};
+#[path = "provider_lip_sync.rs"]
+mod lip_sync;
+pub(crate) use lip_sync::{lip_sync_video, LipSyncRequest};
 
 use super::{
     database, model_addon, model_components, model_import,
@@ -34,7 +40,6 @@ const WORKER_SCHEMA_VERSION: u32 = 5;
 // Treat that startup delay as expected instead of falling through to an
 // unrelated global Python installation.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(3 * 60);
-const MODEL_PROBE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const GENERATION_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const VIDEO_GENERATION_TIMEOUT: Duration = Duration::from_secs(4 * 60 * 60);
 const MAX_IMAGE_BYTES: usize = 64 * 1_024 * 1_024;
@@ -54,8 +59,8 @@ static PREFERRED_HIP_VISIBLE_DEVICE: OnceLock<String> = OnceLock::new();
 static VERIFIED_MODEL_FILES: OnceLock<Mutex<HashMap<PathBuf, VerifiedModelFile>>> = OnceLock::new();
 
 #[cfg(test)]
-#[path = "model_verification_tests.rs"]
-mod model_verification_tests;
+#[path = "model_store_tests.rs"]
+mod model_store_tests;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct VerifiedModelFile {
@@ -237,13 +242,6 @@ struct WorkerVideoGenerationRequest<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     animated_background: Option<&'a MediaAnimatedBackgroundConfig>,
     output_directory: &'a Path,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct WorkerModelProbeRequest<'a> {
-    schema_version: u32,
-    model: WorkerModel<'a>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -434,26 +432,6 @@ struct WorkerEmbeddingVectorEvidence {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct WorkerModelProbeResponse {
-    schema_version: u32,
-    worker_version: String,
-    #[serde(default)]
-    packages: HashMap<String, Option<String>>,
-    ready: bool,
-    architecture: String,
-    pipeline_class: String,
-    #[serde(default)]
-    components: Vec<String>,
-    #[serde(default)]
-    capabilities: Vec<String>,
-    device: String,
-    device_label: String,
-    device_memory_bytes: Option<u64>,
-    diagnostic: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct WorkerFailure {
     error: String,
 }
@@ -488,22 +466,6 @@ pub(crate) struct LocalConditioningSource {
     pub(crate) digest: String,
     pub(crate) role: String,
     pub(crate) influence: f64,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct LocalModelRuntimeProbeResult {
-    pub(crate) schema_version: u32,
-    pub(crate) model_id: String,
-    pub(crate) revision: String,
-    pub(crate) status: String,
-    pub(crate) diagnostic: String,
-    pub(crate) checked_at: String,
-    pub(crate) worker_version: Option<String>,
-    pub(crate) pipeline_class: Option<String>,
-    pub(crate) device_label: Option<String>,
-    pub(crate) components: Vec<String>,
-    pub(crate) capabilities: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -793,67 +755,6 @@ pub(crate) fn probe(app: &AppHandle) -> LocalDiffusersRuntimeStatus {
     probe_with_python(app, &script).0
 }
 
-fn runtime_fingerprint(runtime: &LocalDiffusersRuntimeStatus) -> Option<String> {
-    if !runtime.ready {
-        return None;
-    }
-    let mut packages = runtime.packages.iter().collect::<Vec<_>>();
-    packages.sort_by(|left, right| left.0.cmp(right.0));
-    let mut hasher = Sha256::new();
-    hasher.update(b"machdoch-local-diffusers-runtime-v2\0");
-    let device_memory = runtime.device_memory_bytes.unwrap_or_default().to_string();
-    let device_label = runtime
-        .device_label
-        .as_deref()
-        .map(stable_device_label)
-        .unwrap_or("");
-    for value in [
-        runtime.worker_version.as_deref().unwrap_or(""),
-        runtime.python_version.as_deref().unwrap_or(""),
-        runtime.device.as_deref().unwrap_or(""),
-        device_label,
-        device_memory.as_str(),
-    ] {
-        hasher.update(value.as_bytes());
-        hasher.update(b"\0");
-    }
-    for (name, version) in packages {
-        hasher.update(name.as_bytes());
-        hasher.update(b"=");
-        hasher.update(version.as_deref().unwrap_or("missing").as_bytes());
-        hasher.update(b"\0");
-    }
-    for values in [&runtime.architectures, &runtime.capabilities] {
-        let mut values = values.iter().collect::<Vec<_>>();
-        values.sort();
-        for value in values {
-            hasher.update(value.as_bytes());
-            hasher.update(b"\0");
-        }
-        hasher.update(b"\xff");
-    }
-    Some(format!("{:x}", hasher.finalize()))
-}
-
-/// Torch reports an adapter's process-local ordinal in its display label. On a
-/// hybrid AMD system the same discrete GPU is `cuda:1` during discovery and
-/// becomes `cuda:0` after `HIP_VISIBLE_DEVICES` isolates it for inference.
-/// Readiness belongs to the physical adapter/runtime pair, so that unstable
-/// ordinal must not invalidate an otherwise identical clean model probe.
-fn stable_device_label(label: &str) -> &str {
-    let Some((identity, ordinal)) = label.rsplit_once(" (cuda:") else {
-        return label;
-    };
-    let Some(ordinal) = ordinal.strip_suffix(')') else {
-        return label;
-    };
-    if !ordinal.is_empty() && ordinal.chars().all(|character| character.is_ascii_digit()) {
-        identity
-    } else {
-        label
-    }
-}
-
 fn ready_runtime(
     app: &AppHandle,
     script: &Path,
@@ -1075,336 +976,6 @@ pub(super) fn installed_model(
         revision: row.3,
         digest: row.4,
     })
-}
-
-struct ModelProbeRecord<'a> {
-    runtime_fingerprint: &'a str,
-    status: &'a str,
-    worker_version: &'a str,
-    pipeline_class: Option<&'a str>,
-    device_label: Option<&'a str>,
-    diagnostic: &'a str,
-    checked_at: &'a str,
-}
-
-fn record_model_probe(
-    paths: &MediaRuntimePaths,
-    model: &InstalledModel,
-    record: ModelProbeRecord<'_>,
-) -> MediaResult<()> {
-    let connection = database::open(paths)?;
-    let updated = connection
-        .execute(
-            "INSERT INTO media_model_runtime_probes(
-               model_id, revision, model_digest, runtime_fingerprint, status,
-               worker_version, pipeline_class, device_label, diagnostic, probed_at
-             ) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10
-               WHERE EXISTS (
-                 SELECT 1 FROM media_model_installations
-                 WHERE model_id = ?1 AND revision = ?2 AND manifest_digest = ?3
-                   AND status = 'installed'
-               )
-             ON CONFLICT(model_id) DO UPDATE SET
-               revision = excluded.revision,
-               model_digest = excluded.model_digest,
-               runtime_fingerprint = excluded.runtime_fingerprint,
-               status = excluded.status,
-               worker_version = excluded.worker_version,
-               pipeline_class = excluded.pipeline_class,
-               device_label = excluded.device_label,
-               diagnostic = excluded.diagnostic,
-               probed_at = excluded.probed_at",
-            params![
-                model.id,
-                model.revision,
-                model.digest,
-                record.runtime_fingerprint,
-                record.status,
-                record.worker_version,
-                record.pipeline_class,
-                record.device_label,
-                record.diagnostic,
-                record.checked_at,
-            ],
-        )
-        .map_err(|error| format!("failed to persist model runtime readiness: {error}"))?;
-    if updated != 1 {
-        return Err("The model changed or was removed during verification.".to_string());
-    }
-    Ok(())
-}
-
-fn persist_failed_model_probe(
-    paths: &MediaRuntimePaths,
-    model: &InstalledModel,
-    runtime_fingerprint: &str,
-    runtime: &LocalDiffusersRuntimeStatus,
-    diagnostic: String,
-    checked_at: &str,
-    pipeline_class: Option<&str>,
-) -> MediaResult<LocalModelRuntimeProbeResult> {
-    let worker_version = runtime.worker_version.as_deref().unwrap_or("unknown");
-    record_model_probe(
-        paths,
-        model,
-        ModelProbeRecord {
-            runtime_fingerprint,
-            status: "failed",
-            worker_version,
-            pipeline_class,
-            device_label: runtime.device_label.as_deref(),
-            diagnostic: &diagnostic,
-            checked_at,
-        },
-    )?;
-    Ok(LocalModelRuntimeProbeResult {
-        schema_version: 1,
-        model_id: model.id.clone(),
-        revision: model.revision.clone(),
-        status: "failed".to_string(),
-        diagnostic,
-        checked_at: checked_at.to_string(),
-        worker_version: runtime.worker_version.clone(),
-        pipeline_class: pipeline_class.map(ToOwned::to_owned),
-        device_label: runtime.device_label.clone(),
-        components: Vec::new(),
-        capabilities: Vec::new(),
-    })
-}
-
-pub(crate) fn probe_model(
-    app: &AppHandle,
-    paths: &MediaRuntimePaths,
-    model_id: &str,
-) -> MediaResult<LocalModelRuntimeProbeResult> {
-    let script = worker_script(app)?;
-    let state = app.state::<super::MediaRuntimeState>();
-    let cached_runtime = state
-        .local_diffusers_status
-        .lock()
-        .map_err(|_| "Media runtime status is unavailable")?
-        .clone();
-    let runtime = match cached_runtime {
-        Some(runtime) if runtime.ready => runtime,
-        _ => state.refresh_local_diffusers_status(app),
-    };
-    let python = if runtime.ready {
-        Some(super::runtime_setup::python_path(
-            &super::runtime_setup::root(app)?,
-        ))
-    } else {
-        None
-    };
-    probe_model_with_runtime(paths, model_id, &script, &runtime, python.as_deref())
-}
-
-fn probe_model_with_runtime(
-    paths: &MediaRuntimePaths,
-    model_id: &str,
-    script: &Path,
-    runtime: &LocalDiffusersRuntimeStatus,
-    python: Option<&Path>,
-) -> MediaResult<LocalModelRuntimeProbeResult> {
-    let mut model = installed_model(paths, model_id)?;
-    let checked_at = database::now();
-    let Some(fingerprint) = runtime_fingerprint(&runtime) else {
-        return Ok(LocalModelRuntimeProbeResult {
-            schema_version: 1,
-            model_id: model.id,
-            revision: model.revision,
-            status: "unavailable".to_string(),
-            diagnostic: runtime.diagnostic.clone(),
-            checked_at,
-            worker_version: runtime.worker_version.clone(),
-            pipeline_class: None,
-            device_label: runtime.device_label.clone(),
-            components: Vec::new(),
-            capabilities: Vec::new(),
-        });
-    };
-    let python = python.ok_or_else(|| {
-        "The pinned local Diffusers runtime passed readiness without identifying its interpreter."
-            .to_string()
-    })?;
-    if model.package_kind == "single-file" {
-        let root = model
-            .path
-            .parent()
-            .ok_or("Model package has no directory")?;
-        match model_import::prepare_model_config(paths, root, &model.architecture) {
-            Ok(Some(config)) => model.config_path = Some(config),
-            Ok(None) => {}
-            Err(error) => {
-                return persist_failed_model_probe(
-                    paths,
-                    &model,
-                    &fingerprint,
-                    runtime,
-                    error,
-                    &checked_at,
-                    None,
-                )
-            }
-        }
-    }
-    let request = WorkerModelProbeRequest {
-        schema_version: WORKER_SCHEMA_VERSION,
-        model: WorkerModel {
-            id: &model.id,
-            architecture: &model.architecture,
-            package_kind: &model.package_kind,
-            path: &model.path,
-            config_path: model.config_path.as_deref(),
-            revision: &model.revision,
-            digest: &model.digest,
-        },
-    };
-    let encoded = serde_json::to_vec(&request)
-        .map_err(|error| format!("failed to encode model readiness request: {error}"))?;
-    let output = match run_worker(
-        &python,
-        &script,
-        "probe-model",
-        Some(&encoded),
-        MODEL_PROBE_TIMEOUT,
-        None,
-    ) {
-        Ok(output) => output,
-        Err(error) => {
-            return persist_failed_model_probe(
-                paths,
-                &model,
-                &fingerprint,
-                runtime,
-                error,
-                &checked_at,
-                None,
-            )
-        }
-    };
-    let failure = if output.status.success() {
-        None
-    } else if let Ok(failure) = serde_json::from_slice::<WorkerFailure>(&output.stdout) {
-        Some(worker_failure_with_diagnostics(
-            failure.error,
-            &output.stderr,
-        ))
-    } else {
-        let diagnostic = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        Some(if diagnostic.is_empty() {
-            format!("model readiness worker exited with {}", output.status)
-        } else {
-            format!(
-                "Model check exited with {}. Last output: {diagnostic}",
-                output.status
-            )
-        })
-    };
-    if let Some(diagnostic) = failure {
-        return persist_failed_model_probe(
-            paths,
-            &model,
-            &fingerprint,
-            &runtime,
-            diagnostic,
-            &checked_at,
-            None,
-        );
-    }
-    let response = match serde_json::from_slice::<WorkerModelProbeResponse>(&output.stdout) {
-        Ok(response) => response,
-        Err(error) => {
-            return persist_failed_model_probe(
-                paths,
-                &model,
-                &fingerprint,
-                &runtime,
-                format!("model readiness worker returned invalid JSON: {error}"),
-                &checked_at,
-                None,
-            )
-        }
-    };
-    if !model_probe_matches_runtime(&model, runtime, &response) {
-        return persist_failed_model_probe(
-            paths,
-            &model,
-            &fingerprint,
-            &runtime,
-            "model readiness worker returned inconsistent runtime evidence".to_string(),
-            &checked_at,
-            Some(&response.pipeline_class),
-        );
-    }
-    record_model_probe(
-        paths,
-        &model,
-        ModelProbeRecord {
-            runtime_fingerprint: &fingerprint,
-            status: "ready",
-            worker_version: &response.worker_version,
-            pipeline_class: Some(&response.pipeline_class),
-            device_label: Some(&response.device_label),
-            diagnostic: &response.diagnostic,
-            checked_at: &checked_at,
-        },
-    )?;
-    Ok(LocalModelRuntimeProbeResult {
-        schema_version: 1,
-        model_id: model.id,
-        revision: model.revision,
-        status: "ready".to_string(),
-        diagnostic: response.diagnostic,
-        checked_at,
-        worker_version: Some(response.worker_version),
-        pipeline_class: Some(response.pipeline_class),
-        device_label: Some(response.device_label),
-        components: response.components,
-        capabilities: response.capabilities,
-    })
-}
-
-fn model_probe_matches_runtime(
-    model: &InstalledModel,
-    runtime: &LocalDiffusersRuntimeStatus,
-    response: &WorkerModelProbeResponse,
-) -> bool {
-    let expects_textual_inversion = matches!(
-        model.architecture.as_str(),
-        "stable-diffusion-1" | "stable-diffusion-2" | "stable-diffusion-xl" | "pony" | "flux-1"
-    );
-    response.schema_version == WORKER_SCHEMA_VERSION
-        && response.ready
-        && response.worker_version == runtime.worker_version.as_deref().unwrap_or("")
-        && response.packages == runtime.packages
-        && response.architecture == model.architecture
-        && response.device == runtime.device.as_deref().unwrap_or("")
-        && stable_device_label(&response.device_label)
-            == stable_device_label(runtime.device_label.as_deref().unwrap_or(""))
-        && response.device_memory_bytes == runtime.device_memory_bytes
-        && !response.pipeline_class.trim().is_empty()
-        && response.pipeline_class.len() <= 256
-        && !response.components.is_empty()
-        && response.components.len() <= 64
-        && (if let Some(profile) = super::open_models::by_architecture(&model.architecture) {
-            response.pipeline_class == profile.pipeline
-                && profile
-                    .capabilities
-                    .iter()
-                    .all(|capability| response.capabilities.contains(capability))
-        } else if model.architecture == "intro-svg" {
-            response.capabilities.contains(&"text-to-svg".to_string())
-                && response.capabilities.contains(&"image-to-svg".to_string())
-        } else if model.architecture == "qwen-image-2.1" {
-            true
-        } else {
-            response.capabilities.contains(&"lora".to_string())
-                && response.capabilities.contains(&"multi-lora".to_string())
-        })
-        && (!expects_textual_inversion
-            || response
-                .capabilities
-                .contains(&"textual-inversion".to_string()))
 }
 
 fn resolve_addons(
@@ -3675,8 +3246,6 @@ fn resolve_ltx_model(workspace_root: &str) -> MediaResult<(PathBuf, String)> {
         safe_managed_path(&model_root, "tokenizer/tokenizer_config.json")?,
         safe_managed_path(&model_root, "transformer/config.json")?,
         safe_managed_path(&model_root, "transformer-13b/config.json")?,
-        safe_managed_path(&model_root, "vae/config.json")?,
-        safe_managed_path(&model_root, "vae/diffusion_pytorch_model.safetensors")?,
         safe_managed_path(&model_root, "ltxv-2b-0.9.8-distilled-fp8.safetensors")?,
         safe_managed_path(&model_root, "ltxv-13b-0.9.8-distilled-fp8.safetensors")?,
         safe_managed_path(&model_root, "LTX-Video-Open-Weights-License-0.X.txt")?,
@@ -3704,10 +3273,9 @@ fn resolve_ltx_model(workspace_root: &str) -> MediaResult<(PathBuf, String)> {
             .map_err(|_| "LTX-Video component escaped its model package".to_string())?;
         let expected_revision = if relative.starts_with("spatial_upscaler") {
             LTX_UPSCALER_REVISION
-        } else if matches!(
-            relative.to_str(),
-            Some("transformer-13b/config.json") | Some("scheduler/scheduler_config.json")
-        ) {
+        } else if relative == Path::new("transformer-13b/config.json")
+            || relative == Path::new("scheduler/scheduler_config.json")
+        {
             LTX_13B_CONFIG_REVISION
         } else {
             LTX_MODEL_REVISION
@@ -4757,6 +4325,7 @@ fn expected_video_conditioning_mode(
 
 #[cfg(test)]
 mod tests {
+    use rusqlite::params;
     use std::{process::Stdio, thread};
     #[test]
     fn wan_conditioning_matches_the_worker_endpoint_strategy() {
@@ -4964,35 +4533,7 @@ time.sleep(60)
     }
 
     #[test]
-    fn open_models_can_verify_without_lora_support_and_require_their_declared_pipeline() {
-        let runtime = ready_runtime();
-        let profile = super::super::open_models::by_architecture("z-image-turbo").unwrap();
-        let model = InstalledModel {
-            id: profile.id.clone(),
-            architecture: profile.architecture.clone(),
-            package_kind: "diffusers-directory".to_string(),
-            path: PathBuf::new(),
-            config_path: None,
-            revision: "revision".to_string(),
-            digest: "digest".to_string(),
-        };
-        let mut response = WorkerModelProbeResponse {
-            schema_version: WORKER_SCHEMA_VERSION,
-            worker_version: runtime.worker_version.clone().unwrap(),
-            packages: runtime.packages.clone(),
-            ready: true,
-            architecture: model.architecture.clone(),
-            pipeline_class: profile.pipeline.clone(),
-            components: vec!["transformer".to_string()],
-            capabilities: profile.capabilities.clone(),
-            device: runtime.device.clone().unwrap(),
-            device_label: runtime.device_label.clone().unwrap(),
-            device_memory_bytes: runtime.device_memory_bytes,
-            diagnostic: "ready".to_string(),
-        };
-        assert!(model_probe_matches_runtime(&model, &runtime, &response));
-        response.pipeline_class = "StableDiffusionPipeline".to_string();
-        assert!(!model_probe_matches_runtime(&model, &runtime, &response));
+    fn open_models_use_their_distilled_and_base_sampling_schedules() {
         for policy in ["fast", "balanced", "quality"] {
             assert_eq!(
                 expected_image_inference_steps("z-image-turbo", policy).unwrap(),
@@ -5254,32 +4795,6 @@ time.sleep(60)
         assert_eq!(value["memoryProfile"], "memory-saver");
         assert_eq!(value["fps"], 24);
         assert_eq!(value["seed"], 7);
-    }
-
-    #[test]
-    fn runtime_fingerprint_changes_with_execution_device() {
-        let first = ready_runtime();
-        let mut second = first.clone();
-        second.device_label = Some("Other GPU".to_string());
-        assert_ne!(runtime_fingerprint(&first), runtime_fingerprint(&second));
-    }
-
-    #[test]
-    fn runtime_fingerprint_ignores_process_local_cuda_ordinal() {
-        let mut discovered = ready_runtime();
-        discovered.device_label = Some("AMD Radeon RX 9070 (cuda:1)".to_string());
-        let mut isolated = discovered.clone();
-        isolated.device_label = Some("AMD Radeon RX 9070 (cuda:0)".to_string());
-        assert_eq!(
-            runtime_fingerprint(&discovered),
-            runtime_fingerprint(&isolated)
-        );
-
-        isolated.device_label = Some("AMD Radeon RX 9060 XT (cuda:0)".to_string());
-        assert_ne!(
-            runtime_fingerprint(&discovered),
-            runtime_fingerprint(&isolated)
-        );
     }
 
     #[test]

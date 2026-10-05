@@ -115,6 +115,7 @@ export interface FlowCanvasProps<
   defaultEdgeOptions?: ReactFlowProps<NodeType, EdgeType>["defaultEdgeOptions"];
   edgeTypes?: EdgeTypes;
   fitViewOptions?: ReactFlowProps<NodeType, EdgeType>["fitViewOptions"];
+  minZoom?: number;
   miniMapNodeColor?: MiniMapProps<NodeType>["nodeColor"];
   providerKey?: Key;
   showControls?: boolean;
@@ -127,6 +128,7 @@ export function FlowCanvas<NodeType extends Node, EdgeType extends Edge>({
   defaultEdgeOptions,
   edgeTypes,
   fitViewOptions,
+  minZoom = FLOW_CANVAS_MIN_ZOOM,
   miniMapNodeColor = "#475569",
   providerKey,
   showControls = true,
@@ -154,7 +156,7 @@ export function FlowCanvas<NodeType extends Node, EdgeType extends Edge>({
           maxZoom: FLOW_CANVAS_FIT_MAX_ZOOM,
           ...fitViewOptions,
         }}
-        minZoom={FLOW_CANVAS_MIN_ZOOM}
+        minZoom={minZoom}
         maxZoom={FLOW_CANVAS_MAX_ZOOM}
         proOptions={{ hideAttribution: true }}
       >

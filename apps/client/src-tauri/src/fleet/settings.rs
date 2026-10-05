@@ -1,8 +1,8 @@
 use std::sync::OnceLock;
 
 use machdoch_fleet_protocol::{
-    FleetManagedSettingsDelivery, FleetManagedSettingsSyncReport, MANAGED_SETTINGS_SCHEMA_VERSION,
-    MAX_MANAGED_SETTINGS_DELIVERY_BYTES,
+    FleetManagedSettingsDelivery, FleetManagedSettingsDocument, FleetManagedSettingsSyncReport,
+    MANAGED_SETTINGS_SCHEMA_VERSION, MAX_MANAGED_SETTINGS_DELIVERY_BYTES,
 };
 use reqwest::{header, StatusCode};
 
@@ -15,6 +15,70 @@ use super::{
     FleetSettingsSyncStatus,
 };
 
+pub async fn capture_enrollment(
+    state: &FleetConnectionState,
+    manager_id: &str,
+    instance_id: &str,
+    document: FleetManagedSettingsDocument,
+) -> Result<(), String> {
+    let (config, generation) = connected_config(state)?;
+    if config.manager_id != manager_id || config.instance_id != instance_id {
+        return Err(
+            "Fleet Manager connection changed before device settings were captured.".to_string(),
+        );
+    }
+    let body = serde_json::to_vec(&document)
+        .map_err(|error| format!("Device settings could not be read: {error}"))?;
+    if body.len() > MAX_MANAGED_SETTINGS_DELIVERY_BYTES {
+        return Err("Device settings exceed the size limit.".to_string());
+    }
+    let response = settings_client()?
+        .put(settings_endpoint(&config, "/enrollment")?)
+        .bearer_auth(&config.instance_secret)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(body)
+        .send()
+        .await
+        .map_err(|error| format!("Device settings could not be captured: {error}"))?;
+    require_current_generation(state, generation)?;
+    if !response.status().is_success() {
+        return Err(
+            manager_response_error(response, "Fleet Manager rejected device settings").await,
+        );
+    }
+    Ok(())
+}
+
+pub async fn enrollment_capture_required(state: &FleetConnectionState) -> Result<bool, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct CaptureStatus {
+        capture_required: bool,
+    }
+    let (config, generation) = connected_config(state)?;
+    let response = settings_client()?
+        .get(settings_endpoint(&config, "/enrollment")?)
+        .bearer_auth(&config.instance_secret)
+        .send()
+        .await
+        .map_err(|error| format!("Device settings status is unavailable: {error}"))?;
+    require_current_generation(state, generation)?;
+    if response.status() == StatusCode::NOT_FOUND {
+        return Err("Update Fleet Manager to capture device settings.".to_string());
+    }
+    if !response.status().is_success() {
+        return Err(
+            manager_response_error(response, "Fleet Manager rejected device settings").await,
+        );
+    }
+    let body = read_bounded_response(response, 1024)
+        .await
+        .map_err(settings_response_error)?;
+    let status: CaptureStatus = serde_json::from_slice(&body)
+        .map_err(|_| "Fleet Manager returned invalid device settings status.".to_string())?;
+    require_current_generation(state, generation)?;
+    Ok(status.capture_required)
+}
 pub async fn fetch(
     state: &FleetConnectionState,
     known_etag: Option<&str>,
@@ -367,6 +431,84 @@ mod tests {
     use super::*;
 
     const MANAGER_ID: &str = "manager_MDEyMzQ1Njc4OTAxMjM0NTY3";
+
+    fn connected_state(manager_url: String) -> FleetConnectionState {
+        let state = FleetConnectionState::default();
+        state.inner.lock().expect("state should lock").config =
+            Some(super::super::config::FleetConnectionConfig {
+                schema_version: 1,
+                enabled: true,
+                manager_url,
+                manager_id: MANAGER_ID.to_string(),
+                instance_id: "instance_MDEyMzQ1Njc4OTAxMjM0NTY3".to_string(),
+                display_name: "Fixture".to_string(),
+                instance_secret: "fixture-secret".to_string(),
+            });
+        state
+    }
+
+    #[tokio::test]
+    async fn enrollment_capture_rejects_changed_identity_before_sending() {
+        let state = connected_state("https://unreachable.example.test".to_string());
+        let document: FleetManagedSettingsDocument = serde_json::from_value(serde_json::json!({
+            "defaults": {"provider": null, "model": null, "mode": null, "reasoning": null, "webSearchProvider": null, "theme": null, "density": null, "accent": null},
+            "agentLimits": {"infinite": null, "executorTurns": null, "autopilotExecutorIterations": null},
+            "instructions": [], "contextPacks": [], "prompts": []
+        })).expect("fixture document should parse");
+        for (manager_id, instance_id) in [
+            ("manager_changed", "instance_MDEyMzQ1Njc4OTAxMjM0NTY3"),
+            (MANAGER_ID, "instance_changed"),
+        ] {
+            let error = capture_enrollment(&state, manager_id, instance_id, document.clone())
+                .await
+                .expect_err("changed identity should fail");
+            assert_eq!(
+                error,
+                "Fleet Manager connection changed before device settings were captured."
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn enrollment_status_requires_authenticated_bounded_schema_response() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for (body, expected_length, valid) in [
+            (r#"{"captureRequired":false}"#, 25, true),
+            (r#"{"captureRequired":false,"extra":true}"#, 38, false),
+            (r#"{"captureRequired":false}"#, 2048, false),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("fixture server should bind");
+            let address = listener.local_addr().expect("fixture address should exist");
+            let server = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.expect("client should connect");
+                let mut request = Vec::new();
+                let mut buffer = [0_u8; 1024];
+                while !request.windows(4).any(|chunk| chunk == b"\r\n\r\n") {
+                    let count = stream.read(&mut buffer).await.expect("request should read");
+                    assert!(count > 0 && request.len() < 8192);
+                    request.extend_from_slice(&buffer[..count]);
+                }
+                let request = String::from_utf8(request).expect("request should be text");
+                assert!(request.starts_with(
+                    "GET /api/client/settings/instance_MDEyMzQ1Njc4OTAxMjM0NTY3/enrollment "
+                ));
+                assert!(request
+                    .to_ascii_lowercase()
+                    .contains("authorization: bearer fixture-secret\r\n"));
+                stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {expected_length}\r\nConnection: close\r\n\r\n{body}").as_bytes()).await.expect("response should write");
+            });
+            let result =
+                enrollment_capture_required(&connected_state(format!("http://{address}"))).await;
+            server.await.expect("fixture server should finish");
+            if valid {
+                assert_eq!(result.expect("valid status should parse"), false);
+            } else {
+                assert!(result.is_err());
+            }
+        }
+    }
 
     #[test]
     fn parses_unassigned_delivery() {

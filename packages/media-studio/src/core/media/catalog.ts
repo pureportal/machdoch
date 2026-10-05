@@ -156,7 +156,6 @@ export const createMediaModelCatalogSnapshot = ({
       addonCapabilities: [],
       management: {
         acquisition: "remote",
-        verification: "none",
       },
       license: {
         name: "OpenAI service terms",
@@ -194,7 +193,7 @@ export const createMediaModelCatalogSnapshot = ({
       packageType: "agent-cli",
       architecture: null,
       addonCapabilities: [],
-      management: { acquisition: "external-runtime", verification: "none" },
+      management: { acquisition: "external-runtime" },
       license: {
         name: "OpenAI service terms",
         spdxId: null,
@@ -236,7 +235,6 @@ export const createMediaModelCatalogSnapshot = ({
       ),
       management: {
         acquisition: "managed-install",
-        verification: "model-probe",
       },
       runtimeReadiness: isLocalFluxInstalled ? "ready" : "not-applicable",
       ...(isLocalFluxInstalled
@@ -284,7 +282,6 @@ export const createMediaModelCatalogSnapshot = ({
       addonCapabilities: [],
       management: {
         acquisition: "bundled",
-        verification: "none",
       },
       license: {
         name: "Machdoch bundled utility",
@@ -329,7 +326,6 @@ export const createMediaModelCatalogSnapshot = ({
       addonCapabilities: [],
       management: {
         acquisition: "managed-install",
-        verification: "none",
       },
       license: {
         name: "MIT License",
@@ -372,7 +368,6 @@ export const createMediaModelCatalogSnapshot = ({
       addonCapabilities: [],
       management: {
         acquisition: "bundled",
-        verification: "none",
       },
       license: {
         name: "Machdoch bundled utility",

@@ -113,8 +113,6 @@ describe("Fleet desktop media bridge", () => {
     { configured: false },
     { lifecycle: "removed" as const },
     { target: "local" as const, installed: false },
-    { target: "local" as const, runtimeReadiness: "unverified" as const },
-    { target: "local" as const, runtimeReadiness: "failed" as const },
     {
       target: "local" as const,
       runtimeReadiness: "runtime-unavailable" as const,
@@ -131,6 +129,17 @@ describe("Fleet desktop media bridge", () => {
       ).rejects.toThrow("not ready");
       expect(runtime.saveMediaFlowRevision).not.toHaveBeenCalled();
       expect(runtime.generateMediaImages).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["unverified", "failed"] as const)(
+    "allows a configured local model advertised by the runtime with %s probe status",
+    async (runtimeReadiness) => {
+      const local = { ...catalogModel(), target: "local" as const, runtimeReadiness };
+      setModels([local]);
+      expect((await loadFleetMediaSnapshot([])).generation.available).toBe(true);
+      await executeFleetMediaCommand(generationCommand(), []);
+      expect(runtime.saveMediaFlowRevision).toHaveBeenCalledTimes(1);
     },
   );
 

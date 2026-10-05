@@ -53,7 +53,7 @@ describe("media asset importing", () => {
     await expect(importMediaAsset("C:\\images\\reference.png")).resolves.toBe(
       result,
     );
-    expect(tauri.invoke).toHaveBeenCalledWith("media_import_image", {
+    expect(tauri.invoke).toHaveBeenCalledWith("media_import_asset", {
       path: "C:\\images\\reference.png",
     });
   });

@@ -74,6 +74,10 @@ pub(super) fn validate(
             .get("modelAddons")
             .and_then(Value::as_array)
             .is_some_and(|addons| !addons.is_empty())
+            && !crate::media::model_addon::capabilities_for_model(
+                "local-diffusers",
+                Some(&profile.architecture),
+            ).iter().any(|capability| capability.kind == "lora")
         {
             return Err("This video model does not support LoRAs".to_string());
         }

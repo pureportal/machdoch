@@ -4,7 +4,6 @@ import type {
   RalphInputField,
   RalphInputValue,
   RalphPromptBlock,
-  RalphRunResult,
 } from "../../../../core/ralph.js";
 import type { RalphGenerationInterviewSession } from "../../../../core/ralph-generation.js";
 import type {
@@ -17,7 +16,10 @@ import {
   RUNNABLE_PROVIDER_ORDER,
 } from "../../model-catalog";
 import type { RalphCreateFlowResult } from "../../runtime";
-import { titleFromId, type RalphProviderOption } from "./format-ralph-flow-labels.helper";
+import {
+  titleFromId,
+  type RalphProviderOption,
+} from "./format-ralph-flow-labels.helper";
 import { getPromptLikeText } from "./get-ralph-node-preview.helper";
 import { formatRalphInputValueForPrompt } from "./validate-ralph-input-field-values.helper";
 
@@ -106,7 +108,7 @@ export const getPreferredModelForProvider = (
 
   return models.some((model) => model.id === defaultModel)
     ? defaultModel
-    : models[0]?.id ?? defaultModel;
+    : (models[0]?.id ?? defaultModel);
 };
 
 export const formatCreateFlowMessage = (
@@ -132,27 +134,28 @@ export const formatPromptBlockTargetLabel = (block: RalphPromptBlock): string =>
 export const createPromptBlockGenerationPrompt = (
   userPrompt: string,
   block: RalphPromptBlock,
-): string => [
-  "Update the selected PROMPT block in the current Ralph flow.",
+): string =>
   [
-    "Use the prompt block below as the target for this Prompt change.",
-    "Preserve its id and existing routes unless the user explicitly asks to change them.",
-  ].join(" "),
-  "",
-  "Selected PROMPT block:",
-  JSON.stringify(
-    {
-      id: block.id,
-      title: block.title,
-      prompt: getPromptLikeText(block),
-    },
-    null,
-    2,
-  ),
-  "",
-  "Requested change:",
-  userPrompt,
-].join("\n");
+    "Update the selected PROMPT block in the current Ralph flow.",
+    [
+      "Use the prompt block below as the target for this Prompt change.",
+      "Preserve its id and existing routes unless the user explicitly asks to change them.",
+    ].join(" "),
+    "",
+    "Selected PROMPT block:",
+    JSON.stringify(
+      {
+        id: block.id,
+        title: block.title,
+        prompt: getPromptLikeText(block),
+      },
+      null,
+      2,
+    ),
+    "",
+    "Requested change:",
+    userPrompt,
+  ].join("\n");
 
 export const getTrimmedGenerationInterviewAnswerComments = (
   answerComments: Record<string, string>,
@@ -187,38 +190,39 @@ export const createLocalGenerationInterviewPrompt = (
   fields: readonly RalphInputField[],
   values: Record<string, RalphInputValue>,
   answerComments: Record<string, string> = {},
-): string => [
-  context.generationPrompt,
-  "",
-  "Interview context for generation:",
-  session?.contextSummary ?? context.userPrompt,
-  "",
-  "Collected interview answers:",
-  ...(session?.transcript ?? []).flatMap((turn) => [
-    `Turn ${turn.turn}:`,
-    ...turn.answers.flatMap((answer) =>
-      formatGenerationInterviewAnswerForPrompt(
-        answer.label,
-        answer.value,
-        answer.comment,
-      ),
-    ),
-  ]),
-  ...(fields.length > 0
-    ? [
-        "Current answers:",
-        ...fields.flatMap((field) =>
-          formatGenerationInterviewAnswerForPrompt(
-            field.label,
-            values[field.id],
-            answerComments[field.id],
-          ),
+): string =>
+  [
+    context.generationPrompt,
+    "",
+    "Interview context for generation:",
+    session?.contextSummary ?? context.userPrompt,
+    "",
+    "Collected interview answers:",
+    ...(session?.transcript ?? []).flatMap((turn) => [
+      `Turn ${turn.turn}:`,
+      ...turn.answers.flatMap((answer) =>
+        formatGenerationInterviewAnswerForPrompt(
+          answer.label,
+          answer.value,
+          answer.comment,
         ),
-      ]
-    : []),
-  "",
-  "Use this interview context when generating the Ralph flow changes.",
-].join("\n");
+      ),
+    ]),
+    ...(fields.length > 0
+      ? [
+          "Current answers:",
+          ...fields.flatMap((field) =>
+            formatGenerationInterviewAnswerForPrompt(
+              field.label,
+              values[field.id],
+              answerComments[field.id],
+            ),
+          ),
+        ]
+      : []),
+    "",
+    "Use this interview context when generating the Ralph flow changes.",
+  ].join("\n");
 
 export const getGenerationJobStatusLabel = (
   status: RalphGenerationStatus,
@@ -269,10 +273,6 @@ export const getGenerationPhaseLabel = (
   return [round, actor ? `${actor.trim()} phase` : null]
     .filter((value): value is string => Boolean(value))
     .join(" - ");
-};
-
-export const formatRunMessage = (run: RalphRunResult): string => {
-  return `${run.summary} Status: ${run.status}. ${run.blockResults.length} block result${run.blockResults.length === 1 ? "" : "s"}.`;
 };
 
 const PROVIDER_OPTIONS: readonly RalphProviderOption[] = [

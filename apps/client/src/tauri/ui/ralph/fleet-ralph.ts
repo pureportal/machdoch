@@ -1,4 +1,5 @@
 import type { RalphFlowScope, RalphRunSummary } from "../../../core/ralph.js";
+import { isRecoverableRalphRunStatus } from "../../../core/_helpers/is-recoverable-ralph-run-status.helper.js";
 import {
   getCatalogModelsForProvider,
   SUPPORTED_PROVIDER_ORDER,
@@ -23,8 +24,6 @@ import {
   normalizeWorkspaceForTaskComparison,
   parseRalphRunTaskId,
 } from "./_helpers/parse-ralph-run-task-id.helper";
-
-const RECOVERABLE_STATUSES = new Set(["crashed", "blocked", "abandoned"]);
 
 export interface FleetRalphCommandRuntime {
   workspace: string;
@@ -77,7 +76,7 @@ const createRunSnapshot = (
     ...(task ? { taskId: task.id } : {}),
     cancellable: Boolean(task),
     recoverable:
-      !task && RECOVERABLE_STATUSES.has(run.status) && run.recoverable,
+      !task && isRecoverableRalphRunStatus(run.status) && run.recoverable,
   };
 };
 

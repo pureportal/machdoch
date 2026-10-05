@@ -135,6 +135,7 @@ export const PROVIDER_SYNC_ACTIONS: ReadonlySet<ProviderSyncCliAction> =
   ]);
 export const FLEET_ACTIONS: ReadonlySet<FleetCliAction> = new Set([
   "status",
+  "settings-export",
   "enroll",
   "enable",
   "disable",

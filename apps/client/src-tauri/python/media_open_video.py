@@ -63,7 +63,7 @@ def generate(request: dict[str, Any], worker: Any) -> dict[str, Any]:
         raise worker.WorkerError("Choose a non-looping shot to keep generated audio synchronized")
     if request.get("loopMode") == "seamless":
         raise worker.WorkerError("Use a shot, boomerang, or crossfade with this video profile")
-    if request.get("addons"):
+    if request.get("addons") and profile["family"] != "CogVideoX":
         raise worker.WorkerError("This video profile does not support LoRAs")
     negative_prompt = request.get("negativePrompt", "")
     if not isinstance(negative_prompt, str) or len(negative_prompt) > 8_000:
@@ -103,12 +103,13 @@ def generate(request: dict[str, Any], worker: Any) -> dict[str, Any]:
     device, device_label, device_memory = worker._device(torch)
     backend = worker._configure_video_conv3d_backend(torch, device)
     memory = worker._start_video_memory_observation(torch, device)
-    dtype = worker._pipeline_dtype(torch, device)
+    dtype = torch.float16 if device == "cuda" and profile["architecture"] == "cogvideox-2b" else worker._pipeline_dtype(torch, device)
     generator = torch.Generator(device=device if device == "cuda" else "cpu").manual_seed(request["seed"])
     arguments = media_open_models.video_arguments(profile, request, image, last_image, width, height, generator)
     output_directory = worker._fresh_output_directory(request["outputDirectory"])
     worker._progress("Loading video model", 0.04)
     pipeline = media_open_models.load_pipeline(diffusers, model, dtype, image_conditioned=image is not None)
+    applied_addons = worker._load_video_addons(pipeline.transformer, request.get("addons", [])) if profile["family"] == "CogVideoX" else []
     if profile["guidanceParameter"] == "guider":
         pipeline.guider = diffusers.ClassifierFreeGuidance(guidance_scale=guidance)
     if device == "cuda":
@@ -149,8 +150,8 @@ def generate(request: dict[str, Any], worker: Any) -> dict[str, Any]:
     return {
         "schemaVersion": worker.SCHEMA_VERSION, "workerVersion": worker.WORKER_VERSION,
         "packages": worker._package_versions(), "device": device, "deviceLabel": device_label,
-        "deviceMemoryBytes": device_memory, "architecture": profile["architecture"], "addons": [],
-        "performance": {"gpuMemory": memory_evidence, "timingSeconds": {"total": time.perf_counter() - started}},
+        "deviceMemoryBytes": device_memory, "architecture": profile["architecture"], "addons": applied_addons,
+        "performance": {"gpuMemory": memory_evidence, "inferenceDtype": str(dtype), "timingSeconds": {"total": time.perf_counter() - started}},
         "conv3dBackend": backend,
         "conditioningMode": "native-text-to-video" if image is None else "native-first-last-frame" if last_image is not None else "native-first-frame",
         "conditioningFraming": None, "endpointRestoration": None, "loopEndpointRestoration": None,

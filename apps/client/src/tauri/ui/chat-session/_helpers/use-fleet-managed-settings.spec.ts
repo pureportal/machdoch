@@ -8,6 +8,7 @@ import {
 import {
   applyManagedShellSettings,
   createManagedContextPacks,
+  createEnrollmentSettingsDocument,
   synchronizeSecrets,
 } from "./use-fleet-managed-settings";
 
@@ -96,6 +97,55 @@ const metadata: FleetManagedSettingsState = {
 };
 
 describe("Fleet managed settings", () => {
+  it("captures portable local packs and excludes existing managed instructions and packs", () => {
+    const state = createInitialShellState();
+    const local = document();
+    const localId = "123e4567-e89b-42d3-a456-426614174000";
+    const managedId = "123e4567-e89b-42d3-a456-426614174001";
+    local.instructions = [localId, managedId].map((id) => ({
+      id,
+      name: id,
+      body: "Review",
+      enabled: true,
+      global: true,
+      tags: [],
+    }));
+    state.fleetManagedSettings = {
+      ...metadata,
+      instructionProfileIds: { source: managedId },
+      contextPackIds: [managedId],
+    };
+    state.contextPacks = [
+      localPack(localId, "Local"),
+      localPack(managedId, "Managed"),
+      {
+        ...localPack("123e4567-e89b-42d3-a456-426614174002", "Workspace"),
+        workspace: "C:\\Project",
+      },
+    ];
+    const exported = createEnrollmentSettingsDocument(
+      local,
+      state,
+      { version: 1, theme: "dark", density: "compact", accent: "sky" },
+      {
+        infinite: false,
+        executorTurns: 42,
+        autopilotExecutorIterations: 7,
+        automaticRetries: true,
+        retryAttempts: 3,
+      },
+    );
+    expect(exported.instructions.map((instruction) => instruction.id)).toEqual([
+      localId,
+    ]);
+    expect(exported.contextPacks.map((pack) => pack.id)).toEqual([localId]);
+    expect(exported.defaults).toMatchObject({
+      theme: "dark",
+      density: "compact",
+    });
+    expect(exported.agentLimits).toMatchObject({ executorTurns: 42 });
+    expect(exported).not.toHaveProperty("secrets");
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     secretRuntime.loadUserProviderApiKeys.mockResolvedValue({});

@@ -1,7 +1,7 @@
 use image::{Rgb, RgbImage};
 use serde::Deserialize;
 
-use super::{database, ingest, MediaImageImportResult, MediaResult, MediaRuntimePaths};
+use super::{database, ingest, MediaAssetImportResult, MediaResult, MediaRuntimePaths};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -247,7 +247,7 @@ fn dimensions(aspect_ratio: &str) -> MediaResult<(u32, u32)> {
 pub(crate) fn create(
     paths: &MediaRuntimePaths,
     map: PoseMap,
-) -> MediaResult<MediaImageImportResult> {
+) -> MediaResult<MediaAssetImportResult> {
     let image = map.render()?;
     let name = format!(
         "openpose-{}.png",
@@ -264,7 +264,7 @@ fn save_and_import(
     paths: &MediaRuntimePaths,
     image: RgbImage,
     name: &str,
-) -> MediaResult<MediaImageImportResult> {
+) -> MediaResult<MediaAssetImportResult> {
     let staging = paths
         .database
         .parent()
@@ -281,7 +281,7 @@ fn save_and_import(
     std::fs::create_dir(&staging_directory).map_err(|error| error.to_string())?;
     let path = staging_directory.join(name);
     image.save(&path).map_err(|error| error.to_string())?;
-    let result = ingest::import_image(paths, &path.to_string_lossy());
+    let result = ingest::import_asset(paths, &path.to_string_lossy());
     let cleanup = std::fs::remove_dir_all(&staging_directory).map_err(|error| error.to_string());
     cleanup?;
     let mut imported = result?;

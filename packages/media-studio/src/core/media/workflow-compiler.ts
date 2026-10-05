@@ -29,8 +29,18 @@ export const requiresWorkflowCompilation = (flow: MediaFlow): boolean =>
       "operation.depth-map",
       "operation.controlnet",
       "control.repeat",
+      "source.audio",
+      "source.video",
+      "operation.video-sequence",
+      "operation.video-audio",
+      "operation.lip-sync",
     ].includes(node.type),
   ) ||
+  flow.nodes.filter((node) => node.type === "task.generate-video").length > 1 ||
+  (flow.nodes.some((node) => node.type === "task.generate-audio") &&
+    flow.nodes.some((node) =>
+      !["source.prompt", "task.generate-audio", "output.audio"].includes(node.type),
+    )) ||
   flow.nodes.filter((node) =>
     ["task.generate-image", "task.edit-image"].includes(node.type),
   ).length > 1 ||
@@ -55,11 +65,17 @@ export const isConnectedMediaFlow = (flow: MediaFlow): boolean =>
 export const WORKFLOW_EXECUTABLE_TYPES = new Set([
   "source.prompt",
   "source.image",
+  "source.audio",
+  "source.video",
   "source.seed",
   "task.generate-prompt",
   "task.generate-image",
   "task.edit-image",
   "task.generate-video",
+  "task.generate-audio",
+  "operation.video-sequence",
+  "operation.video-audio",
+  "operation.lip-sync",
   "operation.segment",
   "operation.visual-check",
   "operation.prepare-mask",
@@ -79,6 +95,7 @@ export const WORKFLOW_EXECUTABLE_TYPES = new Set([
   "control.repeat",
   "output.asset",
   "output.video",
+  "output.audio",
 ]);
 
 export function workflowTaskFlow(
@@ -138,7 +155,11 @@ export function workflowTaskFlow(
     });
   }
   const outputType =
-    task.type === "task.generate-video" ? "output.video" : "output.asset";
+    task.type === "task.generate-video"
+      ? "output.video"
+      : task.type === "task.generate-audio"
+        ? "output.audio"
+        : "output.asset";
   if (
     task.type === "task.generate-video" &&
     !edges.some((edge) => edge.toPortId === "last-frame")
@@ -170,9 +191,9 @@ export function workflowTaskFlow(
   edges.push({
     id: "workflow-output",
     fromNodeId: task.id,
-    fromPortId: outputType === "output.video" ? "video" : "image",
+    fromPortId: outputType === "output.video" ? "video" : outputType === "output.audio" ? "audio" : "image",
     toNodeId: outputId,
-    toPortId: outputType === "output.video" ? "video" : "image",
+    toPortId: outputType === "output.video" ? "video" : outputType === "output.audio" ? "audio" : "image",
   });
   return { ...flow, nodes, edges };
 }
@@ -275,6 +296,7 @@ export function compileConnectedMediaFlow(
         "task.generate-image",
         "task.edit-image",
         "task.generate-video",
+        "task.generate-audio",
       ].includes(node.type)
     ) {
       const connectedMask = effective.edges.some(
@@ -368,6 +390,11 @@ export function compileConnectedMediaFlow(
       > = {
         "source.prompt": "normalize-prompt",
         "source.image": "resolve-asset",
+        "source.audio": "resolve-asset",
+        "source.video": "resolve-asset",
+        "operation.video-sequence": "sequence-video",
+        "operation.video-audio": "set-video-audio",
+        "operation.lip-sync": "lip-sync-video",
         "source.seed": "resolve-seed",
         "task.generate-prompt": "generate-prompt",
         "operation.segment": "segment-image",
@@ -388,6 +415,7 @@ export function compileConnectedMediaFlow(
         "control.quality-gate": "evaluate-gate",
         "control.repeat": "repeat-flow",
         "output.asset": "ingest-asset",
+        "output.audio": "ingest-asset",
         "output.video": "ingest-asset",
       };
       const kind = kinds[node.type];
@@ -407,6 +435,7 @@ export function compileConnectedMediaFlow(
         "operation.segment",
         "operation.visual-check",
         "operation.upscale",
+        "operation.lip-sync",
       ].includes(node.type) &&
       !String(node.config.modelPath ?? "").trim()
     )
@@ -468,10 +497,10 @@ export function compileConnectedMediaFlow(
     )
       error(node.id, "Enter the object to select.");
     if (
-      node.type === "source.image" &&
+      ["source.image", "source.audio", "source.video"].includes(node.type) &&
       !String(node.config.assetId ?? "").trim()
     )
-      error(node.id, "Choose an image.");
+      error(node.id, `Choose a ${node.type.slice(7)} asset.`);
     if (
       (node.type === "operation.quality-analyze" ||
         node.type === "control.quality-gate") &&
@@ -504,7 +533,7 @@ export function compileConnectedMediaFlow(
     }
   }
   if (!effective.nodes.some((node) => node.type.startsWith("output.")))
-    error("", "Add an image or video output.");
+    error("", "Add an output.");
   const model = bindings[0]?.model ?? null;
   return {
     schemaVersion: 1,

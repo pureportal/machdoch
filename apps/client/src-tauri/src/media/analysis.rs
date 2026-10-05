@@ -400,7 +400,7 @@ mod tests {
             blobs: root.join("runtime").join("blobs"),
         };
         database::ensure_initialized(&paths).unwrap();
-        let imported = ingest::import_image(&paths, source_path.to_str().unwrap()).unwrap();
+        let imported = ingest::import_asset(&paths, source_path.to_str().unwrap()).unwrap();
         (root, paths, imported.asset.id)
     }
 

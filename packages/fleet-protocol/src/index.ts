@@ -4,6 +4,11 @@
 } from "@machdoch/fleet-protocol/media";
 export * from "@machdoch/fleet-protocol/media";
 import { z } from "zod";
+import { hostTelemetrySchema } from "@machdoch/fleet-protocol/telemetry";
+export {
+  hostTelemetrySchema,
+  type HostTelemetry,
+} from "@machdoch/fleet-protocol/telemetry";
 
 export const workspaceRunsCapability = "workspace-runs.v1";
 export const redactedRunValue = "__MACHDOCH_REDACTED__";
@@ -604,7 +609,7 @@ const managedSettingsPromptSchema = z.strictObject({
   content: managedSettingsText.min(1),
 });
 
-const managedSettingsDocumentSchema = z
+export const managedSettingsDocumentSchema = z
   .strictObject({
     defaults: managedSettingsDefaultsSchema,
     agentLimits: z.strictObject({
@@ -1434,7 +1439,9 @@ export const productShellSchema = z.strictObject({
       uiControlDescription: text,
       attachments: z.array(productAttachmentSchema).max(64),
       chooserProviders: z.array(z.string().max(240)).max(32),
-      matchedContextPackIds: z.array(identifier).max(60),
+      matchedContextPackIds: z
+        .array(identifier)
+        .max(maximumManagedSettingsCollectionEntries),
     })
     .optional(),
   runtime: z
@@ -1492,7 +1499,7 @@ export const productShellSchema = z.strictObject({
         uiControlEnabled: z.boolean().optional(),
       }),
     )
-    .max(60),
+    .max(maximumManagedSettingsCollectionEntries),
   instructions: z
     .strictObject({
       loading: z.boolean(),
@@ -1574,6 +1581,7 @@ const taskSessionSchema = z.strictObject({
 });
 
 export const productSnapshotSchema = z.strictObject({
+  telemetry: hostTelemetrySchema.optional(),
   enabled: z.boolean(),
   serverTime: timestamp,
   eventId: timestamp,

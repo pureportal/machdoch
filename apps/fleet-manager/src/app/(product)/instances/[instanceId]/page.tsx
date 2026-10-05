@@ -7,11 +7,14 @@ export const dynamic = "force-dynamic";
 
 export default async function InstanceProductPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ instanceId: string }>;
+  searchParams: Promise<{ session?: string | string[] }>;
 }): Promise<React.ReactElement> {
   await requirePageSession();
   const { instanceId } = await params;
+  const { session } = await searchParams;
   const instance = getRuntime().fleetStore.getInstance(instanceId);
   if (!instance || instance.revokedAt !== null) notFound();
   return (
@@ -19,6 +22,11 @@ export default async function InstanceProductPage({
       instanceId={instance.instanceId}
       instanceName={instance.displayName}
       settingsEnabled={getRuntime().settingsCipher !== null}
+      {...(typeof session === "string" &&
+      session.length > 0 &&
+      session.length <= 240
+        ? { initialSessionId: session }
+        : {})}
     />
   );
 }

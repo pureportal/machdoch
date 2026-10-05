@@ -827,6 +827,16 @@ describe("Ralph starter flows", () => {
     expect(JSON.stringify(archiveGate)).not.toContain(
       "record-deferred-outcome",
     );
+    expect(JSON.stringify(archiveGate)).not.toContain("record-invalid-outcome");
+    expect(featureFlow.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "record-invalid-outcome",
+          fromOutput: "SUCCESS",
+          to: "retained-checklist-report",
+        }),
+      ]),
+    );
 
     const generationFlow = getRalphStarterFlow(
       "autonomous-feature-generation-loop",
@@ -957,7 +967,7 @@ describe("Ralph starter flows", () => {
         flowId: "full-feature-implementation",
         validatorId: "validate-progress",
         assessmentId: "assess-checklist-tasks",
-        completedOutcomeId: "record-done-outcome",
+        completedOutcomeId: "read-completed-checklist",
         blockedOutcomeId: "record-blocked-outcome",
         deferredOutcomeId: "record-deferred-outcome",
         invalidOutcomeId: "record-invalid-outcome",
@@ -1142,7 +1152,7 @@ describe("Ralph starter flows", () => {
         }
       }
     }
-    expect(validatorCount).toBe(STARTER_RALPH_FLOWS.length);
+    expect(validatorCount).toBe(STARTER_RALPH_FLOWS.length + 1);
   });
 
   it("gives starter flow verification checks enough time for full workspace commands", () => {
@@ -1589,6 +1599,7 @@ describe("Ralph starter flows", () => {
         data: {
           output: {
             featureId: "billing-settings",
+            requestKey: "billing-request",
             note: 'Quoted prose: "BILLING-SETTINGS".',
           },
         },
@@ -1597,7 +1608,7 @@ describe("Ralph starter flows", () => {
 
     expect(
       evaluateStarterCondition(block, {}, expected, {
-        json: { featureId: "billing-settings" },
+        json: { featureId: "billing-settings", requestKey: "billing-request" },
       }),
     ).toBe(true);
     expect(
@@ -1640,9 +1651,6 @@ describe("Ralph starter flows", () => {
     );
     const workYieldAnalysis = flow?.blocks.find(
       (block) => block.id === "work-yield-analysis",
-    );
-    const workYieldDecision = flow?.blocks.find(
-      (block) => block.id === "work-yield-decision",
     );
     const validateGoal = flow?.blocks.find(
       (block) => block.id === "validate-goal",
@@ -1811,18 +1819,9 @@ describe("Ralph starter flows", () => {
         },
       },
     });
-    expect(workYieldDecision).toMatchObject({
-      type: "UTILITY",
-      utility: {
-        type: "CONDITION",
-        condition: {
-          style: "json-path",
-          path: "lastData.output.shouldVerify",
-          operator: "equals",
-          value: "true",
-        },
-      },
-    });
+    expect(
+      flow?.blocks.some((block) => block.id === "work-yield-decision"),
+    ).toBe(true);
     expect(validateGoal).toMatchObject({
       type: "UTILITY",
       utility: {
@@ -2044,18 +2043,7 @@ describe("Ralph starter flows", () => {
         },
       },
     });
-    expect(workYieldDecision).toMatchObject({
-      type: "UTILITY",
-      utility: {
-        type: "CONDITION",
-        condition: {
-          style: "json-path",
-          path: "lastData.output.shouldVerify",
-          operator: "equals",
-          value: "true",
-        },
-      },
-    });
+    expect(workYieldDecision).toBeUndefined();
     expect(validateProgress).toMatchObject({
       type: "UTILITY",
       utility: {
@@ -2084,6 +2072,11 @@ describe("Ralph starter flows", () => {
         expect.objectContaining({
           from: "count-implementation-pass",
           fromOutput: "CONTINUE",
+          to: "read-selected-checklist",
+        }),
+        expect.objectContaining({
+          from: "read-selected-checklist",
+          fromOutput: "SUCCESS",
           to: "implement-feature",
         }),
         expect.objectContaining({
@@ -2109,17 +2102,12 @@ describe("Ralph starter flows", () => {
         expect.objectContaining({
           from: "work-yield-analysis",
           fromOutput: "SUCCESS",
-          to: "work-yield-decision",
-        }),
-        expect.objectContaining({
-          from: "work-yield-decision",
-          fromOutput: "MATCH",
           to: "verification-decision",
         }),
         expect.objectContaining({
-          from: "work-yield-decision",
-          fromOutput: "NO_MATCH",
-          to: "validate-progress",
+          from: "work-yield-analysis",
+          fromOutput: "ERROR",
+          to: "verification-decision",
         }),
       ]),
     );
@@ -3379,23 +3367,25 @@ describe("Ralph starter flows", () => {
         (block): block is RalphUtilityBlock =>
           block.type === "UTILITY" && block.utility.type === "VALIDATOR_JSON",
       );
-      expect(validators).toHaveLength(1);
-      expect(validators[0]?.utility.schema).toEqual(
-        RALPH_VALIDATOR_JSON_SCHEMA,
+      expect(validators).toHaveLength(
+        starterFlow.id === "full-feature-implementation" ? 2 : 1,
       );
-      expect(
-        starterFlow.flow.edges
-          .filter((edge) => edge.from === validators[0]?.id)
-          .map((edge) => edge.fromOutput),
-      ).toEqual(
-        expect.arrayContaining([
-          "DONE",
-          "CONTINUE",
-          "RETRY",
-          "ERROR",
-          "INVALID",
-        ]),
-      );
+      for (const validator of validators) {
+        expect(validator.utility.schema).toEqual(RALPH_VALIDATOR_JSON_SCHEMA);
+        expect(
+          starterFlow.flow.edges
+            .filter((edge) => edge.from === validator.id)
+            .map((edge) => edge.fromOutput),
+        ).toEqual(
+          expect.arrayContaining([
+            "DONE",
+            "CONTINUE",
+            "RETRY",
+            "ERROR",
+            "INVALID",
+          ]),
+        );
+      }
     }
   });
 

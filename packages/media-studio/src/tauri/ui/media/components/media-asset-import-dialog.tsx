@@ -81,6 +81,7 @@ const IMPORT_TYPES: ReadonlyArray<{
   { id: "lora", label: "LoRA" },
   { id: "embedding", label: "Embedding" },
   { id: "image", label: "Image" },
+  { id: "audio", label: "Audio" },
   { id: "video", label: "Video" },
   { id: "svg", label: "SVG" },
 ];
@@ -92,6 +93,7 @@ const IMPORT_EXTENSIONS = [
   "jpeg",
   "webp",
   "webm",
+  "wav",
   "svg",
 ];
 

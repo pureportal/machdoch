@@ -15,7 +15,7 @@ export function MediaWorkflowModelField({
   id: string;
   value: string;
   directory: boolean;
-  modelKind: "prompt" | "upscale" | "sam3" | "vision";
+  modelKind: "prompt" | "upscale" | "sam3" | "vision" | "lip-sync";
   onChange: (value: string) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -114,6 +114,8 @@ export function MediaWorkflowModelField({
                 ? "Download Qwen3 · 1.5 GB"
                 : modelKind === "vision"
                   ? "Download Qwen3-VL · 4.3 GB"
+                  : modelKind === "lip-sync"
+                    ? "Download MuseTalk 1.5 · 3.9 GB"
                   : "Download model"}
           </Button>
         </div>

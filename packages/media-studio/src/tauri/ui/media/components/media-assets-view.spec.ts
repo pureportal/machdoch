@@ -558,7 +558,6 @@ describe("MediaAssetsView asset actions", () => {
       userImported: true,
       management: {
         acquisition: "file-import" as const,
-        verification: "model-probe" as const,
       },
       runtimeReadiness: "ready" as const,
     };

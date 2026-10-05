@@ -20,6 +20,7 @@ mod snapshot;
 mod state;
 mod state_progress;
 mod state_store;
+mod telemetry;
 
 use commands::FleetCommandRecord;
 pub use commands::FleetControlCommandEvent;
@@ -37,7 +38,8 @@ const MAX_COMPLETED_COMMAND_ENTRIES: usize = 512;
 const MAX_COMMAND_TEXT_CHARS: usize = 8_000;
 const MAX_FLEET_SHELL_SESSIONS: usize = 80;
 const MAX_FLEET_SHELL_MESSAGES: usize = 80;
-const MAX_FLEET_CONTEXT_PACKS: usize = 60;
+const MAX_FLEET_CONTEXT_PACKS: usize =
+    machdoch_fleet_protocol::MAX_MANAGED_SETTINGS_COLLECTION_ENTRIES;
 const MAX_FLEET_PROMPT_HISTORY: usize = 30;
 const MAX_FLEET_SCHEDULER_JOBS: usize = 80;
 const MAX_FLEET_SCHEDULER_RUNS: usize = 120;

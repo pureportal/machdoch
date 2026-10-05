@@ -166,7 +166,9 @@ export const shouldSyncUtilityTitle = (
   );
 };
 
-export const isGroupChildMoveSuppressed = (event: MouseEvent | TouchEvent): boolean => {
+export const isGroupChildMoveSuppressed = (
+  event: MouseEvent | TouchEvent,
+): boolean => {
   return "ctrlKey" in event && event.ctrlKey;
 };
 
@@ -183,8 +185,9 @@ export const getFlowLayoutKey = (flow: RalphFlow | null): string => {
     .map((block) => {
       const x = block.position?.x ?? "auto";
       const y = block.position?.y ?? "auto";
+      const collapsed = block.type === "GROUP" && Boolean(block.collapsed);
 
-      return `${block.id}:${x}:${y}`;
+      return `${block.id}:${x}:${y}:${collapsed}`;
     })
     .join("|");
 };

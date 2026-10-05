@@ -3,6 +3,7 @@ import {
   createImageEditFlow,
   createImageRecipeFlow,
   createImageToVideoFlow,
+  readImageRecipeSettings,
 } from "./compiler.js";
 import type { ImageRecipeSettings, MediaFlow } from "./contracts.js";
 import { stepMediaGalleryAssetId } from "./gallery.js";
@@ -68,11 +69,53 @@ const createSimpleFlow = (): MediaFlow =>
   });
 
 describe("media node registry", () => {
+  it.each(["generate", "edit"] as const)(
+    "retains pose guidance changed on an image %s task",
+    (kind) => {
+      const settings = {
+        ...SETTINGS,
+        transparentBackground: false,
+        qualityGateEnabled: false,
+        poseImageAssetId: "asset:pose",
+        poseStrength: 1.1,
+      };
+      const input = { id: "flow:pose", createdAt: "2026-10-05T00:00:00Z", settings };
+      const flow = kind === "edit"
+        ? createImageEditFlow({ ...input, sourceAssetId: "asset:base" })
+        : createImageRecipeFlow(input);
+      const taskId = kind === "edit" ? "edit" : "generate";
+      const edited = updateMediaFlowNodeConfigs({
+        flow,
+        nodeId: taskId,
+        updatedAt: "2026-10-05T00:01:00Z",
+        values: { poseStrength: 0.73, poseStart: 0.12, poseEnd: 0.87 },
+      });
+      const poseSource = edited.nodes.find(node => node.id === "pose-image")!;
+      expect(poseSource.config.influence).toBe(1);
+      expect(validateMediaFlowNodes(edited)).toEqual([]);
+      expect(readImageRecipeSettings(edited)).toMatchObject({
+        poseImageAssetId: "asset:pose",
+        poseStrength: 0.73,
+        poseStart: 0.12,
+        poseEnd: 0.87,
+      });
+      const invalid = updateMediaFlowNodeConfig({
+        flow: edited,
+        nodeId: taskId,
+        fieldId: "poseStart",
+        value: 0.87,
+        updatedAt: "2026-10-05T00:02:00Z",
+      });
+      expect(validateMediaFlowNodes(invalid)).toContainEqual(
+        expect.objectContaining({ fieldId: "poseStart", code: "INVALID_CONFIG_VALUE" }),
+      );
+    },
+  );
   it("declares defaults, examples, typed ports, and valid schemas for every recipe node", () => {
     const flow = createFlow();
 
     expect(validateMediaFlowNodes(flow)).toEqual([]);
-    expect(listMediaNodeDefinitions()).toHaveLength(38);
+    expect(listMediaNodeDefinitions()).toHaveLength(43);
     for (const definition of listMediaNodeDefinitions()) {
       expect(definition.version).toBe(1);
       expect(definition.fields.every((field) => "defaultValue" in field)).toBe(

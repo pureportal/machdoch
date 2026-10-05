@@ -23,6 +23,27 @@ SPEC.loader.exec_module(WORKER)
 
 
 class MediaDiffusersQualityTests(unittest.TestCase):
+    def test_svg_worker_selects_and_configures_the_gpu_before_loading_the_model(self) -> None:
+        torch = object()
+        calls = mock.Mock()
+        calls.attach_mock(mock.Mock(return_value=("cuda", "selected GPU", 16)), "select")
+        calls.attach_mock(mock.Mock(), "configure")
+        calls.attach_mock(mock.Mock(return_value={"candidates": ["<svg/>"]}), "generate")
+        output = io.StringIO()
+        with mock.patch.object(WORKER, "_runtime", return_value=(torch, None)), \
+                mock.patch.object(WORKER, "_device", calls.select), \
+                mock.patch.object(WORKER, "_configure_amd_convolution_backend", calls.configure), \
+                mock.patch.object(WORKER, "_svg_model_module", return_value=SimpleNamespace(generate=calls.generate)), \
+                mock.patch("sys.argv", ["worker", "generate-svg"]), \
+                mock.patch("sys.stdin", io.StringIO('{"prompt":"A teapot"}')), \
+                mock.patch("sys.stdout", output):
+            self.assertEqual(WORKER.main(), 0)
+        self.assertEqual(calls.mock_calls, [
+            mock.call.select(torch), mock.call.configure(torch, "cuda"),
+            mock.call.generate({"prompt": "A teapot"}, torch, WORKER._progress),
+        ])
+        self.assertEqual(json.loads(output.getvalue()), {"candidates": ["<svg/>"]})
+
     def test_training_precision_is_applied_when_loading_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

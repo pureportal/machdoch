@@ -70,7 +70,6 @@ import type {
   MediaModelCatalogSnapshot,
   MediaLocalModelImportInspection,
   MediaLocalModelImportResult,
-  MediaLocalModelRuntimeProbeResult,
   MediaLocalDiffusersRuntimeStatus,
   MediaModelAddonImportInspection,
   MediaModelAddonImportResult,
@@ -1709,19 +1708,6 @@ export const importMediaLocalModel = async (
   });
 };
 
-export const probeMediaLocalModel = async (
-  modelId: string,
-): Promise<MediaLocalModelRuntimeProbeResult> => {
-  if (!canInvokeNativeRuntime()) {
-    throw new Error(
-      "Local model verification is available in the native desktop app only.",
-    );
-  }
-  return invoke<MediaLocalModelRuntimeProbeResult>("media_probe_local_model", {
-    modelId,
-  });
-};
-
 export const inspectMediaModelAddon = async (
   sourcePath: string,
 ): Promise<MediaModelAddonImportInspection> => {
@@ -2818,7 +2804,7 @@ export const importMediaAsset = async (
       "Media import is available in the native desktop app only.",
     );
   }
-  return invoke<MediaAssetImportResult>("media_import_image", { path });
+  return invoke<MediaAssetImportResult>("media_import_asset", { path });
 };
 
 export const importMediaAssetFromUrl = async (

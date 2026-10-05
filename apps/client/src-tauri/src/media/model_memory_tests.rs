@@ -95,10 +95,15 @@ fn pid(output: &Output) -> u32 {
 }
 
 fn assert_reaped(pid: u32) {
+    let pid = sysinfo::Pid::from_u32(pid);
+    let mut system = sysinfo::System::new();
+    system.refresh_processes_specifics(
+        sysinfo::ProcessesToUpdate::Some(&[pid]),
+        true,
+        sysinfo::ProcessRefreshKind::nothing(),
+    );
     assert!(
-        sysinfo::System::new_all()
-            .process(sysinfo::Pid::from_u32(pid))
-            .is_none(),
+        system.process(pid).is_none(),
         "worker {pid} survived cleanup"
     );
 }
@@ -229,11 +234,18 @@ fn resident_and_isolated_generation_survive_with_advancing_progress() {
         let fixture = Fixture::new();
         let stopping = AtomicBool::new(false);
         let mut resident = None;
+        if command == "generate" {
+            let (probe, _) = fixture.work("probe", serde_json::json!({}));
+            execute(&mut resident, &probe, &stopping).unwrap();
+        }
+        let progress_delay = if command == "generate" { 0.3 } else { 2.0 };
         let (mut work, _) = fixture.work(
             command,
-            serde_json::json!({"progressSteps":6,"progressDelay":0.3}),
+            serde_json::json!({"progressSteps":6,"progressDelay":progress_delay}),
         );
-        work.timeout = Duration::from_secs(1);
+        if command == "generate" {
+            work.timeout = Duration::from_secs(1);
+        }
         let started = Instant::now();
         let output = execute(&mut resident, &work, &stopping).unwrap();
         assert!(started.elapsed() > work.timeout);
@@ -251,34 +263,35 @@ fn resident_and_isolated_generation_time_out_after_progress_stops() {
             command,
             serde_json::json!({"progressSteps":3,"progressDelay":0.2,"delay":30}),
         );
-        let started = Instant::now();
         let mut steps = 0;
+        let mut last_progress = None;
+        let timeout = if command == "generate" {
+            Duration::from_secs(1)
+        } else {
+            work.timeout
+        };
         let mut monitor = |event: Option<worker_output::WorkerProgress>| {
             if event.is_some() {
                 steps += 1;
+                last_progress = Some(Instant::now());
             }
             Ok(())
         };
         let error = if command == "generate" {
             let mut worker = ResidentWorker::spawn(work.process, "test".into()).unwrap();
-            let result = worker.request(
-                command,
-                work.input.as_deref(),
-                Duration::from_secs(1),
-                &mut monitor,
-            );
+            worker
+                .request("probe", None, work.timeout, |_| Ok(()))
+                .unwrap();
+            let result = worker.request(command, work.input.as_deref(), timeout, &mut monitor);
             assert!(!worker.alive().unwrap());
             result.unwrap_err()
         } else {
-            let work = Work {
-                timeout: Duration::from_secs(1),
-                ..work
-            };
             run_isolated(&work, &mut monitor).unwrap_err()
         };
         assert_eq!(steps, 3);
-        assert!(started.elapsed() > Duration::from_millis(1300));
+        assert!(last_progress.unwrap().elapsed() >= timeout);
         assert!(error.contains("deadline"), "{error}");
+        assert!(error.contains("Sampling"), "{error}");
         let worker_pid = fs::read_to_string(fixture.root.join("active"))
             .unwrap()
             .parse()
@@ -297,8 +310,8 @@ fn early_response_does_not_bypass_a_blocked_input_deadline() {
 sys.stdin.buffer.read(1)
 (pathlib.Path(__file__).parent / 'active').write_text(str(os.getpid()))
 print(json.dumps({'result': {}, 'retentionSeconds': 120}), flush=True)
-for index in range(20):
-    print('MACHDOCH_PROGRESS ' + json.dumps({'stage': 'Sampling', 'progress': (index + 1) / 20}), file=sys.stderr, flush=True)
+for index in range(200):
+    print('MACHDOCH_PROGRESS ' + json.dumps({'stage': 'Sampling', 'progress': (index + 1) / 200}), file=sys.stderr, flush=True)
     time.sleep(0.1)
 "#,
         )
@@ -308,19 +321,12 @@ for index in range(20):
             serde_json::to_vec(&serde_json::json!({"prompt": "x".repeat(1024 * 1024)})).unwrap();
         let error = if command == "generate" {
             let mut worker = ResidentWorker::spawn(work.process, "test".into()).unwrap();
-            let result =
-                worker.request(
-                    command,
-                    Some(&input),
-                    Duration::from_millis(500),
-                    |_| Ok(()),
-                );
+            let result = worker.request(command, Some(&input), work.timeout, |_| Ok(()));
             assert!(!worker.alive().unwrap());
             result.unwrap_err()
         } else {
             let work = Work {
                 input: Some(input),
-                timeout: Duration::from_millis(500),
                 ..work
             };
             run_isolated(&work, |_| Ok(())).unwrap_err()

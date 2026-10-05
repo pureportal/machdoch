@@ -23,9 +23,9 @@ use super::{
     provider_svg::{self, GeneratedSvgBatch, SvgReferencePlan},
     transform, EnqueueFixtureRunRequest, GenerateMediaImagesRequest, GenerateMediaSvgRequest,
     GenerateMediaVideoRequest, MediaAssetDeletionImpact, MediaAssetDeletionRequest,
-    MediaAssetDeletionResult, MediaAssetExportMode, MediaAssetExportRecord, MediaAssetPage,
-    MediaAssetRecord, MediaAssetTag, MediaAssetTombstone, MediaHumanReviewDecisionRequest,
-    MediaHumanReviewRecord, MediaImageImportResult, MediaModelCatalogSnapshot,
+    MediaAssetDeletionResult, MediaAssetExportMode, MediaAssetExportRecord, MediaAssetImportResult,
+    MediaAssetPage, MediaAssetRecord, MediaAssetTag, MediaAssetTombstone,
+    MediaHumanReviewDecisionRequest, MediaHumanReviewRecord, MediaModelCatalogSnapshot,
     MediaNodeExecutionRecord, MediaProviderJobRecord, MediaProviderPolicySnapshot, MediaResult,
     MediaRunDetail, MediaRunEvent, MediaRunPage, MediaRunPlanSnapshot, MediaRunRecord,
     MediaRuntimePaths,
@@ -45,8 +45,20 @@ pub(crate) struct AssetBlobSource {
 }
 
 pub(crate) enum LocalImportKind<'a> {
-    Raster { source_file_name: &'a str },
-    Svg { operation_json: &'a str },
+    Raster {
+        source_file_name: &'a str,
+    },
+    Audio {
+        source_file_name: &'a str,
+        operation_json: &'a str,
+    },
+    Video {
+        source_file_name: &'a str,
+        operation_json: &'a str,
+    },
+    Svg {
+        operation_json: &'a str,
+    },
 }
 
 pub(crate) struct ImportedAssetRegistration<'a> {
@@ -606,7 +618,7 @@ pub(crate) fn record_asset(
 pub(crate) fn record_imported_asset(
     paths: &MediaRuntimePaths,
     registration: ImportedAssetRegistration<'_>,
-) -> MediaResult<MediaImageImportResult> {
+) -> MediaResult<MediaAssetImportResult> {
     let ImportedAssetRegistration {
         digest,
         relative_path,
@@ -617,10 +629,11 @@ pub(crate) fn record_imported_asset(
         import_kind,
     } = registration;
     transform::verify_cas_blob(paths, Path::new(relative_path), digest, byte_size)?;
-    let asset_kind = if matches!(import_kind, LocalImportKind::Svg { .. }) {
-        "vector"
-    } else {
-        "image"
+    let asset_kind = match import_kind {
+        LocalImportKind::Svg { .. } => "vector",
+        LocalImportKind::Audio { .. } => "audio",
+        LocalImportKind::Video { .. } => "video",
+        LocalImportKind::Raster { .. } => "image",
     };
     let mut connection = open(paths)?;
     let transaction = connection
@@ -658,7 +671,7 @@ pub(crate) fn record_imported_asset(
             .find(|asset| asset.id == asset_id)
             .cloned()
             .ok_or_else(|| format!("deduplicated image asset {asset_id} was not found"))?;
-        return Ok(MediaImageImportResult {
+        return Ok(MediaAssetImportResult {
             detail,
             asset,
             deduplicated: true,
@@ -699,6 +712,26 @@ pub(crate) fn record_imported_asset(
             "local-svg",
             Some(operation_json.to_string()),
             "SVG validation passed before publishing the vector asset.",
+        ),
+        LocalImportKind::Audio { source_file_name, operation_json } => (
+            "builtin:import-audio",
+            "Import audio",
+            "import:audio-v1",
+            source_file_name,
+            "Audio import",
+            "local-import",
+            Some(operation_json.to_string()),
+            "Audio decoded before publishing the asset.",
+        ),
+        LocalImportKind::Video { source_file_name, operation_json } => (
+            "builtin:import-video",
+            "Import video",
+            "import:video-v1",
+            source_file_name,
+            "Video import",
+            "local-import",
+            Some(operation_json.to_string()),
+            "Video decoded before publishing the asset.",
         ),
     };
     let asset_id = format!("asset:{run_id}:0");
@@ -750,11 +783,7 @@ pub(crate) fn record_imported_asset(
                 height,
                 timestamp,
                 operation_json,
-                if mime_type == "image/svg+xml" {
-                    "vector"
-                } else {
-                    "image"
-                },
+                asset_kind,
             ],
         )
         .map_err(|error| format!("failed to register imported image asset: {error}"))?;
@@ -784,7 +813,7 @@ pub(crate) fn record_imported_asset(
         .find(|asset| asset.id == asset_id)
         .cloned()
         .ok_or_else(|| format!("imported image asset {asset_id} was not found"))?;
-    Ok(MediaImageImportResult {
+    Ok(MediaAssetImportResult {
         detail,
         asset,
         deduplicated: false,
@@ -8070,7 +8099,6 @@ mod tests {
         for id in ["local:wan2.2-ti2v-5b", "local-svg:IntroSVG-Qwen2.5-VL-7B"] {
             let model = initial.models.iter().find(|model| model.id == id).unwrap();
             assert_eq!(model.management.acquisition, "managed-install");
-            assert_eq!(model.management.verification, "model-probe");
             assert!(!model.installed);
         }
         assert!(

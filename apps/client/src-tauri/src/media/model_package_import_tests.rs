@@ -7,6 +7,36 @@ use super::{inspect, inventory};
 struct TestPackage(PathBuf);
 
 impl TestPackage {
+    fn audio() -> Self {
+        let package = Self::new();
+        for component in ["projection_model", "unet", "vocoder"] {
+            fs::create_dir_all(package.0.join(component)).unwrap();
+            fs::write(package.0.join(component).join("config.json"), "{}").unwrap();
+            fs::copy(
+                package
+                    .0
+                    .join("transformer/diffusion_pytorch_model.safetensors"),
+                package
+                    .0
+                    .join(component)
+                    .join("diffusion_pytorch_model.safetensors"),
+            )
+            .unwrap();
+        }
+        fs::write(
+            package.0.join("model_index.json"),
+            serde_json::to_vec(&json!({
+                "_class_name": "AudioLDM2Pipeline",
+                "projection_model": ["audioldm2", "AudioLDM2ProjectionModel"],
+                "unet": ["audioldm2", "AudioLDM2UNet2DConditionModel"],
+                "vocoder": ["transformers", "SpeechT5HifiGan"]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        package
+    }
+
     fn new() -> Self {
         let root = std::env::temp_dir().join(format!(
             "machdoch-model-folder-test-{}",
@@ -37,6 +67,45 @@ impl TestPackage {
         .unwrap();
         Self(root)
     }
+}
+
+#[test]
+fn audioldm_native_components_can_be_imported() {
+    let package = TestPackage::audio();
+    let inspection = inspect(&package.0).unwrap();
+    assert!(inspection.can_import);
+    assert_eq!(
+        inspection.detected_architecture.as_deref(),
+        Some("audioldm-2")
+    );
+}
+
+#[test]
+fn audioldm_namespace_does_not_accept_other_repository_classes() {
+    let package = TestPackage::audio();
+    let path = package.0.join("model_index.json");
+    let mut index: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    index["projection_model"][1] = json!("CustomProjectionModel");
+    fs::write(&path, serde_json::to_vec(&index).unwrap()).unwrap();
+    assert!(inventory(&package.0)
+        .err()
+        .unwrap()
+        .contains("custom repository code"));
+}
+
+#[test]
+fn audioldm_requires_vocoder_weights() {
+    let package = TestPackage::audio();
+    fs::remove_file(
+        package
+            .0
+            .join("vocoder/diffusion_pytorch_model.safetensors"),
+    )
+    .unwrap();
+    assert!(inventory(&package.0)
+        .err()
+        .unwrap()
+        .contains("Missing safetensors weights for vocoder"));
 }
 
 impl Drop for TestPackage {

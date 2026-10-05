@@ -119,7 +119,11 @@ export const formatUnconnectedRouteLabel = (
 };
 
 export const titleFromId = (id: string): string => {
-  const words = id.replace(/-/gu, " ").split(/\s+/u).filter(Boolean);
+  const words = id
+    .replace(/([a-z\d])([A-Z])/gu, "$1 $2")
+    .replace(/[-_]/gu, " ")
+    .split(/\s+/u)
+    .filter(Boolean);
 
   return words.length > 0
     ? words

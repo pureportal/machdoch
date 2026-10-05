@@ -80,7 +80,6 @@ export const createManagedGenerationModels = (
       ),
       management: {
         acquisition: "managed-install",
-        verification: "model-probe",
       },
       runtimeReadiness: "unverified",
       license: {

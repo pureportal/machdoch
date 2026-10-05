@@ -37,6 +37,7 @@ import {
   Group,
   History,
   ImageIcon,
+  Music,
   LayoutDashboard,
   LayoutTemplate,
   LoaderCircle,
@@ -609,6 +610,17 @@ const MediaAssetThumbnail = ({
   }, [assetId]);
 
   if (url) {
+    if (asset.kind === "video") {
+      return (
+        <video
+          src={url}
+          aria-label={alt}
+          muted
+          preload="metadata"
+          className={cn("h-full w-full object-cover", className)}
+        />
+      );
+    }
     return (
       <img
         src={url}
@@ -672,11 +684,20 @@ const MediaFlowNodeCard = ({
       />
       {data.asset ? (
         <div className="mt-3 aspect-[4/3] overflow-hidden rounded-xl border border-white/10 bg-black/20">
-          <MediaAssetThumbnail
-            asset={data.asset}
-            alt={`${data.assetLabel ?? data.label} preview`}
-            className="object-contain"
-          />
+          {data.asset.kind === "audio" ? (
+            <div
+              className="flex h-full items-center justify-center"
+              aria-label={data.assetLabel ?? data.label}
+            >
+              <Music aria-hidden="true" className="h-8 w-8 opacity-60" />
+            </div>
+          ) : (
+            <MediaAssetThumbnail
+              asset={data.asset}
+              alt={`${data.assetLabel ?? data.label} preview`}
+              className="object-contain"
+            />
+          )}
         </div>
       ) : data.assetId ? (
         <div className="mt-3 flex aspect-[4/3] items-center justify-center rounded-xl border border-dashed border-white/15 bg-black/15 text-center text-[9px] opacity-60">
@@ -927,7 +948,7 @@ const MediaAssetPicker = ({
   fieldLabel,
   currentAssetId,
   currentAsset,
-  imageAssets,
+  assets,
   metadata,
   categories,
   disabled,
@@ -939,7 +960,7 @@ const MediaAssetPicker = ({
   fieldLabel: string;
   currentAssetId: string;
   currentAsset: MediaAssetRecord | null;
-  imageAssets: readonly MediaAssetRecord[];
+  assets: readonly MediaAssetRecord[];
   metadata: Readonly<Record<string, MediaGenerationAssetMetadata>>;
   categories: readonly MediaAssetCategory[];
   disabled: boolean;
@@ -949,7 +970,7 @@ const MediaAssetPicker = ({
 }): JSX.Element => {
   const [open, setOpen] = useState(false);
   const currentAssetIndex = currentAsset
-    ? imageAssets.findIndex((asset) => asset.id === currentAsset.id)
+    ? assets.findIndex((asset) => asset.id === currentAsset.id)
     : -1;
   const currentAssetLabel =
     currentAsset && currentAssetIndex >= 0
@@ -999,12 +1020,11 @@ const MediaAssetPicker = ({
             {currentAssetLabel ??
               (currentAssetId ? "Unavailable asset" : "Choose an asset…")}
           </span>
-          <span className="mt-1 block truncate text-[10px] text-slate-500">
-            {currentAsset
-              ? `${currentAsset.width} × ${currentAsset.height}`
-              : currentAssetId ||
-                `${imageAssets.length} image${imageAssets.length === 1 ? "" : "s"} available`}
-          </span>
+          {currentAsset?.kind === "image" || currentAsset?.kind === "video" ? (
+            <span className="mt-1 block truncate text-[10px] text-slate-500">
+              {`${currentAsset.width} × ${currentAsset.height}`}
+            </span>
+          ) : null}
         </span>
         <ChevronDown
           aria-hidden="true"
@@ -1021,7 +1041,7 @@ const MediaAssetPicker = ({
         </DialogHeader>
         <div className="min-h-0 overflow-y-auto p-5">
           <MediaAssetBrowser
-            assets={imageAssets}
+            assets={assets}
             metadata={metadata}
             categories={categories}
             selectedIds={currentAssetId ? [currentAssetId] : []}
@@ -1151,10 +1171,16 @@ const NodeFieldEditor = ({
     node.type === "task.generate-video" && currentModelIsMissing
       ? models.find((model) => model.id === currentModelId)
       : null;
-  const imageAssets = assets.filter((asset) => asset.kind === "image");
+  const assetKind =
+    node.type === "source.audio"
+      ? "audio"
+      : node.type === "source.video"
+        ? "video"
+        : "image";
+  const matchingAssets = assets.filter((asset) => asset.kind === assetKind);
   const currentAssetId = typeof value === "string" ? value : "";
   const currentAsset =
-    imageAssets.find((asset) => asset.id === currentAssetId) ?? null;
+    matchingAssets.find((asset) => asset.id === currentAssetId) ?? null;
   const describedBy = issue ? `${descriptionId} ${issueId}` : descriptionId;
 
   let control: JSX.Element;
@@ -1173,6 +1199,8 @@ const NodeFieldEditor = ({
                 ? "sam3"
                 : node.type === "operation.visual-check"
                   ? "vision"
+                  : node.type === "operation.lip-sync"
+                    ? "lip-sync"
                   : "upscale"
           }
           onChange={(value) => onChange(field.id, value)}
@@ -1260,7 +1288,7 @@ const NodeFieldEditor = ({
           fieldLabel={field.label}
           currentAssetId={currentAssetId}
           currentAsset={currentAsset}
-          imageAssets={imageAssets}
+          assets={matchingAssets}
           metadata={assetMetadata}
           categories={categories}
           disabled={field.readOnly === true}
@@ -2825,31 +2853,31 @@ const NodeInspector = ({
     node.type === "task.generate-audio"
       ? ["text-to-audio"]
       : node.type === "task.generate-video"
-      ? videoNeedsTerminalConditioning
-        ? ["image-to-video", "start-end-to-video"]
-        : firstFrameEdge || lastFrameEdge
-          ? ["image-to-video"]
-          : ["text-to-video"]
-      : node.type === "task.generate-image" &&
-          node.config.outputFormat === "svg"
-        ? [
-            node.config.svgMode === "vectorize"
-              ? "image-to-svg"
-              : imageInputEdges.length > 0
-                ? "guided-svg-generation"
-                : "text-to-svg",
-          ]
-        : [
-            ...(hasPoseInput ? (["pose-control"] as const) : []),
-            ...(hasMaskInput ? (["masked-image-edit"] as const) : []),
-            ...(conditionedImageCount > 1
-              ? (["multi-reference-edit"] as const)
-              : conditionedImageCount === 1 && !hasMaskInput
-                ? (["image-to-image"] as const)
-                : imageInputEdges.length === 0
-                  ? (["text-to-image"] as const)
-                  : []),
-          ];
+        ? videoNeedsTerminalConditioning
+          ? ["image-to-video", "start-end-to-video"]
+          : firstFrameEdge || lastFrameEdge
+            ? ["image-to-video"]
+            : ["text-to-video"]
+        : node.type === "task.generate-image" &&
+            node.config.outputFormat === "svg"
+          ? [
+              node.config.svgMode === "vectorize"
+                ? "image-to-svg"
+                : imageInputEdges.length > 0
+                  ? "guided-svg-generation"
+                  : "text-to-svg",
+            ]
+          : [
+              ...(hasPoseInput ? (["pose-control"] as const) : []),
+              ...(hasMaskInput ? (["masked-image-edit"] as const) : []),
+              ...(conditionedImageCount > 1
+                ? (["multi-reference-edit"] as const)
+                : conditionedImageCount === 1 && !hasMaskInput
+                  ? (["image-to-image"] as const)
+                  : imageInputEdges.length === 0
+                    ? (["text-to-image"] as const)
+                    : []),
+            ];
   const videoKeyframes =
     node.type === "task.generate-video"
       ? (["first-frame", "last-frame"] as const).map((portId) => {
@@ -2884,6 +2912,8 @@ const NodeInspector = ({
     ? listVisibleMediaNodeFields(definition, node.config, activeGroup).filter(
         (field) =>
           !(field.id === "providerPolicy" && field.readOnly) &&
+          (!["poseStrength", "poseStart", "poseEnd"].includes(field.id) ||
+            hasPoseInput) &&
           (field.kind !== "mask" ||
             (maskBaseAsset !== null &&
               (!incoming.some((edge) => edge.toPortId === "mask") ||
@@ -2894,7 +2924,8 @@ const NodeInspector = ({
                   "masked-image-edit",
                 ) === true))) &&
           (field.id !== "influence" ||
-            (referenceRoleModel !== null &&
+            (node.config.referenceRole !== "pose" &&
+              referenceRoleModel !== null &&
               getMediaReferenceConditioningCapabilities(referenceRoleModel)
                 .adjustableInfluence)),
       )
@@ -3171,23 +3202,17 @@ const NodeInspector = ({
                     <p className="text-xs text-amber-300">
                       Choose a local Stable Diffusion model for this image task.
                     </p>
-                  ) : poseTargetModel &&
-                    (poseTargetModel.runtimeReadiness !== "ready" ||
-                      !poseTargetModel.capabilities.includes(
-                        "pose-control",
-                      )) ? (
+                  ) : !poseTargetModel.capabilities.includes("pose-control") ? (
                     <p className="text-xs text-amber-300">
-                      {poseTargetModel.runtimeReadiness !== "ready"
-                        ? "Verify this model in Assets to use a pose."
-                        : poseTargetModel.architecture === "stable-diffusion-2"
-                          ? "SD 2 needs a matching OpenPose ControlNet installed manually."
-                          : [
-                                "stable-diffusion-1",
-                                "stable-diffusion-xl",
-                                "pony",
-                              ].includes(poseTargetModel.architecture ?? "")
-                            ? "Install OpenPose for this model in Basic."
-                            : "Choose a local Stable Diffusion model to use this pose."}
+                      {poseTargetModel.architecture === "stable-diffusion-2"
+                        ? "SD 2 needs a matching OpenPose ControlNet installed manually."
+                        : [
+                              "stable-diffusion-1",
+                              "stable-diffusion-xl",
+                              "pony",
+                            ].includes(poseTargetModel.architecture ?? "")
+                          ? "Install OpenPose for this model in Basic."
+                          : "Choose a local Stable Diffusion model to use this pose."}
                     </p>
                   ) : null}
                 </>
@@ -4027,10 +4052,6 @@ export const MediaFlowView = ({
       ),
     [flow],
   );
-  const flowImageAssets = useMemo(
-    () => assets.filter((asset) => asset.kind === "image"),
-    [assets],
-  );
   const runOverlayProjection = useMemo(
     () =>
       runOverlay
@@ -4117,10 +4138,10 @@ export const MediaFlowView = ({
           ? configuredAssetValue.trim()
           : "";
       const assetIndex = configuredAssetId
-        ? flowImageAssets.findIndex((asset) => asset.id === configuredAssetId)
+        ? assets.findIndex((asset) => asset.id === configuredAssetId)
         : -1;
       const configuredAsset =
-        assetIndex >= 0 ? (flowImageAssets[assetIndex] ?? null) : null;
+        assetIndex >= 0 ? (assets[assetIndex] ?? null) : null;
       const runOutputAsset =
         node.type === "output.asset" ||
         runOverlay?.executor === "media-workflow"
@@ -4163,7 +4184,7 @@ export const MediaFlowView = ({
   }, [
     collapsedNodeIds,
     flow.nodes,
-    flowImageAssets,
+    assets,
     layout.comments,
     layout.groups,
     layoutByNodeId,

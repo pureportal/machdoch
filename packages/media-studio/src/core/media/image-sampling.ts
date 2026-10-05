@@ -11,6 +11,22 @@ export interface MediaImageSamplingSettings {
   guidanceScale?: number | null;
 }
 
+export const mediaImageSamplingConstraints = (
+  architecture: MediaLocalModelArchitecture | null | undefined,
+): { fixedSteps: number | null; manualGuidance: boolean } => {
+  const profile = openMediaModelProfile(architecture);
+  return {
+    fixedSteps: profile?.fixedSteps
+      ? profile.steps
+      : architecture === "flux-2"
+        ? 4
+        : null,
+    manualGuidance:
+      !profile?.fixedGuidance &&
+      !["flux-2", "krea-2", "qwen-image-2.1"].includes(architecture ?? ""),
+  };
+};
+
 export const readMediaImageSampling = (
   config: Record<string, unknown>,
 ): MediaImageSamplingSettings => ({
