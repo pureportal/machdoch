@@ -2,9 +2,35 @@ plugins {
     id("com.android.application")
 }
 
+abstract class PrepareLegalAssets : DefaultTask() {
+    @get:InputFiles
+    abstract val legalDocuments: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun copyDocuments() {
+        val destination = outputDirectory.dir("legal").get().asFile
+        if (!destination.exists() && !destination.mkdirs()) {
+            throw GradleException("Cannot create legal assets directory: $destination")
+        }
+        legalDocuments.forEach { document ->
+            document.copyTo(destination.resolve(document.name), overwrite = true)
+        }
+    }
+}
+
 val productVersion = providers.fileContents(rootProject.layout.projectDirectory.file("../../package.json")).asText.get()
     .let { Regex("\"version\"\\s*:\\s*\"([^\"]+)\"").find(it)!!.groupValues[1] }
 val releaseVersion = productVersion.split(".").map(String::toInt)
+val legalAssetsDirectory = layout.buildDirectory.dir("generated/legal-assets")
+
+val prepareLegalAssets = tasks.register<PrepareLegalAssets>("prepareLegalAssets") {
+    legalDocuments.from(listOf("LICENSE", "NOTICE", "EULA.md", "THIRD_PARTY_NOTICES.md")
+        .map { rootProject.layout.projectDirectory.file("../../$it") })
+    outputDirectory.set(legalAssetsDirectory)
+}
 
 android {
     namespace = "com.machdoch.fleet"
@@ -29,6 +55,13 @@ android {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
         }
+    }
+
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(prepareLegalAssets) { it.outputDirectory }
     }
 }
 

@@ -1,0 +1,8 @@
+{
+  "name": "@oxc-node/core-linux-arm64-gnu",
+  "version": "0.1.0",
+  "license": "MIT",
+  "source": "https://registry.npmjs.org/%40oxc-node%2Fcore-linux-arm64-gnu/0.1.0",
+  "termsSource": "https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/MIT.txt",
+  "terms": "Standard permission and disclaimer clauses; retain upstream attribution in the original package manifest and source."
+}

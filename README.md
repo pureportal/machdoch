@@ -114,3 +114,11 @@ A workspace is a working folder, not a security boundary. Before using Machdoch 
 | Local media generation is unavailable | Check model and runtime details in **Media Studio** and follow any readiness guidance. |
 
 Use `machdoch --help` or `machdoch config` for terminal diagnostics. For updates, see [all releases](https://github.com/pureportal/machdoch/releases). To report a problem, open a [GitHub issue](https://github.com/pureportal/machdoch/issues) with the app version, operating system, steps to reproduce, and the error message. Remove keys and private data first.
+
+## Credits
+
+MiniMax H3 support uses code from [Fizgig](https://github.com/shootthesound/Fizgig) by [@shootthesound](https://github.com/shootthesound). Its ComfyUI-derived portions have unresolved GPL provenance; see [third-party notices](THIRD_PARTY_NOTICES.md).
+
+## Licence
+
+Machdoch-owned code and documentation are licensed under [Apache-2.0](LICENSE). Third-party components and models retain their own terms. See [end-user terms](EULA.md), [third-party notices](THIRD_PARTY_NOTICES.md) and [licensing status](legal/README.md).

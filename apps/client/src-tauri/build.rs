@@ -63,6 +63,7 @@ fn main() {
             if let Err(error) = validate_runtime(&node_binary, &cli_bundle) {
                 panic!("{error}");
             }
+            validate_licence_bundle(&manifest_dir, &node_binary);
 
             copy_file_or_panic(&cli_bundle, &output_path, "bundled CLI");
             copy_file_or_panic(&node_binary, &node_output_path, "Node runtime");
@@ -126,6 +127,22 @@ fn validate_runtime(node_binary: &Path, cli_bundle: &Path) -> Result<(), String>
             cli_bundle.display()
         )
     })
+}
+
+fn validate_licence_bundle(manifest_dir: &Path, node_binary: &Path) {
+    let legal_directory = manifest_dir.join("../dist/legal-desktop");
+    let verifier = manifest_dir.join("../../../scripts/licensing/verify.mjs");
+    println!("cargo:rerun-if-changed={}", legal_directory.display());
+    println!("cargo:rerun-if-changed={}", verifier.display());
+    let status = Command::new(node_binary)
+        .arg(&verifier)
+        .arg(&legal_directory)
+        .arg(node_binary)
+        .status()
+        .unwrap_or_else(|error| panic!("Could not verify release licences: {error}"));
+    if !status.success() {
+        panic!("Release licence verification failed. Run the desktop licence generator for the selected Node.js runtime before building.");
+    }
 }
 
 fn run_node_check(node_binary: &Path, argument: &str, input: Option<&Path>) -> Result<(), String> {

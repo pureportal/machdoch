@@ -37,6 +37,10 @@ function shellQuote(value) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
+function rpmPayloadPath(value) {
+  return `"${value.replaceAll("%", "%%").replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+}
+
 async function listPayloadPaths(directory, root = directory) {
   const paths = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -49,7 +53,11 @@ async function listPayloadPaths(directory, root = directory) {
       throw new Error(`Unsupported RPM payload entry: ${entryPath}`);
     }
     const packagePath = `/${relative(root, entryPath).split(sep).join("/")}`;
-    if (/[\s%]/u.test(packagePath)) {
+    if (
+      packagePath.includes("\r") ||
+      packagePath.includes("\n") ||
+      packagePath.includes("\0")
+    ) {
       throw new Error(`Unsupported RPM package path: ${packagePath}`);
     }
     paths.push(packagePath);
@@ -142,8 +150,8 @@ try {
     ),
   ]
     .sort((left, right) => left.localeCompare(right))
-    .map((path) => `%dir ${path}`)
-    .concat(payloadPaths);
+    .map((path) => `%dir ${rpmPayloadPath(path)}`)
+    .concat(payloadPaths.map(rpmPayloadPath));
   await writeFile(manifestPath, `${manifest.join("\n")}\n`);
 
   const spec = [
@@ -155,7 +163,7 @@ try {
     `Version: ${version}`,
     "Release: 1",
     `Summary: ${specValue(bundle.shortDescription, "summary")}`,
-    "License: Unspecified",
+    `License: ${specValue(bundle.license, "license")}`,
     `URL: ${specValue(bundle.homepage, "URL")}`,
     "BuildArch: x86_64",
     "AutoReqProv: no",

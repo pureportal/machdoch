@@ -23,8 +23,13 @@ COPY apps/client apps/client
 COPY packages/fleet-protocol packages/fleet-protocol
 COPY packages/product-ui packages/product-ui
 COPY packages/media-studio packages/media-studio
+COPY LICENSE NOTICE EULA.md THIRD_PARTY_NOTICES.md ./
+COPY legal legal
+COPY docs/licensing docs/licensing
+COPY scripts/licensing scripts/licensing
 
-RUN pnpm build:fleet-manager
+RUN pnpm build:fleet-manager \
+    && node scripts/licensing/generate.mjs fleet-manager
 
 FROM base AS production-dependencies
 
@@ -49,6 +54,7 @@ COPY --from=build --chown=node:node /workspace/apps/fleet-manager/next.config.ts
 COPY --from=build --chown=node:node /workspace/apps/fleet-manager/tsconfig.json apps/fleet-manager/tsconfig.json
 COPY --from=build --chown=node:node /workspace/packages/fleet-protocol/src packages/fleet-protocol/src
 COPY --from=build --chown=node:node /workspace/packages/product-ui/src packages/product-ui/src
+COPY --from=build /workspace/apps/fleet-manager/dist/legal legal-release
 
 RUN mkdir -p /config/data \
     && chown -R node:node /config

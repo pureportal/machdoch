@@ -34,6 +34,23 @@ try {
   const extracted = run("tar", ["-xzf", archive, "-C", temp]);
   assert.equal(extracted.status, 0, extracted.stderr);
   const root = join(temp, "machdoch");
+  const licenceManifest = JSON.parse(
+    readFileSync(join(root, "legal/manifest.json"), "utf8"),
+  );
+  assert.equal(licenceManifest.profile, "headless");
+  assert.ok(licenceManifest.packages.length > 0);
+  for (const file of [
+    "LICENSE",
+    "NOTICE",
+    "EULA.md",
+    "THIRD_PARTY_NOTICES.md",
+  ]) {
+    assert.ok(readFileSync(join(root, file), "utf8").trim());
+    assert.equal(
+      readFileSync(join(root, file), "utf8"),
+      readFileSync(join(root, "legal", file), "utf8"),
+    );
+  }
   const launcher = join(root, "machdoch");
   const env = {
     ...process.env,

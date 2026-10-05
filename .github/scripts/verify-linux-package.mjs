@@ -28,6 +28,13 @@ export const requiredRpmDependencies = [
 export const requiredLinuxPackagePaths = [
   "/usr/bin/machdoch",
   "/usr/lib/machdoch/libonnxruntime.so.1",
+  "/usr/lib/machdoch/legal/LICENSE",
+  "/usr/lib/machdoch/legal/NOTICE",
+  "/usr/lib/machdoch/legal/EULA.md",
+  "/usr/lib/machdoch/legal/manifest.json",
+  "/usr/lib/machdoch/legal/node/LICENSE",
+  "/usr/lib/machdoch/legal/onnxruntime/LICENSE",
+  "/usr/lib/machdoch/legal/onnxruntime/ThirdPartyNotices.txt",
   "/usr/lib/machdoch/python/build_source_anchored_loop.py",
   "/usr/lib/machdoch/python/media_diffusers_requirements.txt",
   "/usr/lib/machdoch/python/media_diffusers_worker.py",

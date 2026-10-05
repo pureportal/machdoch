@@ -11,6 +11,7 @@ import {
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(projectRoot, "../..");
@@ -20,12 +21,28 @@ const metadata = JSON.parse(
   await readFile(join(projectRoot, "package.json"), "utf8"),
 );
 await mkdir(dist, { recursive: true });
+execFileSync(
+  process.execPath,
+  [join(repositoryRoot, "scripts/licensing/generate.mjs"), "headless"],
+  { stdio: "inherit", windowsHide: true },
+);
 const stage = await mkdtemp(join(dist, "headless-stage-"));
 if (dirname(stage) !== dist)
   throw new Error("Refusing to use an unexpected staging path.");
 try {
   const root = join(stage, "machdoch");
   await mkdir(root);
+  await cp(join(dist, "legal-headless"), join(root, "legal"), {
+    recursive: true,
+  });
+  for (const name of [
+    "LICENSE",
+    "NOTICE",
+    "EULA.md",
+    "THIRD_PARTY_NOTICES.md",
+  ]) {
+    await cp(join(repositoryRoot, name), join(root, name));
+  }
   await cp(join(dist, "machdoch-cli.cjs"), join(root, "machdoch-cli.cjs"));
   await cp(
     join(repositoryRoot, "packaging/headless/machdoch"),
@@ -48,14 +65,15 @@ try {
   );
   await writeFile(
     join(root, "package.json"),
-    `${JSON.stringify({ name: "machdoch-headless", version: metadata.version, private: true, engines: metadata.engines }, null, 2)}\n`,
+    `${JSON.stringify({ name: "machdoch-headless", version: metadata.version, license: metadata.license, private: true, engines: metadata.engines }, null, 2)}\n`,
   );
   const archive = join(dist, "machdoch-headless.tar.gz");
-  await createTar(
+  await createTar.asyncFile(
     {
       cwd: stage,
       file: archive,
       gzip: true,
+      sync: false,
       portable: true,
       strict: true,
       onWriteEntry(entry) {
